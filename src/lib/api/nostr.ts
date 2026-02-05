@@ -64,8 +64,20 @@ export async function refreshProfileNow(npub: string): Promise<void> {
 }
 
 /**
+ * Fetch DMs from Nostr relays (backend: fetch_messages).
+ * Pulls Gift Wraps (kind 1059) for our pubkey, unwraps and stores in state/DB, then emits init_finished with profiles + chats.
+ * Call after login so DMs are loaded from relays (per MESSAGING_OVERVIEW §8).
+ */
+export async function fetchMessages(init: boolean, relayUrl?: string): Promise<void> {
+  await invoke('fetch_messages', {
+    init,
+    relay_url: relayUrl ?? null,
+  });
+}
+
+/**
  * Get paginated messages for a DM chat (backend: get_message_views).
- * chat_id = npub for DMs
+ * chat_id = npub for DMs; reads from backend DB (filled by fetch_messages from relays).
  */
 export async function getDmMessages(
   chatId: string,

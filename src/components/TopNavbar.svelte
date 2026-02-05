@@ -2,9 +2,9 @@
   import { activeTopNavTab, type TopNavTab } from '../stores/app';
 
   const tabs: { id: TopNavTab; label: string }[] = [
-    { id: 'dms', label: 'DMs' },
-    { id: 'networks', label: 'Networks' },
     { id: 'communities', label: 'Communities' },
+    { id: 'networks', label: 'Networks' },
+    { id: 'dms', label: 'DMs' },
   ];
 
   function selectTab(id: TopNavTab) {

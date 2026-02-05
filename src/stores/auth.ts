@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { login as apiLogin, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
 import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, clearStoredKey, validatePrivateKeyFormat } from '../lib/api/encryption';
-import { refreshProfileNow } from '../lib/api/nostr';
+import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
@@ -83,7 +83,9 @@ export async function createAccount(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
-    
+    // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
+    fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
+
     authLoading.set(false);
   } catch (error: any) {
     console.error('Create account failed:', error);
@@ -126,7 +128,9 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
       npub: npub,
       pubkey: keys.public
     });
-    
+    // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
+    fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
+
     // Auto-refresh profile on login
     try {
       await refreshProfileNow(npub);
@@ -134,7 +138,7 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
       console.error('Auto profile refresh failed:', e);
       // Don't fail login if profile refresh fails
     }
-    
+
     authLoading.set(false);
   } catch (error: any) {
     console.error('Import account failed:', error);
@@ -171,7 +175,9 @@ export async function unlockWithPin(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
-    
+    // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
+    fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
+
     // Auto-refresh profile on login
     try {
       await refreshProfileNow(npub);
@@ -179,7 +185,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
       console.error('Auto profile refresh failed:', e);
       // Don't fail login if profile refresh fails
     }
-    
+
     authLoading.set(false);
   } catch (error: any) {
     console.error('Unlock failed:', error);

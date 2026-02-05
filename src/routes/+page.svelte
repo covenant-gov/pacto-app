@@ -10,8 +10,9 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import Message from '../components/Message.svelte';
   import MessageInput from '../components/MessageInput.svelte';
-  import { getDmMessages, sendDmMessage, queueProfileSync } from '../lib/api/nostr';
+  import { getDmMessages, sendDmMessage, queueProfileSync, fetchMessages } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { isAuthenticated } from '../stores/auth';
   import {
     activeCommunityId,
     activeChannelId,
@@ -20,6 +21,7 @@
     activeDmId,
     composingNewChat,
     backendDmMessages,
+    dmList,
     type DmMessage,
   } from '../stores/app';
 
@@ -92,6 +94,11 @@
     $activeCommunityId = 'community-1';
     $activeChannelId = 'channel-1';
 
+    // Pull DMs from Nostr relays when app loads (if already authenticated)
+    if ($isAuthenticated) {
+      fetchMessages(true).catch(() => {});
+    }
+
     const unlistenNew = listen<{ message: DmMessage; chat_id: string }>('message_new', (event) => {
       const { message, chat_id } = event.payload;
       if (!chat_id.startsWith('npub1')) return;
@@ -106,6 +113,11 @@
         const list = byNpub[chat_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byNpub;
         return { ...byNpub, [chat_id]: [...list, m] };
+      });
+      // Add new DM to list if not already present (e.g. first message from a new contact)
+      dmList.update((list) => {
+        if (list.some((e) => e.npub === chat_id)) return list;
+        return [...list, { npub: chat_id }];
       });
     });
 

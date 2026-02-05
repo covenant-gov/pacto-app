@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, type NostrProfile } from '../lib/api/nostr';
+import { dmList, type DmEntry } from './app';
 
 // Store all loaded profiles, keyed by npub
 export const profiles = writable<Record<string, NostrProfile>>({});
@@ -8,16 +9,41 @@ export const profiles = writable<Record<string, NostrProfile>>({});
 // Track loading states for profiles
 export const profileLoadingStates = writable<Record<string, boolean>>({});
 
-// Listen for initial DB load
+// Listen for initial DB load (profiles + chats from Nostr relay sync)
 (async () => {
   try {
     await listen('init_finished', (event: any) => {
-      if (event.payload?.profiles) {
+      const payload = event.payload;
+      if (!payload) return;
+
+      if (payload.profiles) {
         const profilesMap: Record<string, NostrProfile> = {};
-        for (const profile of event.payload.profiles) {
+        for (const profile of payload.profiles) {
           profilesMap[profile.id] = profile;
         }
         profiles.set(profilesMap);
+      }
+
+      // Populate DM list from chats (DMs = id starts with npub1 or chat_type DirectMessage)
+      if (payload.chats && Array.isArray(payload.chats)) {
+        const profilesMap = payload.profiles
+          ? Object.fromEntries(payload.profiles.map((p: NostrProfile) => [p.id, p]))
+          : {};
+        const dmEntries: DmEntry[] = payload.chats
+          .filter(
+            (c: { id: string; chat_type?: string }) =>
+              typeof c.id === 'string' &&
+              (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage' || c.chat_type === 0)
+          )
+          .map((c: { id: string }) => {
+            const profile = profilesMap[c.id];
+            return {
+              npub: c.id,
+              name: profile?.display_name || profile?.name,
+              avatar: profile?.avatar_cached || profile?.avatar,
+            } as DmEntry;
+          });
+        dmList.set(dmEntries);
       }
     });
   } catch (error) {
