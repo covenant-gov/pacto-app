@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pacto-copy",
+  "productName": "pacto-impl-0",
   "version": "0.1.0",
-  "identifier": "com.daopunk.pacto-copy",
+  "identifier": "com.daopunk.pacto-impl-0",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1421",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pacto-copy",
+        "title": "pacto-impl-0",
         "minWidth": 400,
         "width": 1000,
         "minHeight": 400,
