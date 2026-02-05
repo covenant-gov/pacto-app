@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pacto-impl-0",
+  "productName": "pacto-impl-1",
   "version": "0.1.0",
-  "identifier": "com.daopunk.pacto-impl-0",
+  "identifier": "com.daopunk.pacto-impl-1",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1421",
+    "devUrl": "http://localhost:1422",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../build"
   },
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pacto-impl-0",
+        "title": "pacto-impl-1",
         "minWidth": 400,
         "width": 1000,
         "minHeight": 400,
