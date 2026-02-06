@@ -533,10 +533,20 @@ async fn fetch_messages<R: Runtime>(
                     *cache = wrapper_ids;
                 }
                 
+                // Build dm_flags (has_from_me / has_from_them per DM) from DB so frontend can show Friends vs Requests vs Pending
+                let mut dm_flags = serde_json::Map::new();
+                for chat in &state.chats {
+                    if chat.id().starts_with("npub1") || chat.chat_type == ChatType::DirectMessage {
+                        if let Ok((has_from_me, has_from_them)) = db::get_dm_sent_received(&handle, chat.id()) {
+                            dm_flags.insert(chat.id().clone(), serde_json::json!({ "has_from_me": has_from_me, "has_from_them": has_from_them }));
+                        }
+                    }
+                }
                 // Send the state to our frontend to signal finalised init with a full state
                 handle.emit("init_finished", serde_json::json!({
                     "profiles": &state.profiles,
-                    "chats": &state.chats
+                    "chats": &state.chats,
+                    "dm_flags": serde_json::Value::Object(dm_flags)
                 })).unwrap();
             } else {
                 // Even if no integrity check needed, still clean up empty files
@@ -554,10 +564,20 @@ async fn fetch_messages<R: Runtime>(
                     *cache = wrapper_ids;
                 }
                 
+                // Build dm_flags (has_from_me / has_from_them per DM) from DB so frontend can show Friends vs Requests vs Pending
+                let mut dm_flags = serde_json::Map::new();
+                for chat in &state.chats {
+                    if chat.id().starts_with("npub1") || chat.chat_type == ChatType::DirectMessage {
+                        if let Ok((has_from_me, has_from_them)) = db::get_dm_sent_received(&handle, chat.id()) {
+                            dm_flags.insert(chat.id().clone(), serde_json::json!({ "has_from_me": has_from_me, "has_from_them": has_from_them }));
+                        }
+                    }
+                }
                 // No integrity check needed, send init immediately
                 handle.emit("init_finished", serde_json::json!({
                     "profiles": &state.profiles,
-                    "chats": &state.chats
+                    "chats": &state.chats,
+                    "dm_flags": serde_json::Value::Object(dm_flags)
                 })).unwrap();
             }
 

@@ -18,12 +18,21 @@
     <div class="spinner"></div>
   </div>
 {:else if $isAuthenticated}
-  <slot />
+  <div class="layout-root">
+    <slot />
+  </div>
 {:else}
   <Login />
 {/if}
 
 <style>
+  .layout-root {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .loading-screen {
     display: flex;
     align-items: center;

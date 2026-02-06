@@ -4,7 +4,7 @@
   import { logout, currentUser } from '../stores/auth';
   import { exportKeys } from '../lib/api/auth';
   import { loadAndDecryptKey } from '../lib/api/encryption';
-  import { refreshProfileNow, updateProfile, uploadAvatar } from '../lib/api/nostr';
+  import { updateProfile, uploadAvatar } from '../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../lib/utils/profile';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
@@ -19,7 +19,6 @@
   
   let error: string | null = null;
   let isLoggingOut = false;
-  let isRefreshing = false;
 
   // Edit profile state (PFP Plan §7)
   let isEditing = false;
@@ -74,24 +73,6 @@
       console.error('Logout failed:', e);
     }
     // Will redirect to login automatically via +layout.svelte
-  }
-
-  async function handleRefreshProfile() {
-    if (!userNpub || isRefreshing) return;
-    
-    isRefreshing = true;
-    try {
-      await refreshProfileNow(userNpub);
-      // The profile_update event will automatically update the UI
-    } catch (e: any) {
-      console.error('Refresh failed:', e);
-      error = 'Failed to refresh profile';
-    } finally {
-      // Small delay to show the button feedback
-      setTimeout(() => {
-        isRefreshing = false;
-      }, 500);
-    }
   }
 
   function startEditing() {
@@ -437,13 +418,6 @@
                 on:click={startEditing}
               >
                 Edit profile
-              </button>
-              <button 
-                class="btn-refresh" 
-                on:click={handleRefreshProfile}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? 'Refreshing...' : 'Refresh Profile'}
               </button>
               <button 
                 class="btn-export" 
@@ -854,29 +828,6 @@
 
   .btn-edit-profile:hover {
     background: rgba(88, 101, 242, 0.1);
-  }
-
-  .btn-refresh {
-    width: 100%;
-    height: 48px;
-    background: transparent;
-    color: #3ba55c;
-    border: 2px solid #3ba55c;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    outline: none;
-  }
-
-  .btn-refresh:hover:not(:disabled) {
-    background: rgba(59, 165, 92, 0.1);
-  }
-
-  .btn-refresh:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .btn-export {

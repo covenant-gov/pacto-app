@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { dmList, activeDmId, type DmEntry } from './app';
+import { dmChatsByNpub, activeDmId, type DmChatState } from './app';
 
 const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
 let lastOpenChatRestored = false;
@@ -34,8 +34,7 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
         dmLog('init_finished: profiles store set', Object.keys(profilesMap).length);
       }
 
-      // Populate DM list from chats (DMs = id starts with npub1 or chat_type DirectMessage).
-      // Sort by last activity (DM_FLOW §5.1): newest first.
+      // Build DM map: Friends (2-way), Requests (they only), Pending (we only). Derived lists in app.ts.
       if (payload.chats && Array.isArray(payload.chats)) {
         const profilesMap = payload.profiles
           ? Object.fromEntries(payload.profiles.map((p: NostrProfile) => [p.id, p]))
@@ -43,7 +42,7 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
         type ChatPayload = {
           id: string;
           chat_type?: string;
-          messages?: Array<{ at: number }>;
+          messages?: Array<{ at: number; mine?: boolean }>;
           created_at?: number;
         };
         const dmChats = (payload.chats as ChatPayload[]).filter(
@@ -51,30 +50,33 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
             typeof c.id === 'string' &&
             (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage')
         );
-        const dmEntries: DmEntry[] = dmChats.map((c) => {
+        const dmFlags = (payload as { dm_flags?: Record<string, { has_from_me?: boolean; has_from_them?: boolean }> }).dm_flags;
+        const map: Record<string, DmChatState> = {};
+        for (const c of dmChats) {
+          const ms = c.messages ?? [];
+          // Prefer backend dm_flags (from full DB) so Friends vs Requests vs Pending is correct when init only loads 1 message per chat
+          const flags = dmFlags?.[c.id];
+          const hasFromMe = flags ? flags.has_from_me ?? false : ms.some((m: { mine?: boolean }) => m.mine === true);
+          const hasFromThem = flags ? flags.has_from_them ?? false : ms.some((m: { mine?: boolean }) => m.mine === false);
+          const lastAt = ms.length > 0 ? Math.max(...ms.map((m: { at?: number }) => m.at ?? 0)) : (c.created_at ?? 0);
           const profile = profilesMap[c.id];
-          return {
+          map[c.id] = {
             npub: c.id,
             name: getProfileDisplayName(profile ?? undefined),
             avatar: profile?.avatar_cached || profile?.avatar,
-          } as DmEntry;
-        });
-        // Last activity: last message .at, or created_at, or 0
-        const lastAt = (c: ChatPayload) => {
-          const ms = c.messages;
-          if (ms && ms.length > 0) return ms[ms.length - 1].at ?? 0;
-          return c.created_at ?? 0;
-        };
-        const orderByLastAt = new Map(dmChats.map((c) => [c.id, lastAt(c)]));
-        dmEntries.sort((a, b) => (orderByLastAt.get(b.npub) ?? 0) - (orderByLastAt.get(a.npub) ?? 0));
-        dmList.set(dmEntries);
-        dmLog('init_finished: dmList set (sorted by last activity)', dmEntries.length, 'DMs');
+            hasFromMe,
+            hasFromThem,
+            lastAt,
+          };
+        }
+        dmChatsByNpub.set(map);
+        dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
 
-        // Restore last open chat if still in list (DM_FLOW §8.2)
+        // Restore last open chat if still in map (DM_FLOW §8.2)
         if (!lastOpenChatRestored && typeof localStorage !== 'undefined') {
           lastOpenChatRestored = true;
           const lastNpub = localStorage.getItem(LAST_DM_NPUB_KEY)?.trim();
-          if (lastNpub && dmEntries.some((e) => e.npub === lastNpub)) {
+          if (lastNpub && lastNpub in map) {
             dmLog('init_finished: restore last open chat', lastNpub.slice(0, 20) + '…');
             activeDmId.set(lastNpub);
           }
@@ -121,10 +123,12 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
         if (!existing) return p;
         return { ...p, [profile_id]: { ...existing, nickname: value } };
       });
-      // Keep DM list display name in sync (sidebar shows name from dmList)
-      dmList.update((list) =>
-        list.map((e) => (e.npub === profile_id ? { ...e, name: value } : e))
-      );
+      // Keep DM map display name in sync (sidebar uses derived dmList/requestsList/pendingList)
+      dmChatsByNpub.update((m) => {
+        const cur = m[profile_id];
+        if (!cur) return m;
+        return { ...m, [profile_id]: { ...cur, name: value } };
+      });
     });
   } catch (error) {
     console.error('Failed to register profile_nick_changed event listener:', error);
