@@ -1,6 +1,10 @@
 <script lang="ts">
   import Tab from './Tab.svelte';
   import settingsIcon from '../icons/settings.svg';
+  import plusCircleIcon from '../icons/plus-circle.svg';
+  import friendsIcon from '../icons/friends.svg';
+  import requestsIcon from '../icons/requests.svg';
+  import pendingIcon from '../icons/pending.svg';
   import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, type TopNavTab, type DmTab } from '../stores/app';
 
   function selectSquad(squadId: string) {
@@ -25,12 +29,10 @@
     $activeChannelId = null;
   }
 
-  let showTooltip = false;
-
   const addButtonLabels: Record<TopNavTab, string> = {
-    dms: 'New Chat',
-    networks: 'Network Chat',
-    squads: 'Squad Hub',
+    dms: 'Start DM',
+    squads: 'Organize Squad',
+    networks: 'Coordinate Network',
   };
   $: addButtonLabel = addButtonLabels[$activeTopNavTab];
 
@@ -49,7 +51,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Friends" active={$activeView === 'hub' && $activeDmTab === 'friends'} />
+        <Tab label="Friends" icon={friendsIcon} active={$activeView === 'hub' && $activeDmTab === 'friends'} />
       </div>
       <div 
         on:click={() => selectDmTab('requests')}
@@ -57,7 +59,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Requests" active={$activeView === 'hub' && $activeDmTab === 'requests'} />
+        <Tab label="Requests" icon={requestsIcon} active={$activeView === 'hub' && $activeDmTab === 'requests'} />
       </div>
       <div 
         on:click={() => selectDmTab('pending')}
@@ -65,7 +67,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Pending" active={$activeView === 'hub' && $activeDmTab === 'pending'} />
+        <Tab label="Pending" icon={pendingIcon} active={$activeView === 'hub' && $activeDmTab === 'pending'} />
       </div>
     {:else if $activeTopNavTab === 'squads'}
       {#each $squads as squad}
@@ -87,27 +89,21 @@
     {/if}
   </div>
   <div class="tab-list bottom">
-    <div class="tooltip-wrapper">
-      <button 
-        class="add-squad-btn"
-        on:click={$activeTopNavTab === 'dms' ? startNewChat : handleAddAction}
-        on:mouseenter={() => showTooltip = true}
-        on:mouseleave={() => showTooltip = false}
-        aria-label={addButtonLabel}
-      >
-        <span class="plus-icon">+</span>
-      </button>
-      {#if showTooltip}
-        <div class="tooltip">{addButtonLabel}</div>
-      {/if}
+    <div
+      on:click={$activeTopNavTab === 'dms' ? startNewChat : handleAddAction}
+      on:keydown={(e) => e.key === 'Enter' && ($activeTopNavTab === 'dms' ? startNewChat() : handleAddAction())}
+      role="button"
+      tabindex="0"
+    >
+      <Tab label={addButtonLabel} icon={plusCircleIcon} active={false} />
     </div>
-    <div 
+    <div
       on:click={openProfile}
       on:keydown={(e) => e.key === 'Enter' && openProfile()}
       role="button"
       tabindex="0"
     >
-      <Tab label="Settings" image={settingsIcon} active={$activeView === 'profile'} />
+      <Tab label="Settings" icon={settingsIcon} active={$activeView === 'profile'} />
     </div>
   </div>
 </div>
@@ -120,6 +116,9 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    box-sizing: border-box;
   }
 
   .tab-list {
@@ -129,80 +128,7 @@
     gap: 8px;
   }
 
-  .add-squad-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: #313338;
-    border: 2px dashed #5865f2;
-    color: #5865f2;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    outline: none;
-  }
-
-  .add-squad-btn:hover {
-    background: #5865f2;
-    color: #ffffff;
-    border-style: solid;
-    transform: scale(1.05);
-  }
-
-  .add-squad-btn:active {
-    transform: scale(0.95);
-  }
-
-  .plus-icon {
-    font-size: 24px;
-    font-weight: 300;
-    line-height: 1;
-  }
-
-  .tooltip-wrapper {
-    position: relative;
-  }
-
-  .tooltip {
-    position: absolute;
-    left: 72px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: #1e1f22;
-    color: #f2f3f5;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    z-index: 1000;
-    pointer-events: none;
-    animation: tooltipFadeIn 0.15s ease-out;
-  }
-
-  .tooltip::before {
-    content: '';
-    position: absolute;
-    left: -4px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 0;
-    height: 0;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
-    border-right: 4px solid #1e1f22;
-  }
-
-  @keyframes tooltipFadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(-50%) translateX(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(-50%) translateX(0);
-    }
+  .tab-list.bottom {
+    padding-bottom: 8px;
   }
 </style>

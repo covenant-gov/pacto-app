@@ -2,7 +2,8 @@
   export let active: boolean = false;
   export let label: string = "";
   export let image: string = "";
-  
+  export let icon: string = "";
+
   $: firstLetter = label.charAt(0).toUpperCase();
 </script>
 
@@ -12,6 +13,8 @@
 >
   {#if image}
     <img src={image} alt={label} class="tab-image" />
+  {:else if icon}
+    <img src={icon} alt={label} class="tab-icon" />
   {:else}
     <span class="label">
       <slot>{firstLetter}</slot>
@@ -62,6 +65,13 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    pointer-events: none;
+  }
+
+  .tab-icon {
+    width: 56%;
+    height: 56%;
+    object-fit: contain;
     pointer-events: none;
   }
 

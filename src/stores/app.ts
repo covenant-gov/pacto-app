@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 
 // Top navbar tab - determines what the side Navbar shows (DMs, Networks, Squads)
 export type TopNavTab = 'dms' | 'networks' | 'squads';
@@ -19,20 +19,75 @@ export const activeDmTab = writable<DmTab>('friends');
 // New Chat flow: when true, show npub + message form instead of DM list/thread
 export const composingNewChat = writable<boolean>(false);
 
-// DM list for MessengerNavbar - will be populated from backend chats
+// DM entry for display in the sidebar
 export interface DmEntry {
   npub: string;
   name?: string;
   avatar?: string;
 }
-export const dmList = writable<DmEntry[]>([]);
-// Pending DMs (we sent first, not yet in friends) - will be populated when backend has initiated_by
-export const pendingList = writable<DmEntry[]>([]);
-// Request DMs (they sent first, not in friends) - will be populated when backend has initiated_by
-export const requestsList = writable<DmEntry[]>([]);
+
+// Single source of truth: who has sent messages → Friends (2-way), Requests (they only), Pending (we only)
+export interface DmChatState {
+  npub: string;
+  name?: string;
+  avatar?: string;
+  hasFromMe: boolean;
+  hasFromThem: boolean;
+  lastAt: number;
+}
+
+export const dmChatsByNpub = writable<Record<string, DmChatState>>({});
+
+function toDmEntries(map: Record<string, DmChatState>, filter: (c: DmChatState) => boolean): DmEntry[] {
+  return Object.values(map)
+    .filter(filter)
+    .sort((a, b) => b.lastAt - a.lastAt)
+    .map((c) => ({ npub: c.npub, name: c.name, avatar: c.avatar }));
+}
+
+export const dmList = derived(dmChatsByNpub, ($m) =>
+  toDmEntries($m, (c) => c.hasFromMe && c.hasFromThem)
+);
+export const requestsList = derived(dmChatsByNpub, ($m) =>
+  toDmEntries($m, (c) => !c.hasFromMe && c.hasFromThem)
+);
+export const pendingList = derived(dmChatsByNpub, ($m) =>
+  toDmEntries($m, (c) => c.hasFromMe && !c.hasFromThem)
+);
+
+/** Add/update a DM in the map. */
+export function setDmChatState(
+  npub: string,
+  update: Partial<Omit<DmChatState, 'npub'>> & { npub?: string }
+): void {
+  dmChatsByNpub.update((m) => {
+    const cur = m[npub];
+    const next: DmChatState = {
+      npub,
+      name: update.name ?? cur?.name,
+      avatar: update.avatar ?? cur?.avatar,
+      hasFromMe: update.hasFromMe ?? cur?.hasFromMe ?? false,
+      hasFromThem: update.hasFromThem ?? cur?.hasFromThem ?? false,
+      lastAt: update.lastAt ?? cur?.lastAt ?? 0,
+    };
+    return { ...m, [npub]: next };
+  });
+}
+
+/** When we send first message to a new npub → appears in Pending until they reply. */
+export function addPendingDm(npub: string): void {
+  setDmChatState(npub, { hasFromMe: true, hasFromThem: false, lastAt: Math.floor(Date.now() / 1000) });
+}
 
 // Selected DM conversation (other user's npub)
 export const activeDmId = writable<string | null>(null);
+
+// Last opened chat per tab (Friends / Requests / Pending) so switching tabs shows that chat if still in section
+export const lastOpenedDmByTab = writable<Record<DmTab, string | null>>({
+  friends: null,
+  requests: null,
+  pending: null,
+});
 
 // DM send error (shown in thread; set by both thread send and new-chat send)
 export const dmSendError = writable<string | null>(null);

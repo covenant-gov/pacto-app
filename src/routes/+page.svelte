@@ -21,6 +21,7 @@
     activeChannelId,
     activeView,
     activeTopNavTab,
+    activeDmTab,
     activeDmId,
     composingNewChat,
     backendDmMessages,
@@ -29,8 +30,13 @@
     dmSyncStatus,
     typingByChat,
     dmList,
+    requestsList,
+    pendingList,
+    lastOpenedDmByTab,
+    dmChatsByNpub,
     dmSendError,
     type DmMessage,
+    type DmTab,
   } from '../stores/app';
 
   const PAGE_SIZE = 100;
@@ -38,7 +44,29 @@
 
   let dmMessagesContainer: HTMLDivElement;
   let prevDmId: string | null = null;
+  let prevDmTab: DmTab | undefined = undefined;
   let loadingOlder = false;
+
+  // When switching Friends / Requests / Pending, show the last opened chat in that section (or first if none / no longer in list)
+  $: {
+    const tab = $activeDmTab;
+    if (prevDmTab !== tab && $activeTopNavTab === 'dms') {
+      prevDmTab = tab;
+      const list = tab === 'friends' ? $dmList : tab === 'requests' ? $requestsList : $pendingList;
+      const lastOpened = $lastOpenedDmByTab[tab];
+      const stillInList = lastOpened && list.some((e) => e.npub === lastOpened);
+      const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
+      activeDmId.set(npub);
+    }
+  }
+
+  // Remember which chat was last opened per tab (so tab switch restores it)
+  $: if ($activeTopNavTab === 'dms' && $activeDmId) {
+    lastOpenedDmByTab.update((byTab) => ({
+      ...byTab,
+      [$activeDmTab]: $activeDmId,
+    }));
+  }
 
   // Nickname edit for current DM contact (PFP Plan §8)
   let showNicknameEdit = false;
@@ -245,12 +273,18 @@
         );
         return { ...byNpub, [chat_id]: [...withoutOpt, m] };
       });
-      // Add new DM to list if not already present; if present, move to top (last activity order, DM_FLOW §5.1)
-      dmList.update((list) => {
-        const entry = list.find((e) => e.npub === chat_id);
-        const newEntry = entry ?? { npub: chat_id };
-        const rest = list.filter((e) => e.npub !== chat_id);
-        return [newEntry, ...rest];
+      // Update Friends/Requests/Pending: OR in message flags so we never lose a true (chat can move to Friends when they reply)
+      dmChatsByNpub.update((map) => {
+        const cur = map[chat_id];
+        const next = {
+          npub: chat_id,
+          name: cur?.name,
+          avatar: cur?.avatar,
+          hasFromMe: (cur?.hasFromMe ?? false) || m.mine,
+          hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
+          lastAt: Math.max(cur?.lastAt ?? 0, m.at),
+        };
+        return { ...map, [chat_id]: next };
       });
     });
 
@@ -320,17 +354,18 @@
   <main class="container">
     <Navbar />
     <div class="content-wrap">
-      {#if $activeTopNavTab === 'dms' && $dmSyncStatus !== 'idle'}
-        <p class="dm-sync-banner dm-sync-{$dmSyncStatus}" role="status">
-          {$dmSyncStatus === 'syncing' ? 'Updating messages…' : 'Up to date'}
-        </p>
-      {/if}
       {#if $activeView === 'profile'}
         <Profile />
       {:else if $activeTopNavTab === 'dms'}
         <div class="dm-area">
           <MessengerNavbar />
-          <div class="dm-main">
+          <div class="dm-area-center">
+            {#if $dmSyncStatus !== 'idle'}
+              <p class="dm-sync-banner dm-sync-{$dmSyncStatus}" role="status">
+                {$dmSyncStatus === 'syncing' ? 'Updating messages…' : 'Up to date'}
+              </p>
+            {/if}
+            <div class="dm-main">
             {#if $composingNewChat}
               <MessengerChatView />
             {:else if $activeDmId}
@@ -412,6 +447,7 @@
                 <p>Select a conversation or start a new chat</p>
               </div>
             {/if}
+            </div>
           </div>
         </div>
       {:else}
@@ -454,6 +490,14 @@
     min-height: 0;
     display: flex;
     flex-direction: row;
+  }
+
+  .dm-area-center {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .dm-main {

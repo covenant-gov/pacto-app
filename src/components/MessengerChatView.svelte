@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeDmId, composingNewChat, dmList, backendDmMessages, dmSendError } from '../stores/app';
+  import { activeDmId, composingNewChat, addPendingDm, backendDmMessages, dmSendError } from '../stores/app';
   import { sendDmMessage } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -36,12 +36,9 @@
     npub = '';
     messageText = '';
 
-    // Ensure the new chat appears in the sidebar
-    dmList.update((list) => {
-      if (list.some((e) => e.npub === trimmedNpub)) return list;
-      return [...list, { npub: trimmedNpub }];
-    });
-    dmLog('MessengerChatView: added to dmList, optimistic message');
+    // Ensure the new chat appears in Pending (we sent first; moves to Friends when they reply)
+    addPendingDm(trimmedNpub);
+    dmLog('MessengerChatView: added to Pending, optimistic message');
 
     // Add optimistic message so the sender sees their message immediately
     const optimisticId = `opt-${Date.now()}`;

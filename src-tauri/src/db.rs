@@ -1219,6 +1219,29 @@ pub async fn get_chat_last_messages<R: Runtime>(
     get_message_views(handle, chat_int_id, count, 0).await
 }
 
+/// For DM chats: whether there is at least one message from us and one from them.
+/// Used by init_finished so the frontend can show Friends vs Requests vs Pending correctly
+/// even when only the last message is loaded for preview.
+pub fn get_dm_sent_received<R: Runtime>(
+    handle: &AppHandle<R>,
+    chat_identifier: &str,
+) -> Result<(bool, bool), String> {
+    let chat_int_id = get_chat_id_by_identifier(handle, chat_identifier)?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let has_from_me: i32 = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE chat_id = ?1 AND kind IN (14, 15) AND mine = 1)",
+        rusqlite::params![chat_int_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("get_dm_sent_received (from_me): {}", e))?;
+    let has_from_them: i32 = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM events WHERE chat_id = ?1 AND kind IN (14, 15) AND mine = 0)",
+        rusqlite::params![chat_int_id],
+        |row| row.get(0),
+    ).map_err(|e| format!("get_dm_sent_received (from_them): {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok((has_from_me != 0, has_from_them != 0))
+}
+
 /// Get messages around a specific message ID
 /// Returns messages from (target - context_before) to the most recent
 /// This is used for scrolling to old replied-to messages
