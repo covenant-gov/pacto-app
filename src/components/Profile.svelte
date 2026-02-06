@@ -56,8 +56,6 @@
   });
 
   async function handleLogout() {
-    if (!confirm('Are you sure you want to logout?')) return;
-    
     isLoggingOut = true;
     try {
       await logout(false); // Don't clear keys, just logout

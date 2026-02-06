@@ -1,10 +1,10 @@
 <script lang="ts">
   import Channel from './Channel.svelte';
-  import { communities, activeCommunityId, activeChannelId, activeView } from '../stores/app';
+  import { squads, activeSquadId, activeChannelId, activeView } from '../stores/app';
 
-  // Get the active community's data
-  $: activeCommunity = $communities.find(c => c.id === $activeCommunityId);
-  $: channels = activeCommunity?.channels || [];
+  // Get the active squad's data
+  $: activeSquad = $squads.find(c => c.id === $activeSquadId);
+  $: channels = activeSquad?.channels || [];
 
   function selectChannel(channelId: string) {
     $activeChannelId = channelId;
@@ -37,10 +37,10 @@
   on:mouseup={stopResize}
 />
 
-<div class="community-navbar" style="width: {width}px;">
-  {#if activeCommunity}
-    <div class="community-header">
-      <h2 class="community-name">{activeCommunity.name}</h2>
+<div class="squad-navbar" style="width: {width}px;">
+  {#if activeSquad}
+    <div class="squad-header">
+      <h2 class="squad-name">{activeSquad.name}</h2>
     </div>
     
     <div class="channels-container">
@@ -63,7 +63,7 @@
     </div>
   {:else}
     <div class="empty-state">
-      <p>Select a community</p>
+      <p>Select a squad</p>
     </div>
   {/if}
   
@@ -76,7 +76,7 @@
 </div>
 
 <style>
-  .community-navbar {
+  .squad-navbar {
     height: 100%;
     background-color:#202020;
     display: flex;
@@ -86,7 +86,7 @@
     border-left: 1px solid #313338;
   }
 
-  .community-header {
+  .squad-header {
     height: 48px;
     padding: 0 16px;
     display: flex;
@@ -95,7 +95,7 @@
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   }
 
-  .community-name {
+  .squad-name {
     font-size: 1rem;
     font-weight: 600;
     color: #f2f3f5;
@@ -144,4 +144,3 @@
     background-color: #5865f2;
   }
 </style>
-
