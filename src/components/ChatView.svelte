@@ -1,11 +1,11 @@
 <script lang="ts">
   import Message from './Message.svelte';
   import MessageInput from './MessageInput.svelte';
-  import { activeChannelId, communities, activeCommunityId, channelMessages } from '../stores/app';
+  import { activeChannelId, squads, activeSquadId, channelMessages } from '../stores/app';
 
   // Get active channel info
-  $: activeCommunity = $communities.find(c => c.id === $activeCommunityId);
-  $: activeChannel = activeCommunity?.channels.find(ch => ch.id === $activeChannelId);
+  $: activeSquad = $squads.find(c => c.id === $activeSquadId);
+  $: activeChannel = activeSquad?.channels.find(ch => ch.id === $activeChannelId);
   $: channelName = activeChannel?.name || 'channel';
 
   // Get messages for the current channel

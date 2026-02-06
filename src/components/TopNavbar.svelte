@@ -2,9 +2,9 @@
   import { activeTopNavTab, type TopNavTab } from '../stores/app';
 
   const tabs: { id: TopNavTab; label: string }[] = [
-    { id: 'communities', label: 'Communities' },
-    { id: 'networks', label: 'Networks' },
-    { id: 'dms', label: 'DMs' },
+    { id: 'dms', label: 'DMs' }, // 1-on-1 chat, non-governable
+    { id: 'squads', label: 'Squads' }, // commune-level organizations (positioned below networks), governable
+    { id: 'networks', label: 'Networks' }, // [regional] delegation-level coordinations (positioned above squads), governable
   ];
 
   function selectTab(id: TopNavTab) {

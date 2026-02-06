@@ -3,7 +3,7 @@
   import { listen } from '@tauri-apps/api/event';
   import Navbar from '../components/Navbar.svelte';
   import TopNavbar from '../components/TopNavbar.svelte';
-  import CommunityNavbar from '../components/CommunityNavbar.svelte';
+  import SquadNavbar from '../components/SquadNavbar.svelte';
   import ChatView from '../components/ChatView.svelte';
   import Profile from '../components/Profile.svelte';
   import MessengerNavbar from '../components/MessengerNavbar.svelte';
@@ -12,9 +12,10 @@
   import MessageInput from '../components/MessageInput.svelte';
   import { getDmMessages, sendDmMessage, queueProfileSync, fetchMessages } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated } from '../stores/auth';
   import {
-    activeCommunityId,
+    activeSquadId,
     activeChannelId,
     activeView,
     activeTopNavTab,
@@ -22,17 +23,17 @@
     composingNewChat,
     backendDmMessages,
     dmList,
+    dmSendError,
     type DmMessage,
   } from '../stores/app';
 
   let dmMessagesContainer: HTMLDivElement;
-  let dmSendError: string | null = null;
   let prevDmId: string | null = null;
 
   // Clear send error when user switches to a different DM
   $: if (prevDmId !== $activeDmId) {
     prevDmId = $activeDmId;
-    if (prevDmId != null) dmSendError = null;
+    if (prevDmId != null) $dmSendError = null;
   }
 
   function truncateNpub(n: string): string {
@@ -51,15 +52,19 @@
 
   // Load backend messages when active DM changes; queue profile sync (per reference flow).
   $: if ($activeDmId && $activeTopNavTab === 'dms') {
+    dmLog('open conversation', { npub: $activeDmId.slice(0, 20) + '…', tab: 'dms' });
     queueProfileSync($activeDmId).catch(() => {});
     getDmMessages($activeDmId, 100, 0)
       .then((msgs) => {
+        dmLog('open conversation: messages loaded', { npub: $activeDmId!.slice(0, 20) + '…', count: msgs.length });
         backendDmMessages.update((byNpub) => ({
           ...byNpub,
           [$activeDmId!]: msgs as DmMessage[],
         }));
       })
-      .catch(() => {});
+      .catch((err) => {
+        dmError('open conversation: getDmMessages failed', err);
+      });
   }
 
   function toMessageProps(msg: DmMessage) {
@@ -74,33 +79,37 @@
   async function handleDmSend(content: string) {
     const id = $activeDmId;
     if (!id) return;
-    dmSendError = null;
+    dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
+    $dmSendError = null;
     try {
       const ok = await sendDmMessage(id, content);
+      dmLog('handleDmSend result', { ok });
       if (!ok) {
-        dmSendError = friendlyMessage(
+        $dmSendError = friendlyMessage(
           'Could not deliver to relays. Message may appear as pending or failed.',
           'dm_send'
         );
       }
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
-      dmSendError = friendlyMessage(raw, 'dm_send');
-      if (import.meta.env.DEV) console.error('[DM send error]', e);
+      $dmSendError = friendlyMessage(raw, 'dm_send');
+      dmError('handleDmSend error', e);
     }
   }
 
   onMount(() => {
-    $activeCommunityId = 'community-1';
+    $activeSquadId = 'squad-1';
     $activeChannelId = 'channel-1';
 
     // Pull DMs from Nostr relays when app loads (if already authenticated)
     if ($isAuthenticated) {
-      fetchMessages(true).catch(() => {});
+      dmLog('onMount: authenticated, calling fetchMessages(true)');
+      fetchMessages(true).catch((e) => dmError('onMount: fetchMessages(true) failed', e));
     }
 
     const unlistenNew = listen<{ message: DmMessage; chat_id: string }>('message_new', (event) => {
       const { message, chat_id } = event.payload;
+      dmLog('message_new', { chat_id: chat_id.slice(0, 20) + '…', messageId: message.id?.slice(0, 12), mine: message.mine });
       if (!chat_id.startsWith('npub1')) return;
       const m: DmMessage = {
         id: message.id,
@@ -108,16 +117,24 @@
         at: message.at,
         mine: message.mine,
         npub: message.npub,
+        pending: message.pending,
+        failed: message.failed,
       };
       backendDmMessages.update((byNpub) => {
         const list = byNpub[chat_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byNpub;
-        return { ...byNpub, [chat_id]: [...list, m] };
+        // Replace optimistic message (opt-*) with same content when backend confirms (avoids duplicate)
+        const withoutOpt = list.filter(
+          (x) => !(x.id.startsWith('opt-') && x.mine && x.content === m.content)
+        );
+        return { ...byNpub, [chat_id]: [...withoutOpt, m] };
       });
-      // Add new DM to list if not already present (e.g. first message from a new contact)
+      // Add new DM to list if not already present; if present, move to top (last activity order, DM_FLOW §5.1)
       dmList.update((list) => {
-        if (list.some((e) => e.npub === chat_id)) return list;
-        return [...list, { npub: chat_id }];
+        const entry = list.find((e) => e.npub === chat_id);
+        const newEntry = entry ?? { npub: chat_id };
+        const rest = list.filter((e) => e.npub !== chat_id);
+        return [newEntry, ...rest];
       });
     });
 
@@ -125,6 +142,7 @@
       'message_update',
       (event) => {
         const { old_id, message, chat_id } = event.payload;
+        dmLog('message_update', { chat_id: chat_id.slice(0, 20) + '…', old_id: old_id?.slice(0, 12), new_id: message.id?.slice(0, 12) });
         if (!chat_id.startsWith('npub1')) return;
         const m: DmMessage = {
           id: message.id,
@@ -132,6 +150,8 @@
           at: message.at,
           mine: message.mine,
           npub: message.npub,
+          pending: message.pending,
+          failed: message.failed,
         };
         backendDmMessages.update((byNpub) => {
           const list = byNpub[chat_id] ?? [];
@@ -141,9 +161,23 @@
       }
     );
 
+    // Drive historical sync: backend emits sync_slice_finished after each 2-day window; we must call fetch_messages(init: false) to get the next window (DM_FLOW §3.1, §11).
+    const unlistenSyncSlice = listen('sync_slice_finished', () => {
+      dmLog('sync_slice_finished → fetchMessages(false)');
+      fetchMessages(false).catch((e) => {
+        dmError('sync_slice_finished: fetchMessages(false) failed', e);
+      });
+    });
+
+    const unlistenSyncFinished = listen('sync_finished', () => {
+      dmLog('sync_finished (historical sync complete)');
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
+      unlistenSyncSlice.then((fn) => fn());
+      unlistenSyncFinished.then((fn) => fn());
     };
   });
 </script>
@@ -175,8 +209,8 @@
               <p class="dm-thread-placeholder">No messages yet</p>
             {/if}
           </div>
-          {#if dmSendError}
-            <p class="dm-thread-error" role="alert">{dmSendError}</p>
+          {#if $dmSendError}
+            <p class="dm-thread-error" role="alert">{$dmSendError}</p>
           {/if}
           <MessageInput channelName={truncateNpub($activeDmId)} onSend={handleDmSend} />
         </div>
@@ -186,7 +220,7 @@
         </div>
       {/if}
     {:else}
-      <CommunityNavbar />
+      <SquadNavbar />
       <ChatView />
     {/if}
   </main>
