@@ -3,6 +3,7 @@ import { login as apiLogin, createAccount as apiCreateAccount, connect as apiCon
 import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, clearStoredKey, validatePrivateKeyFormat } from '../lib/api/encryption';
 import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
+import { dmSyncStatus } from './app';
 
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
@@ -134,6 +135,7 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
     });
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('importAccount: fetchMessages(true)');
+    dmSyncStatus.set('syncing');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
 
     // Auto-refresh profile on login
@@ -185,6 +187,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
     });
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('unlockWithPin: fetchMessages(true)');
+    dmSyncStatus.set('syncing');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
 
     // Auto-refresh profile on login

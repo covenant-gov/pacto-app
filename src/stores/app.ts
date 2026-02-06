@@ -48,12 +48,33 @@ export interface DmMessage {
   failed?: boolean;
 }
 
-// Backend DM messages (from get_chat_messages_paginated + message_new). Keyed by npub.
+// Backend DM messages (from get_message_views + message_new). Keyed by npub.
 export const backendDmMessages = writable<Record<string, DmMessage[]>>({});
+
+// Total message count per chat (from get_chat_message_count when opening a DM). Used for "load older" pagination.
+export const messageCountByChat = writable<Record<string, number>>({});
+
+// Offset already loaded per chat for "load older" (get_message_views offset). After first page (e.g. 100), next load uses this.
+export const loadedOffsetByChat = writable<Record<string, number>>({});
+
+// DM historical sync status (DM_FLOW §3.1 optional UI). 'finished' shows "Up to date" briefly then resets to 'idle'.
+export type SyncStatus = 'idle' | 'syncing' | 'finished';
+export const dmSyncStatus = writable<SyncStatus>('idle');
+
+// Typing indicators per chat (npub → list of npubs currently typing). DM_FLOW §6.1.
+export const typingByChat = writable<Record<string, string[]>>({});
 
 // Squads store - will be populated from Nostr relay data
 export const squads = writable<any[]>([]);
 
 // Messages store organized by channelId - will be populated from Nostr relay data
 export const channelMessages = writable<Record<string, any[]>>({});
+
+// Persist last open DM for restore on next app open (DM_FLOW §8.2)
+const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
+activeDmId.subscribe((id) => {
+  if (id && typeof localStorage !== 'undefined') {
+    localStorage.setItem(LAST_DM_NPUB_KEY, id);
+  }
+});
 

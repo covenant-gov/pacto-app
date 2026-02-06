@@ -4,8 +4,9 @@
   import { logout, currentUser } from '../stores/auth';
   import { exportKeys } from '../lib/api/auth';
   import { loadAndDecryptKey } from '../lib/api/encryption';
-  import { refreshProfileNow } from '../lib/api/nostr';
+  import { refreshProfileNow, updateProfile, uploadAvatar } from '../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../lib/utils/profile';
+  import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 
   // Get the logged-in user's npub from auth store
   $: userNpub = $currentUser?.npub || '';
@@ -19,6 +20,16 @@
   let error: string | null = null;
   let isLoggingOut = false;
   let isRefreshing = false;
+
+  // Edit profile state (PFP Plan §7)
+  let isEditing = false;
+  let editName = '';
+  let editAbout = '';
+  let editAvatarUrl = '';
+  let editBannerUrl = '';
+  let saveError: string | null = null;
+  let uploadingAvatar = false;
+  let uploadingBanner = false;
   
   // Export keys modal state
   let showExportModal = false;
@@ -80,6 +91,81 @@
       setTimeout(() => {
         isRefreshing = false;
       }, 500);
+    }
+  }
+
+  function startEditing() {
+    if (!profile) return;
+    isEditing = true;
+    saveError = null;
+    editName = profile.name || profile.display_name || '';
+    editAbout = profile.about || '';
+    editAvatarUrl = profile.avatar || '';
+    editBannerUrl = profile.banner || '';
+  }
+
+  function cancelEditing() {
+    isEditing = false;
+    saveError = null;
+  }
+
+  async function handleChangeAvatar() {
+    if (!profile || uploadingAvatar) return;
+    try {
+      const selected = await openFileDialog({
+        title: 'Choose avatar image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+        multiple: false,
+      });
+      if (selected == null) return;
+      uploadingAvatar = true;
+      saveError = null;
+      const url = await uploadAvatar(selected, 'avatar');
+      editAvatarUrl = url;
+    } catch (e: any) {
+      console.error('Upload avatar failed:', e);
+      saveError = e?.message || 'Failed to upload avatar';
+    } finally {
+      uploadingAvatar = false;
+    }
+  }
+
+  async function handleChangeBanner() {
+    if (!profile || uploadingBanner) return;
+    try {
+      const selected = await openFileDialog({
+        title: 'Choose banner image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+        multiple: false,
+      });
+      if (selected == null) return;
+      uploadingBanner = true;
+      saveError = null;
+      const url = await uploadAvatar(selected, 'banner');
+      editBannerUrl = url;
+    } catch (e: any) {
+      console.error('Upload banner failed:', e);
+      saveError = e?.message || 'Failed to upload banner';
+    } finally {
+      uploadingBanner = false;
+    }
+  }
+
+  async function handleSaveProfile() {
+    if (!profile) return;
+    saveError = null;
+    try {
+      await updateProfile({
+        name: editName.trim(),
+        avatar: editAvatarUrl,
+        banner: editBannerUrl,
+        about: editAbout.trim(),
+      });
+      isEditing = false;
+      // profile_update event will update the store and UI
+    } catch (e: any) {
+      console.error('Save profile failed:', e);
+      saveError = e?.message || 'Failed to save profile';
     }
   }
 
@@ -242,6 +328,26 @@
       </div>
     {:else if profile}
       <div class="profile-content">
+        <!-- Banner (PFP Plan §6) -->
+        {#if bannerSrc}
+          <div class="profile-banner">
+            <img
+              src={bannerSrc}
+              alt=""
+              class="banner-img"
+              on:error={(e) => {
+                const img = e.currentTarget as HTMLImageElement;
+                img.style.display = 'none';
+                const placeholder = img.nextElementSibling as HTMLElement;
+                if (placeholder?.classList.contains('banner-placeholder')) {
+                  placeholder.style.display = 'block';
+                }
+              }}
+            />
+            <div class="banner-placeholder" style="display: none;" aria-hidden="true"></div>
+          </div>
+        {/if}
+
         <!-- Avatar -->
         <div class="avatar-section">
           {#if avatarSrc}
@@ -269,62 +375,91 @@
           {/if}
         </div>
 
-        <!-- Profile Info -->
+        <!-- Profile Info or Edit Form -->
         <div class="info-section">
-          <h2>{profile.display_name || profile.name || 'Anonymous'}</h2>
-          {#if profile.nickname}
-            <p class="nickname">aka "{profile.nickname}"</p>
-          {/if}
-          
-          {#if profile.nip05}
-            <p class="nip05">✓ {profile.nip05}</p>
-          {/if}
+          {#if isEditing}
+            <h2>Edit profile</h2>
+            {#if saveError}
+              <p class="edit-error" role="alert">{saveError}</p>
+            {/if}
+            <label class="edit-label" for="edit-name">Name</label>
+            <input id="edit-name" type="text" class="edit-input" bind:value={editName} placeholder="Display name" />
+            <label class="edit-label" for="edit-about">About</label>
+            <textarea id="edit-about" class="edit-textarea" bind:value={editAbout} placeholder="Bio" rows="3"></textarea>
+            <div class="edit-image-buttons">
+              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={uploadingAvatar}>
+                {uploadingAvatar ? 'Uploading…' : 'Change avatar'}
+              </button>
+              <button type="button" class="btn-edit-image" on:click={handleChangeBanner} disabled={uploadingBanner}>
+                {uploadingBanner ? 'Uploading…' : 'Change banner'}
+              </button>
+            </div>
+            <div class="edit-actions">
+              <button type="button" class="btn-cancel-edit" on:click={cancelEditing}>Cancel</button>
+              <button type="button" class="btn-save-edit" on:click={handleSaveProfile}>Save</button>
+            </div>
+          {:else}
+            <h2>{profile.display_name || profile.name || 'Anonymous'}</h2>
+            {#if profile.nickname}
+              <p class="nickname">aka "{profile.nickname}"</p>
+            {/if}
+            
+            {#if profile.nip05}
+              <p class="nip05">✓ {profile.nip05}</p>
+            {/if}
 
-          {#if profile.about}
-            <p class="about">{profile.about}</p>
+            {#if profile.about}
+              <p class="about">{profile.about}</p>
+            {/if}
+
+            {#if profile.website}
+              <a href={profile.website} target="_blank" rel="noopener noreferrer" class="website">
+                🌐 {profile.website}
+              </a>
+            {/if}
+
+            <!-- Lightning Address -->
+            {#if profile.lud16 || profile.lud06}
+              <p class="lightning">⚡ {profile.lud16 || profile.lud06}</p>
+            {/if}
+
+            <!-- Debug Info -->
+            <div class="debug-info">
+              <p class="meta">ID: {profile.id}</p>
+              <p class="meta">Last Updated: {new Date(profile.last_updated * 1000).toLocaleString()}</p>
+              <p class="meta">Muted: {profile.muted ? 'Yes' : 'No'} | Bot: {profile.bot ? 'Yes' : 'No'}</p>
+            </div>
+
+            <!-- Actions -->
+            <div class="profile-actions">
+              <button 
+                class="btn-edit-profile" 
+                on:click={startEditing}
+              >
+                Edit profile
+              </button>
+              <button 
+                class="btn-refresh" 
+                on:click={handleRefreshProfile}
+                disabled={isRefreshing}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh Profile'}
+              </button>
+              <button 
+                class="btn-export" 
+                on:click={handleExportAccount}
+              >
+                Export Account
+              </button>
+              <button 
+                class="btn-logout" 
+                on:click={handleLogout}
+                disabled={isLoggingOut}
+              >
+                {isLoggingOut ? 'Logging out...' : 'Logout'}
+              </button>
+            </div>
           {/if}
-
-          {#if profile.website}
-            <a href={profile.website} target="_blank" rel="noopener noreferrer" class="website">
-              🌐 {profile.website}
-            </a>
-          {/if}
-
-          <!-- Lightning Address -->
-          {#if profile.lud16 || profile.lud06}
-            <p class="lightning">⚡ {profile.lud16 || profile.lud06}</p>
-          {/if}
-
-          <!-- Debug Info -->
-          <div class="debug-info">
-            <p class="meta">ID: {profile.id}</p>
-            <p class="meta">Last Updated: {new Date(profile.last_updated * 1000).toLocaleString()}</p>
-            <p class="meta">Muted: {profile.muted ? 'Yes' : 'No'} | Bot: {profile.bot ? 'Yes' : 'No'}</p>
-          </div>
-
-          <!-- Actions -->
-          <div class="profile-actions">
-            <button 
-              class="btn-refresh" 
-              on:click={handleRefreshProfile}
-              disabled={isRefreshing}
-            >
-              {isRefreshing ? 'Refreshing...' : 'Refresh Profile'}
-            </button>
-            <button 
-              class="btn-export" 
-              on:click={handleExportAccount}
-            >
-              Export Account
-            </button>
-            <button 
-              class="btn-logout" 
-              on:click={handleLogout}
-              disabled={isLoggingOut}
-            >
-              {isLoggingOut ? 'Logging out...' : 'Logout'}
-            </button>
-          </div>
         </div>
       </div>
     {:else}
@@ -485,6 +620,28 @@
     gap: 32px;
   }
 
+  .profile-banner {
+    width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #2b2d31;
+  }
+
+  .banner-img {
+    width: 100%;
+    height: 100%;
+    max-height: 200px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .banner-placeholder {
+    width: 100%;
+    height: 120px;
+    background: linear-gradient(135deg, #2b2d31 0%, #383a40 100%);
+  }
+
   .avatar-section {
     display: flex;
     justify-content: center;
@@ -580,6 +737,123 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .edit-error {
+    color: #f23f42;
+    font-size: 0.875rem;
+    margin: 0 0 12px 0;
+  }
+
+  .edit-label {
+    display: block;
+    color: #b5bac1;
+    font-size: 0.875rem;
+    margin: 12px 0 4px 0;
+  }
+
+  .edit-input,
+  .edit-textarea {
+    width: 100%;
+    padding: 10px 12px;
+    background: #1e1f22;
+    border: 1px solid #404249;
+    border-radius: 6px;
+    color: #f2f3f5;
+    font-size: 0.9375rem;
+    outline: none;
+  }
+
+  .edit-input:focus,
+  .edit-textarea:focus {
+    border-color: #5865f2;
+  }
+
+  .edit-textarea {
+    resize: vertical;
+    min-height: 72px;
+  }
+
+  .edit-image-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .btn-edit-image {
+    padding: 8px 16px;
+    background: #383a40;
+    color: #f2f3f5;
+    border: 1px solid #404249;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .btn-edit-image:hover:not(:disabled) {
+    background: #4e5058;
+  }
+
+  .btn-edit-image:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .btn-cancel-edit {
+    padding: 10px 20px;
+    background: transparent;
+    color: #949ba4;
+    border: 1px solid #404249;
+    border-radius: 6px;
+    font-size: 0.9375rem;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .btn-cancel-edit:hover {
+    background: #313338;
+    color: #f2f3f5;
+  }
+
+  .btn-save-edit {
+    padding: 10px 20px;
+    background: #5865f2;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .btn-save-edit:hover {
+    background: #4752c4;
+  }
+
+  .btn-edit-profile {
+    width: 100%;
+    height: 48px;
+    background: transparent;
+    color: #5865f2;
+    border: 2px solid #5865f2;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    outline: none;
+  }
+
+  .btn-edit-profile:hover {
+    background: rgba(88, 101, 242, 0.1);
   }
 
   .btn-refresh {

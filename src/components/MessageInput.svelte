@@ -1,7 +1,9 @@
 <script lang="ts">
   export let channelName: string = "";
   export let onSend: (content: string) => void = () => {};
-  
+  /** Optional: called when user types (e.g. to send typing indicator). */
+  export let onTyping: (() => void) | undefined = undefined;
+
   let messageText = "";
 
   function handleSubmit(event: Event) {
@@ -16,7 +18,13 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSubmit(event);
+    } else {
+      onTyping?.();
     }
+  }
+
+  function handleInput() {
+    onTyping?.();
   }
 </script>
 
@@ -27,6 +35,7 @@
         type="text"
         bind:value={messageText}
         on:keydown={handleKeydown}
+        on:input={handleInput}
         placeholder="Message #{channelName}"
         class="message-input"
         autocomplete="off"
