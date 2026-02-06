@@ -129,6 +129,7 @@
 <style>
   .messenger-chat-view {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     min-width: 0;

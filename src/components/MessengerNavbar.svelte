@@ -1,13 +1,16 @@
 <script lang="ts">
   import { activeDmTab, dmList, pendingList, requestsList, activeDmId, type DmEntry } from '../stores/app';
+  import { profiles } from '../stores/profiles';
+  import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import userPlaceholder from '../icons/user-placeholder.svg';
 
   $: title = $activeDmTab === 'friends' ? 'Friends' : $activeDmTab === 'requests' ? 'Requests' : 'Pending';
   $: entries = $activeDmTab === 'friends' ? $dmList : $activeDmTab === 'requests' ? $requestsList : $pendingList;
 
   function displayName(entry: DmEntry): string {
-    if (entry.name && entry.name.trim()) return entry.name.trim();
-    return truncateNpub(entry.npub);
+    const profile = $profiles[entry.npub];
+    if (profile) return getProfileDisplayName(profile);
+    return entry.name?.trim() || truncateNpub(entry.npub);
   }
 
   function truncateNpub(npub: string): string {
@@ -53,6 +56,7 @@
     {#if entries.length > 0}
       <ul class="dm-list" role="list">
         {#each entries as entry (entry.npub)}
+          {@const avatarSrc = getProfileAvatarSrc($profiles[entry.npub])}
           <li>
             <button
               type="button"
@@ -62,8 +66,8 @@
               on:keydown={(e) => e.key === 'Enter' && selectDm(entry.npub)}
             >
               <span class="dm-avatar">
-                {#if entry.avatar}
-                  <img src={entry.avatar} alt="" class="dm-avatar-img" />
+                {#if avatarSrc}
+                  <img src={avatarSrc} alt="" class="dm-avatar-img" />
                 {:else}
                   <img src={userPlaceholder} alt="" class="dm-avatar-placeholder" />
                 {/if}
