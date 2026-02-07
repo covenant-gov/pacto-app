@@ -298,6 +298,34 @@ export async function getMlsGroupMetadata(): Promise<unknown[]> {
   return meta;
 }
 
+/** Structured payload for squad invite sent via DM (Approach A). */
+export interface SquadInvitePayload {
+  type: 'squad_invite';
+  squadName: string;
+  groupId: string;
+}
+
+const SQUAD_INVITE_TYPE = 'squad_invite';
+
+export function parseSquadInviteMessage(content: string): SquadInvitePayload | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === SQUAD_INVITE_TYPE) {
+      const p = parsed as { squadName?: string; groupId?: string };
+      if (typeof p.squadName === 'string' && typeof p.groupId === 'string') {
+        return { type: SQUAD_INVITE_TYPE, squadName: p.squadName, groupId: p.groupId };
+      }
+    }
+  } catch {
+    // not JSON or invalid shape
+  }
+  return null;
+}
+
+export function formatSquadInviteMessage(payload: SquadInvitePayload): string {
+  return JSON.stringify(payload);
+}
+
 /**
  * List pending MLS welcomes (invites). Backend: list_pending_mls_welcomes.
  */
@@ -330,8 +358,8 @@ export async function inviteMemberToGroup(
 ): Promise<void> {
   dmLog('invite_member_to_group', { groupId: groupId.slice(0, 16) + '…', memberNpub: memberNpub.slice(0, 20) + '…' });
   await invoke('invite_member_to_group', {
-    group_id: groupId,
-    member_npub: memberNpub,
+    groupId,
+    memberNpub,
   });
   dmLog('invite_member_to_group done');
 }

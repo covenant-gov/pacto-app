@@ -76,14 +76,10 @@
   async function handleCreateSquad() {
     const name = organizeSquadName.trim();
     if (!name) return;
-    if (organizeSquadMembers.length === 0) {
-      organizeSquadError = 'Select at least one member for the announcements channel.';
-      return;
-    }
     creatingSquad = true;
     organizeSquadError = '';
     try {
-      // Backend adds creator automatically; memberIds = other members only
+      // Empty list creates announcements channel with just the creator; optional members can be added via Invite to squad later.
       const groupId = await createGroupChat('announcements', organizeSquadMembers);
       const announcementsChannel: Channel = {
         id: groupId,
@@ -104,7 +100,7 @@
       $activeSquadId = squad.id;
       $activeChannelId = groupId;
       $activeView = 'hub';
-      closeOrganizeSquadModal();
+      showOrganizeSquadModal = false;
     } catch (e) {
       organizeSquadError = friendlyMessage(getInvokeErrorMessage(e));
     } finally {
@@ -120,7 +116,7 @@
     }
   }
 
-  $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
+  $: canCreateSquad = organizeSquadName.trim().length > 0;
 </script>
 
 <div class="navbar">
@@ -207,7 +203,7 @@
       tabindex="0"
     >
       <h2 id="organize-squad-title">Organize Squad</h2>
-      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Add at least one member.</p>
+      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Add members now or invite them later.</p>
       <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
         <input

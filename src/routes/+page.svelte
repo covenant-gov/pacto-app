@@ -10,7 +10,7 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import Message from '../components/Message.svelte';
   import MessageInput from '../components/MessageInput.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -184,6 +184,11 @@
     !loadingOlder &&
     (($messageCountByChat[$activeDmId] ?? 0) > ($backendDmMessages[$activeDmId]?.length ?? 0));
 
+  // Squad invite cards in DM: track accepted/declined so we show status and hide buttons
+  let acceptedSquadInviteIds: Set<string> = new Set();
+  let declinedSquadInviteIds: Set<string> = new Set();
+  let acceptingSquadInviteId: string | null = null;
+
   // Message bubbles show sender avatar and display name from profiles
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
@@ -203,6 +208,27 @@
       timestamp: new Date(msg.at).toISOString(),
       avatar: getProfileAvatarSrc(senderProfile) ?? '',
     };
+  }
+
+  async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
+    const payload = parseSquadInviteMessage(msg.content);
+    if (!payload) return;
+    if (acceptingSquadInviteId) return;
+    acceptingSquadInviteId = msg.id;
+    try {
+      const welcomes = await listPendingMlsWelcomes();
+      const welcome = welcomes.find((w) => w.nostr_group_id === groupId);
+      if (!welcome) {
+        dmError('Accept squad invite: no pending welcome for group', groupId);
+        return;
+      }
+      await acceptMlsWelcome(welcome.id);
+      acceptedSquadInviteIds = new Set(acceptedSquadInviteIds).add(msg.id);
+    } catch (e) {
+      dmError('Accept squad invite failed', e);
+    } finally {
+      acceptingSquadInviteId = null;
+    }
   }
 
   let dmTypingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -497,7 +523,41 @@
             {/if}
             {#if mergedDmMessages.length > 0}
               {#each mergedDmMessages as msg (msg.id)}
-                <Message {...toMessageProps(msg)} />
+                {@const invitePayload = !msg.mine ? parseSquadInviteMessage(msg.content) : null}
+                {#if invitePayload}
+                  {@const inviterName = msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone'}
+                  <div class="squad-invite-card">
+                    <p class="squad-invite-text">
+                      {inviterName} invited you to <strong>{invitePayload.squadName}</strong>.
+                    </p>
+                    {#if acceptedSquadInviteIds.has(msg.id)}
+                      <p class="squad-invite-accepted">Accepted</p>
+                    {:else if declinedSquadInviteIds.has(msg.id)}
+                      <p class="squad-invite-declined">Declined</p>
+                    {:else}
+                      <div class="squad-invite-actions">
+                        <button
+                          type="button"
+                          class="squad-invite-btn squad-invite-btn-accept"
+                          disabled={acceptingSquadInviteId === msg.id}
+                          on:click={() => handleAcceptSquadInvite(msg, invitePayload.groupId)}
+                        >
+                          {acceptingSquadInviteId === msg.id ? 'Accepting…' : 'Accept'}
+                        </button>
+                        <button
+                          type="button"
+                          class="squad-invite-btn squad-invite-btn-decline"
+                          disabled={acceptingSquadInviteId === msg.id}
+                          on:click={() => { declinedSquadInviteIds = new Set(declinedSquadInviteIds).add(msg.id); }}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
+                  <Message {...toMessageProps(msg)} />
+                {/if}
               {/each}
             {:else}
               <p class="dm-thread-placeholder">No messages yet</p>
@@ -766,6 +826,74 @@
     font-size: 0.875rem;
     color: #6d6f78;
     margin: 0;
+  }
+
+  .squad-invite-card {
+    margin: 8px 16px;
+    padding: 12px 16px;
+    background: #2b2d31;
+    border: 1px solid #404249;
+    border-radius: 8px;
+    max-width: 420px;
+  }
+
+  .squad-invite-text {
+    margin: 0 0 12px;
+    font-size: 0.9375rem;
+    color: #dbdee1;
+    line-height: 1.4;
+  }
+
+  .squad-invite-text strong {
+    color: #f2f3f5;
+  }
+
+  .squad-invite-accepted {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #57f287;
+  }
+
+  .squad-invite-declined {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: #949ba4;
+  }
+
+  .squad-invite-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .squad-invite-btn {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+  }
+
+  .squad-invite-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .squad-invite-btn-accept {
+    background: #5865f2;
+    color: #fff;
+  }
+
+  .squad-invite-btn-accept:hover:not(:disabled) {
+    background: #4752c4;
+  }
+
+  .squad-invite-btn-decline {
+    background: #4e5058;
+    color: #dbdee1;
+  }
+
+  .squad-invite-btn-decline:hover:not(:disabled) {
+    background: #5d6069;
   }
 
   .dm-thread-typing {

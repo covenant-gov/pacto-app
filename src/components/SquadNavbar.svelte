@@ -1,7 +1,7 @@
 <script lang="ts">
   import Channel from './Channel.svelte';
-  import { squads, activeSquadId, activeChannelId, activeView, pendingMlsWelcomes, ungroupedChannels, type Channel as ChannelType } from '../stores/app';
-  import { createGroupChat, acceptMlsWelcome, getMlsGroupMembers } from '../lib/api/nostr';
+  import { squads, activeSquadId, activeChannelId, activeView, dmList, ungroupedChannels, type Channel as ChannelType } from '../stores/app';
+  import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -125,25 +125,70 @@
     return fallbackName?.trim() || getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
-  let acceptingWelcomeId: string | null = null;
-  let inviteError = '';
-  async function handleAcceptInvite(welcome: { id: string }) {
-    if (acceptingWelcomeId) return;
-    acceptingWelcomeId = welcome.id;
-    inviteError = '';
-    try {
-      await acceptMlsWelcome(welcome.id);
-    } catch (e) {
-      inviteError = friendlyMessage(getInvokeErrorMessage(e));
-    } finally {
-      acceptingWelcomeId = null;
-    }
-  }
-
   function selectUngroupedChannel(groupId: string) {
     $activeSquadId = null;
     $activeChannelId = groupId;
     $activeView = 'hub';
+  }
+
+  let showInviteToSquadModal = false;
+  let inviteToSquadCandidates: string[] = [];
+  let loadingInviteToSquad = false;
+  let selectedInviteNpub: string | null = null;
+  let invitingToSquad = false;
+  let inviteToSquadError = '';
+
+  function openInviteToSquadModal() {
+    showInviteToSquadModal = true;
+    selectedInviteNpub = null;
+    inviteToSquadError = '';
+    loadInviteToSquadCandidates();
+  }
+
+  async function loadInviteToSquadCandidates() {
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    const announcementsChannel = squad?.channels[0];
+    if (!announcementsChannel) {
+      inviteToSquadCandidates = [];
+      return;
+    }
+    loadingInviteToSquad = true;
+    try {
+      const result = await getMlsGroupMembers(announcementsChannel.groupId);
+      const inSquad = new Set(result.members ?? []);
+      inviteToSquadCandidates = $dmList.map((e) => e.npub).filter((npub) => !inSquad.has(npub));
+    } catch {
+      inviteToSquadCandidates = [];
+    } finally {
+      loadingInviteToSquad = false;
+    }
+  }
+
+  function closeInviteToSquadModal() {
+    if (!invitingToSquad) showInviteToSquadModal = false;
+  }
+
+  async function handleInviteToSquad() {
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    const announcementsChannel = squad?.channels[0];
+    if (!announcementsChannel || !selectedInviteNpub || !squad) return;
+    invitingToSquad = true;
+    inviteToSquadError = '';
+    try {
+      await inviteMemberToGroup(announcementsChannel.groupId, selectedInviteNpub);
+      // Send structured DM so invitee sees the invite in their thread (I.3)
+      const payload = formatSquadInviteMessage({
+        type: 'squad_invite',
+        squadName: squad.name,
+        groupId: announcementsChannel.groupId,
+      });
+      sendDmMessage(selectedInviteNpub, payload).catch(() => {});
+      closeInviteToSquadModal();
+    } catch (e) {
+      inviteToSquadError = friendlyMessage(getInvokeErrorMessage(e));
+    } finally {
+      invitingToSquad = false;
+    }
   }
 </script>
 
@@ -153,30 +198,6 @@
 />
 
 <div class="squad-navbar" style="width: {width}px;">
-  {#if $pendingMlsWelcomes.length > 0}
-    <div class="invites-section">
-      <h3 class="section-title">Pending invites</h3>
-      {#if inviteError}
-        <p class="invite-error">{inviteError}</p>
-      {/if}
-      <ul class="invites-list">
-        {#each $pendingMlsWelcomes as welcome (welcome.id)}
-          <li class="invite-item">
-            <span class="invite-name">{welcome.group_name || 'Unnamed group'}</span>
-            <button
-              type="button"
-              class="invite-accept-btn"
-              on:click={() => handleAcceptInvite(welcome)}
-              disabled={acceptingWelcomeId === welcome.id}
-            >
-              {acceptingWelcomeId === welcome.id ? 'Accepting…' : 'Accept'}
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
   {#if $ungroupedChannels.length > 0}
     <div class="ungrouped-section">
       <h3 class="section-title">Ungrouped</h3>
@@ -202,6 +223,14 @@
   {#if activeSquad}
     <div class="squad-header">
       <h2 class="squad-name">{activeSquad.name}</h2>
+      <button
+        type="button"
+        class="invite-to-squad-btn"
+        on:click={openInviteToSquadModal}
+        title="Invite someone to this squad"
+      >
+        Invite
+      </button>
     </div>
 
     <div class="channels-container">
@@ -308,6 +337,65 @@
   </div>
 {/if}
 
+{#if showInviteToSquadModal}
+  <div
+    class="create-channel-overlay"
+    on:click={closeInviteToSquadModal}
+    on:keydown={(e) => e.key === 'Escape' && closeInviteToSquadModal()}
+    role="button"
+    tabindex="-1"
+  >
+    <div
+      class="create-channel-content"
+      on:click|stopPropagation
+      on:keydown={(e) => e.key === 'Escape' && closeInviteToSquadModal()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invite-to-squad-title"
+      tabindex="0"
+    >
+      <h2 id="invite-to-squad-title">Invite to squad</h2>
+      <p class="create-channel-subtitle">Invite a friend to {activeSquad?.name ?? 'this squad'} (announcements channel).</p>
+      {#if loadingInviteToSquad}
+        <p class="create-channel-loading">Loading…</p>
+      {:else if inviteToSquadCandidates.length === 0}
+        <p class="create-channel-empty-friends">All your friends are already in this squad, or add friends in DMs first.</p>
+      {:else}
+        <div class="create-channel-members">
+          {#each inviteToSquadCandidates as npub (npub)}
+            <div
+              class="invite-to-squad-row"
+              class:selected={selectedInviteNpub === npub}
+              on:click={() => selectedInviteNpub = npub}
+              on:keydown={(e) => e.key === 'Enter' && (selectedInviteNpub = npub)}
+              role="button"
+              tabindex="0"
+            >
+              <span class="create-channel-member-name">{displayName(npub)}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if inviteToSquadError}
+        <p class="create-channel-error" role="alert">{inviteToSquadError}</p>
+      {/if}
+      <div class="create-channel-actions">
+        <button type="button" class="create-channel-btn-cancel" on:click={closeInviteToSquadModal} disabled={invitingToSquad}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="create-channel-btn-create"
+          on:click={handleInviteToSquad}
+          disabled={!selectedInviteNpub || invitingToSquad}
+        >
+          {invitingToSquad ? 'Inviting…' : 'Invite'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .squad-navbar {
     height: 100%;
@@ -329,65 +417,9 @@
     padding: 0 12px;
   }
 
-  .invites-section,
   .ungrouped-section {
     padding: 12px 0 8px;
     border-bottom: 1px solid #313338;
-  }
-
-  .invites-list {
-    list-style: none;
-    margin: 0;
-    padding: 0 8px;
-  }
-
-  .invite-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 4px;
-    border-radius: 4px;
-  }
-
-  .invite-item:hover {
-    background: #35373c;
-  }
-
-  .invite-name {
-    font-size: 0.9375rem;
-    color: #f2f3f5;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .invite-accept-btn {
-    flex-shrink: 0;
-    padding: 4px 10px;
-    font-size: 0.8125rem;
-    background: #5865f2;
-    border: none;
-    border-radius: 6px;
-    color: #fff;
-    cursor: pointer;
-  }
-
-  .invite-accept-btn:hover:not(:disabled) {
-    background: #4752c4;
-  }
-
-  .invite-accept-btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .invite-error {
-    font-size: 0.8125rem;
-    color: #f23f42;
-    margin: 0 12px 8px;
   }
 
   .ungrouped-section .channel-list {
@@ -399,11 +431,14 @@
     padding: 0 16px;
     display: flex;
     align-items: center;
+    gap: 8px;
     border-bottom: 1px solid #313338;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   }
 
   .squad-name {
+    flex: 1;
+    min-width: 0;
     font-size: 1rem;
     font-weight: 600;
     color: #f2f3f5;
@@ -411,6 +446,39 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .invite-to-squad-btn {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 0.8125rem;
+    background: #5865f2;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .invite-to-squad-btn:hover {
+    background: #4752c4;
+  }
+
+  .invite-to-squad-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: #f2f3f5;
+    font-size: 0.9375rem;
+    border-radius: 4px;
+  }
+
+  .invite-to-squad-row:hover {
+    background: #35373c;
+  }
+
+  .invite-to-squad-row.selected {
+    background: #404249;
   }
 
   .channels-container {
