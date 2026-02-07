@@ -1,10 +1,11 @@
 <script lang="ts">
   import Channel from './Channel.svelte';
-  import { squads, activeSquadId, activeChannelId, activeView, dmList, pendingMlsWelcomes, ungroupedChannels, type Channel as ChannelType } from '../stores/app';
-  import { createGroupChat, acceptMlsWelcome } from '../lib/api/nostr';
+  import { squads, activeSquadId, activeChannelId, activeView, pendingMlsWelcomes, ungroupedChannels, type Channel as ChannelType } from '../stores/app';
+  import { createGroupChat, acceptMlsWelcome, getMlsGroupMembers } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
+  import { currentUser } from '../stores/auth';
 
   $: activeSquad = $squads.find(c => c.id === $activeSquadId);
   $: channels = activeSquad?.channels || [];
@@ -38,12 +39,35 @@
   let selectedNpubs: string[] = [];
   let createChannelError = '';
   let creating = false;
+  let createChannelMemberList: string[] = [];
+  let loadingCreateChannelMembers = false;
 
   function openCreateChannelModal() {
     showCreateChannelModal = true;
     createChannelName = '';
     selectedNpubs = [];
     createChannelError = '';
+    createChannelMemberList = [];
+    loadCreateChannelMembers();
+  }
+
+  async function loadCreateChannelMembers() {
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    const announcementsChannel = squad?.channels[0];
+    if (!announcementsChannel) {
+      createChannelMemberList = [];
+      return;
+    }
+    loadingCreateChannelMembers = true;
+    try {
+      const result = await getMlsGroupMembers(announcementsChannel.groupId);
+      const myNpub = $currentUser?.npub;
+      createChannelMemberList = (result.members ?? []).filter((n) => n !== myNpub);
+    } catch {
+      createChannelMemberList = [];
+    } finally {
+      loadingCreateChannelMembers = false;
+    }
   }
 
   function closeCreateChannelModal() {
@@ -248,21 +272,25 @@
           bind:value={createChannelName}
           required
         />
-        <span class="create-channel-label">Members (select at least one)</span>
+        <span class="create-channel-label">Members (squad announcements only, select at least one)</span>
         <div class="create-channel-members">
-          {#each $dmList as entry (entry.npub)}
-            <label class="create-channel-member-row">
-              <input
-                type="checkbox"
-                checked={selectedNpubs.includes(entry.npub)}
-                on:change={() => toggleMember(entry.npub)}
-              />
-              <span class="create-channel-member-name">{displayName(entry.npub, entry.name)}</span>
-            </label>
-          {/each}
+          {#if loadingCreateChannelMembers}
+            <p class="create-channel-loading">Loading squad members…</p>
+          {:else}
+            {#each createChannelMemberList as npub (npub)}
+              <label class="create-channel-member-row">
+                <input
+                  type="checkbox"
+                  checked={selectedNpubs.includes(npub)}
+                  on:change={() => toggleMember(npub)}
+                />
+                <span class="create-channel-member-name">{displayName(npub)}</span>
+              </label>
+            {/each}
+          {/if}
         </div>
-        {#if $dmList.length === 0}
-          <p class="create-channel-empty-friends">Add friends in DMs first to invite them to channels.</p>
+        {#if !loadingCreateChannelMembers && createChannelMemberList.length === 0}
+          <p class="create-channel-empty-friends">Invite people to the squad (announcements) first to add them to new channels.</p>
         {/if}
         {#if createChannelError}
           <p class="create-channel-error" role="alert">{createChannelError}</p>
@@ -530,10 +558,15 @@
     white-space: nowrap;
   }
 
+  .create-channel-loading,
   .create-channel-empty-friends {
     color: #949ba4;
     font-size: 0.875rem;
     margin: 0 0 16px 0;
+  }
+
+  .create-channel-loading {
+    padding: 8px 12px;
   }
 
   .create-channel-error {

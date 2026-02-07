@@ -5,7 +5,11 @@
   import friendsIcon from '../icons/friends.svg';
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
-  import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, type TopNavTab, type DmTab, type Squad } from '../stores/app';
+  import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
+  import { createGroupChat } from '../lib/api/nostr';
+  import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { getProfileDisplayName } from '../lib/utils/profile';
+  import { profiles } from '../stores/profiles';
 
   function selectSquad(squadId: string) {
     $activeSquadId = squadId;
@@ -41,34 +45,71 @@
   let showOrganizeSquadModal = false;
   let organizeSquadName = '';
   let organizeSquadIconUrl = '';
+  let organizeSquadMembers: string[] = [];
+  let organizeSquadError = '';
+  let creatingSquad = false;
 
   function openOrganizeSquadModal() {
     showOrganizeSquadModal = true;
     organizeSquadName = '';
     organizeSquadIconUrl = '';
+    organizeSquadMembers = [];
+    organizeSquadError = '';
   }
 
   function closeOrganizeSquadModal() {
-    showOrganizeSquadModal = false;
+    if (!creatingSquad) showOrganizeSquadModal = false;
   }
 
-  function handleCreateSquad() {
+  function toggleOrganizeMember(npub: string) {
+    if (organizeSquadMembers.includes(npub)) {
+      organizeSquadMembers = organizeSquadMembers.filter((n) => n !== npub);
+    } else {
+      organizeSquadMembers = [...organizeSquadMembers, npub];
+    }
+  }
+
+  function organizeMemberDisplayName(npub: string, fallbackName?: string) {
+    return fallbackName?.trim() || getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
+  }
+
+  async function handleCreateSquad() {
     const name = organizeSquadName.trim();
     if (!name) return;
-    const now = Date.now();
-    const squad: Squad = {
-      id: crypto.randomUUID(),
-      name,
-      iconUrl: organizeSquadIconUrl.trim() || undefined,
-      channels: [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    squads.update((list) => [...list, squad]);
-    $activeSquadId = squad.id;
-    $activeChannelId = null;
-    $activeView = 'hub';
-    closeOrganizeSquadModal();
+    if (organizeSquadMembers.length === 0) {
+      organizeSquadError = 'Select at least one member for the announcements channel.';
+      return;
+    }
+    creatingSquad = true;
+    organizeSquadError = '';
+    try {
+      // Backend adds creator automatically; memberIds = other members only
+      const groupId = await createGroupChat('announcements', organizeSquadMembers);
+      const announcementsChannel: Channel = {
+        id: groupId,
+        name: 'announcements',
+        groupId,
+        order: 0,
+      };
+      const now = Date.now();
+      const squad: Squad = {
+        id: crypto.randomUUID(),
+        name,
+        iconUrl: organizeSquadIconUrl.trim() || undefined,
+        channels: [announcementsChannel],
+        createdAt: now,
+        updatedAt: now,
+      };
+      squads.update((list) => [...list, squad]);
+      $activeSquadId = squad.id;
+      $activeChannelId = groupId;
+      $activeView = 'hub';
+      closeOrganizeSquadModal();
+    } catch (e) {
+      organizeSquadError = friendlyMessage(getInvokeErrorMessage(e));
+    } finally {
+      creatingSquad = false;
+    }
   }
 
   function handleAddAction() {
@@ -79,7 +120,7 @@
     }
   }
 
-  $: canCreateSquad = organizeSquadName.trim().length > 0;
+  $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
 </script>
 
 <div class="navbar">
@@ -166,7 +207,7 @@
       tabindex="0"
     >
       <h2 id="organize-squad-title">Organize Squad</h2>
-      <p class="organize-modal-subtitle">Create a squad to group channels.</p>
+      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Add at least one member.</p>
       <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
         <input
@@ -185,12 +226,31 @@
           placeholder="https://…"
           bind:value={organizeSquadIconUrl}
         />
+        <span class="organize-label">Members for announcements (select at least one)</span>
+        <div class="organize-members">
+          {#each $dmList as entry (entry.npub)}
+            <label class="organize-member-row">
+              <input
+                type="checkbox"
+                checked={organizeSquadMembers.includes(entry.npub)}
+                on:change={() => toggleOrganizeMember(entry.npub)}
+              />
+              <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
+            </label>
+          {/each}
+        </div>
+        {#if $dmList.length === 0}
+          <p class="organize-members-empty">Add friends in DMs first to create a squad with them.</p>
+        {/if}
+        {#if organizeSquadError}
+          <p class="organize-error" role="alert">{organizeSquadError}</p>
+        {/if}
         <div class="organize-actions">
-          <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal}>
+          <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} disabled={creatingSquad}>
             Cancel
           </button>
-          <button type="submit" class="organize-btn-create" disabled={!canCreateSquad}>
-            Create
+          <button type="submit" class="organize-btn-create" disabled={!canCreateSquad || creatingSquad}>
+            {creatingSquad ? 'Creating…' : 'Create'}
           </button>
         </div>
       </form>
@@ -282,6 +342,42 @@
     color: #6d6f78;
   }
 
+  .organize-members {
+    max-height: 180px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    padding: 8px 0;
+    border: 1px solid #404249;
+    border-radius: 8px;
+    background: #1e1f22;
+  }
+
+  .organize-member-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: #f2f3f5;
+    font-size: 0.9375rem;
+  }
+
+  .organize-member-row:hover {
+    background: #35373c;
+  }
+
+  .organize-member-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .organize-members-empty {
+    color: #949ba4;
+    font-size: 0.875rem;
+    margin: 0 0 16px 0;
+  }
+
   .organize-actions {
     display: flex;
     justify-content: flex-end;
@@ -321,5 +417,11 @@
   .organize-btn-create:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .organize-error {
+    font-size: 0.875rem;
+    color: #f23f42;
+    margin: 0 0 16px 0;
   }
 </style>
