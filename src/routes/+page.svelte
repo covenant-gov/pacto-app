@@ -10,7 +10,7 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import Message from '../components/Message.svelte';
   import MessageInput from '../components/MessageInput.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -41,10 +41,25 @@
     dmSendError,
     type DmMessage,
     type DmTab,
+    type Channel,
   } from '../stores/app';
 
   const PAGE_SIZE = 100;
   const LOAD_OLDER_PAGE_SIZE = 50;
+
+  let pendingAddToSquadGroupId: string | null = null;
+  function addAcceptedChannelToSquad(squadId: string) {
+    const groupId = pendingAddToSquadGroupId;
+    if (!groupId) return;
+    const squad = $squads.find((s) => s.id === squadId);
+    if (!squad) return;
+    const name = groupId.slice(0, 12) + '…';
+    const newChannel: Channel = { id: groupId, name, groupId, order: squad.channels.length };
+    squads.update((list) =>
+      list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, newChannel] }))
+    );
+    pendingAddToSquadGroupId = null;
+  }
 
   let dmMessagesContainer: HTMLDivElement;
   let prevDmId: string | null = null;
@@ -120,10 +135,15 @@
     getDmMessages(npub, PAGE_SIZE, 0)
       .then((msgs) => {
         dmLog('open conversation: messages loaded', { npub: npub.slice(0, 20) + '…', count: msgs.length });
-        backendDmMessages.update((byNpub) => ({
-          ...byNpub,
-          [npub]: msgs as DmMessage[],
-        }));
+        const loaded = msgs as DmMessage[];
+        backendDmMessages.update((byNpub) => {
+          const existing = byNpub[npub] ?? [];
+          const loadedIds = new Set(loaded.map((m) => m.id));
+          // Keep messages from state that aren't in the loaded set (e.g. just-sent squad invite from message_new)
+          const fromExisting = existing.filter((m) => !loadedIds.has(m.id));
+          const merged = [...loaded, ...fromExisting];
+          return { ...byNpub, [npub]: merged };
+        });
         loadedOffsetByChat.update((by) => ({ ...by, [npub]: PAGE_SIZE }));
         // Mark as read up to the latest message (backend returns newest first)
         const lastMessageId = msgs.length > 0 ? (msgs[0] as DmMessage).id : null;
@@ -291,6 +311,20 @@
     }
   }
 
+  /** Ungrouped channels UI removed; keep store empty. */
+  function clearUngroupedChannels() {
+    ungroupedChannels.set([]);
+  }
+
+  let prevTopNavTab: string | undefined = undefined;
+  $: if ($activeTopNavTab === 'squads' && prevTopNavTab !== 'squads') {
+    prevTopNavTab = 'squads';
+    syncMlsGroupsNow(null).catch(() => {});
+    clearUngroupedChannels();
+  } else if ($activeTopNavTab !== 'squads') {
+    prevTopNavTab = $activeTopNavTab;
+  }
+
   onMount(() => {
     // Gate selection: only set squad/channel when we have squads
     if ($squads.length > 0 && !$activeSquadId) {
@@ -304,6 +338,7 @@
       dmLog('onMount: authenticated, calling fetchMessages(true)');
       dmSyncStatus.set('syncing');
       fetchMessages(true).catch((e) => dmError('onMount: fetchMessages(true) failed', e));
+      clearUngroupedChannels();
     }
 
     const unlistenNew = listen<{ message: DmMessage; chat_id: string }>('message_new', (event) => {
@@ -425,11 +460,8 @@
 
     const unlistenWelcomeAccepted = listen<{ group_id: string }>('mls_welcome_accepted', (event) => {
       const group_id = event.payload.group_id;
-      ungroupedChannels.update((ch) => [
-        ...ch,
-        { id: group_id, name: group_id.slice(0, 12) + '…', groupId: group_id, order: ch.length },
-      ]);
       refreshPendingWelcomes().catch((e) => dmError('mls_welcome_accepted refresh', e));
+      pendingAddToSquadGroupId = group_id;
     });
 
     return () => {
@@ -523,14 +555,20 @@
             {/if}
             {#if mergedDmMessages.length > 0}
               {#each mergedDmMessages as msg (msg.id)}
-                {@const invitePayload = !msg.mine ? parseSquadInviteMessage(msg.content) : null}
+                {@const invitePayload = parseSquadInviteMessage(msg.content)}
                 {#if invitePayload}
-                  {@const inviterName = msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone'}
+                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
                   <div class="squad-invite-card">
                     <p class="squad-invite-text">
-                      {inviterName} invited you to <strong>{invitePayload.squadName}</strong>.
+                      {#if msg.mine}
+                        You invited {inviterName} to <strong>{invitePayload.squadName}</strong>.
+                      {:else}
+                        {inviterName} invited you to <strong>{invitePayload.squadName}</strong>.
+                      {/if}
                     </p>
-                    {#if acceptedSquadInviteIds.has(msg.id)}
+                    {#if msg.mine}
+                      <!-- Inviter: no actions -->
+                    {:else if acceptedSquadInviteIds.has(msg.id)}
                       <p class="squad-invite-accepted">Accepted</p>
                     {:else if declinedSquadInviteIds.has(msg.id)}
                       <p class="squad-invite-declined">Declined</p>
@@ -584,10 +622,39 @@
           </div>
         </div>
       {:else}
-        <SquadNavbar />
-        <ChatView />
+        <div class="squads-area">
+          <SquadNavbar />
+          <ChatView />
+        </div>
       {/if}
     </div>
+
+    <!-- Add to squad modal (after accepting an invite) -->
+    {#if pendingAddToSquadGroupId}
+      <div class="add-to-squad-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-to-squad-modal-title">
+        <div class="add-to-squad-modal">
+          <h2 id="add-to-squad-modal-title">Add channel to a squad</h2>
+          <p class="add-to-squad-modal-text">You joined a new channel. Add it to a squad to see it in the sidebar.</p>
+          <div class="add-to-squad-modal-list">
+            {#each $squads as squad (squad.id)}
+              <button
+                type="button"
+                class="add-to-squad-modal-option"
+                on:click={() => addAcceptedChannelToSquad(squad.id)}
+              >
+                {squad.name}
+              </button>
+            {/each}
+          </div>
+          {#if $squads.length === 0}
+            <p class="add-to-squad-modal-empty">Create a squad first (Organize Squad).</p>
+          {/if}
+          <button type="button" class="add-to-squad-modal-skip" on:click={() => (pendingAddToSquadGroupId = null)}>
+            Skip
+          </button>
+        </div>
+      </div>
+    {/if}
   </main>
 </div>
 
@@ -615,6 +682,14 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .squads-area {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
   }
 
   .dm-area {
@@ -942,5 +1017,79 @@
     background-color: #313338;
     color: #6d6f78;
     font-size: 0.9375rem;
+  }
+
+  .add-to-squad-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+
+  .add-to-squad-modal {
+    background: #2b2d31;
+    border: 1px solid #404249;
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 280px;
+    max-width: 90vw;
+  }
+
+  .add-to-squad-modal h2 {
+    margin: 0 0 8px;
+    font-size: 1.125rem;
+    color: #f2f3f5;
+  }
+
+  .add-to-squad-modal-text {
+    margin: 0 0 16px;
+    font-size: 0.875rem;
+    color: #949ba4;
+  }
+
+  .add-to-squad-modal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .add-to-squad-modal-option {
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 0.9375rem;
+    color: #dbdee1;
+    background: #383a40;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .add-to-squad-modal-option:hover {
+    background: #4e5058;
+  }
+
+  .add-to-squad-modal-empty {
+    margin: 0 0 16px;
+    font-size: 0.875rem;
+    color: #949ba4;
+  }
+
+  .add-to-squad-modal-skip {
+    padding: 6px 14px;
+    font-size: 0.875rem;
+    background: transparent;
+    border: 1px solid #4e5058;
+    border-radius: 6px;
+    color: #949ba4;
+    cursor: pointer;
+  }
+
+  .add-to-squad-modal-skip:hover {
+    background: #35373c;
+    color: #dbdee1;
   }
 </style>

@@ -287,13 +287,25 @@ export async function listMlsGroups(): Promise<string[]> {
   return ids;
 }
 
+/** MLS group metadata (from get_mls_group_metadata). */
+export interface MlsGroupMetadataItem {
+  group_id: string;
+  name: string;
+  engine_group_id?: string;
+  creator_pubkey?: string;
+  avatar_ref?: string | null;
+  created_at?: number;
+  updated_at?: number;
+  evicted?: boolean;
+}
+
 /**
  * Get metadata for all MLS groups. Backend: get_mls_group_metadata.
  * Returns array of group metadata objects (shape from backend DB).
  */
-export async function getMlsGroupMetadata(): Promise<unknown[]> {
+export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
   dmLog('get_mls_group_metadata');
-  const meta = (await invoke('get_mls_group_metadata')) as unknown[];
+  const meta = (await invoke('get_mls_group_metadata')) as MlsGroupMetadataItem[];
   dmLog('get_mls_group_metadata result', { count: meta.length });
   return meta;
 }
@@ -369,7 +381,7 @@ export async function inviteMemberToGroup(
  */
 export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembers> {
   dmLog('get_mls_group_members', { groupId: groupId.slice(0, 16) + '…' });
-  const result = (await invoke('get_mls_group_members', { group_id: groupId })) as MlsGroupMembers;
+  const result = (await invoke('get_mls_group_members', { groupId })) as MlsGroupMembers;
   dmLog('get_mls_group_members result', { members: result.members?.length ?? 0 });
   return result;
 }
