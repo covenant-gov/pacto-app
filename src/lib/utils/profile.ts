@@ -21,7 +21,7 @@ function isHttpUrl(s: string): boolean {
 }
 
 /**
- * Get the display name for a profile (PFP_FLOW §1).
+ * Get the display name for a profile.
  * Prefer Vector nickname, then Nostr name/display_name, then short npub.
  */
 export function getProfileDisplayName(profile: NostrProfile | null | undefined): string {

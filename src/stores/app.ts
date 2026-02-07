@@ -1,4 +1,5 @@
 import { writable, derived } from 'svelte/store';
+import type { PendingMlsWelcome } from '../lib/api/nostr';
 
 // Top navbar tab - determines what the side Navbar shows (DMs, Networks, Squads)
 export type TopNavTab = 'dms' | 'networks' | 'squads';
@@ -112,20 +113,71 @@ export const messageCountByChat = writable<Record<string, number>>({});
 // Offset already loaded per chat for "load older" (get_message_views offset). After first page (e.g. 100), next load uses this.
 export const loadedOffsetByChat = writable<Record<string, number>>({});
 
-// DM historical sync status (DM_FLOW §3.1 optional UI). 'finished' shows "Up to date" briefly then resets to 'idle'.
+// DM historical sync status. 'finished' shows "Up to date" briefly then resets to 'idle'.
 export type SyncStatus = 'idle' | 'syncing' | 'finished';
 export const dmSyncStatus = writable<SyncStatus>('idle');
 
-// Typing indicators per chat (npub → list of npubs currently typing). DM_FLOW §6.1.
+// Typing indicators per chat (npub → list of npubs currently typing).
 export const typingByChat = writable<Record<string, string[]>>({});
 
-// Squads store - will be populated from Nostr relay data
-export const squads = writable<any[]>([]);
+// --- MLS / Squads ---
+// Channel = one MLS group. id === groupId for simplicity (backend uses group_id everywhere).
+export interface Channel {
+  id: string;
+  name: string;
+  groupId: string;
+  order: number;
+}
 
-// Messages store organized by channelId - will be populated from Nostr relay data
+// Squad = frontend-only container (name, icon, ordered channels). Persisted to localStorage.
+export interface Squad {
+  id: string;
+  name: string;
+  iconUrl?: string;
+  channels: Channel[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+const PACTO_SQUADS_KEY = 'pacto_squads';
+
+function loadSquadsFromStorage(): Squad[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PACTO_SQUADS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed as Squad[];
+  } catch {
+    return [];
+  }
+}
+
+export const squads = writable<Squad[]>(loadSquadsFromStorage());
+
+squads.subscribe((value) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PACTO_SQUADS_KEY, JSON.stringify(value));
+  } catch {
+    // ignore quota or serialization errors
+  }
+});
+
+// Backend-backed group messages (get_message_views(groupId) + mls_message_new). Keyed by group_id. Reuse DmMessage shape.
+export const backendGroupMessages = writable<Record<string, DmMessage[]>>({});
+
+export const groupSendError = writable<string | null>(null);
+
+export const pendingMlsWelcomes = writable<PendingMlsWelcome[]>([]);
+
+export const ungroupedChannels = writable<Channel[]>([]);
+
+// Legacy: channelMessages was keyed by channel id for local-only mock. Replaced by backendGroupMessages keyed by groupId.
 export const channelMessages = writable<Record<string, any[]>>({});
 
-// Persist last open DM for restore on next app open (DM_FLOW §8.2)
+// Persist last open DM for restore on next app open
 const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
 activeDmId.subscribe((id) => {
   if (id && typeof localStorage !== 'undefined') {

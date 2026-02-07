@@ -1,6 +1,6 @@
 /**
  * Npub (bech32 public key) validation for DM recipient input.
- * DM_FLOW §7.2: validate bech32 npub (starts with npub1) before sending.
+ * Validates bech32 npub (starts with npub1) before sending.
  */
 
 const NPUB_PREFIX = 'npub1';

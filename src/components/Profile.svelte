@@ -20,7 +20,7 @@
   let error: string | null = null;
   let isLoggingOut = false;
 
-  // Edit profile state (PFP Plan §7)
+  // Edit profile state
   let isEditing = false;
   let editName = '';
   let editAbout = '';
@@ -309,7 +309,7 @@
       </div>
     {:else if profile}
       <div class="profile-content">
-        <!-- Banner (PFP Plan §6) -->
+        <!-- Banner -->
         {#if bannerSrc}
           <div class="profile-banner">
             <img
