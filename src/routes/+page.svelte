@@ -10,13 +10,14 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import Message from '../components/Message.svelte';
   import MessageInput from '../components/MessageInput.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
   import { profiles } from '../stores/profiles';
   import {
+    squads,
     activeSquadId,
     activeChannelId,
     activeView,
@@ -25,6 +26,9 @@
     activeDmId,
     composingNewChat,
     backendDmMessages,
+    backendGroupMessages,
+    pendingMlsWelcomes,
+    ungroupedChannels,
     messageCountByChat,
     loadedOffsetByChat,
     dmSyncStatus,
@@ -68,7 +72,7 @@
     }));
   }
 
-  // Nickname edit for current DM contact (PFP Plan §8)
+  // Nickname edit for current DM contact
   let showNicknameEdit = false;
   let nicknameEditValue = '';
   let nicknameSaving = false;
@@ -87,7 +91,7 @@
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
-  // Contact for current DM (PFP Plan §4 – conversation header)
+  // Contact for current DM (conversation header)
   $: contactProfile = $activeDmId ? $profiles[$activeDmId] : null;
   $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
   $: contactDisplayName = contactProfile ? getProfileDisplayName(contactProfile) : ($activeDmId ? truncateNpub($activeDmId) : 'Unknown');
@@ -101,7 +105,7 @@
     return list;
   })();
 
-  // Load backend messages when active DM changes; queue profile sync, get total count (DM_FLOW §5.2).
+  // Load backend messages when active DM changes; queue profile sync, get total count.
   $: if ($activeDmId && $activeTopNavTab === 'dms') {
     const npub = $activeDmId;
     dmLog('open conversation', { npub: npub.slice(0, 20) + '…', tab: 'dms' });
@@ -121,13 +125,34 @@
           [npub]: msgs as DmMessage[],
         }));
         loadedOffsetByChat.update((by) => ({ ...by, [npub]: PAGE_SIZE }));
-        // Mark as read up to the latest message (backend returns newest first; DM_FLOW §5.2)
+        // Mark as read up to the latest message (backend returns newest first)
         const lastMessageId = msgs.length > 0 ? (msgs[0] as DmMessage).id : null;
         markAsRead(npub, lastMessageId).catch(() => {});
       })
       .catch((err) => {
         dmError('open conversation: getDmMessages failed', err);
       });
+  }
+
+  // Load group messages when opening a channel (Squads tab)
+  $: if ($activeChannelId && $activeTopNavTab === 'squads') {
+    const groupId = $activeChannelId;
+    dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
+    getChatMessageCount(groupId)
+      .then((count) => {
+        messageCountByChat.update((by) => ({ ...by, [groupId]: count }));
+      })
+      .catch((err) => dmError('open channel: getChatMessageCount failed', err));
+    getDmMessages(groupId, PAGE_SIZE, 0)
+      .then((msgs) => {
+        dmLog('open channel: messages loaded', { groupId: groupId.slice(0, 20) + '…', count: msgs.length });
+        backendGroupMessages.update((byGroup) => ({
+          ...byGroup,
+          [groupId]: msgs as DmMessage[],
+        }));
+        loadedOffsetByChat.update((by) => ({ ...by, [groupId]: PAGE_SIZE }));
+      })
+      .catch((err) => dmError('open channel: getDmMessages failed', err));
   }
 
   async function loadOlder() {
@@ -159,7 +184,7 @@
     !loadingOlder &&
     (($messageCountByChat[$activeDmId] ?? 0) > ($backendDmMessages[$activeDmId]?.length ?? 0));
 
-  // PFP Plan §5: message bubbles show sender avatar and display name from profiles
+  // Message bubbles show sender avatar and display name from profiles
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
     const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
@@ -241,8 +266,12 @@
   }
 
   onMount(() => {
-    $activeSquadId = 'squad-1';
-    $activeChannelId = 'channel-1';
+    // Gate selection: only set squad/channel when we have squads
+    if ($squads.length > 0 && !$activeSquadId) {
+      const first = $squads[0];
+      $activeSquadId = first.id;
+      $activeChannelId = first.channels.length > 0 ? first.channels[0].groupId : null;
+    }
 
     // Pull DMs from Nostr relays when app loads (if already authenticated)
     if ($isAuthenticated) {
@@ -311,7 +340,7 @@
       }
     );
 
-    // Drive historical sync: backend emits sync_slice_finished after each 2-day window; we must call fetch_messages(init: false) to get the next window (DM_FLOW §3.1, §11).
+    // Drive historical sync: backend emits sync_slice_finished after each 2-day window; we must call fetch_messages(init: false) to get the next window.
     const unlistenSyncSlice = listen('sync_slice_finished', () => {
       dmLog('sync_slice_finished → fetchMessages(false)');
       dmSyncStatus.set('syncing');
@@ -336,6 +365,47 @@
       typingByChat.update((by) => ({ ...by, [conversation_id]: typers ?? [] }));
     });
 
+    const unlistenMlsNew = listen<{ group_id: string; message: DmMessage }>('mls_message_new', (event) => {
+      const { group_id, message } = event.payload;
+      const m: DmMessage = {
+        id: message.id,
+        content: message.content,
+        at: message.at,
+        mine: message.mine,
+        npub: message.npub,
+        pending: message.pending,
+        failed: message.failed,
+      };
+      backendGroupMessages.update((byGroup) => {
+        const list = byGroup[group_id] ?? [];
+        if (list.some((x) => x.id === m.id)) return byGroup;
+        const withoutOpt = list.filter(
+          (x) => !(x.id.startsWith('opt-') && x.mine && x.content === m.content)
+        );
+        return { ...byGroup, [group_id]: [...withoutOpt, m] };
+      });
+    });
+
+    async function refreshPendingWelcomes() {
+      const list = await listPendingMlsWelcomes();
+      pendingMlsWelcomes.set(list);
+    }
+
+    refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));
+
+    const unlistenInviteReceived = listen('mls_invite_received', () => {
+      refreshPendingWelcomes().catch((e) => dmError('mls_invite_received refresh', e));
+    });
+
+    const unlistenWelcomeAccepted = listen<{ group_id: string }>('mls_welcome_accepted', (event) => {
+      const group_id = event.payload.group_id;
+      ungroupedChannels.update((ch) => [
+        ...ch,
+        { id: group_id, name: group_id.slice(0, 12) + '…', groupId: group_id, order: ch.length },
+      ]);
+      refreshPendingWelcomes().catch((e) => dmError('mls_welcome_accepted refresh', e));
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
@@ -343,6 +413,9 @@
       unlistenSyncProgress.then((fn) => fn());
       unlistenSyncFinished.then((fn) => fn());
       unlistenTyping.then((fn) => fn());
+      unlistenMlsNew.then((fn) => fn());
+      unlistenInviteReceived.then((fn) => fn());
+      unlistenWelcomeAccepted.then((fn) => fn());
     };
   });
 </script>

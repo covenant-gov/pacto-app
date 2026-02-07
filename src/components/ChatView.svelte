@@ -1,41 +1,108 @@
 <script lang="ts">
   import Message from './Message.svelte';
   import MessageInput from './MessageInput.svelte';
-  import { activeChannelId, squads, activeSquadId, channelMessages } from '../stores/app';
+  import {
+    activeChannelId,
+    squads,
+    activeSquadId,
+    ungroupedChannels,
+    backendGroupMessages,
+    messageCountByChat,
+    loadedOffsetByChat,
+    groupSendError,
+    type DmMessage,
+  } from '../stores/app';
+  import { sendDmMessage, getDmMessages } from '../lib/api/nostr';
+  import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
+  import { profiles } from '../stores/profiles';
+  import { currentUser } from '../stores/auth';
 
-  // Get active channel info
-  $: activeSquad = $squads.find(c => c.id === $activeSquadId);
-  $: activeChannel = activeSquad?.channels.find(ch => ch.id === $activeChannelId);
+  const LOAD_OLDER_PAGE_SIZE = 50;
+
+  $: activeSquad = $squads.find((c) => c.id === $activeSquadId);
+  $: activeChannel =
+    activeSquad?.channels.find((ch) => ch.id === $activeChannelId || ch.groupId === $activeChannelId) ??
+    $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId);
   $: channelName = activeChannel?.name || 'channel';
 
-  // Get messages for the current channel
-  $: currentMessages = $activeChannelId ? ($channelMessages[$activeChannelId] || []) : [];
+  $: currentMessages = (() => {
+    if (!$activeChannelId) return [];
+    const list = [...($backendGroupMessages[$activeChannelId] ?? [])];
+    list.sort((a, b) => a.at - b.at);
+    return list;
+  })();
 
-  function handleSendMessage(content: string) {
-    if (!$activeChannelId) return;
-    
-    const newMessage = {
-      id: String(Date.now()),
-      authorName: 'You',
-      content: content,
-      timestamp: new Date().toISOString(),
-      avatar: ''
+  function toMessageProps(msg: DmMessage) {
+    const currentUserNpub = $currentUser?.npub;
+    const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
+    if (msg.mine) {
+      return {
+        authorName: 'You',
+        content: msg.content,
+        timestamp: new Date(msg.at).toISOString(),
+        avatar: getProfileAvatarSrc(currentUserProfile) ?? '',
+      };
+    }
+    const senderProfile = msg.npub ? $profiles[msg.npub] : null;
+    return {
+      authorName: getProfileDisplayName(senderProfile),
+      content: msg.content,
+      timestamp: new Date(msg.at).toISOString(),
+      avatar: getProfileAvatarSrc(senderProfile) ?? '',
     };
-    
-    // Update the store for this channel
-    channelMessages.update(messages => ({
-      ...messages,
-      [$activeChannelId]: [...(messages[$activeChannelId] || []), newMessage]
-    }));
   }
 
-  // Auto-scroll to bottom when new messages arrive (only if already near bottom)
+  let prevChannelId: string | null = null;
+  $: if (prevChannelId !== $activeChannelId) {
+    prevChannelId = $activeChannelId;
+    groupSendError.set(null);
+  }
+
+  let loadingOlder = false;
+  async function handleSendMessage(content: string) {
+    const groupId = $activeChannelId;
+    if (!groupId) return;
+    groupSendError.set(null);
+    try {
+      await sendDmMessage(groupId, content, '');
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send message');
+      groupSendError.set(friendlyMessage(raw, 'dm_send'));
+    }
+  }
+
+  $: canLoadOlder =
+    $activeChannelId &&
+    ($messageCountByChat[$activeChannelId] ?? 0) > ($backendGroupMessages[$activeChannelId]?.length ?? 0);
+
+  async function loadOlder() {
+    const groupId = $activeChannelId;
+    if (!groupId || loadingOlder) return;
+    loadingOlder = true;
+    try {
+      const offset = $loadedOffsetByChat[groupId] ?? 0;
+      const older = await getDmMessages(groupId, LOAD_OLDER_PAGE_SIZE, offset);
+      backendGroupMessages.update((byGroup) => {
+        const list = byGroup[groupId] ?? [];
+        const ids = new Set(list.map((m) => m.id));
+        const newMsgs = (older as DmMessage[]).filter((m) => !ids.has(m.id));
+        return { ...byGroup, [groupId]: [...newMsgs, ...list].sort((a, b) => a.at - b.at) };
+      });
+      loadedOffsetByChat.update((by) => ({ ...by, [groupId]: offset + older.length }));
+    } finally {
+      loadingOlder = false;
+    }
+  }
+
   let messagesContainer: HTMLDivElement;
-  $: if (currentMessages && messagesContainer) {
+  $: if (currentMessages.length && messagesContainer) {
     setTimeout(() => {
-      const isNearBottom = 
-        messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 100;
-      
+      const isNearBottom =
+        messagesContainer.scrollHeight -
+          messagesContainer.scrollTop -
+          messagesContainer.clientHeight <
+        100;
       if (isNearBottom) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
       }
@@ -54,17 +121,26 @@
 
     <div class="messages-container" bind:this={messagesContainer}>
       <div class="messages-list">
+        {#if canLoadOlder}
+          <div class="load-older-wrap">
+            <button
+              type="button"
+              class="load-older-btn"
+              on:click={loadOlder}
+              disabled={loadingOlder}
+            >
+              {loadingOlder ? 'Loading…' : 'Load older messages'}
+            </button>
+          </div>
+        {/if}
         {#each currentMessages as message (message.id)}
-          <Message 
-            authorName={message.authorName}
-            content={message.content}
-            timestamp={message.timestamp}
-            avatar={message.avatar}
-          />
+          <Message {...toMessageProps(message)} />
         {/each}
       </div>
     </div>
-
+    {#if $groupSendError}
+      <p class="channel-send-error" role="alert">{$groupSendError}</p>
+    {/if}
     <MessageInput channelName={channelName} onSend={handleSendMessage} />
   {:else}
     <div class="empty-state">
@@ -124,6 +200,36 @@
     display: flex;
     flex-direction: column;
     padding: 16px 0;
+  }
+
+  .load-older-wrap {
+    margin-bottom: 16px;
+  }
+
+  .load-older-btn {
+    padding: 8px 16px;
+    font-size: 0.875rem;
+    color: #b5bac1;
+    background: #2b2d31;
+    border: 1px solid #404249;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .load-older-btn:hover:not(:disabled) {
+    color: #f2f3f5;
+    background: #4e5058;
+  }
+
+  .load-older-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .channel-send-error {
+    font-size: 0.875rem;
+    color: #ed4245;
+    margin: 0 16px 8px;
   }
 
   .empty-state {

@@ -67,7 +67,7 @@ export async function refreshProfileNow(npub: string): Promise<void> {
 /**
  * Fetch DMs from Nostr relays (backend: fetch_messages).
  * Pulls Gift Wraps (kind 1059) for our pubkey, unwraps and stores in state/DB, then emits init_finished with profiles + chats.
- * Call after login so DMs are loaded from relays (per MESSAGING_OVERVIEW §8).
+ * Call after login so DMs are loaded from relays.
  */
 export async function fetchMessages(init: boolean, relayUrl?: string): Promise<void> {
   dmLog('fetch_messages', { init, relayUrl: relayUrl ?? null });
@@ -81,7 +81,7 @@ export async function fetchMessages(init: boolean, relayUrl?: string): Promise<v
 /**
  * Start live subscriptions for DMs and group messages (backend: notifs).
  * Subscribes to Gift Wrap (kind 1059) and MlsGroupMessage (kind 444); relays then push new events.
- * Call after init_finished so new messages arrive via push, not polling (per MESSAGING_OVERVIEW §9).
+ * Call after init_finished so new messages arrive via push, not polling.
  */
 export async function startNotifs(): Promise<boolean> {
   dmLog('notifs() starting live subscriptions');
@@ -92,7 +92,7 @@ export async function startNotifs(): Promise<boolean> {
 
 /**
  * Get total message count for a DM chat (backend: get_chat_message_count).
- * Used for pagination / "load older" (DM_FLOW §4.3, §5.2).
+ * Used for pagination / "load older".
  */
 export async function getChatMessageCount(chatId: string): Promise<number> {
   dmLog('get_chat_message_count', { chatId: chatId.slice(0, 20) + '…' });
@@ -121,7 +121,7 @@ export async function getDmMessages(
 }
 
 /**
- * Queue all profiles in backend state for sync from Nostr (PFP_FLOW §6.2).
+ * Queue all profiles in backend state for sync from Nostr.
  * Call after init_finished so contacts' names and PFPs fill in over time.
  * Backend: sync_all_profiles.
  */
@@ -132,7 +132,7 @@ export async function syncAllProfiles(): Promise<void> {
 }
 
 /**
- * Update own profile and publish to Nostr (PFP_FLOW §4.5).
+ * Update own profile and publish to Nostr.
  * Backend: update_profile. Pass current avatar/banner to preserve when only changing name/about.
  */
 export async function updateProfile(params: {
@@ -153,7 +153,7 @@ export async function updateProfile(params: {
 }
 
 /**
- * Upload avatar or banner image to Blossom; returns URL (PFP_FLOW §4.5).
+ * Upload avatar or banner image to Blossom; returns URL.
  * Use the returned URL in update_profile for avatar or banner.
  * Backend: upload_avatar. Emits profile_upload_progress.
  */
@@ -171,7 +171,7 @@ export async function uploadAvatar(
 }
 
 /**
- * Set local nickname for a contact (PFP_FLOW §5.4). Backend emits profile_nick_changed.
+ * Set local nickname for a contact. Backend emits profile_nick_changed.
  */
 export async function setNickname(npub: string, nickname: string): Promise<boolean> {
   dmLog('set_nickname', { npub: npub.slice(0, 20) + '…', nicknameLen: nickname?.length ?? 0 });
@@ -198,7 +198,7 @@ export async function queueProfileSync(
 }
 
 /**
- * Notify the other party that we are typing (backend: start_typing). DM_FLOW §6.1 optional.
+ * Notify the other party that we are typing (backend: start_typing).
  */
 export async function startTyping(receiver: string): Promise<boolean> {
   dmLog('start_typing', { receiver: receiver.slice(0, 20) + '…' });
@@ -208,7 +208,7 @@ export async function startTyping(receiver: string): Promise<boolean> {
 
 /**
  * Mark a conversation as read up to a message (backend: mark_as_read).
- * DM_FLOW §5.2 optional. Pass last message id when opening or scrolling to bottom.
+ * Pass last message id when opening or scrolling to bottom.
  */
 export async function markAsRead(chatId: string, messageId: string | null): Promise<boolean> {
   dmLog('mark_as_read', { chatId: chatId.slice(0, 20) + '…', messageId: messageId?.slice(0, 12) ?? null });
@@ -219,6 +219,7 @@ export async function markAsRead(chatId: string, messageId: string | null): Prom
 
 /**
  * Send a DM to an npub (NIP-17 gift wrap). Calls backend message command.
+ * Also used for group messages: pass group_id as receiver.
  */
 export async function sendDmMessage(
   receiver: string,
@@ -234,4 +235,135 @@ export async function sendDmMessage(
   })) as boolean;
   dmLog('message result', { ok });
   return ok;
+}
+
+// --- MLS / Squads ---
+
+/** Pending MLS welcome (invite). Backend: SimpleWelcome. */
+export interface PendingMlsWelcome {
+  id: string;
+  wrapper_event_id: string;
+  nostr_group_id: string;
+  group_name: string;
+  group_description: string | null;
+  group_image_url?: string | null;
+  group_admin_pubkeys: string[];
+  group_relays: string[];
+  welcomer: string;
+  member_count: number;
+}
+
+/** MLS group members. Backend: GroupMembers. */
+export interface MlsGroupMembers {
+  group_id: string;
+  members: string[];
+  admins: string[];
+}
+
+/**
+ * Create a new MLS group (channel). Backend: create_group_chat.
+ * Returns group_id (hex). Emits mls_group_initial_sync.
+ */
+export async function createGroupChat(
+  groupName: string,
+  memberIds: string[]
+): Promise<string> {
+  dmLog('create_group_chat', { groupName: groupName.slice(0, 20), memberCount: memberIds.length });
+  const groupId = (await invoke('create_group_chat', {
+    groupName,
+    memberIds,
+  })) as string;
+  dmLog('create_group_chat result', { groupId: groupId?.slice(0, 16) + '…' });
+  return groupId;
+}
+
+/**
+ * List MLS group IDs the user is in. Backend: list_mls_groups.
+ */
+export async function listMlsGroups(): Promise<string[]> {
+  dmLog('list_mls_groups');
+  const ids = (await invoke('list_mls_groups')) as string[];
+  dmLog('list_mls_groups result', { count: ids.length });
+  return ids;
+}
+
+/**
+ * Get metadata for all MLS groups. Backend: get_mls_group_metadata.
+ * Returns array of group metadata objects (shape from backend DB).
+ */
+export async function getMlsGroupMetadata(): Promise<unknown[]> {
+  dmLog('get_mls_group_metadata');
+  const meta = (await invoke('get_mls_group_metadata')) as unknown[];
+  dmLog('get_mls_group_metadata result', { count: meta.length });
+  return meta;
+}
+
+/**
+ * List pending MLS welcomes (invites). Backend: list_pending_mls_welcomes.
+ */
+export async function listPendingMlsWelcomes(): Promise<PendingMlsWelcome[]> {
+  dmLog('list_pending_mls_welcomes');
+  const list = (await invoke('list_pending_mls_welcomes')) as PendingMlsWelcome[];
+  dmLog('list_pending_mls_welcomes result', { count: list.length });
+  return list;
+}
+
+/**
+ * Accept an MLS welcome (join group). Backend: accept_mls_welcome.
+ * Pass welcome event id (hex). Emits mls_welcome_accepted / mls_group_updated.
+ */
+export async function acceptMlsWelcome(welcomeEventIdHex: string): Promise<boolean> {
+  dmLog('accept_mls_welcome', { id: welcomeEventIdHex.slice(0, 16) + '…' });
+  const ok = (await invoke('accept_mls_welcome', {
+    welcomeEventIdHex,
+  })) as boolean;
+  dmLog('accept_mls_welcome result', { ok });
+  return ok;
+}
+
+/**
+ * Invite a member (npub) to an MLS group. Backend: invite_member_to_group.
+ */
+export async function inviteMemberToGroup(
+  groupId: string,
+  memberNpub: string
+): Promise<void> {
+  dmLog('invite_member_to_group', { groupId: groupId.slice(0, 16) + '…', memberNpub: memberNpub.slice(0, 20) + '…' });
+  await invoke('invite_member_to_group', {
+    group_id: groupId,
+    member_npub: memberNpub,
+  });
+  dmLog('invite_member_to_group done');
+}
+
+/**
+ * Get members and admins of an MLS group. Backend: get_mls_group_members.
+ */
+export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembers> {
+  dmLog('get_mls_group_members', { groupId: groupId.slice(0, 16) + '…' });
+  const result = (await invoke('get_mls_group_members', { group_id: groupId })) as MlsGroupMembers;
+  dmLog('get_mls_group_members result', { members: result.members?.length ?? 0 });
+  return result;
+}
+
+/**
+ * Leave an MLS group. Backend: leave_mls_group.
+ */
+export async function leaveMlsGroup(groupId: string): Promise<void> {
+  dmLog('leave_mls_group', { groupId: groupId.slice(0, 16) + '…' });
+  await invoke('leave_mls_group', { group_id: groupId });
+  dmLog('leave_mls_group done');
+}
+
+/**
+ * Sync MLS groups (fetch new messages). Backend: sync_mls_groups_now.
+ * Pass groupId to sync only that group, or null to sync all.
+ */
+export async function syncMlsGroupsNow(groupId?: string | null): Promise<{ synced: number; total: number }> {
+  dmLog('sync_mls_groups_now', { groupId: groupId ?? '(all)' });
+  const [synced, total] = (await invoke('sync_mls_groups_now', {
+    group_id: groupId ?? null,
+  })) as [number, number];
+  dmLog('sync_mls_groups_now result', { synced, total });
+  return { synced, total };
 }

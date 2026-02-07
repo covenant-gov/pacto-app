@@ -14,10 +14,15 @@ export const profiles = writable<Record<string, NostrProfile>>({});
 // Track loading states for profiles
 export const profileLoadingStates = writable<Record<string, boolean>>({});
 
-// Listen for initial DB load (profiles + chats from Nostr relay sync)
+const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
+
+// Listen for initial DB load (profiles + chats from Nostr relay sync). Single registration so HMR doesn't stack listeners.
 (async () => {
   try {
-    await listen('init_finished', (event: any) => {
+    const prev = typeof window !== 'undefined' ? (window as unknown as { [key: string]: (() => void) | undefined })[INIT_LISTENER_KEY] : undefined;
+    if (prev) prev();
+
+    const unlisten = await listen('init_finished', (event: any) => {
       const payload = event.payload;
       dmLog('init_finished received', {
         profilesCount: payload?.profiles?.length ?? 0,
@@ -72,7 +77,7 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
         dmChatsByNpub.set(map);
         dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
 
-        // Restore last open chat if still in map (DM_FLOW §8.2)
+        // Restore last open chat if still in map
         if (!lastOpenChatRestored && typeof localStorage !== 'undefined') {
           lastOpenChatRestored = true;
           const lastNpub = localStorage.getItem(LAST_DM_NPUB_KEY)?.trim();
@@ -83,13 +88,17 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
         }
       }
 
-      // Queue all contacts for profile sync so names/PFPs fill in over time (PFP_FLOW §6.2)
+      // Queue all contacts for profile sync so names/PFPs fill in over time
       syncAllProfiles().catch((e) => console.error('sync_all_profiles failed:', e));
 
-      // Start live subscriptions so relays push new DMs/group messages (per MESSAGING_OVERVIEW §9)
+      // Start live subscriptions so relays push new DMs/group messages
       dmLog('init_finished: calling startNotifs()');
       startNotifs().catch((e) => console.error('notifs failed:', e));
     });
+
+    if (typeof window !== 'undefined') {
+      (window as unknown as { [key: string]: () => void })[INIT_LISTENER_KEY] = unlisten;
+    }
   } catch (error) {
     console.error('Failed to register init_finished listener:', error);
   }
@@ -110,7 +119,7 @@ export const profileLoadingStates = writable<Record<string, boolean>>({});
   }
 })();
 
-// Listen for nickname changes (DM_FLOW §6.1)
+// Listen for nickname changes
 (async () => {
   try {
     await listen('profile_nick_changed', (event: any) => {
