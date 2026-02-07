@@ -287,15 +287,55 @@ export async function listMlsGroups(): Promise<string[]> {
   return ids;
 }
 
+/** MLS group metadata (from get_mls_group_metadata). */
+export interface MlsGroupMetadataItem {
+  group_id: string;
+  name: string;
+  engine_group_id?: string;
+  creator_pubkey?: string;
+  avatar_ref?: string | null;
+  created_at?: number;
+  updated_at?: number;
+  evicted?: boolean;
+}
+
 /**
  * Get metadata for all MLS groups. Backend: get_mls_group_metadata.
  * Returns array of group metadata objects (shape from backend DB).
  */
-export async function getMlsGroupMetadata(): Promise<unknown[]> {
+export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
   dmLog('get_mls_group_metadata');
-  const meta = (await invoke('get_mls_group_metadata')) as unknown[];
+  const meta = (await invoke('get_mls_group_metadata')) as MlsGroupMetadataItem[];
   dmLog('get_mls_group_metadata result', { count: meta.length });
   return meta;
+}
+
+/** Structured payload for squad invite sent via DM (Approach A). */
+export interface SquadInvitePayload {
+  type: 'squad_invite';
+  squadName: string;
+  groupId: string;
+}
+
+const SQUAD_INVITE_TYPE = 'squad_invite';
+
+export function parseSquadInviteMessage(content: string): SquadInvitePayload | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === SQUAD_INVITE_TYPE) {
+      const p = parsed as { squadName?: string; groupId?: string };
+      if (typeof p.squadName === 'string' && typeof p.groupId === 'string') {
+        return { type: SQUAD_INVITE_TYPE, squadName: p.squadName, groupId: p.groupId };
+      }
+    }
+  } catch {
+    // not JSON or invalid shape
+  }
+  return null;
+}
+
+export function formatSquadInviteMessage(payload: SquadInvitePayload): string {
+  return JSON.stringify(payload);
 }
 
 /**
@@ -330,8 +370,8 @@ export async function inviteMemberToGroup(
 ): Promise<void> {
   dmLog('invite_member_to_group', { groupId: groupId.slice(0, 16) + '…', memberNpub: memberNpub.slice(0, 20) + '…' });
   await invoke('invite_member_to_group', {
-    group_id: groupId,
-    member_npub: memberNpub,
+    groupId,
+    memberNpub,
   });
   dmLog('invite_member_to_group done');
 }
@@ -341,7 +381,7 @@ export async function inviteMemberToGroup(
  */
 export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembers> {
   dmLog('get_mls_group_members', { groupId: groupId.slice(0, 16) + '…' });
-  const result = (await invoke('get_mls_group_members', { group_id: groupId })) as MlsGroupMembers;
+  const result = (await invoke('get_mls_group_members', { groupId })) as MlsGroupMembers;
   dmLog('get_mls_group_members result', { members: result.members?.length ?? 0 });
   return result;
 }
