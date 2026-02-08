@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import Channel from './Channel.svelte';
   import { squads, activeSquadId, activeChannelId, activeView, dmList, requestsList, pendingList, type Channel as ChannelType } from '../stores/app';
-  import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage } from '../lib/api/nostr';
+  import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, leaveMlsGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -94,6 +95,7 @@
 
   $: canCreateChannel = createChannelName.trim().length > 0 && selectedNpubs.length > 0;
 
+  let createChannelErrorBanner = '';
   async function handleCreateChannel() {
     const name = createChannelName.trim();
     if (!name) return;
@@ -101,40 +103,73 @@
       createChannelError = 'Select at least one member';
       return;
     }
-    creating = true;
-    createChannelError = '';
-    try {
-      const groupId = await createGroupChat(name, selectedNpubs);
-      const squad = $squads.find((s) => s.id === $activeSquadId);
-      if (!squad) {
-        createChannelError = 'Squad not found';
-        return;
-      }
-      const newChannel: ChannelType = {
-        id: groupId,
-        name,
-        groupId,
-        order: squad.channels.length,
-      };
-      squads.update((list) =>
-        list.map((s) =>
-          s.id !== $activeSquadId ? s : { ...s, channels: [...s.channels, newChannel] }
-        )
-      );
-      $activeChannelId = groupId;
-      $activeView = 'hub';
-      closeCreateChannelModal();
-    } catch (e) {
-      createChannelError = friendlyMessage(getInvokeErrorMessage(e));
-    } finally {
-      creating = false;
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    if (!squad) {
+      createChannelError = 'Squad not found';
+      return;
     }
+    createChannelError = '';
+    createChannelErrorBanner = '';
+    const placeholderId = `creating-${Date.now()}`;
+    const placeholderChannel: ChannelType = {
+      id: placeholderId,
+      name,
+      groupId: placeholderId,
+      order: squad.channels.length,
+    };
+    squads.update((list) =>
+      list.map((s) =>
+        s.id !== $activeSquadId ? s : { ...s, channels: [...s.channels, placeholderChannel] }
+      )
+    );
+    $activeChannelId = placeholderId;
+    $activeView = 'hub';
+    closeCreateChannelModal();
+    creating = false;
+    (async () => {
+      try {
+        const groupId = await createGroupChat(name, selectedNpubs);
+        const squadId = get(activeSquadId);
+        squads.update((list) =>
+          list.map((s) => {
+            if (s.id !== squadId) return s;
+            const channels = s.channels.map((ch) =>
+              ch.groupId === placeholderId
+                ? { id: groupId, name, groupId, order: ch.order }
+                : ch
+            );
+            return { ...s, channels };
+          })
+        );
+        if (get(activeChannelId) === placeholderId) activeChannelId.set(groupId);
+      } catch (e) {
+        createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
+        setTimeout(() => { createChannelErrorBanner = ''; }, 8000);
+        const squadId = get(activeSquadId);
+        squads.update((list) =>
+          list.map((s) => {
+            if (s.id !== squadId) return s;
+            const channels = s.channels.filter((ch) => ch.groupId !== placeholderId);
+            return { ...s, channels };
+          })
+        );
+        if (get(activeChannelId) === placeholderId) {
+          const list = get(squads);
+          const still = list.find((s) => s.id === squadId);
+          activeChannelId.set(still?.channels[0]?.groupId ?? null);
+        }
+      }
+    })();
   }
 
   function displayName(npub: string, fallbackName?: string) {
     return fallbackName?.trim() || getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
+  let squadMenuOpen = false;
+  let showExitSquadModal = false;
+  let exitingSquad = false;
+  let exitSquadError = '';
   let showInviteToSquadModal = false;
   let inviteToSquadCandidates: string[] = [];
   let inviteToSquadHasNoChannel = false;
@@ -144,7 +179,41 @@
   let invitingToSquad = false;
   let inviteToSquadError = '';
 
+  function openExitSquadModal() {
+    squadMenuOpen = false;
+    showExitSquadModal = true;
+    exitSquadError = '';
+  }
+
+  function closeExitSquadModal() {
+    if (!exitingSquad) showExitSquadModal = false;
+  }
+
+  async function handleExitSquad() {
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    if (!squad) return;
+    exitingSquad = true;
+    exitSquadError = '';
+    try {
+      for (const ch of squad.channels) {
+        if (ch.groupId.startsWith('creating-')) continue;
+        await leaveMlsGroup(ch.groupId);
+      }
+      squads.update((list) => list.filter((s) => s.id !== squad.id));
+      if ($activeSquadId === squad.id) {
+        activeSquadId.set(null);
+        activeChannelId.set(null);
+      }
+      showExitSquadModal = false;
+    } catch (e) {
+      exitSquadError = friendlyMessage(getInvokeErrorMessage(e));
+    } finally {
+      exitingSquad = false;
+    }
+  }
+
   function openInviteToSquadModal() {
+    squadMenuOpen = false;
     console.log('[Squads] openInviteToSquadModal', { activeSquadId: $activeSquadId, activeSquadName: $squads.find((s) => s.id === $activeSquadId)?.name });
     showInviteToSquadModal = true;
     inviteToSquadHasNoChannel = false;
@@ -249,25 +318,49 @@
 <svelte:window 
   on:mousemove={onMouseMove} 
   on:mouseup={stopResize}
+  on:click={(e) => {
+    const t = e.target as HTMLElement | null;
+    if (squadMenuOpen && t && !t.closest('.squad-header-actions')) squadMenuOpen = false;
+  }}
 />
 
 <div class="squad-navbar" style="width: {width}px;">
   {#if activeSquad}
     <div class="squad-header">
       <h2 class="squad-name">{activeSquad.name}</h2>
-      <button
-        type="button"
-        class="invite-to-squad-btn"
-        on:click={openInviteToSquadModal}
-        title="Invite someone to this squad"
-      >
-        Invite
-      </button>
+      <div class="squad-header-actions">
+        <button
+          type="button"
+          class="squad-menu-btn"
+          title="Squad options"
+          on:click={() => (squadMenuOpen = !squadMenuOpen)}
+          aria-haspopup="true"
+          aria-expanded={squadMenuOpen}
+        >
+          ⋯
+        </button>
+        {#if squadMenuOpen}
+          <div class="squad-menu-dropdown" role="menu">
+            <button type="button" class="squad-menu-item" role="menuitem" on:click={openInviteToSquadModal}>
+              Invite to Squad
+            </button>
+            <button type="button" class="squad-menu-item squad-menu-item-exit" role="menuitem" on:click={openExitSquadModal}>
+              Exit Squad
+            </button>
+          </div>
+        {/if}
+      </div>
     </div>
     {#if inviteToSquadErrorBanner}
       <div class="invite-to-squad-error-banner" role="alert">
         {inviteToSquadErrorBanner}
         <button type="button" class="invite-to-squad-error-dismiss" on:click={() => (inviteToSquadErrorBanner = '')} aria-label="Dismiss">×</button>
+      </div>
+    {/if}
+    {#if createChannelErrorBanner}
+      <div class="invite-to-squad-error-banner" role="alert">
+        {createChannelErrorBanner}
+        <button type="button" class="invite-to-squad-error-dismiss" on:click={() => (createChannelErrorBanner = '')} aria-label="Dismiss">×</button>
       </div>
     {/if}
 
@@ -447,6 +540,45 @@
   </div>
 {/if}
 
+{#if showExitSquadModal}
+  <div
+    class="create-channel-overlay"
+    on:click={closeExitSquadModal}
+    on:keydown={(e) => e.key === 'Escape' && closeExitSquadModal()}
+    role="button"
+    tabindex="-1"
+  >
+    <div
+      class="create-channel-content"
+      on:click|stopPropagation
+      on:keydown={(e) => e.key === 'Escape' && closeExitSquadModal()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="exit-squad-title"
+      tabindex="0"
+    >
+      <h2 id="exit-squad-title">Exit Squad</h2>
+      <p class="exit-squad-message">Are you sure you want to exit this squad? All local storage associated with this Squad will be erased and you will no longer be able to decrypt messages for this Squad.</p>
+      {#if exitSquadError}
+        <p class="create-channel-error" role="alert">{exitSquadError}</p>
+      {/if}
+      <div class="create-channel-actions">
+        <button type="button" class="create-channel-btn-cancel" on:click={closeExitSquadModal} disabled={exitingSquad}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="exit-squad-confirm-btn"
+          on:click={handleExitSquad}
+          disabled={exitingSquad}
+        >
+          {exitingSquad ? 'Exiting…' : 'Exit Squad'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .squad-navbar {
     height: 100%;
@@ -480,19 +612,90 @@
     white-space: nowrap;
   }
 
-  .invite-to-squad-btn {
+  .squad-header-actions {
+    position: relative;
     flex-shrink: 0;
-    padding: 4px 10px;
-    font-size: 0.8125rem;
-    background: #5865f2;
+  }
+
+  .squad-menu-btn {
+    padding: 6px 8px;
+    background: transparent;
     border: none;
-    border-radius: 6px;
-    color: #fff;
+    border-radius: 4px;
+    color: #b5bac1;
+    font-size: 1.125rem;
+    line-height: 1;
     cursor: pointer;
   }
 
-  .invite-to-squad-btn:hover {
-    background: #4752c4;
+  .squad-menu-btn:hover {
+    background: #35373c;
+    color: #f2f3f5;
+  }
+
+  .squad-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 160px;
+    background: #2b2d31;
+    border: 1px solid #404249;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    padding: 4px 0;
+  }
+
+  .squad-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: #dbdee1;
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .squad-menu-item:hover {
+    background: #35373c;
+  }
+
+  .squad-menu-item-exit {
+    color: #ed4245;
+  }
+
+  .squad-menu-item-exit:hover {
+    background: rgba(237, 66, 69, 0.15);
+    color: #ff6b6b;
+  }
+
+  .exit-squad-message {
+    color: #b5bac1;
+    font-size: 0.9375rem;
+    margin: 0 0 20px 0;
+    line-height: 1.5;
+  }
+
+  .exit-squad-confirm-btn {
+    padding: 8px 16px;
+    background: #ed4245;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .exit-squad-confirm-btn:hover:not(:disabled) {
+    background: #c03537;
+  }
+
+  .exit-squad-confirm-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .invite-to-squad-error-banner {

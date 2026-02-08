@@ -29,6 +29,7 @@
     $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId);
   $: channelName = activeChannel?.name || 'channel';
   $: isAnnouncementsChannel = activeSquad?.channels[0]?.groupId === $activeChannelId;
+  $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
 
   let channelMenuOpen = false;
   let showMembersModal = false;
@@ -122,6 +123,25 @@
     leavingChannel = true;
     leaveChannelError = '';
     try {
+      if (groupId.startsWith('creating-')) {
+        const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
+        if (inSquad && activeSquad) {
+          squads.update((list) =>
+            list.map((s) =>
+              s.id !== activeSquad.id
+                ? s
+                : { ...s, channels: s.channels.filter((ch) => ch.groupId !== groupId) }
+            )
+          );
+          const still = $squads.find((s) => s.id === activeSquad.id);
+          activeChannelId.set(still?.channels[0]?.groupId ?? null);
+          if (still?.channels.length === 0) activeSquadId.set(null);
+        } else {
+          activeChannelId.set(null);
+        }
+        closeChannelMenu();
+        return;
+      }
       await leaveMlsGroup(groupId);
       const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
       if (inSquad && activeSquad) {
@@ -282,27 +302,31 @@
 
     <div class="messages-container" bind:this={messagesContainer}>
       <div class="messages-list">
-        {#if canLoadOlder}
-          <div class="load-older-wrap">
-            <button
-              type="button"
-              class="load-older-btn"
-              on:click={loadOlder}
-              disabled={loadingOlder}
-            >
-              {loadingOlder ? 'Loading…' : 'Load older messages'}
-            </button>
-          </div>
+        {#if isChannelCreating}
+          <p class="channel-creating-message">Private group channel is being created.</p>
+        {:else}
+          {#if canLoadOlder}
+            <div class="load-older-wrap">
+              <button
+                type="button"
+                class="load-older-btn"
+                on:click={loadOlder}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? 'Loading…' : 'Load older messages'}
+              </button>
+            </div>
+          {/if}
+          {#each currentMessages as message (message.id)}
+            <Message {...toMessageProps(message)} />
+          {/each}
         {/if}
-        {#each currentMessages as message (message.id)}
-          <Message {...toMessageProps(message)} />
-        {/each}
       </div>
     </div>
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} />
+    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
 
     <!-- Members modal -->
     {#if showMembersModal}
@@ -611,6 +635,12 @@
   .load-older-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .channel-creating-message {
+    padding: 24px 16px;
+    color: #949ba4;
+    font-size: 0.9375rem;
   }
 
   .channel-send-error {

@@ -3,11 +3,14 @@
   export let onSend: (content: string) => void = () => {};
   /** Optional: called when user types (e.g. to send typing indicator). */
   export let onTyping: (() => void) | undefined = undefined;
+  /** When true, input and send are disabled (e.g. channel still being created). */
+  export let disabled: boolean = false;
 
   let messageText = "";
 
   function handleSubmit(event: Event) {
     event.preventDefault();
+    if (disabled) return;
     if (messageText.trim()) {
       onSend(messageText);
       messageText = "";
@@ -28,7 +31,7 @@
   }
 </script>
 
-<div class="message-input-container">
+<div class="message-input-container" class:disabled>
   <form on:submit={handleSubmit}>
     <div class="input-wrapper">
       <input
@@ -39,11 +42,12 @@
         placeholder="Message #{channelName}"
         class="message-input"
         autocomplete="off"
+        {disabled}
       />
       <button 
         type="submit" 
         class="send-button" 
-        disabled={!messageText.trim()}
+        disabled={disabled || !messageText.trim()}
         aria-label="Send message"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -58,6 +62,11 @@
   .message-input-container {
     padding: 16px;
     background: #313338;
+  }
+
+  .message-input-container.disabled {
+    opacity: 0.7;
+    pointer-events: none;
   }
 
   form {

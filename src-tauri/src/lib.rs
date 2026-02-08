@@ -4917,7 +4917,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
         return Err("Group name must not be empty".to_string());
     }
     if member_ids.is_empty() {
-      return Err("Select at least one member to create a group".to_string());
+        return Err("Select at least one member to create a group".to_string());
     }
 
     // For each member id (npub), refresh keypackages and pick one device to add

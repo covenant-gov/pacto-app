@@ -158,8 +158,8 @@
       });
   }
 
-  // Load group messages when opening a channel (Squads tab)
-  $: if ($activeChannelId && $activeTopNavTab === 'squads') {
+  // Load group messages when opening a channel (Squads tab). Skip placeholder "creating-*" channels.
+  $: if ($activeChannelId && $activeTopNavTab === 'squads' && !$activeChannelId.startsWith('creating-')) {
     const groupId = $activeChannelId;
     dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
     getChatMessageCount(groupId)
