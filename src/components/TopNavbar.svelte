@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeTopNavTab, type TopNavTab } from '../stores/app';
+  import { activeTopNavTab, activeView, type TopNavTab } from '../stores/app';
 
   const tabs: { id: TopNavTab; label: string }[] = [
     { id: 'dms', label: 'DMs' }, // 1-on-1 chat, non-governable
@@ -9,67 +9,88 @@
 
   function selectTab(id: TopNavTab) {
     $activeTopNavTab = id;
+    $activeView = 'hub'; // close Settings if open so the selected view is shown
   }
 </script>
 
-<div class="top-navbar" role="tablist" aria-label="Main navigation">
-  {#each tabs as tab}
-    <button
-      type="button"
-      role="tab"
-      class="tab"
-      class:active={$activeTopNavTab === tab.id}
-      on:click={() => selectTab(tab.id)}
-      aria-selected={$activeTopNavTab === tab.id}
-      aria-label={tab.label}
-    >
-      {tab.label}
-    </button>
-  {/each}
+<div class="top-navbar" role="tablist" aria-label="Main view">
+  <span class="top-navbar-label" aria-hidden="true">View</span>
+  <div class="mode-switcher" role="group" aria-label="DMs, Squads, or Networks">
+    {#each tabs as tab}
+      <button
+        type="button"
+        role="tab"
+        class="mode-segment"
+        class:active={$activeTopNavTab === tab.id}
+        on:click={() => selectTab(tab.id)}
+        aria-selected={$activeTopNavTab === tab.id}
+        aria-label={tab.label}
+      >
+        {tab.label}
+      </button>
+    {/each}
+  </div>
 </div>
 
 <style>
   .top-navbar {
-    height: 40px;
-    min-height: 40px;
+    height: 48px;
+    min-height: 48px;
     width: 100%;
-    background-color: #2b2d31;
-    border-bottom: 1px solid #1e1f22;
+    background-color: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
     display: flex;
-    align-items: stretch;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
     flex-shrink: 0;
   }
 
-  .tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 12px;
+  .top-navbar-label {
     font-size: 0.8125rem;
     font-weight: 500;
-    color: #b5bac1;
-    background: none;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Segmented control: one pill containing three segments */
+  .mode-switcher {
+    display: inline-flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .mode-segment {
+    padding: 0 22px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
-    transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+    transition: color 0.15s, background-color 0.15s;
     outline: none;
   }
 
-  .tab:hover {
-    color: #f2f3f5;
-    background-color: rgba(255, 255, 255, 0.04);
+  .mode-segment:hover:not(.active) {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
   }
 
-  .tab:focus-visible {
-    outline: 2px solid #5865f2;
-    outline-offset: -2px;
+  .mode-segment:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
-  .tab.active {
-    color: #f2f3f5;
-    border-bottom-color: #5865f2;
-    background-color: rgba(255, 255, 255, 0.02);
+  .mode-segment.active {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   }
 </style>

@@ -3,7 +3,7 @@ import type { PendingMlsWelcome } from '../lib/api/nostr';
 
 // Top navbar tab - determines what the side Navbar shows (DMs, Networks, Squads)
 export type TopNavTab = 'dms' | 'networks' | 'squads';
-export const activeTopNavTab = writable<TopNavTab>('dms');
+export const activeTopNavTab = writable<TopNavTab>('squads');
 
 // UI state stores - what's currently selected
 export const activeSquadId = writable<string | null>(null);
@@ -215,6 +215,43 @@ const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
 activeDmId.subscribe((id) => {
   if (id && typeof localStorage !== 'undefined') {
     localStorage.setItem(LAST_DM_NPUB_KEY, id);
+  }
+});
+
+// Last opened squad/channel for restore when switching to Squads view (like DMs)
+const LAST_SQUAD_ID_KEY = 'pacto_last_squad_id';
+const LAST_CHANNEL_ID_KEY = 'pacto_last_channel_id';
+
+function loadLastSquadId(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(LAST_SQUAD_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+function loadLastChannelId(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return localStorage.getItem(LAST_CHANNEL_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export const lastOpenedSquadId = writable<string | null>(loadLastSquadId());
+export const lastOpenedChannelId = writable<string | null>(loadLastChannelId());
+
+lastOpenedSquadId.subscribe((id) => {
+  if (typeof localStorage !== 'undefined') {
+    if (id) localStorage.setItem(LAST_SQUAD_ID_KEY, id);
+    else localStorage.removeItem(LAST_SQUAD_ID_KEY);
+  }
+});
+lastOpenedChannelId.subscribe((id) => {
+  if (typeof localStorage !== 'undefined') {
+    if (id) localStorage.setItem(LAST_CHANNEL_ID_KEY, id);
+    else localStorage.removeItem(LAST_CHANNEL_ID_KEY);
   }
 });
 

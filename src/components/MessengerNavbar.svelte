@@ -117,12 +117,12 @@
 <style>
   .messenger-navbar {
     height: 100%;
-    background-color: #202020;
+    background-color: var(--bg-panel);
     display: flex;
     flex-direction: column;
     position: relative;
     flex-shrink: 0;
-    border-left: 1px solid #313338;
+    border-left: 1px solid var(--border-subtle);
   }
 
   .messenger-header {
@@ -130,14 +130,14 @@
     padding: 0 16px;
     display: flex;
     align-items: center;
-    border-bottom: 1px solid #313338;
+    border-bottom: 1px solid var(--border-subtle);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   }
 
   .messenger-title {
     font-size: 1rem;
     font-weight: 600;
-    color: #f2f3f5;
+    color: var(--text-primary);
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -168,7 +168,7 @@
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     text-align: left;
     cursor: pointer;
@@ -177,17 +177,17 @@
   }
 
   .dm-row:hover {
-    background-color: #313338;
+    background-color: var(--border-subtle);
   }
 
   .dm-row:focus-visible {
-    outline: 2px solid #5865f2;
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 
   .dm-row.active {
-    background-color: #313338;
-    color: #f2f3f5;
+    background-color: var(--border-subtle);
+    color: var(--text-primary);
   }
 
   .dm-avatar {
@@ -196,7 +196,7 @@
     height: 32px;
     border-radius: 50%;
     overflow: hidden;
-    background-color: #313338;
+    background-color: var(--border-subtle);
   }
 
   .dm-avatar-img,
@@ -223,7 +223,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     padding: 16px;
   }
@@ -244,6 +244,6 @@
 
   .resize-handle:hover,
   .resize-handle:focus {
-    background-color: #5865f2;
+    background-color: var(--accent);
   }
 </style>

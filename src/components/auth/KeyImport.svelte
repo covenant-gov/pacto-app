@@ -111,7 +111,7 @@
     justify-content: center;
     width: 100%;
     height: 100vh;
-    background: #1c1c1c;
+    background: var(--bg-page);
   }
 
   .key-import-content {
@@ -130,20 +130,20 @@
   }
 
   .import-header h2 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.75rem;
     font-weight: 600;
     margin: 0;
   }
 
   .import-subtitle {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0;
   }
 
   .import-error {
-    color: #f23f42;
+    color: var(--danger);
     font-size: 0.875rem;
     background: rgba(242, 63, 66, 0.1);
     padding: 12px 16px;
@@ -166,10 +166,10 @@
   .key-textarea {
     width: 100%;
     padding: 16px;
-    background: #313338;
-    border: 2px solid #404249;
+    background: var(--border-subtle);
+    border: 2px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     font-family: 'Courier New', monospace;
     resize: vertical;
@@ -178,8 +178,8 @@
   }
 
   .key-textarea:focus {
-    border-color: #5865f2;
-    background: #383a40;
+    border-color: var(--accent);
+    background: var(--bg-hover);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
   }
 
@@ -189,7 +189,7 @@
   }
 
   .key-textarea::placeholder {
-    color: #6d6f78;
+    color: var(--text-muted);
   }
 
   .import-actions {
@@ -210,12 +210,12 @@
   }
 
   .btn-primary {
-    background: #5865f2;
+    background: var(--accent);
     color: #ffffff;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: #4752c4;
+    background: var(--accent-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 
@@ -226,14 +226,14 @@
 
   .btn-secondary {
     background: transparent;
-    color: #949ba4;
-    border: 2px solid #404249;
+    color: var(--text-muted);
+    border: 2px solid var(--border);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: #313338;
-    border-color: #5865f2;
-    color: #f2f3f5;
+    background: var(--border-subtle);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
   .btn-secondary:disabled {
@@ -245,11 +245,11 @@
     padding: 12px 16px;
     background: rgba(88, 101, 242, 0.1);
     border-radius: 8px;
-    border-left: 3px solid #5865f2;
+    border-left: 3px solid var(--accent);
   }
 
   .import-notice p {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.75rem;
     margin: 0;
     line-height: 1.5;

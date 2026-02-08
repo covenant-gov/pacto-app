@@ -174,7 +174,7 @@
   .login-container {
     width: 100%;
     height: 100vh;
-    background: #1c1c1c;
+    background: var(--bg-page);
   }
 
   .pin-screen {
@@ -183,7 +183,7 @@
     justify-content: center;
     width: 100%;
     height: 100vh;
-    background: #1c1c1c;
+    background: var(--bg-page);
   }
 </style>
 

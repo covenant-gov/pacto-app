@@ -24,20 +24,20 @@
     gap: 8px;
     padding: 0 8px;
     cursor: pointer;
-    color: #949ba4;
+    color: var(--text-muted);
     transition: background 0.15s, color 0.15s;
     margin: 2px 0;
     outline: none;
   }
 
   .channel:hover {
-    background: #35373c;
-    color: #dbdee1;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
   }
 
   .channel.active {
-    background: #404249;
-    color: #ffffff;
+    background: var(--border);
+    color: var(--text-primary);
   }
 
   .icon {

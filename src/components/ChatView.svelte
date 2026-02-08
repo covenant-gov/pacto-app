@@ -397,15 +397,15 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #242424;
+    background: var(--bg-panel);
     height: 100%;
     min-width: 0;
-    border-left: 1px solid #313338;
+    border-left: 1px solid var(--border-subtle);
   }
 
   .channel-header {
     height: 48px;
-    border-bottom: 1px solid #313338;
+    border-bottom: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -423,15 +423,15 @@
     border: none;
     border-radius: 4px;
     background: transparent;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 1.25rem;
     line-height: 1;
     cursor: pointer;
   }
 
   .channel-menu-btn:hover {
-    background: #35373c;
-    color: #f2f3f5;
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .channel-menu-dropdown {
@@ -440,8 +440,8 @@
     right: 0;
     margin-top: 4px;
     min-width: 160px;
-    background: #2b2d31;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 50;
@@ -454,14 +454,14 @@
     padding: 8px 12px;
     border: none;
     background: none;
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     text-align: left;
     cursor: pointer;
   }
 
   .channel-menu-item:hover:not(:disabled) {
-    background: #35373c;
+    background: var(--bg-hover);
   }
 
   .channel-menu-item:disabled {
@@ -470,7 +470,7 @@
   }
 
   .channel-menu-item-danger {
-    color: #ed4245;
+    color: var(--danger);
   }
 
   .channel-modal-overlay {
@@ -484,8 +484,8 @@
   }
 
   .channel-modal {
-    background: #2b2d31;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 20px;
     min-width: 280px;
@@ -497,14 +497,14 @@
   .channel-modal h2 {
     margin: 0 0 16px;
     font-size: 1.125rem;
-    color: #f2f3f5;
+    color: var(--text-primary);
   }
 
   .channel-modal-loading,
   .channel-modal-empty {
     margin: 0 0 16px;
     font-size: 0.875rem;
-    color: #949ba4;
+    color: var(--text-muted);
   }
 
   .channel-members-list {
@@ -516,7 +516,7 @@
   .channel-member-item {
     padding: 6px 0;
     font-size: 0.9375rem;
-    color: #dbdee1;
+    color: var(--text-secondary);
   }
 
   .channel-invite-list {
@@ -532,13 +532,13 @@
     padding: 6px 0;
     cursor: pointer;
     font-size: 0.9375rem;
-    color: #dbdee1;
+    color: var(--text-secondary);
   }
 
   .channel-modal-error {
     margin: 0 0 12px;
     font-size: 0.875rem;
-    color: #ed4245;
+    color: var(--danger);
   }
 
   .channel-modal-actions {
@@ -550,7 +550,7 @@
   .channel-modal-close {
     padding: 6px 14px;
     font-size: 0.875rem;
-    background: #4e5058;
+    background: var(--border);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -558,13 +558,13 @@
   }
 
   .channel-modal-close:hover:not(:disabled) {
-    background: #5d6069;
+    background: var(--bg-hover);
   }
 
   .channel-modal-primary {
     padding: 6px 14px;
     font-size: 0.875rem;
-    background: #5865f2;
+    background: var(--accent);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -572,7 +572,7 @@
   }
 
   .channel-modal-primary:hover:not(:disabled) {
-    background: #4752c4;
+    background: var(--accent-hover);
   }
 
   .channel-modal-close:disabled,
@@ -588,13 +588,13 @@
   }
 
   .channel-icon {
-    color: #80848e;
+    color: var(--text-muted);
     font-size: 1.25rem;
     font-weight: 600;
   }
 
   .channel-name {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1rem;
     font-weight: 600;
     margin: 0;
@@ -620,16 +620,16 @@
   .load-older-btn {
     padding: 8px 16px;
     font-size: 0.875rem;
-    color: #b5bac1;
-    background: #2b2d31;
-    border: 1px solid #404249;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
     cursor: pointer;
   }
 
   .load-older-btn:hover:not(:disabled) {
-    color: #f2f3f5;
-    background: #4e5058;
+    color: var(--text-primary);
+    background: var(--border);
   }
 
   .load-older-btn:disabled {
@@ -639,13 +639,13 @@
 
   .channel-creating-message {
     padding: 24px 16px;
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.9375rem;
   }
 
   .channel-send-error {
     font-size: 0.875rem;
-    color: #ed4245;
+    color: var(--danger);
     margin: 0 16px 8px;
   }
 
@@ -654,7 +654,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
   }
 
@@ -668,12 +668,12 @@
   }
 
   .messages-container::-webkit-scrollbar-thumb {
-    background: #1a1b1e;
+    background: var(--bg-elevated);
     border-radius: 4px;
   }
 
   .messages-container::-webkit-scrollbar-thumb:hover {
-    background: #1e1f22;
+    background: var(--border-subtle);
   }
 </style>
 

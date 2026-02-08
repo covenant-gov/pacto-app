@@ -583,12 +583,12 @@
 <style>
   .squad-navbar {
     height: 100%;
-    background-color:#202020;
+    background-color: var(--bg-panel);
     display: flex;
     flex-direction: column;
     position: relative;
     flex-shrink: 0;
-    border-left: 1px solid #313338;
+    border-left: 1px solid var(--border-subtle);
   }
 
   .squad-header {
@@ -597,7 +597,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid #313338;
+    border-bottom: 1px solid var(--border-subtle);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
   }
 
@@ -606,7 +606,7 @@
     min-width: 0;
     font-size: 1rem;
     font-weight: 600;
-    color: #f2f3f5;
+    color: var(--text-primary);
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -623,15 +623,15 @@
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 1.125rem;
     line-height: 1;
     cursor: pointer;
   }
 
   .squad-menu-btn:hover {
-    background: #35373c;
-    color: #f2f3f5;
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .squad-menu-chevron {
@@ -647,8 +647,8 @@
     right: 0;
     margin-top: 4px;
     min-width: 160px;
-    background: #2b2d31;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 50;
@@ -661,27 +661,27 @@
     padding: 8px 12px;
     border: none;
     background: none;
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     text-align: left;
     cursor: pointer;
   }
 
   .squad-menu-item:hover {
-    background: #35373c;
+    background: var(--bg-hover);
   }
 
   .squad-menu-item-exit {
-    color: #ed4245;
+    color: var(--danger);
   }
 
   .squad-menu-item-exit:hover {
     background: rgba(237, 66, 69, 0.15);
-    color: #ff6b6b;
+    color: var(--danger);
   }
 
   .exit-squad-message {
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     margin: 0 0 20px 0;
     line-height: 1.5;
@@ -689,7 +689,7 @@
 
   .exit-squad-confirm-btn {
     padding: 8px 16px;
-    background: #ed4245;
+    background: var(--danger);
     border: none;
     border-radius: 8px;
     color: #fff;
@@ -698,7 +698,7 @@
   }
 
   .exit-squad-confirm-btn:hover:not(:disabled) {
-    background: #c03537;
+    filter: brightness(0.9);
   }
 
   .exit-squad-confirm-btn:disabled {
@@ -715,7 +715,7 @@
     border: 1px solid rgba(242, 63, 66, 0.4);
     border-radius: 6px;
     margin: 8px 12px 0;
-    color: #f23f42;
+    color: var(--danger);
     font-size: 0.875rem;
   }
 
@@ -741,7 +741,7 @@
     gap: 10px;
     padding: 8px 12px;
     cursor: pointer;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     border-radius: 4px;
   }
@@ -750,16 +750,16 @@
     flex-shrink: 0;
     width: 1.25em;
     text-align: center;
-    color: #5865f2;
+    color: var(--accent);
     font-weight: bold;
   }
 
   .invite-to-squad-row:hover {
-    background: #35373c;
+    background: var(--bg-hover);
   }
 
   .invite-to-squad-row.selected {
-    background: #404249;
+    background: var(--border);
   }
 
   .channels-container {
@@ -778,7 +778,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
   }
 
@@ -798,7 +798,7 @@
 
   .resize-handle:hover,
   .resize-handle:focus {
-    background-color: #5865f2;
+    background-color: var(--accent);
   }
 
   .create-channel-btn {
@@ -806,18 +806,18 @@
     margin-top: 8px;
     padding: 8px 12px;
     background: transparent;
-    border: 1px dashed #404249;
+    border: 1px dashed var(--border);
     border-radius: 4px;
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     cursor: pointer;
     text-align: left;
   }
 
   .create-channel-btn:hover {
-    background: #35373c;
-    color: #dbdee1;
-    border-color: #4e5058;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    border-color: var(--border);
   }
 
   .create-channel-overlay {
@@ -835,7 +835,7 @@
   }
 
   .create-channel-content {
-    background: #2b2d31;
+    background: var(--bg-elevated);
     border-radius: 12px;
     padding: 32px;
     max-width: 420px;
@@ -846,21 +846,21 @@
   }
 
   .create-channel-content h2 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0 0 8px 0;
   }
 
   .create-channel-subtitle {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.9375rem;
     margin: 0 0 24px 0;
   }
 
   .create-channel-label {
     display: block;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: 6px;
   }
@@ -870,10 +870,10 @@
     box-sizing: border-box;
     padding: 10px 12px;
     margin-bottom: 16px;
-    background: #1e1f22;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
   }
 
@@ -882,9 +882,9 @@
     overflow-y: auto;
     margin-bottom: 16px;
     padding: 8px 0;
-    border: 1px solid #404249;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: #1e1f22;
+    background: var(--bg-elevated);
   }
 
   .create-channel-member-row {
@@ -893,12 +893,12 @@
     gap: 10px;
     padding: 8px 12px;
     cursor: pointer;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
   }
 
   .create-channel-member-row:hover {
-    background: #35373c;
+    background: var(--bg-hover);
   }
 
   .create-channel-member-name {
@@ -909,7 +909,7 @@
 
   .create-channel-loading,
   .create-channel-empty-friends {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0 0 16px 0;
   }
@@ -919,7 +919,7 @@
   }
 
   .create-channel-invite-by-npub-label {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0 0 6px 0;
   }
@@ -928,21 +928,21 @@
     width: 100%;
     box-sizing: border-box;
     padding: 8px 12px;
-    background: #1e1f22;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     margin-bottom: 16px;
   }
 
   .create-channel-invite-npub-input:focus {
     outline: none;
-    border-color: #5865f2;
+    border-color: var(--accent);
   }
 
   .create-channel-error {
-    color: #f23f42;
+    color: var(--danger);
     background: rgba(242, 63, 66, 0.1);
     padding: 12px 16px;
     border-radius: 8px;
@@ -960,21 +960,21 @@
   .create-channel-btn-cancel {
     padding: 8px 16px;
     background: transparent;
-    border: 1px solid #404249;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     cursor: pointer;
   }
 
   .create-channel-btn-cancel:hover:not(:disabled) {
-    background: #36373d;
-    color: #f2f3f5;
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .create-channel-btn-create {
     padding: 8px 16px;
-    background: #5865f2;
+    background: var(--accent);
     border: none;
     border-radius: 8px;
     color: #fff;
@@ -983,7 +983,7 @@
   }
 
   .create-channel-btn-create:hover:not(:disabled) {
-    background: #4752c4;
+    background: var(--accent-hover);
   }
 
   .create-channel-btn-create:disabled {

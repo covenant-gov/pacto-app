@@ -41,7 +41,7 @@
   }
 
   .message:hover {
-    background: #2e3035;
+    background: var(--bg-hover);
   }
 
   .avatar {
@@ -62,7 +62,7 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: #5865f2;
+    background: var(--accent);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -84,19 +84,19 @@
   }
 
   .author-name {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-weight: 500;
     font-size: 0.9375rem;
   }
 
   .timestamp {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 400;
   }
 
   .message-text {
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     line-height: 1.375rem;
     word-wrap: break-word;

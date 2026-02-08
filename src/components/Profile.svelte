@@ -7,6 +7,13 @@
   import { updateProfile, uploadAvatar } from '../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../lib/utils/profile';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+  import { theme, setTheme, type Theme } from '../stores/theme';
+  import { activeView } from '../stores/app';
+  import backIcon from '../icons/chevron-double-left.svg';
+
+  function goBack() {
+    $activeView = 'hub';
+  }
 
   // Get the logged-in user's npub from auth store
   $: userNpub = $currentUser?.npub || '';
@@ -295,7 +302,12 @@
 
 <div class="profile-view">
   <div class="profile-container">
-    <h1>Profile</h1>
+    <div class="profile-header">
+      <button type="button" class="profile-back" on:click={goBack} aria-label="Back to DMs or Squads">
+        <img src={backIcon} alt="" class="profile-back-icon" />
+        <span>Back</span>
+      </button>
+    </div>
     
     {#if loading}
       <div class="loading-state">
@@ -407,9 +419,23 @@
             <!-- Debug Info -->
             <div class="debug-info">
               <p class="meta">ID: {profile.id}</p>
-              <p class="meta">Last Updated: {new Date(profile.last_updated * 1000).toLocaleString()}</p>
               <p class="meta">Muted: {profile.muted ? 'Yes' : 'No'} | Bot: {profile.bot ? 'Yes' : 'No'}</p>
             </div>
+
+            <!-- Appearance -->
+            <section class="theme-section" aria-labelledby="theme-heading">
+              <h2 id="theme-heading" class="theme-section-title">Appearance</h2>
+              <span class="theme-label">Theme</span>
+              <div class="theme-options" role="radiogroup" aria-label="App theme">
+                {#each ['default', 'light', 'colorful'] as t}
+                  {@const value = t as Theme}
+                  <label class="theme-option">
+                    <input type="radio" name="theme" value={value} checked={$theme === value} on:change={() => setTheme(value)} />
+                    <span class="theme-option-label">{value === 'default' ? 'Dark' : value === 'light' ? 'Light' : 'Midnight'}</span>
+                  </label>
+                {/each}
+              </div>
+            </section>
 
             <!-- Actions -->
             <div class="profile-actions">
@@ -535,10 +561,10 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: #242424;
+    background: var(--bg-panel);
     height: 100%;
     overflow-y: auto;
-    border-left: 1px solid #313338;
+    border-left: 1px solid var(--border-subtle);
   }
 
   .profile-container {
@@ -548,11 +574,95 @@
     width: 100%;
   }
 
+  .profile-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-bottom: 32px;
+  }
+
   h1 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 2rem;
     font-weight: 600;
     margin: 0 0 32px 0;
+  }
+
+  .profile-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+    outline: none;
+    flex-shrink: 0;
+  }
+
+  .profile-back:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-color: var(--border-subtle);
+  }
+
+  .profile-back:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .profile-back-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+  }
+
+  .theme-section {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .theme-section-title {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+  }
+
+  .theme-label {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: 8px;
+  }
+
+  .theme-options {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .theme-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+  }
+
+  .theme-option input {
+    accent-color: var(--accent);
+  }
+
+  .theme-option-label {
+    user-select: none;
   }
 
   .loading-state, .error-state, .empty-state {
@@ -561,14 +671,14 @@
     align-items: center;
     justify-content: center;
     padding: 64px 16px;
-    color: #949ba4;
+    color: var(--text-muted);
   }
 
   .spinner {
     width: 48px;
     height: 48px;
-    border: 4px solid #313338;
-    border-top-color: #5865f2;
+    border: 4px solid var(--border-subtle);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-bottom: 16px;
@@ -579,11 +689,11 @@
   }
 
   .error-state {
-    color: #f23f42;
+    color: var(--danger);
   }
 
   .error-detail {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin-top: 8px;
   }
@@ -599,7 +709,7 @@
     max-height: 200px;
     border-radius: 8px;
     overflow: hidden;
-    background: #2b2d31;
+    background: var(--bg-elevated);
   }
 
   .banner-img {
@@ -613,7 +723,7 @@
   .banner-placeholder {
     width: 100%;
     height: 120px;
-    background: linear-gradient(135deg, #2b2d31 0%, #383a40 100%);
+    background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-hover) 100%);
   }
 
   .avatar-section {
@@ -626,21 +736,21 @@
     height: 128px;
     border-radius: 50%;
     object-fit: cover;
-    border: 4px solid #313338;
+    border: 4px solid var(--border-subtle);
   }
 
   .avatar-placeholder {
     width: 128px;
     height: 128px;
     border-radius: 50%;
-    background: #5865f2;
+    background: var(--accent);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #ffffff;
     font-weight: 600;
     font-size: 3rem;
-    border: 4px solid #313338;
+    border: 4px solid var(--border-subtle);
   }
 
   .info-section {
@@ -649,33 +759,33 @@
     gap: 16px;
   }
 
-  h2 {
-    color: #f2f3f5;
+  .info-section h2 {
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0;
   }
 
   .nickname {
-    color: #949ba4;
+    color: var(--text-muted);
     font-style: italic;
     margin: 0;
   }
 
   .nip05 {
-    color: #3ba55c;
+    color: var(--success);
     font-size: 0.875rem;
     margin: 0;
   }
 
   .about {
-    color: #dbdee1;
+    color: var(--text-secondary);
     line-height: 1.5;
     margin: 0;
   }
 
   .website {
-    color: #5865f2;
+    color: var(--accent);
     text-decoration: none;
     font-size: 0.9375rem;
   }
@@ -685,7 +795,7 @@
   }
 
   .lightning {
-    color: #faa61a;
+    color: var(--warning);
     font-size: 0.9375rem;
     margin: 0;
     font-family: monospace;
@@ -694,11 +804,11 @@
   .debug-info {
     margin-top: 16px;
     padding-top: 16px;
-    border-top: 1px solid #313338;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .meta {
-    color: #6d6f78;
+    color: var(--text-muted);
     font-size: 0.75rem;
     margin: 4px 0;
     font-family: monospace;
@@ -707,21 +817,21 @@
   .profile-actions {
     margin-top: 24px;
     padding-top: 24px;
-    border-top: 1px solid #313338;
+    border-top: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
 
   .edit-error {
-    color: #f23f42;
+    color: var(--danger);
     font-size: 0.875rem;
     margin: 0 0 12px 0;
   }
 
   .edit-label {
     display: block;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     margin: 12px 0 4px 0;
   }
@@ -730,17 +840,17 @@
   .edit-textarea {
     width: 100%;
     padding: 10px 12px;
-    background: #1e1f22;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 6px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
     outline: none;
   }
 
   .edit-input:focus,
   .edit-textarea:focus {
-    border-color: #5865f2;
+    border-color: var(--accent);
   }
 
   .edit-textarea {
@@ -756,9 +866,9 @@
 
   .btn-edit-image {
     padding: 8px 16px;
-    background: #383a40;
-    color: #f2f3f5;
-    border: 1px solid #404249;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 0.875rem;
     cursor: pointer;
@@ -766,7 +876,7 @@
   }
 
   .btn-edit-image:hover:not(:disabled) {
-    background: #4e5058;
+    background: var(--border);
   }
 
   .btn-edit-image:disabled {
@@ -783,8 +893,8 @@
   .btn-cancel-edit {
     padding: 10px 20px;
     background: transparent;
-    color: #949ba4;
-    border: 1px solid #404249;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 0.9375rem;
     cursor: pointer;
@@ -792,13 +902,13 @@
   }
 
   .btn-cancel-edit:hover {
-    background: #313338;
-    color: #f2f3f5;
+    background: var(--border-subtle);
+    color: var(--text-primary);
   }
 
   .btn-save-edit {
     padding: 10px 20px;
-    background: #5865f2;
+    background: var(--accent);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -809,15 +919,15 @@
   }
 
   .btn-save-edit:hover {
-    background: #4752c4;
+    background: var(--accent-hover);
   }
 
   .btn-edit-profile {
     width: 100%;
     height: 48px;
     background: transparent;
-    color: #5865f2;
-    border: 2px solid #5865f2;
+    color: var(--accent);
+    border: 2px solid var(--accent);
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
@@ -834,8 +944,8 @@
     width: 100%;
     height: 48px;
     background: transparent;
-    color: #5865f2;
-    border: 2px solid #5865f2;
+    color: var(--accent);
+    border: 2px solid var(--accent);
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
@@ -852,8 +962,8 @@
     width: 100%;
     height: 48px;
     background: transparent;
-    color: #f23f42;
-    border: 2px solid #f23f42;
+    color: var(--danger);
+    border: 2px solid var(--danger);
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
@@ -887,7 +997,7 @@
   }
 
   .modal-content {
-    background: #2b2d31;
+    background: var(--bg-elevated);
     border-radius: 12px;
     padding: 32px;
     max-width: 560px;
@@ -898,31 +1008,31 @@
   }
 
   .modal-content h2 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0 0 8px 0;
   }
 
   .modal-subtitle {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.9375rem;
     margin: 0 0 24px 0;
   }
 
   .modal-warning {
-    color: #faa61a;
+    color: var(--warning);
     background: rgba(250, 166, 26, 0.1);
     padding: 16px;
     border-radius: 8px;
-    border-left: 3px solid #faa61a;
+    border-left: 3px solid var(--warning);
     margin-bottom: 24px;
     font-size: 0.875rem;
     line-height: 1.5;
   }
 
   .modal-error {
-    color: #f23f42;
+    color: var(--danger);
     background: rgba(242, 63, 66, 0.1);
     padding: 12px 16px;
     border-radius: 8px;
@@ -941,21 +1051,21 @@
     width: 56px;
     height: 64px;
     padding: 0;
-    background: #1e1f22;
-    border: 2px solid #404249;
+    background: var(--bg-elevated);
+    border: 2px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.5rem;
     text-align: center;
     outline: none;
     transition: all 0.2s;
-    caret-color: #5865f2;
+    caret-color: var(--accent);
   }
 
   .pin-box:focus {
-    border-color: #5865f2;
+    border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
-    background: #23252a;
+    background: var(--bg-panel);
   }
 
   .pin-box:disabled {
@@ -975,7 +1085,7 @@
   }
 
   .key-header h3 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1rem;
     font-weight: 600;
     margin: 0;
@@ -983,7 +1093,7 @@
 
   .btn-copy {
     padding: 8px 16px;
-    background: #5865f2;
+    background: var(--accent);
     color: #ffffff;
     border: none;
     border-radius: 6px;
@@ -994,19 +1104,19 @@
   }
 
   .btn-copy:hover {
-    background: #4752c4;
+    background: var(--accent-hover);
   }
 
   .key-value {
-    background: #1e1f22;
+    background: var(--bg-elevated);
     padding: 16px;
     border-radius: 8px;
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-family: 'Courier New', monospace;
     font-size: 0.875rem;
     word-break: break-all;
     line-height: 1.6;
-    border: 1px solid #313338;
+    border: 1px solid var(--border-subtle);
   }
 
   .seed-phrase {
@@ -1017,12 +1127,12 @@
     background: rgba(88, 101, 242, 0.1);
     padding: 16px;
     border-radius: 8px;
-    border-left: 3px solid #5865f2;
+    border-left: 3px solid var(--accent);
     margin-bottom: 24px;
   }
 
   .modal-notice p {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0;
     line-height: 1.5;
@@ -1048,23 +1158,23 @@
 
   .btn-cancel {
     background: transparent;
-    color: #949ba4;
-    border: 2px solid #404249;
+    color: var(--text-muted);
+    border: 2px solid var(--border);
   }
 
   .btn-cancel:hover:not(:disabled) {
-    background: #313338;
-    border-color: #5865f2;
-    color: #f2f3f5;
+    background: var(--border-subtle);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
   .btn-confirm {
-    background: #5865f2;
+    background: var(--accent);
     color: #ffffff;
   }
 
   .btn-confirm:hover:not(:disabled) {
-    background: #4752c4;
+    background: var(--accent-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 
@@ -1074,12 +1184,12 @@
   }
 
   .btn-close {
-    background: #5865f2;
+    background: var(--accent);
     color: #ffffff;
   }
 
   .btn-close:hover {
-    background: #4752c4;
+    background: var(--accent-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 

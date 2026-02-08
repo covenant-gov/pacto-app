@@ -61,7 +61,7 @@
 <style>
   .message-input-container {
     padding: 16px;
-    background: #313338;
+    background: var(--border-subtle);
   }
 
   .message-input-container.disabled {
@@ -77,14 +77,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #383a40;
+    background: var(--bg-hover);
     border-radius: 8px;
     padding: 0 16px;
     transition: background 0.15s;
   }
 
   .input-wrapper:focus-within {
-    background: #404249;
+    background: var(--border);
   }
 
   .message-input {
@@ -92,14 +92,14 @@
     background: transparent;
     border: none;
     outline: none;
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     padding: 12px 0;
     font-family: inherit;
   }
 
   .message-input::placeholder {
-    color: #6d6f78;
+    color: var(--text-muted);
   }
 
   .send-button {
@@ -111,12 +111,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #949ba4;
+    color: var(--text-muted);
     transition: color 0.15s;
   }
 
   .send-button:hover:not(:disabled) {
-    color: #f2f3f5;
+    color: var(--text-primary);
   }
 
   .send-button:disabled {
