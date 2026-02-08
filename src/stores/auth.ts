@@ -3,7 +3,7 @@ import { login as apiLogin, createAccount as apiCreateAccount, connect as apiCon
 import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, clearStoredKey, validatePrivateKeyFormat } from '../lib/api/encryption';
 import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
-import { dmSyncStatus } from './app';
+import { dmSyncStatus, activeTopNavTab } from './app';
 
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
@@ -87,6 +87,7 @@ export async function createAccount(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
+    activeTopNavTab.set('squads');
 
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
     authLoading.set(false);
@@ -133,6 +134,7 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
       npub: npub,
       pubkey: keys.public
     });
+    activeTopNavTab.set('squads');
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('importAccount: fetchMessages(true)');
     dmSyncStatus.set('syncing');
@@ -185,6 +187,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
+    activeTopNavTab.set('squads');
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('unlockWithPin: fetchMessages(true)');
     dmSyncStatus.set('syncing');

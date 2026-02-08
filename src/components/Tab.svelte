@@ -27,7 +27,7 @@
   .server-button {
     width: 48px;
     height: 48px;
-    background: #313338;
+    background: var(--border-subtle);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -45,12 +45,12 @@
   .server-button.active,
   .server-button:focus,
   .server-button:hover {
-    background: #5865f2;
+    background: var(--accent);
     box-shadow: 0 2px 8px rgba(80,100,255,0.2);
   }
 
   .label {
-    color: #f6f6f6;
+    color: var(--text-primary);
     font-size: 1.25rem;
     font-weight: 600;
     pointer-events: none;
@@ -80,8 +80,8 @@
     left: calc(100% + 12px);
     top: 50%;
     transform: translateY(-50%);
-    background: #1a1a1a;
-    color: #f6f6f6;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
     padding: 8px 12px;
     border-radius: 8px;
     font-size: 0.875rem;
@@ -100,7 +100,7 @@
     top: 50%;
     transform: translateY(-50%);
     border: 6px solid transparent;
-    border-right-color: #1a1a1a;
+    border-right-color: var(--bg-elevated);
   }
 
   .server-button:hover .tooltip {

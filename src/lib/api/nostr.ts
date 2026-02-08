@@ -391,7 +391,7 @@ export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembe
  */
 export async function leaveMlsGroup(groupId: string): Promise<void> {
   dmLog('leave_mls_group', { groupId: groupId.slice(0, 16) + '…' });
-  await invoke('leave_mls_group', { group_id: groupId });
+  await invoke('leave_mls_group', { groupId });
   dmLog('leave_mls_group done');
 }
 

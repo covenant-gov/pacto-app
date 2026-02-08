@@ -1,10 +1,14 @@
+@import './styles/themes/default.css';
+@import './styles/themes/light.css';
+@import './styles/themes/colorful.css';
+
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
 
-  color: #f6f6f6;
+  color: var(--text-primary);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -21,7 +25,7 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #1c1c1c;
+  background-color: var(--bg-page);
 }
 
 body {

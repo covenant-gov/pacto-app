@@ -3,11 +3,14 @@
   export let onSend: (content: string) => void = () => {};
   /** Optional: called when user types (e.g. to send typing indicator). */
   export let onTyping: (() => void) | undefined = undefined;
+  /** When true, input and send are disabled (e.g. channel still being created). */
+  export let disabled: boolean = false;
 
   let messageText = "";
 
   function handleSubmit(event: Event) {
     event.preventDefault();
+    if (disabled) return;
     if (messageText.trim()) {
       onSend(messageText);
       messageText = "";
@@ -28,7 +31,7 @@
   }
 </script>
 
-<div class="message-input-container">
+<div class="message-input-container" class:disabled>
   <form on:submit={handleSubmit}>
     <div class="input-wrapper">
       <input
@@ -39,11 +42,12 @@
         placeholder="Message #{channelName}"
         class="message-input"
         autocomplete="off"
+        {disabled}
       />
       <button 
         type="submit" 
         class="send-button" 
-        disabled={!messageText.trim()}
+        disabled={disabled || !messageText.trim()}
         aria-label="Send message"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -57,7 +61,12 @@
 <style>
   .message-input-container {
     padding: 16px;
-    background: #313338;
+    background: var(--border-subtle);
+  }
+
+  .message-input-container.disabled {
+    opacity: 0.7;
+    pointer-events: none;
   }
 
   form {
@@ -68,14 +77,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #383a40;
+    background: var(--bg-hover);
     border-radius: 8px;
     padding: 0 16px;
     transition: background 0.15s;
   }
 
   .input-wrapper:focus-within {
-    background: #404249;
+    background: var(--border);
   }
 
   .message-input {
@@ -83,14 +92,14 @@
     background: transparent;
     border: none;
     outline: none;
-    color: #dbdee1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     padding: 12px 0;
     font-family: inherit;
   }
 
   .message-input::placeholder {
-    color: #6d6f78;
+    color: var(--text-muted);
   }
 
   .send-button {
@@ -102,12 +111,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #949ba4;
+    color: var(--text-muted);
     transition: color 0.15s;
   }
 
   .send-button:hover:not(:disabled) {
-    color: #f2f3f5;
+    color: var(--text-primary);
   }
 
   .send-button:disabled {

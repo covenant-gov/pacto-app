@@ -171,7 +171,7 @@
   }
 
   .pin-title {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.25rem;
     font-weight: 600;
     margin: 0;
@@ -179,7 +179,7 @@
   }
 
   .pin-error {
-    color: #f23f42;
+    color: var(--danger);
     font-size: 0.875rem;
     background: rgba(242, 63, 66, 0.1);
     padding: 8px 16px;
@@ -205,10 +205,10 @@
   .pin-digit {
     width: 48px;
     height: 56px;
-    background: #313338;
-    border: 2px solid #404249;
+    background: var(--border-subtle);
+    border: 2px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
     text-align: center;
@@ -217,8 +217,8 @@
   }
 
   .pin-digit:focus {
-    border-color: #5865f2;
-    background: #383a40;
+    border-color: var(--accent);
+    background: var(--bg-hover);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
   }
 
@@ -232,14 +232,14 @@
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    color: #949ba4;
+    color: var(--text-muted);
   }
 
   .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid #313338;
-    border-top-color: #5865f2;
+    border: 3px solid var(--border-subtle);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -256,8 +256,8 @@
   .btn-back {
     padding: 12px 24px;
     background: transparent;
-    color: #949ba4;
-    border: 2px solid #404249;
+    color: var(--text-muted);
+    border: 2px solid var(--border);
     border-radius: 8px;
     font-size: 0.875rem;
     font-weight: 600;
@@ -267,9 +267,9 @@
   }
 
   .btn-back:hover:not(:disabled) {
-    background: #313338;
-    border-color: #5865f2;
-    color: #f2f3f5;
+    background: var(--border-subtle);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
   .btn-back:disabled {

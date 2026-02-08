@@ -35,7 +35,7 @@
     justify-content: center;
     width: 100%;
     height: 100vh;
-    background: #1c1c1c;
+    background: var(--bg-page);
   }
 
   .welcome-content {
@@ -57,7 +57,7 @@
   .logo-placeholder {
     width: 96px;
     height: 96px;
-    background: #5865f2;
+    background: var(--accent);
     border-radius: 24px;
     display: flex;
     align-items: center;
@@ -72,14 +72,14 @@
   }
 
   .app-title {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 2.5rem;
     font-weight: 700;
     margin: 0;
   }
 
   .app-subtitle {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 1rem;
     margin: 0;
     text-align: center;
@@ -105,12 +105,12 @@
   }
 
   .btn-primary {
-    background: #5865f2;
+    background: var(--accent);
     color: #ffffff;
   }
 
   .btn-primary:hover {
-    background: #4752c4;
+    background: var(--accent-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 
@@ -120,14 +120,14 @@
 
   .btn-secondary {
     background: transparent;
-    color: #949ba4;
-    border: 2px solid #404249;
+    color: var(--text-muted);
+    border: 2px solid var(--border);
   }
 
   .btn-secondary:hover {
-    background: #313338;
-    border-color: #5865f2;
-    color: #f2f3f5;
+    background: var(--border-subtle);
+    border-color: var(--accent);
+    color: var(--text-primary);
   }
 
   .btn-secondary:active {
@@ -135,7 +135,7 @@
   }
 
   .welcome-footer {
-    color: #6d6f78;
+    color: var(--text-muted);
     font-size: 0.75rem;
     margin: 0;
     text-align: center;

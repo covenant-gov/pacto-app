@@ -130,24 +130,24 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
-    background-color: #313338;
+    background-color: var(--border-subtle);
   }
 
   .header {
     padding: 24px 24px 16px;
-    border-bottom: 1px solid #1e1f22;
+    border-bottom: 1px solid var(--bg-elevated);
   }
 
   .title {
     font-size: 1.25rem;
     font-weight: 600;
-    color: #f2f3f5;
+    color: var(--text-primary);
     margin: 0 0 4px;
   }
 
   .subtitle {
     font-size: 0.875rem;
-    color: #b5bac1;
+    color: var(--text-secondary);
     margin: 0;
   }
 
@@ -162,7 +162,7 @@
   .label {
     font-size: 0.8125rem;
     font-weight: 500;
-    color: #b5bac1;
+    color: var(--text-secondary);
     display: block;
   }
 
@@ -171,9 +171,9 @@
     width: 100%;
     padding: 10px 12px;
     font-size: 0.9375rem;
-    color: #f2f3f5;
-    background-color: #383a40;
-    border: 1px solid #1e1f22;
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+    border: 1px solid var(--bg-elevated);
     border-radius: 4px;
     outline: none;
     font-family: inherit;
@@ -181,17 +181,17 @@
 
   .input:focus,
   .textarea:focus {
-    border-color: #5865f2;
+    border-color: var(--accent);
   }
 
   .input::placeholder,
   .textarea::placeholder {
-    color: #6d6f78;
+    color: var(--text-muted);
   }
 
   .hint {
     font-size: 0.8125rem;
-    color: #b5bac1;
+    color: var(--text-secondary);
     margin: -8px 0 0;
   }
 
@@ -202,7 +202,7 @@
 
   .error {
     font-size: 0.875rem;
-    color: #ed4245;
+    color: var(--danger);
     margin: 0;
   }
 
@@ -229,20 +229,20 @@
   }
 
   .btn-secondary {
-    background-color: #4e5058;
-    color: #f2f3f5;
+    background-color: var(--border);
+    color: var(--text-primary);
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background-color: #5d5f69;
+    background-color: var(--bg-hover);
   }
 
   .btn-primary {
-    background-color: #5865f2;
+    background-color: var(--accent);
     color: #ffffff;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: #4752c4;
+    background-color: var(--accent-hover);
   }
 </style>

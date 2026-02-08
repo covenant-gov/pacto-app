@@ -5,7 +5,9 @@
   import friendsIcon from '../icons/friends.svg';
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
+  import pinIcon from '../icons/pin.svg';
   import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
+  import { currentUser } from '../stores/auth';
   import { createGroupChat } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
@@ -79,8 +81,14 @@
     creatingSquad = true;
     organizeSquadError = '';
     try {
-      // Empty list creates announcements channel with just the creator; optional members can be added via Invite to squad later.
-      const groupId = await createGroupChat('announcements', organizeSquadMembers);
+      // Creator must not be in the member list; backend requires at least one other member.
+      const myNpub = $currentUser?.npub;
+      const memberIds = (organizeSquadMembers || []).filter((n) => n !== myNpub);
+      if (memberIds.length === 0) {
+        organizeSquadError = 'Select at least one other member to create a squad.';
+        return;
+      }
+      const groupId = await createGroupChat('announcements', memberIds);
       const announcementsChannel: Channel = {
         id: groupId,
         name: 'announcements',
@@ -116,12 +124,20 @@
     }
   }
 
-  $: canCreateSquad = organizeSquadName.trim().length > 0;
+  $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
 </script>
 
 <div class="navbar">
   <div class="tab-list">
     {#if $activeTopNavTab === 'dms'}
+      <div 
+        on:click={() => selectDmTab('pinned')}
+        on:keydown={(e) => e.key === 'Enter' && selectDmTab('pinned')}
+        role="button"
+        tabindex="0"
+      >
+        <Tab label="Pinned" icon={pinIcon} active={$activeView === 'hub' && $activeDmTab === 'pinned'} />
+      </div>
       <div 
         on:click={() => selectDmTab('friends')}
         on:keydown={(e) => e.key === 'Enter' && selectDmTab('friends')}
@@ -203,7 +219,7 @@
       tabindex="0"
     >
       <h2 id="organize-squad-title">Organize Squad</h2>
-      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Add members now or invite them later.</p>
+      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Select at least one member.</p>
       <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
         <input
@@ -258,7 +274,7 @@
   .navbar {
     width: 64px;
     height: 100%;
-    background-color: #242424;
+    background-color: var(--bg-panel);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -294,7 +310,7 @@
   }
 
   .organize-modal-content {
-    background: #2b2d31;
+    background: var(--bg-elevated);
     border-radius: 12px;
     padding: 32px;
     max-width: 400px;
@@ -303,21 +319,21 @@
   }
 
   .organize-modal-content h2 {
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 1.5rem;
     font-weight: 600;
     margin: 0 0 8px 0;
   }
 
   .organize-modal-subtitle {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.9375rem;
     margin: 0 0 24px 0;
   }
 
   .organize-label {
     display: block;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: 6px;
   }
@@ -327,15 +343,15 @@
     box-sizing: border-box;
     padding: 10px 12px;
     margin-bottom: 16px;
-    background: #1e1f22;
-    border: 1px solid #404249;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
   }
 
   .organize-input::placeholder {
-    color: #6d6f78;
+    color: var(--text-muted);
   }
 
   .organize-members {
@@ -343,9 +359,9 @@
     overflow-y: auto;
     margin-bottom: 16px;
     padding: 8px 0;
-    border: 1px solid #404249;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    background: #1e1f22;
+    background: var(--bg-elevated);
   }
 
   .organize-member-row {
@@ -354,12 +370,12 @@
     gap: 10px;
     padding: 8px 12px;
     cursor: pointer;
-    color: #f2f3f5;
+    color: var(--text-primary);
     font-size: 0.9375rem;
   }
 
   .organize-member-row:hover {
-    background: #35373c;
+    background: var(--bg-hover);
   }
 
   .organize-member-name {
@@ -369,7 +385,7 @@
   }
 
   .organize-members-empty {
-    color: #949ba4;
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0 0 16px 0;
   }
@@ -384,21 +400,21 @@
   .organize-btn-cancel {
     padding: 8px 16px;
     background: transparent;
-    border: 1px solid #404249;
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #b5bac1;
+    color: var(--text-secondary);
     font-size: 0.9375rem;
     cursor: pointer;
   }
 
   .organize-btn-cancel:hover {
-    background: #36373d;
-    color: #f2f3f5;
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .organize-btn-create {
     padding: 8px 16px;
-    background: #5865f2;
+    background: var(--accent);
     border: none;
     border-radius: 8px;
     color: #fff;
@@ -407,7 +423,7 @@
   }
 
   .organize-btn-create:hover:not(:disabled) {
-    background: #4752c4;
+    background: var(--accent-hover);
   }
 
   .organize-btn-create:disabled {
@@ -417,7 +433,7 @@
 
   .organize-error {
     font-size: 0.875rem;
-    color: #f23f42;
+    color: var(--danger);
     margin: 0 0 16px 0;
   }
 </style>
