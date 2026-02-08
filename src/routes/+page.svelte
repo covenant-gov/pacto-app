@@ -15,6 +15,7 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
+  import chevronDownIcon from '../icons/chevron-down.svg';
   import { isAuthenticated, currentUser } from '../stores/auth';
   import { profiles } from '../stores/profiles';
   import {
@@ -37,8 +38,10 @@
     dmList,
     requestsList,
     pendingList,
+    pinnedList,
     lastOpenedDmByTab,
     dmChatsByNpub,
+    pinnedDmNpubs,
     dmSendError,
     type DmMessage,
     type DmTab,
@@ -75,7 +78,14 @@
     const tab = $activeDmTab;
     if (prevDmTab !== tab && $activeTopNavTab === 'dms') {
       prevDmTab = tab;
-      const list = tab === 'friends' ? $dmList : tab === 'requests' ? $requestsList : $pendingList;
+      const list =
+        tab === 'friends'
+          ? $dmList
+          : tab === 'requests'
+            ? $requestsList
+            : tab === 'pending'
+              ? $pendingList
+              : $pinnedList;
       const lastOpened = $lastOpenedDmByTab[tab];
       const stillInList = lastOpened && list.some((e) => e.npub === lastOpened);
       const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
@@ -306,10 +316,25 @@
     }
   }
 
+  let dmThreadMenuOpen = false;
+
   function openNicknameEdit() {
+    dmThreadMenuOpen = false;
     nicknameEditValue = contactProfile?.nickname ?? '';
     nicknameError = null;
     showNicknameEdit = true;
+  }
+
+  function togglePinDm() {
+    const npub = $activeDmId;
+    if (!npub) return;
+    pinnedDmNpubs.update((s) => {
+      const next = new Set(s);
+      if (next.has(npub)) next.delete(npub);
+      else next.add(npub);
+      return next;
+    });
+    dmThreadMenuOpen = false;
   }
 
   function cancelNicknameEdit() {
@@ -516,6 +541,12 @@
   });
 </script>
 
+<svelte:window
+  on:click={(e) => {
+    const t = e.target as HTMLElement | null;
+    if (dmThreadMenuOpen && t && !t.closest('.dm-thread-header-actions')) dmThreadMenuOpen = false;
+  }}
+/>
 <div class="page">
   <header class="top-navbar-slot">
     <TopNavbar />
@@ -570,9 +601,30 @@
               {:else}
                 <div class="dm-thread-header-title-row">
                   <h3 class="dm-thread-title">{contactDisplayName}</h3>
-                  <button type="button" class="dm-thread-set-nickname" on:click={openNicknameEdit} title="Set nickname for this contact">
-                    Set nickname
-                  </button>
+                  {#if $activeDmTab === 'friends'}
+                    <div class="dm-thread-header-actions">
+                      <button
+                        type="button"
+                        class="dm-thread-dropdown-trigger"
+                        title="Options"
+                        on:click={() => (dmThreadMenuOpen = !dmThreadMenuOpen)}
+                        aria-haspopup="true"
+                        aria-expanded={dmThreadMenuOpen}
+                      >
+                        <img src={chevronDownIcon} alt="" class="dm-thread-chevron" />
+                      </button>
+                      {#if dmThreadMenuOpen}
+                        <div class="dm-thread-dropdown" role="menu">
+                          <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
+                            Set Nickname
+                          </button>
+                          <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={togglePinDm}>
+                            {$pinnedDmNpubs.has($activeDmId) ? 'Unpin DM' : 'Pin DM'}
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
                 <span class="dm-thread-npub">{truncateNpub($activeDmId)}</span>
               {/if}
@@ -824,21 +876,64 @@
     min-width: 0;
   }
 
-  .dm-thread-set-nickname {
+  .dm-thread-header-actions {
+    position: relative;
     flex-shrink: 0;
-    padding: 4px 8px;
-    font-size: 0.75rem;
-    color: #949ba4;
+  }
+
+  .dm-thread-dropdown-trigger {
+    padding: 4px 6px;
     background: transparent;
     border: 1px solid #404249;
     border-radius: 4px;
     cursor: pointer;
     outline: none;
+    color: #949ba4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .dm-thread-set-nickname:hover {
+  .dm-thread-dropdown-trigger:hover {
     color: #f2f3f5;
     border-color: #5865f2;
+  }
+
+  .dm-thread-chevron {
+    width: 16px;
+    height: 16px;
+    display: block;
+    filter: invert(1);
+  }
+
+  .dm-thread-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 140px;
+    background: #2b2d31;
+    border: 1px solid #404249;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    padding: 4px 0;
+  }
+
+  .dm-thread-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: #dbdee1;
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .dm-thread-dropdown-item:hover {
+    background: #35373c;
   }
 
   .dm-thread-nickname-edit {

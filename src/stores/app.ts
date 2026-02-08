@@ -13,9 +13,31 @@ export const activeChannelId = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
-// DMs: which sub-tab (Friends, Requests, Pending)
-export type DmTab = 'friends' | 'requests' | 'pending';
+// DMs: which sub-tab (Friends, Requests, Pending, Pinned)
+export type DmTab = 'friends' | 'requests' | 'pending' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
+
+const PINNED_DM_NPUBS_KEY = 'pacto_pinned_dm_npubs';
+function loadPinnedDmNpubs(): string[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PINNED_DM_NPUBS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as string[]).filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+export const pinnedDmNpubs = writable<Set<string>>(new Set(loadPinnedDmNpubs()));
+pinnedDmNpubs.subscribe((set) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PINNED_DM_NPUBS_KEY, JSON.stringify([...set]));
+  } catch {
+    // ignore
+  }
+});
 
 // New Chat flow: when true, show npub + message form instead of DM list/thread
 export const composingNewChat = writable<boolean>(false);
@@ -46,14 +68,24 @@ function toDmEntries(map: Record<string, DmChatState>, filter: (c: DmChatState) 
     .map((c) => ({ npub: c.npub, name: c.name, avatar: c.avatar }));
 }
 
-export const dmList = derived(dmChatsByNpub, ($m) =>
-  toDmEntries($m, (c) => c.hasFromMe && c.hasFromThem)
+export const dmList = derived(
+  [dmChatsByNpub, pinnedDmNpubs] as const,
+  ([$m, $pinned]) =>
+    toDmEntries($m, (c) => c.hasFromMe && c.hasFromThem && !$pinned.has(c.npub))
 );
 export const requestsList = derived(dmChatsByNpub, ($m) =>
   toDmEntries($m, (c) => !c.hasFromMe && c.hasFromThem)
 );
 export const pendingList = derived(dmChatsByNpub, ($m) =>
   toDmEntries($m, (c) => c.hasFromMe && !c.hasFromThem)
+);
+
+export const pinnedList = derived(
+  [dmChatsByNpub, pinnedDmNpubs] as const,
+  ([$m, $pinned]) => {
+    const set = $pinned;
+    return toDmEntries($m, (c) => set.has(c.npub) && c.hasFromMe && c.hasFromThem);
+  }
 );
 
 /** Add/update a DM in the map. */
@@ -83,11 +115,12 @@ export function addPendingDm(npub: string): void {
 // Selected DM conversation (other user's npub)
 export const activeDmId = writable<string | null>(null);
 
-// Last opened chat per tab (Friends / Requests / Pending) so switching tabs shows that chat if still in section
+// Last opened chat per tab (Friends / Requests / Pending / Pinned) so switching tabs shows that chat if still in section
 export const lastOpenedDmByTab = writable<Record<DmTab, string | null>>({
   friends: null,
   requests: null,
   pending: null,
+  pinned: null,
 });
 
 // DM send error (shown in thread; set by both thread send and new-chat send)

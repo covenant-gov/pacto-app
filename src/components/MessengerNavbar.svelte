@@ -1,11 +1,25 @@
 <script lang="ts">
-  import { activeDmTab, dmList, pendingList, requestsList, activeDmId, type DmEntry } from '../stores/app';
+  import { activeDmTab, dmList, pendingList, requestsList, pinnedList, activeDmId, type DmEntry } from '../stores/app';
   import { profiles } from '../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import userPlaceholder from '../icons/user-placeholder.svg';
 
-  $: title = $activeDmTab === 'friends' ? 'Friends' : $activeDmTab === 'requests' ? 'Requests' : 'Pending';
-  $: entries = $activeDmTab === 'friends' ? $dmList : $activeDmTab === 'requests' ? $requestsList : $pendingList;
+  $: title =
+    $activeDmTab === 'friends'
+      ? 'Friends'
+      : $activeDmTab === 'requests'
+        ? 'Requests'
+        : $activeDmTab === 'pending'
+          ? 'Pending'
+          : 'Pinned';
+  $: entries =
+    $activeDmTab === 'friends'
+      ? $dmList
+      : $activeDmTab === 'requests'
+        ? $requestsList
+        : $activeDmTab === 'pending'
+          ? $pendingList
+          : $pinnedList;
 
   function displayName(entry: DmEntry): string {
     const profile = $profiles[entry.npub];
@@ -79,7 +93,15 @@
       </ul>
     {:else}
       <div class="empty-state">
-        <p>{$activeDmTab === 'friends' ? 'No DMs yet' : $activeDmTab === 'requests' ? 'No requests' : 'No pending chats'}</p>
+        <p>
+        {$activeDmTab === 'friends'
+          ? 'No DMs yet'
+          : $activeDmTab === 'requests'
+            ? 'No requests'
+            : $activeDmTab === 'pending'
+              ? 'No pending chats'
+              : 'No pinned DMs'}
+      </p>
       </div>
     {/if}
   </div>

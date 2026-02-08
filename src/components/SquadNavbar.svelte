@@ -7,6 +7,7 @@
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
+  import chevronDownIcon from '../icons/chevron-down.svg';
 
   $: activeSquad = $squads.find(c => c.id === $activeSquadId);
   $: channels = activeSquad?.channels || [];
@@ -337,7 +338,7 @@
           aria-haspopup="true"
           aria-expanded={squadMenuOpen}
         >
-          ⋯
+          <img src={chevronDownIcon} alt="" class="squad-menu-chevron" />
         </button>
         {#if squadMenuOpen}
           <div class="squad-menu-dropdown" role="menu">
@@ -631,6 +632,13 @@
   .squad-menu-btn:hover {
     background: #35373c;
     color: #f2f3f5;
+  }
+
+  .squad-menu-chevron {
+    width: 18px;
+    height: 18px;
+    display: block;
+    filter: invert(1);
   }
 
   .squad-menu-dropdown {

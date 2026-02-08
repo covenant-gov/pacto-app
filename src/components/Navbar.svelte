@@ -5,6 +5,7 @@
   import friendsIcon from '../icons/friends.svg';
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
+  import pinIcon from '../icons/pin.svg';
   import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
   import { currentUser } from '../stores/auth';
   import { createGroupChat } from '../lib/api/nostr';
@@ -129,6 +130,14 @@
 <div class="navbar">
   <div class="tab-list">
     {#if $activeTopNavTab === 'dms'}
+      <div 
+        on:click={() => selectDmTab('pinned')}
+        on:keydown={(e) => e.key === 'Enter' && selectDmTab('pinned')}
+        role="button"
+        tabindex="0"
+      >
+        <Tab label="Pinned" icon={pinIcon} active={$activeView === 'hub' && $activeDmTab === 'pinned'} />
+      </div>
       <div 
         on:click={() => selectDmTab('friends')}
         on:keydown={(e) => e.key === 'Enter' && selectDmTab('friends')}
