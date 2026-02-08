@@ -6,6 +6,7 @@
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
   import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
+  import { currentUser } from '../stores/auth';
   import { createGroupChat } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
@@ -79,8 +80,14 @@
     creatingSquad = true;
     organizeSquadError = '';
     try {
-      // Empty list creates announcements channel with just the creator; optional members can be added via Invite to squad later.
-      const groupId = await createGroupChat('announcements', organizeSquadMembers);
+      // Creator must not be in the member list; backend requires at least one other member.
+      const myNpub = $currentUser?.npub;
+      const memberIds = (organizeSquadMembers || []).filter((n) => n !== myNpub);
+      if (memberIds.length === 0) {
+        organizeSquadError = 'Select at least one other member to create a squad.';
+        return;
+      }
+      const groupId = await createGroupChat('announcements', memberIds);
       const announcementsChannel: Channel = {
         id: groupId,
         name: 'announcements',
@@ -116,7 +123,7 @@
     }
   }
 
-  $: canCreateSquad = organizeSquadName.trim().length > 0;
+  $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
 </script>
 
 <div class="navbar">
@@ -203,7 +210,7 @@
       tabindex="0"
     >
       <h2 id="organize-squad-title">Organize Squad</h2>
-      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Add members now or invite them later.</p>
+      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Select at least one member.</p>
       <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
         <input

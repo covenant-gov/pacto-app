@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import { listen } from '@tauri-apps/api/event';
   import Navbar from '../components/Navbar.svelte';
   import TopNavbar from '../components/TopNavbar.svelte';
@@ -46,6 +47,9 @@
 
   const PAGE_SIZE = 100;
   const LOAD_OLDER_PAGE_SIZE = 50;
+
+  /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
+  let acceptedSquadInviteGroupIds = new Set<string>();
 
   let pendingAddToSquadGroupId: string | null = null;
   function addAcceptedChannelToSquad(squadId: string) {
@@ -244,6 +248,25 @@
       }
       await acceptMlsWelcome(welcome.id);
       acceptedSquadInviteIds = new Set(acceptedSquadInviteIds).add(msg.id);
+      acceptedSquadInviteGroupIds.add(groupId);
+      const now = Date.now();
+      const announcementsChannel: Channel = {
+        id: groupId,
+        name: 'announcements',
+        groupId,
+        order: 0,
+      };
+      const newSquad = {
+        id: crypto.randomUUID(),
+        name: payload.squadName,
+        channels: [announcementsChannel],
+        createdAt: now,
+        updatedAt: now,
+      };
+      squads.update((list) => [...list, newSquad]);
+      activeSquadId.set(newSquad.id);
+      activeChannelId.set(groupId);
+      activeView.set('hub');
     } catch (e) {
       dmError('Accept squad invite failed', e);
     } finally {
@@ -461,6 +484,21 @@
     const unlistenWelcomeAccepted = listen<{ group_id: string }>('mls_welcome_accepted', (event) => {
       const group_id = event.payload.group_id;
       refreshPendingWelcomes().catch((e) => dmError('mls_welcome_accepted refresh', e));
+      if (acceptedSquadInviteGroupIds.has(group_id)) {
+        acceptedSquadInviteGroupIds.delete(group_id);
+        return;
+      }
+      const list = get(squads);
+      const singleChannelSquads = list.filter((s) => s.channels.length === 1);
+      if (singleChannelSquads.length === 1) {
+        const squad = singleChannelSquads[0];
+        const name = group_id.slice(0, 12) + '…';
+        const newChannel: Channel = { id: group_id, name, groupId: group_id, order: squad.channels.length };
+        squads.update((l) =>
+          l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
+        );
+        return;
+      }
       pendingAddToSquadGroupId = group_id;
     });
 

@@ -4916,7 +4916,9 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     if name.is_empty() {
         return Err("Group name must not be empty".to_string());
     }
-    // Empty member_ids is allowed: creates a group with only the creator (e.g. squad announcements channel).
+    if member_ids.is_empty() {
+      return Err("Select at least one member to create a group".to_string());
+    }
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
