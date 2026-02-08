@@ -6,6 +6,7 @@
   import { loadAndDecryptKey } from '../lib/api/encryption';
   import { updateProfile, uploadAvatar } from '../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../lib/utils/profile';
+  import { openExternalUrl } from '../lib/utils/open-external';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
   import { theme, setTheme, type Theme } from '../stores/theme';
   import { activeView } from '../stores/app';
@@ -406,7 +407,13 @@
             {/if}
 
             {#if profile.website}
-              <a href={profile.website} target="_blank" rel="noopener noreferrer" class="website">
+              <a
+                href={profile.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="website"
+                on:click|preventDefault={() => openExternalUrl(profile.website!)}
+              >
                 🌐 {profile.website}
               </a>
             {/if}

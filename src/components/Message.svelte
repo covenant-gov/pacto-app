@@ -1,21 +1,33 @@
 <script lang="ts">
-  export let authorName: string = "";
-  export let content: string = "";
-  export let timestamp: string = "";
-  export let avatar: string = "";
+  import FormattedMessageBody from './FormattedMessageBody.svelte';
 
-  // Format timestamp (expects ISO string)
+  export let id: string = '';
+  export let authorName: string = '';
+  export let content: string = '';
+  export let timestamp: string = '';
+  export let avatar: string = '';
+  /** When set, show a reply bar above the body (author + truncated content or "Attachment"). */
+  export let replyToId: string | undefined = undefined;
+  export let replyAuthorName: string | undefined = undefined;
+  export let replyPreview: string | undefined = undefined;
+
   function formatTime(isoString: string): string {
     const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
       minute: '2-digit',
-      hour12: true 
+      hour12: true,
     });
+  }
+
+  function jumpToReply() {
+    if (!replyToId) return;
+    const el = document.getElementById(`msg-${replyToId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 </script>
 
-<div class="message">
+<div class="message" id={id ? `msg-${id}` : undefined}>
   <div class="avatar">
     {#if avatar}
       <img src={avatar} alt={authorName} />
@@ -28,7 +40,22 @@
       <span class="author-name">{authorName}</span>
       <span class="timestamp">{formatTime(timestamp)}</span>
     </div>
-    <div class="message-text">{content}</div>
+    {#if replyToId && (replyAuthorName != null || replyPreview != null)}
+      <div class="msg-reply" role="region" aria-label="Reply to {replyAuthorName ?? 'message'}">
+        <button
+          type="button"
+          class="msg-reply-inner"
+          on:click={jumpToReply}
+          aria-label="Jump to replied message"
+        >
+          <span class="msg-reply-author">{replyAuthorName ?? 'Unknown'}</span>
+          <span class="msg-reply-preview">{#if replyPreview}{replyPreview}{/if}</span>
+        </button>
+      </div>
+    {/if}
+    <div class="message-text">
+      <FormattedMessageBody content={content} />
+    </div>
   </div>
 </div>
 
@@ -93,6 +120,44 @@
     color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 400;
+  }
+
+  .msg-reply {
+    margin-bottom: 6px;
+    padding-left: 10px;
+    border-left: 3px solid var(--reply-border, var(--accent));
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.3;
+  }
+
+  .msg-reply-inner {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+  }
+
+  .msg-reply-inner:hover {
+    color: var(--text-secondary);
+  }
+
+  .msg-reply-author {
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .msg-reply-preview {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
   }
 
   .message-text {
