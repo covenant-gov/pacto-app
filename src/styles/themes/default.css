@@ -15,6 +15,12 @@
   --danger: #f23f42;
   --success: #3ba55c;
   --warning: #faa61a;
+  /* Message formatting (code block, blockquote, spoiler) */
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--accent);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--accent);
   /* Dropdown/chevron icons: white in dark mode */
   --icon-dropdown-filter: brightness(0) invert(1);
 }

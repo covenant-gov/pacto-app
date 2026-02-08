@@ -14,6 +14,12 @@
   --danger: #a83537;
   --success: #2a7d42;
   --warning: #a8760d;
+  /* Message formatting (code block, blockquote, spoiler) */
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--accent);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--accent);
   /* Dropdown/chevron icons: black in light mode */
   --icon-dropdown-filter: brightness(0);
 }

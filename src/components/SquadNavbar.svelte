@@ -486,28 +486,25 @@
       aria-labelledby="invite-to-squad-title"
       tabindex="0"
     >
-      <h2 id="invite-to-squad-title">Invite to squad</h2>
-      <p class="create-channel-subtitle">Invite friends to {activeSquad?.name ?? 'this squad'}.</p>
+      <h2 id="invite-to-squad-title">Invite to Squad</h2>
+      <p class="create-channel-subtitle">Invite friends to {activeSquad?.name ?? 'this Squad'}.</p>
       {#if loadingInviteToSquad}
         <p class="create-channel-loading">Loading…</p>
       {:else if inviteToSquadHasNoChannel}
-        <p class="create-channel-empty-friends">This squad has no channel yet. Create a channel first (use + next to Channels), or create squads from DMs so they get an announcements channel.</p>
+        <p class="create-channel-empty-friends">This Squad has no channel yet. Create a channel first (use + next to Channels), or create Squads from DMs so they get an announcements channel.</p>
       {:else if inviteToSquadCandidates.length === 0}
-        <p class="create-channel-empty-friends">No one to invite right now. Start a DM with someone first, or they may already be in this squad.</p>
+        <p class="create-channel-empty-friends">No one to invite right now. Start a DM with someone first, or they may already be in this Squad.</p>
       {:else}
         <div class="create-channel-members">
           {#each inviteToSquadCandidates as npub (npub)}
-            <div
-              class="invite-to-squad-row"
-              class:selected={selectedInviteNpubs.includes(npub)}
-              on:click={() => toggleInviteCandidate(npub)}
-              on:keydown={(e) => e.key === 'Enter' && toggleInviteCandidate(npub)}
-              role="button"
-              tabindex="0"
-            >
-              <span class="invite-to-squad-check">{selectedInviteNpubs.includes(npub) ? '✓' : ''}</span>
+            <label class="invite-to-squad-row" class:selected={selectedInviteNpubs.includes(npub)}>
+              <input
+                type="checkbox"
+                checked={selectedInviteNpubs.includes(npub)}
+                on:change={() => toggleInviteCandidate(npub)}
+              />
               <span class="create-channel-member-name">{displayName(npub)}</span>
-            </div>
+            </label>
           {/each}
         </div>
       {/if}
@@ -738,7 +735,7 @@
   .invite-to-squad-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     padding: 8px 12px;
     cursor: pointer;
     color: var(--text-primary);
@@ -746,12 +743,13 @@
     border-radius: 4px;
   }
 
-  .invite-to-squad-check {
+  .invite-to-squad-row input[type="checkbox"] {
     flex-shrink: 0;
-    width: 1.25em;
-    text-align: center;
-    color: var(--accent);
-    font-weight: bold;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
   }
 
   .invite-to-squad-row:hover {

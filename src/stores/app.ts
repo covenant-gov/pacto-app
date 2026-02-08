@@ -135,6 +135,14 @@ export interface DmMessage {
   npub?: string;
   pending?: boolean;
   failed?: boolean;
+  /** Id of the message this one replies to (backend: replied_to) */
+  replied_to?: string;
+  /** Plain text preview of replied-to message (backend: replied_to_content). Not parsed as Markdown. */
+  replied_to_content?: string | null;
+  /** Sender npub of replied-to message (backend: replied_to_npub) */
+  replied_to_npub?: string | null;
+  /** Whether replied-to message has attachment (backend: replied_to_has_attachment) */
+  replied_to_has_attachment?: boolean | null;
 }
 
 // Backend DM messages (from get_message_views + message_new). Keyed by npub.
