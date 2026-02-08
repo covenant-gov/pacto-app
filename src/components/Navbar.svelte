@@ -128,6 +128,7 @@
 </script>
 
 <div class="navbar">
+  {#if $activeView !== 'profile'}
   <div class="tab-list">
     {#if $activeTopNavTab === 'dms'}
       <div 
@@ -181,6 +182,10 @@
       <!-- Networks: placeholder for future tabs -->
     {/if}
   </div>
+  {/if}
+  {#if $activeView === 'profile'}
+  <div class="navbar-spacer" aria-hidden="true"></div>
+  {/if}
   <div class="tab-list bottom">
     <div
       on:click={$activeTopNavTab === 'dms' ? startNewChat : handleAddAction}
@@ -292,6 +297,11 @@
 
   .tab-list.bottom {
     padding-bottom: 8px;
+  }
+
+  .navbar-spacer {
+    flex: 1;
+    min-height: 0;
   }
 
   /* Organize Squad modal */

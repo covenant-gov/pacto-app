@@ -638,7 +638,7 @@
     width: 18px;
     height: 18px;
     display: block;
-    filter: invert(1);
+    filter: var(--icon-dropdown-filter);
   }
 
   .squad-menu-dropdown {

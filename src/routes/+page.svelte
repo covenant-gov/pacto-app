@@ -961,7 +961,7 @@
     width: 16px;
     height: 16px;
     display: block;
-    filter: invert(1);
+    filter: var(--icon-dropdown-filter);
   }
 
   .dm-thread-dropdown {
