@@ -620,6 +620,7 @@
     width: 18px;
     height: 18px;
     display: block;
+    filter: var(--icon-dropdown-filter);
   }
 
   .theme-section {

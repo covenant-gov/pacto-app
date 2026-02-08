@@ -20,6 +20,8 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
+  import chevronDownIcon from '../icons/chevron-down.svg';
+  import friendsIcon from '../icons/friends.svg';
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
@@ -32,7 +34,8 @@
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
 
   let channelMenuOpen = false;
-  let showMembersModal = false;
+  let showMembersModal = false; /* panel state (right-hand bar); name kept for HMR/cache compat */
+  let showLeaveChannelConfirm = false;
   let showInviteToChannelModal = false;
   let channelMembers: string[] = [];
   let loadingMembers = false;
@@ -75,6 +78,7 @@
   $: if (prevChannelId !== $activeChannelId) {
     prevChannelId = $activeChannelId;
     groupSendError.set(null);
+    showMembersModal = false;
   }
 
   let loadingOlder = false;
@@ -117,11 +121,17 @@
     channelMenuOpen = false;
   }
 
+  function openLeaveChannelConfirm() {
+    closeChannelMenu();
+    showLeaveChannelConfirm = true;
+  }
+
   async function handleLeaveChannel() {
     const groupId = $activeChannelId;
     if (!groupId || leavingChannel) return;
     leavingChannel = true;
     leaveChannelError = '';
+    showLeaveChannelConfirm = false;
     try {
       if (groupId.startsWith('creating-')) {
         const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
@@ -167,7 +177,7 @@
     }
   }
 
-  function openMembersModal() {
+  function openMembersPanel() {
     showMembersModal = true;
     channelMembers = [];
     closeChannelMenu();
@@ -259,25 +269,36 @@
 />
 <div class="chat-view">
   {#if activeChannel}
+    <div class="chat-view-main">
     <div class="channel-header">
       <div class="channel-info">
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
       </div>
       <div class="channel-header-actions">
-        <button
-          type="button"
-          class="channel-menu-btn"
-          title="Channel options"
-          on:click={() => (channelMenuOpen = !channelMenuOpen)}
-        >
-          ⋯
-        </button>
+        <div class="channel-header-actions-inner">
+          <button
+            type="button"
+            class="channel-menu-btn"
+            title="Channel options"
+            on:click={() => (channelMenuOpen = !channelMenuOpen)}
+            aria-expanded={channelMenuOpen}
+            aria-haspopup="menu"
+          >
+            <img src={chevronDownIcon} alt="" class="channel-menu-btn-icon" />
+          </button>
+          <button
+            type="button"
+            class="channel-members-btn"
+            title="Members"
+            on:click={openMembersPanel}
+            aria-label="View channel members"
+          >
+            <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
+          </button>
+        </div>
         {#if channelMenuOpen}
           <div class="channel-menu-dropdown" role="menu">
-            <button type="button" class="channel-menu-item" role="menuitem" on:click={openMembersModal}>
-              Members
-            </button>
             {#if !isAnnouncementsChannel}
               <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
                 Invite to channel
@@ -288,9 +309,9 @@
               class="channel-menu-item channel-menu-item-danger"
               role="menuitem"
               disabled={leavingChannel}
-              on:click={handleLeaveChannel}
+              on:click={openLeaveChannelConfirm}
             >
-              {leavingChannel ? 'Leaving…' : 'Leave channel'}
+              Leave channel
             </button>
           </div>
         {/if}
@@ -328,21 +349,23 @@
     {/if}
     <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
 
-    <!-- Members modal -->
-    {#if showMembersModal}
-      <div class="channel-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="members-modal-title">
-        <div class="channel-modal">
-          <h2 id="members-modal-title">Members</h2>
-          {#if loadingMembers}
-            <p class="channel-modal-loading">Loading…</p>
-          {:else}
-            <ul class="channel-members-list">
-              {#each channelMembers as npub (npub)}
-                <li class="channel-member-item">{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</li>
-              {/each}
-            </ul>
-          {/if}
-          <button type="button" class="channel-modal-close" on:click={() => (showMembersModal = false)}>Close</button>
+    <!-- Leave channel confirm -->
+    {#if showLeaveChannelConfirm}
+      <div class="channel-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="leave-channel-title">
+        <div class="channel-modal channel-modal-confirm">
+          <h2 id="leave-channel-title">Leave channel?</h2>
+          <p class="channel-leave-explainer">Channels are private groups and you will need to be re-invited to re-enter this channel.</p>
+          <div class="channel-modal-actions">
+            <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>Cancel</button>
+            <button
+              type="button"
+              class="channel-modal-primary channel-modal-danger"
+              disabled={leavingChannel}
+              on:click={handleLeaveChannel}
+            >
+              {leavingChannel ? 'Leaving…' : 'Leave channel'}
+            </button>
+          </div>
         </div>
       </div>
     {/if}
@@ -385,6 +408,33 @@
         </div>
       </div>
     {/if}
+    </div>
+    <!-- Right-hand members panel (Discord-style) -->
+    {#if showMembersModal}
+      <aside class="members-panel" aria-label="Channel members">
+        <div class="members-panel-header">
+          <h3 class="members-panel-title">Members</h3>
+          <button type="button" class="members-panel-close" aria-label="Close" on:click={() => (showMembersModal = false)}>×</button>
+        </div>
+        <div class="members-panel-list">
+          {#if loadingMembers}
+            <p class="members-panel-loading">Loading…</p>
+          {:else}
+            {#each channelMembers as npub (npub)}
+              {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
+              <div class="members-panel-member">
+                {#if avatarSrc}
+                  <img src={avatarSrc} alt="" class="members-panel-avatar" />
+                {:else}
+                  <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
+                {/if}
+                <span class="members-panel-name">{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</span>
+              </div>
+            {/each}
+          {/if}
+        </div>
+      </aside>
+    {/if}
   {:else}
     <div class="empty-state">
       <p>Select a channel to start chatting</p>
@@ -396,11 +446,18 @@
   .chat-view {
     flex: 1;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     background: var(--bg-panel);
     height: 100%;
     min-width: 0;
     border-left: 1px solid var(--border-subtle);
+  }
+
+  .chat-view-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
 
   .channel-header {
@@ -418,20 +475,58 @@
     position: relative;
   }
 
+  .channel-header-actions-inner {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   .channel-menu-btn {
-    padding: 4px 8px;
+    padding: 6px 8px;
     border: none;
     border-radius: 4px;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 1.25rem;
-    line-height: 1;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .channel-menu-btn:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .channel-menu-btn-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    filter: var(--icon-dropdown-filter);
+  }
+
+  .channel-members-btn {
+    padding: 6px 8px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .channel-members-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .channel-members-btn-icon {
+    width: 20px;
+    height: 20px;
+    display: block;
+    filter: var(--icon-dropdown-filter);
   }
 
   .channel-menu-dropdown {
@@ -507,18 +602,6 @@
     color: var(--text-muted);
   }
 
-  .channel-members-list {
-    list-style: none;
-    margin: 0 0 16px;
-    padding: 0;
-  }
-
-  .channel-member-item {
-    padding: 6px 0;
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-  }
-
   .channel-invite-list {
     margin: 0 0 16px;
     max-height: 200px;
@@ -579,6 +662,109 @@
   .channel-modal-primary:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .channel-leave-explainer {
+    margin: 0 0 16px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .channel-modal-danger {
+    background: var(--danger);
+  }
+
+  .channel-modal-danger:hover:not(:disabled) {
+    background: var(--danger);
+    filter: brightness(1.1);
+  }
+
+  /* Right-hand members panel (Discord-style) */
+  .members-panel {
+    width: 240px;
+    min-width: 240px;
+    background: var(--bg-elevated);
+    border-left: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .members-panel-header {
+    height: 48px;
+    padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .members-panel-title {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .members-panel-close {
+    padding: 4px 8px;
+    font-size: 1.25rem;
+    line-height: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .members-panel-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .members-panel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .members-panel-loading {
+    margin: 0 16px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .members-panel-member {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px;
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+  }
+
+  .members-panel-member:hover {
+    background: var(--bg-hover);
+  }
+
+  .members-panel-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .members-panel-avatar-placeholder {
+    background: var(--border);
+  }
+
+  .members-panel-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .channel-info {

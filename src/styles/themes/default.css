@@ -15,4 +15,6 @@
   --danger: #f23f42;
   --success: #3ba55c;
   --warning: #faa61a;
+  /* Dropdown/chevron icons: white in dark mode */
+  --icon-dropdown-filter: brightness(0) invert(1);
 }
