@@ -28,6 +28,10 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
         profilesCount: payload?.profiles?.length ?? 0,
         chatsCount: payload?.chats?.length ?? 0,
       });
+      // [Squad/Invite] debug: which chats (npubs) we got so we can see if inviter DM exists
+      const chats = (payload?.chats && Array.isArray(payload.chats)) ? (payload.chats as { id?: string; chat_type?: string }[]) : [];
+      const dmNpubs = chats.filter((c) => typeof c.id === 'string' && (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage')).map((c) => c.id as string);
+      console.log('[Squad/Invite] init_finished: chats total=', chats.length, 'dm npubs=', dmNpubs.length, 'ids (first 5)=', dmNpubs.slice(0, 5).map((id) => id.slice(0, 24) + '…'));
       if (!payload) return;
 
       if (payload.profiles) {
@@ -76,6 +80,7 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
         }
         dmChatsByNpub.set(map);
         dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
+        console.log('[Squad/Invite] init_finished: dmChatsByNpub keys=', Object.keys(map).map((k) => k.slice(0, 20) + '…'));
 
         // Restore last open chat if still in map
         if (!lastOpenChatRestored && typeof localStorage !== 'undefined') {

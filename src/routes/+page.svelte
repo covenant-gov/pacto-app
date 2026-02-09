@@ -142,6 +142,8 @@
     if (!npub) return [];
     const list = [...($backendDmMessages[npub] ?? [])];
     list.sort((a, b) => a.at - b.at);
+    const squadInviteCount = list.filter((m) => parseSquadInviteMessage(m.content ?? '') !== null).length;
+    if (list.length > 0 || npub) console.log('[Squad/Invite] mergedDmMessages for', npub?.slice(0, 24) + '…', 'count=', list.length, 'squadInviteMsgs=', squadInviteCount);
     return list;
   })();
 
@@ -454,6 +456,8 @@
     const unlistenNew = listen<{ message: DmMessage; chat_id: string }>('message_new', (event) => {
       const { message, chat_id } = event.payload;
       dmLog('message_new', { chat_id: chat_id.slice(0, 20) + '…', messageId: message.id?.slice(0, 12), mine: message.mine });
+      const isSquadInvite = parseSquadInviteMessage(message.content ?? '') !== null;
+      console.log('[Squad/Invite] message_new: chat_id=', chat_id?.slice(0, 24) + '…', 'mine=', message.mine, 'isSquadInvite=', isSquadInvite, 'contentPreview=', (message.content ?? '').slice(0, 60) + (message.content && message.content.length > 60 ? '…' : ''));
       if (!chat_id.startsWith('npub1')) return;
       const m: DmMessage = {
         id: message.id,
@@ -480,6 +484,7 @@
       // Update Friends/Requests/Pending: OR in message flags so we never lose a true (chat can move to Friends when they reply)
       dmChatsByNpub.update((map) => {
         const cur = map[chat_id];
+        const hadChat = chat_id in map;
         const next = {
           npub: chat_id,
           name: cur?.name,
@@ -488,6 +493,7 @@
           hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
           lastAt: Math.max(cur?.lastAt ?? 0, m.at),
         };
+        if (isSquadInvite && !hadChat) console.log('[Squad/Invite] message_new: added new chat to dmChatsByNpub for inviter', chat_id?.slice(0, 24) + '…');
         return { ...map, [chat_id]: next };
       });
       // Sender sent a message — clear "Typing" for this chat and cancel expiry timeout
@@ -597,13 +603,16 @@
     });
 
     async function refreshPendingWelcomes() {
+      console.log('[Squad/Invite] refreshPendingWelcomes: calling listPendingMlsWelcomes…');
       const list = await listPendingMlsWelcomes();
       pendingMlsWelcomes.set(list);
+      console.log('[Squad/Invite] refreshPendingWelcomes: count=', list.length, 'welcomes=', list.map((w) => ({ groupId: w.nostr_group_id?.slice(0, 16) + '…', name: w.group_name, wrapperId: w.wrapper_event_id?.slice(0, 16) + '…' })));
     }
 
     refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));
 
     const unlistenInviteReceived = listen('mls_invite_received', () => {
+      console.log('[Squad/Invite] mls_invite_received event: refreshing pending welcomes');
       refreshPendingWelcomes().catch((e) => dmError('mls_invite_received refresh', e));
     });
 

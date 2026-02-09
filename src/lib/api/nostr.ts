@@ -343,8 +343,10 @@ export function formatSquadInviteMessage(payload: SquadInvitePayload): string {
  */
 export async function listPendingMlsWelcomes(): Promise<PendingMlsWelcome[]> {
   dmLog('list_pending_mls_welcomes');
+  console.log('[Squad/Invite] listPendingMlsWelcomes: calling backend…');
   const list = (await invoke('list_pending_mls_welcomes')) as PendingMlsWelcome[];
   dmLog('list_pending_mls_welcomes result', { count: list.length });
+  console.log('[Squad/Invite] listPendingMlsWelcomes: backend returned count=', list.length, list.length > 0 ? 'first=' + JSON.stringify({ nostr_group_id: list[0].nostr_group_id?.slice(0, 16), group_name: list[0].group_name }) : '');
   return list;
 }
 
