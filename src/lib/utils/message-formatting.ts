@@ -1,7 +1,51 @@
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import hljs from 'highlight.js';
-import emojiRegex from 'emoji-regex';
+declare global {
+  interface Window {
+    hljs?: { highlight: (code: string, opts: { language: string }) => { value: string } };
+    marked?: {
+      use: (opts: object) => void;
+      parse: (src: string, opts?: { async?: boolean }) => string;
+    };
+    twemoji?: {
+      replace: (text: string, callback: (match: string) => string) => string;
+      convert: { toCodePoint: (unicode: string, sep?: string) => string };
+    };
+    DOMPurify?: {
+      sanitize: (dirty: string, config?: object) => string;
+      addHook: (hook: string, cb: (currentNode: Element, data: unknown, config: unknown) => void) => void;
+      removeHook: (hook: string, cb: (currentNode: Element, data: unknown, config: unknown) => void) => void;
+    };
+  }
+}
+
+function getDOMPurify(): Window['DOMPurify'] {
+  return typeof window !== 'undefined' ? window.DOMPurify : undefined;
+}
+
+let markedConfigured = false;
+
+function getMarked() {
+  if (typeof window === 'undefined') return undefined;
+  const m = window.marked;
+  if (!m || markedConfigured) return m;
+  m.use({
+    gfm: true,
+    breaks: true,
+    extensions: [spoilerExtension],
+    renderer: {
+      code(token: unknown) {
+        const t = token as { text?: string; lang?: string };
+        const raw = t.text ?? '';
+        const lang = t.lang ?? 'plaintext';
+        const highlighted = highlightCode(raw, lang);
+        const langClass = lang ? `language-${escapeHtml(lang)}` : '';
+        const dataRaw = escapeAttr(raw);
+        return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="Copy code" title="Copy code">Copy</button></div>`;
+      },
+    },
+  });
+  markedConfigured = true;
+  return m;
+}
 
 function escapeHtml(text: string): string {
   const map: Record<string, string> = {
@@ -25,8 +69,12 @@ function escapeAttr(text: string): string {
 function highlightCode(text: string, lang: string | undefined): string {
   const language = (lang ?? 'plaintext').toLowerCase();
   try {
-    const result = hljs.highlight(text, { language });
-    return result.value;
+    const hljs = typeof window !== 'undefined' ? window.hljs : undefined;
+    if (hljs) {
+      const result = hljs.highlight(text, { language });
+      return result.value;
+    }
+    return escapeHtml(text);
   } catch {
     return escapeHtml(text);
   }
@@ -59,22 +107,6 @@ const spoilerExtension = {
     return `<span class="spoiler" role="button" tabindex="0">${escapeHtml(token.text ?? '')}</span>`;
   },
 };
-
-marked.use({
-  gfm: true,
-  breaks: true,
-  extensions: [spoilerExtension],
-  renderer: {
-    code(token: { type: string; text: string; lang?: string; escaped?: boolean }) {
-      const raw = token.text ?? '';
-      const lang = token.lang ?? 'plaintext';
-      const highlighted = highlightCode(raw, lang);
-      const langClass = lang ? `language-${escapeHtml(lang)}` : '';
-      const dataRaw = escapeAttr(raw);
-      return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="Copy code" title="Copy code">Copy</button></div>`;
-    },
-  },
-});
 
 /**
  * Map emoji character(s) to Twemoji SVG filename (e.g. "🌈" → "1f308.svg", "🇺🇸" → "1f1fa-1f1f8.svg").
@@ -110,6 +142,8 @@ const TWEMOJI_SRC_REGEX = /^\/twemoji\/svg\/[0-9a-f]+(-[0-9a-f]+)*\.svg$/;
  */
 export function parseMarkdown(content: string): string {
   if (typeof content !== 'string') return '';
+  const marked = getMarked();
+  if (!marked) return escapeHtml(content);
   return marked.parse(content, { async: false }) as string;
 }
 
@@ -118,14 +152,16 @@ export function parseMarkdown(content: string): string {
  */
 export function sanitize(html: string): string {
   if (typeof html !== 'string') return '';
-  return DOMPurify.sanitize(html, {
+  const purify = getDOMPurify();
+  if (!purify) return escapeHtml(html);
+  return purify.sanitize(html, {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
   });
 }
 
-const restrictTwemojiImgSrc: (currentNode: Element, hookEvent: null, _config: unknown) => void = (currentNode) => {
+const restrictTwemojiImgSrc = (currentNode: Element, _data: unknown, _config: unknown): void => {
   if (currentNode.tagName === 'IMG') {
     const src = currentNode.getAttribute('src');
     if (!src || !TWEMOJI_SRC_REGEX.test(src)) currentNode.removeAttribute('src');
@@ -137,16 +173,18 @@ const restrictTwemojiImgSrc: (currentNode: Element, hookEvent: null, _config: un
  */
 function sanitizeWithEmoji(html: string): string {
   if (typeof html !== 'string') return '';
-  const hookName = 'beforeSanitizeAttributes' as const;
-  DOMPurify.addHook(hookName, restrictTwemojiImgSrc as import('dompurify').ElementHook);
+  const purify = getDOMPurify();
+  if (!purify) return escapeHtml(html);
+  const hookName = 'beforeSanitizeAttributes';
+  purify.addHook(hookName, restrictTwemojiImgSrc);
   try {
-    return DOMPurify.sanitize(html, {
+    return purify.sanitize(html, {
       ALLOWED_TAGS: ALLOWED_TAGS_WITH_EMOJI,
       ALLOWED_ATTR: ALLOWED_ATTR_WITH_EMOJI,
       ALLOW_DATA_ATTR: false,
     });
   } finally {
-    DOMPurify.removeHook(hookName, restrictTwemojiImgSrc as import('dompurify').ElementHook);
+    purify.removeHook(hookName, restrictTwemojiImgSrc);
   }
 }
 
@@ -160,13 +198,12 @@ function isSafeUrl(url: string): boolean {
 const SKIP_LINKIFY_TAGS = new Set(['a', 'code', 'pre']);
 const SKIP_EMOJI_TAGS = new Set(['code', 'pre']);
 
-const regexEmoji = emojiRegex();
-
 /**
  * Replace Unicode emoji in text segments with Twemoji <img> tags.
- * Skips content inside <code> and <pre>. Keeps alt as original emoji for a11y.
+ * Uses window.twemoji (Vector's vendored script) when available; skips content inside <code> and <pre>.
  */
 function replaceEmojiWithTwemoji(html: string): string {
+  const tw = typeof window !== 'undefined' ? window.twemoji : undefined;
   let out = '';
   let i = 0;
   const len = html.length;
@@ -193,12 +230,12 @@ function replaceEmojiWithTwemoji(html: string): string {
     const nextTag = html.indexOf('<', i);
     const segmentEnd = nextTag === -1 ? len : nextTag;
     let segment = html.slice(i, segmentEnd);
-    if (stack.length === 0) {
-      segment = segment.replace(regexEmoji, (emoji) => {
-        const filename = emojiToTwemojiFilename(emoji);
-        if (!filename) return emoji;
-        const alt = escapeAttr(emoji);
-        return `<img src="${TWEMOJI_SVG_PREFIX}${filename}" alt="${alt}" class="twemoji">`;
+    if (stack.length === 0 && tw) {
+      segment = tw.replace(segment, (rawText: string) => {
+        const icon = tw.convert.toCodePoint(rawText);
+        if (!icon || !/^[0-9a-f]+(-[0-9a-f]+)*$/.test(icon)) return rawText;
+        const alt = escapeAttr(rawText);
+        return `<img class="twemoji" draggable="false" alt="${alt}" src="${TWEMOJI_SVG_PREFIX}${icon}.svg">`;
       });
     }
     out += segment;
