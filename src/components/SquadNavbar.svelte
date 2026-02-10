@@ -143,6 +143,17 @@
           })
         );
         if (get(activeChannelId) === placeholderId) activeChannelId.set(groupId);
+
+        // Send squad_invite DM to each member so they see the invite card in the DM thread
+        const squadName = squad.name;
+        const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName, groupId });
+        for (const npub of selectedNpubs) {
+          try {
+            await sendDmMessage(npub, payload);
+          } catch (e) {
+            console.warn('[SquadNavbar] send channel invite DM failed for', npub.slice(0, 20) + '…', e);
+          }
+        }
       } catch (e) {
         createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
         setTimeout(() => { createChannelErrorBanner = ''; }, 8000);
