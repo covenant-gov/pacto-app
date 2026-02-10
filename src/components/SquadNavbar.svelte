@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import Channel from './Channel.svelte';
   import { squads, activeSquadId, activeChannelId, activeView, dmList, requestsList, pendingList, type Channel as ChannelType } from '../stores/app';
-  import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, leaveMlsGroup } from '../lib/api/nostr';
+  import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, formatChannelInSquadMessage, leaveMlsGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -52,6 +52,7 @@
     showCreateChannelModal = true;
     createChannelName = '';
     selectedNpubs = [];
+    createChannelSelectEveryone = false;
     createChannelError = '';
     createChannelMemberList = [];
     loadCreateChannelMembers();
@@ -95,6 +96,21 @@
   }
 
   $: canCreateChannel = createChannelName.trim().length > 0 && selectedNpubs.length > 0;
+
+  /** When true, all squad members (announcements) are selected for the new channel. */
+  let createChannelSelectEveryone = false;
+  $: if (showCreateChannelModal && createChannelSelectEveryone && createChannelMemberList.length > 0) {
+    const all = createChannelMemberList;
+    if (selectedNpubs.length !== all.length || all.some((n) => !selectedNpubs.includes(n))) {
+      selectedNpubs = [...all];
+    }
+  }
+  function toggleCreateChannelSelectEveryone() {
+    createChannelSelectEveryone = !createChannelSelectEveryone;
+    if (createChannelSelectEveryone) {
+      selectedNpubs = [...createChannelMemberList];
+    }
+  }
 
   let createChannelErrorBanner = '';
   async function handleCreateChannel() {
@@ -144,14 +160,23 @@
         );
         if (get(activeChannelId) === placeholderId) activeChannelId.set(groupId);
 
-        // Send squad_invite DM to each member so they see the invite card in the DM thread
+        // Send channel_in_squad DM (not squad_invite) so receiver adds this channel to existing squad
+        const announcementsChannel = getAnnouncementsChannel(squad);
         const squadName = squad.name;
-        const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName, groupId });
-        for (const npub of selectedNpubs) {
-          try {
-            await sendDmMessage(npub, payload);
-          } catch (e) {
-            console.warn('[SquadNavbar] send channel invite DM failed for', npub.slice(0, 20) + '…', e);
+        if (announcementsChannel) {
+          const payload = formatChannelInSquadMessage({
+            type: 'channel_in_squad',
+            squadName,
+            announcementsGroupId: announcementsChannel.groupId,
+            channelGroupId: groupId,
+            channelName: name,
+          });
+          for (const npub of selectedNpubs) {
+            try {
+              await sendDmMessage(npub, payload);
+            } catch (e) {
+              console.warn('[SquadNavbar] send channel_in_squad DM failed for', npub.slice(0, 20) + '…', e);
+            }
           }
         }
       } catch (e) {
@@ -445,6 +470,14 @@
           required
         />
         <span class="create-channel-label">Members (squad announcements only, select at least one)</span>
+        <label class="create-channel-select-everyone">
+          <input
+            type="checkbox"
+            bind:checked={createChannelSelectEveryone}
+            on:change={toggleCreateChannelSelectEveryone}
+          />
+          Add everyone in squad
+        </label>
         <div class="create-channel-members">
           {#if loadingCreateChannelMembers}
             <p class="create-channel-loading">Loading squad members…</p>
@@ -872,6 +905,20 @@
     color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: 6px;
+  }
+
+  .create-channel-select-everyone {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .create-channel-select-everyone input {
+    cursor: pointer;
   }
 
   .create-channel-input {
