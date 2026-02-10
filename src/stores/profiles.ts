@@ -1,11 +1,12 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
 import { dmChatsByNpub, activeDmId, type DmChatState } from './app';
+import { currentUser } from './auth';
 
-const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
+const LAST_DM_NPUB_PREFIX = 'pacto_last_dm_npub';
 let lastOpenChatRestored = false;
 
 // Store all loaded profiles, keyed by npub
@@ -82,10 +83,12 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
         dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
         console.log('[Squad/Invite] init_finished: dmChatsByNpub keys=', Object.keys(map).map((k) => k.slice(0, 20) + '…'));
 
-        // Restore last open chat if still in map
+        // Restore last open chat if still in map (npub-scoped key, or legacy)
         if (!lastOpenChatRestored && typeof localStorage !== 'undefined') {
           lastOpenChatRestored = true;
-          const lastNpub = localStorage.getItem(LAST_DM_NPUB_KEY)?.trim();
+          const npub = get(currentUser)?.npub;
+          const key = npub ? `${LAST_DM_NPUB_PREFIX}_${npub}` : LAST_DM_NPUB_PREFIX;
+          const lastNpub = localStorage.getItem(key)?.trim();
           if (lastNpub && lastNpub in map) {
             dmLog('init_finished: restore last open chat', lastNpub.slice(0, 20) + '…');
             activeDmId.set(lastNpub);

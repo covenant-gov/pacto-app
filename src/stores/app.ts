@@ -1,5 +1,17 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type { PendingMlsWelcome } from '../lib/api/nostr';
+
+/** Current npub for persistence: scoped localStorage keys use this. Set on login, cleared on logout. */
+export const currentNpubForPersistence = writable<string | null>(null);
+
+export function setCurrentNpubForPersistence(npub: string | null): void {
+  currentNpubForPersistence.set(npub);
+}
+
+function persistenceKey(prefix: string): string | null {
+  const npub = get(currentNpubForPersistence);
+  return npub ? `${prefix}_${npub}` : null;
+}
 
 // Top navbar tab - determines what the side Navbar shows (DMs, Networks, Squads)
 export type TopNavTab = 'dms' | 'networks' | 'squads';
@@ -17,23 +29,14 @@ export const activeView = writable<ViewType>('hub');
 export type DmTab = 'friends' | 'requests' | 'pending' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
 
-const PINNED_DM_NPUBS_KEY = 'pacto_pinned_dm_npubs';
-function loadPinnedDmNpubs(): string[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PINNED_DM_NPUBS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as string[]).filter((x) => typeof x === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-export const pinnedDmNpubs = writable<Set<string>>(new Set(loadPinnedDmNpubs()));
+const PINNED_DM_NPUBS_PREFIX = 'pacto_pinned_dm_npubs';
+export const pinnedDmNpubs = writable<Set<string>>(new Set());
 pinnedDmNpubs.subscribe((set) => {
   if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(PINNED_DM_NPUBS_PREFIX);
+  if (!key) return;
   try {
-    localStorage.setItem(PINNED_DM_NPUBS_KEY, JSON.stringify([...set]));
+    localStorage.setItem(key, JSON.stringify([...set]));
   } catch {
     // ignore
   }
@@ -180,27 +183,16 @@ export interface Squad {
   updatedAt: number;
 }
 
-const PACTO_SQUADS_KEY = 'pacto_squads';
+const PACTO_SQUADS_PREFIX = 'pacto_squads';
 
-function loadSquadsFromStorage(): Squad[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PACTO_SQUADS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed as Squad[];
-  } catch {
-    return [];
-  }
-}
-
-export const squads = writable<Squad[]>(loadSquadsFromStorage());
+export const squads = writable<Squad[]>([]);
 
 squads.subscribe((value) => {
   if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(PACTO_SQUADS_PREFIX);
+  if (!key) return;
   try {
-    localStorage.setItem(PACTO_SQUADS_KEY, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // ignore quota or serialization errors
   }
@@ -218,48 +210,64 @@ export const ungroupedChannels = writable<Channel[]>([]);
 // Legacy: channelMessages was keyed by channel id for local-only mock. Replaced by backendGroupMessages keyed by groupId.
 export const channelMessages = writable<Record<string, any[]>>({});
 
-// Persist last open DM for restore on next app open
-const LAST_DM_NPUB_KEY = 'pacto_last_dm_npub';
+// Persist last open DM for restore on next app open (npub-scoped)
+const LAST_DM_NPUB_PREFIX = 'pacto_last_dm_npub';
 activeDmId.subscribe((id) => {
-  if (id && typeof localStorage !== 'undefined') {
-    localStorage.setItem(LAST_DM_NPUB_KEY, id);
-  }
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_DM_NPUB_PREFIX);
+  if (!key) return;
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
 });
 
-// Last opened squad/channel for restore when switching to Squads view (like DMs)
-const LAST_SQUAD_ID_KEY = 'pacto_last_squad_id';
-const LAST_CHANNEL_ID_KEY = 'pacto_last_channel_id';
+// Last opened squad/channel for restore when switching to Squads view (npub-scoped)
+const LAST_SQUAD_ID_PREFIX = 'pacto_last_squad_id';
+const LAST_CHANNEL_ID_PREFIX = 'pacto_last_channel_id';
 
-function loadLastSquadId(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  try {
-    return localStorage.getItem(LAST_SQUAD_ID_KEY);
-  } catch {
-    return null;
-  }
-}
-function loadLastChannelId(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  try {
-    return localStorage.getItem(LAST_CHANNEL_ID_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export const lastOpenedSquadId = writable<string | null>(loadLastSquadId());
-export const lastOpenedChannelId = writable<string | null>(loadLastChannelId());
+export const lastOpenedSquadId = writable<string | null>(null);
+export const lastOpenedChannelId = writable<string | null>(null);
 
 lastOpenedSquadId.subscribe((id) => {
-  if (typeof localStorage !== 'undefined') {
-    if (id) localStorage.setItem(LAST_SQUAD_ID_KEY, id);
-    else localStorage.removeItem(LAST_SQUAD_ID_KEY);
-  }
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_SQUAD_ID_PREFIX);
+  if (!key) return;
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
 });
 lastOpenedChannelId.subscribe((id) => {
-  if (typeof localStorage !== 'undefined') {
-    if (id) localStorage.setItem(LAST_CHANNEL_ID_KEY, id);
-    else localStorage.removeItem(LAST_CHANNEL_ID_KEY);
-  }
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_CHANNEL_ID_PREFIX);
+  if (!key) return;
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
 });
+
+/** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
+export function loadAccountState(npub: string): void {
+  setCurrentNpubForPersistence(npub);
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const squadsKey = `${PACTO_SQUADS_PREFIX}_${npub}`;
+    const rawSquads = localStorage.getItem(squadsKey);
+    if (rawSquads) {
+      const parsed = JSON.parse(rawSquads) as unknown;
+      squads.set(Array.isArray(parsed) ? (parsed as Squad[]) : []);
+    }
+    const pinnedKey = `${PINNED_DM_NPUBS_PREFIX}_${npub}`;
+    const rawPinned = localStorage.getItem(pinnedKey);
+    if (rawPinned) {
+      const parsed = JSON.parse(rawPinned) as unknown;
+      const arr = Array.isArray(parsed) ? (parsed as string[]).filter((x) => typeof x === 'string') : [];
+      pinnedDmNpubs.set(new Set(arr));
+    }
+    const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`)?.trim();
+    if (lastDm) activeDmId.set(lastDm);
+    const lastSquad = localStorage.getItem(`${LAST_SQUAD_ID_PREFIX}_${npub}`);
+    if (lastSquad) lastOpenedSquadId.set(lastSquad);
+    const lastChannel = localStorage.getItem(`${LAST_CHANNEL_ID_PREFIX}_${npub}`);
+    if (lastChannel) lastOpenedChannelId.set(lastChannel);
+  } catch {
+    // ignore parse errors
+  }
+}
 

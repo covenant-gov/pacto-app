@@ -1,9 +1,11 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+import { invoke } from '@tauri-apps/api/core';
 import { login as apiLogin, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
-import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, clearStoredKey, validatePrivateKeyFormat } from '../lib/api/encryption';
+import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, validatePrivateKeyFormat } from '../lib/api/encryption';
 import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
-import { dmSyncStatus, activeTopNavTab } from './app';
+import { clearAccountState } from '../lib/utils/clear-account-state';
+import { dmSyncStatus, activeTopNavTab, loadAccountState } from './app';
 
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
@@ -69,6 +71,7 @@ export async function createAccount(pin: string): Promise<void> {
   authError.set(null);
 
   try {
+    clearAccountState();
     // Generate keys with mnemonic (initializes Nostr client)
     const keys = await apiCreateAccount();
     
@@ -80,7 +83,7 @@ export async function createAccount(pin: string): Promise<void> {
     await apiConnect();
     dmLog('createAccount: connect() done');
 
-    // Set frontend state
+    // Set frontend state and load npub-scoped persistence (squads, last open, etc.)
     const npub = await getCurrentAccount();
     isAuthenticated.set(true);
     currentUser.set({
@@ -88,6 +91,7 @@ export async function createAccount(pin: string): Promise<void> {
       pubkey: keys.public
     });
     activeTopNavTab.set('squads');
+    loadAccountState(npub);
 
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
     authLoading.set(false);
@@ -109,6 +113,7 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
   authError.set(null);
 
   try {
+    clearAccountState();
     // Validate key format
     if (!validatePrivateKeyFormat(privateKey)) {
       throw new Error('Invalid private key format');
@@ -128,13 +133,14 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
     // Get current account npub from backend
     const npub = await getCurrentAccount();
 
-    // Set auth state
+    // Set auth state and load npub-scoped persistence (squads, last open, etc.)
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
     activeTopNavTab.set('squads');
+    loadAccountState(npub);
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('importAccount: fetchMessages(true)');
     dmSyncStatus.set('syncing');
@@ -181,13 +187,14 @@ export async function unlockWithPin(pin: string): Promise<void> {
     // Get current account npub from backend
     const npub = await getCurrentAccount();
 
-    // Set auth state
+    // Set auth state and load npub-scoped persistence (squads, last open, etc.)
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
     activeTopNavTab.set('squads');
+    loadAccountState(npub);
     // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
     dmLog('unlockWithPin: fetchMessages(true)');
     dmSyncStatus.set('syncing');
@@ -212,32 +219,25 @@ export async function unlockWithPin(pin: string): Promise<void> {
 }
 
 /**
- * Logout current user
- * Optionally clear stored keys
+ * Logout current user: clear all account-specific frontend state, then call
+ * backend logout (deletes current account profile dir and restarts the app).
  */
-export async function logout(clearKeys: boolean = false): Promise<void> {
+export async function logout(): Promise<void> {
   authLoading.set(true);
   authError.set(null);
 
   try {
-    if (clearKeys) {
-      await clearStoredKey();
-    }
-    
-    // Clear auth state
+    const npub = get(currentUser)?.npub;
+    clearAccountState(npub);
     isAuthenticated.set(false);
     currentUser.set(null);
-    
-    // TODO: Call backend logout if needed
-    // await invoke('logout');
-    
-    authLoading.set(false);
+
+    await invoke('logout');
+    // Backend restarts the process; code below runs only if invoke throws
   } catch (error: any) {
     console.error('Logout failed:', error);
     authError.set(error.message || 'Failed to logout');
     authLoading.set(false);
-    
-    // Still clear state even if backend fails
     isAuthenticated.set(false);
     currentUser.set(null);
   }
