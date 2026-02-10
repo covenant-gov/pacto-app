@@ -41,6 +41,7 @@
   // Export keys modal state
   let showExportModal = false;
   let showPinModal = false;
+  let showLogoutConfirm = false;
   let exportedKeys: { nsec: string; seed_phrase?: string } | null = null;
   let pinDigits = ['', '', '', '', '', ''];
   let pinError = '';
@@ -73,14 +74,23 @@
     }
   });
 
+  function openLogoutConfirm() {
+    showLogoutConfirm = true;
+  }
+
+  function closeLogoutConfirm() {
+    if (!isLoggingOut) showLogoutConfirm = false;
+  }
+
   async function handleLogout() {
+    showLogoutConfirm = false;
     isLoggingOut = true;
     try {
-      await logout(false); // Don't clear keys, just logout
+      await logout();
     } catch (e) {
       console.error('Logout failed:', e);
     }
-    // Will redirect to login automatically via +layout.svelte
+    // Backend restarts on success; otherwise redirect to login via +layout.svelte
   }
 
   function startEditing() {
@@ -460,7 +470,7 @@
               </button>
               <button 
                 class="btn-logout" 
-                on:click={handleLogout}
+                on:click={openLogoutConfirm}
                 disabled={isLoggingOut}
               >
                 {isLoggingOut ? 'Logging out...' : 'Logout'}
@@ -476,6 +486,26 @@
     {/if}
   </div>
 </div>
+
+<!-- Logout confirmation modal -->
+{#if showLogoutConfirm}
+  <div class="modal-overlay" on:click={closeLogoutConfirm} on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()} role="button" tabindex="-1">
+    <div class="modal-content" on:click|stopPropagation on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()} role="dialog" aria-modal="true" tabindex="0">
+      <h2>Logout</h2>
+      <p class="modal-subtitle">
+        Logout will remove this account's data from this device (chats, keys, and MLS data). The app will restart. You can create a new account or log in with a different key after that.
+      </p>
+      <div class="modal-actions">
+        <button class="btn-cancel" on:click={closeLogoutConfirm} disabled={isLoggingOut}>
+          Cancel
+        </button>
+        <button class="btn-confirm btn-logout-confirm" on:click={handleLogout} disabled={isLoggingOut}>
+          {isLoggingOut ? 'Logging out...' : 'Logout'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- PIN Modal -->
 {#if showPinModal}
@@ -1189,6 +1219,15 @@
   .btn-confirm:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .btn-logout-confirm {
+    background: var(--danger);
+    color: #ffffff;
+  }
+
+  .btn-logout-confirm:hover:not(:disabled) {
+    background: rgba(242, 63, 66, 0.85);
   }
 
   .btn-close {
