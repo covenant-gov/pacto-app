@@ -6,6 +6,7 @@
 
 import {
   squads,
+  networks,
   pinnedDmNpubs,
   dmChatsByNpub,
   activeDmId,
@@ -14,6 +15,9 @@ import {
   lastOpenedChannelId,
   activeSquadId,
   activeChannelId,
+  activeNetworkId,
+  lastOpenedNetworkId,
+  lastOpenedNetworkChannelId,
   backendGroupMessages,
   groupSendError,
   pendingMlsWelcomes,
@@ -37,9 +41,12 @@ import { recentEmojisStore } from '../../stores/emojis';
 /** Legacy (non-scoped) keys to remove for backwards compatibility. */
 const LEGACY_LOCAL_STORAGE_KEYS = [
   'pacto_squads',
+  'pacto_networks',
   'pacto_last_dm_npub',
   'pacto_last_squad_id',
   'pacto_last_channel_id',
+  'pacto_last_network_id',
+  'pacto_last_network_channel_id',
   'pacto_pinned_dm_npubs',
   'pacto_theme',
   'recentEmojis',
@@ -50,9 +57,12 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
 /** Npub-scoped key prefixes (suffix is _<npub>). */
 const SCOPED_KEY_PREFIXES = [
   'pacto_squads',
+  'pacto_networks',
   'pacto_last_dm_npub',
   'pacto_last_squad_id',
   'pacto_last_channel_id',
+  'pacto_last_network_id',
+  'pacto_last_network_channel_id',
   'pacto_pinned_dm_npubs',
 ] as const;
 
@@ -99,6 +109,10 @@ export function clearAccountState(npub?: string): void {
   lastOpenedChannelId.set(null);
   activeSquadId.set(null);
   activeChannelId.set(null);
+  networks.set([]);
+  activeNetworkId.set(null);
+  lastOpenedNetworkId.set(null);
+  lastOpenedNetworkChannelId.set(null);
   backendGroupMessages.set({});
   groupSendError.set(null);
   pendingMlsWelcomes.set([]);

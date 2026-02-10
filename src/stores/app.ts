@@ -183,6 +183,18 @@ export interface Squad {
   updatedAt: number;
 }
 
+// Network = same shape as Squad but formed from multiple squads; memberSquads used for heading sub-title.
+export interface Network {
+  id: string;
+  name: string;
+  iconUrl?: string;
+  channels: Channel[];
+  /** Squads that form this network (id + name at creation). Used for network heading sub-heading. */
+  memberSquads: { id: string; name: string }[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 const PACTO_SQUADS_PREFIX = 'pacto_squads';
 
 export const squads = writable<Squad[]>([]);
@@ -190,6 +202,21 @@ export const squads = writable<Squad[]>([]);
 squads.subscribe((value) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(PACTO_SQUADS_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota or serialization errors
+  }
+});
+
+const PACTO_NETWORKS_PREFIX = 'pacto_networks';
+
+export const networks = writable<Network[]>([]);
+
+networks.subscribe((value) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(PACTO_NETWORKS_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -242,6 +269,29 @@ lastOpenedChannelId.subscribe((id) => {
   else localStorage.removeItem(key);
 });
 
+// Last opened network/channel for restore when switching to Networks view (npub-scoped)
+const LAST_NETWORK_ID_PREFIX = 'pacto_last_network_id';
+const LAST_NETWORK_CHANNEL_ID_PREFIX = 'pacto_last_network_channel_id';
+
+export const activeNetworkId = writable<string | null>(null);
+export const lastOpenedNetworkId = writable<string | null>(null);
+export const lastOpenedNetworkChannelId = writable<string | null>(null);
+
+lastOpenedNetworkId.subscribe((id) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_NETWORK_ID_PREFIX);
+  if (!key) return;
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
+});
+lastOpenedNetworkChannelId.subscribe((id) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_NETWORK_CHANNEL_ID_PREFIX);
+  if (!key) return;
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
+});
+
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
@@ -266,6 +316,15 @@ export function loadAccountState(npub: string): void {
     if (lastSquad) lastOpenedSquadId.set(lastSquad);
     const lastChannel = localStorage.getItem(`${LAST_CHANNEL_ID_PREFIX}_${npub}`);
     if (lastChannel) lastOpenedChannelId.set(lastChannel);
+    const rawNetworks = localStorage.getItem(`${PACTO_NETWORKS_PREFIX}_${npub}`);
+    if (rawNetworks) {
+      const parsed = JSON.parse(rawNetworks) as unknown;
+      networks.set(Array.isArray(parsed) ? (parsed as Network[]) : []);
+    }
+    const lastNetwork = localStorage.getItem(`${LAST_NETWORK_ID_PREFIX}_${npub}`);
+    if (lastNetwork) lastOpenedNetworkId.set(lastNetwork);
+    const lastNetworkChannel = localStorage.getItem(`${LAST_NETWORK_CHANNEL_ID_PREFIX}_${npub}`);
+    if (lastNetworkChannel) lastOpenedNetworkChannelId.set(lastNetworkChannel);
   } catch {
     // ignore parse errors
   }
