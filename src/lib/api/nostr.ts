@@ -379,6 +379,55 @@ export function formatChannelInSquadMessage(payload: ChannelInSquadPayload): str
   return JSON.stringify(payload);
 }
 
+/** Payload for network invite sent via DM (invite to a network, not a squad). */
+export interface NetworkInvitePayload {
+  type: 'network_invite';
+  networkName: string;
+  groupId: string;
+  memberSquads: { id: string; name: string }[];
+}
+
+const NETWORK_INVITE_TYPE = 'network_invite';
+
+function isMemberSquadsArray(value: unknown): value is { id: string; name: string }[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      typeof (item as { id?: unknown }).id === 'string' &&
+      typeof (item as { name?: unknown }).name === 'string'
+  );
+}
+
+export function parseNetworkInviteMessage(content: string): NetworkInvitePayload | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === NETWORK_INVITE_TYPE) {
+      const p = parsed as { networkName?: string; groupId?: string; memberSquads?: unknown };
+      if (
+        typeof p.networkName === 'string' &&
+        typeof p.groupId === 'string' &&
+        isMemberSquadsArray(p.memberSquads)
+      ) {
+        return {
+          type: NETWORK_INVITE_TYPE,
+          networkName: p.networkName,
+          groupId: p.groupId,
+          memberSquads: p.memberSquads,
+        };
+      }
+    }
+  } catch {
+    // not JSON or invalid shape
+  }
+  return null;
+}
+
+export function formatNetworkInviteMessage(payload: NetworkInvitePayload): string {
+  return JSON.stringify(payload);
+}
+
 /**
  * List pending MLS welcomes (invites). Backend: list_pending_mls_welcomes.
  */
