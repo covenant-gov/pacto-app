@@ -11,6 +11,7 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import Message from '../components/Message.svelte';
   import MessageInput from '../components/MessageInput.svelte';
+  import SquadInviteCard from '../components/SquadInviteCard.svelte';
   import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
@@ -763,42 +764,21 @@
               {#each mergedDmMessages as msg (msg.id)}
                 {@const invitePayload = parseSquadInviteMessage(msg.content)}
                 {#if invitePayload}
+                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
+                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
                   {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
-                  <div class="squad-invite-card">
-                    <p class="squad-invite-text">
-                      {#if msg.mine}
-                        You invited {inviterName} to <strong>{invitePayload.squadName}</strong>.
-                      {:else}
-                        {inviterName} invited you to <strong>{invitePayload.squadName}</strong>.
-                      {/if}
-                    </p>
-                    {#if msg.mine}
-                      <!-- Inviter: no actions -->
-                    {:else if acceptedSquadInviteIds.has(msg.id)}
-                      <p class="squad-invite-accepted">Accepted</p>
-                    {:else if declinedSquadInviteIds.has(msg.id)}
-                      <p class="squad-invite-declined">Declined</p>
-                    {:else}
-                      <div class="squad-invite-actions">
-                        <button
-                          type="button"
-                          class="squad-invite-btn squad-invite-btn-accept"
-                          disabled={acceptingSquadInviteId === msg.id}
-                          on:click={() => handleAcceptSquadInvite(msg, invitePayload.groupId)}
-                        >
-                          {acceptingSquadInviteId === msg.id ? 'Accepting…' : 'Accept'}
-                        </button>
-                        <button
-                          type="button"
-                          class="squad-invite-btn squad-invite-btn-decline"
-                          disabled={acceptingSquadInviteId === msg.id}
-                          on:click={() => { declinedSquadInviteIds = new Set(declinedSquadInviteIds).add(msg.id); }}
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    {/if}
-                  </div>
+                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
+                  {@const inviteStatus = acceptedSquadInviteIds.has(msg.id) ? 'accepted' : declinedSquadInviteIds.has(msg.id) ? 'declined' : 'pending'}
+                  <SquadInviteCard
+                    squadName={invitePayload.squadName}
+                    isMine={msg.mine}
+                    inviterName={inviterName}
+                    inviterAvatarSrc={inviterAvatarSrc}
+                    status={inviteStatus}
+                    accepting={acceptingSquadInviteId === msg.id}
+                    onAccept={() => handleAcceptSquadInvite(msg, invitePayload.groupId)}
+                    onDecline={() => { declinedSquadInviteIds = new Set(declinedSquadInviteIds).add(msg.id); }}
+                  />
                 {:else}
                   <Message {...toMessageProps(msg)} />
                 {/if}
@@ -1150,74 +1130,6 @@
     font-size: 0.875rem;
     color: var(--text-muted);
     margin: 0;
-  }
-
-  .squad-invite-card {
-    margin: 8px 16px;
-    padding: 12px 16px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    max-width: 420px;
-  }
-
-  .squad-invite-text {
-    margin: 0 0 12px;
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-  }
-
-  .squad-invite-text strong {
-    color: var(--text-primary);
-  }
-
-  .squad-invite-accepted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--success);
-  }
-
-  .squad-invite-declined {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .squad-invite-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .squad-invite-btn {
-    padding: 6px 14px;
-    font-size: 0.8125rem;
-    border-radius: 6px;
-    cursor: pointer;
-    border: none;
-  }
-
-  .squad-invite-btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .squad-invite-btn-accept {
-    background: var(--accent);
-    color: #fff;
-  }
-
-  .squad-invite-btn-accept:hover:not(:disabled) {
-    background: var(--accent-hover);
-  }
-
-  .squad-invite-btn-decline {
-    background: var(--border);
-    color: var(--text-secondary);
-  }
-
-  .squad-invite-btn-decline:hover:not(:disabled) {
-    background: var(--bg-hover);
   }
 
   .dm-thread-typing {

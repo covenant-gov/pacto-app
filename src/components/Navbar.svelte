@@ -8,7 +8,7 @@
   import pinIcon from '../icons/pin.svg';
   import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, pinnedList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
   import { currentUser } from '../stores/auth';
-  import { createGroupChat } from '../lib/api/nostr';
+  import { createGroupChat, sendDmMessage, formatSquadInviteMessage } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -109,6 +109,18 @@
       $activeChannelId = groupId;
       $activeView = 'hub';
       showOrganizeSquadModal = false;
+
+      // Send squad_invite DM to each member so they see the invite card in the DM thread
+      const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName: name, groupId });
+      (async () => {
+        for (const npub of memberIds) {
+          try {
+            await sendDmMessage(npub, payload);
+          } catch (e) {
+            console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
+          }
+        }
+      })();
     } catch (e) {
       organizeSquadError = friendlyMessage(getInvokeErrorMessage(e));
     } finally {
