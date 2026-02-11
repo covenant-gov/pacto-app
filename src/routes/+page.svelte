@@ -13,9 +13,10 @@
   import MessageInput from '../components/MessageInput.svelte';
   import SquadInviteCard from '../components/SquadInviteCard.svelte';
   import ChannelInSquadCard from '../components/ChannelInSquadCard.svelte';
+  import ChannelInNetworkCard from '../components/ChannelInNetworkCard.svelte';
   import NetworkInviteCard from '../components/NetworkInviteCard.svelte';
   import NetworkNavbar from '../components/NetworkNavbar.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -301,6 +302,7 @@
   // Squad/network/channel-in-squad invite cards: accepted/declined are persisted in app store; accepting is transient
   let acceptingSquadInviteId: string | null = null;
   let acceptingChannelInSquadId: string | null = null;
+  let acceptingChannelInNetworkId: string | null = null;
   let acceptingNetworkInviteId: string | null = null;
 
   // Message bubbles show sender avatar and display name from profiles
@@ -408,6 +410,36 @@
       acceptedSquadInviteGroupIds.delete(payload.channelGroupId);
     } finally {
       acceptingChannelInSquadId = null;
+    }
+  }
+
+  async function handleAcceptChannelInNetwork(
+    msg: DmMessage,
+    payload: { networkId: string; channelGroupId: string; channelName: string }
+  ) {
+    if (acceptingChannelInNetworkId) return;
+    acceptingChannelInNetworkId = msg.id;
+    try {
+      const welcomes = await listPendingMlsWelcomes();
+      const welcome = welcomes.find((w) => w.nostr_group_id === payload.channelGroupId);
+      if (!welcome) {
+        dmError('Accept channel in network: no pending welcome for channel', payload.channelGroupId);
+        return;
+      }
+      channelInvitePendingAccept.set(payload.channelGroupId, {
+        parentType: 'network',
+        parentId: payload.networkId,
+        channelName: payload.channelName,
+      });
+      acceptedSquadInviteGroupIds.add(payload.channelGroupId);
+      await acceptMlsWelcome(welcome.id);
+      acceptedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+    } catch (e) {
+      dmError('Accept channel in network invite failed', e);
+      channelInvitePendingAccept.delete(payload.channelGroupId);
+      acceptedSquadInviteGroupIds.delete(payload.channelGroupId);
+    } finally {
+      acceptingChannelInNetworkId = null;
     }
   }
 
@@ -828,6 +860,16 @@
       addChannelToParent('squad', announcements_group_id, channel_group_id, channel_name);
     });
 
+    const unlistenChannelAddedToNetwork = listen<{
+      network_id: string;
+      channel_group_id: string;
+      channel_name: string;
+    }>('channel_added_to_network', (event) => {
+      const { network_id, channel_group_id, channel_name } = event.payload;
+      refreshPendingWelcomes().catch((e) => dmError('channel_added_to_network refresh', e));
+      addChannelToParent('network', network_id, channel_group_id, channel_name);
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
@@ -839,6 +881,7 @@
       unlistenInviteReceived.then((fn) => fn());
       unlistenWelcomeAccepted.then((fn) => fn());
       unlistenChannelAddedToSquad.then((fn) => fn());
+      unlistenChannelAddedToNetwork.then((fn) => fn());
     };
   });
 </script>
@@ -954,6 +997,7 @@
             {#if mergedDmMessages.length > 0}
               {#each mergedDmMessages as msg (msg.id)}
                 {@const channelInSquadPayload = parseChannelInSquadMessage(msg.content ?? '')}
+                {@const channelInNetworkPayload = parseChannelInNetworkMessage(msg.content ?? '')}
                 {@const networkInvitePayload = parseNetworkInviteMessage(msg.content ?? '')}
                 {@const invitePayload = parseSquadInviteMessage(msg.content ?? '')}
                 {#if channelInSquadPayload}
@@ -971,6 +1015,24 @@
                     status={channelInviteStatus}
                     accepting={acceptingChannelInSquadId === msg.id}
                     onAccept={() => handleAcceptChannelInSquad(msg, { channelGroupId: channelInSquadPayload.channelGroupId, announcementsGroupId: channelInSquadPayload.announcementsGroupId, channelName: channelInSquadPayload.channelName })}
+                    onDecline={() => { declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
+                  />
+                {:else if channelInNetworkPayload}
+                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
+                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
+                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
+                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
+                  {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
+                  <ChannelInNetworkCard
+                    networkName={channelInNetworkPayload.networkName}
+                    channelName={channelInNetworkPayload.channelName}
+                    memberSquads={channelInNetworkPayload.memberSquads ?? []}
+                    isMine={msg.mine}
+                    inviterName={inviterName}
+                    inviterAvatarSrc={inviterAvatarSrc}
+                    status={channelInviteStatus}
+                    accepting={acceptingChannelInNetworkId === msg.id}
+                    onAccept={() => handleAcceptChannelInNetwork(msg, { networkId: channelInNetworkPayload.networkId, channelGroupId: channelInNetworkPayload.channelGroupId, channelName: channelInNetworkPayload.channelName })}
                     onDecline={() => { declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
                   />
                 {:else if networkInvitePayload}

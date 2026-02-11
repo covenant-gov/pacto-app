@@ -379,6 +379,51 @@ export function formatChannelInSquadMessage(payload: ChannelInSquadPayload): str
   return JSON.stringify(payload);
 }
 
+/** Payload for "new channel in existing network" DM (add channel to network; recipient may already be in network). */
+export interface ChannelInNetworkPayload {
+  type: 'channel_in_network';
+  networkId: string;
+  networkName: string;
+  channelGroupId: string;
+  channelName: string;
+  memberSquads?: { id: string; name: string }[];
+  /** MLS group ids of channels already in the network (used by backend to auto-accept if user is in any). Exclude the new channel's groupId. */
+  existingChannelGroupIds?: string[];
+}
+
+const CHANNEL_IN_NETWORK_TYPE = 'channel_in_network';
+
+export function parseChannelInNetworkMessage(content: string): ChannelInNetworkPayload | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === CHANNEL_IN_NETWORK_TYPE) {
+      const p = parsed as { networkId?: string; networkName?: string; channelGroupId?: string; channelName?: string; memberSquads?: unknown };
+      if (
+        typeof p.networkId === 'string' &&
+        typeof p.networkName === 'string' &&
+        typeof p.channelGroupId === 'string' &&
+        typeof p.channelName === 'string'
+      ) {
+        return {
+          type: CHANNEL_IN_NETWORK_TYPE,
+          networkId: p.networkId,
+          networkName: p.networkName,
+          channelGroupId: p.channelGroupId,
+          channelName: p.channelName,
+          memberSquads: isMemberSquadsArray(p.memberSquads) ? p.memberSquads : undefined,
+        };
+      }
+    }
+  } catch {
+    // not JSON or invalid shape
+  }
+  return null;
+}
+
+export function formatChannelInNetworkMessage(payload: ChannelInNetworkPayload): string {
+  return JSON.stringify(payload);
+}
+
 /** Payload for network invite sent via DM (invite to a network, not a squad). */
 export interface NetworkInvitePayload {
   type: 'network_invite';

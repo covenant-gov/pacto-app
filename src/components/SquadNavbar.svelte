@@ -52,7 +52,6 @@
     showCreateChannelModal = true;
     createChannelName = '';
     selectedNpubs = [];
-    createChannelSelectEveryone = false;
     createChannelError = '';
     createChannelMemberList = [];
     loadCreateChannelMembers();
@@ -97,17 +96,16 @@
 
   $: canCreateChannel = createChannelName.trim().length > 0 && selectedNpubs.length > 0;
 
-  /** When true, all squad members (announcements) are selected for the new channel. */
-  let createChannelSelectEveryone = false;
-  $: if (showCreateChannelModal && createChannelSelectEveryone && createChannelMemberList.length > 0) {
-    const all = createChannelMemberList;
-    if (selectedNpubs.length !== all.length || all.some((n) => !selectedNpubs.includes(n))) {
-      selectedNpubs = [...all];
-    }
-  }
+  /** Derived: checked when every squad member is selected. */
+  $: createChannelAllSelected =
+    createChannelMemberList.length > 0 &&
+    selectedNpubs.length === createChannelMemberList.length &&
+    createChannelMemberList.every((n) => selectedNpubs.includes(n));
+
   function toggleCreateChannelSelectEveryone() {
-    createChannelSelectEveryone = !createChannelSelectEveryone;
-    if (createChannelSelectEveryone) {
+    if (createChannelAllSelected) {
+      selectedNpubs = [];
+    } else {
       selectedNpubs = [...createChannelMemberList];
     }
   }
@@ -473,7 +471,7 @@
         <label class="create-channel-select-everyone">
           <input
             type="checkbox"
-            bind:checked={createChannelSelectEveryone}
+            checked={createChannelAllSelected}
             on:change={toggleCreateChannelSelectEveryone}
           />
           Add everyone in squad
