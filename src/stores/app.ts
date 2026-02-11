@@ -1,5 +1,25 @@
 import { writable, derived, get } from 'svelte/store';
 import type { PendingMlsWelcome } from '../lib/api/nostr';
+import {
+  initInviteDecisionPersistence,
+  getInviteDecisionLoadEntries,
+  acceptedSquadInviteIds,
+  declinedSquadInviteIds,
+  acceptedNetworkInviteIds,
+  declinedNetworkInviteIds,
+  acceptedChannelInviteMessageIds,
+  declinedChannelInviteMessageIds,
+} from './invite-decisions';
+
+// Re-export invite decision stores for consumers (e.g. +page, clear-account-state)
+export {
+  acceptedSquadInviteIds,
+  declinedSquadInviteIds,
+  acceptedNetworkInviteIds,
+  declinedNetworkInviteIds,
+  acceptedChannelInviteMessageIds,
+  declinedChannelInviteMessageIds,
+};
 
 /** Current npub for persistence: scoped localStorage keys use this. Set on login, cleared on logout. */
 export const currentNpubForPersistence = writable<string | null>(null);
@@ -76,9 +96,11 @@ export const dmList = derived(
   ([$m, $pinned]) =>
     toDmEntries($m, (c) => c.hasFromMe && c.hasFromThem && !$pinned.has(c.npub))
 );
+// Requests: they messaged us, we haven't replied. Includes invite-only DMs (squad/network/channel-in-squad) from non-friends.
 export const requestsList = derived(dmChatsByNpub, ($m) =>
   toDmEntries($m, (c) => !c.hasFromMe && c.hasFromThem)
 );
+// Pending: we messaged them, they haven't replied. Includes conversations where we sent an invite and they haven't replied.
 export const pendingList = derived(dmChatsByNpub, ($m) =>
   toDmEntries($m, (c) => c.hasFromMe && !c.hasFromThem)
 );
@@ -117,6 +139,9 @@ export function addPendingDm(npub: string): void {
 
 // Selected DM conversation (other user's npub)
 export const activeDmId = writable<string | null>(null);
+
+// Invite decision persistence wired from invite-decisions.ts
+initInviteDecisionPersistence(persistenceKey);
 
 // Last opened chat per tab (Friends / Requests / Pending / Pinned) so switching tabs shows that chat if still in section
 export const lastOpenedDmByTab = writable<Record<DmTab, string | null>>({
@@ -325,6 +350,15 @@ export function loadAccountState(npub: string): void {
     if (lastNetwork) lastOpenedNetworkId.set(lastNetwork);
     const lastNetworkChannel = localStorage.getItem(`${LAST_NETWORK_CHANNEL_ID_PREFIX}_${npub}`);
     if (lastNetworkChannel) lastOpenedNetworkChannelId.set(lastNetworkChannel);
+    for (const [key, setStore] of getInviteDecisionLoadEntries(npub)) {
+      try {
+        const raw = localStorage.getItem(key);
+        const arr = raw ? (JSON.parse(raw) as unknown) : [];
+        setStore(Array.isArray(arr) ? (arr as string[]).filter((x) => typeof x === 'string') : []);
+      } catch {
+        setStore([]);
+      }
+    }
   } catch {
     // ignore parse errors
   }

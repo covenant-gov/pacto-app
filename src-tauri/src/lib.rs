@@ -1463,6 +1463,70 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
         }
     }
 
+    // Channel-in-squad: if this DM is a channel invite for a squad we're already in, auto-accept
+    // on the backend and never show it as an invite (don't add to chat, don't emit message_new).
+    if !is_mine {
+        if let Some((announcements_group_id, channel_group_id, channel_name)) =
+            parse_channel_in_squad_dm(&msg.content)
+        {
+            if let Some(handle) = TAURI_APP.get() {
+                let handle = handle.clone();
+                let in_squad = match db::load_mls_groups(&handle).await {
+                    Ok(groups) => {
+                        let aid = announcements_group_id.to_lowercase();
+                        groups.iter().any(|g| {
+                            g.group_id.to_lowercase() == aid || g.engine_group_id.to_lowercase() == aid
+                        })
+                    }
+                    Err(_) => false,
+                };
+                if in_squad {
+                    let announcements_group_id = announcements_group_id.clone();
+                    let channel_group_id = channel_group_id.clone();
+                    let channel_name = channel_name.clone();
+                    tokio::spawn(async move {
+                        for _ in 0..10 {
+                            let handle = TAURI_APP.get().unwrap().clone();
+                            let cid = channel_group_id.clone();
+                            let welcome_id = tokio::task::spawn_blocking(move || {
+                                get_pending_welcome_id_for_group_sync(&handle, &cid)
+                            })
+                            .await
+                            .ok()
+                            .and_then(|o| o);
+                            if let Some(wid) = welcome_id {
+                                let handle = TAURI_APP.get().unwrap().clone();
+                                let accepted = tokio::task::spawn_blocking(move || {
+                                    let rt = tokio::runtime::Handle::current();
+                                    rt.block_on(do_accept_mls_welcome(handle, wid))
+                                })
+                                .await
+                                .ok()
+                                .and_then(|r| r.ok())
+                                .unwrap_or(false);
+                                if accepted {
+                                    if let Some(app) = TAURI_APP.get() {
+                                        let _ = app.emit(
+                                            "channel_added_to_squad",
+                                            serde_json::json!({
+                                                "announcements_group_id": announcements_group_id,
+                                                "channel_group_id": channel_group_id,
+                                                "channel_name": channel_name,
+                                            }),
+                                        );
+                                    }
+                                    break;
+                                }
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    });
+                    return true;
+                }
+            }
+        }
+    }
+
     // Populate reply context before emitting (for replies to old messages not in frontend cache)
     if !msg.replied_to.is_empty() {
         if let Some(handle) = TAURI_APP.get() {
@@ -5128,6 +5192,33 @@ struct SimpleWelcome {
     member_count: u32,
 }
 
+/// Parse DM content as channel_in_squad payload; returns (announcements_group_id, channel_group_id, channel_name) if valid.
+fn parse_channel_in_squad_dm(content: &str) -> Option<(String, String, String)> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    let obj = v.as_object()?;
+    if obj.get("type").and_then(|t| t.as_str()) != Some("channel_in_squad") {
+        return None;
+    }
+    let announcements = obj.get("announcementsGroupId").and_then(|s| s.as_str())?;
+    let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
+    let name = obj.get("channelName").and_then(|s| s.as_str())?;
+    Some((announcements.to_string(), channel.to_string(), name.to_string()))
+}
+
+/// Get the welcome event id (hex) for a pending MLS welcome that matches the given channel group id.
+/// Must be called from a blocking context (uses MLS engine).
+fn get_pending_welcome_id_for_group_sync<R: Runtime>(
+    handle: &AppHandle<R>,
+    channel_group_id: &str,
+) -> Option<String> {
+    let mls = MlsService::new_persistent(handle).ok()?;
+    let engine = mls.engine().ok()?;
+    let pending = engine.get_pending_welcomes().ok()?;
+    let cid_lower = channel_group_id.to_lowercase();
+    let w = pending.into_iter().find(|w| hex::encode(&w.nostr_group_id).to_lowercase() == cid_lower)?;
+    Some(w.id.to_hex())
+}
+
 /// List pending MLS welcomes (invites)
 #[tauri::command]
 async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
@@ -5203,183 +5294,123 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
     Ok(welcomes)
 }
 
+/// Core logic for accepting an MLS welcome. Used by the tauri command and by channel-in-squad auto-accept.
+/// Must be run from a blocking context (e.g. rt.block_on) because it uses the MLS engine.
+async fn do_accept_mls_welcome<R: Runtime>(
+    handle: AppHandle<R>,
+    welcome_event_id_hex: String,
+) -> Result<bool, String> {
+    let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+
+    let (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex) = {
+        let engine = mls.engine().map_err(|e| e.to_string())?;
+        let id = nostr_sdk::EventId::from_hex(&welcome_event_id_hex).map_err(|e| e.to_string())?;
+        let welcome_opt = engine.get_welcome(&id).map_err(|e| e.to_string())?;
+        let welcome = welcome_opt.ok_or_else(|| "Welcome not found".to_string())?;
+        let nostr_group_id_bytes = welcome.nostr_group_id.clone();
+        let group_name = welcome.group_name.clone();
+        let welcomer_hex = welcome.welcomer.to_hex();
+        let wrapper_event_id_hex = welcome.wrapper_event_id.to_hex();
+        engine.accept_welcome(&welcome).map_err(|e| e.to_string())?;
+        let nostr_group_id = hex::encode(&nostr_group_id_bytes);
+        let engine_group_id = {
+            let groups = engine
+                .get_groups()
+                .map_err(|e| format!("Failed to get groups after accepting welcome: {}", e))?;
+            let matching_group = groups
+                .iter()
+                .find(|g| hex::encode(&g.nostr_group_id) == nostr_group_id);
+            if let Some(group) = matching_group {
+                hex::encode(group.mls_group_id.as_slice())
+            } else {
+                nostr_group_id.clone()
+            }
+        };
+        (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex)
+    };
+
+    let mut groups = mls.read_groups().await.map_err(|e| e.to_string())?;
+    let existing_index = groups.iter().position(|g| g.group_id == nostr_group_id);
+
+    if let Some(idx) = existing_index {
+        if groups[idx].evicted {
+            groups[idx].evicted = false;
+            groups[idx].updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| e.to_string())?
+                .as_secs();
+            crate::db::save_mls_group(handle.clone(), &groups[idx])
+                .await
+                .map_err(|e| e.to_string())?;
+            mls::emit_group_metadata_event(&groups[idx]);
+        }
+    } else {
+        let now_secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_secs();
+        let metadata = mls::MlsGroupMetadata {
+            group_id: nostr_group_id.clone(),
+            engine_group_id: engine_group_id.clone(),
+            creator_pubkey: welcomer_hex,
+            name: group_name,
+            avatar_ref: None,
+            created_at: now_secs,
+            updated_at: now_secs,
+            evicted: false,
+        };
+        crate::db::save_mls_group(handle.clone(), &metadata)
+            .await
+            .map_err(|e| e.to_string())?;
+        mls::emit_group_metadata_event(&metadata);
+        let mut state = STATE.lock().await;
+        let chat_id = state.create_or_get_mls_group_chat(&nostr_group_id, vec![]);
+        if let Some(chat) = state.get_chat_mut(&chat_id) {
+            chat.metadata.set_name(metadata.name.clone());
+        }
+        if let Some(chat) = state.get_chat(&chat_id) {
+            let _ = db::save_chat(handle.clone(), chat).await;
+        }
+    }
+
+    {
+        let mut notified = NOTIFIED_WELCOMES.lock().await;
+        notified.remove(&wrapper_event_id_hex);
+    }
+
+    if let Some(app) = TAURI_APP.get() {
+        let _ = app.emit(
+            "mls_welcome_accepted",
+            serde_json::json!({
+                "welcome_event_id": welcome_event_id_hex,
+                "group_id": nostr_group_id
+            }),
+        );
+    }
+
+    if let Err(e) = sync_mls_group_participants(nostr_group_id.clone()).await {
+        eprintln!("[MLS] Failed to sync participants after welcome accept: {}", e);
+    }
+
+    if let Err(e) = mls.sync_group_since_cursor(&nostr_group_id).await {
+        eprintln!(
+            "[MLS] Post-accept initial sync failed for group {}: {}",
+            nostr_group_id, e
+        );
+    } else if let Some(app) = TAURI_APP.get() {
+        let _ = app.emit("mls_group_initial_sync", serde_json::json!({ "group_id": nostr_group_id }));
+    }
+
+    Ok(true)
+}
+
 /// Accept an MLS welcome by its welcome (rumor) event id hex
 #[tauri::command]
 async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String> {
-    // Run non-Send MLS engine work on blocking thread; drive async via current runtime
     let accepted = tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
         let rt = tokio::runtime::Handle::current();
-        rt.block_on(async move {
-            let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            
-            // Get welcome details and accept it (engine work in no-await scope)
-            let (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex) = {
-                let engine = mls.engine().map_err(|e| e.to_string())?;
-                
-                let id = nostr_sdk::EventId::from_hex(&welcome_event_id_hex).map_err(|e| e.to_string())?;
-                let welcome_opt = engine.get_welcome(&id).map_err(|e| e.to_string())?;
-                let welcome = welcome_opt.ok_or_else(|| "Welcome not found".to_string())?;
-                
-                // Extract metadata before accepting
-                let nostr_group_id_bytes = welcome.nostr_group_id.clone();
-                let group_name = welcome.group_name.clone();
-                let welcomer_hex = welcome.welcomer.to_hex();
-                let wrapper_event_id_hex = welcome.wrapper_event_id.to_hex();
-
-                // Accept the welcome - this updates engine state internally
-                engine.accept_welcome(&welcome).map_err(|e| e.to_string())?;
-                
-                // The nostr_group_id is used for wire protocol (h tag on relays)
-                let nostr_group_id = hex::encode(&nostr_group_id_bytes);
-                
-                // After accepting the welcome, get the actual group from the engine to find its internal ID
-                // This follows the pattern from the SDK example
-                let engine_group_id = {
-                    // Get all groups from the engine (should include the one we just joined)
-                    let groups = engine.get_groups()
-                        .map_err(|e| format!("Failed to get groups after accepting welcome: {}", e))?;
-                    
-                    // Find the group that matches our nostr_group_id
-                    let matching_group = groups.iter()
-                        .find(|g| hex::encode(&g.nostr_group_id) == nostr_group_id);
-                    
-                    if let Some(group) = matching_group {
-                        // Found the group - use its internal MLS group ID
-                        let engine_id = hex::encode(group.mls_group_id.as_slice());
-                        println!("[MLS] Found group in engine after accept:");
-                        println!("[MLS]   - nostr_group_id matches: {}", nostr_group_id);
-                        println!("[MLS]   - engine mls_group_id: {}", engine_id);
-                        engine_id
-                    } else {
-                        // This shouldn't happen, but fallback to nostr_group_id
-                        eprintln!("[MLS] Warning: Could not find group in engine after accepting welcome");
-                        eprintln!("[MLS] Groups in engine: {}", groups.len());
-                        for g in groups.iter() {
-                            eprintln!("[MLS]   - Group: nostr_id={}, mls_id={}",
-                                     hex::encode(&g.nostr_group_id),
-                                     hex::encode(g.mls_group_id.as_slice()));
-                        }
-                        // Use the nostr_group_id as fallback
-                        nostr_group_id.clone()
-                    }
-                };
-                
-                // Log for debugging
-                println!("[MLS] Welcome accepted:");
-                println!("[MLS]   - wire_id (h tag): {}", nostr_group_id);
-                println!("[MLS]   - engine_group_id: {}", engine_group_id);
-                println!("[MLS]   - group_name: {}", group_name);
-                
-                (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex)
-            }; // engine dropped here
-            
-            // Now persist the group metadata (awaitable section)
-            let mut groups = mls.read_groups().await.map_err(|e| e.to_string())?;
-            
-            // Check if group already exists or was previously evicted
-            let existing_index = groups.iter().position(|g| g.group_id == nostr_group_id);
-            
-            if let Some(idx) = existing_index {
-                // Group exists - check if it was evicted and we're being re-invited
-                if groups[idx].evicted {
-                    println!("[MLS] Re-invited to previously evicted group: {}", nostr_group_id);
-                    // Clear the evicted flag and update metadata
-                    groups[idx].evicted = false;
-                    groups[idx].updated_at = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map_err(|e| e.to_string())?
-                        .as_secs();
-                    // Update only the specific group instead of all groups
-                    crate::db::save_mls_group(handle.clone(), &groups[idx]).await.map_err(|e| e.to_string())?;
-                    mls::emit_group_metadata_event(&groups[idx]);
-                } else {
-                    println!("[MLS] Group already exists in metadata: group_id={}", nostr_group_id);
-                }
-            } else {
-                // Build metadata for the accepted group
-                let now_secs = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|e| e.to_string())?
-                    .as_secs();
-                
-                let metadata = mls::MlsGroupMetadata {
-                    group_id: nostr_group_id.clone(),         // Wire ID for relay filtering (h tag)
-                    engine_group_id: engine_group_id.clone(), // Internal engine ID for local operations
-                    creator_pubkey: welcomer_hex,             // The welcomer becomes the creator from our perspective
-                    name: group_name,
-                    avatar_ref: None,
-                    created_at: now_secs,
-                    updated_at: now_secs,
-                    evicted: false,                           // Accepting a welcome means we're joining, not evicted
-                };
-                
-                crate::db::save_mls_group(handle.clone(), &metadata).await.map_err(|e| e.to_string())?;
-                mls::emit_group_metadata_event(&metadata);
-                
-                // Create the Chat in STATE with metadata and save to disk
-                {
-                    let mut state = STATE.lock().await;
-                    let chat_id = state.create_or_get_mls_group_chat(&nostr_group_id, vec![]);
-                    
-                    // Set metadata from MlsGroupMetadata
-                    if let Some(chat) = state.get_chat_mut(&chat_id) {
-                        chat.metadata.set_name(metadata.name.clone());
-                        // Member count will be updated during sync when we process messages
-                    }
-                    
-                    // Save chat to disk
-                    if let Some(chat) = state.get_chat(&chat_id) {
-                        if let Err(e) = db::save_chat(handle.clone(), chat).await {
-                            eprintln!("[MLS] Failed to save chat after welcome acceptance: {}", e);
-                        }
-                    }
-                }
-                
-                println!("[MLS] Persisted group metadata after accept: group_id={}", nostr_group_id);
-            }
-
-            // Remove this welcome from the notified set since it's been accepted
-            {
-                let mut notified = NOTIFIED_WELCOMES.lock().await;
-                notified.remove(&wrapper_event_id_hex);
-            }
-            
-            // Emit event so the UI can refresh welcome lists and group lists
-            if let Some(app) = TAURI_APP.get() {
-                let _ = app.emit("mls_welcome_accepted", serde_json::json!({
-                    "welcome_event_id": welcome_event_id_hex,
-                    "group_id": nostr_group_id
-                }));
-            }
-
-            // Sync the participants array with actual group members from the engine
-            if let Err(e) = sync_mls_group_participants(nostr_group_id.clone()).await {
-                eprintln!("[MLS] Failed to sync participants after welcome accept: {}", e);
-            }
-
-            // Immediately prefetch recent MLS messages for this group so the chat list shows previews
-            // and ordering without requiring the user to open the chat. This loads a recent slice
-            // (48h window by default in sync_group_since_cursor) rather than full history.
-            match mls.sync_group_since_cursor(&nostr_group_id).await {
-                Ok((processed, new_msgs)) => {
-                    println!("[MLS] Post-accept initial sync: processed={}, new={}", processed, new_msgs);
-                    // Optional: let UI know initial sync finished for this group
-                    if let Some(app) = TAURI_APP.get() {
-                        let _ = app.emit("mls_group_initial_sync", serde_json::json!({
-                            "group_id": nostr_group_id,
-                            "processed": processed,
-                            "new": new_msgs
-                        }));
-                    }
-                }
-                Err(e) => {
-                    eprintln!("[MLS] Post-accept initial sync failed for group {}: {}", nostr_group_id, e);
-                }
-            }
-
-            Ok::<bool, String>(true)
-        })
+        rt.block_on(do_accept_mls_welcome(handle, welcome_event_id_hex))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;

@@ -13,7 +13,9 @@
   import MessageInput from '../components/MessageInput.svelte';
   import SquadInviteCard from '../components/SquadInviteCard.svelte';
   import ChannelInSquadCard from '../components/ChannelInSquadCard.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, syncMlsGroupsNow } from '../lib/api/nostr';
+  import NetworkInviteCard from '../components/NetworkInviteCard.svelte';
+  import NetworkNavbar from '../components/NetworkNavbar.svelte';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -44,12 +46,23 @@
     lastOpenedDmByTab,
     lastOpenedSquadId,
     lastOpenedChannelId,
+    networks,
+    activeNetworkId,
+    lastOpenedNetworkId,
+    lastOpenedNetworkChannelId,
+    acceptedSquadInviteIds,
+    declinedSquadInviteIds,
+    acceptedNetworkInviteIds,
+    declinedNetworkInviteIds,
+    acceptedChannelInviteMessageIds,
+    declinedChannelInviteMessageIds,
     dmChatsByNpub,
     pinnedDmNpubs,
     dmSendError,
     type DmMessage,
     type DmTab,
     type Channel,
+    type Network,
   } from '../stores/app';
 
   const PAGE_SIZE = 100;
@@ -58,8 +71,48 @@
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
   let acceptedSquadInviteGroupIds = new Set<string>();
 
-  /** When user accepts a "channel in squad" invite we store mapping so mls_welcome_accepted can add channel to the right squad. */
-  let channelInSquadPendingAccept = new Map<string, { announcementsGroupId: string; channelName: string }>();
+  /** When user accepts a channel invite (squad or network) we store mapping so mls_welcome_accepted can add channel to the right parent. */
+  let channelInvitePendingAccept = new Map<
+    string,
+    { parentType: 'squad' | 'network'; parentId: string; channelName: string }
+  >();
+
+  /** Add a channel to a squad (parentId = announcementsGroupId) or network (parentId = network id). */
+  function addChannelToParent(
+    parentType: 'squad' | 'network',
+    parentId: string,
+    channelGroupId: string,
+    channelName: string
+  ) {
+    const newChannel: Channel = {
+      id: channelGroupId,
+      name: channelName,
+      groupId: channelGroupId,
+      order: 0,
+    };
+    if (parentType === 'squad') {
+      const list = get(squads);
+      const squad = list.find((s) => {
+        const ann = s.channels?.slice().sort((a, b) => a.order - b.order)[0];
+        return ann?.groupId === parentId;
+      });
+      if (squad) {
+        newChannel.order = squad.channels.length;
+        squads.update((l) =>
+          l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
+        );
+      }
+    } else {
+      const list = get(networks);
+      const network = list.find((n) => n.id === parentId);
+      if (network) {
+        newChannel.order = network.channels.length;
+        networks.update((l) =>
+          l.map((n) => (n.id !== network.id ? n : { ...n, channels: [...n.channels, newChannel] }))
+        );
+      }
+    }
+  }
 
   let pendingAddToSquadGroupId: string | null = null;
   function addAcceptedChannelToSquad(squadId: string) {
@@ -115,6 +168,15 @@
   }
   $: if ($activeTopNavTab === 'squads' && $activeChannelId && !$activeChannelId.startsWith('creating-')) {
     lastOpenedChannelId.set($activeChannelId);
+  }
+
+  // Persist last-opened network/channel when user selects in Networks tab (also set in NetworkNavbar)
+  $: if ($activeTopNavTab === 'networks' && $activeNetworkId) {
+    lastOpenedNetworkId.set($activeNetworkId);
+    if ($activeChannelId) lastOpenedNetworkChannelId.set($activeChannelId);
+  }
+  $: if ($activeTopNavTab === 'networks' && $activeChannelId && !$activeChannelId.startsWith('creating-')) {
+    lastOpenedNetworkChannelId.set($activeChannelId);
   }
 
   // Nickname edit for current DM contact
@@ -236,13 +298,10 @@
     !loadingOlder &&
     (($messageCountByChat[$activeDmId] ?? 0) > ($backendDmMessages[$activeDmId]?.length ?? 0));
 
-  // Squad invite cards in DM: track accepted/declined so we show status and hide buttons
-  let acceptedSquadInviteIds: Set<string> = new Set();
-  let declinedSquadInviteIds: Set<string> = new Set();
+  // Squad/network/channel-in-squad invite cards: accepted/declined are persisted in app store; accepting is transient
   let acceptingSquadInviteId: string | null = null;
-  let acceptedChannelInSquadMessageIds: Set<string> = new Set();
-  let declinedChannelInSquadMessageIds: Set<string> = new Set();
   let acceptingChannelInSquadId: string | null = null;
+  let acceptingNetworkInviteId: string | null = null;
 
   // Message bubbles show sender avatar and display name from profiles
   function toMessageProps(msg: DmMessage) {
@@ -299,7 +358,7 @@
       // Mark before accept so mls_welcome_accepted listener skips "Add to squad" modal (channel is already this squad)
       acceptedSquadInviteGroupIds.add(groupId);
       await acceptMlsWelcome(welcome.id);
-      acceptedSquadInviteIds = new Set(acceptedSquadInviteIds).add(msg.id);
+      acceptedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
       const now = Date.now();
       const announcementsChannel: Channel = {
         id: groupId,
@@ -335,19 +394,65 @@
         dmError('Accept channel in squad: no pending welcome for channel', payload.channelGroupId);
         return;
       }
-      channelInSquadPendingAccept.set(payload.channelGroupId, {
-        announcementsGroupId: payload.announcementsGroupId,
+      channelInvitePendingAccept.set(payload.channelGroupId, {
+        parentType: 'squad',
+        parentId: payload.announcementsGroupId,
         channelName: payload.channelName,
       });
       acceptedSquadInviteGroupIds.add(payload.channelGroupId);
       await acceptMlsWelcome(welcome.id);
-      acceptedChannelInSquadMessageIds = new Set(acceptedChannelInSquadMessageIds).add(msg.id);
+      acceptedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
     } catch (e) {
-      dmError('Accept channel in squad failed', e);
-      channelInSquadPendingAccept.delete(payload.channelGroupId);
+      dmError('Accept channel invite failed', e);
+      channelInvitePendingAccept.delete(payload.channelGroupId);
       acceptedSquadInviteGroupIds.delete(payload.channelGroupId);
     } finally {
       acceptingChannelInSquadId = null;
+    }
+  }
+
+  async function handleAcceptNetworkInvite(
+    msg: DmMessage,
+    payload: { networkName: string; groupId: string; memberSquads: { id: string; name: string }[] }
+  ) {
+    if (acceptingNetworkInviteId) return;
+    acceptingNetworkInviteId = msg.id;
+    dmSendError.set(null);
+    try {
+      const welcomes = await listPendingMlsWelcomes();
+      const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
+      if (!welcome) {
+        dmSendError.set('No pending invite for this network. The invite may have expired.');
+        return;
+      }
+      acceptedSquadInviteGroupIds.add(payload.groupId);
+      await acceptMlsWelcome(welcome.id);
+      const now = Date.now();
+      const announcementsChannel: Channel = {
+        id: payload.groupId,
+        name: 'Announcements',
+        groupId: payload.groupId,
+        order: 0,
+      };
+      const newNetwork: Network = {
+        id: crypto.randomUUID(),
+        name: payload.networkName,
+        channels: [announcementsChannel],
+        memberSquads: payload.memberSquads,
+        createdAt: now,
+        updatedAt: now,
+      };
+      networks.update((list) => [...list, newNetwork]);
+      activeNetworkId.set(newNetwork.id);
+      activeChannelId.set(payload.groupId);
+      activeTopNavTab.set('networks');
+      activeView.set('hub');
+      acceptedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+    } catch (e) {
+      dmError('Accept network invite failed', e);
+      dmSendError.set(friendlyMessage(getInvokeErrorMessage(e)) || 'Failed to accept network invite.');
+    } finally {
+      acceptingNetworkInviteId = null;
     }
   }
 
@@ -468,6 +573,30 @@
       activeSquadId.set(first.id);
       activeChannelId.set(first.channels.length > 0 ? first.channels[0].groupId : null);
     }
+  } else if ($activeTopNavTab === 'networks' && prevTopNavTab !== 'networks') {
+    prevTopNavTab = 'networks';
+    // Restore last-opened network/channel when switching to Networks tab
+    const lastNetId = $lastOpenedNetworkId;
+    const lastChanId = $lastOpenedNetworkChannelId;
+    const net = lastNetId ? $networks.find((n) => n.id === lastNetId) : null;
+    if (net) {
+      activeNetworkId.set(net.id);
+      const sorted = [...net.channels].sort((a, b) => a.order - b.order);
+      const ch =
+        lastChanId && sorted.some((c) => c.groupId === lastChanId)
+          ? sorted.find((c) => c.groupId === lastChanId)
+          : sorted[0];
+      activeChannelId.set(ch?.groupId ?? sorted[0]?.groupId ?? null);
+    } else if ($networks.length > 0) {
+      // No valid last-opened, or last-opened was removed: ensure valid selection
+      const currentNet = $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) : null;
+      if (!currentNet) {
+        const first = $networks[0];
+        const firstCh = first.channels.slice().sort((a, b) => a.order - b.order)[0];
+        activeNetworkId.set(first.id);
+        activeChannelId.set(firstCh?.groupId ?? null);
+      }
+    }
   } else if ($activeTopNavTab !== 'squads') {
     prevTopNavTab = $activeTopNavTab;
   }
@@ -491,8 +620,11 @@
     const unlistenNew = listen<{ message: DmMessage; chat_id: string }>('message_new', (event) => {
       const { message, chat_id } = event.payload;
       dmLog('message_new', { chat_id: chat_id.slice(0, 20) + '…', messageId: message.id?.slice(0, 12), mine: message.mine });
+      // Squad/network/channel-in-squad invites are normal DMs: no friend check. Receiver sees in Requests, sender in Pending; Accept/Decline in thread.
       const isSquadInvite = parseSquadInviteMessage(message.content ?? '') !== null;
-      console.log('[Squad/Invite] message_new: chat_id=', chat_id?.slice(0, 24) + '…', 'mine=', message.mine, 'isSquadInvite=', isSquadInvite, 'contentPreview=', (message.content ?? '').slice(0, 60) + (message.content && message.content.length > 60 ? '…' : ''));
+      const isNetworkInvite = parseNetworkInviteMessage(message.content ?? '') !== null;
+      const isInviteDm = isSquadInvite || isNetworkInvite || parseChannelInSquadMessage(message.content ?? '') !== null;
+      console.log('[Squad/Invite] message_new: chat_id=', chat_id?.slice(0, 24) + '…', 'mine=', message.mine, 'isInviteDm=', isInviteDm, 'contentPreview=', (message.content ?? '').slice(0, 60) + (message.content && message.content.length > 60 ? '…' : ''));
       if (!chat_id.startsWith('npub1')) return;
       const m: DmMessage = {
         id: message.id,
@@ -528,7 +660,7 @@
           hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
           lastAt: Math.max(cur?.lastAt ?? 0, m.at),
         };
-        if (isSquadInvite && !hadChat) console.log('[Squad/Invite] message_new: added new chat to dmChatsByNpub for inviter', chat_id?.slice(0, 24) + '…');
+        if (isInviteDm && !hadChat) console.log('[Squad/Invite] message_new: invite DM added chat (receiver=Requests, sender=Pending)', chat_id?.slice(0, 24) + '…');
         return { ...map, [chat_id]: next };
       });
       // Sender sent a message — clear "Typing" for this chat and cancel expiry timeout
@@ -654,27 +786,17 @@
     const unlistenWelcomeAccepted = listen<{ group_id: string }>('mls_welcome_accepted', (event) => {
       const group_id = event.payload.group_id;
       refreshPendingWelcomes().catch((e) => dmError('mls_welcome_accepted refresh', e));
-      // Channel-in-squad: add this channel to the existing squad (must run before acceptedSquadInviteGroupIds)
-      const channelInSquadInfo = channelInSquadPendingAccept.get(group_id);
-      if (channelInSquadInfo) {
-        channelInSquadPendingAccept.delete(group_id);
+      // Channel invite (squad or network): add this channel to the right parent
+      const channelInviteInfo = channelInvitePendingAccept.get(group_id);
+      if (channelInviteInfo) {
+        channelInvitePendingAccept.delete(group_id);
         acceptedSquadInviteGroupIds.delete(group_id);
-        const list = get(squads);
-        const squad = list.find((s) => {
-          const ann = s.channels?.slice().sort((a, b) => a.order - b.order)[0];
-          return ann?.groupId === channelInSquadInfo.announcementsGroupId;
-        });
-        if (squad) {
-          const newChannel: Channel = {
-            id: group_id,
-            name: channelInSquadInfo.channelName,
-            groupId: group_id,
-            order: squad.channels.length,
-          };
-          squads.update((l) =>
-            l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
-          );
-        }
+        addChannelToParent(
+          channelInviteInfo.parentType,
+          channelInviteInfo.parentId,
+          group_id,
+          channelInviteInfo.channelName
+        );
         return;
       }
       if (acceptedSquadInviteGroupIds.has(group_id)) {
@@ -695,6 +817,17 @@
       pendingAddToSquadGroupId = group_id;
     });
 
+    // Backend auto-accepted a channel invite (user already in parent). addChannelToParent works for squad and network.
+    const unlistenChannelAddedToSquad = listen<{
+      announcements_group_id: string;
+      channel_group_id: string;
+      channel_name: string;
+    }>('channel_added_to_squad', (event) => {
+      const { announcements_group_id, channel_group_id, channel_name } = event.payload;
+      refreshPendingWelcomes().catch((e) => dmError('channel_added_to_squad refresh', e));
+      addChannelToParent('squad', announcements_group_id, channel_group_id, channel_name);
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
@@ -705,6 +838,7 @@
       unlistenMlsNew.then((fn) => fn());
       unlistenInviteReceived.then((fn) => fn());
       unlistenWelcomeAccepted.then((fn) => fn());
+      unlistenChannelAddedToSquad.then((fn) => fn());
     };
   });
 </script>
@@ -820,30 +954,48 @@
             {#if mergedDmMessages.length > 0}
               {#each mergedDmMessages as msg (msg.id)}
                 {@const channelInSquadPayload = parseChannelInSquadMessage(msg.content ?? '')}
+                {@const networkInvitePayload = parseNetworkInviteMessage(msg.content ?? '')}
                 {@const invitePayload = parseSquadInviteMessage(msg.content ?? '')}
                 {#if channelInSquadPayload}
                   {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
                   {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
                   {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
                   {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const channelInSquadStatus = acceptedChannelInSquadMessageIds.has(msg.id) ? 'accepted' : declinedChannelInSquadMessageIds.has(msg.id) ? 'declined' : 'pending'}
+                  {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
                   <ChannelInSquadCard
                     squadName={channelInSquadPayload.squadName}
                     channelName={channelInSquadPayload.channelName}
                     isMine={msg.mine}
                     inviterName={inviterName}
                     inviterAvatarSrc={inviterAvatarSrc}
-                    status={channelInSquadStatus}
+                    status={channelInviteStatus}
                     accepting={acceptingChannelInSquadId === msg.id}
                     onAccept={() => handleAcceptChannelInSquad(msg, { channelGroupId: channelInSquadPayload.channelGroupId, announcementsGroupId: channelInSquadPayload.announcementsGroupId, channelName: channelInSquadPayload.channelName })}
-                    onDecline={() => { declinedChannelInSquadMessageIds = new Set(declinedChannelInSquadMessageIds).add(msg.id); }}
+                    onDecline={() => { declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
+                  />
+                {:else if networkInvitePayload}
+                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
+                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
+                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
+                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
+                  {@const networkInviteStatus = $acceptedNetworkInviteIds.includes(msg.id) ? 'accepted' : $declinedNetworkInviteIds.includes(msg.id) ? 'declined' : 'pending'}
+                  <NetworkInviteCard
+                    networkName={networkInvitePayload.networkName}
+                    memberSquads={networkInvitePayload.memberSquads}
+                    isMine={msg.mine}
+                    inviterName={inviterName}
+                    inviterAvatarSrc={inviterAvatarSrc}
+                    status={networkInviteStatus}
+                    accepting={acceptingNetworkInviteId === msg.id}
+                    onAccept={() => handleAcceptNetworkInvite(msg, networkInvitePayload)}
+                    onDecline={() => { declinedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
                   />
                 {:else if invitePayload}
                   {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
                   {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
                   {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
                   {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const inviteStatus = acceptedSquadInviteIds.has(msg.id) ? 'accepted' : declinedSquadInviteIds.has(msg.id) ? 'declined' : 'pending'}
+                  {@const inviteStatus = $acceptedSquadInviteIds.includes(msg.id) ? 'accepted' : $declinedSquadInviteIds.includes(msg.id) ? 'declined' : 'pending'}
                   <SquadInviteCard
                     squadName={invitePayload.squadName}
                     isMine={msg.mine}
@@ -852,7 +1004,7 @@
                     status={inviteStatus}
                     accepting={acceptingSquadInviteId === msg.id}
                     onAccept={() => handleAcceptSquadInvite(msg, invitePayload.groupId)}
-                    onDecline={() => { declinedSquadInviteIds = new Set(declinedSquadInviteIds).add(msg.id); }}
+                    onDecline={() => { declinedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
                   />
                 {:else}
                   <Message {...toMessageProps(msg)} />
@@ -881,6 +1033,11 @@
             {/if}
             </div>
           </div>
+        </div>
+      {:else if $activeTopNavTab === 'networks'}
+        <div class="networks-area">
+          <NetworkNavbar />
+          <ChatView />
         </div>
       {:else}
         <div class="squads-area">
@@ -945,7 +1102,8 @@
     flex-direction: column;
   }
 
-  .squads-area {
+  .squads-area,
+  .networks-area {
     flex: 1;
     min-width: 0;
     min-height: 0;
