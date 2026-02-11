@@ -14,7 +14,7 @@
     memberSquads?.length > 0 ? memberSquads.map((s) => s.name).join(', ') : '';
 </script>
 
-<div class="network-invite-card">
+<div class="network-invite-card" class:collapsed={status === 'accepted' || status === 'declined'}>
   <div class="network-invite-icon">
     {#if inviterAvatarSrc}
       <img src={inviterAvatarSrc} alt="" class="network-invite-icon-img" />
@@ -38,9 +38,9 @@
     {#if isMine}
       <!-- Sender: no actions -->
     {:else if status === 'accepted'}
-      <p class="network-invite-status network-invite-accepted">Accepted</p>
+      <p class="network-invite-status network-invite-accepted" aria-live="polite">Accepted</p>
     {:else if status === 'declined'}
-      <p class="network-invite-status network-invite-declined">Declined</p>
+      <p class="network-invite-status network-invite-declined" aria-live="polite">Declined</p>
     {:else}
       <div class="network-invite-actions">
         <button
@@ -76,6 +76,41 @@
     border-radius: 8px;
     max-width: 380px;
     border-left: 3px solid var(--accent);
+  }
+
+  .network-invite-card.collapsed {
+    align-items: center;
+    padding: 8px 14px;
+    gap: 10px;
+  }
+
+  .network-invite-card.collapsed .network-invite-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .network-invite-card.collapsed .network-invite-icon-placeholder {
+    font-size: 0.875rem;
+  }
+
+  .network-invite-card.collapsed .network-invite-badge {
+    display: none;
+  }
+
+  .network-invite-card.collapsed .network-invite-title {
+    margin: 0;
+    font-size: 0.9375rem;
+  }
+
+  .network-invite-card.collapsed .network-invite-squads,
+  .network-invite-card.collapsed .network-invite-text {
+    display: none;
+  }
+
+  .network-invite-card.collapsed .network-invite-status {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 0.75rem;
   }
 
   .network-invite-icon {

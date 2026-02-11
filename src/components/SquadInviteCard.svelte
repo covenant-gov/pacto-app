@@ -10,7 +10,7 @@
   export let onDecline: () => void;
 </script>
 
-<div class="squad-invite-card">
+<div class="squad-invite-card" class:collapsed={status === 'accepted' || status === 'declined'}>
   <div class="squad-invite-icon">
     {#if inviterAvatarSrc}
       <img src={inviterAvatarSrc} alt="" class="squad-invite-icon-img" />
@@ -30,9 +30,9 @@
     {#if isMine}
       <!-- Inviter: no actions -->
     {:else if status === 'accepted'}
-      <p class="squad-invite-status squad-invite-accepted">Accepted</p>
+      <p class="squad-invite-status squad-invite-accepted" aria-live="polite">Accepted</p>
     {:else if status === 'declined'}
-      <p class="squad-invite-status squad-invite-declined">Declined</p>
+      <p class="squad-invite-status squad-invite-declined" aria-live="polite">Declined</p>
     {:else}
       <div class="squad-invite-actions">
         <button
@@ -67,6 +67,36 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     max-width: 380px;
+  }
+
+  .squad-invite-card.collapsed {
+    align-items: center;
+    padding: 8px 14px;
+    gap: 10px;
+  }
+
+  .squad-invite-card.collapsed .squad-invite-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .squad-invite-card.collapsed .squad-invite-icon-placeholder {
+    font-size: 0.875rem;
+  }
+
+  .squad-invite-card.collapsed .squad-invite-title {
+    margin: 0;
+    font-size: 0.9375rem;
+  }
+
+  .squad-invite-card.collapsed .squad-invite-text {
+    display: none;
+  }
+
+  .squad-invite-card.collapsed .squad-invite-status {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 0.75rem;
   }
 
   .squad-invite-icon {

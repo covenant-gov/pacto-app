@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import Message from './Message.svelte';
   import MessageInput from './MessageInput.svelte';
   import {
     activeChannelId,
     squads,
     activeSquadId,
+    activeTopNavTab,
+    activeNetworkId,
+    networks,
     ungroupedChannels,
     dmList,
     requestsList,
@@ -25,12 +29,25 @@
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
-  $: activeSquad = $squads.find((c) => c.id === $activeSquadId);
-  $: activeChannel =
-    activeSquad?.channels.find((ch) => ch.id === $activeChannelId || ch.groupId === $activeChannelId) ??
-    $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId);
+  $: activeSquad = $activeTopNavTab === 'squads' ? $squads.find((c) => c.id === $activeSquadId) : null;
+  $: activeNetwork = $activeTopNavTab === 'networks' && $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) : null;
+  $: activeChannel = (() => {
+    if ($activeTopNavTab === 'networks' && activeNetwork && $activeChannelId) {
+      const sorted = [...activeNetwork.channels].sort((a, b) => a.order - b.order);
+      return sorted.find((ch) => ch.groupId === $activeChannelId) ?? null;
+    }
+    if ($activeTopNavTab === 'squads') {
+      return (
+        activeSquad?.channels.find((ch) => ch.groupId === $activeChannelId) ??
+        $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId)
+      ) ?? null;
+    }
+    return null;
+  })();
   $: channelName = activeChannel?.name || 'channel';
-  $: isAnnouncementsChannel = activeSquad?.channels[0]?.groupId === $activeChannelId;
+  $: isAnnouncementsChannel = activeSquad
+    ? activeSquad.channels[0]?.groupId === $activeChannelId
+    : (activeNetwork ? [...activeNetwork.channels].sort((a, b) => a.order - b.order)[0]?.groupId === $activeChannelId : false);
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
 
   let channelMenuOpen = false;
@@ -173,6 +190,8 @@
       }
       await leaveMlsGroup(groupId);
       const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
+      const netList = get(networks);
+      const networkContaining = netList.find((n) => n.channels.some((ch) => ch.groupId === groupId));
       if (inSquad && activeSquad) {
         squads.update((list) =>
           list.map((s) =>
@@ -184,6 +203,18 @@
         const still = $squads.find((s) => s.id === activeSquad.id);
         activeChannelId.set(still?.channels[0]?.groupId ?? null);
         if (still?.channels.length === 0) activeSquadId.set(null);
+      } else if (networkContaining) {
+        networks.update((list) =>
+          list.map((n) =>
+            n.id !== networkContaining.id
+              ? n
+              : { ...n, channels: n.channels.filter((ch) => ch.groupId !== groupId) }
+          )
+        );
+        const still = get(networks).find((n) => n.id === networkContaining.id);
+        const remaining = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
+        activeChannelId.set(remaining[0]?.groupId ?? null);
+        if (remaining.length === 0) activeNetworkId.set(null);
       } else {
         ungroupedChannels.update((ch) => ch.filter((c) => c.groupId !== groupId));
         activeChannelId.set(null);
