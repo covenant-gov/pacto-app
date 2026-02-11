@@ -17,6 +17,16 @@
       ? activeNetwork.memberSquads.map((s) => s.name).join(', ')
       : '';
 
+  // If activeNetworkId points to a removed network, select first network
+  $: if ($activeNetworkId && $networks.length > 0 && !$networks.find((n) => n.id === $activeNetworkId)) {
+    const first = $networks[0];
+    const firstCh = first.channels.slice().sort((a, b) => a.order - b.order)[0];
+    activeNetworkId.set(first.id);
+    activeChannelId.set(firstCh?.groupId ?? null);
+    lastOpenedNetworkId.set(first.id);
+    if (firstCh) lastOpenedNetworkChannelId.set(firstCh.groupId);
+  }
+
   function selectNetwork(networkId: string) {
     const net = $networks.find((n) => n.id === networkId);
     if (!net) return;
@@ -61,7 +71,7 @@
 
 <div class="network-navbar" style="width: {width}px;">
   {#if activeNetwork}
-    <div class="network-heading">
+    <div class="network-heading" role="region" aria-label="Network {activeNetwork.name}">
       <h2 class="network-name">{activeNetwork.name}</h2>
       {#if memberSquadsLabel}
         <p class="network-subheading">{memberSquadsLabel}</p>
