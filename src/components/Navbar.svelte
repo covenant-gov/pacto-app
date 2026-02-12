@@ -20,6 +20,19 @@
     $activeView = 'hub';
   }
 
+  function selectNetwork(networkId: string) {
+    const net = $networks.find((n) => n.id === networkId);
+    if (!net) return;
+    $activeNetworkId = networkId;
+    $lastOpenedNetworkId = networkId;
+    const firstChannel = net.channels.slice().sort((a, b) => a.order - b.order)[0];
+    if (firstChannel) {
+      $activeChannelId = firstChannel.groupId;
+      $lastOpenedNetworkChannelId = firstChannel.groupId;
+    }
+    $activeView = 'hub';
+  }
+
   function selectDmTab(tab: DmTab) {
     $activeDmTab = tab;
     $activeView = 'hub';
@@ -312,8 +325,21 @@
           />
         </div>
       {/each}
-    {:else}
-      <!-- Networks: placeholder for future tabs -->
+    {:else if $activeTopNavTab === 'networks'}
+      {#each $networks as network (network.id)}
+        <div
+          on:click={() => selectNetwork(network.id)}
+          on:keydown={(e) => e.key === 'Enter' && selectNetwork(network.id)}
+          role="button"
+          tabindex="0"
+        >
+          <Tab
+            label={network.name}
+            image={network.iconUrl ?? ''}
+            active={$activeView === 'hub' && $activeNetworkId === network.id}
+          />
+        </div>
+      {/each}
     {/if}
   </div>
   {/if}
