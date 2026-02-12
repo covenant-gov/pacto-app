@@ -190,12 +190,16 @@ export const dmSyncStatus = writable<SyncStatus>('idle');
 export const typingByChat = writable<Record<string, string[]>>({});
 
 // --- MLS / Squads ---
-// Channel = one MLS group. id === groupId for simplicity (backend uses group_id everywhere).
+// Channel = one MLS group. Identified by groupId only (backend uses group_id everywhere).
 export interface Channel {
-  id: string;
   name: string;
   groupId: string;
   order: number;
+}
+
+/** Normalize a channel from storage (drops legacy `id` if present). */
+function normalizeChannel(ch: { name: string; groupId: string; order: number }): Channel {
+  return { name: ch.name, groupId: ch.groupId, order: ch.order };
 }
 
 // Squad = frontend-only container (name, icon, ordered channels). Persisted to localStorage.
@@ -259,7 +263,7 @@ export const pendingMlsWelcomes = writable<PendingMlsWelcome[]>([]);
 
 export const ungroupedChannels = writable<Channel[]>([]);
 
-// Legacy: channelMessages was keyed by channel id for local-only mock. Replaced by backendGroupMessages keyed by groupId.
+// Legacy: channelMessages was keyed by groupId for local-only mock. Replaced by backendGroupMessages keyed by groupId.
 export const channelMessages = writable<Record<string, any[]>>({});
 
 // Persist last open DM for restore on next app open (npub-scoped)
@@ -326,7 +330,10 @@ export function loadAccountState(npub: string): void {
     const rawSquads = localStorage.getItem(squadsKey);
     if (rawSquads) {
       const parsed = JSON.parse(rawSquads) as unknown;
-      squads.set(Array.isArray(parsed) ? (parsed as Squad[]) : []);
+      const list = Array.isArray(parsed) ? (parsed as Squad[]) : [];
+      squads.set(
+        list.map((s) => ({ ...s, channels: s.channels.map(normalizeChannel) }))
+      );
     }
     const pinnedKey = `${PINNED_DM_NPUBS_PREFIX}_${npub}`;
     const rawPinned = localStorage.getItem(pinnedKey);
@@ -344,7 +351,10 @@ export function loadAccountState(npub: string): void {
     const rawNetworks = localStorage.getItem(`${PACTO_NETWORKS_PREFIX}_${npub}`);
     if (rawNetworks) {
       const parsed = JSON.parse(rawNetworks) as unknown;
-      networks.set(Array.isArray(parsed) ? (parsed as Network[]) : []);
+      const list = Array.isArray(parsed) ? (parsed as Network[]) : [];
+      networks.set(
+        list.map((n) => ({ ...n, channels: n.channels.map(normalizeChannel) }))
+      );
     }
     const lastNetwork = localStorage.getItem(`${LAST_NETWORK_ID_PREFIX}_${npub}`);
     if (lastNetwork) lastOpenedNetworkId.set(lastNetwork);

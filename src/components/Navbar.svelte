@@ -1,5 +1,6 @@
 <script lang="ts">
   import Tab from './Tab.svelte';
+  import Modal from './Modal.svelte';
   import settingsIcon from '../icons/settings.svg';
   import plusCircleIcon from '../icons/plus-circle.svg';
   import friendsIcon from '../icons/friends.svg';
@@ -90,7 +91,6 @@
       }
       const groupId = await createGroupChat('announcements', memberIds);
       const announcementsChannel: Channel = {
-        id: groupId,
         name: 'announcements',
         groupId,
         order: 0,
@@ -204,7 +204,6 @@
       }
       const groupId = await createGroupChat('announcements', allMemberNpubs);
       const announcementsChannel: Channel = {
-        id: groupId,
         name: 'announcements',
         groupId,
         order: 0,
@@ -342,23 +341,8 @@
 </div>
 
 {#if showOrganizeSquadModal}
-  <div
-    class="organize-modal-overlay"
-    on:click={closeOrganizeSquadModal}
-    on:keydown={(e) => e.key === 'Escape' && closeOrganizeSquadModal()}
-    role="button"
-    tabindex="-1"
-  >
-    <div
-      class="organize-modal-content"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && closeOrganizeSquadModal()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="organize-squad-title"
-      tabindex="0"
-    >
-      <h2 id="organize-squad-title">Organize Squad</h2>
+  <Modal titleId="organize-squad-title" onClose={closeOrganizeSquadModal}>
+    <h2 id="organize-squad-title">Organize Squad</h2>
       <p class="organize-modal-subtitle">Create a squad with an announcements channel. Select at least one member.</p>
       <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
@@ -406,29 +390,12 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 {#if showCreateNetworkModal}
-  <div
-    class="organize-modal-overlay"
-    on:click={closeCreateNetworkModal}
-    on:keydown={(e) => e.key === 'Escape' && closeCreateNetworkModal()}
-    role="button"
-    tabindex="-1"
-  >
-    <div
-      class="organize-modal-content"
-      on:click|stopPropagation
-      on:keydown={(e) => e.key === 'Escape' && closeCreateNetworkModal()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-network-title"
-      aria-describedby="create-network-description"
-      tabindex="0"
-    >
-      <h2 id="create-network-title">Coordinate Network</h2>
+  <Modal titleId="create-network-title" descriptionId="create-network-description" onClose={closeCreateNetworkModal}>
+    <h2 id="create-network-title">Coordinate Network</h2>
       <p id="create-network-description" class="organize-modal-subtitle">Create a network from two or more squads. Everyone in those squads will be invited.</p>
       <form on:submit|preventDefault={handleCreateNetwork}>
         <label class="organize-label" for="network-name">Network name</label>
@@ -477,8 +444,7 @@
           </button>
         </div>
       </form>
-    </div>
-  </div>
+  </Modal>
 {/if}
 
 <style>
@@ -510,37 +476,7 @@
     min-height: 0;
   }
 
-  /* Organize Squad modal */
-  .organize-modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    backdrop-filter: blur(4px);
-  }
-
-  .organize-modal-content {
-    background: var(--bg-elevated);
-    border-radius: 12px;
-    padding: 32px;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  }
-
-  .organize-modal-content h2 {
-    color: var(--text-primary);
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin: 0 0 8px 0;
-  }
-
+  /* Modal content (Organize Squad / Create Network) - title styling in Modal.svelte */
   .organize-modal-subtitle {
     color: var(--text-muted);
     font-size: 0.9375rem;

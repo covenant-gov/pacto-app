@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import Channel from './Channel.svelte';
+  import ResizableSidebar from './ResizableSidebar.svelte';
   import {
     networks,
     activeNetworkId,
@@ -118,7 +119,6 @@
     createChannelErrorBanner = '';
     const placeholderId = `creating-${Date.now()}`;
     const placeholderChannel: ChannelType = {
-      id: placeholderId,
       name,
       groupId: placeholderId,
       order: network.channels.length,
@@ -142,7 +142,7 @@
           list.map((n) => {
             if (n.id !== networkId) return n;
             const chs = n.channels.map((ch) =>
-              ch.groupId === placeholderId ? { id: groupId, name, groupId, order: ch.order } : ch
+              ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch
             );
             return { ...n, channels: chs };
           })
@@ -221,29 +221,9 @@
     if ($activeNetworkId) lastOpenedNetworkId.set($activeNetworkId);
   }
 
-  let width = 240;
-  let isResizing = false;
-  const minWidth = 180;
-  const maxWidth = 400;
-
-  function startResize() {
-    isResizing = true;
-  }
-
-  function onMouseMove(event: MouseEvent) {
-    if (!isResizing) return;
-    const newWidth = event.clientX - 64;
-    width = Math.max(minWidth, Math.min(maxWidth, newWidth));
-  }
-
-  function stopResize() {
-    isResizing = false;
-  }
 </script>
 
-<svelte:window on:mousemove={onMouseMove} on:mouseup={stopResize} />
-
-<div class="network-navbar" style="width: {width}px;">
+<ResizableSidebar sidebarClass="network-navbar">
   {#if activeNetwork}
     <div class="network-heading" role="region" aria-label="Network {activeNetwork.name}">
       <h2 class="network-name">{activeNetwork.name}</h2>
@@ -295,14 +275,7 @@
       <p>No networks</p>
     </div>
   {/if}
-
-  <button
-    class="resize-handle"
-    on:mousedown={startResize}
-    aria-label="Resize sidebar"
-    type="button"
-  ></button>
-</div>
+</ResizableSidebar>
 
 {#if createChannelErrorBanner}
   <div class="create-channel-error-banner" role="alert">
@@ -385,7 +358,7 @@
 {/if}
 
 <style>
-  .network-navbar {
+  :global(.network-navbar) {
     display: flex;
     flex-direction: column;
     position: relative;
@@ -477,25 +450,6 @@
     justify-content: center;
     color: var(--text-muted);
     font-size: 0.875rem;
-  }
-
-  .resize-handle {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 4px;
-    height: 100%;
-    cursor: ew-resize;
-    background-color: transparent;
-    transition: background-color 0.15s;
-    border: none;
-    padding: 0;
-    outline: none;
-  }
-
-  .resize-handle:hover,
-  .resize-handle:focus {
-    background-color: var(--accent);
   }
 
   .create-channel-btn {
