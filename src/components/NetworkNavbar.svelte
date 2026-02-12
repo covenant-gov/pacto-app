@@ -9,9 +9,20 @@
     activeView,
     lastOpenedNetworkId,
     lastOpenedNetworkChannelId,
+    dmList,
+    requestsList,
+    pendingList,
     type Channel as ChannelType,
   } from '../stores/app';
-  import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatChannelInNetworkMessage } from '../lib/api/nostr';
+  import {
+    createGroupChat,
+    getMlsGroupMembers,
+    inviteMemberToGroup,
+    sendDmMessage,
+    formatChannelInNetworkMessage,
+    formatNetworkInviteMessage,
+  } from '../lib/api/nostr';
+  import chevronDownIcon from '../icons/chevron-down.svg';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -24,6 +35,120 @@
     activeNetwork?.memberSquads?.length
       ? activeNetwork.memberSquads.map((s) => s.name).join(', ')
       : '';
+
+  function getNetworkAnnouncementsChannel(net: typeof activeNetwork) {
+    if (!net?.channels?.length) return undefined;
+    return [...net.channels].sort((a, b) => a.order - b.order)[0];
+  }
+
+  let networkMenuOpen = false;
+  let showInviteToNetworkModal = false;
+  let inviteToNetworkCandidates: string[] = [];
+  let inviteToNetworkHasNoChannel = false;
+  let loadingInviteToNetwork = false;
+  let selectedInviteNpubs: string[] = [];
+  let inviteByNpub = '';
+  let inviteToNetworkError = '';
+  let invitingToNetwork = false;
+  let inviteToNetworkErrorBanner = '';
+
+  function openInviteToNetworkModal() {
+    networkMenuOpen = false;
+    showInviteToNetworkModal = true;
+    inviteToNetworkHasNoChannel = false;
+    selectedInviteNpubs = [];
+    inviteByNpub = '';
+    inviteToNetworkError = '';
+    loadInviteToNetworkCandidates();
+  }
+
+  function toggleInviteCandidate(npub: string) {
+    selectedInviteNpubs = selectedInviteNpubs.includes(npub)
+      ? selectedInviteNpubs.filter((n) => n !== npub)
+      : [...selectedInviteNpubs, npub];
+  }
+
+  async function loadInviteToNetworkCandidates() {
+    const net = $networks.find((n) => n.id === $activeNetworkId);
+    const announcementsChannel = getNetworkAnnouncementsChannel(net);
+    if (!announcementsChannel) {
+      inviteToNetworkHasNoChannel = true;
+      inviteToNetworkCandidates = [];
+      return;
+    }
+    inviteToNetworkHasNoChannel = false;
+    loadingInviteToNetwork = true;
+    try {
+      const result = await getMlsGroupMembers(announcementsChannel.groupId);
+      const inNetwork = new Set(result.members ?? []);
+      const dmListSnap = $dmList;
+      const requestsSnap = $requestsList;
+      const pendingSnap = $pendingList;
+      const allDmNpubs = [...dmListSnap, ...requestsSnap, ...pendingSnap].map((e) => e.npub);
+      const uniqueNpubs = [...new Set(allDmNpubs)];
+      inviteToNetworkCandidates = uniqueNpubs.filter((npub) => !inNetwork.has(npub));
+    } catch {
+      inviteToNetworkCandidates = [];
+    } finally {
+      loadingInviteToNetwork = false;
+    }
+  }
+
+  function closeInviteToNetworkModal() {
+    if (!invitingToNetwork) showInviteToNetworkModal = false;
+  }
+
+  async function handleInviteToNetwork() {
+    const net = $networks.find((n) => n.id === $activeNetworkId);
+    const announcementsChannel = getNetworkAnnouncementsChannel(net);
+    const extraNpub = inviteByNpub.trim();
+    const npubsToInvite = [
+      ...selectedInviteNpubs,
+      ...(extraNpub && extraNpub.startsWith('npub1') ? [extraNpub] : []),
+    ];
+    if (!announcementsChannel || !net) return;
+    if (npubsToInvite.length === 0) {
+      inviteToNetworkError = extraNpub
+        ? 'Please enter a valid npub (starts with npub1) or pick from the list.'
+        : 'Select at least one person or enter an npub.';
+      return;
+    }
+    if (extraNpub && !extraNpub.startsWith('npub1')) {
+      inviteToNetworkError = 'Please enter a valid npub (starts with npub1) or pick from the list.';
+      return;
+    }
+    inviteToNetworkError = '';
+    inviteToNetworkErrorBanner = '';
+    showInviteToNetworkModal = false;
+    invitingToNetwork = true;
+    const groupId = announcementsChannel.groupId;
+    const networkName = net.name;
+    const memberSquads = net.memberSquads ?? [];
+    const payload = formatNetworkInviteMessage({
+      type: 'network_invite',
+      networkName,
+      groupId,
+      memberSquads,
+    });
+    (async () => {
+      let lastError = '';
+      for (const npub of npubsToInvite) {
+        try {
+          await inviteMemberToGroup(groupId, npub);
+          await sendDmMessage(npub, payload);
+        } catch (e) {
+          lastError = friendlyMessage(getInvokeErrorMessage(e));
+        }
+      }
+      if (lastError) {
+        inviteToNetworkErrorBanner = lastError;
+        setTimeout(() => {
+          inviteToNetworkErrorBanner = '';
+        }, 8000);
+      }
+      invitingToNetwork = false;
+    })();
+  }
 
   let showCreateChannelModal = false;
   let createChannelName = '';
@@ -201,19 +326,6 @@
     if (firstCh) lastOpenedNetworkChannelId.set(firstCh.groupId);
   }
 
-  function selectNetwork(networkId: string) {
-    const net = $networks.find((n) => n.id === networkId);
-    if (!net) return;
-    activeNetworkId.set(networkId);
-    lastOpenedNetworkId.set(networkId);
-    const firstChannel = net.channels.slice().sort((a, b) => a.order - b.order)[0];
-    if (firstChannel) {
-      activeChannelId.set(firstChannel.groupId);
-      lastOpenedNetworkChannelId.set(firstChannel.groupId);
-    }
-    activeView.set('hub');
-  }
-
   function selectChannel(channelGroupId: string) {
     activeChannelId.set(channelGroupId);
     activeView.set('hub');
@@ -223,14 +335,48 @@
 
 </script>
 
+<svelte:window
+  on:click={(e) => {
+    const t = e.target as HTMLElement | null;
+    if (networkMenuOpen && t && !t.closest('.network-header-actions')) networkMenuOpen = false;
+  }}
+/>
+
 <ResizableSidebar sidebarClass="network-navbar">
   {#if activeNetwork}
     <div class="network-heading" role="region" aria-label="Network {activeNetwork.name}">
-      <h2 class="network-name">{activeNetwork.name}</h2>
+      <div class="network-header-row">
+        <h2 class="network-name">{activeNetwork.name}</h2>
+        <div class="network-header-actions">
+          <button
+            type="button"
+            class="network-menu-btn"
+            aria-label="Network menu"
+            on:click={() => (networkMenuOpen = !networkMenuOpen)}
+            aria-haspopup="true"
+            aria-expanded={networkMenuOpen}
+          >
+            <img src={chevronDownIcon} alt="" class="network-menu-chevron" />
+          </button>
+          {#if networkMenuOpen}
+            <div class="network-menu-dropdown" role="menu">
+              <button type="button" class="network-menu-item" role="menuitem" on:click={openInviteToNetworkModal}>
+                Invite to Network
+              </button>
+            </div>
+          {/if}
+        </div>
+      </div>
       {#if memberSquadsLabel}
         <p class="network-subheading">{memberSquadsLabel}</p>
       {/if}
     </div>
+    {#if inviteToNetworkErrorBanner}
+      <div class="invite-to-network-error-banner" role="alert">
+        {inviteToNetworkErrorBanner}
+        <button type="button" class="invite-to-network-error-dismiss" on:click={() => (inviteToNetworkErrorBanner = '')} aria-label="Dismiss">×</button>
+      </div>
+    {/if}
     <div class="channels-container">
       <div class="channel-list">
         {#each sortedChannels as channel (channel.groupId)}
@@ -256,23 +402,9 @@
         + Create channel
       </button>
     </div>
-  {:else if $networks.length > 0}
-    <div class="network-list">
-      <p class="network-list-label">Networks</p>
-      {#each $networks as network (network.id)}
-        <button
-          type="button"
-          class="network-list-item"
-          on:click={() => selectNetwork(network.id)}
-          on:keydown={(e) => e.key === 'Enter' && selectNetwork(network.id)}
-        >
-          {network.name}
-        </button>
-      {/each}
-    </div>
   {:else}
     <div class="empty-state">
-      <p>No networks</p>
+      <p>{$networks.length > 0 ? 'Select a network' : 'No networks'}</p>
     </div>
   {/if}
 </ResizableSidebar>
@@ -357,6 +489,75 @@
   </div>
 {/if}
 
+{#if showInviteToNetworkModal}
+  <div
+    class="create-channel-overlay"
+    on:click={closeInviteToNetworkModal}
+    on:keydown={(e) => e.key === 'Escape' && closeInviteToNetworkModal()}
+    role="button"
+    tabindex="-1"
+  >
+    <div
+      class="create-channel-content"
+      on:click|stopPropagation
+      on:keydown={(e) => e.key === 'Escape' && closeInviteToNetworkModal()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="invite-to-network-title"
+      tabindex="0"
+    >
+      <h2 id="invite-to-network-title">Invite to Network</h2>
+      <p class="create-channel-subtitle">Invite friends to {activeNetwork?.name ?? 'this Network'}.</p>
+      {#if loadingInviteToNetwork}
+        <p class="create-channel-loading">Loading…</p>
+      {:else if inviteToNetworkHasNoChannel}
+        <p class="create-channel-empty-friends">This Network has no channel yet. Create a channel first (use + Create channel), or create Networks from squads so they get an announcements channel.</p>
+      {:else if inviteToNetworkCandidates.length === 0}
+        <p class="create-channel-empty-friends">No one to invite right now. Start a DM with someone first, or they may already be in this Network.</p>
+      {:else}
+        <div class="create-channel-members">
+          {#each inviteToNetworkCandidates as npub (npub)}
+            <label class="invite-to-network-row" class:selected={selectedInviteNpubs.includes(npub)}>
+              <input
+                type="checkbox"
+                checked={selectedInviteNpubs.includes(npub)}
+                on:change={() => toggleInviteCandidate(npub)}
+              />
+              <span class="create-channel-member-name">{displayName(npub)}</span>
+            </label>
+          {/each}
+        </div>
+      {/if}
+      {#if !inviteToNetworkHasNoChannel}
+        <p class="create-channel-invite-by-npub-label">Or invite by npub:</p>
+        <input
+          type="text"
+          class="create-channel-invite-npub-input"
+          placeholder="npub1…"
+          bind:value={inviteByNpub}
+          disabled={invitingToNetwork}
+        />
+      {/if}
+      {#if inviteToNetworkError}
+        <p class="create-channel-error" role="alert">{inviteToNetworkError}</p>
+      {/if}
+      <div class="create-channel-actions">
+        <button type="button" class="create-channel-btn-cancel" on:click={closeInviteToNetworkModal} disabled={invitingToNetwork}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="create-channel-btn-create"
+          on:click={handleInviteToNetwork}
+          disabled={inviteToNetworkHasNoChannel || (selectedInviteNpubs.length === 0 && !inviteByNpub.trim()) || invitingToNetwork}
+        >
+          {invitingToNetwork ? 'Inviting…' : 'Invite'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   :global(.network-navbar) {
     display: flex;
@@ -370,6 +571,127 @@
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-subtle);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  }
+
+  .network-header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .network-header-actions {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .network-menu-btn {
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 1.125rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .network-menu-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .network-menu-chevron {
+    width: 18px;
+    height: 18px;
+    display: block;
+    filter: var(--icon-dropdown-filter);
+  }
+
+  .network-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 160px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow-dropdown);
+    z-index: 20;
+    padding: 4px 0;
+  }
+
+  .network-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .network-menu-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .invite-to-network-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(242, 63, 66, 0.15);
+    border: 1px solid rgba(242, 63, 66, 0.4);
+    border-radius: 6px;
+    margin: 8px 12px 0;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+  }
+
+  .invite-to-network-error-dismiss {
+    margin-left: auto;
+    padding: 0 4px;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.8;
+  }
+
+  .invite-to-network-error-dismiss:hover {
+    opacity: 1;
+  }
+
+  .invite-to-network-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    border-radius: 4px;
+  }
+
+  .invite-to-network-row input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  .invite-to-network-row:hover {
+    background: var(--bg-hover);
+  }
+
+  .invite-to-network-row.selected {
+    background: var(--border);
   }
 
   .network-name {
@@ -407,40 +729,6 @@
   .channel-list > div {
     cursor: pointer;
     border-radius: 4px;
-  }
-
-  .network-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
-  }
-
-  .network-list-label {
-    margin: 0 0 8px 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-  }
-
-  .network-list-item {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    margin: 2px 0;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 0.9375rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .network-list-item:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
   }
 
   .empty-state {
@@ -608,6 +896,35 @@
 
   .create-channel-loading {
     padding: 8px 12px;
+  }
+
+  .create-channel-empty-friends {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0 0 16px 0;
+  }
+
+  .create-channel-invite-by-npub-label {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0 0 6px 0;
+  }
+
+  .create-channel-invite-npub-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    margin-bottom: 16px;
+  }
+
+  .create-channel-invite-npub-input:focus {
+    outline: none;
+    border-color: var(--accent);
   }
 
   .create-channel-error {

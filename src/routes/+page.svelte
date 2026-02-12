@@ -107,20 +107,6 @@
     }
   }
 
-  let pendingAddToSquadGroupId: string | null = null;
-  function addAcceptedChannelToSquad(squadId: string) {
-    const groupId = pendingAddToSquadGroupId;
-    if (!groupId) return;
-    const squad = $squads.find((s) => s.id === squadId);
-    if (!squad) return;
-    const name = groupId.slice(0, 12) + '…';
-    const newChannel: Channel = { name, groupId, order: squad.channels.length };
-    squads.update((list) =>
-      list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, newChannel] }))
-    );
-    pendingAddToSquadGroupId = null;
-  }
-
   let prevDmId: string | null = null;
   let prevDmTab: DmTab | undefined = undefined;
   let loadingOlder = false;
@@ -728,7 +714,7 @@
         );
         return;
       }
-      pendingAddToSquadGroupId = group_id;
+      // Unattributed MLS welcome: do not add to app (potential attack vector).
     });
 
     // Backend auto-accepted a channel invite (user already in parent). addChannelToParent works for squad and network.
@@ -841,33 +827,6 @@
         </div>
       {/if}
     </div>
-
-    <!-- Add to squad modal (after accepting an invite) -->
-    {#if pendingAddToSquadGroupId}
-      <div class="add-to-squad-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-to-squad-modal-title">
-        <div class="add-to-squad-modal">
-          <h2 id="add-to-squad-modal-title">Add channel to a squad</h2>
-          <p class="add-to-squad-modal-text">You joined a new channel. Add it to a squad to see it in the sidebar.</p>
-          <div class="add-to-squad-modal-list">
-            {#each $squads as squad (squad.id)}
-              <button
-                type="button"
-                class="add-to-squad-modal-option"
-                on:click={() => addAcceptedChannelToSquad(squad.id)}
-              >
-                {squad.name}
-              </button>
-            {/each}
-          </div>
-          {#if $squads.length === 0}
-            <p class="add-to-squad-modal-empty">Create a squad first (Organize Squad).</p>
-          {/if}
-          <button type="button" class="add-to-squad-modal-skip" on:click={() => (pendingAddToSquadGroupId = null)}>
-            Skip
-          </button>
-        </div>
-      </div>
-    {/if}
   </main>
 </div>
 
@@ -962,77 +921,4 @@
     font-size: 0.9375rem;
   }
 
-  .add-to-squad-modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-  }
-
-  .add-to-squad-modal {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 20px;
-    min-width: 280px;
-    max-width: 90vw;
-  }
-
-  .add-to-squad-modal h2 {
-    margin: 0 0 8px;
-    font-size: 1.125rem;
-    color: var(--text-primary);
-  }
-
-  .add-to-squad-modal-text {
-    margin: 0 0 16px;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .add-to-squad-modal-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 16px;
-  }
-
-  .add-to-squad-modal-option {
-    padding: 8px 12px;
-    text-align: left;
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-
-  .add-to-squad-modal-option:hover {
-    background: var(--border);
-  }
-
-  .add-to-squad-modal-empty {
-    margin: 0 0 16px;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .add-to-squad-modal-skip {
-    padding: 6px 14px;
-    font-size: 0.875rem;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .add-to-squad-modal-skip:hover {
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-  }
 </style>
