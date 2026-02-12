@@ -9,18 +9,11 @@
   import Profile from '../components/Profile.svelte';
   import MessengerNavbar from '../components/MessengerNavbar.svelte';
   import MessengerChatView from '../components/MessengerChatView.svelte';
-  import Message from '../components/Message.svelte';
-  import MessageInput from '../components/MessageInput.svelte';
-  import SquadInviteCard from '../components/SquadInviteCard.svelte';
-  import ChannelInSquadCard from '../components/ChannelInSquadCard.svelte';
-  import ChannelInNetworkCard from '../components/ChannelInNetworkCard.svelte';
-  import NetworkInviteCard from '../components/NetworkInviteCard.svelte';
+  import DmThread from '../components/DmThread.svelte';
   import NetworkNavbar from '../components/NetworkNavbar.svelte';
   import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
-  import { getProfileAvatarSrc, getProfileDisplayName } from '../lib/utils/profile';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
-  import chevronDownIcon from '../icons/chevron-down.svg';
   import { isAuthenticated, currentUser } from '../stores/auth';
   import { profiles } from '../stores/profiles';
   import {
@@ -86,7 +79,6 @@
     channelName: string
   ) {
     const newChannel: Channel = {
-      id: channelGroupId,
       name: channelName,
       groupId: channelGroupId,
       order: 0,
@@ -122,14 +114,13 @@
     const squad = $squads.find((s) => s.id === squadId);
     if (!squad) return;
     const name = groupId.slice(0, 12) + '…';
-    const newChannel: Channel = { id: groupId, name, groupId, order: squad.channels.length };
+    const newChannel: Channel = { name, groupId, order: squad.channels.length };
     squads.update((list) =>
       list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, newChannel] }))
     );
     pendingAddToSquadGroupId = null;
   }
 
-  let dmMessagesContainer: HTMLDivElement;
   let prevDmId: string | null = null;
   let prevDmTab: DmTab | undefined = undefined;
   let loadingOlder = false;
@@ -186,23 +177,11 @@
   let nicknameSaving = false;
   let nicknameError: string | null = null;
 
-  // Clear send error and nickname edit when user switches to a different DM
+  // Clear send error when user switches to a different DM
   $: if (prevDmId !== $activeDmId) {
     prevDmId = $activeDmId;
     if (prevDmId != null) $dmSendError = null;
-    showNicknameEdit = false;
-    nicknameError = null;
   }
-
-  function truncateNpub(n: string): string {
-    if (n.length <= 16) return n;
-    return n.slice(0, 8) + '…' + n.slice(-4);
-  }
-
-  // Contact for current DM (conversation header)
-  $: contactProfile = $activeDmId ? $profiles[$activeDmId] : null;
-  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = contactProfile ? getProfileDisplayName(contactProfile) : ($activeDmId ? truncateNpub($activeDmId) : 'Unknown');
 
   // Backend messages for active DM, sorted by at (oldest first). Backend emits message_new on send.
   $: mergedDmMessages = (() => {
@@ -305,46 +284,6 @@
   let acceptingChannelInNetworkId: string | null = null;
   let acceptingNetworkInviteId: string | null = null;
 
-  // Message bubbles show sender avatar and display name from profiles
-  function toMessageProps(msg: DmMessage) {
-    const currentUserNpub = $currentUser?.npub;
-    const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
-    const base = {
-      id: msg.id,
-      authorName: '',
-      content: msg.content,
-      timestamp: new Date(msg.at).toISOString(),
-      avatar: '',
-      replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
-      replyAuthorName: undefined as string | undefined,
-      replyPreview: undefined as string | undefined,
-    };
-    if (msg.mine) {
-      base.authorName = 'You';
-      base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
-    } else {
-      const senderProfile = msg.npub ? $profiles[msg.npub] : null;
-      base.authorName = getProfileDisplayName(senderProfile);
-      base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
-    }
-    if (base.replyToId) {
-      const replyNpub = msg.replied_to_npub ?? undefined;
-      base.replyAuthorName =
-        replyNpub && currentUserNpub && replyNpub === currentUserNpub
-          ? 'You'
-          : replyNpub
-            ? getProfileDisplayName($profiles[replyNpub] ?? null)
-            : 'Unknown';
-      base.replyPreview =
-        msg.replied_to_has_attachment === true
-          ? 'Attachment'
-          : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
-            : 'Message';
-    }
-    return base;
-  }
-
   async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
     const payload = parseSquadInviteMessage(msg.content);
     if (!payload) return;
@@ -363,7 +302,6 @@
       acceptedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
       const now = Date.now();
       const announcementsChannel: Channel = {
-        id: groupId,
         name: 'announcements',
         groupId,
         order: 0,
@@ -461,7 +399,6 @@
       await acceptMlsWelcome(welcome.id);
       const now = Date.now();
       const announcementsChannel: Channel = {
-        id: payload.groupId,
         name: 'Announcements',
         groupId: payload.groupId,
         order: 0,
@@ -521,61 +458,6 @@
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSend error', e);
-    }
-  }
-
-  let dmThreadMenuOpen = false;
-
-  function openNicknameEdit() {
-    dmThreadMenuOpen = false;
-    nicknameEditValue = contactProfile?.nickname ?? '';
-    nicknameError = null;
-    showNicknameEdit = true;
-  }
-
-  function pinDm() {
-    const npub = $activeDmId;
-    if (!npub) return;
-    pinnedDmNpubs.update((s) => {
-      if (s.has(npub)) return s;
-      const next = new Set(s);
-      next.add(npub);
-      return next;
-    });
-    dmThreadMenuOpen = false;
-  }
-
-  function unpinDm() {
-    const npub = $activeDmId;
-    if (!npub) return;
-    pinnedDmNpubs.update((s) => {
-      if (!s.has(npub)) return s;
-      const next = new Set(s);
-      next.delete(npub);
-      return next;
-    });
-    dmThreadMenuOpen = false;
-  }
-
-  function cancelNicknameEdit() {
-    showNicknameEdit = false;
-    nicknameError = null;
-  }
-
-  async function saveNickname() {
-    const npub = $activeDmId;
-    if (!npub || nicknameSaving) return;
-    nicknameError = null;
-    nicknameSaving = true;
-    try {
-      await setNickname(npub, nicknameEditValue.trim());
-      showNicknameEdit = false;
-      // profile_nick_changed will update store and UI
-    } catch (e: unknown) {
-      nicknameError = getInvokeErrorMessage(e, 'Failed to set nickname');
-      dmError('saveNickname error', e);
-    } finally {
-      nicknameSaving = false;
     }
   }
 
@@ -840,7 +722,7 @@
       if (singleChannelSquads.length === 1) {
         const squad = singleChannelSquads[0];
         const name = group_id.slice(0, 12) + '…';
-        const newChannel: Channel = { id: group_id, name, groupId: group_id, order: squad.channels.length };
+        const newChannel: Channel = { name, groupId: group_id, order: squad.channels.length };
         squads.update((l) =>
           l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
         );
@@ -886,12 +768,6 @@
   });
 </script>
 
-<svelte:window
-  on:click={(e) => {
-    const t = e.target as HTMLElement | null;
-    if (dmThreadMenuOpen && t && !t.closest('.dm-thread-header-actions')) dmThreadMenuOpen = false;
-  }}
-/>
 <div class="page">
   <header class="top-navbar-slot">
     <TopNavbar />
@@ -914,180 +790,37 @@
             {#if $composingNewChat}
               <MessengerChatView />
             {:else if $activeDmId}
-              <div class="dm-thread">
-          <div class="dm-thread-header">
-            <div class="dm-thread-header-avatar">
-              {#if contactAvatarSrc}
-                <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
-              {:else}
-                <span class="dm-thread-header-avatar-placeholder">{contactDisplayName.charAt(0).toUpperCase()}</span>
-              {/if}
-            </div>
-            <div class="dm-thread-header-info">
-              {#if showNicknameEdit}
-                <div class="dm-thread-nickname-edit">
-                  <input
-                    type="text"
-                    class="dm-thread-nickname-input"
-                    placeholder="Nickname"
-                    bind:value={nicknameEditValue}
-                    on:keydown={(e) => e.key === 'Escape' && cancelNicknameEdit()}
-                  />
-                  <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-save" on:click={saveNickname} disabled={nicknameSaving}>
-                    {nicknameSaving ? 'Saving…' : 'Save'}
-                  </button>
-                  <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-cancel" on:click={cancelNicknameEdit} disabled={nicknameSaving}>
-                    Cancel
-                  </button>
-                </div>
-                {#if nicknameError}
-                  <p class="dm-thread-nickname-error" role="alert">{nicknameError}</p>
-                {/if}
-              {:else}
-                <div class="dm-thread-header-title-row">
-                  <h3 class="dm-thread-title">{contactDisplayName}</h3>
-                  {#if $activeDmTab === 'friends' || $activeDmTab === 'pinned'}
-                    <div class="dm-thread-header-actions">
-                      <button
-                        type="button"
-                        class="dm-thread-dropdown-trigger"
-                        title="Options"
-                        on:click={() => (dmThreadMenuOpen = !dmThreadMenuOpen)}
-                        aria-haspopup="true"
-                        aria-expanded={dmThreadMenuOpen}
-                      >
-                        <img src={chevronDownIcon} alt="" class="dm-thread-chevron" />
-                      </button>
-                      {#if dmThreadMenuOpen}
-                        <div class="dm-thread-dropdown" role="menu">
-                          <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
-                            Set Nickname
-                          </button>
-                          {#if $pinnedDmNpubs.has($activeDmId)}
-                            <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
-                              Unpin DM
-                            </button>
-                          {:else}
-                            <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
-                              Pin DM
-                            </button>
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-                <span class="dm-thread-npub">{truncateNpub($activeDmId)}</span>
-              {/if}
-            </div>
-          </div>
-          <div class="dm-thread-messages" bind:this={dmMessagesContainer}>
-            {#if canLoadOlder}
-              <div class="dm-thread-load-older">
-                <button
-                  type="button"
-                  class="load-older-btn"
-                  on:click={loadOlder}
-                  disabled={loadingOlder}
-                >
-                  {loadingOlder ? 'Loading…' : 'Load older messages'}
-                </button>
-              </div>
-            {/if}
-            {#if mergedDmMessages.length > 0}
-              {#each mergedDmMessages as msg (msg.id)}
-                {@const channelInSquadPayload = parseChannelInSquadMessage(msg.content ?? '')}
-                {@const channelInNetworkPayload = parseChannelInNetworkMessage(msg.content ?? '')}
-                {@const networkInvitePayload = parseNetworkInviteMessage(msg.content ?? '')}
-                {@const invitePayload = parseSquadInviteMessage(msg.content ?? '')}
-                {#if channelInSquadPayload}
-                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
-                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
-                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
-                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
-                  <ChannelInSquadCard
-                    squadName={channelInSquadPayload.squadName}
-                    channelName={channelInSquadPayload.channelName}
-                    isMine={msg.mine}
-                    inviterName={inviterName}
-                    inviterAvatarSrc={inviterAvatarSrc}
-                    status={channelInviteStatus}
-                    accepting={acceptingChannelInSquadId === msg.id}
-                    onAccept={() => handleAcceptChannelInSquad(msg, { channelGroupId: channelInSquadPayload.channelGroupId, announcementsGroupId: channelInSquadPayload.announcementsGroupId, channelName: channelInSquadPayload.channelName })}
-                    onDecline={() => { declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
-                  />
-                {:else if channelInNetworkPayload}
-                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
-                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
-                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
-                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
-                  <ChannelInNetworkCard
-                    networkName={channelInNetworkPayload.networkName}
-                    channelName={channelInNetworkPayload.channelName}
-                    memberSquads={channelInNetworkPayload.memberSquads ?? []}
-                    isMine={msg.mine}
-                    inviterName={inviterName}
-                    inviterAvatarSrc={inviterAvatarSrc}
-                    status={channelInviteStatus}
-                    accepting={acceptingChannelInNetworkId === msg.id}
-                    onAccept={() => handleAcceptChannelInNetwork(msg, { networkId: channelInNetworkPayload.networkId, channelGroupId: channelInNetworkPayload.channelGroupId, channelName: channelInNetworkPayload.channelName })}
-                    onDecline={() => { declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
-                  />
-                {:else if networkInvitePayload}
-                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
-                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
-                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
-                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const networkInviteStatus = $acceptedNetworkInviteIds.includes(msg.id) ? 'accepted' : $declinedNetworkInviteIds.includes(msg.id) ? 'declined' : 'pending'}
-                  <NetworkInviteCard
-                    networkName={networkInvitePayload.networkName}
-                    memberSquads={networkInvitePayload.memberSquads}
-                    isMine={msg.mine}
-                    inviterName={inviterName}
-                    inviterAvatarSrc={inviterAvatarSrc}
-                    status={networkInviteStatus}
-                    accepting={acceptingNetworkInviteId === msg.id}
-                    onAccept={() => handleAcceptNetworkInvite(msg, networkInvitePayload)}
-                    onDecline={() => { declinedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
-                  />
-                {:else if invitePayload}
-                  {@const inviterNpub = msg.mine ? $activeDmId : msg.npub}
-                  {@const inviterProfile = inviterNpub ? $profiles[inviterNpub] : null}
-                  {@const inviterName = msg.mine ? (getProfileDisplayName($profiles[$activeDmId]) || $activeDmId?.slice(0, 12) + '…') : (msg.npub ? (getProfileDisplayName($profiles[msg.npub]) || msg.npub.slice(0, 12) + '…') : 'Someone')}
-                  {@const inviterAvatarSrc = inviterProfile ? getProfileAvatarSrc(inviterProfile) : null}
-                  {@const inviteStatus = $acceptedSquadInviteIds.includes(msg.id) ? 'accepted' : $declinedSquadInviteIds.includes(msg.id) ? 'declined' : 'pending'}
-                  <SquadInviteCard
-                    squadName={invitePayload.squadName}
-                    isMine={msg.mine}
-                    inviterName={inviterName}
-                    inviterAvatarSrc={inviterAvatarSrc}
-                    status={inviteStatus}
-                    accepting={acceptingSquadInviteId === msg.id}
-                    onAccept={() => handleAcceptSquadInvite(msg, invitePayload.groupId)}
-                    onDecline={() => { declinedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id])); }}
-                  />
-                {:else}
-                  <Message {...toMessageProps(msg)} />
-                {/if}
-              {/each}
-            {:else}
-              <p class="dm-thread-placeholder">No messages yet</p>
-            {/if}
-          </div>
-          {#if ($typingByChat[$activeDmId]?.length ?? 0) > 0}
-            <p class="dm-thread-typing" role="status">Typing…</p>
-          {/if}
-          {#if $dmSendError}
-            <p class="dm-thread-error" role="alert">{$dmSendError}</p>
-          {/if}
-          <MessageInput
-            channelName={truncateNpub($activeDmId)}
-            onSend={handleDmSend}
-            onTyping={handleDmTyping}
-          />
-              </div>
+              <DmThread
+                npub={$activeDmId}
+                messages={mergedDmMessages}
+                canLoadOlder={!!canLoadOlder}
+                loadingOlder={loadingOlder}
+                onLoadOlder={loadOlder}
+                onSend={handleDmSend}
+                onTyping={handleDmTyping}
+                onAcceptSquadInvite={handleAcceptSquadInvite}
+                onAcceptChannelInSquad={handleAcceptChannelInSquad}
+                onAcceptChannelInNetwork={handleAcceptChannelInNetwork}
+                onAcceptNetworkInvite={handleAcceptNetworkInvite}
+                onDeclineSquad={(msg) => declinedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineNetwork={(msg) => declinedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineChannelInSquad={(msg) => declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineChannelInNetwork={(msg) => declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                acceptingSquadInviteId={acceptingSquadInviteId}
+                acceptingChannelInSquadId={acceptingChannelInSquadId}
+                acceptingChannelInNetworkId={acceptingChannelInNetworkId}
+                acceptingNetworkInviteId={acceptingNetworkInviteId}
+                showOptionsMenu={$activeDmTab === 'friends' || $activeDmTab === 'pinned'}
+                onSaveNickname={async (value) => {
+                  const id = $activeDmId;
+                  if (!id) return;
+                  try {
+                    await setNickname(id, value);
+                  } catch (e) {
+                    throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'));
+                  }
+                }}
+              />
             {:else}
               <div class="dm-empty">
                 <p>Select a conversation or start a new chat</p>
@@ -1187,6 +920,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    padding: 0 16px 0 16px;
   }
 
   .dm-main {
@@ -1195,253 +929,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-
-  .dm-thread {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    background-color: var(--border-subtle);
-  }
-
-  .dm-thread-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--bg-elevated);
-  }
-
-  .dm-thread-header-avatar {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    overflow: hidden;
-    background-color: var(--bg-hover);
-  }
-
-  .dm-thread-header-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .dm-thread-header-avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 600;
-    font-size: 1.125rem;
-    background-color: var(--accent);
-  }
-
-  .dm-thread-header-info {
-    min-width: 0;
-  }
-
-  .dm-thread-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .dm-thread-npub {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .dm-thread-header-title-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .dm-thread-header-actions {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .dm-thread-dropdown-trigger {
-    padding: 4px 6px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    cursor: pointer;
-    outline: none;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .dm-thread-dropdown-trigger:hover {
-    color: var(--text-primary);
-    border-color: var(--accent);
-  }
-
-  .dm-thread-chevron {
-    width: 16px;
-    height: 16px;
-    display: block;
-    filter: var(--icon-dropdown-filter);
-  }
-
-  .dm-thread-dropdown {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
-    min-width: 140px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    z-index: 50;
-    padding: 4px 0;
-  }
-
-  .dm-thread-dropdown-item {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: none;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .dm-thread-dropdown-item:hover {
-    background: var(--bg-hover);
-  }
-
-  .dm-thread-nickname-edit {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .dm-thread-nickname-input {
-    flex: 1;
-    min-width: 120px;
-    padding: 6px 10px;
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    outline: none;
-  }
-
-  .dm-thread-nickname-input:focus {
-    border-color: var(--accent);
-  }
-
-  .dm-thread-nickname-btn {
-    padding: 6px 12px;
-    font-size: 0.8125rem;
-    border-radius: 4px;
-    cursor: pointer;
-    outline: none;
-    border: none;
-  }
-
-  .dm-thread-nickname-save {
-    background: var(--accent);
-    color: #fff;
-  }
-
-  .dm-thread-nickname-save:hover:not(:disabled) {
-    background: var(--accent-hover);
-  }
-
-  .dm-thread-nickname-cancel {
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-  }
-
-  .dm-thread-nickname-cancel:hover:not(:disabled) {
-    color: var(--text-primary);
-  }
-
-  .dm-thread-nickname-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .dm-thread-nickname-error {
-    margin: 4px 0 0 0;
-    font-size: 0.75rem;
-    color: var(--danger);
-  }
-
-  .dm-thread-messages {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 24px;
-  }
-
-  .dm-thread-load-older {
-    margin-bottom: 16px;
-  }
-
-  .load-older-btn {
-    padding: 8px 16px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-    border: 1px solid var(--bg-elevated);
-    border-radius: 4px;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .load-older-btn:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: var(--border);
-  }
-
-  .load-older-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .dm-thread-placeholder {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .dm-thread-typing {
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    margin: 0;
-    padding: 4px 24px 8px;
-    font-style: italic;
-  }
-
-  .dm-thread-error {
-    font-size: 0.875rem;
-    color: var(--danger);
-    margin: 0;
-    padding: 8px 24px;
-    background-color: rgba(237, 66, 69, 0.1);
-    border-top: 1px solid var(--bg-elevated);
   }
 
   .dm-sync-banner {
