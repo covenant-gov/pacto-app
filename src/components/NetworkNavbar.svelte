@@ -29,7 +29,7 @@
   } from '../lib/api/nostr';
   import chevronDownIcon from '../icons/chevron-down.svg';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
-  import { showToast } from '../stores/toast';
+  import { pendingReadyToast } from '../stores/toast';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
@@ -82,7 +82,7 @@
           console.warn('[NetworkNavbar] retry send network invite DM failed for', npub.slice(0, 20) + '…', e);
         }
       }
-      showToast(`${net.name} is ready!`, { type: 'network', name: net.name, id: net.id, channelId: groupId });
+      pendingReadyToast.set({ text: `${net.name} is ready!`, goTo: { type: 'network', name: net.name, id: net.id, channelId: groupId } });
     } catch (e) {
       networkCreateErrorByNetworkId.update((m) => ({ ...m, [net.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
     } finally {
