@@ -233,13 +233,14 @@ export async function logout(): Promise<void> {
     currentUser.set(null);
 
     await invoke('logout');
-    // Backend restarts the process; code below runs only if invoke throws
+    // Backend clears current account and returns (no restart)
   } catch (error: any) {
     console.error('Logout failed:', error);
     authError.set(error.message || 'Failed to logout');
-    authLoading.set(false);
     isAuthenticated.set(false);
     currentUser.set(null);
+  } finally {
+    authLoading.set(false);
   }
 }
 

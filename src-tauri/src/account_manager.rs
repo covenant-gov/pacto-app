@@ -268,9 +268,13 @@ fn account_has_valid_pkey<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Resu
     Ok(result.map(|s| !s.is_empty()).unwrap_or(false))
 }
 
-/// Check if any account exists
+/// Check if any account exists. If exactly one account exists and none is selected, selects it
+/// so that get_pkey/hasStoredKey works after logout-without-restart.
 pub fn has_any_account<R: Runtime>(handle: &AppHandle<R>) -> bool {
     let sql_accounts = list_accounts(handle).unwrap_or_default();
+    if !sql_accounts.is_empty() && get_current_account().is_err() {
+        let _ = set_current_account(sql_accounts[0].clone());
+    }
     !sql_accounts.is_empty()
 }
 
@@ -313,6 +317,13 @@ pub fn set_current_account(npub: String) -> Result<(), String> {
     // Close old connection when switching accounts
     close_db_connection();
 
+    Ok(())
+}
+
+/// Clear the current account (e.g. on logout)
+pub fn clear_current_account() -> Result<(), String> {
+    *CURRENT_ACCOUNT.write()
+        .map_err(|e| format!("Failed to write current account: {}", e))? = None;
     Ok(())
 }
 

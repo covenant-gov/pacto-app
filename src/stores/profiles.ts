@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { dmChatsByNpub, activeDmId, type DmChatState } from './app';
+import { dmChatsByNpub, activeDmId, dmSyncStatus, type DmChatState } from './app';
 import { currentUser } from './auth';
 
 const LAST_DM_NPUB_PREFIX = 'pacto_last_dm_npub';
@@ -102,6 +102,10 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       // Start live subscriptions so relays push new DMs/group messages
       dmLog('init_finished: calling startNotifs()');
       startNotifs().catch((e) => console.error('notifs failed:', e));
+
+      // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only)
+      dmSyncStatus.set('finished');
+      setTimeout(() => dmSyncStatus.set('idle'), 2500);
     });
 
     if (typeof window !== 'undefined') {

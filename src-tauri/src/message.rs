@@ -13,7 +13,7 @@ use crate::net;
 use crate::STATE;
 use crate::util::{self, calculate_file_hash};
 use crate::TAURI_APP;
-use crate::NOSTR_CLIENT;
+use crate::get_nostr_client;
 
 /// Cached compressed image data
 #[derive(Clone)]
@@ -311,7 +311,7 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
         edit_history: None,
     };
     // Grab our pubkey first
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
     let my_public_key = signer.get_public_key().await.unwrap();
 
@@ -625,7 +625,7 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
         // Final attachment rumor - either reused or newly uploaded
         let final_attachment_rumor = if should_upload {
             // Upload the file to the server
-            let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+            let client = get_nostr_client().expect("Nostr client not initialized");
             let signer = client.signer().await.unwrap();
             let servers = crate::get_blossom_servers();
             let file_size = enc_file.len();
@@ -2581,7 +2581,7 @@ fn compress_image_internal(file_path: &str) -> Result<CachedCompressedImage, Str
 pub async fn react_to_message(reference_id: String, chat_id: String, emoji: String) -> Result<bool, String> {
     use crate::chat::ChatType;
     
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
     
@@ -2814,7 +2814,7 @@ pub async fn edit_message(
     use crate::chat::ChatType;
     use crate::stored_event::event_kind;
 
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let my_npub = my_public_key.to_bech32().map_err(|e| e.to_string())?;

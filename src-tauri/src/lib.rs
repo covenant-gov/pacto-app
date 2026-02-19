@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 use lazy_static::lazy_static;
 use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
@@ -101,7 +102,26 @@ pub(crate) fn get_blossom_servers() -> Vec<String> {
 
 static MNEMONIC_SEED: OnceCell<String> = OnceCell::new();
 static ENCRYPTION_KEY: OnceCell<[u8; 32]> = OnceCell::new();
-pub(crate) static NOSTR_CLIENT: OnceCell<Client> = OnceCell::new();
+
+/// Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
+lazy_static! {
+    static ref NOSTR_CLIENT: std::sync::RwLock<Option<Arc<Client>>> = std::sync::RwLock::new(None);
+}
+pub(crate) fn get_nostr_client() -> Result<Arc<Client>, String> {
+    NOSTR_CLIENT
+        .read()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "Nostr client not initialized".to_string())
+}
+pub(crate) fn set_nostr_client(client: Client) {
+    *NOSTR_CLIENT.write().expect("NOSTR_CLIENT lock") = Some(Arc::new(client));
+}
+pub(crate) fn clear_nostr_client() {
+    *NOSTR_CLIENT.write().expect("NOSTR_CLIENT lock") = None;
+}
+
 pub(crate) static TAURI_APP: OnceCell<AppHandle> = OnceCell::new();
 
 #[derive(Clone)]
@@ -170,7 +190,7 @@ impl ChatState {
             let mut full_profile = slim.to_profile();
 
             // Check if this is our profile: we need to mark it as such
-            let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+            let client = get_nostr_client().expect("Nostr client not initialized");
             let signer = client.signer().await.unwrap();
             let my_public_key = signer.get_public_key().await.unwrap();
             let profile_pubkey = PublicKey::from_bech32(&full_profile.id).unwrap();
@@ -385,7 +405,7 @@ async fn fetch_messages<R: Runtime>(
     init: bool,
     relay_url: Option<String>
 ) {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
     let signer = client.signer().await.unwrap();
@@ -1017,7 +1037,7 @@ async fn check_attachment_filesystem_integrity<R: Runtime>(
 
 #[tauri::command]
 async fn start_typing(receiver: String) -> bool {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
     let my_public_key = signer.get_public_key().await.unwrap();
 
@@ -1232,7 +1252,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
         }
     }
 
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
     let signer = client.signer().await.unwrap();
@@ -1890,7 +1910,7 @@ async fn list_group_cursors() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 async fn notifs() -> Result<bool, String> {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
     let signer = client.signer().await.map_err(|e| e.to_string())?;
@@ -1950,7 +1970,7 @@ async fn notifs() -> Result<bool, String> {
                         
                         // Resolve my pubkey for filtering and 'mine' flag
                         let (my_pubkey, my_pubkey_bech32) = {
-                            let client = NOSTR_CLIENT.get().unwrap();
+                            let client = get_nostr_client().unwrap();
                             if let Ok(signer) = client.signer().await {
                                 if let Ok(pk) = signer.get_public_key().await {
                                     (Some(pk), pk.to_bech32().unwrap())
@@ -2562,7 +2582,7 @@ struct RelayInfo {
 /// Get all relays with their current status
 #[tauri::command]
 async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, String> {
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
     // Get custom relays from DB
     let custom_relays = get_custom_relays(handle.clone()).await.unwrap_or_default();
@@ -2796,7 +2816,7 @@ async fn toggle_default_relay<R: Runtime>(handle: AppHandle<R>, url: String, ena
     save_disabled_default_relays(&handle, &disabled).await?;
 
     // Update the relay pool
-    if let Some(client) = NOSTR_CLIENT.get() {
+    if let Ok(client) = get_nostr_client() {
         if enabled {
             // Re-add the relay
             match client.pool().add_relay(&normalized_url, RelayOptions::new().reconnect(false)).await {
@@ -2868,7 +2888,7 @@ async fn add_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, mode: O
     save_custom_relays(&handle, &relays).await?;
 
     // If we're already connected, add this relay to the pool immediately
-    if let Some(client) = NOSTR_CLIENT.get() {
+    if let Ok(client) = get_nostr_client() {
         if client.relays().await.len() > 0 {
             match client.pool().add_relay(&new_relay.url, relay_options_for_mode(&relay_mode)).await {
                 Ok(_) => {
@@ -2903,7 +2923,7 @@ async fn remove_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String) -> R
     save_custom_relays(&handle, &relays).await?;
 
     // Remove from active pool if connected
-    if let Some(client) = NOSTR_CLIENT.get() {
+    if let Ok(client) = get_nostr_client() {
         if let Err(e) = client.pool().remove_relay(&url).await {
             // Log but don't fail - relay might not be in pool
             eprintln!("[Relay] Note: Could not remove relay from pool: {}", e);
@@ -2941,7 +2961,7 @@ async fn toggle_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, enab
     save_custom_relays(&handle, &relays).await?;
 
     // Update the relay pool
-    if let Some(client) = NOSTR_CLIENT.get() {
+    if let Ok(client) = get_nostr_client() {
         if enabled {
             // Add and connect with proper mode
             match client.pool().add_relay(&url, relay_options_for_mode(&relay_mode)).await {
@@ -2996,7 +3016,7 @@ async fn update_relay_mode<R: Runtime>(handle: AppHandle<R>, url: String, mode: 
 
     // If relay is currently enabled, reconnect with new mode
     if is_enabled {
-        if let Some(client) = NOSTR_CLIENT.get() {
+        if let Ok(client) = get_nostr_client() {
             // Remove and re-add with new options
             let _ = client.pool().remove_relay(&url).await;
             match client.pool().add_relay(&url, relay_options_for_mode(&mode)).await {
@@ -3030,7 +3050,7 @@ async fn monitor_relay_connections() -> Result<bool, String> {
         return Ok(false);
     }
 
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let handle = TAURI_APP.get().unwrap().clone();
 
     // Get the monitor and subscribe to real-time notifications
@@ -3766,10 +3786,7 @@ struct LoginKeyPair {
 #[tauri::command]
 async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     // Check if we have an active Nostr client (meaning we're already logged in)
-    let client = match NOSTR_CLIENT.get() {
-        Some(c) => c,
-        None => return Err("Backend not initialized - perform normal login".to_string()),
-    };
+    let client = get_nostr_client().map_err(|_| "Backend not initialized - perform normal login".to_string())?;
     
     // Get the current user's public key
     let signer = client.signer().await.map_err(|e| format!("Signer error: {}", e))?;
@@ -3805,7 +3822,7 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
     let keys: Keys;
 
     // If we're already logged in (i.e: Developer Mode with frontend hot-loading), just return the existing keys.
-    if let Some(client) = NOSTR_CLIENT.get() {
+    if let Ok(client) = get_nostr_client() {
         let signer = client.signer().await.unwrap();
         let new_keys = Keys::parse(&import_key).unwrap();
 
@@ -3844,7 +3861,7 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
         .opts(ClientOptions::new().gossip(false))
         .monitor(Monitor::new(1024))
         .build();
-    NOSTR_CLIENT.set(client).unwrap();
+    set_nostr_client(client);
 
     // Add our profile (at least, the npub of it) to our state
     let npub = keys.public_key.to_bech32().unwrap();
@@ -3885,7 +3902,7 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
 /// Returns `true` if the client has connected, `false` if it was already connected
 #[tauri::command]
 async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Check which relays are already in the pool
     let existing_relays = client.relays().await;
@@ -3968,7 +3985,7 @@ async fn encrypt(input: String, password: Option<String>) -> String {
     // Check if we have a pending invite acceptance to broadcast
     if let Some(pending_invite) = PENDING_INVITE.get() {
         // Get the Nostr client
-        if let Some(client) = NOSTR_CLIENT.get() {
+        if let Ok(client) = get_nostr_client() {
             // Clone the data we need before the async block
             let invite_code = pending_invite.invite_code.clone();
             let inviter_pubkey = pending_invite.inviter_pubkey.clone();
@@ -4158,8 +4175,10 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Restart the Core process
-    handle.restart();
+    // Clear in-memory current account and Nostr client so backend is in logged-out state.
+    // (Clearing client allows create_account/login to set a new one without restart.)
+    clear_nostr_client();
+    let _ = account_manager::clear_current_account();
 }
 
 /// Creates a new Nostr keypair derived from a BIP39 Seed Phrase
@@ -4178,7 +4197,7 @@ async fn create_account() -> Result<LoginKeyPair, String> {
         .opts(ClientOptions::new().gossip(false))
         .monitor(Monitor::new(1024))
         .build();
-    NOSTR_CLIENT.set(client).unwrap();
+    set_nostr_client(client);
 
     // Add our profile (at least, the npub of it) to our state
     let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
@@ -4411,7 +4430,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
     }
     
     // No local code found, check the network
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
     
     // Get our public key
     let signer = client.signer().await.map_err(|e| e.to_string())?;
@@ -4468,7 +4487,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
 /// Accept an invite code from another user (deferred until after encryption setup)
 #[tauri::command]
 async fn accept_invite_code(invite_code: String) -> Result<String, String> {
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
     
     // Validate invite code format (8 alphanumeric characters)
     if invite_code.len() != 8 || !invite_code.chars().all(|c| c.is_alphanumeric()) {
@@ -4720,7 +4739,7 @@ async fn clear_storage() -> Result<serde_json::Value, String> {
 /// Get the count of unique users who accepted invites from a given npub
 #[tauri::command]
 async fn get_invited_users(npub: String) -> Result<u32, String> {
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
     
     // Convert npub to PublicKey
     let inviter_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
@@ -4795,7 +4814,7 @@ const FAWKES_DAY_END: u64 = 1762387200;   // 2025-11-06 00:00:00 UTC
 /// Verifies they have a valid badge claim event from the November 5, 2025 event
 #[tauri::command]
 async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
     
     // Convert npub to PublicKey
     let user_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
@@ -4853,7 +4872,7 @@ async fn load_mls_keypackages() -> Result<Vec<serde_json::Value>, String> {
 async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, String> {
     // Access handle and client
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
     // Ensure a persistent device_id exists
     let device_id: String = match db::load_mls_device_id(&handle).await {
@@ -5693,7 +5712,7 @@ async fn refresh_keypackages_for_contact(
     let contact_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
 
     // Access client
-    let client = NOSTR_CLIENT.get().ok_or("Nostr client not initialized")?;
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
     // Build filter: author(contact) + MlsKeyPackage
     let filter = Filter::new()
@@ -5866,7 +5885,7 @@ pub fn run() {
                         }
                         
                         // Cleanly shutdown our Nostr client
-                        if let Some(nostr_client) = NOSTR_CLIENT.get() {
+                        if let Ok(nostr_client) = get_nostr_client() {
                             tauri::async_runtime::block_on(async {
                                 // Shutdown the Nostr client
                                 nostr_client.shutdown().await;

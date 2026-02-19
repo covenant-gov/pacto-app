@@ -2,7 +2,7 @@ use nostr_sdk::prelude::*;
 use tauri::Emitter;
 use tauri_plugin_fs::FsExt;
 
-use crate::{NOSTR_CLIENT, STATE, TAURI_APP};
+use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
@@ -326,9 +326,9 @@ pub async fn cache_all_profile_images() {
 
 #[tauri::command]
 pub async fn load_profile(npub: String) -> bool {
-    let client = match NOSTR_CLIENT.get() {
-        Some(c) => c,
-        None => return false,
+    let client = match get_nostr_client() {
+        Ok(c) => c,
+        Err(_) => return false,
     };
 
     // Convert the Bech32 String in to a PublicKey
@@ -467,7 +467,7 @@ pub async fn load_profile(npub: String) -> bool {
 
 #[tauri::command]
 pub async fn update_profile(name: String, avatar: String, banner: String, about: String) -> bool {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
     let signer = client.signer().await.unwrap();
@@ -588,7 +588,7 @@ pub async fn update_profile(name: String, avatar: String, banner: String, about:
 
 #[tauri::command]
 pub async fn update_status(status: String) -> bool {
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
     let signer = client.signer().await.unwrap();
@@ -655,7 +655,7 @@ pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Res
         .map_err(|_| "File type is not allowed for avatars (only images are permitted)")?;
 
     // Upload the file to the server using Blossom with automatic failover and progress
-    let client = NOSTR_CLIENT.get().expect("Nostr client not initialized");
+    let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
     let servers = crate::get_blossom_servers();
 

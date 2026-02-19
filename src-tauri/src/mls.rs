@@ -26,7 +26,7 @@ use mdk_core::prelude::*;
 use mdk_sqlite_storage::MdkSqliteStorage;
 use std::sync::Arc;
 use tauri::{AppHandle, Runtime, Emitter};
-use crate::{TAURI_APP, NOSTR_CLIENT, TRUSTED_RELAYS, STATE};
+use crate::{get_nostr_client, TAURI_APP, TRUSTED_RELAYS, STATE};
 use crate::rumor::{RumorEvent, RumorContext, ConversationType, process_rumor, RumorProcessingResult};
 use crate::db::{save_chat, save_chat_messages};
 
@@ -228,7 +228,7 @@ impl MlsService {
         // TODO: Resolve `initial_member_devices` into Vec<Event> KeyPackages (from index or network).
 
         // Resolve client and my pubkey
-        let client = NOSTR_CLIENT.get().ok_or(MlsError::NotInitialized)?;
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
         let signer = client
             .signer()
             .await
@@ -294,8 +294,7 @@ impl MlsService {
                     }
                 };
                 let filter = Filter::new().id(id).limit(1);
-                match NOSTR_CLIENT
-                    .get()
+                match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
                     .await
@@ -312,8 +311,7 @@ impl MlsService {
                     .author(member_pk)
                     .kind(Kind::MlsKeyPackage)
                     .limit(50);
-                match NOSTR_CLIENT
-                    .get()
+                match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
                     .await
@@ -419,8 +417,7 @@ impl MlsService {
             for i in 0..min_len {
                 let welcome = welcome_rumors[i].clone(); // UnsignedEvent
                 let target = invited_recipients[i];
-                match NOSTR_CLIENT
-                    .get()
+                match get_nostr_client()
                     .unwrap()
                     .gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &target, welcome, [])
                     .await
@@ -532,7 +529,7 @@ impl MlsService {
         use nostr_sdk::prelude::*;
 
         // Resolve client
-        let client = NOSTR_CLIENT.get().ok_or(MlsError::NotInitialized)?;
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
 
         // Parse member public key
         let member_pk = PublicKey::from_bech32(member_pubkey)
@@ -661,7 +658,7 @@ impl MlsService {
         use nostr_sdk::prelude::*;
 
         // Resolve client
-        let client = NOSTR_CLIENT.get().ok_or(MlsError::NotInitialized)?;
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
 
         // Find the group's MLS group ID
         let groups = self.read_groups().await?;
@@ -726,7 +723,7 @@ impl MlsService {
         use nostr_sdk::prelude::*;
 
         // Resolve client
-        let client = NOSTR_CLIENT.get().ok_or(MlsError::NotInitialized)?;
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
 
         // Parse member pubkey
         let member_pk = PublicKey::from_bech32(member_pubkey)
@@ -855,7 +852,7 @@ impl MlsService {
             group_id.to_string()
         };
         // 2) Build filter for MLS wrapper events (Kind 445) with 'h' tag = gid_for_fetch
-        let client = NOSTR_CLIENT.get().ok_or(MlsError::NotInitialized)?;
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
         let group_id_len = gid_for_fetch.len();
         if group_id_len != 32 && group_id_len != 64 {
             eprintln!(
@@ -1723,8 +1720,8 @@ pub async fn send_mls_message(group_id: &str, rumor: nostr_sdk::UnsignedEvent, p
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             // Get the Nostr client
-            let client = NOSTR_CLIENT.get()
-                .ok_or_else(|| "Nostr client not initialized".to_string())?;
+            let client = get_nostr_client()
+                .map_err(|_| "Nostr client not initialized".to_string())?;
             
             // Create MLS service instance
             let service = MlsService::new_persistent(&handle)
