@@ -3,11 +3,12 @@
   import Modal from './Modal.svelte';
   import settingsIcon from '../icons/settings.svg';
   import plusCircleIcon from '../icons/plus-circle.svg';
+  import minusCircleIcon from '../icons/minus-circle.svg';
   import friendsIcon from '../icons/friends.svg';
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
   import pinIcon from '../icons/pin.svg';
-  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedNetworkId, lastOpenedNetworkChannelId, composingNewChat, dmList, pinnedList, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../stores/app';
+  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../stores/app';
   import { currentUser } from '../stores/auth';
   import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatSquadInviteMessage, formatNetworkInviteMessage } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
@@ -15,21 +16,34 @@
   import { profiles } from '../stores/profiles';
 
   function selectSquad(squadId: string) {
+    const squad = $squads.find((s) => s.id === squadId);
+    if (!squad) return;
+    const sortedChannels = [...squad.channels].sort((a, b) => a.order - b.order);
+    const firstChannel = sortedChannels[0];
+    const lastChannelId = $lastChannelBySquadId[squadId];
+    const channel =
+      lastChannelId && sortedChannels.some((c) => c.groupId === lastChannelId)
+        ? sortedChannels.find((c) => c.groupId === lastChannelId)!
+        : firstChannel;
     $activeSquadId = squadId;
-    $activeChannelId = null;
+    $activeChannelId = channel?.groupId ?? firstChannel?.groupId ?? null;
     $activeView = 'hub';
   }
 
   function selectNetwork(networkId: string) {
     const net = $networks.find((n) => n.id === networkId);
     if (!net) return;
+    const sortedChannels = [...net.channels].sort((a, b) => a.order - b.order);
+    const firstChannel = sortedChannels[0];
+    const lastChannelId = $lastChannelByNetworkId[networkId];
+    const channel =
+      lastChannelId && sortedChannels.some((c) => c.groupId === lastChannelId)
+        ? sortedChannels.find((c) => c.groupId === lastChannelId)!
+        : firstChannel;
     $activeNetworkId = networkId;
     $lastOpenedNetworkId = networkId;
-    const firstChannel = net.channels.slice().sort((a, b) => a.order - b.order)[0];
-    if (firstChannel) {
-      $activeChannelId = firstChannel.groupId;
-      $lastOpenedNetworkChannelId = firstChannel.groupId;
-    }
+    $activeChannelId = channel?.groupId ?? firstChannel?.groupId ?? null;
+    if ($activeChannelId) $lastOpenedNetworkChannelId = $activeChannelId;
     $activeView = 'hub';
   }
 
@@ -58,6 +72,8 @@
   $: addButtonLabel = addButtonLabels[$activeTopNavTab];
 
   // Organize Squad modal
+  type OrganizeSquadMode = 'from-dms' | 'from-network';
+  let organizeSquadMode: OrganizeSquadMode = 'from-dms';
   let showOrganizeSquadModal = false;
   let organizeSquadName = '';
   let organizeSquadIconUrl = '';
@@ -65,12 +81,53 @@
   let organizeSquadError = '';
   let creatingSquad = false;
 
-  function openOrganizeSquadModal() {
+  // Break: network members for from-network mode (loaded when modal opens)
+  let breakNetworkMemberList: { npub: string; name?: string }[] = [];
+  let breakNetworkMembersLoading = false;
+  let breakNetworkMembersError = '';
+
+  /** Every network has an #announcements channel (created with name 'announcements'). */
+  function getNetworkAnnouncementsChannel(net: Network) {
+    return net.channels.find((c) => c.name === 'announcements') ?? [...net.channels].sort((a, b) => a.order - b.order)[0];
+  }
+
+  async function loadBreakNetworkMembers() {
+    const nid = $activeNetworkId;
+    const net = nid ? $networks.find((n) => n.id === nid) : null;
+    if (!net) return;
+    const announcementsChannel = getNetworkAnnouncementsChannel(net);
+    breakNetworkMembersLoading = true;
+    breakNetworkMembersError = '';
+    try {
+      const result = await getMlsGroupMembers(announcementsChannel.groupId);
+      const members = (result.members ?? []).map((npub) => ({ npub }));
+      breakNetworkMemberList = members;
+      if (members.length === 0) breakNetworkMembersError = '';
+    } catch (e) {
+      breakNetworkMembersError = 'Could not load network members. Try again or cancel.';
+      breakNetworkMemberList = [];
+    } finally {
+      breakNetworkMembersLoading = false;
+    }
+  }
+
+  function openOrganizeSquadModal(mode: OrganizeSquadMode = 'from-dms') {
+    organizeSquadMode = mode;
     showOrganizeSquadModal = true;
     organizeSquadName = '';
     organizeSquadIconUrl = '';
     organizeSquadMembers = [];
     organizeSquadError = '';
+    breakNetworkMemberList = [];
+    breakNetworkMembersError = '';
+    if (mode === 'from-network') {
+      loadBreakNetworkMembers();
+    }
+  }
+
+  function openBreakIntoSquadModal() {
+    if (!$activeNetworkId) return;
+    openOrganizeSquadModal('from-network');
   }
 
   function closeOrganizeSquadModal() {
@@ -123,6 +180,14 @@
       $activeView = 'hub';
       showOrganizeSquadModal = false;
 
+      // When created from Break (from-network), switch to Squads tab and persist selection
+      if (organizeSquadMode === 'from-network') {
+        activeTopNavTab.set('squads');
+        lastOpenedSquadId.set(squad.id);
+        lastOpenedChannelId.set(groupId);
+        lastChannelBySquadId.update((m) => ({ ...m, [squad.id]: groupId }));
+      }
+
       // Send squad_invite DM to each member so they see the invite card in the DM thread
       const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName: name, groupId });
       (async () => {
@@ -143,13 +208,17 @@
 
   function handleAddAction() {
     if ($activeTopNavTab === 'squads') {
-      openOrganizeSquadModal();
+      openOrganizeSquadModal('from-dms');
     } else if ($activeTopNavTab === 'networks') {
       openCreateNetworkModal();
     }
   }
 
-  $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
+  $: canCreateSquad =
+    organizeSquadName.trim().length > 0 &&
+    (organizeSquadMode === 'from-network'
+      ? organizeSquadMembers.some((n) => n !== $currentUser?.npub)
+      : organizeSquadMembers.length > 0);
 
   // Create Network modal
   let showCreateNetworkModal = false;
@@ -179,9 +248,9 @@
     }
   }
 
+  /** Every squad has an #announcements channel (created with name 'announcements'). */
   function getAnnouncementsChannel(squad: Squad) {
-    if (!squad?.channels?.length) return undefined;
-    return [...squad.channels].sort((a, b) => a.order - b.order)[0];
+    return squad.channels.find((c) => c.name === 'announcements') ?? [...squad.channels].sort((a, b) => a.order - b.order)[0];
   }
 
   async function handleCreateNetwork() {
@@ -199,7 +268,6 @@
       const allNpubs = new Set<string>();
       for (const squad of selectedSquads) {
         const ann = getAnnouncementsChannel(squad);
-        if (!ann) continue;
         try {
           const result = await getMlsGroupMembers(ann.groupId);
           for (const n of result.members ?? []) {
@@ -270,8 +338,15 @@
     setTimeout(() => document.getElementById('network-name')?.focus(), 0);
   }
 
-  /* Organize Squad: members = Pinned + Friends (so squad creation can use both) */
-  $: organizeMemberList = [...$pinnedList, ...$dmList];
+  $: if (showOrganizeSquadModal) {
+    setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
+  }
+
+  /* Organize Squad: member list depends on mode. from-dms = Pinned + Friends; from-network = loaded network members */
+  $: organizeMemberList =
+    organizeSquadMode === 'from-network'
+      ? breakNetworkMemberList
+      : [...$pinnedList, ...$dmList];
 </script>
 
 <div class="navbar">
@@ -347,6 +422,20 @@
   <div class="navbar-spacer" aria-hidden="true"></div>
   {/if}
   <div class="tab-list bottom">
+    {#if $activeTopNavTab === 'networks'}
+    <div
+      class="break-btn-wrapper"
+      class:disabled={!$activeNetworkId}
+      on:click={() => $activeNetworkId && openBreakIntoSquadModal()}
+      on:keydown={(e) => e.key === 'Enter' && $activeNetworkId && openBreakIntoSquadModal()}
+      role="button"
+      tabindex={$activeNetworkId ? 0 : -1}
+      aria-label="Break into Squad"
+      title={$activeNetworkId ? undefined : 'Select a network first.'}
+    >
+      <Tab label="Break into Squad" icon={minusCircleIcon} active={false} />
+    </div>
+    {/if}
     <div
       on:click={$activeTopNavTab === 'dms' ? startNewChat : handleAddAction}
       on:keydown={(e) => e.key === 'Enter' && ($activeTopNavTab === 'dms' ? startNewChat() : handleAddAction())}
@@ -367,10 +456,16 @@
 </div>
 
 {#if showOrganizeSquadModal}
-  <Modal titleId="organize-squad-title" onClose={closeOrganizeSquadModal}>
-    <h2 id="organize-squad-title">Organize Squad</h2>
-      <p class="organize-modal-subtitle">Create a squad with an announcements channel. Select at least one member.</p>
-      <form on:submit|preventDefault={handleCreateSquad}>
+  <Modal titleId="organize-squad-title" descriptionId="organize-squad-description" onClose={closeOrganizeSquadModal}>
+    <h2 id="organize-squad-title">{organizeSquadMode === 'from-network' ? 'Break into Squad' : 'Organize Squad'}</h2>
+    <p id="organize-squad-description" class="organize-modal-subtitle">
+      {#if organizeSquadMode === 'from-network'}
+        Select members from this network to form a new squad. Choose a name and at least one member.
+      {:else}
+        Create a squad with an announcements channel. Select at least one member.
+      {/if}
+    </p>
+    <form on:submit|preventDefault={handleCreateSquad}>
         <label class="organize-label" for="squad-name">Squad name</label>
         <input
           id="squad-name"
@@ -389,33 +484,52 @@
           bind:value={organizeSquadIconUrl}
         />
         <span class="organize-label">Members for announcements (select at least one)</span>
-        <div class="organize-members">
-          {#each organizeMemberList as entry (entry.npub)}
-            <label class="organize-member-row">
-              <input
-                type="checkbox"
-                checked={organizeSquadMembers.includes(entry.npub)}
-                on:change={() => toggleOrganizeMember(entry.npub)}
-              />
-              <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
-            </label>
-          {/each}
-        </div>
-        {#if organizeMemberList.length === 0}
-          <p class="organize-members-empty">Add friends in DMs first to create a squad with them.</p>
+        {#if organizeSquadMode === 'from-network' && breakNetworkMembersLoading}
+          <p class="organize-members-empty">Loading network members…</p>
+        {:else if organizeSquadMode === 'from-network' && breakNetworkMembersError}
+          <p class="organize-error" role="alert">{breakNetworkMembersError}</p>
+        {:else}
+          <div class="organize-members">
+            {#each organizeMemberList as entry (entry.npub)}
+              <label class="organize-member-row">
+                <input
+                  type="checkbox"
+                  checked={organizeSquadMembers.includes(entry.npub)}
+                  on:change={() => toggleOrganizeMember(entry.npub)}
+                />
+                <span class="organize-member-name">{organizeMemberDisplayName(entry.npub, entry.name)}</span>
+              </label>
+            {/each}
+          </div>
+          {#if organizeSquadMode === 'from-network'
+            ? organizeMemberList.filter((e) => e.npub !== $currentUser?.npub).length === 0
+            : organizeMemberList.length === 0}
+            <p class="organize-members-empty">
+              {#if organizeSquadMode === 'from-network'}
+                This network has no other members to add to a squad.
+              {:else}
+                Add friends in DMs first to create a squad with them.
+              {/if}
+            </p>
+          {/if}
         {/if}
         {#if organizeSquadError}
           <p class="organize-error" role="alert">{organizeSquadError}</p>
         {/if}
         <div class="organize-actions">
-          <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} disabled={creatingSquad}>
+          <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} disabled={creatingSquad} aria-label="Cancel">
             Cancel
           </button>
-          <button type="submit" class="organize-btn-create" disabled={!canCreateSquad || creatingSquad}>
+          <button
+            type="submit"
+            class="organize-btn-create"
+            disabled={!canCreateSquad || creatingSquad || (organizeSquadMode === 'from-network' && breakNetworkMembersLoading)}
+            aria-label={organizeSquadMode === 'from-network' ? 'Create squad from network members' : 'Create squad'}
+          >
             {creatingSquad ? 'Creating…' : 'Create'}
           </button>
         </div>
-      </form>
+    </form>
   </Modal>
 {/if}
 
@@ -500,6 +614,12 @@
   .navbar-spacer {
     flex: 1;
     min-height: 0;
+  }
+
+  .break-btn-wrapper.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: auto;
   }
 
   /* Modal content (Organize Squad / Create Network) - title styling in Modal.svelte */

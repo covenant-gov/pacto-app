@@ -142,7 +142,12 @@
 </script>
 
 <div class="login-container">
-  {#if currentStep === 'welcome'}
+  {#if currentStep === 'checking'}
+    <div class="checking-screen" role="status" aria-live="polite">
+      <div class="checking-spinner"></div>
+      <p class="checking-text">Checking your account…</p>
+    </div>
+  {:else if currentStep === 'welcome'}
     <WelcomeScreen
       onCreateAccount={handleCreateAccount}
       onImportKeys={handleImportKeys}
@@ -174,7 +179,37 @@
   .login-container {
     width: 100%;
     height: 100vh;
-    background: var(--bg-page);
+    background: var(--bg-page, #1c1c1c);
+  }
+
+  .checking-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100vh;
+    gap: 16px;
+    background: var(--bg-page, #1c1c1c);
+  }
+
+  .checking-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--border-subtle, #313338);
+    border-top-color: var(--accent, #5865f2);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .checking-text {
+    color: var(--text-secondary, #dbdee1);
+    font-size: 0.9375rem;
+    margin: 0;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .pin-screen {

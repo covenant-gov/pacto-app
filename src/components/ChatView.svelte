@@ -18,6 +18,7 @@
     messageCountByChat,
     loadedOffsetByChat,
     groupSendError,
+    showMembersPanel,
     type DmMessage,
   } from '../stores/app';
   import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, inviteMemberToGroup } from '../lib/api/nostr';
@@ -52,7 +53,6 @@
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
 
   let channelMenuOpen = false;
-  let showMembersModal = false; /* panel state (right-hand bar); name kept for HMR/cache compat */
   let showLeaveChannelConfirm = false;
   let showInviteToChannelModal = false;
   let channelMembers: string[] = [];
@@ -115,8 +115,15 @@
   $: if (prevChannelId !== $activeChannelId) {
     prevChannelId = $activeChannelId;
     groupSendError.set(null);
-    showMembersModal = false;
   }
+
+  // When members panel is open and user navigates to another squad/network/channel, refresh the list
+  let prevChannelIdForMembers: string | null = null;
+  $: if ($showMembersPanel && $activeChannelId && prevChannelIdForMembers !== $activeChannelId) {
+    prevChannelIdForMembers = $activeChannelId;
+    loadChannelMembers();
+  }
+  $: if (!$showMembersPanel) prevChannelIdForMembers = null;
 
   let loadingOlder = false;
   async function handleSendMessage(content: string) {
@@ -229,7 +236,8 @@
   }
 
   function openMembersPanel() {
-    showMembersModal = true;
+    showMembersPanel.set(true);
+    prevChannelIdForMembers = $activeChannelId;
     channelMembers = [];
     closeChannelMenu();
     loadChannelMembers();
@@ -457,11 +465,11 @@
     {/if}
     </div>
     <!-- Right-hand members panel (Discord-style) -->
-    {#if showMembersModal}
+    {#if $showMembersPanel}
       <aside class="members-panel" aria-label="Channel members">
         <div class="members-panel-header">
           <h3 class="members-panel-title">Members</h3>
-          <button type="button" class="members-panel-close" aria-label="Close" on:click={() => (showMembersModal = false)}>×</button>
+          <button type="button" class="members-panel-close" aria-label="Close" on:click={() => showMembersPanel.set(false)}>×</button>
         </div>
         <div class="members-panel-list">
           {#if loadingMembers}

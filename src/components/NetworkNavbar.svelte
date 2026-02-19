@@ -9,6 +9,7 @@
     activeView,
     lastOpenedNetworkId,
     lastOpenedNetworkChannelId,
+    lastChannelByNetworkId,
     dmList,
     requestsList,
     pendingList,
@@ -36,15 +37,14 @@
       ? activeNetwork.memberSquads.map((s) => s.name).join(', ')
       : '';
 
-  function getNetworkAnnouncementsChannel(net: typeof activeNetwork) {
-    if (!net?.channels?.length) return undefined;
-    return [...net.channels].sort((a, b) => a.order - b.order)[0];
+  /** Every network has an #announcements channel (created with name 'announcements'). */
+  function getNetworkAnnouncementsChannel(net: NonNullable<typeof activeNetwork>) {
+    return net.channels.find((c) => c.name === 'announcements') ?? [...net.channels].sort((a, b) => a.order - b.order)[0];
   }
 
   let networkMenuOpen = false;
   let showInviteToNetworkModal = false;
   let inviteToNetworkCandidates: string[] = [];
-  let inviteToNetworkHasNoChannel = false;
   let loadingInviteToNetwork = false;
   let selectedInviteNpubs: string[] = [];
   let inviteByNpub = '';
@@ -55,7 +55,6 @@
   function openInviteToNetworkModal() {
     networkMenuOpen = false;
     showInviteToNetworkModal = true;
-    inviteToNetworkHasNoChannel = false;
     selectedInviteNpubs = [];
     inviteByNpub = '';
     inviteToNetworkError = '';
@@ -70,13 +69,8 @@
 
   async function loadInviteToNetworkCandidates() {
     const net = $networks.find((n) => n.id === $activeNetworkId);
+    if (!net) return;
     const announcementsChannel = getNetworkAnnouncementsChannel(net);
-    if (!announcementsChannel) {
-      inviteToNetworkHasNoChannel = true;
-      inviteToNetworkCandidates = [];
-      return;
-    }
-    inviteToNetworkHasNoChannel = false;
     loadingInviteToNetwork = true;
     try {
       const result = await getMlsGroupMembers(announcementsChannel.groupId);
@@ -100,13 +94,13 @@
 
   async function handleInviteToNetwork() {
     const net = $networks.find((n) => n.id === $activeNetworkId);
+    if (!net) return;
     const announcementsChannel = getNetworkAnnouncementsChannel(net);
     const extraNpub = inviteByNpub.trim();
     const npubsToInvite = [
       ...selectedInviteNpubs,
       ...(extraNpub && extraNpub.startsWith('npub1') ? [extraNpub] : []),
     ];
-    if (!announcementsChannel || !net) return;
     if (npubsToInvite.length === 0) {
       inviteToNetworkError = extraNpub
         ? 'Please enter a valid npub (starts with npub1) or pick from the list.'
@@ -330,7 +324,10 @@
     activeChannelId.set(channelGroupId);
     activeView.set('hub');
     lastOpenedNetworkChannelId.set(channelGroupId);
-    if ($activeNetworkId) lastOpenedNetworkId.set($activeNetworkId);
+    if ($activeNetworkId) {
+      lastOpenedNetworkId.set($activeNetworkId);
+      lastChannelByNetworkId.update((m) => ({ ...m, [$activeNetworkId]: channelGroupId }));
+    }
   }
 
 </script>
@@ -510,8 +507,6 @@
       <p class="create-channel-subtitle">Invite friends to {activeNetwork?.name ?? 'this Network'}.</p>
       {#if loadingInviteToNetwork}
         <p class="create-channel-loading">Loading…</p>
-      {:else if inviteToNetworkHasNoChannel}
-        <p class="create-channel-empty-friends">This Network has no channel yet. Create a channel first (use + Create channel), or create Networks from squads so they get an announcements channel.</p>
       {:else if inviteToNetworkCandidates.length === 0}
         <p class="create-channel-empty-friends">No one to invite right now. Start a DM with someone first, or they may already be in this Network.</p>
       {:else}
@@ -528,16 +523,14 @@
           {/each}
         </div>
       {/if}
-      {#if !inviteToNetworkHasNoChannel}
-        <p class="create-channel-invite-by-npub-label">Or invite by npub:</p>
-        <input
-          type="text"
-          class="create-channel-invite-npub-input"
-          placeholder="npub1…"
-          bind:value={inviteByNpub}
-          disabled={invitingToNetwork}
-        />
-      {/if}
+      <p class="create-channel-invite-by-npub-label">Or invite by npub:</p>
+      <input
+        type="text"
+        class="create-channel-invite-npub-input"
+        placeholder="npub1…"
+        bind:value={inviteByNpub}
+        disabled={invitingToNetwork}
+      />
       {#if inviteToNetworkError}
         <p class="create-channel-error" role="alert">{inviteToNetworkError}</p>
       {/if}
@@ -549,7 +542,7 @@
           type="button"
           class="create-channel-btn-create"
           on:click={handleInviteToNetwork}
-          disabled={inviteToNetworkHasNoChannel || (selectedInviteNpubs.length === 0 && !inviteByNpub.trim()) || invitingToNetwork}
+          disabled={(selectedInviteNpubs.length === 0 && !inviteByNpub.trim()) || invitingToNetwork}
         >
           {invitingToNetwork ? 'Inviting…' : 'Invite'}
         </button>

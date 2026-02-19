@@ -45,6 +45,9 @@ export const activeChannelId = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
+// Members panel (right-hand bar in squad/network channel view): keep open across tab switches until user closes
+export const showMembersPanel = writable<boolean>(false);
+
 // DMs: which sub-tab (Friends, Requests, Pending, Pinned)
 export type DmTab = 'friends' | 'requests' | 'pending' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
@@ -279,9 +282,12 @@ activeDmId.subscribe((id) => {
 // Last opened squad/channel for restore when switching to Squads view (npub-scoped)
 const LAST_SQUAD_ID_PREFIX = 'pacto_last_squad_id';
 const LAST_CHANNEL_ID_PREFIX = 'pacto_last_channel_id';
+// Per-squad last channel (squadId -> channelId) so returning to a squad restores its channel
+const LAST_CHANNEL_BY_SQUAD_PREFIX = 'pacto_last_channel_by_squad';
 
 export const lastOpenedSquadId = writable<string | null>(null);
 export const lastOpenedChannelId = writable<string | null>(null);
+export const lastChannelBySquadId = writable<Record<string, string>>({});
 
 lastOpenedSquadId.subscribe((id) => {
   if (typeof localStorage === 'undefined') return;
@@ -297,14 +303,27 @@ lastOpenedChannelId.subscribe((id) => {
   if (id) localStorage.setItem(key, id);
   else localStorage.removeItem(key);
 });
+lastChannelBySquadId.subscribe((map) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_CHANNEL_BY_SQUAD_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch {
+    // ignore quota
+  }
+});
 
 // Last opened network/channel for restore when switching to Networks view (npub-scoped)
 const LAST_NETWORK_ID_PREFIX = 'pacto_last_network_id';
 const LAST_NETWORK_CHANNEL_ID_PREFIX = 'pacto_last_network_channel_id';
+// Per-network last channel (networkId -> channelId) so returning to a network restores its channel
+const LAST_CHANNEL_BY_NETWORK_PREFIX = 'pacto_last_channel_by_network';
 
 export const activeNetworkId = writable<string | null>(null);
 export const lastOpenedNetworkId = writable<string | null>(null);
 export const lastOpenedNetworkChannelId = writable<string | null>(null);
+export const lastChannelByNetworkId = writable<Record<string, string>>({});
 
 lastOpenedNetworkId.subscribe((id) => {
   if (typeof localStorage === 'undefined') return;
@@ -319,6 +338,16 @@ lastOpenedNetworkChannelId.subscribe((id) => {
   if (!key) return;
   if (id) localStorage.setItem(key, id);
   else localStorage.removeItem(key);
+});
+lastChannelByNetworkId.subscribe((map) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(LAST_CHANNEL_BY_NETWORK_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch {
+    // ignore quota
+  }
 });
 
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
@@ -348,6 +377,15 @@ export function loadAccountState(npub: string): void {
     if (lastSquad) lastOpenedSquadId.set(lastSquad);
     const lastChannel = localStorage.getItem(`${LAST_CHANNEL_ID_PREFIX}_${npub}`);
     if (lastChannel) lastOpenedChannelId.set(lastChannel);
+    const rawBySquad = localStorage.getItem(`${LAST_CHANNEL_BY_SQUAD_PREFIX}_${npub}`);
+    if (rawBySquad) {
+      try {
+        const parsed = JSON.parse(rawBySquad) as unknown;
+        lastChannelBySquadId.set(typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, string>) : {});
+      } catch {
+        lastChannelBySquadId.set({});
+      }
+    }
     const rawNetworks = localStorage.getItem(`${PACTO_NETWORKS_PREFIX}_${npub}`);
     if (rawNetworks) {
       const parsed = JSON.parse(rawNetworks) as unknown;
@@ -360,6 +398,15 @@ export function loadAccountState(npub: string): void {
     if (lastNetwork) lastOpenedNetworkId.set(lastNetwork);
     const lastNetworkChannel = localStorage.getItem(`${LAST_NETWORK_CHANNEL_ID_PREFIX}_${npub}`);
     if (lastNetworkChannel) lastOpenedNetworkChannelId.set(lastNetworkChannel);
+    const rawByNetwork = localStorage.getItem(`${LAST_CHANNEL_BY_NETWORK_PREFIX}_${npub}`);
+    if (rawByNetwork) {
+      try {
+        const parsed = JSON.parse(rawByNetwork) as unknown;
+        lastChannelByNetworkId.set(typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, string>) : {});
+      } catch {
+        lastChannelByNetworkId.set({});
+      }
+    }
     for (const [key, setStore] of getInviteDecisionLoadEntries(npub)) {
       try {
         const raw = localStorage.getItem(key);

@@ -1,5 +1,18 @@
 <script lang="ts">
-  import { activeTopNavTab, activeView, type TopNavTab } from '../stores/app';
+  import {
+    activeTopNavTab,
+    activeView,
+    activeSquadId,
+    activeChannelId,
+    activeNetworkId,
+    lastOpenedSquadId,
+    lastOpenedChannelId,
+    lastChannelBySquadId,
+    lastOpenedNetworkId,
+    lastOpenedNetworkChannelId,
+    lastChannelByNetworkId,
+    type TopNavTab,
+  } from '../stores/app';
 
   const tabs: { id: TopNavTab; label: string }[] = [
     { id: 'dms', label: 'DMs' }, // 1-on-1 chat, non-governable
@@ -7,7 +20,29 @@
     { id: 'networks', label: 'Networks' }, // [regional] delegation-level coordinations (positioned above squads), governable
   ];
 
+  const DEBUG = false; // [SquadChannel] set true to trace tab-switch persistence
   function selectTab(id: TopNavTab) {
+    // Persist current squad/network channel before switching so it restores when returning
+    if (id !== $activeTopNavTab) {
+      const cid = $activeChannelId;
+      if (DEBUG) console.log('[SquadChannel] selectTab', { from: $activeTopNavTab, to: id, activeSquadId: $activeSquadId, activeChannelId: cid?.slice(0, 20) });
+      if ($activeTopNavTab === 'squads' && $activeSquadId && cid && !cid.startsWith('creating-')) {
+        const sid = $activeSquadId;
+        lastOpenedSquadId.set(sid);
+        lastOpenedChannelId.set(cid);
+        lastChannelBySquadId.update((m) => {
+          const next = { ...m, [sid]: cid };
+          if (DEBUG) console.log('[SquadChannel] TopNavbar persist squad', { sid: sid.slice(0, 12), cid: cid.slice(0, 20), mapKeys: Object.keys(next) });
+          return next;
+        });
+      }
+      if ($activeTopNavTab === 'networks' && $activeNetworkId && cid && !cid.startsWith('creating-')) {
+        const nid = $activeNetworkId;
+        lastOpenedNetworkId.set(nid);
+        lastOpenedNetworkChannelId.set(cid);
+        lastChannelByNetworkId.update((m) => ({ ...m, [nid]: cid }));
+      }
+    }
     $activeTopNavTab = id;
     $activeView = 'hub'; // close Settings if open so the selected view is shown
   }
