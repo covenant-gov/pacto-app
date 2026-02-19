@@ -13,6 +13,10 @@
     dmList,
     requestsList,
     pendingList,
+    networksCreatingAnnouncements,
+    networkCreateErrorByNetworkId,
+    networkPendingCreateMembers,
+    removeNetworkCreatingAnnouncements,
     type Channel as ChannelType,
   } from '../stores/app';
   import {
@@ -25,6 +29,7 @@
   } from '../lib/api/nostr';
   import chevronDownIcon from '../icons/chevron-down.svg';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { showToast } from '../stores/toast';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
@@ -32,6 +37,59 @@
   $: activeNetwork = $networks.find((n) => n.id === $activeNetworkId);
   $: channels = activeNetwork?.channels ?? [];
   $: sortedChannels = [...channels].sort((a, b) => a.order - b.order);
+  $: networkCreating = activeNetwork && activeNetwork.channels.length === 0 && $networksCreatingAnnouncements.has(activeNetwork.id);
+  $: networkCreateError = activeNetwork ? $networkCreateErrorByNetworkId[activeNetwork.id] ?? '' : '';
+  $: canRetryNetworkCreate = activeNetwork && networkCreateError && ($networkPendingCreateMembers[activeNetwork.id]?.length ?? 0) > 0;
+
+  let retryingNetworkCreate = false;
+  async function handleRetryNetworkCreate() {
+    const net = activeNetwork;
+    if (!net || !networkCreateError || retryingNetworkCreate) return;
+    const allMemberNpubs = $networkPendingCreateMembers[net.id];
+    if (!allMemberNpubs?.length) return;
+    retryingNetworkCreate = true;
+    try {
+      const groupId = await createGroupChat('announcements', allMemberNpubs);
+      const announcementsChannel: ChannelType = { name: 'announcements', groupId, order: 0 };
+      networks.update((list) =>
+        list.map((n) => (n.id !== net.id ? n : { ...n, channels: [announcementsChannel], updatedAt: Date.now() }))
+      );
+      removeNetworkCreatingAnnouncements(net.id);
+      networkCreateErrorByNetworkId.update((m) => {
+        const next = { ...m };
+        delete next[net.id];
+        return next;
+      });
+      networkPendingCreateMembers.update((m) => {
+        const next = { ...m };
+        delete next[net.id];
+        return next;
+      });
+      if (get(activeNetworkId) === net.id) {
+        activeChannelId.set(groupId);
+        lastOpenedNetworkChannelId.set(groupId);
+      }
+      const payload = formatNetworkInviteMessage({
+        type: 'network_invite',
+        networkName: net.name,
+        groupId,
+        memberSquads: net.memberSquads ?? [],
+      });
+      for (const npub of allMemberNpubs) {
+        try {
+          await sendDmMessage(npub, payload);
+        } catch (e) {
+          console.warn('[NetworkNavbar] retry send network invite DM failed for', npub.slice(0, 20) + '…', e);
+        }
+      }
+      showToast(`${net.name} is ready!`, { type: 'network', name: net.name, id: net.id, channelId: groupId });
+    } catch (e) {
+      networkCreateErrorByNetworkId.update((m) => ({ ...m, [net.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
+    } finally {
+      retryingNetworkCreate = false;
+    }
+  }
+
   $: memberSquadsLabel =
     activeNetwork?.memberSquads?.length
       ? activeNetwork.memberSquads.map((s) => s.name).join(', ')
@@ -375,29 +433,53 @@
       </div>
     {/if}
     <div class="channels-container">
-      <div class="channel-list">
-        {#each sortedChannels as channel (channel.groupId)}
-          <div
-            on:click={() => selectChannel(channel.groupId)}
-            on:keydown={(e) => e.key === 'Enter' && selectChannel(channel.groupId)}
-            role="button"
-            tabindex="0"
+      {#if networkCreating}
+        <div class="network-setting-up" role="status" aria-live="polite">
+          {#if networkCreateError}
+            <p class="setting-up-error" role="alert" id="network-create-error">{networkCreateError}</p>
+            {#if canRetryNetworkCreate}
+              <button
+                type="button"
+                class="setting-up-retry-btn"
+                disabled={retryingNetworkCreate}
+                on:click={handleRetryNetworkCreate}
+                aria-describedby="network-create-error"
+              >
+                {retryingNetworkCreate ? 'Retrying…' : 'Retry'}
+              </button>
+            {/if}
+          {:else}
+            <div class="setting-up-spinner" aria-hidden="true"></div>
+            <p class="setting-up-text">Setting up…</p>
+          {/if}
+        </div>
+      {:else}
+        <div class="channel-list">
+          {#each sortedChannels as channel (channel.groupId)}
+            <div
+              on:click={() => selectChannel(channel.groupId)}
+              on:keydown={(e) => e.key === 'Enter' && selectChannel(channel.groupId)}
+              role="button"
+              tabindex="0"
+            >
+              <Channel
+                name={channel.name}
+                type="text"
+                active={$activeView === 'hub' && $activeChannelId === channel.groupId}
+              />
+            </div>
+          {/each}
+        </div>
+        {#if sortedChannels.length > 0}
+          <button
+            type="button"
+            class="create-channel-btn"
+            on:click={openCreateChannelModal}
           >
-            <Channel
-              name={channel.name}
-              type="text"
-              active={$activeView === 'hub' && $activeChannelId === channel.groupId}
-            />
-          </div>
-        {/each}
-      </div>
-      <button
-        type="button"
-        class="create-channel-btn"
-        on:click={openCreateChannelModal}
-      >
-        + Create channel
-      </button>
+            + Create channel
+          </button>
+        {/if}
+      {/if}
     </div>
   {:else}
     <div class="empty-state">
@@ -722,6 +804,61 @@
   .channel-list > div {
     cursor: pointer;
     border-radius: 4px;
+  }
+
+  .network-setting-up {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px 16px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .setting-up-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border-subtle);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: network-setting-up-spin 0.9s linear infinite;
+  }
+
+  @keyframes network-setting-up-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .setting-up-text {
+    margin: 0;
+  }
+
+  .setting-up-error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+
+  .setting-up-retry-btn {
+    margin-top: 4px;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .setting-up-retry-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .setting-up-retry-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 
   .empty-state {

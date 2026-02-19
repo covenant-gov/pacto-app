@@ -61,6 +61,26 @@
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
+  let dmMessagesContainer: HTMLDivElement | null = null;
+  let scrollPrevNpub: string | null = null;
+  let lastScrolledToBottomNpub: string | null = null;
+  $: if (dmMessagesContainer && messages.length) {
+    const container = dmMessagesContainer;
+    const conversationJustChanged = npub !== scrollPrevNpub;
+    const firstTimeWithMessages = npub !== lastScrolledToBottomNpub;
+    if (conversationJustChanged) scrollPrevNpub = npub;
+    setTimeout(() => {
+      if (!container || !document.contains(container)) return;
+      const isNearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      if (conversationJustChanged || firstTimeWithMessages || isNearBottom) {
+        container.scrollTop = container.scrollHeight;
+        lastScrolledToBottomNpub = npub;
+      }
+    }, 0);
+  }
+  $: if (npub !== scrollPrevNpub && messages.length === 0) scrollPrevNpub = npub;
+
   $: contactProfile = npub ? $profiles[npub] : null;
   $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
   $: contactDisplayName = contactProfile
@@ -252,7 +272,7 @@
       {/if}
     </div>
   </div>
-  <div class="dm-thread-messages">
+  <div class="dm-thread-messages" bind:this={dmMessagesContainer}>
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>

@@ -257,12 +257,92 @@ networks.subscribe((value) => {
   }
 });
 
+/** Returns true if the channel display name looks like a placeholder (e.g. truncated groupId). */
+export function isPlaceholderChannelName(groupId: string, name: string): boolean {
+  if (!name || name.length < 10) return false;
+  const placeholder = groupId.slice(0, 12) + '…';
+  return name === placeholder || name === groupId.slice(0, 12);
+}
+
+/**
+ * If a channel with this groupId has a placeholder name (e.g. hash), update it to newName
+ * in squads, networks, and ungroupedChannels. Only updates when current name is placeholder-like.
+ */
+export function updateChannelNameIfPlaceholder(groupId: string, newName: string): void {
+  if (!newName || typeof newName !== 'string') return;
+  const name = newName.trim();
+  if (!name) return;
+
+  squads.update((list) =>
+    list.map((s) => ({
+      ...s,
+      channels: s.channels.map((ch) =>
+        ch.groupId === groupId && isPlaceholderChannelName(groupId, ch.name)
+          ? { ...ch, name }
+          : ch
+      ),
+    }))
+  );
+  networks.update((list) =>
+    list.map((n) => ({
+      ...n,
+      channels: n.channels.map((ch) =>
+        ch.groupId === groupId && isPlaceholderChannelName(groupId, ch.name)
+          ? { ...ch, name }
+          : ch
+      ),
+    }))
+  );
+  ungroupedChannels.update((list) =>
+    list.map((ch) =>
+      ch.groupId === groupId && isPlaceholderChannelName(groupId, ch.name)
+        ? { ...ch, name }
+        : ch
+    )
+  );
+}
+
 // Backend-backed group messages (get_message_views(groupId) + mls_message_new). Keyed by group_id. Reuse DmMessage shape.
 export const backendGroupMessages = writable<Record<string, DmMessage[]>>({});
 
 export const groupSendError = writable<string | null>(null);
 
 export const pendingMlsWelcomes = writable<PendingMlsWelcome[]>([]);
+
+/** Squad ids that are optimistically created and still creating their announcements channel. Cleared on success/failure or logout. */
+export const squadsCreatingAnnouncements = writable<Set<string>>(new Set());
+/** Network ids that are optimistically created and still creating their announcements channel. Cleared on success/failure or logout. */
+export const networksCreatingAnnouncements = writable<Set<string>>(new Set());
+
+export function addSquadCreatingAnnouncements(id: string): void {
+  squadsCreatingAnnouncements.update((s) => new Set(s).add(id));
+}
+export function removeSquadCreatingAnnouncements(id: string): void {
+  squadsCreatingAnnouncements.update((s) => {
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+}
+export function addNetworkCreatingAnnouncements(id: string): void {
+  networksCreatingAnnouncements.update((s) => new Set(s).add(id));
+}
+export function removeNetworkCreatingAnnouncements(id: string): void {
+  networksCreatingAnnouncements.update((s) => {
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+}
+
+/** Error message per squad id when optimistic squad creation (announcements) failed. Cleared on retry/success or logout. */
+export const squadCreateErrorBySquadId = writable<Record<string, string>>({});
+/** Error message per network id when optimistic network creation (announcements) failed. Cleared on retry/success or logout. */
+export const networkCreateErrorByNetworkId = writable<Record<string, string>>({});
+/** Member npubs for squads still creating announcements; used for retry. Cleared on success or logout. */
+export const squadPendingCreateMembers = writable<Record<string, string[]>>({});
+/** Member npubs for networks still creating announcements; used for retry. Cleared on success or logout. */
+export const networkPendingCreateMembers = writable<Record<string, string[]>>({});
 
 export const ungroupedChannels = writable<Channel[]>([]);
 

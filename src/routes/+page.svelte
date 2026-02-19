@@ -11,6 +11,7 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import DmThread from '../components/DmThread.svelte';
   import NetworkNavbar from '../components/NetworkNavbar.svelte';
+  import Toast from '../components/Toast.svelte';
   import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -55,6 +56,7 @@
     dmChatsByNpub,
     pinnedDmNpubs,
     dmSendError,
+    updateChannelNameIfPlaceholder,
     type DmMessage,
     type DmTab,
     type Channel,
@@ -736,8 +738,8 @@
       }
     });
 
-    const unlistenMlsNew = listen<{ group_id: string; message: DmMessage }>('mls_message_new', (event) => {
-      const { group_id, message } = event.payload;
+    const unlistenMlsNew = listen<{ group_id: string; message: DmMessage; group_name?: string }>('mls_message_new', (event) => {
+      const { group_id, message, group_name } = event.payload;
       const m: DmMessage = {
         id: message.id,
         content: message.content,
@@ -759,6 +761,7 @@
         );
         return { ...byGroup, [group_id]: [...withoutOpt, m] };
       });
+      if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
 
     async function refreshPendingWelcomes() {
@@ -920,6 +923,7 @@
       {/if}
     </div>
   </main>
+  <Toast />
 </div>
 
 <style>

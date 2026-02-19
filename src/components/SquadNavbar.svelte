@@ -2,9 +2,10 @@
   import { get } from 'svelte/store';
   import Channel from './Channel.svelte';
   import ResizableSidebar from './ResizableSidebar.svelte';
-  import { squads, activeSquadId, activeChannelId, activeView, lastChannelBySquadId, dmList, requestsList, pendingList, type Channel as ChannelType } from '../stores/app';
+  import { squads, activeSquadId, activeChannelId, activeView, lastChannelBySquadId, dmList, requestsList, pendingList, squadsCreatingAnnouncements, squadCreateErrorBySquadId, squadPendingCreateMembers, removeSquadCreatingAnnouncements, type Channel as ChannelType } from '../stores/app';
   import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, formatChannelInSquadMessage, leaveMlsGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { showToast } from '../stores/toast';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
@@ -15,6 +16,51 @@
   $: channels = activeSquad?.channels
     ? [...new Map(activeSquad.channels.map((c) => [c.groupId, c])).values()].sort((a, b) => a.order - b.order)
     : [];
+  $: squadCreating = activeSquad && activeSquad.channels.length === 0 && $squadsCreatingAnnouncements.has(activeSquad.id);
+  $: squadCreateError = activeSquad ? $squadCreateErrorBySquadId[activeSquad.id] ?? '' : '';
+  $: canRetrySquadCreate = activeSquad && squadCreateError && ($squadPendingCreateMembers[activeSquad.id]?.length ?? 0) > 0;
+
+  let retryingSquadCreate = false;
+  async function handleRetrySquadCreate() {
+    const squad = activeSquad;
+    if (!squad || !squadCreateError || retryingSquadCreate) return;
+    const memberIds = $squadPendingCreateMembers[squad.id];
+    if (!memberIds?.length) return;
+    retryingSquadCreate = true;
+    try {
+      const groupId = await createGroupChat('announcements', memberIds);
+      const announcementsChannel: ChannelType = { name: 'announcements', groupId, order: 0 };
+      squads.update((list) =>
+        list.map((s) => (s.id !== squad.id ? s : { ...s, channels: [announcementsChannel], updatedAt: Date.now() }))
+      );
+      removeSquadCreatingAnnouncements(squad.id);
+      squadCreateErrorBySquadId.update((m) => {
+        const next = { ...m };
+        delete next[squad.id];
+        return next;
+      });
+      squadPendingCreateMembers.update((m) => {
+        const next = { ...m };
+        delete next[squad.id];
+        return next;
+      });
+      if (get(activeSquadId) === squad.id) activeChannelId.set(groupId);
+      lastChannelBySquadId.update((m) => ({ ...m, [squad.id]: groupId }));
+      const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName: squad.name, groupId });
+      for (const npub of memberIds) {
+        try {
+          await sendDmMessage(npub, payload);
+        } catch (e) {
+          console.warn('[SquadNavbar] retry send squad invite DM failed for', npub.slice(0, 20) + '…', e);
+        }
+      }
+      showToast(`${squad.name} is ready!`, { type: 'squad', name: squad.name, id: squad.id, channelId: groupId });
+    } catch (e) {
+      squadCreateErrorBySquadId.update((m) => ({ ...m, [squad.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
+    } finally {
+      retryingSquadCreate = false;
+    }
+  }
 
   $: if (typeof console !== 'undefined' && console.log) {
     console.log('[Squads] state', { squadCount: $squads.length, activeSquadId: $activeSquadId, activeChannelId: $activeChannelId, squads: $squads.map((s) => ({ id: s.id, name: s.name, channels: s.channels.length })) });
@@ -376,29 +422,53 @@
     {/if}
 
     <div class="channels-container">
-      <div class="channel-list">
-        {#each channels as channel (channel.groupId)}
-          <div
-            on:click={() => selectChannel(channel.groupId)}
-            on:keydown={(e) => e.key === 'Enter' && selectChannel(channel.groupId)}
-            role="button"
-            tabindex="0"
+      {#if squadCreating}
+        <div class="squad-setting-up" role="status" aria-live="polite">
+          {#if squadCreateError}
+            <p class="setting-up-error" role="alert" id="squad-create-error">{squadCreateError}</p>
+            {#if canRetrySquadCreate}
+              <button
+                type="button"
+                class="setting-up-retry-btn"
+                disabled={retryingSquadCreate}
+                on:click={handleRetrySquadCreate}
+                aria-describedby="squad-create-error"
+              >
+                {retryingSquadCreate ? 'Retrying…' : 'Retry'}
+              </button>
+            {/if}
+          {:else}
+            <div class="setting-up-spinner" aria-hidden="true"></div>
+            <p class="setting-up-text">Setting up…</p>
+          {/if}
+        </div>
+      {:else}
+        <div class="channel-list">
+          {#each channels as channel (channel.groupId)}
+            <div
+              on:click={() => selectChannel(channel.groupId)}
+              on:keydown={(e) => e.key === 'Enter' && selectChannel(channel.groupId)}
+              role="button"
+              tabindex="0"
+            >
+              <Channel
+                name={channel.name}
+                type="text"
+                active={$activeView === 'hub' && $activeChannelId === channel.groupId}
+              />
+            </div>
+          {/each}
+        </div>
+        {#if channels.length > 0}
+          <button
+            type="button"
+            class="create-channel-btn"
+            on:click={openCreateChannelModal}
           >
-            <Channel
-              name={channel.name}
-              type="text"
-              active={$activeView === 'hub' && $activeChannelId === channel.groupId}
-            />
-          </div>
-        {/each}
-      </div>
-      <button
-        type="button"
-        class="create-channel-btn"
-        on:click={openCreateChannelModal}
-      >
-        + Create channel
-      </button>
+            + Create channel
+          </button>
+        {/if}
+      {/if}
     </div>
   {:else}
     <div class="empty-state">
@@ -776,6 +846,61 @@
   .channel-list {
     display: flex;
     flex-direction: column;
+  }
+
+  .squad-setting-up {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px 16px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .setting-up-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--border-subtle);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: squad-setting-up-spin 0.9s linear infinite;
+  }
+
+  @keyframes squad-setting-up-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .setting-up-text {
+    margin: 0;
+  }
+
+  .setting-up-error {
+    margin: 0;
+    color: var(--danger);
+    font-size: 0.8125rem;
+    text-align: center;
+  }
+
+  .setting-up-retry-btn {
+    margin-top: 4px;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .setting-up-retry-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .setting-up-retry-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 
   .empty-state {

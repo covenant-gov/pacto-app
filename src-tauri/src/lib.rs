@@ -2427,10 +2427,18 @@ async fn notifs() -> Result<bool, String> {
                         .unwrap_or(None);
 
                         if let Some(record) = emit_record {
-                            // Emit UI event (no MLS operations here, just event emission)
+                            // Emit UI event (include group_name so non-creators can update channel name from hash)
+                            let group_name = db::load_mls_groups(&handle).await
+                                .ok()
+                                .and_then(|groups| {
+                                    groups.into_iter()
+                                        .find(|g| g.group_id == group_id_for_emit || g.engine_group_id == group_id_for_emit)
+                                        .map(|g| g.name)
+                                });
                             let _ = handle.emit("mls_message_new", serde_json::json!({
                                 "group_id": group_id_for_emit,
-                                "message": record
+                                "message": record,
+                                "group_name": group_name
                             }));
                         }
                     }

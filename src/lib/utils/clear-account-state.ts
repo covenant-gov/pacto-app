@@ -29,6 +29,12 @@ import {
   backendGroupMessages,
   groupSendError,
   pendingMlsWelcomes,
+  squadsCreatingAnnouncements,
+  networksCreatingAnnouncements,
+  squadCreateErrorBySquadId,
+  networkCreateErrorByNetworkId,
+  squadPendingCreateMembers,
+  networkPendingCreateMembers,
   ungroupedChannels,
   channelMessages,
   composingNewChat,
@@ -138,6 +144,12 @@ export function clearAccountState(npub?: string): void {
   backendGroupMessages.set({});
   groupSendError.set(null);
   pendingMlsWelcomes.set([]);
+  squadsCreatingAnnouncements.set(new Set());
+  networksCreatingAnnouncements.set(new Set());
+  squadCreateErrorBySquadId.set({});
+  networkCreateErrorByNetworkId.set({});
+  squadPendingCreateMembers.set({});
+  networkPendingCreateMembers.set({});
   ungroupedChannels.set([]);
   channelMessages.set({});
   composingNewChat.set(false);
