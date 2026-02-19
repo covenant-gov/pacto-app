@@ -1223,11 +1223,19 @@ impl MlsService {
                                 };
 
                                 if was_added {
-                                    // Emit UI event for new message
+                                    // Emit UI event for new message (include group_name so non-creators can update channel name from hash)
                                     if let Some(handle) = TAURI_APP.get() {
+                                        let group_name = crate::db::load_mls_groups(handle).await
+                                            .ok()
+                                            .and_then(|groups| {
+                                                groups.into_iter()
+                                                    .find(|g| g.group_id == gid_for_fetch || g.engine_group_id == gid_for_fetch)
+                                                    .map(|g| g.name)
+                                            });
                                         handle.emit("mls_message_new", serde_json::json!({
                                             "group_id": gid_for_fetch,
-                                            "message": msg
+                                            "message": msg,
+                                            "group_name": group_name
                                         })).unwrap_or_else(|e| {
                                             eprintln!("[MLS] Failed to emit mls_message_new event: {}", e);
                                         });
