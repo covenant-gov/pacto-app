@@ -1,15 +1,37 @@
 <script lang="ts">
+  import { portal } from '../lib/utils/portal';
+
   export let active: boolean = false;
   export let label: string = "";
   export let image: string = "";
   export let icon: string = "";
 
   $: firstLetter = label.charAt(0).toUpperCase();
+
+  let buttonEl: HTMLButtonElement;
+  let showTooltip = false;
+  let tooltipPos = { x: 0, y: 0 };
+
+  function handleTooltipEnter() {
+    const rect = buttonEl.getBoundingClientRect();
+    tooltipPos = {
+      x: rect.right + 10,
+      y: rect.top + rect.height / 2,
+    };
+    showTooltip = true;
+  }
+
+  function handleTooltipLeave() {
+    showTooltip = false;
+  }
 </script>
 
 <button
+  bind:this={buttonEl}
   class="server-button {active ? 'active' : ''}"
   aria-label={label}
+  on:mouseenter={handleTooltipEnter}
+  on:mouseleave={handleTooltipLeave}
 >
   {#if image}
     <img src={image} alt={label} class="tab-image" />
@@ -20,8 +42,18 @@
       <slot>{firstLetter}</slot>
     </span>
   {/if}
-  <span class="tooltip">{label}</span>
 </button>
+
+{#if showTooltip}
+  <div
+    class="tab-tooltip-portal"
+    style="left: {tooltipPos.x}px; top: {tooltipPos.y}px;"
+    use:portal
+    role="tooltip"
+  >
+    {label}
+  </div>
+{/if}
 
 <style>
   .server-button {
@@ -75,25 +107,26 @@
     pointer-events: none;
   }
 
-  .tooltip {
-    position: absolute;
-    left: calc(100% + 12px);
-    top: 50%;
+  /* Rendered in portal (body) so not constrained by navbar; appears to the right of the button */
+  .tab-tooltip-portal {
+    position: fixed;
     transform: translateY(-50%);
+    padding: 10px 14px;
     background: var(--bg-elevated);
     color: var(--text-primary);
-    padding: 8px 12px;
     border-radius: 8px;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
     white-space: nowrap;
     pointer-events: none;
+    z-index: 10000;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border);
     opacity: 0;
-    transition: opacity 0.2s ease;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: tab-tooltip-in 0.08s ease-out forwards;
   }
 
-  .tooltip::before {
+  .tab-tooltip-portal::before {
     content: '';
     position: absolute;
     right: 100%;
@@ -103,9 +136,14 @@
     border-right-color: var(--bg-elevated);
   }
 
-  .server-button:hover .tooltip {
-    opacity: 1;
+  @keyframes tab-tooltip-in {
+    from {
+      opacity: 0;
+      transform: translateY(-50%) translateX(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(-50%) translateX(0);
+    }
   }
 </style>
-
-

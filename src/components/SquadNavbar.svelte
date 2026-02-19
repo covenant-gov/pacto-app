@@ -5,7 +5,7 @@
   import { squads, activeSquadId, activeChannelId, activeView, lastChannelBySquadId, dmList, requestsList, pendingList, squadsCreatingAnnouncements, squadCreateErrorBySquadId, squadPendingCreateMembers, removeSquadCreatingAnnouncements, type Channel as ChannelType } from '../stores/app';
   import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, formatChannelInSquadMessage, leaveMlsGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
-  import { showToast } from '../stores/toast';
+  import { pendingReadyToast } from '../stores/toast';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
   import { currentUser } from '../stores/auth';
@@ -54,7 +54,7 @@
           console.warn('[SquadNavbar] retry send squad invite DM failed for', npub.slice(0, 20) + '…', e);
         }
       }
-      showToast(`${squad.name} is ready!`, { type: 'squad', name: squad.name, id: squad.id, channelId: groupId });
+      pendingReadyToast.set({ text: `${squad.name} is ready!`, goTo: { type: 'squad', name: squad.name, id: squad.id, channelId: groupId } });
     } catch (e) {
       squadCreateErrorBySquadId.update((m) => ({ ...m, [squad.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
     } finally {

@@ -37,3 +37,9 @@ export function showToast(text: string, goTo?: ToastGoTo): void {
     clearTimeoutId = null;
   }, TOAST_DURATION_MS);
 }
+
+/**
+ * Pending "ready" toast to show from the root page. When set, +page.svelte subscribes and
+ * calls showToast so the notification appears regardless of which view (DMs / Squads / Networks) is active.
+ */
+export const pendingReadyToast = writable<ToastState | null>(null);

@@ -73,8 +73,9 @@
     color: var(--text-primary);
     font-size: 0.9375rem;
     font-weight: 500;
-    z-index: 1000;
+    z-index: 99999;
     animation: toast-in 0.25s ease-out;
+    pointer-events: auto; /* clickable even though portal wrapper has pointer-events: none */
   }
 
   .toast-icon {

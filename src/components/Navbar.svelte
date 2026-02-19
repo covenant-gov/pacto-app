@@ -12,7 +12,7 @@
   import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addSquadCreatingAnnouncements, removeSquadCreatingAnnouncements, squadCreateErrorBySquadId, squadPendingCreateMembers, addNetworkCreatingAnnouncements, removeNetworkCreatingAnnouncements, networkCreateErrorByNetworkId, networkPendingCreateMembers, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../stores/app';
   import { currentUser } from '../stores/auth';
   import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatSquadInviteMessage, formatNetworkInviteMessage } from '../lib/api/nostr';
-  import { showToast } from '../stores/toast';
+  import { pendingReadyToast } from '../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -213,7 +213,7 @@
             console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
           }
         }
-        showToast(`${name} is ready!`, { type: 'squad', name, id: squadId, channelId: groupId });
+        pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'squad', name, id: squadId, channelId: groupId } });
       } catch (e) {
         removeSquadCreatingAnnouncements(squad.id);
         squadCreateErrorBySquadId.update((m) => ({ ...m, [squad.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
@@ -362,7 +362,7 @@
             console.warn('[Navbar] send network invite DM failed for', npub.slice(0, 20) + '…', e);
           }
         }
-        showToast(`${name} is ready!`, { type: 'network', name, id: networkId, channelId: groupId });
+        pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'network', name, id: networkId, channelId: groupId } });
       } catch (e) {
         removeNetworkCreatingAnnouncements(network.id);
         networkCreateErrorByNetworkId.update((m) => ({ ...m, [network.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
@@ -469,10 +469,9 @@
       on:keydown={(e) => e.key === 'Enter' && $activeNetworkId && openBreakIntoSquadModal()}
       role="button"
       tabindex={$activeNetworkId ? 0 : -1}
-      aria-label="Break into Squad"
-      title={$activeNetworkId ? undefined : 'Select a network first.'}
+      aria-label={$activeNetworkId ? 'Break into Squad' : 'Select a network first.'}
     >
-      <Tab label="Break into Squad" icon={minusCircleIcon} active={false} />
+      <Tab label={$activeNetworkId ? 'Break into Squad' : 'Select a network first.'} icon={minusCircleIcon} active={false} />
     </div>
     {/if}
     <div

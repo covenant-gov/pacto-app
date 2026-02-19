@@ -62,8 +62,16 @@
     type Channel,
     type Network,
   } from '../stores/app';
+  import { pendingReadyToast, showToast } from '../stores/toast';
+  import { portal } from '../lib/utils/portal';
 
   const PAGE_SIZE = 100;
+
+  // Show "X is ready!" toast from root so it appears regardless of active view (DMs / Squads / Networks)
+  $: if ($pendingReadyToast) {
+    showToast($pendingReadyToast.text, $pendingReadyToast.goTo);
+    pendingReadyToast.set(null);
+  }
   const LOAD_OLDER_PAGE_SIZE = 50;
 
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
@@ -923,7 +931,9 @@
       {/if}
     </div>
   </main>
-  <Toast />
+  <div class="toast-portal-wrapper" use:portal>
+    <Toast />
+  </div>
 </div>
 
 <style>
@@ -1017,4 +1027,8 @@
     font-size: 0.9375rem;
   }
 
+  /* Portal wrapper must not block hover on the rest of the app (Navbar tabs, etc.) */
+  :global(.toast-portal-wrapper) {
+    pointer-events: none;
+  }
 </style>
