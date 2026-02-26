@@ -363,8 +363,19 @@
     createNetworkError = '';
     const myNpub = $currentUser?.npub;
     const selectedSquads = $squads.filter((s) => createNetworkSelectedSquadIds.includes(s.id));
-    const memberPromises = selectedSquads.map((squad) => {
+    const squadsWithChannels = selectedSquads.filter((s) => s.channels?.length > 0);
+    if (squadsWithChannels.length < 2) {
+      createNetworkError =
+        selectedSquads.length !== squadsWithChannels.length
+          ? 'Some selected squads have no channels yet. Wait for them to finish setting up, or pick different squads.'
+          : 'Select at least two squads to create a network.';
+      return;
+    }
+    const memberPromises = squadsWithChannels.map((squad) => {
       const ann = getAnnouncementsChannel(squad);
+      if (!ann?.groupId) {
+        return Promise.reject(new Error(`Squad "${squad.name}" has no announcements channel`));
+      }
       return getMlsGroupMembers(ann.groupId).then((result) => ({ squad, result }));
     });
     let settled: PromiseSettledResult<{ squad: Squad; result: Awaited<ReturnType<typeof getMlsGroupMembers>> }>[];
@@ -378,7 +389,7 @@
     for (let i = 0; i < settled.length; i++) {
       const s = settled[i];
       if (s.status === 'rejected') {
-        createNetworkError = `Could not load members for squad "${selectedSquads[i].name}". Try again or pick different squads.`;
+        createNetworkError = `Could not load members for squad "${squadsWithChannels[i].name}". Try again or pick different squads.`;
         return;
       }
       for (const n of s.value.result.members ?? []) {
