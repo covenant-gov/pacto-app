@@ -200,6 +200,9 @@ export interface Channel {
   order: number;
 }
 
+/** Canonical name for the first channel of every squad and network (announcements group). */
+export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
+
 /** Normalize a channel from storage (drops legacy `id` if present). */
 function normalizeChannel(ch: { name: string; groupId: string; order: number }): Channel {
   return { name: ch.name, groupId: ch.groupId, order: ch.order };
@@ -309,40 +312,24 @@ export const groupSendError = writable<string | null>(null);
 
 export const pendingMlsWelcomes = writable<PendingMlsWelcome[]>([]);
 
-/** Squad ids that are optimistically created and still creating their announcements channel. Cleared on success/failure or logout. */
-export const squadsCreatingAnnouncements = writable<Set<string>>(new Set());
-/** Network ids that are optimistically created and still creating their announcements channel. Cleared on success/failure or logout. */
-export const networksCreatingAnnouncements = writable<Set<string>>(new Set());
+/** Parent ids (squad or network, temp or group id) that are optimistically created and still creating their announcements channel. Cleared on success/failure or logout. */
+export const parentsCreatingAnnouncements = writable<Set<string>>(new Set());
 
-export function addSquadCreatingAnnouncements(id: string): void {
-  squadsCreatingAnnouncements.update((s) => new Set(s).add(id));
+export function addParentCreatingAnnouncements(id: string): void {
+  parentsCreatingAnnouncements.update((s) => new Set(s).add(id));
 }
-export function removeSquadCreatingAnnouncements(id: string): void {
-  squadsCreatingAnnouncements.update((s) => {
-    const next = new Set(s);
-    next.delete(id);
-    return next;
-  });
-}
-export function addNetworkCreatingAnnouncements(id: string): void {
-  networksCreatingAnnouncements.update((s) => new Set(s).add(id));
-}
-export function removeNetworkCreatingAnnouncements(id: string): void {
-  networksCreatingAnnouncements.update((s) => {
+export function removeParentCreatingAnnouncements(id: string): void {
+  parentsCreatingAnnouncements.update((s) => {
     const next = new Set(s);
     next.delete(id);
     return next;
   });
 }
 
-/** Error message per squad id when optimistic squad creation (announcements) failed. Cleared on retry/success or logout. */
-export const squadCreateErrorBySquadId = writable<Record<string, string>>({});
-/** Error message per network id when optimistic network creation (announcements) failed. Cleared on retry/success or logout. */
-export const networkCreateErrorByNetworkId = writable<Record<string, string>>({});
-/** Member npubs for squads still creating announcements; used for retry. Cleared on success or logout. */
-export const squadPendingCreateMembers = writable<Record<string, string[]>>({});
-/** Member npubs for networks still creating announcements; used for retry. Cleared on success or logout. */
-export const networkPendingCreateMembers = writable<Record<string, string[]>>({});
+/** Error message per parent id when optimistic creation (announcements) failed. Cleared on retry/success or logout. */
+export const parentCreateErrorById = writable<Record<string, string>>({});
+/** Member npubs per parent id for parents still creating announcements; used for retry. Cleared on success or logout. */
+export const parentPendingCreateMembers = writable<Record<string, string[]>>({});
 
 export const ungroupedChannels = writable<Channel[]>([]);
 
