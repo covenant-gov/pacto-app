@@ -4,13 +4,12 @@
   import { listen } from '@tauri-apps/api/event';
   import Navbar from '../components/Navbar.svelte';
   import TopNavbar from '../components/TopNavbar.svelte';
-  import SquadNavbar from '../components/SquadNavbar.svelte';
+  import ParentNavbar from '../components/ParentNavbar.svelte';
   import ChatView from '../components/ChatView.svelte';
   import Profile from '../components/Profile.svelte';
   import MessengerNavbar from '../components/MessengerNavbar.svelte';
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import DmThread from '../components/DmThread.svelte';
-  import NetworkNavbar from '../components/NetworkNavbar.svelte';
   import Toast from '../components/Toast.svelte';
   import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
@@ -57,6 +56,7 @@
     pinnedDmNpubs,
     dmSendError,
     updateChannelNameIfPlaceholder,
+    ANNOUNCEMENTS_CHANNEL_NAME,
     type DmMessage,
     type DmTab,
     type Channel,
@@ -83,7 +83,7 @@
     { parentType: 'squad' | 'network'; parentId: string; channelName: string }
   >();
 
-  /** Add a channel to a squad (parentId = announcementsGroupId) or network (parentId = network id). */
+  /** Add a channel to a squad or network. parentId is the parent's id (announcements group id for both). */
   function addChannelToParent(
     parentType: 'squad' | 'network',
     parentId: string,
@@ -97,10 +97,7 @@
     };
     if (parentType === 'squad') {
       const list = get(squads);
-      const squad = list.find((s) => {
-        const ann = s.channels?.slice().sort((a, b) => a.order - b.order)[0];
-        return ann?.groupId === parentId;
-      });
+      const squad = list.find((s) => s.id === parentId);
       if (squad) {
         newChannel.order = squad.channels.length;
         squads.update((l) =>
@@ -287,8 +284,8 @@
       });
   }
 
-  // Load group messages when opening a channel (Squads tab). Skip placeholder "creating-*" channels.
-  $: if ($activeChannelId && $activeTopNavTab === 'squads' && !$activeChannelId.startsWith('creating-')) {
+  // Load group messages when opening a squad or network channel. Skip placeholder "creating-*" channels.
+  $: if ($activeChannelId && !$activeChannelId.startsWith('creating-')) {
     const groupId = $activeChannelId;
     dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
     getChatMessageCount(groupId)
@@ -343,39 +340,64 @@
   let acceptingChannelInNetworkId: string | null = null;
   let acceptingNetworkInviteId: string | null = null;
 
-  async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
-    const payload = parseSquadInviteMessage(msg.content);
-    if (!payload) return;
-    if (acceptingSquadInviteId) return;
-    acceptingSquadInviteId = msg.id;
-    try {
-      const welcomes = await listPendingMlsWelcomes();
-      const welcome = welcomes.find((w) => w.nostr_group_id === groupId);
-      if (!welcome) {
-        dmError('Accept squad invite: no pending welcome for group', groupId);
-        return;
-      }
-      // Mark before accept so mls_welcome_accepted listener skips "Add to squad" modal (channel is already this squad)
-      acceptedSquadInviteGroupIds.add(groupId);
-      await acceptMlsWelcome(welcome.id);
-      acceptedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
-      const now = Date.now();
-      const announcementsChannel: Channel = {
-        name: 'announcements',
-        groupId,
-        order: 0,
-      };
+  async function acceptAnnouncementsInvite(
+    type: 'squad' | 'network',
+    payload: { groupId: string; name: string; memberSquads?: { id: string; name: string }[] },
+    messageId: string
+  ): Promise<void> {
+    const welcomes = await listPendingMlsWelcomes();
+    const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
+    if (!welcome) {
+      const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
+      err.noWelcome = true;
+      throw err;
+    }
+    acceptedSquadInviteGroupIds.add(payload.groupId);
+    await acceptMlsWelcome(welcome.id);
+    const now = Date.now();
+    const announcementsChannel: Channel = {
+      name: ANNOUNCEMENTS_CHANNEL_NAME,
+      groupId: payload.groupId,
+      order: 0,
+    };
+    if (type === 'squad') {
       const newSquad = {
-        id: crypto.randomUUID(),
-        name: payload.squadName,
+        id: payload.groupId,
+        name: payload.name,
         channels: [announcementsChannel],
         createdAt: now,
         updatedAt: now,
       };
       squads.update((list) => [...list, newSquad]);
       activeSquadId.set(newSquad.id);
-      activeChannelId.set(groupId);
+      activeChannelId.set(payload.groupId);
       activeView.set('hub');
+      acceptedSquadInviteIds.update((ids) => (ids.includes(messageId) ? ids : [...ids, messageId]));
+    } else {
+      const newNetwork: Network = {
+        id: payload.groupId,
+        name: payload.name,
+        channels: [announcementsChannel],
+        memberSquads: payload.memberSquads ?? [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      networks.update((list) => [...list, newNetwork]);
+      activeNetworkId.set(newNetwork.id);
+      activeChannelId.set(payload.groupId);
+      activeTopNavTab.set('networks');
+      activeView.set('hub');
+      acceptedNetworkInviteIds.update((ids) => (ids.includes(messageId) ? ids : [...ids, messageId]));
+    }
+  }
+
+  async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
+    const payload = parseSquadInviteMessage(msg.content);
+    if (!payload) return;
+    if (acceptingSquadInviteId) return;
+    acceptingSquadInviteId = msg.id;
+    try {
+      await acceptAnnouncementsInvite('squad', { groupId: payload.groupId, name: payload.squadName }, msg.id);
     } catch (e) {
       dmError('Accept squad invite failed', e);
     } finally {
@@ -448,37 +470,19 @@
     acceptingNetworkInviteId = msg.id;
     dmSendError.set(null);
     try {
-      const welcomes = await listPendingMlsWelcomes();
-      const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
-      if (!welcome) {
-        dmSendError.set('No pending invite for this network. The invite may have expired.');
-        return;
-      }
-      acceptedSquadInviteGroupIds.add(payload.groupId);
-      await acceptMlsWelcome(welcome.id);
-      const now = Date.now();
-      const announcementsChannel: Channel = {
-        name: 'Announcements',
+      await acceptAnnouncementsInvite('network', {
         groupId: payload.groupId,
-        order: 0,
-      };
-      const newNetwork: Network = {
-        id: crypto.randomUUID(),
         name: payload.networkName,
-        channels: [announcementsChannel],
         memberSquads: payload.memberSquads,
-        createdAt: now,
-        updatedAt: now,
-      };
-      networks.update((list) => [...list, newNetwork]);
-      activeNetworkId.set(newNetwork.id);
-      activeChannelId.set(payload.groupId);
-      activeTopNavTab.set('networks');
-      activeView.set('hub');
-      acceptedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+      }, msg.id);
     } catch (e) {
-      dmError('Accept network invite failed', e);
-      dmSendError.set(friendlyMessage(getInvokeErrorMessage(e)) || 'Failed to accept network invite.');
+      const err = e as Error & { noWelcome?: boolean };
+      if (err?.noWelcome) {
+        dmSendError.set('No pending invite for this network. The invite may have expired.');
+      } else {
+        dmError('Accept network invite failed', e);
+        dmSendError.set(friendlyMessage(getInvokeErrorMessage(e)) || 'Failed to accept network invite.');
+      }
     } finally {
       acceptingNetworkInviteId = null;
     }
@@ -832,13 +836,15 @@
     });
 
     const unlistenChannelAddedToNetwork = listen<{
+      announcements_group_id?: string;
       network_id: string;
       channel_group_id: string;
       channel_name: string;
     }>('channel_added_to_network', (event) => {
-      const { network_id, channel_group_id, channel_name } = event.payload;
+      const { announcements_group_id, network_id, channel_group_id, channel_name } = event.payload;
+      const parentId = announcements_group_id ?? network_id;
       refreshPendingWelcomes().catch((e) => dmError('channel_added_to_network refresh', e));
-      addChannelToParent('network', network_id, channel_group_id, channel_name);
+      addChannelToParent('network', parentId, channel_group_id, channel_name);
     });
 
     return () => {
@@ -918,14 +924,9 @@
             </div>
           </div>
         </div>
-      {:else if $activeTopNavTab === 'networks'}
-        <div class="networks-area">
-          <NetworkNavbar />
-          <ChatView />
-        </div>
       {:else}
-        <div class="squads-area">
-          <SquadNavbar />
+        <div class="parent-area">
+          <ParentNavbar type={$activeTopNavTab === 'networks' ? 'network' : 'squad'} />
           <ChatView />
         </div>
       {/if}
@@ -962,6 +963,7 @@
     flex-direction: column;
   }
 
+  .parent-area,
   .squads-area,
   .networks-area {
     flex: 1;

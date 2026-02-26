@@ -19,11 +19,11 @@
     loadedOffsetByChat,
     groupSendError,
     showMembersPanel,
-    squadsCreatingAnnouncements,
-    squadCreateErrorBySquadId,
-    networksCreatingAnnouncements,
-    networkCreateErrorByNetworkId,
+    parentsCreatingAnnouncements,
+    parentCreateErrorById,
     type DmMessage,
+    type Squad,
+    type Network,
   } from '../stores/app';
   import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, inviteMemberToGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
@@ -35,30 +35,31 @@
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
-  $: activeSquad = $activeTopNavTab === 'squads' ? $squads.find((c) => c.id === $activeSquadId) : null;
-  $: activeNetwork = $activeTopNavTab === 'networks' && $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) : null;
+  // Single derivation: active parent (squad or network) and active channel from tab + ids + lists.
+  $: activeParent =
+    $activeTopNavTab === 'squads'
+      ? ($squads.find((c) => c.id === $activeSquadId) ?? null)
+      : $activeTopNavTab === 'networks' && $activeNetworkId
+        ? ($networks.find((n) => n.id === $activeNetworkId) ?? null)
+        : null;
   $: activeChannel = (() => {
-    if ($activeTopNavTab === 'networks' && activeNetwork && $activeChannelId) {
-      const sorted = [...activeNetwork.channels].sort((a, b) => a.order - b.order);
-      return sorted.find((ch) => ch.groupId === $activeChannelId) ?? null;
-    }
-    if ($activeTopNavTab === 'squads') {
-      return (
-        activeSquad?.channels.find((ch) => ch.groupId === $activeChannelId) ??
-        $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId)
-      ) ?? null;
-    }
+    if (!activeParent || !$activeChannelId) return null;
+    const sorted = [...activeParent.channels].sort((a, b) => a.order - b.order);
+    const ch = sorted.find((c) => c.groupId === $activeChannelId);
+    if (ch) return ch;
+    if ($activeTopNavTab === 'squads') return $ungroupedChannels.find((c) => c.groupId === $activeChannelId) ?? null;
     return null;
   })();
+  $: activeSquad = $activeTopNavTab === 'squads' && activeParent ? (activeParent as Squad) : null;
+  $: activeNetwork = $activeTopNavTab === 'networks' && activeParent ? (activeParent as Network) : null;
+
   $: channelName = activeChannel?.name || 'channel';
-  $: isAnnouncementsChannel = activeSquad
-    ? activeSquad.channels[0]?.groupId === $activeChannelId
-    : (activeNetwork ? [...activeNetwork.channels].sort((a, b) => a.order - b.order)[0]?.groupId === $activeChannelId : false);
+  $: isAnnouncementsChannel = activeParent
+    ? [...activeParent.channels].sort((a, b) => a.order - b.order)[0]?.groupId === $activeChannelId
+    : false;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
-  $: squadSettingUp = $activeTopNavTab === 'squads' && activeSquad && activeSquad.channels.length === 0 && $squadsCreatingAnnouncements.has(activeSquad.id);
-  $: squadSettingUpError = (squadSettingUp && activeSquad && $squadCreateErrorBySquadId[activeSquad.id]) ?? '';
-  $: networkSettingUp = $activeTopNavTab === 'networks' && activeNetwork && activeNetwork.channels.length === 0 && $networksCreatingAnnouncements.has(activeNetwork.id);
-  $: networkSettingUpError = (networkSettingUp && activeNetwork && $networkCreateErrorByNetworkId[activeNetwork.id]) ?? '';
+  $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
+  $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
 
   let channelMenuOpen = false;
   let showLeaveChannelConfirm = false;
@@ -352,20 +353,12 @@
   }}
 />
 <div class="chat-view">
-  {#if squadSettingUp}
+  {#if parentSettingUp}
     <div class="squad-setting-up-state" role="status" aria-live="polite">
       <div class="squad-setting-up-spinner"></div>
       <p class="squad-setting-up-text">Setting up this space…</p>
-      {#if squadSettingUpError}
-        <p class="squad-setting-up-error" role="alert">{squadSettingUpError}</p>
-      {/if}
-    </div>
-  {:else if networkSettingUp}
-    <div class="squad-setting-up-state" role="status" aria-live="polite">
-      <div class="squad-setting-up-spinner"></div>
-      <p class="squad-setting-up-text">Setting up this space…</p>
-      {#if networkSettingUpError}
-        <p class="squad-setting-up-error" role="alert">{networkSettingUpError}</p>
+      {#if parentSettingUpError}
+        <p class="squad-setting-up-error" role="alert">{parentSettingUpError}</p>
       {/if}
     </div>
   {:else if activeChannel}

@@ -29,12 +29,9 @@ import {
   backendGroupMessages,
   groupSendError,
   pendingMlsWelcomes,
-  squadsCreatingAnnouncements,
-  networksCreatingAnnouncements,
-  squadCreateErrorBySquadId,
-  networkCreateErrorByNetworkId,
-  squadPendingCreateMembers,
-  networkPendingCreateMembers,
+  parentsCreatingAnnouncements,
+  parentCreateErrorById,
+  parentPendingCreateMembers,
   ungroupedChannels,
   channelMessages,
   composingNewChat,
@@ -144,12 +141,9 @@ export function clearAccountState(npub?: string): void {
   backendGroupMessages.set({});
   groupSendError.set(null);
   pendingMlsWelcomes.set([]);
-  squadsCreatingAnnouncements.set(new Set());
-  networksCreatingAnnouncements.set(new Set());
-  squadCreateErrorBySquadId.set({});
-  networkCreateErrorByNetworkId.set({});
-  squadPendingCreateMembers.set({});
-  networkPendingCreateMembers.set({});
+  parentsCreatingAnnouncements.set(new Set());
+  parentCreateErrorById.set({});
+  parentPendingCreateMembers.set({});
   ungroupedChannels.set([]);
   channelMessages.set({});
   composingNewChat.set(false);
