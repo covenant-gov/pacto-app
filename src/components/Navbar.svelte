@@ -6,9 +6,10 @@
   import requestsIcon from '../icons/requests.svg';
   import pendingIcon from '../icons/pending.svg';
   import pinIcon from '../icons/pin.svg';
-  import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Channel } from '../stores/app';
+  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelByNetworkId, composingNewChat, dmList, type TopNavTab, type DmTab, type Squad, type Network, type Channel } from '../stores/app';
   import { currentUser } from '../stores/auth';
-  import { createGroupChat } from '../lib/api/nostr';
+  import { get } from 'svelte/store';
+  import { createGroupChat, getMlsGroupMembers } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
   import { profiles } from '../stores/profiles';
@@ -16,6 +17,21 @@
   function selectSquad(squadId: string) {
     $activeSquadId = squadId;
     $activeChannelId = null;
+    $activeView = 'hub';
+  }
+
+  function selectNetwork(network: Network) {
+    $activeNetworkId = network.id;
+    lastOpenedNetworkId.set(network.id);
+    const lastChannelId = $lastChannelByNetworkId[network.id];
+    const channel =
+      lastChannelId && network.channels.some((c) => c.groupId === lastChannelId)
+        ? network.channels.find((c) => c.groupId === lastChannelId)
+        : network.channels[0];
+    $activeChannelId = channel?.groupId ?? null;
+    lastOpenedNetworkChannelId.set($activeChannelId);
+    const cid = channel?.groupId;
+    if (cid) lastChannelByNetworkId.update((m) => ({ ...m, [network.id]: cid }));
     $activeView = 'hub';
   }
 
@@ -119,12 +135,117 @@
   function handleAddAction() {
     if ($activeTopNavTab === 'squads') {
       openOrganizeSquadModal();
-    } else {
-      // networks: TODO
+    } else if ($activeTopNavTab === 'networks') {
+      openCreateNetworkModal();
     }
   }
 
   $: canCreateSquad = organizeSquadName.trim().length > 0 && organizeSquadMembers.length > 0;
+
+  // Create Network modal (network.id = announcements group id after create)
+  let showCreateNetworkModal = false;
+  let createNetworkName = '';
+  let createNetworkSelectedSquadIds: string[] = [];
+  let createNetworkError = '';
+  let creatingNetwork = false;
+
+  function openCreateNetworkModal() {
+    showCreateNetworkModal = true;
+    createNetworkName = '';
+    createNetworkSelectedSquadIds = [];
+    createNetworkError = '';
+  }
+
+  function closeCreateNetworkModal() {
+    if (!creatingNetwork) showCreateNetworkModal = false;
+  }
+
+  function toggleCreateNetworkSquad(squadId: string) {
+    if (createNetworkSelectedSquadIds.includes(squadId)) {
+      createNetworkSelectedSquadIds = createNetworkSelectedSquadIds.filter((id) => id !== squadId);
+    } else {
+      createNetworkSelectedSquadIds = [...createNetworkSelectedSquadIds, squadId];
+    }
+  }
+
+  async function handleCreateNetwork() {
+    const name = createNetworkName.trim();
+    if (!name) return;
+    if (createNetworkSelectedSquadIds.length < 2) {
+      createNetworkError = 'Select at least two squads to form a network.';
+      return;
+    }
+    creatingNetwork = true;
+    createNetworkError = '';
+    const memberSquads = $squads
+      .filter((s) => createNetworkSelectedSquadIds.includes(s.id))
+      .map((s) => ({ id: s.id, name: s.name }));
+    const tempId = 'creating-network-' + Date.now();
+    const now = Date.now();
+    const network: Network = {
+      id: tempId,
+      name,
+      channels: [],
+      memberSquads,
+      createdAt: now,
+      updatedAt: now,
+    };
+    networks.update((list) => [...list, network]);
+    activeNetworkId.set(tempId);
+    activeChannelId.set(null);
+    activeView.set('hub');
+    activeTopNavTab.set('networks');
+    lastOpenedNetworkId.set(tempId);
+
+    (async () => {
+      try {
+        const announcementsBySquad = get(squads)
+          .filter((s) => createNetworkSelectedSquadIds.includes(s.id))
+          .map((s) => s.channels.find((c) => c.name === 'announcements') ?? s.channels[0])
+          .filter(Boolean) as Channel[];
+        const allMemberNpubs = new Set<string>();
+        for (const ch of announcementsBySquad) {
+          const { members } = await getMlsGroupMembers(ch.groupId);
+          members.forEach((npub) => allMemberNpubs.add(npub));
+        }
+        const myNpub = get(currentUser)?.npub;
+        const allMemberNpubsList = [...allMemberNpubs].filter((n) => n !== myNpub);
+        if (allMemberNpubsList.length === 0) {
+          createNetworkError = 'No other members in the selected squads.';
+          return;
+        }
+        const groupId = await createGroupChat('announcements', allMemberNpubsList);
+        const announcementsChannel: Channel = {
+          id: groupId,
+          name: 'announcements',
+          groupId,
+          order: 0,
+        };
+        networks.update((list) =>
+          list.map((n) =>
+            n.id === tempId
+              ? { ...n, id: groupId, channels: [announcementsChannel], updatedAt: Date.now() }
+              : n
+          )
+        );
+        if (get(activeNetworkId) === tempId) activeNetworkId.set(groupId);
+        if (get(lastOpenedNetworkId) === tempId) lastOpenedNetworkId.set(groupId);
+        activeChannelId.set(groupId);
+        lastOpenedNetworkChannelId.set(groupId);
+        lastChannelByNetworkId.update((m) => ({ ...m, [groupId]: groupId }));
+        showCreateNetworkModal = false;
+      } catch (e) {
+        createNetworkError = friendlyMessage(getInvokeErrorMessage(e));
+        networks.update((list) => list.filter((n) => n.id !== tempId));
+        if (get(activeNetworkId) === tempId) activeNetworkId.set(null);
+        if (get(lastOpenedNetworkId) === tempId) lastOpenedNetworkId.set(null);
+      } finally {
+        creatingNetwork = false;
+      }
+    })();
+  }
+
+  $: canCreateNetwork = createNetworkName.trim().length > 0 && createNetworkSelectedSquadIds.length >= 2;
 </script>
 
 <div class="navbar">
@@ -177,8 +298,21 @@
           />
         </div>
       {/each}
-    {:else}
-      <!-- Networks: placeholder for future tabs -->
+    {:else if $activeTopNavTab === 'networks'}
+      {#each $networks as network (network.id)}
+        <div
+          on:click={() => selectNetwork(network)}
+          on:keydown={(e) => e.key === 'Enter' && selectNetwork(network)}
+          role="button"
+          tabindex="0"
+        >
+          <Tab
+            label={network.name}
+            image={network.iconUrl ?? ''}
+            active={$activeView === 'hub' && $activeNetworkId === network.id}
+          />
+        </div>
+      {/each}
     {/if}
   </div>
   <div class="tab-list bottom">
@@ -263,6 +397,67 @@
           </button>
           <button type="submit" class="organize-btn-create" disabled={!canCreateSquad || creatingSquad}>
             {creatingSquad ? 'Creating…' : 'Create'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+{#if showCreateNetworkModal}
+  <div
+    class="organize-modal-overlay"
+    on:click={closeCreateNetworkModal}
+    on:keydown={(e) => e.key === 'Escape' && closeCreateNetworkModal()}
+    role="button"
+    tabindex="-1"
+  >
+    <div
+      class="organize-modal-content"
+      on:click|stopPropagation
+      on:keydown={(e) => e.key === 'Escape' && closeCreateNetworkModal()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-network-title"
+      tabindex="0"
+    >
+      <h2 id="create-network-title">Coordinate Network</h2>
+      <p class="organize-modal-subtitle">Create a network from at least two squads. All members of those squads will be in the network.</p>
+      <form on:submit|preventDefault={handleCreateNetwork}>
+        <label class="organize-label" for="network-name">Network name</label>
+        <input
+          id="network-name"
+          type="text"
+          class="organize-input"
+          placeholder="e.g. Regional Council"
+          bind:value={createNetworkName}
+          required
+        />
+        <span class="organize-label">Squads (select at least two)</span>
+        <div class="organize-members">
+          {#each $squads as squad (squad.id)}
+            <label class="organize-member-row">
+              <input
+                type="checkbox"
+                checked={createNetworkSelectedSquadIds.includes(squad.id)}
+                on:change={() => toggleCreateNetworkSquad(squad.id)}
+              />
+              <span class="organize-member-name">{squad.name}</span>
+            </label>
+          {/each}
+        </div>
+        {#if $squads.length < 2}
+          <p class="organize-members-empty">Create at least two squads first.</p>
+        {/if}
+        {#if createNetworkError}
+          <p class="organize-error" role="alert">{createNetworkError}</p>
+        {/if}
+        <div class="organize-actions">
+          <button type="button" class="organize-btn-cancel" on:click={closeCreateNetworkModal} disabled={creatingNetwork}>
+            Cancel
+          </button>
+          <button type="submit" class="organize-btn-create" disabled={!canCreateNetwork || creatingNetwork}>
+            {creatingNetwork ? 'Creating…' : 'Create'}
           </button>
         </div>
       </form>

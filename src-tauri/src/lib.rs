@@ -1463,6 +1463,142 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
         }
     }
 
+    // Channel-in-squad: if this DM is a channel invite for a squad we're already in, auto-accept and emit channel_added_to_squad.
+    if !is_mine {
+        if let Some((announcements_group_id, channel_group_id, channel_name)) =
+            parse_channel_in_squad_dm(&msg.content)
+        {
+            if let Some(handle) = TAURI_APP.get() {
+                let handle = handle.clone();
+                let in_squad = match db::load_mls_groups(&handle).await {
+                    Ok(groups) => {
+                        let aid = announcements_group_id.to_lowercase();
+                        groups.iter().any(|g| {
+                            g.group_id.to_lowercase() == aid || g.engine_group_id.to_lowercase() == aid
+                        })
+                    }
+                    Err(_) => false,
+                };
+                if in_squad {
+                    let announcements_group_id = announcements_group_id.clone();
+                    let channel_group_id = channel_group_id.clone();
+                    let channel_name = channel_name.clone();
+                    tokio::spawn(async move {
+                        for _ in 0..10 {
+                            let handle = TAURI_APP.get().unwrap().clone();
+                            let cid = channel_group_id.clone();
+                            let welcome_id = tokio::task::spawn_blocking(move || {
+                                get_pending_welcome_id_for_group_sync(&handle, &cid)
+                            })
+                            .await
+                            .ok()
+                            .and_then(|o| o);
+                            if let Some(wid) = welcome_id {
+                                let accepted = tokio::task::spawn_blocking(move || {
+                                    let rt = tokio::runtime::Handle::current();
+                                    rt.block_on(accept_mls_welcome_impl(wid))
+                                })
+                                .await
+                                .ok()
+                                .and_then(|r| r.ok())
+                                .unwrap_or(false);
+                                if accepted {
+                                    if let Some(app) = TAURI_APP.get() {
+                                        let _ = app.emit(
+                                            "channel_added_to_squad",
+                                            serde_json::json!({
+                                                "announcements_group_id": announcements_group_id,
+                                                "channel_group_id": channel_group_id,
+                                                "channel_name": channel_name,
+                                            }),
+                                        );
+                                    }
+                                    break;
+                                }
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    });
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Channel-in-network: if this DM is a channel invite for a network we're already in, auto-accept and emit channel_added_to_network (7.3: include announcements_group_id).
+    if !is_mine {
+        if let Some((network_id, channel_group_id, channel_name, existing_channel_group_ids)) =
+            parse_channel_in_network_dm(&msg.content)
+        {
+            if !existing_channel_group_ids.is_empty() {
+                if let Some(handle) = TAURI_APP.get() {
+                    let handle = handle.clone();
+                    let in_network = match db::load_mls_groups(&handle).await {
+                        Ok(groups) => {
+                            let our_ids: std::collections::HashSet<String> = groups
+                                .iter()
+                                .flat_map(|g| {
+                                    [
+                                        g.group_id.to_lowercase(),
+                                        g.engine_group_id.to_lowercase(),
+                                    ]
+                                })
+                                .collect();
+                            existing_channel_group_ids.iter().any(|cid| {
+                                our_ids.contains(&cid.to_lowercase())
+                            })
+                        }
+                        Err(_) => false,
+                    };
+                    if in_network {
+                        let network_id = network_id.clone();
+                        let channel_group_id = channel_group_id.clone();
+                        let channel_name = channel_name.clone();
+                        let announcements_group_id = network_id.clone(); // network_id is the announcements group id (7.1/7.2)
+                        tokio::spawn(async move {
+                            for _ in 0..10 {
+                                let handle = TAURI_APP.get().unwrap().clone();
+                                let cid = channel_group_id.clone();
+                                let welcome_id = tokio::task::spawn_blocking(move || {
+                                    get_pending_welcome_id_for_group_sync(&handle, &cid)
+                                })
+                                .await
+                                .ok()
+                                .and_then(|o| o);
+                                if let Some(wid) = welcome_id {
+                                    let accepted = tokio::task::spawn_blocking(move || {
+                                        let rt = tokio::runtime::Handle::current();
+                                        rt.block_on(accept_mls_welcome_impl(wid))
+                                    })
+                                    .await
+                                    .ok()
+                                    .and_then(|r| r.ok())
+                                    .unwrap_or(false);
+                                    if accepted {
+                                        if let Some(app) = TAURI_APP.get() {
+                                            let _ = app.emit(
+                                                "channel_added_to_network",
+                                                serde_json::json!({
+                                                    "announcements_group_id": announcements_group_id,
+                                                    "network_id": network_id,
+                                                    "channel_group_id": channel_group_id,
+                                                    "channel_name": channel_name,
+                                                }),
+                                            );
+                                        }
+                                        break;
+                                    }
+                                }
+                                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            }
+                        });
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
     // Populate reply context before emitting (for replies to old messages not in frontend cache)
     if !msg.replied_to.is_empty() {
         if let Some(handle) = TAURI_APP.get() {
@@ -5107,6 +5243,60 @@ async fn sync_mls_groups_now(
 }
 
 
+/// Parse DM content as channel_in_squad payload; returns (announcements_group_id, channel_group_id, channel_name) if valid.
+fn parse_channel_in_squad_dm(content: &str) -> Option<(String, String, String)> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    let obj = v.as_object()?;
+    if obj.get("type").and_then(|t| t.as_str()) != Some("channel_in_squad") {
+        return None;
+    }
+    let announcements = obj.get("announcementsGroupId").and_then(|s| s.as_str())?;
+    let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
+    let name = obj.get("channelName").and_then(|s| s.as_str())?;
+    Some((announcements.to_string(), channel.to_string(), name.to_string()))
+}
+
+/// Parse DM content as channel_in_network payload; returns (network_id, channel_group_id, channel_name, existing_channel_group_ids) if valid.
+fn parse_channel_in_network_dm(content: &str) -> Option<(String, String, String, Vec<String>)> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    let obj = v.as_object()?;
+    if obj.get("type").and_then(|t| t.as_str()) != Some("channel_in_network") {
+        return None;
+    }
+    let network_id = obj.get("networkId").and_then(|s| s.as_str())?;
+    let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
+    let name = obj.get("channelName").and_then(|s| s.as_str())?;
+    let existing: Vec<String> = obj
+        .get("existingChannelGroupIds")
+        .and_then(|a| a.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some((network_id.to_string(), channel.to_string(), name.to_string(), existing))
+}
+
+/// Get the welcome event id (hex) for a pending MLS welcome that matches the given channel group id.
+/// Must be called from a blocking context (uses MLS engine).
+fn get_pending_welcome_id_for_group_sync<R: Runtime>(
+    handle: &AppHandle<R>,
+    channel_group_id: &str,
+) -> Option<String> {
+    let mls = MlsService::new_persistent(handle).ok()?;
+    let engine = mls.engine().ok()?;
+    let pending = engine.get_pending_welcomes().ok()?;
+    let cid_lower = channel_group_id.to_lowercase();
+    for w in pending {
+        let gid = hex::encode(&w.nostr_group_id);
+        if gid.to_lowercase() == cid_lower {
+            return Some(w.id.to_hex());
+        }
+    }
+    None
+}
+
 /// Simplified representation of a pending MLS Welcome for UI
 #[derive(serde::Serialize)]
 struct SimpleWelcome {
@@ -5203,15 +5393,10 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
     Ok(welcomes)
 }
 
-/// Accept an MLS welcome by its welcome (rumor) event id hex
-#[tauri::command]
-async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String> {
-    // Run non-Send MLS engine work on blocking thread; drive async via current runtime
-    let accepted = tokio::task::spawn_blocking(move || {
-        let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async move {
-            let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+/// Inner accept logic (async). Called from accept_mls_welcome command and from channel_in_squad/channel_in_network auto-accept.
+async fn accept_mls_welcome_impl(welcome_event_id_hex: String) -> Result<bool, String> {
+    let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
+    let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             
             // Get welcome details and accept it (engine work in no-await scope)
             let (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex) = {
@@ -5378,8 +5563,15 @@ async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String
                 }
             }
 
-            Ok::<bool, String>(true)
-        })
+    Ok(true)
+}
+
+/// Accept an MLS welcome by its welcome (rumor) event id hex
+#[tauri::command]
+async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String> {
+    let accepted = tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(accept_mls_welcome_impl(welcome_event_id_hex))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;

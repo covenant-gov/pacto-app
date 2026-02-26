@@ -338,6 +338,63 @@ export function formatSquadInviteMessage(payload: SquadInvitePayload): string {
   return JSON.stringify(payload);
 }
 
+const NETWORK_INVITE_TYPE = 'network_invite';
+
+export interface NetworkInvitePayload {
+  type: 'network_invite';
+  networkName: string;
+  groupId: string;
+  memberSquads: { id: string; name: string }[];
+}
+
+export function parseNetworkInviteMessage(content: string): NetworkInvitePayload | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === NETWORK_INVITE_TYPE) {
+      const p = parsed as { networkName?: string; groupId?: string; memberSquads?: unknown };
+      if (
+        typeof p.networkName === 'string' &&
+        typeof p.groupId === 'string' &&
+        Array.isArray(p.memberSquads) &&
+        p.memberSquads.every(
+          (s: unknown) =>
+            s && typeof s === 'object' && typeof (s as { id?: string }).id === 'string' && typeof (s as { name?: string }).name === 'string'
+        )
+      ) {
+        return {
+          type: NETWORK_INVITE_TYPE,
+          networkName: p.networkName,
+          groupId: p.groupId,
+          memberSquads: p.memberSquads as { id: string; name: string }[],
+        };
+      }
+    }
+  } catch {
+    // not JSON or invalid shape
+  }
+  return null;
+}
+
+export function formatNetworkInviteMessage(payload: NetworkInvitePayload): string {
+  return JSON.stringify(payload);
+}
+
+/** 7.5: channel_in_network DM payload. networkId must be the announcements channel's MLS group id (same as network.id). */
+export interface ChannelInNetworkPayload {
+  type: 'channel_in_network';
+  /** Announcements channel's group id (network.id) — same on all devices. */
+  networkId: string;
+  networkName?: string;
+  channelGroupId: string;
+  channelName: string;
+  /** Existing channel group ids in this network (so recipient can check they're in the network). */
+  existingChannelGroupIds: string[];
+}
+
+export function formatChannelInNetworkMessage(payload: ChannelInNetworkPayload): string {
+  return JSON.stringify(payload);
+}
+
 /**
  * List pending MLS welcomes (invites). Backend: list_pending_mls_welcomes.
  */

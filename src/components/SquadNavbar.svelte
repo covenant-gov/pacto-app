@@ -1,7 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import Channel from './Channel.svelte';
-  import { squads, activeSquadId, activeChannelId, activeView, dmList, requestsList, pendingList, type Channel as ChannelType } from '../stores/app';
+  import { squads, activeSquadId, activeChannelId, activeView, activeTopNavTab, networks, activeNetworkId, lastChannelByNetworkId, dmList, requestsList, pendingList, type Channel as ChannelType } from '../stores/app';
   import { createGroupChat, getMlsGroupMembers, inviteMemberToGroup, sendDmMessage, formatSquadInviteMessage, leaveMlsGroup } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../lib/utils/profile';
@@ -10,7 +10,11 @@
   import chevronDownIcon from '../icons/chevron-down.svg';
 
   $: activeSquad = $squads.find(c => c.id === $activeSquadId);
-  $: channels = activeSquad?.channels || [];
+  $: activeNetwork = $activeTopNavTab === 'networks' ? $networks.find((n) => n.id === $activeNetworkId) : null;
+  $: channels =
+    $activeTopNavTab === 'networks' && activeNetwork
+      ? activeNetwork.channels
+      : activeSquad?.channels ?? [];
 
   $: if (typeof console !== 'undefined' && console.log) {
     console.log('[Squads] state', { squadCount: $squads.length, activeSquadId: $activeSquadId, activeChannelId: $activeChannelId, squads: $squads.map((s) => ({ id: s.id, name: s.name, channels: s.channels.length })) });
@@ -19,6 +23,9 @@
   function selectChannel(channelId: string) {
     $activeChannelId = channelId;
     $activeView = 'hub';
+    if ($activeTopNavTab === 'networks' && activeNetwork) {
+      lastChannelByNetworkId.update((m) => ({ ...m, [activeNetwork.id]: channelId }));
+    }
   }
 
   let width = 240;
@@ -326,7 +333,29 @@
 />
 
 <div class="squad-navbar" style="width: {width}px;">
-  {#if activeSquad}
+  {#if $activeTopNavTab === 'networks' && activeNetwork}
+    <div class="squad-header">
+      <h2 class="squad-name">{activeNetwork.name}</h2>
+    </div>
+    <div class="channels-container">
+      <div class="channel-list">
+        {#each channels as channel}
+          <div
+            on:click={() => selectChannel(channel.groupId)}
+            on:keydown={(e) => e.key === 'Enter' && selectChannel(channel.groupId)}
+            role="button"
+            tabindex="0"
+          >
+            <Channel
+              name={channel.name}
+              type="text"
+              active={$activeView === 'hub' && $activeChannelId === channel.groupId}
+            />
+          </div>
+        {/each}
+      </div>
+    </div>
+  {:else if activeSquad}
     <div class="squad-header">
       <h2 class="squad-name">{activeSquad.name}</h2>
       <div class="squad-header-actions">
@@ -392,7 +421,7 @@
     </div>
   {:else}
     <div class="empty-state">
-      <p>Select a squad</p>
+      <p>Select a squad or network</p>
     </div>
   {/if}
   

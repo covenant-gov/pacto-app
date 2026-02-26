@@ -172,6 +172,17 @@ export interface Squad {
   updatedAt: number;
 }
 
+// Network = like Squad but comprised of multiple squads. id is the announcements channel MLS group id (stable across devices).
+export interface Network {
+  id: string;
+  name: string;
+  iconUrl?: string;
+  channels: Channel[];
+  memberSquads: { id: string; name: string }[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 const PACTO_SQUADS_KEY = 'pacto_squads';
 
 function loadSquadsFromStorage(): Squad[] {
@@ -255,3 +266,34 @@ lastOpenedChannelId.subscribe((id) => {
   }
 });
 
+// --- Networks ---
+const PACTO_NETWORKS_KEY = 'pacto_networks';
+
+function loadNetworksFromStorage(): Network[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PACTO_NETWORKS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed as Network[];
+  } catch {
+    return [];
+  }
+}
+
+export const networks = writable<Network[]>(loadNetworksFromStorage());
+
+networks.subscribe((value) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(PACTO_NETWORKS_KEY, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+});
+
+export const activeNetworkId = writable<string | null>(null);
+export const lastOpenedNetworkId = writable<string | null>(null);
+export const lastOpenedNetworkChannelId = writable<string | null>(null);
+export const lastChannelByNetworkId = writable<Record<string, string>>({});

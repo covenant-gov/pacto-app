@@ -5,6 +5,9 @@
     activeChannelId,
     squads,
     activeSquadId,
+    networks,
+    activeNetworkId,
+    activeTopNavTab,
     ungroupedChannels,
     dmList,
     requestsList,
@@ -24,11 +27,17 @@
   const LOAD_OLDER_PAGE_SIZE = 50;
 
   $: activeSquad = $squads.find((c) => c.id === $activeSquadId);
+  $: activeNetwork = $activeTopNavTab === 'networks' ? $networks.find((n) => n.id === $activeNetworkId) : null;
   $: activeChannel =
+    ($activeTopNavTab === 'networks' && activeNetwork
+      ? activeNetwork.channels.find((ch) => ch.groupId === $activeChannelId)
+      : null) ??
     activeSquad?.channels.find((ch) => ch.id === $activeChannelId || ch.groupId === $activeChannelId) ??
-    $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId);
-  $: channelName = activeChannel?.name || 'channel';
-  $: isAnnouncementsChannel = activeSquad?.channels[0]?.groupId === $activeChannelId;
+    $ungroupedChannels.find((ch) => ch.groupId === $activeChannelId) ??
+    null;
+  $: channelName = (activeChannel && 'name' in activeChannel ? activeChannel.name : null) || 'channel';
+  $: isAnnouncementsChannel =
+    (activeNetwork?.channels[0]?.groupId === $activeChannelId) || (activeSquad?.channels[0]?.groupId === $activeChannelId);
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
 
   let channelMenuOpen = false;
