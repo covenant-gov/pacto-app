@@ -1,18 +1,20 @@
 <script lang="ts">
   export let open = false;
-  export let squadName = '';
+  export let type: 'squad' | 'network' = 'squad';
+  export let parentName = '';
   export let error = '';
   export let exiting = false;
 
   export let onClose: () => void = () => {};
   export let onConfirm: () => void = () => {};
 
-  const titleId = 'exit-squad-modal-title';
-  const defaultMessage =
-    'Are you sure you want to exit this squad? All local storage associated with this Squad will be erased and you will no longer be able to decrypt messages for this Squad.';
-  $: message = squadName
-    ? `Are you sure you want to exit "${squadName}"? All local storage associated with this Squad will be erased and you will no longer be able to decrypt messages for this Squad.`
-    : defaultMessage;
+  const titleId = 'exit-parent-modal-title';
+  const parentLabel = type === 'squad' ? 'Squad' : 'Network';
+  $: title = type === 'squad' ? 'Exit Squad' : 'Exit Network';
+  $: confirmLabel = type === 'squad' ? 'Exit Squad' : 'Exit Network';
+  $: message = parentName
+    ? `Are you sure you want to exit "${parentName}"? All local storage associated with this ${parentLabel} will be erased and you will no longer be able to decrypt messages for this ${parentLabel}.`
+    : `Are you sure you want to exit this ${parentLabel.toLowerCase()}? All local storage associated with this ${parentLabel} will be erased and you will no longer be able to decrypt messages for this ${parentLabel}.`;
 </script>
 
 {#if open}
@@ -24,24 +26,24 @@
     on:keydown={(e) => e.key === 'Escape' && onClose()}
   >
     <div
-      class="parent-modal-content exit-squad-content"
+      class="parent-modal-content exit-parent-content"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-label="Exit squad{squadName ? ' ' + squadName : ''}"
+      aria-label="{title}{parentName ? ' ' + parentName : ''}"
       tabindex="0"
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}
     >
-      <h2 id={titleId}>Exit Squad</h2>
-      <p class="exit-squad-message">{message}</p>
+      <h2 id={titleId}>{title}</h2>
+      <p class="exit-parent-message">{message}</p>
       {#if error}
-        <p class="exit-squad-error" role="alert">{error}</p>
+        <p class="exit-parent-error" role="alert">{error}</p>
       {/if}
-      <div class="exit-squad-actions">
+      <div class="exit-parent-actions">
         <button
           type="button"
-          class="exit-squad-btn-cancel"
+          class="exit-parent-btn-cancel"
           on:click={onClose}
           disabled={exiting}
         >
@@ -49,11 +51,11 @@
         </button>
         <button
           type="button"
-          class="exit-squad-btn-confirm"
+          class="exit-parent-btn-confirm"
           on:click={onConfirm}
           disabled={exiting}
         >
-          {exiting ? 'Exiting…' : 'Exit Squad'}
+          {exiting ? 'Exiting…' : confirmLabel}
         </button>
       </div>
     </div>
@@ -93,14 +95,14 @@
     margin: 0 0 8px 0;
   }
 
-  .exit-squad-message {
+  .exit-parent-message {
     color: var(--text-secondary);
     font-size: 0.9375rem;
     margin: 0 0 20px 0;
     line-height: 1.5;
   }
 
-  .exit-squad-error {
+  .exit-parent-error {
     color: var(--danger);
     background: rgba(242, 63, 66, 0.1);
     padding: 12px 16px;
@@ -109,14 +111,14 @@
     font-size: 0.875rem;
   }
 
-  .exit-squad-actions {
+  .exit-parent-actions {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
     margin-top: 24px;
   }
 
-  .exit-squad-btn-cancel {
+  .exit-parent-btn-cancel {
     padding: 8px 16px;
     background: transparent;
     border: 1px solid var(--border);
@@ -126,12 +128,12 @@
     cursor: pointer;
   }
 
-  .exit-squad-btn-cancel:hover:not(:disabled) {
+  .exit-parent-btn-cancel:hover:not(:disabled) {
     background: var(--bg-hover);
     color: var(--text-primary);
   }
 
-  .exit-squad-btn-confirm {
+  .exit-parent-btn-confirm {
     padding: 8px 16px;
     background: var(--danger);
     border: none;
@@ -141,11 +143,11 @@
     cursor: pointer;
   }
 
-  .exit-squad-btn-confirm:hover:not(:disabled) {
+  .exit-parent-btn-confirm:hover:not(:disabled) {
     filter: brightness(0.9);
   }
 
-  .exit-squad-btn-confirm:disabled {
+  .exit-parent-btn-confirm:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

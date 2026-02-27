@@ -21,6 +21,7 @@
     showMembersPanel,
     parentsCreatingAnnouncements,
     parentCreateErrorById,
+    ANNOUNCEMENTS_CHANNEL_NAME,
     type DmMessage,
     type Squad,
     type Network,
@@ -54,9 +55,8 @@
   $: activeNetwork = $activeTopNavTab === 'networks' && activeParent ? (activeParent as Network) : null;
 
   $: channelName = activeChannel?.name || 'channel';
-  $: isAnnouncementsChannel = activeParent
-    ? [...activeParent.channels].sort((a, b) => a.order - b.order)[0]?.groupId === $activeChannelId
-    : false;
+  $: isAnnouncementsChannel =
+    (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
@@ -258,6 +258,13 @@
     closeChannelMenu();
     loadChannelMembers();
   }
+  function toggleMembersPanel() {
+    if ($showMembersPanel) {
+      showMembersPanel.set(false);
+    } else {
+      openMembersPanel();
+    }
+  }
   async function loadChannelMembers() {
     const groupId = $activeChannelId;
     if (!groupId) return;
@@ -370,22 +377,25 @@
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
-          <button
-            type="button"
-            class="channel-menu-btn"
-            title="Channel options"
-            on:click={() => (channelMenuOpen = !channelMenuOpen)}
-            aria-expanded={channelMenuOpen}
-            aria-haspopup="menu"
-          >
-            <img src={chevronDownIcon} alt="" class="channel-menu-btn-icon" />
-          </button>
+          {#if !isAnnouncementsChannel}
+            <button
+              type="button"
+              class="channel-menu-btn"
+              title="Channel options"
+              on:click={() => (channelMenuOpen = !channelMenuOpen)}
+              aria-expanded={channelMenuOpen}
+              aria-haspopup="menu"
+            >
+              <img src={chevronDownIcon} alt="" class="channel-menu-btn-icon" />
+            </button>
+          {/if}
           <button
             type="button"
             class="channel-members-btn"
             title="Members"
-            on:click={openMembersPanel}
-            aria-label="View channel members"
+            on:click={toggleMembersPanel}
+            aria-label={$showMembersPanel ? 'Close channel members' : 'View channel members'}
+            aria-expanded={$showMembersPanel}
           >
             <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
           </button>
@@ -396,16 +406,16 @@
               <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
                 Invite to channel
               </button>
+              <button
+                type="button"
+                class="channel-menu-item channel-menu-item-danger"
+                role="menuitem"
+                disabled={leavingChannel}
+                on:click={openLeaveChannelConfirm}
+              >
+                Leave channel
+              </button>
             {/if}
-            <button
-              type="button"
-              class="channel-menu-item channel-menu-item-danger"
-              role="menuitem"
-              disabled={leavingChannel}
-              on:click={openLeaveChannelConfirm}
-            >
-              Leave channel
-            </button>
           </div>
         {/if}
       </div>
@@ -503,7 +513,6 @@
       <aside class="members-panel" aria-label="Channel members">
         <div class="members-panel-header">
           <h3 class="members-panel-title">Members</h3>
-          <button type="button" class="members-panel-close" aria-label="Close" on:click={() => showMembersPanel.set(false)}>×</button>
         </div>
         <div class="members-panel-list">
           {#if loadingMembers}
@@ -769,22 +778,6 @@
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--text-primary);
-  }
-
-  .members-panel-close {
-    padding: 4px 8px;
-    font-size: 1.25rem;
-    line-height: 1;
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: 4px;
-  }
-
-  .members-panel-close:hover {
-    color: var(--text-primary);
-    background: var(--bg-hover);
   }
 
   .members-panel-list {

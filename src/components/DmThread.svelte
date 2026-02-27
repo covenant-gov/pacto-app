@@ -55,6 +55,8 @@
   export let acceptingNetworkInviteId: string | null = null;
   export let showOptionsMenu = true;
   export let onSaveNickname: (value: string) => Promise<void> = async () => {};
+  /** Called when user chooses "Delete chat" (optimistic delete is handled by caller). */
+  export let onDeleteChat: (() => void) | undefined = undefined;
 
   function truncateNpub(n: string): string {
     if (n.length <= 16) return n;
@@ -261,6 +263,19 @@
                   {:else}
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
                       Pin DM
+                    </button>
+                  {/if}
+                  {#if onDeleteChat}
+                    <button
+                      type="button"
+                      class="dm-thread-dropdown-item dm-thread-dropdown-item-danger"
+                      role="menuitem"
+                      on:click={() => {
+                        menuOpen = false;
+                        onDeleteChat();
+                      }}
+                    >
+                      Delete chat
                     </button>
                   {/if}
                 </div>
@@ -496,6 +511,15 @@
 
   .dm-thread-dropdown-item:hover {
     background: var(--bg-hover);
+  }
+
+  .dm-thread-dropdown-item-danger {
+    color: var(--danger);
+  }
+
+  .dm-thread-dropdown-item-danger:hover {
+    background: rgba(237, 66, 69, 0.15);
+    color: var(--danger);
   }
 
   .dm-thread-nickname-edit {

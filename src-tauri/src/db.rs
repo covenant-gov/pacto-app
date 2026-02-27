@@ -686,16 +686,25 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
     Ok(())
 }
 
-/// Delete a chat and all its messages from the database
-pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_id: &str) -> Result<(), String> {
+/// Delete a chat and all its messages from the database.
+/// `chat_identifier` is the npub for DMs or group_id for MLS; events are CASCADE deleted.
+pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str) -> Result<(), String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
+
+    let chat_int_id = get_chat_id_by_identifier(&handle, chat_identifier)?;
 
     conn.execute(
         "DELETE FROM chats WHERE id = ?1",
-        rusqlite::params![chat_id],
-    ).map_err(|e| format!("Failed to delete chat: {}", e))?;
+        rusqlite::params![chat_int_id],
+    )
+    .map_err(|e| format!("Failed to delete chat: {}", e))?;
 
-    println!("[DB] Deleted chat and messages from SQL: {}", chat_id);
+    {
+        let mut cache = CHAT_ID_CACHE.write().unwrap();
+        cache.remove(chat_identifier);
+    }
+
+    println!("[DB] Deleted chat and messages: {} (id {})", chat_identifier, chat_int_id);
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
