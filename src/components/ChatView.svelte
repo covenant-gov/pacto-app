@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import { listen } from '@tauri-apps/api/event';
   import Message from './Message.svelte';
   import MessageInput from './MessageInput.svelte';
   import Modal from './Modal.svelte';
@@ -133,6 +135,22 @@
     loadChannelMembers();
   }
   $: if (!$showMembersPanel) prevChannelIdForMembers = null;
+
+  // When backend emits mls_group_updated (e.g. someone left), refetch members if panel is open for that group
+  onMount(() => {
+    let unlistenFn: (() => void) | undefined;
+    listen<{ group_id?: string }>('mls_group_updated', (event) => {
+      const group_id = event.payload?.group_id;
+      if (group_id && get(showMembersPanel) && get(activeChannelId) === group_id) {
+        loadChannelMembers();
+      }
+    }).then((fn) => {
+      unlistenFn = fn;
+    });
+    return () => {
+      unlistenFn?.();
+    };
+  });
 
   let loadingOlder = false;
   function scrollMessagesToBottom() {

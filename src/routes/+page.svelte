@@ -908,7 +908,8 @@
                 acceptingChannelInSquadId={acceptingChannelInSquadId}
                 acceptingChannelInNetworkId={acceptingChannelInNetworkId}
                 acceptingNetworkInviteId={acceptingNetworkInviteId}
-                showOptionsMenu={$activeDmTab === 'friends' || $activeDmTab === 'pinned'}
+                showOptionsMenu={true}
+                showPinOption={$activeDmTab !== 'requests' && $activeDmTab !== 'pending'}
                 onSaveNickname={async (value) => {
                   const id = $activeDmId;
                   if (!id) return;
