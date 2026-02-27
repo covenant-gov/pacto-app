@@ -449,6 +449,16 @@ export const lastOpenedNetworkId = writable<string | null>(null);
 export const lastOpenedNetworkChannelId = writable<string | null>(null);
 export const lastChannelByNetworkId = writable<Record<string, string>>({});
 
+/** Monotonic version per MLS group id; increments when backend signals membership changes. */
+export const membershipVersionByGroupId = writable<Record<string, number>>({});
+
+export function bumpMembershipVersion(groupId: string): void {
+  membershipVersionByGroupId.update((map) => ({
+    ...map,
+    [groupId]: (map[groupId] ?? 0) + 1,
+  }));
+}
+
 lastOpenedNetworkId.subscribe((id) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(LAST_NETWORK_ID_PREFIX);

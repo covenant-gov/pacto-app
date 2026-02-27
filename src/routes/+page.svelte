@@ -59,6 +59,7 @@
     revertDmChat,
     type DmChatSnapshot,
     updateChannelNameIfPlaceholder,
+    bumpMembershipVersion,
     ANNOUNCEMENTS_CHANNEL_NAME,
     type DmMessage,
     type DmTab,
@@ -850,6 +851,15 @@
       addChannelToParent('network', parentId, channel_group_id, channel_name);
     });
 
+    const unlistenGroupUpdated = listen<{ group_id?: string }>('mls_group_updated', (event) => {
+      const gid = event.payload?.group_id;
+      if (gid) bumpMembershipVersion(gid);
+    });
+    const unlistenGroupLeft = listen<{ group_id?: string }>('mls_group_left', (event) => {
+      const gid = event.payload?.group_id;
+      if (gid) bumpMembershipVersion(gid);
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
@@ -862,6 +872,8 @@
       unlistenWelcomeAccepted.then((fn) => fn());
       unlistenChannelAddedToSquad.then((fn) => fn());
       unlistenChannelAddedToNetwork.then((fn) => fn());
+      unlistenGroupUpdated.then((fn) => fn());
+      unlistenGroupLeft.then((fn) => fn());
     };
   });
 </script>
