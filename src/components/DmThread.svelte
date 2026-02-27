@@ -54,8 +54,9 @@
   export let acceptingChannelInNetworkId: string | null = null;
   export let acceptingNetworkInviteId: string | null = null;
   export let showOptionsMenu = true;
+  /** When false, Pin/Unpin DM is hidden (e.g. for Requests and Pending tabs). */
+  export let showPinOption = true;
   export let onSaveNickname: (value: string) => Promise<void> = async () => {};
-  /** Called when user chooses "Delete chat" (optimistic delete is handled by caller). */
   export let onDeleteChat: (() => void) | undefined = undefined;
 
   function truncateNpub(n: string): string {
@@ -256,14 +257,16 @@
                   <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
                     Set Nickname
                   </button>
-                  {#if $pinnedDmNpubs.has(npub)}
-                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
-                      Unpin DM
-                    </button>
-                  {:else}
-                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
-                      Pin DM
-                    </button>
+                  {#if showPinOption}
+                    {#if $pinnedDmNpubs.has(npub)}
+                      <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
+                        Unpin DM
+                      </button>
+                    {:else}
+                      <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
+                        Pin DM
+                      </button>
+                    {/if}
                   {/if}
                   {#if onDeleteChat}
                     <button
