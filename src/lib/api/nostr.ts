@@ -102,6 +102,14 @@ export async function getChatMessageCount(chatId: string): Promise<number> {
 }
 
 /**
+ * Delete a DM chat and all its messages from the backend (DB + in-memory state).
+ * chatId is the other party's npub. Call after optimistic deleteDmChat(); on failure revert and show toast.
+ */
+export async function deleteDmChatBackend(chatId: string): Promise<void> {
+  await invoke('delete_dm_chat', { chatId });
+}
+
+/**
  * Get paginated messages for a DM chat (backend: get_message_views).
  * chat_id = npub for DMs; reads from backend DB (filled by fetch_messages from relays).
  */

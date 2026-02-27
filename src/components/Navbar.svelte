@@ -86,6 +86,7 @@
   let breakNetworkMemberList: { npub: string; name?: string }[] = [];
   let breakNetworkMembersLoading = false;
   let breakNetworkMembersError = '';
+  $: activeNetwork = $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) ?? null : null;
 
   /** Every network has an #announcements channel (created with name 'announcements'). */
   function getNetworkAnnouncementsChannel(net: Network) {
@@ -271,6 +272,7 @@
             lastOpenedChannelId.set(groupId);
             lastChannelBySquadId.update((m) => ({ ...m, [groupId]: groupId }));
           }
+          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'squad', name, id: groupId, channelId: groupId } });
           const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName: name, groupId });
           for (const npub of memberNpubs) {
             try {
@@ -279,7 +281,6 @@
               console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'squad', name, id: groupId, channelId: groupId } });
         } catch (e) {
           removeParentCreatingAnnouncements(squad.id);
           parentCreateErrorById.update((m) => ({ ...m, [squad.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
@@ -331,6 +332,7 @@
           }
           lastOpenedNetworkId.set(groupId);
           lastChannelByNetworkId.update((m) => ({ ...m, [groupId]: groupId }));
+          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'network', name, id: groupId, channelId: groupId } });
           const payload = formatNetworkInviteMessage({
             type: 'network_invite',
             networkName: name,
@@ -344,7 +346,6 @@
               console.warn('[Navbar] send network invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'network', name, id: groupId, channelId: groupId } });
         } catch (e) {
           removeParentCreatingAnnouncements(network.id);
           parentCreateErrorById.update((m) => ({ ...m, [network.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
@@ -535,7 +536,7 @@
 
 {#if showOrganizeSquadModal}
   <Modal titleId="organize-squad-title" descriptionId="organize-squad-description" onClose={closeOrganizeSquadModal}>
-    <h2 id="organize-squad-title">{organizeSquadMode === 'from-network' ? 'Break into Squad' : 'Organize Squad'}</h2>
+    <h2 id="organize-squad-title">{organizeSquadMode === 'from-network' ? `Break "${activeNetwork?.name ?? 'Network'}" into Squad` : 'Organize Squad'}</h2>
     <p id="organize-squad-description" class="organize-modal-subtitle">
       {#if organizeSquadMode === 'from-network'}
         Select members from this network to form a new squad. Choose a name and at least one member.

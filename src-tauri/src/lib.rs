@@ -1214,6 +1214,16 @@ async fn evict_chat_messages(chat_id: String, keep_count: usize) -> Result<(), S
     Ok(())
 }
 
+/// Delete a DM chat and all its messages from the database and in-memory state.
+/// chat_id is the other party's npub for DMs.
+#[tauri::command]
+async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
+    db::delete_chat(handle.clone(), &chat_id).await?;
+    let mut state = STATE.lock().await;
+    state.chats.retain(|c| c.id != chat_id);
+    Ok(())
+}
+
 /// Build and return the file hash index for deduplication
 /// Returns a map of file_hash -> attachment reference data
 #[tauri::command]
@@ -5989,6 +5999,7 @@ pub fn run() {
             get_message_views,
             get_messages_around_id,
             get_chat_message_count,
+            delete_dm_chat,
             get_file_hash_index,
             evict_chat_messages,
             generate_blurhash_preview,

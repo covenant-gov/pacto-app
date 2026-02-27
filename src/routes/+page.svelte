@@ -11,7 +11,7 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import DmThread from '../components/DmThread.svelte';
   import Toast from '../components/Toast.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend } from '../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
@@ -55,6 +55,9 @@
     dmChatsByNpub,
     pinnedDmNpubs,
     dmSendError,
+    deleteDmChat,
+    revertDmChat,
+    type DmChatSnapshot,
     updateChannelNameIfPlaceholder,
     ANNOUNCEMENTS_CHANNEL_NAME,
     type DmMessage,
@@ -914,6 +917,22 @@
                   } catch (e) {
                     throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'));
                   }
+                }}
+                onDeleteChat={() => {
+                  const id = $activeDmId;
+                  if (!id) return;
+                  const snapshot: DmChatSnapshot = {
+                    chatState: $dmChatsByNpub[id],
+                    messages: $backendDmMessages[id] ?? [],
+                    messageCount: $messageCountByChat[id],
+                    loadedOffset: $loadedOffsetByChat[id],
+                    wasPinned: $pinnedDmNpubs.has(id),
+                  };
+                  deleteDmChat(id);
+                  deleteDmChatBackend(id).catch(() => {
+                    revertDmChat(id, snapshot);
+                    showToast('Could not delete chat. Please try again.');
+                  });
                 }}
               />
             {:else}

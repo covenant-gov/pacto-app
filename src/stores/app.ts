@@ -140,6 +140,63 @@ export function addPendingDm(npub: string): void {
   setDmChatState(npub, { hasFromMe: true, hasFromThem: false, lastAt: Math.floor(Date.now() / 1000) });
 }
 
+/** Snapshot of a DM chat state for revert after failed backend delete. */
+export interface DmChatSnapshot {
+  chatState: DmChatState | undefined;
+  messages: DmMessage[];
+  messageCount: number | undefined;
+  loadedOffset: number | undefined;
+  wasPinned: boolean;
+}
+
+/** Remove a DM chat locally (conversation + messages, unpin, clear selection if active). */
+export function deleteDmChat(npub: string): void {
+  dmChatsByNpub.update((m) => {
+    const next = { ...m };
+    delete next[npub];
+    return next;
+  });
+  backendDmMessages.update((byNpub) => {
+    const next = { ...byNpub };
+    delete next[npub];
+    return next;
+  });
+  messageCountByChat.update((m) => {
+    const next = { ...m };
+    delete next[npub];
+    return next;
+  });
+  loadedOffsetByChat.update((m) => {
+    const next = { ...m };
+    delete next[npub];
+    return next;
+  });
+  pinnedDmNpubs.update((s) => {
+    if (!s.has(npub)) return s;
+    const next = new Set(s);
+    next.delete(npub);
+    return next;
+  });
+  activeDmId.update((id) => (id === npub ? null : id));
+}
+
+/** Restore a DM chat from a snapshot (e.g. after backend delete failed). */
+export function revertDmChat(npub: string, snapshot: DmChatSnapshot): void {
+  if (snapshot.chatState) {
+    dmChatsByNpub.update((m) => ({ ...m, [npub]: snapshot.chatState! }));
+  }
+  backendDmMessages.update((byNpub) => ({ ...byNpub, [npub]: snapshot.messages }));
+  if (snapshot.messageCount !== undefined) {
+    messageCountByChat.update((m) => ({ ...m, [npub]: snapshot.messageCount! }));
+  }
+  if (snapshot.loadedOffset !== undefined) {
+    loadedOffsetByChat.update((m) => ({ ...m, [npub]: snapshot.loadedOffset! }));
+  }
+  if (snapshot.wasPinned) {
+    pinnedDmNpubs.update((s) => new Set(s).add(npub));
+  }
+}
+
 // Selected DM conversation (other user's npub)
 export const activeDmId = writable<string | null>(null);
 

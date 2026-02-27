@@ -37,12 +37,18 @@
   export let onInvite: () => void = () => {};
   /** Only used when type === 'squad'. */
   export let onExitSquad: (() => void) | undefined = undefined;
+  /** Only used when type === 'network'. */
+  export let onExitNetwork: (() => void) | undefined = undefined;
 
   let menuOpen = false;
   const createErrorId = 'parent-create-error';
 
   $: inviteLabel = type === 'squad' ? 'Invite to Squad' : 'Invite to Network';
   $: showExitSquad = type === 'squad' && typeof onExitSquad === 'function';
+  $: showExitNetwork = type === 'network' && typeof onExitNetwork === 'function';
+  $: showExit = showExitSquad || showExitNetwork;
+  $: exitLabel = type === 'squad' ? 'Exit Squad' : 'Exit Network';
+  $: onExit = type === 'squad' ? onExitSquad : onExitNetwork;
 </script>
 
 <svelte:window
@@ -82,17 +88,17 @@
               >
                 {inviteLabel}
               </button>
-              {#if showExitSquad && onExitSquad}
+              {#if showExit && onExit}
                 <button
                   type="button"
                   class="parent-menu-item parent-menu-item-exit"
                   role="menuitem"
                   on:click={() => {
                     menuOpen = false;
-                    onExitSquad();
+                    onExit();
                   }}
                 >
-                  Exit Squad
+                  {exitLabel}
                 </button>
               {/if}
             </div>
