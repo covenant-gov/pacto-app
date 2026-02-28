@@ -260,6 +260,10 @@ export interface Channel {
 /** Canonical name for the first channel of every squad and network (announcements group). */
 export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
 
+/** Virtual channel id for the squad/network dashboard (not an MLS group; profile-like view). Shown above # announcements. */
+export const DASHBOARD_CHANNEL_ID = '__dashboard__';
+export const DASHBOARD_CHANNEL_NAME = 'dashboard';
+
 /** Normalize a channel from storage (drops legacy `id` if present). */
 function normalizeChannel(ch: { name: string; groupId: string; order: number }): Channel {
   return { name: ch.name, groupId: ch.groupId, order: ch.order };

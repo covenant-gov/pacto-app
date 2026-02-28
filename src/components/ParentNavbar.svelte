@@ -22,6 +22,8 @@
     parentCreateErrorById,
     parentPendingCreateMembers,
     removeParentCreatingAnnouncements,
+    DASHBOARD_CHANNEL_ID,
+    DASHBOARD_CHANNEL_NAME,
     type Channel as ChannelType,
     type Squad,
     type Network,
@@ -56,7 +58,7 @@
       ? ($squads.find((s) => s.id === $activeSquadId) as Squad | undefined)
       : ($networks.find((n) => n.id === $activeNetworkId) as Network | undefined);
 
-  $: channels =
+  $: rawChannels =
     type === 'squad' && activeParent
       ? [...new Map((activeParent as Squad).channels.map((c) => [c.groupId, c])).values()].sort(
           (a, b) => a.order - b.order
@@ -64,6 +66,10 @@
       : activeParent
         ? [...(activeParent as Network).channels].sort((a, b) => a.order - b.order)
         : [];
+  // Prepend # dashboard above # announcements (dashboard is not an MLS channel)
+  $: channels = activeParent
+    ? [{ name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 }, ...rawChannels]
+    : [];
 
   $: creating =
     activeParent &&
