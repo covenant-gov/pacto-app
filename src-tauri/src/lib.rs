@@ -32,6 +32,8 @@ mod blossom;
 mod util;
 use util::{get_file_type_description, calculate_file_hash, format_bytes};
 
+mod evm;
+
 #[cfg(target_os = "android")]
 #[path = "android/mod.rs"]
 mod android;
@@ -3723,6 +3725,12 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
 struct LoginKeyPair {
     public: String,
     private: String,
+    /// EVM private key (hex with 0x), derived from Nostr secret. Present for new/imported accounts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evm_private_key: Option<String>,
+    /// EVM address (0x + 40 hex chars). Present when evm_private_key is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evm_address: Option<String>,
 }
 
 /// # Debug Hot-Reload State Sync
@@ -3784,9 +3792,14 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
         let new_npub = new_keys.public_key.to_bech32().unwrap();
         if prev_npub == new_npub {
             // Simply return the same KeyPair and allow the frontend to continue login as usual
+            let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&new_keys.secret_key().to_secret_bytes())
+                .map(|t| (Some(t.0), Some(t.1)))
+                .unwrap_or((None, None));
             return Ok(LoginKeyPair {
                 public: signer.get_public_key().await.unwrap().to_bech32().unwrap(),
                 private: new_keys.secret_key().to_bech32().unwrap(),
+                evm_private_key,
+                evm_address,
             });
         } else {
             // This shouldn't happen in the real-world, but just in case...
@@ -3845,10 +3858,15 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
         }
     }
 
-    // Return our npub to the frontend client
+    let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+        .map(|t| (Some(t.0), Some(t.1)))
+        .unwrap_or((None, None));
+
     Ok(LoginKeyPair {
         public: npub,
         private: keys.secret_key().to_bech32().unwrap(),
+        evm_private_key,
+        evm_address,
     })
 }
 
@@ -4005,9 +4023,9 @@ async fn decrypt(ciphertext: String, password: Option<String>) -> Result<String,
             // brief delay to allow any post-login setup to settle
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             
-            // Skip if no account selected (migration pending)
+            // Skip if no account selected (e.g. setup pending)
             if crate::account_manager::get_current_account().is_err() {
-                println!("[MLS] Skipping KeyPackage bootstrap - no account selected (migration may be pending)");
+                println!("[MLS] Skipping KeyPackage bootstrap - no account selected");
                 return;
             }
             
@@ -4166,10 +4184,16 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     // This prevents creating "dead accounts" if user quits before setting a PIN
     account_manager::set_pending_account(npub.clone())?;
 
-    // Return the keypair in the same format as the login function
+    // Derive EVM key from Nostr secret for embedded wallet
+    let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+        .map(|t| (Some(t.0), Some(t.1)))
+        .unwrap_or((None, None));
+
     Ok(LoginKeyPair {
         public: npub,
         private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
+        evm_private_key,
+        evm_address,
     })
 }
 
@@ -4204,10 +4228,20 @@ async fn export_keys() -> Result<serde_json::Value, String> {
         }
     };
     
-    // Create response object
+    // EVM private key (when present): decrypt with same cached PIN key as nsec
+    let evm_private_key = if let Some(enc_evm) = db::get_evm_pkey(handle.clone())? {
+        match crypto::internal_decrypt(enc_evm, None).await {
+            Ok(decrypted) => Some(decrypted),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
     let response = serde_json::json!({
         "nsec": nsec,
-        "seed_phrase": seed_phrase
+        "seed_phrase": seed_phrase,
+        "evm_private_key": evm_private_key
     });
     
     Ok(response)
@@ -5953,6 +5987,10 @@ pub fn run() {
             db::get_theme,
             db::get_pkey,
             db::set_pkey,
+            db::get_evm_pkey,
+            db::set_evm_pkey,
+            db::get_evm_address,
+            db::set_evm_address,
             db::get_seed,
             db::set_seed,
             db::get_sql_setting,

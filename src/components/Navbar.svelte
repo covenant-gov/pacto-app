@@ -63,7 +63,6 @@
   function openProfile() {
     $activeView = 'profile';
     // Keep activeSquadId / activeNetworkId so last selection is restored when leaving Settings.
-    // Channel will be restored by the "never leave channel empty" helpers in +page.svelte.
     $activeChannelId = null;
   }
 

@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface LoginKeyPair {
   public: string;
   private: string;
+  evm_private_key?: string | null;
+  evm_address?: string | null;
 }
 
 /**
@@ -48,6 +50,20 @@ export async function getCurrentAccount(): Promise<string> {
 }
 
 /**
+ * Get the stored EVM address for the current account (no PIN required; address is public).
+ */
+export async function getEvmAddress(): Promise<string | null> {
+  return await invoke<string | null>('get_evm_address');
+}
+
+/**
+ * Store the EVM address for the current account (called when saving keys after create/import).
+ */
+export async function setEvmAddress(address: string): Promise<void> {
+  await invoke('set_evm_address', { address });
+}
+
+/**
  * List all accounts on this device
  * @returns Array of account npubs
  */
@@ -57,9 +73,13 @@ export async function listAllAccounts(): Promise<string[]> {
 
 /**
  * Export account keys (requires PIN for decryption)
- * @returns Object containing nsec and optional seed_phrase
+ * @returns Object containing nsec, optional seed_phrase, and optional evm_private_key
  */
-export async function exportKeys(): Promise<{ nsec: string; seed_phrase?: string }> {
+export async function exportKeys(): Promise<{
+  nsec: string;
+  seed_phrase?: string;
+  evm_private_key?: string | null;
+}> {
   return await invoke('export_keys');
 }
 

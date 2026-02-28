@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { login as apiLogin, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
-import { hasStoredKey, encryptAndSaveKey, loadAndDecryptKey, validatePrivateKeyFormat } from '../lib/api/encryption';
+import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validatePrivateKeyFormat } from '../lib/api/encryption';
 import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { clearAccountState } from '../lib/utils/clear-account-state';
@@ -77,7 +77,9 @@ export async function createAccount(pin: string): Promise<void> {
     
     // Encrypt and save private key + mnemonic
     await encryptAndSaveKey(keys.private, pin);
-    
+    if (keys.evm_private_key && keys.evm_address) {
+      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
+    }
     // Connect to relays
     dmLog('createAccount: connect()');
     await apiConnect();
@@ -124,7 +126,9 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
     
     // Encrypt and save the private key
     await encryptAndSaveKey(keys.private, pin);
-    
+    if (keys.evm_private_key && keys.evm_address) {
+      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
+    }
     // Connect to relays
     dmLog('importAccount: connect()');
     await apiConnect();

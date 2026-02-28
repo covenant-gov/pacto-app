@@ -54,7 +54,6 @@
   export let acceptingChannelInNetworkId: string | null = null;
   export let acceptingNetworkInviteId: string | null = null;
   export let showOptionsMenu = true;
-  /** When false, Pin/Unpin DM is hidden (e.g. for Requests and Pending tabs). */
   export let showPinOption = true;
   export let onSaveNickname: (value: string) => Promise<void> = async () => {};
   export let onDeleteChat: (() => void) | undefined = undefined;
