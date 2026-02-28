@@ -30,6 +30,23 @@ export async function encryptAndSaveKey(privateKey: string, pin: string): Promis
 }
 
 /**
+ * Encrypt and save the EVM private key, and store the EVM address (public).
+ * Call after encryptAndSaveKey when the login/create response includes evm_private_key and evm_address.
+ */
+export async function encryptAndSaveEvmKey(
+  evmPrivateKey: string,
+  evmAddress: string,
+  pin: string
+): Promise<void> {
+  const encryptedEvm = await invoke<string>('encrypt', {
+    input: evmPrivateKey,
+    password: pin
+  });
+  await invoke('set_evm_pkey', { evmPkey: encryptedEvm });
+  await invoke('set_evm_address', { address: evmAddress });
+}
+
+/**
  * Load and decrypt a private key using a PIN
  * @param pin - The 6-digit PIN for decryption
  * @returns The decrypted private key

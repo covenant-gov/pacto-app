@@ -277,6 +277,68 @@ pub fn get_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, Stri
 }
 
 #[command]
+pub async fn set_evm_pkey<R: Runtime>(handle: AppHandle<R>, evm_pkey: String) -> Result<(), String> {
+    if let Ok(Some(npub)) = crate::account_manager::get_pending_account() {
+        crate::account_manager::init_profile_database(&handle, &npub).await?;
+        crate::account_manager::set_current_account(npub.clone())?;
+        crate::account_manager::clear_pending_account()?;
+
+        let conn = crate::account_manager::get_db_connection(&handle)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["evm_pkey", evm_pkey],
+        ).map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
+        crate::account_manager::return_db_connection(conn);
+        return Ok(());
+    }
+
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+        rusqlite::params!["evm_pkey", evm_pkey],
+    ).map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+#[command]
+pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+
+    let result: Option<String> = conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        rusqlite::params!["evm_pkey"],
+        |row| row.get(0)
+    ).ok();
+
+    crate::account_manager::return_db_connection(conn);
+    Ok(result)
+}
+
+#[command]
+pub fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+        rusqlite::params!["evm_address", address],
+    ).map_err(|e| format!("Failed to insert evm_address: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+#[command]
+pub fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result: Option<String> = conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        rusqlite::params!["evm_address"],
+        |row| row.get(0)
+    ).ok();
+    crate::account_manager::return_db_connection(conn);
+    Ok(result)
+}
+
+#[command]
 pub async fn set_seed<R: Runtime>(handle: AppHandle<R>, seed: String) -> Result<(), String> {
     let encrypted_seed = internal_encrypt(seed, None).await;
 

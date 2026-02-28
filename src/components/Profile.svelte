@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { loadProfile, profiles, profileLoadingStates } from '../stores/profiles';
   import { logout, currentUser } from '../stores/auth';
-  import { exportKeys } from '../lib/api/auth';
+  import { exportKeys, getEvmAddress } from '../lib/api/auth';
   import { loadAndDecryptKey } from '../lib/api/encryption';
   import { updateProfile, uploadAvatar } from '../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../lib/utils/profile';
@@ -42,13 +42,19 @@
   let showExportModal = false;
   let showPinModal = false;
   let showLogoutConfirm = false;
-  let exportedKeys: { nsec: string; seed_phrase?: string } | null = null;
+  let exportedKeys: { nsec: string; seed_phrase?: string; evm_private_key?: string | null } | null = null;
   let pinDigits = ['', '', '', '', '', ''];
   let pinError = '';
   let isExporting = false;
   let copiedNsec = false;
   let copiedSeed = false;
+  let copiedEvm = false;
   let pinInputs: HTMLInputElement[] = [];
+
+  // EVM address (public, no PIN) for Profile display
+  let evmAddress: string | null = null;
+  let copiedEvmAddress = false;
+  let copiedNpub = false;
 
   // Watch for changes to userNpub and load profile
   $: if (userNpub) {
@@ -57,10 +63,12 @@
 
   async function loadUserProfile(npub: string) {
     if (!npub) return;
-    
+
     try {
       error = null;
       await loadProfile(npub);
+      const addr = await getEvmAddress();
+      evmAddress = addr;
     } catch (e: any) {
       error = e.message || 'Failed to load profile';
       console.error('Profile load error:', e);
@@ -287,6 +295,7 @@
     exportedKeys = null;
     copiedNsec = false;
     copiedSeed = false;
+    copiedEvm = false;
   }
 
   function closePinModal() {
@@ -295,15 +304,18 @@
     pinError = '';
   }
 
-  async function copyToClipboard(text: string, type: 'nsec' | 'seed') {
+  async function copyToClipboard(text: string, type: 'nsec' | 'seed' | 'evm') {
     try {
       await navigator.clipboard.writeText(text);
       if (type === 'nsec') {
         copiedNsec = true;
         setTimeout(() => copiedNsec = false, 2000);
-      } else {
+      } else if (type === 'seed') {
         copiedSeed = true;
         setTimeout(() => copiedSeed = false, 2000);
+      } else {
+        copiedEvm = true;
+        setTimeout(() => copiedEvm = false, 2000);
       }
     } catch (e) {
       console.error('Failed to copy:', e);
@@ -435,7 +447,34 @@
 
             <!-- Debug Info -->
             <div class="debug-info">
-              <p class="meta">ID: {profile.id}</p>
+              <p class="meta evm-address-line">
+                <span>ID:</span>
+                <span class="evm-address-value">{profile.id}</span>
+                <button type="button" class="btn-copy-inline" on:click={async () => {
+                  try {
+                    await navigator.clipboard.writeText(profile?.id ?? '');
+                    copiedNpub = true;
+                    setTimeout(() => copiedNpub = false, 2000);
+                  } catch (_) {}
+                }}>
+                  {copiedNpub ? '✓ Copied' : 'Copy'}
+                </button>
+              </p>
+              {#if evmAddress}
+                <p class="meta evm-address-line">
+                  <span>EVM address:</span>
+                  <span class="evm-address-value">{evmAddress}</span>
+                  <button type="button" class="btn-copy-inline" on:click={async () => {
+                    try {
+                      await navigator.clipboard.writeText(evmAddress ?? '');
+                      copiedEvmAddress = true;
+                      setTimeout(() => copiedEvmAddress = false, 2000);
+                    } catch (_) {}
+                  }}>
+                    {copiedEvmAddress ? '✓ Copied' : 'Copy'}
+                  </button>
+                </p>
+              {/if}
               <p class="meta">Muted: {profile.muted ? 'Yes' : 'No'} | Bot: {profile.bot ? 'Yes' : 'No'}</p>
             </div>
 
@@ -577,6 +616,19 @@
             </button>
           </div>
           <div class="key-value seed-phrase">{exportedKeys.seed_phrase}</div>
+        </div>
+      {/if}
+
+      <!-- EVM private key (if available) -->
+      {#if exportedKeys.evm_private_key}
+        <div class="key-section">
+          <div class="key-header">
+            <h3>EVM private key</h3>
+            <button class="btn-copy" on:click={() => copyToClipboard(exportedKeys!.evm_private_key!, 'evm')}>
+              {copiedEvm ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+          <div class="key-value">{exportedKeys.evm_private_key}</div>
         </div>
       {/if}
       
@@ -850,6 +902,28 @@
     font-size: 0.75rem;
     margin: 4px 0;
     font-family: monospace;
+  }
+
+  .evm-address-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .evm-address-value {
+    word-break: break-all;
+  }
+  .btn-copy-inline {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .btn-copy-inline:hover {
+    background: var(--bg-tertiary);
   }
 
   .profile-actions {

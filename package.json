@@ -21,7 +21,8 @@
     "@tauri-apps/plugin-fs": "^2.4.2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.0",
-    "@tauri-apps/plugin-updater": "^2.9.0"
+    "@tauri-apps/plugin-updater": "^2.9.0",
+    "viem": "^2.46.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",
