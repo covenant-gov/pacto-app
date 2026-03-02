@@ -6,12 +6,14 @@
   import TopNavbar from '../components/TopNavbar.svelte';
   import ParentNavbar from '../components/ParentNavbar.svelte';
   import ChatView from '../components/ChatView.svelte';
+  import ParentDashboard from '../components/ParentDashboard.svelte';
   import Profile from '../components/Profile.svelte';
   import MessengerNavbar from '../components/MessengerNavbar.svelte';
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import DmThread from '../components/DmThread.svelte';
   import Toast from '../components/Toast.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend, getSafe, setSafe } from '../lib/api/nostr';
+  import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
@@ -61,6 +63,8 @@
     updateChannelNameIfPlaceholder,
     bumpMembershipVersion,
     ANNOUNCEMENTS_CHANNEL_NAME,
+    DASHBOARD_CHANNEL_ID,
+    safeByParentId,
     type DmMessage,
     type DmTab,
     type Channel,
@@ -80,6 +84,16 @@
 
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
   let acceptedSquadInviteGroupIds = new Set<string>();
+
+  /** Hydrate Safe address from backend when dashboard is shown (once per squad/network). */
+  let safeHydratedIds = new Set<string>();
+  $: dashboardParentId = $activeChannelId === DASHBOARD_CHANNEL_ID ? ($activeTopNavTab === 'squads' ? $activeSquadId : $activeNetworkId) ?? null : null;
+  $: if (dashboardParentId && !safeHydratedIds.has(dashboardParentId)) {
+    safeHydratedIds.add(dashboardParentId);
+    getSafe(dashboardParentId).then((addr) => {
+      if (addr != null) safeByParentId.update((m) => ({ ...m, [dashboardParentId]: addr }));
+    });
+  }
 
   /** When user accepts a channel invite (squad or network) we store mapping so mls_welcome_accepted can add channel to the right parent. */
   let channelInvitePendingAccept = new Map<
@@ -190,7 +204,7 @@
     }
   }
 
-  // Never leave channel empty when a squad is selected: restore last channel for this squad or default to first (announcements)
+  // Never leave channel empty when a squad is selected: restore last channel for this squad or default to first (announcements). Dashboard (virtual channel) is valid.
   $: if ($activeTopNavTab === 'squads' && $activeSquadId && $squads.length > 0) {
     const sid = $activeSquadId;
     const squad = $squads.find((s) => s.id === sid);
@@ -198,12 +212,12 @@
       const sorted = [...squad.channels].sort((a, b) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForSquad = $lastChannelBySquadId[sid];
-      const activeInSquad = $activeChannelId && sorted.some((c) => c.groupId === $activeChannelId);
-      const lastInSquad = lastForSquad && sorted.some((c) => c.groupId === lastForSquad);
+      const activeInSquad = $activeChannelId && (sorted.some((c) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
+      const lastInSquad = lastForSquad && (sorted.some((c) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
       const validChannel =
         activeInSquad ? $activeChannelId
           : lastInSquad ? lastForSquad
-            : firstCh?.groupId ?? null;
+            : firstCh ? DASHBOARD_CHANNEL_ID : null;
       if (validChannel && $activeChannelId !== validChannel) {
         if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page never-empty correct', { sid: sid.slice(0, 12), from: $activeChannelId?.slice(0, 20), to: validChannel?.slice(0, 20), reason: activeInSquad ? 'active' : lastInSquad ? 'lastForSquad' : 'firstCh', lastForSquad: lastForSquad?.slice(0, 20) });
         activeChannelId.set(validChannel);
@@ -211,7 +225,7 @@
     }
   }
 
-  // Never leave channel empty when a network is selected: restore last channel for this network or default to first (announcements)
+  // Never leave channel empty when a network is selected: restore last channel for this network or default to first (announcements). Dashboard (virtual channel) is valid.
   $: if ($activeTopNavTab === 'networks' && $activeNetworkId && $networks.length > 0) {
     const nid = $activeNetworkId;
     const net = $networks.find((n) => n.id === nid);
@@ -219,12 +233,12 @@
       const sorted = [...net.channels].sort((a, b) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForNet = $lastChannelByNetworkId[nid];
+      const activeInNet = $activeChannelId && (sorted.some((c) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
+      const lastInNet = lastForNet && (sorted.some((c) => c.groupId === lastForNet) || lastForNet === DASHBOARD_CHANNEL_ID);
       const validChannel =
-        $activeChannelId && sorted.some((c) => c.groupId === $activeChannelId)
-          ? $activeChannelId
-          : (lastForNet && sorted.some((c) => c.groupId === lastForNet)
-            ? lastForNet
-            : firstCh?.groupId ?? null);
+        activeInNet ? $activeChannelId
+          : lastInNet ? lastForNet
+            : firstCh ? DASHBOARD_CHANNEL_ID : null;
       if (validChannel && $activeChannelId !== validChannel) {
         activeChannelId.set(validChannel);
       }
@@ -547,9 +561,10 @@
       const sorted = [...squad.channels].sort((a, b) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForSquad = $lastChannelBySquadId[squad.id];
-      const lastValid = lastForSquad && sorted.some((c) => c.groupId === lastForSquad);
-      const ch = lastValid ? sorted.find((c) => c.groupId === lastForSquad) : firstCh;
-      const setChannelId = ch?.groupId ?? firstCh?.groupId ?? null;
+      const lastValid = lastForSquad && (sorted.some((c) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
+      const setChannelId = lastValid && lastForSquad === DASHBOARD_CHANNEL_ID
+        ? DASHBOARD_CHANNEL_ID
+        : (lastValid ? sorted.find((c) => c.groupId === lastForSquad)?.groupId : firstCh?.groupId) ?? firstCh?.groupId ?? null;
       if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page restore-to-squads set', { squadId: squad.id.slice(0, 12), lastForSquad: lastForSquad?.slice(0, 20), lastValid, setChannelId: setChannelId?.slice(0, 20), firstChId: firstCh?.groupId?.slice(0, 20) });
       activeSquadId.set(squad.id);
       activeChannelId.set(setChannelId);
@@ -570,13 +585,16 @@
       const firstCh = sorted[0];
       const lastChanId = $lastOpenedNetworkChannelId;
       const lastForNet = $lastChannelByNetworkId[net.id];
+      const lastIsDashboard = lastChanId === DASHBOARD_CHANNEL_ID || lastForNet === DASHBOARD_CHANNEL_ID;
       const ch =
-        lastChanId && sorted.some((c) => c.groupId === lastChanId)
-          ? sorted.find((c) => c.groupId === lastChanId)
-          : lastForNet && sorted.some((c) => c.groupId === lastForNet)
-            ? sorted.find((c) => c.groupId === lastForNet)
-            : firstCh;
-      activeChannelId.set(ch?.groupId ?? firstCh?.groupId ?? null);
+        lastIsDashboard
+          ? null
+          : lastChanId && sorted.some((c) => c.groupId === lastChanId)
+            ? sorted.find((c) => c.groupId === lastChanId)
+            : lastForNet && sorted.some((c) => c.groupId === lastForNet)
+              ? sorted.find((c) => c.groupId === lastForNet)
+              : firstCh;
+      activeChannelId.set(lastIsDashboard ? DASHBOARD_CHANNEL_ID : (ch?.groupId ?? firstCh?.groupId ?? null));
     } else if ($networks.length > 0) {
       const currentNet = $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) : null;
       if (!currentNet) {
@@ -616,7 +634,7 @@
     if ($squads.length > 0 && !$activeSquadId) {
       const first = $squads[0];
       $activeSquadId = first.id;
-      $activeChannelId = first.channels.length > 0 ? first.channels[0].groupId : null;
+      $activeChannelId = first.channels.length > 0 ? DASHBOARD_CHANNEL_ID : null;
     }
 
     // Pull DMs from Nostr relays when app loads (if already authenticated)
@@ -690,7 +708,6 @@
       (event) => {
         const { old_id, message, chat_id } = event.payload;
         dmLog('message_update', { chat_id: chat_id.slice(0, 20) + '…', old_id: old_id?.slice(0, 12), new_id: message.id?.slice(0, 12) });
-        if (!chat_id.startsWith('npub1')) return;
         const m: DmMessage = {
           id: message.id,
           content: message.content,
@@ -704,11 +721,24 @@
           replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
           replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null }).replied_to_has_attachment,
         };
-        backendDmMessages.update((byNpub) => {
-          const list = byNpub[chat_id] ?? [];
-          const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
-          return { ...byNpub, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
-        });
+        if (chat_id.startsWith('npub1')) {
+          backendDmMessages.update((byNpub) => {
+            const list = byNpub[chat_id] ?? [];
+            const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
+            return { ...byNpub, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
+          });
+        } else {
+          // Group chat: replace old_id with real message so sender doesn't see duplicate (pending-* → real id)
+          backendGroupMessages.update((byGroup) => {
+            const list = byGroup[chat_id] ?? [];
+            const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
+            return { ...byGroup, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
+          });
+          const announce = parseAnnouncement(m.content);
+          if (announce?.type === 'squad_safe_updated') {
+            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+          }
+        }
       }
     );
 
@@ -772,11 +802,16 @@
       backendGroupMessages.update((byGroup) => {
         const list = byGroup[group_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byGroup;
+        // Remove optimistic placeholder (opt-* or pending-*) so we don't show duplicate when real message arrives
         const withoutOpt = list.filter(
-          (x) => !(x.id.startsWith('opt-') && x.mine && x.content === m.content)
+          (x) => !((x.id.startsWith('opt-') || x.id.startsWith('pending-')) && x.mine && x.content === m.content)
         );
         return { ...byGroup, [group_id]: [...withoutOpt, m] };
       });
+      const announce = parseAnnouncement(m.content);
+      if (announce?.type === 'squad_safe_updated') {
+            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+          }
       if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
 
@@ -959,7 +994,22 @@
       {:else}
         <div class="parent-area">
           <ParentNavbar type={$activeTopNavTab === 'networks' ? 'network' : 'squad'} />
-          <ChatView />
+          {#if $activeChannelId === DASHBOARD_CHANNEL_ID && ($activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId) : $networks.find((n) => n.id === $activeNetworkId))}
+            <ParentDashboard
+              parent={$activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!}
+              parentType={$activeTopNavTab === 'networks' ? 'network' : 'squad'}
+              safeAddress={$safeByParentId[($activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId) : $networks.find((n) => n.id === $activeNetworkId))?.id ?? ''] ?? null}
+              onConfirmSetSafe={async (safeAddress: string) => {
+                const p = $activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!;
+                await setSafe(p.id, safeAddress);
+                const announcementsGroupId = p.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ?? p.channels[0]?.groupId;
+                if (announcementsGroupId) await sendDmMessage(announcementsGroupId, buildAnnounceContent({ type: ANNOUNCE_TYPE_SAFE_UPDATED, payload: { squad_id: p.id, safe_address: safeAddress } }));
+                safeByParentId.update((m) => ({ ...m, [p.id]: safeAddress }));
+              }}
+            />
+          {:else}
+            <ChatView />
+          {/if}
         </div>
       {/if}
     </div>

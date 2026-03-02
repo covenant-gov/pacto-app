@@ -260,6 +260,13 @@ export interface Channel {
 /** Canonical name for the first channel of every squad and network (announcements group). */
 export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
 
+/** Virtual channel id for the squad/network dashboard (not an MLS group; profile-like view). Shown above # announcements. */
+export const DASHBOARD_CHANNEL_ID = '__dashboard__';
+export const DASHBOARD_CHANNEL_NAME = 'dashboard';
+
+/** Safe address by id (squad or network id). Updated when we receive safe_updated announce-cards in # announcements. */
+export const safeByParentId = writable<Record<string, string>>({});
+
 /** Normalize a channel from storage (drops legacy `id` if present). */
 function normalizeChannel(ch: { name: string; groupId: string; order: number }): Channel {
   return { name: ch.name, groupId: ch.groupId, order: ch.order };

@@ -12,3 +12,4 @@ export {
 } from './chains';
 
 export { getCurrentAddress, getPublicClient, getBalance } from './client';
+export { getSafeState, type SafeState } from './safe';

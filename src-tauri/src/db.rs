@@ -338,6 +338,56 @@ pub fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String
     Ok(result)
 }
 
+/// Get stored Safe address for a squad or network by id. Returns None if not set.
+#[command]
+pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<Option<String>, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result: Option<String> = conn.query_row(
+        "SELECT safe_address FROM squad_safe WHERE squad_id = ?1",
+        rusqlite::params![parent_id],
+        |row| row.get(0)
+    ).ok();
+    crate::account_manager::return_db_connection(conn);
+    Ok(result)
+}
+
+/// Set Safe address for a squad or network. PoC: no access control (trusted setup).
+#[command]
+pub fn set_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String, safe_address: String) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO squad_safe (squad_id, safe_address) VALUES (?1, ?2)",
+        rusqlite::params![parent_id, safe_address],
+    ).map_err(|e| format!("Failed to set parent Safe: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+/// If content is a squad_safe_updated (or safe_updated) announce-card JSON, update stored mapping. No-op otherwise.
+/// Wire format uses "squad_id" in payload for backward compat; it holds the parent id (squad or network).
+pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_safe_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let parent_id = match p.get("squad_id").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return,
+    };
+    let safe_address = match p.get("safe_address").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return,
+    };
+    let _ = set_safe(handle.clone(), parent_id.to_string(), safe_address.to_string());
+}
+
 #[command]
 pub async fn set_seed<R: Runtime>(handle: AppHandle<R>, seed: String) -> Result<(), String> {
     let encrypted_seed = internal_encrypt(seed, None).await;
