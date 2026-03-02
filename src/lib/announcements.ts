@@ -1,0 +1,133 @@
+/**
+ * Announcement message format for # announcements channel.
+ * Messages are JSON: { type: string, payload: object }.
+ * Backend and frontend parse by type and act accordingly.
+ * Applies to both squads and networks (parent = squad or network).
+ */
+
+/** Wire format: "squad_safe_updated". Payload.squad_id is the parent id (squad or network). */
+export const ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED = 'squad_safe_updated';
+/** Alias for parent-agnostic code. Same value as ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED. */
+export const ANNOUNCE_TYPE_SAFE_UPDATED = ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED;
+
+/** Wire format for new Safe proposal. Payload includes parent_id, to, amount, token, proposer_npub, id. */
+export const ANNOUNCE_TYPE_SAFE_PROPOSAL = 'safe_proposal';
+
+/** Payload for safe_updated announce. squad_id in JSON is the parent id (squad or network). */
+export interface SquadSafeUpdatedPayload {
+  squad_id: string;
+  safe_address: string;
+}
+/** Alias for parent-agnostic code. Same shape as SquadSafeUpdatedPayload. */
+export type SafeUpdatedPayload = SquadSafeUpdatedPayload;
+
+/**
+ * Proposal payload: single transfer (to, amount, token). Broadcast to # announcements so all members see it.
+ * parent_id = squad or network id (resolves Safe and channel). proposer_npub = creator's npub.
+ */
+export interface SafeProposalPayload {
+  id: string;
+  parent_id: string;
+  to: string;
+  amount: string;
+  /** "ETH" or token contract address */
+  token: string;
+  proposer_npub: string;
+  /** Optional: created_at ms for ordering */
+  created_at?: number;
+}
+
+export type AnnouncePayload = SquadSafeUpdatedPayload | SafeProposalPayload;
+
+/** Discriminated union of all announcement message types. */
+export type AnnounceMessage =
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED; payload: SquadSafeUpdatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
+
+function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
+  return (
+    p != null &&
+    typeof p === 'object' &&
+    typeof (p as SquadSafeUpdatedPayload).squad_id === 'string' &&
+    typeof (p as SquadSafeUpdatedPayload).safe_address === 'string'
+  );
+}
+
+function isSafeProposalPayload(p: unknown): p is SafeProposalPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  return (
+    typeof q.id === 'string' &&
+    typeof q.parent_id === 'string' &&
+    typeof q.to === 'string' &&
+    typeof q.amount === 'string' &&
+    typeof q.token === 'string' &&
+    typeof q.proposer_npub === 'string'
+  );
+}
+
+/**
+ * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
+ */
+export function parseAnnouncement(content: string): AnnounceMessage | null {
+  if (!content || typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || !('type' in parsed) || !('payload' in parsed)) return null;
+  const type = (parsed as { type: unknown }).type;
+  const payload = (parsed as { payload: unknown }).payload;
+  if (type === ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED && isSquadSafeUpdatedPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED, payload };
+  }
+  if (type === ANNOUNCE_TYPE_SAFE_PROPOSAL && isSafeProposalPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_SAFE_PROPOSAL, payload };
+  }
+  return null;
+}
+
+/**
+ * Build content string for posting an announcement (e.g. from Set Safe flow or Create proposal).
+ */
+export function buildAnnounceContent<T extends AnnounceMessage>(msg: T): string {
+  return JSON.stringify({ type: msg.type, payload: msg.payload });
+}
+
+/**
+ * Proposal with message metadata (id, at) for display and resolving by parent.
+ */
+export interface ProposalWithMeta {
+  id: string;
+  messageId: string;
+  at: number;
+  payload: SafeProposalPayload;
+}
+
+/**
+ * Extract all safe_proposal announcements from a list of channel messages.
+ * Use to resolve "pending proposals" for a parent's # announcements channel.
+ */
+export function getProposalsFromMessages(
+  messages: Array<{ id: string; content: string; at: number }>,
+  parentId?: string
+): ProposalWithMeta[] {
+  const out: ProposalWithMeta[] = [];
+  for (const msg of messages) {
+    const parsed = parseAnnouncement(msg.content);
+    if (parsed?.type !== ANNOUNCE_TYPE_SAFE_PROPOSAL) continue;
+    if (parentId != null && parsed.payload.parent_id !== parentId) continue;
+    out.push({
+      id: parsed.payload.id,
+      messageId: msg.id,
+      at: msg.at,
+      payload: parsed.payload,
+    });
+  }
+  out.sort((a, b) => a.at - b.at);
+  return out;
+}

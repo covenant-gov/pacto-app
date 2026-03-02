@@ -295,6 +295,21 @@ export async function listMlsGroups(): Promise<string[]> {
   return ids;
 }
 
+/**
+ * Get stored Safe address for a squad or network (by id). Backend: get_safe.
+ */
+export async function getSafe(parentId: string): Promise<string | null> {
+  const addr = (await invoke('get_safe', { parentId })) as string | null;
+  return addr ?? null;
+}
+
+/**
+ * Set Safe address for a squad or network (by id). Backend: set_safe. Caller should then post safe_updated announce-card to # announcements.
+ */
+export async function setSafe(parentId: string, safeAddress: string): Promise<void> {
+  await invoke('set_safe', { parentId, safeAddress });
+}
+
 /** MLS group metadata (from get_mls_group_metadata). */
 export interface MlsGroupMetadataItem {
   group_id: string;

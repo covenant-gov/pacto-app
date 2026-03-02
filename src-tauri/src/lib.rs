@@ -2387,6 +2387,7 @@ async fn notifs() -> Result<bool, String> {
                                 "message": record,
                                 "group_name": group_name
                             }));
+                            db::apply_parent_safe_announce(&handle, &record.content);
                         }
                     }
                 }
@@ -5991,6 +5992,8 @@ pub fn run() {
             db::set_evm_pkey,
             db::get_evm_address,
             db::set_evm_address,
+            db::get_safe,
+            db::set_safe,
             db::get_seed,
             db::set_seed,
             db::get_sql_setting,

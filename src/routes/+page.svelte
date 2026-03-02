@@ -12,7 +12,8 @@
   import MessengerChatView from '../components/MessengerChatView.svelte';
   import DmThread from '../components/DmThread.svelte';
   import Toast from '../components/Toast.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend } from '../lib/api/nostr';
+  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend, getSafe, setSafe } from '../lib/api/nostr';
+  import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
@@ -63,6 +64,7 @@
     bumpMembershipVersion,
     ANNOUNCEMENTS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
+    safeByParentId,
     type DmMessage,
     type DmTab,
     type Channel,
@@ -82,6 +84,16 @@
 
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
   let acceptedSquadInviteGroupIds = new Set<string>();
+
+  /** Hydrate Safe address from backend when dashboard is shown (once per squad/network). */
+  let safeHydratedIds = new Set<string>();
+  $: dashboardParentId = $activeChannelId === DASHBOARD_CHANNEL_ID ? ($activeTopNavTab === 'squads' ? $activeSquadId : $activeNetworkId) ?? null : null;
+  $: if (dashboardParentId && !safeHydratedIds.has(dashboardParentId)) {
+    safeHydratedIds.add(dashboardParentId);
+    getSafe(dashboardParentId).then((addr) => {
+      if (addr != null) safeByParentId.update((m) => ({ ...m, [dashboardParentId]: addr }));
+    });
+  }
 
   /** When user accepts a channel invite (squad or network) we store mapping so mls_welcome_accepted can add channel to the right parent. */
   let channelInvitePendingAccept = new Map<
@@ -722,6 +734,10 @@
             const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
             return { ...byGroup, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
           });
+          const announce = parseAnnouncement(m.content);
+          if (announce?.type === 'squad_safe_updated') {
+            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+          }
         }
       }
     );
@@ -792,6 +808,10 @@
         );
         return { ...byGroup, [group_id]: [...withoutOpt, m] };
       });
+      const announce = parseAnnouncement(m.content);
+      if (announce?.type === 'squad_safe_updated') {
+            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+          }
       if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
 
@@ -978,7 +998,14 @@
             <ParentDashboard
               parent={$activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!}
               parentType={$activeTopNavTab === 'networks' ? 'network' : 'squad'}
-              safeAddress={null}
+              safeAddress={$safeByParentId[($activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId) : $networks.find((n) => n.id === $activeNetworkId))?.id ?? ''] ?? null}
+              onConfirmSetSafe={async (safeAddress: string) => {
+                const p = $activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!;
+                await setSafe(p.id, safeAddress);
+                const announcementsGroupId = p.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ?? p.channels[0]?.groupId;
+                if (announcementsGroupId) await sendDmMessage(announcementsGroupId, buildAnnounceContent({ type: ANNOUNCE_TYPE_SAFE_UPDATED, payload: { squad_id: p.id, safe_address: safeAddress } }));
+                safeByParentId.update((m) => ({ ...m, [p.id]: safeAddress }));
+              }}
             />
           {:else}
             <ChatView />

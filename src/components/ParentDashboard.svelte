@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Squad, Network } from '../stores/app';
+  import { safeStateByParentId, refreshSafeStateForParent } from '../stores/safe';
 
   export let parent: Squad | Network;
   export let parentType: 'squad' | 'network' = 'squad';
@@ -7,9 +8,27 @@
   /** Safe address for this squad/network (from backend or state). Null = not linked yet. */
   export let safeAddress: string | null = null;
 
+  /** When user confirms Set Safe: backend + post announce-card + update store. Called with the new address. */
+  export let onConfirmSetSafe: ((safeAddress: string) => Promise<void>) | undefined = undefined;
+
   let showSetSafeModal = false;
   let setSafeInput = '';
   let setSafeError = '';
+  let setSafeSaving = false;
+
+  /** Cached Safe state entry for this parent id (kept across navigation). */
+  $: parentId = parent?.id;
+  $: safeEntry = parentId ? $safeStateByParentId[parentId] : undefined;
+
+  // Refresh in background when we have a Safe address. Cached state remains visible for smooth UX.
+  $: if (parentId && safeAddress && typeof safeAddress === 'string') {
+    refreshSafeStateForParent(parentId, safeAddress);
+  }
+
+  function shortAddress(addr: string): string {
+    if (!addr || addr.length < 12) return addr;
+    return addr.slice(0, 6) + '…' + addr.slice(-4);
+  }
 
   function openSetSafe() {
     showSetSafeModal = true;
@@ -23,7 +42,7 @@
     setSafeError = '';
   }
 
-  function confirmSetSafe() {
+  async function confirmSetSafe() {
     const addr = setSafeInput.trim();
     if (!addr) {
       setSafeError = 'Enter a Safe address';
@@ -33,8 +52,20 @@
       setSafeError = 'Invalid address (expected 0x + 40 hex chars)';
       return;
     }
-    // TODO (3.10): call backend set_squad_safe(parent.id, addr) and post announce-card to # announcements
-    closeSetSafeModal();
+    if (!onConfirmSetSafe) {
+      setSafeError = 'Set Safe is not available';
+      return;
+    }
+    setSafeSaving = true;
+    setSafeError = '';
+    try {
+      await onConfirmSetSafe(addr);
+      closeSetSafeModal();
+    } catch (e) {
+      setSafeError = (e as Error)?.message ?? 'Failed to set Safe address';
+    } finally {
+      setSafeSaving = false;
+    }
   }
 </script>
 
@@ -55,6 +86,33 @@
         <span class="safe-address-value">{safeAddress}</span>
         <button type="button" class="btn-secondary" on:click={openSetSafe}>Change</button>
       </div>
+      {#if safeEntry?.state}
+        <dl class="safe-state-dl">
+          <dt>Balance</dt>
+          <dd>{safeEntry.state.balanceFormatted} ETH</dd>
+          <dt>Signatures</dt>
+          <dd>{safeEntry.state.threshold} of {safeEntry.state.owners.length}</dd>
+          <dt>Nonce</dt>
+          <dd>{String(safeEntry.state.nonce)}</dd>
+          <dt>Owners</dt>
+          <dd>
+            <ul class="safe-owners-list">
+              {#each safeEntry.state.owners as owner}
+                <li><code class="safe-owner-address">{shortAddress(owner)}</code></li>
+              {/each}
+            </ul>
+          </dd>
+        </dl>
+        {#if safeEntry.loading}
+          <p class="safe-state-meta">Refreshing…</p>
+        {:else if safeEntry.error}
+          <p class="safe-state-error" role="alert">Last refresh failed: {safeEntry.error}</p>
+        {/if}
+      {:else if safeEntry?.loading}
+        <p class="safe-state-meta">Loading Safe state…</p>
+      {:else if safeEntry?.error}
+        <p class="safe-state-error" role="alert">{safeEntry.error}</p>
+      {/if}
     {:else}
       <p class="no-safe">No Safe linked</p>
       <button type="button" class="btn-primary" on:click={openSetSafe}>Set Safe address</button>
@@ -79,8 +137,8 @@
         <p id="set-safe-error" class="input-error" role="alert">{setSafeError}</p>
       {/if}
       <div class="modal-actions">
-        <button type="button" class="btn-secondary" on:click={closeSetSafeModal}>Cancel</button>
-        <button type="button" class="btn-primary" on:click={confirmSetSafe}>Save</button>
+        <button type="button" class="btn-secondary" on:click={closeSetSafeModal} disabled={setSafeSaving}>Cancel</button>
+        <button type="button" class="btn-primary" on:click={confirmSetSafe} disabled={setSafeSaving}>{setSafeSaving ? 'Saving…' : 'Save'}</button>
       </div>
     </div>
   </div>
@@ -132,6 +190,41 @@
     color: var(--text-muted);
     font-size: 0.875rem;
     margin: 0 0 12px 0;
+  }
+  .safe-state-meta {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin: 12px 0 0 0;
+  }
+  .safe-state-error {
+    font-size: 0.875rem;
+    color: var(--danger, #e53e3e);
+    margin: 12px 0 0 0;
+  }
+  .safe-state-dl {
+    margin: 12px 0 0 0;
+    font-size: 0.875rem;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 16px;
+    align-items: baseline;
+  }
+  .safe-state-dl dt {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .safe-state-dl dd {
+    margin: 0;
+    color: var(--text-primary);
+  }
+  .safe-owners-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    list-style: disc;
+  }
+  .safe-owner-address {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
   }
   .btn-primary,
   .btn-secondary {

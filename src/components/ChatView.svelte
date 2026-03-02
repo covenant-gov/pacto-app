@@ -1,8 +1,10 @@
 <script lang="ts">
   import { get } from 'svelte/store';
   import Message from './Message.svelte';
+  import AnnounceCard from './announcements/AnnounceCard.svelte';
   import MessageInput from './MessageInput.svelte';
   import Modal from './Modal.svelte';
+  import { parseAnnouncement } from '../lib/announcements';
   import {
     activeChannelId,
     squads,
@@ -453,7 +455,18 @@
             </div>
           {/if}
           {#each currentMessages as message (message.id)}
-            <Message {...toMessageProps(message)} />
+            {@const props = toMessageProps(message)}
+            {@const parsed = channelName === ANNOUNCEMENTS_CHANNEL_NAME ? parseAnnouncement(message.content) : null}
+            {#if parsed}
+              <AnnounceCard
+                id={message.id}
+                announce={parsed}
+                authorName={props.authorName}
+                timestamp={props.timestamp}
+              />
+            {:else}
+              <Message {...props} />
+            {/if}
           {/each}
         {/if}
       </div>

@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS mls_event_cursors (
     last_seen_at INTEGER NOT NULL
 );
 
+-- Squad/network id -> Safe address (for multisig). Updated via set_squad_safe and when receiving squad_safe_updated announce-cards.
+CREATE TABLE IF NOT EXISTS squad_safe (
+    squad_id TEXT PRIMARY KEY,
+    safe_address TEXT NOT NULL
+);
+
 -- Events table: flat, protocol-aligned storage for all Nostr events
 -- Every event (message, reaction, attachment, etc.) is a separate row
 -- This is the PRIMARY storage for all message data
@@ -651,6 +657,21 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         ).map_err(|e| format!("Failed to backfill event npubs: {}", e))?;
 
         println!("[Migration 6] Backfilled npub for {} events", updated);
+    }
+
+    // Migration: squad_safe table (squad/network id -> Safe address)
+    let has_squad_safe: bool = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_safe'",
+        [],
+        |row| row.get::<_, i32>(0)
+    ).map(|c| c > 0).unwrap_or(false);
+
+    if !has_squad_safe {
+        println!("[Migration] Creating squad_safe table...");
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS squad_safe (squad_id TEXT PRIMARY KEY, safe_address TEXT NOT NULL);"
+        ).map_err(|e| format!("Failed to create squad_safe table: {}", e))?;
+        println!("[Migration] squad_safe table created");
     }
 
     Ok(())

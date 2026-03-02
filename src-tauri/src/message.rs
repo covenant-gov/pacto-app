@@ -364,6 +364,7 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
                 "group_id": &receiver,
                 "message": &msg
             })).unwrap();
+            db::apply_parent_safe_announce(&handle, &msg.content);
         } else {
             handle.emit("message_new", serde_json::json!({
                 "message": &msg,

@@ -1239,6 +1239,7 @@ impl MlsService {
                                         })).unwrap_or_else(|e| {
                                             eprintln!("[MLS] Failed to emit mls_message_new event: {}", e);
                                         });
+                                        crate::db::apply_parent_safe_announce(handle, &msg.content);
                                     }
                                     
                                     // Save the new message to database immediately
