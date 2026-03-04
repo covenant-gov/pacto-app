@@ -4248,6 +4248,52 @@ async fn export_keys() -> Result<serde_json::Value, String> {
     Ok(response)
 }
 
+/// Sign a 32-byte Ethereum hash (hex string) with the stored EVM key.
+/// Returns a 65-byte signature as 0x-prefixed hex (r || s || v) where v is 27 or 28.
+#[tauri::command]
+async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Result<String, String> {
+    // Decode hash (32 bytes).
+    let trimmed = hash_hex.trim();
+    let s = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    if s.len() != 64 {
+        return Err("Hash must be 32 bytes (64 hex chars)".to_string());
+    }
+    let hash_bytes = hex::decode(s).map_err(|e| format!("Invalid hash hex: {}", e))?;
+    if hash_bytes.len() != 32 {
+        return Err("Hash must be exactly 32 bytes".to_string());
+    }
+
+    // Load and decrypt EVM private key.
+    let enc_evm = db::get_evm_pkey(handle.clone())?
+        .ok_or_else(|| "EVM key not set".to_string())?;
+    let evm_private_key = crypto::internal_decrypt(enc_evm, None)
+        .await
+        .map_err(|_| "Failed to decrypt EVM key".to_string())?;
+
+    let key_hex = evm_private_key.trim().strip_prefix("0x").unwrap_or(&evm_private_key);
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
+
+    use secp256k1::{ecdsa::RecoverableSignature, Message, Secp256k1, SecretKey};
+
+    let sk = SecretKey::from_slice(&key_bytes).map_err(|_| "Invalid EVM secret key".to_string())?;
+    let msg = Message::from_slice(&hash_bytes).map_err(|_| "Hash must be a 32-byte message".to_string())?;
+    let secp = Secp256k1::new();
+    let sig: RecoverableSignature = secp.sign_ecdsa_recoverable(&msg, &sk);
+
+    let (rec_id, compact) = sig.serialize_compact();
+    let rec: i32 = rec_id.to_i32();
+    if rec != 0 && rec != 1 {
+        return Err("Unexpected recovery id".to_string());
+    }
+    let v: u8 = 27 + (rec as u8); // 27 or 28
+
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&compact[..]);
+    out[64] = v;
+
+    Ok(format!("0x{}", hex::encode(out)))
+}
+
 /// Updates the OS taskbar badge with the count of unread messages
 /// Platform feature list structure
 #[derive(serde::Serialize, Clone)]
@@ -6084,6 +6130,7 @@ pub fn run() {
             load_mls_device_id,
             load_mls_keypackages,
             export_keys,
+            sign_evm_hash,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,
