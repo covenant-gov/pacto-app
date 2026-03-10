@@ -5096,7 +5096,8 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     - "Group name must not be empty": validation error. Frontend disables Create until non-empty; if surfaced, show inline status.
     - "Select at least one member to create a group": validation error. Frontend disables Create until at least one contact is selected; if surfaced, show inline status.
     - "Failed to refresh device keypackage for {npub}: {error}": hard failure for a specific member during preflight refresh. Abort creation and show this exact string in popup/toast and inline status.
-    - "No device keypackages found for {npub}": hard failure when contact has zero devices/keypackages after refresh. Abort creation and show verbatim.
+    - Members with zero device keypackages after refresh are skipped (they are not added to the group). If *all* selected members are missing keypackages, creation aborts with:
+      "No device keypackages found for any selected member: [npub1..., npub1...]".
     - Any error bubbled from create_mls_group(...): engine/storage/network issues are propagated as user-facing strings. Surface them verbatim in the UI.
 
     Success path
@@ -5113,6 +5114,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
+    let mut skipped_missing_keypackages: Vec<String> = Vec::new();
 
     for npub in member_ids {
         // Attempt to refresh and fetch device keypackages for this contact
@@ -5122,13 +5124,39 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
         })?;
 
         // Choose a device. Currently: first entry. Future: prefer newest by fetched_at if available.
-        let (device_id, _kp_ref) = devices
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("No device keypackages found for {}", npub))?;
+        let maybe_first = devices.into_iter().next();
+        if let Some((device_id, _kp_ref)) = maybe_first {
+            // Shape required by create_mls_group: (member_npub, device_id)
+            initial_member_devices.push((npub, device_id));
+        } else {
+            // No keypackages for this member → skip them but keep going
+            eprintln!(
+                "[MLS][create_group_chat] Skipping member with no device keypackages: {}",
+                npub
+            );
+            skipped_missing_keypackages.push(npub);
+        }
+    }
 
-        // Shape required by create_mls_group: (member_npub, device_id)
-        initial_member_devices.push((npub, device_id));
+    // If everyone was skipped, abort with a clear error
+    if initial_member_devices.is_empty() {
+        let list = if skipped_missing_keypackages.is_empty() {
+            "none".to_string()
+        } else {
+            format!("[{}]", skipped_missing_keypackages.join(", "))
+        };
+        return Err(format!(
+            "No device keypackages found for any selected member: {}",
+            list
+        ));
+    }
+
+    // Log any partially skipped members for troubleshooting
+    if !skipped_missing_keypackages.is_empty() {
+        eprintln!(
+            "[MLS][create_group_chat] Proceeding without members missing keypackages: [{}]",
+            skipped_missing_keypackages.join(", ")
+        );
     }
 
     // Delegate to existing helper that persists metadata, publishes welcomes and emits UI events

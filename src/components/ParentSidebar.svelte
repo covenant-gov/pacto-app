@@ -35,6 +35,10 @@
   export let onCreateChannel: () => void = () => {};
   export let onRetryCreate: () => void = () => {};
   export let onInvite: () => void = () => {};
+  /** Open the "Add Juice" WIP modal for this parent (optional). */
+  export let onAddJuice: (() => void) | undefined = undefined;
+  /** Open the "Initialize Governance" WIP modal for this parent (optional). */
+  export let onInitGovernance: (() => void) | undefined = undefined;
   /** Only used when type === 'squad'. */
   export let onExitSquad: (() => void) | undefined = undefined;
   /** Only used when type === 'network'. */
@@ -44,6 +48,10 @@
   const createErrorId = 'parent-create-error';
 
   $: inviteLabel = type === 'squad' ? 'Invite to Squad' : 'Invite to Network';
+  $: addJuiceLabel = 'Add Juice';
+  $: initGovLabel = 'Initialize Governance';
+  $: showAddJuice = typeof onAddJuice === 'function';
+  $: showInitGovernance = typeof onInitGovernance === 'function';
   $: showExitSquad = type === 'squad' && typeof onExitSquad === 'function';
   $: showExitNetwork = type === 'network' && typeof onExitNetwork === 'function';
   $: showExit = showExitSquad || showExitNetwork;
@@ -88,6 +96,32 @@
               >
                 {inviteLabel}
               </button>
+              {#if showAddJuice && onAddJuice}
+                <button
+                  type="button"
+                  class="parent-menu-item"
+                  role="menuitem"
+                  on:click={() => {
+                    menuOpen = false;
+                    onAddJuice();
+                  }}
+                >
+                  {addJuiceLabel}
+                </button>
+              {/if}
+              {#if showInitGovernance && onInitGovernance}
+                <button
+                  type="button"
+                  class="parent-menu-item"
+                  role="menuitem"
+                  on:click={() => {
+                    menuOpen = false;
+                    onInitGovernance();
+                  }}
+                >
+                  {initGovLabel}
+                </button>
+              {/if}
               {#if showExit && onExit}
                 <button
                   type="button"

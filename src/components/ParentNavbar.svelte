@@ -4,6 +4,7 @@
   import CreateChannelModal from './CreateChannelModal.svelte';
   import InviteToParentModal from './InviteToParentModal.svelte';
   import ExitParentModal from './ExitParentModal.svelte';
+  import Modal from './Modal.svelte';
   import {
     squads,
     networks,
@@ -571,6 +572,22 @@
   let showExitModal = false;
   let exitError = '';
 
+  // --- WIP: Juice funding & governance modals ---
+  let showAddJuiceModal = false;
+  let showInitGovernanceModal = false;
+
+  function openAddJuiceModal() {
+    if (!activeParent) return;
+    showAddJuiceModal = true;
+  }
+
+  function openInitGovernanceModal() {
+    if (!activeParent) return;
+    showInitGovernanceModal = true;
+  }
+
+  const MOCK_MULTISIG_ADDRESS = '0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF';
+
   function openExitModal() {
     showExitModal = true;
     exitError = '';
@@ -678,6 +695,8 @@
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
   onInvite={openInviteModal}
+  onAddJuice={openAddJuiceModal}
+  onInitGovernance={openInitGovernanceModal}
   onExitSquad={type === 'squad' ? openExitModal : undefined}
   onExitNetwork={type === 'network' ? openExitModal : undefined}
 />
@@ -732,3 +751,184 @@
   onClose={closeExitModal}
   onConfirm={handleExitParent}
 />
+
+{#if showAddJuiceModal}
+  <Modal titleId="add-juice-title" descriptionId="add-juice-desc" onClose={() => (showAddJuiceModal = false)}>
+    <h2 id="add-juice-title">Add Juice</h2>
+    <p id="add-juice-desc" class="juice-subtitle">
+      Scan or copy the funding address below. Any funds sent here will cover gas fees for all members of this
+      {type === 'squad' ? ' squad' : ' network'}.
+    </p>
+    <div class="juice-card">
+      <div class="juice-qr-mock" aria-hidden="true"></div>
+      <div class="juice-address-block">
+        <p class="juice-address-label">Multisig funding address</p>
+        <code class="juice-address-value">{MOCK_MULTISIG_ADDRESS}</code>
+        <p class="juice-address-note">
+          This is a mock address for design and integration only. Do not send real funds on mainnet.
+        </p>
+      </div>
+    </div>
+    <div class="juice-actions">
+      <button type="button" class="juice-close-btn" on:click={() => (showAddJuiceModal = false)}>
+        Close
+      </button>
+    </div>
+  </Modal>
+{/if}
+
+{#if showInitGovernanceModal}
+  <Modal
+    titleId="init-governance-title"
+    descriptionId="init-governance-desc"
+    onClose={() => (showInitGovernanceModal = false)}
+  >
+    <h2 id="init-governance-title">Initialize Governance</h2>
+    <p id="init-governance-desc" class="gov-subtitle">
+      Initialize the Nave Pirata Hats Protocol tree for this {type === 'squad' ? 'squad' : 'network'}. You (the
+      initializer) will receive the <strong>Captain</strong> hat and all other members will receive
+      <strong> Crew</strong> hats. The Captain can be mutinied by the Crew to upgrade governance using contracts from
+      the Governance Library.
+    </p>
+    <div class="gov-lib-card">
+      <p class="gov-lib-title">Governance Library</p>
+      <p class="gov-lib-body">
+        This is a work-in-progress mock flow. The Governance Library will list contract templates you can use to evolve
+        your squad&apos;s decision-making over time.
+      </p>
+      <button type="button" class="gov-lib-btn" disabled>
+        View Gov Lib (WIP)
+      </button>
+    </div>
+    <div class="gov-actions">
+      <button type="button" class="gov-close-btn" on:click={() => (showInitGovernanceModal = false)}>
+        Close
+      </button>
+    </div>
+  </Modal>
+{/if}
+
+<style>
+  .juice-subtitle,
+  .gov-subtitle {
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    margin: 0 0 16px 0;
+  }
+
+  .juice-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    border-radius: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .juice-qr-mock {
+    width: 160px;
+    height: 160px;
+    border-radius: 12px;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
+      linear-gradient(225deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
+      linear-gradient(45deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
+      linear-gradient(315deg, rgba(255, 255, 255, 0.07) 25%, rgba(0, 0, 0, 0.02) 25%);
+    background-position:
+      8px 0,
+      8px 0,
+      0 0,
+      0 0;
+    background-size: 8px 8px;
+    background-repeat: repeat;
+    border: 1px dashed var(--border-subtle);
+  }
+
+  .juice-address-block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .juice-address-label {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .juice-address-value {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+        monospace);
+    font-size: 0.875rem;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    word-break: break-all;
+  }
+
+  .juice-address-note {
+    margin: 4px 0 0 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .juice-actions,
+  .gov-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+  }
+
+  .juice-close-btn,
+  .gov-close-btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .juice-close-btn:hover,
+  .gov-close-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .gov-lib-card {
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    margin-bottom: 16px;
+  }
+
+  .gov-lib-title {
+    margin: 0 0 8px 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .gov-lib-body {
+    margin: 0 0 12px 0;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .gov-lib-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.875rem;
+    background: var(--border);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+</style>
