@@ -4248,6 +4248,52 @@ async fn export_keys() -> Result<serde_json::Value, String> {
     Ok(response)
 }
 
+/// Sign a 32-byte Ethereum hash (hex string) with the stored EVM key.
+/// Returns a 65-byte signature as 0x-prefixed hex (r || s || v) where v is 27 or 28.
+#[tauri::command]
+async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Result<String, String> {
+    // Decode hash (32 bytes).
+    let trimmed = hash_hex.trim();
+    let s = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    if s.len() != 64 {
+        return Err("Hash must be 32 bytes (64 hex chars)".to_string());
+    }
+    let hash_bytes = hex::decode(s).map_err(|e| format!("Invalid hash hex: {}", e))?;
+    if hash_bytes.len() != 32 {
+        return Err("Hash must be exactly 32 bytes".to_string());
+    }
+
+    // Load and decrypt EVM private key.
+    let enc_evm = db::get_evm_pkey(handle.clone())?
+        .ok_or_else(|| "EVM key not set".to_string())?;
+    let evm_private_key = crypto::internal_decrypt(enc_evm, None)
+        .await
+        .map_err(|_| "Failed to decrypt EVM key".to_string())?;
+
+    let key_hex = evm_private_key.trim().strip_prefix("0x").unwrap_or(&evm_private_key);
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
+
+    use secp256k1::{ecdsa::RecoverableSignature, Message, Secp256k1, SecretKey};
+
+    let sk = SecretKey::from_slice(&key_bytes).map_err(|_| "Invalid EVM secret key".to_string())?;
+    let msg = Message::from_slice(&hash_bytes).map_err(|_| "Hash must be a 32-byte message".to_string())?;
+    let secp = Secp256k1::new();
+    let sig: RecoverableSignature = secp.sign_ecdsa_recoverable(&msg, &sk);
+
+    let (rec_id, compact) = sig.serialize_compact();
+    let rec: i32 = rec_id.to_i32();
+    if rec != 0 && rec != 1 {
+        return Err("Unexpected recovery id".to_string());
+    }
+    let v: u8 = 27 + (rec as u8); // 27 or 28
+
+    let mut out = [0u8; 65];
+    out[..64].copy_from_slice(&compact[..]);
+    out[64] = v;
+
+    Ok(format!("0x{}", hex::encode(out)))
+}
+
 /// Updates the OS taskbar badge with the count of unread messages
 /// Platform feature list structure
 #[derive(serde::Serialize, Clone)]
@@ -5050,7 +5096,8 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     - "Group name must not be empty": validation error. Frontend disables Create until non-empty; if surfaced, show inline status.
     - "Select at least one member to create a group": validation error. Frontend disables Create until at least one contact is selected; if surfaced, show inline status.
     - "Failed to refresh device keypackage for {npub}: {error}": hard failure for a specific member during preflight refresh. Abort creation and show this exact string in popup/toast and inline status.
-    - "No device keypackages found for {npub}": hard failure when contact has zero devices/keypackages after refresh. Abort creation and show verbatim.
+    - Members with zero device keypackages after refresh are skipped (they are not added to the group). If *all* selected members are missing keypackages, creation aborts with:
+      "No device keypackages found for any selected member: [npub1..., npub1...]".
     - Any error bubbled from create_mls_group(...): engine/storage/network issues are propagated as user-facing strings. Surface them verbatim in the UI.
 
     Success path
@@ -5067,6 +5114,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
+    let mut skipped_missing_keypackages: Vec<String> = Vec::new();
 
     for npub in member_ids {
         // Attempt to refresh and fetch device keypackages for this contact
@@ -5076,13 +5124,39 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
         })?;
 
         // Choose a device. Currently: first entry. Future: prefer newest by fetched_at if available.
-        let (device_id, _kp_ref) = devices
-            .into_iter()
-            .next()
-            .ok_or_else(|| format!("No device keypackages found for {}", npub))?;
+        let maybe_first = devices.into_iter().next();
+        if let Some((device_id, _kp_ref)) = maybe_first {
+            // Shape required by create_mls_group: (member_npub, device_id)
+            initial_member_devices.push((npub, device_id));
+        } else {
+            // No keypackages for this member → skip them but keep going
+            eprintln!(
+                "[MLS][create_group_chat] Skipping member with no device keypackages: {}",
+                npub
+            );
+            skipped_missing_keypackages.push(npub);
+        }
+    }
 
-        // Shape required by create_mls_group: (member_npub, device_id)
-        initial_member_devices.push((npub, device_id));
+    // If everyone was skipped, abort with a clear error
+    if initial_member_devices.is_empty() {
+        let list = if skipped_missing_keypackages.is_empty() {
+            "none".to_string()
+        } else {
+            format!("[{}]", skipped_missing_keypackages.join(", "))
+        };
+        return Err(format!(
+            "No device keypackages found for any selected member: {}",
+            list
+        ));
+    }
+
+    // Log any partially skipped members for troubleshooting
+    if !skipped_missing_keypackages.is_empty() {
+        eprintln!(
+            "[MLS][create_group_chat] Proceeding without members missing keypackages: [{}]",
+            skipped_missing_keypackages.join(", ")
+        );
     }
 
     // Delegate to existing helper that persists metadata, publishes welcomes and emits UI events
@@ -6084,6 +6158,7 @@ pub fn run() {
             load_mls_device_id,
             load_mls_keypackages,
             export_keys,
+            sign_evm_hash,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

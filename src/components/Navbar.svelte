@@ -282,8 +282,27 @@
             }
           }
         } catch (e) {
-          removeParentCreatingAnnouncements(squad.id);
-          parentCreateErrorById.update((m) => ({ ...m, [squad.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
+          console.error(
+            '[Navbar] createParentWithAnnouncements(squad): createGroupChat failed',
+            {
+              tempId,
+              name,
+              memberCount: memberNpubs.length,
+            },
+            e
+          );
+          // Clear "creating" state and record a friendly error for troubleshooting
+          removeParentCreatingAnnouncements(tempId);
+          parentCreateErrorById.update((m) => ({
+            ...m,
+            [tempId]: friendlyMessage(getInvokeErrorMessage(e, 'Failed to create squad announcements channel')),
+          }));
+          // Remove the temporary squad so we do not leave a zombie parent with no channels
+          squads.update((list) => list.filter((s) => s.id !== tempId));
+          if (get(activeSquadId) === tempId) {
+            activeSquadId.set(null);
+            activeChannelId.set(null);
+          }
         }
       })();
     } else {
@@ -347,8 +366,28 @@
             }
           }
         } catch (e) {
-          removeParentCreatingAnnouncements(network.id);
-          parentCreateErrorById.update((m) => ({ ...m, [network.id]: friendlyMessage(getInvokeErrorMessage(e)) }));
+          console.error(
+            '[Navbar] createParentWithAnnouncements(network): createGroupChat failed',
+            {
+              tempId,
+              name,
+              memberCount: memberNpubs.length,
+              memberSquads: memberSquads.map((s) => s.id),
+            },
+            e
+          );
+          // Clear "creating" state and record a friendly error for troubleshooting
+          removeParentCreatingAnnouncements(tempId);
+          parentCreateErrorById.update((m) => ({
+            ...m,
+            [tempId]: friendlyMessage(getInvokeErrorMessage(e, 'Failed to create network announcements channel')),
+          }));
+          // Remove the temporary network so we do not leave a zombie parent with no channels
+          networks.update((list) => list.filter((n) => n.id !== tempId));
+          if (get(activeNetworkId) === tempId) {
+            activeNetworkId.set(null);
+            activeChannelId.set(null);
+          }
         }
       })();
     }

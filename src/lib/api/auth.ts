@@ -64,6 +64,14 @@ export async function setEvmAddress(address: string): Promise<void> {
 }
 
 /**
+ * Sign a 32-byte Ethereum hash (hex string) with the stored EVM key.
+ * Returns a 65-byte signature as 0x-prefixed hex (r || s || v).
+ */
+export async function signEvmHash(hashHex: string): Promise<string> {
+  return await invoke<string>('sign_evm_hash', { hashHex });
+}
+
+/**
  * List all accounts on this device
  * @returns Array of account npubs
  */
