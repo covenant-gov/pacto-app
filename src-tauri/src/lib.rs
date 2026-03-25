@@ -403,7 +403,7 @@ impl ChatState {
 }
 
 lazy_static! {
-    static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
+    pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
 }
 
 #[tauri::command]

@@ -562,6 +562,12 @@ pub async fn update_profile(name: String, avatar: String, banner: String, about:
         meta = meta.lud16(&profile.lud16);
     }
 
+    // Pacto wallet: peers read `evm_address` from kind 0 `content` JSON (NIP-01 custom map).
+    // Without this, `set_evm_address` only updates the local row — senders never see the payout address.
+    if let Some(addr) = crate::evm::normalize_hex_address(profile.evm_address.trim()) {
+        meta = meta.custom_field("evm_address", addr);
+    }
+
     // Serialize the metadata to JSON for the event content
     let metadata_json = serde_json::to_string(&meta).unwrap();
 

@@ -8,6 +8,7 @@
   import requestsIcon from '../../icons/requests.svg';
   import pendingIcon from '../../icons/pending.svg';
   import pinIcon from '../../icons/pin.svg';
+  import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
   import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
@@ -512,6 +513,14 @@
         tabindex="0"
       >
         <Tab label="Pending" icon={pendingIcon} active={$activeView === 'hub' && $activeDmTab === 'pending'} />
+      </div>
+      <div
+        on:click={() => selectDmTab('search')}
+        on:keydown={(e) => e.key === 'Enter' && selectDmTab('search')}
+        role="button"
+        tabindex="0"
+      >
+        <Tab label="Search" icon={searchIcon} active={$activeView === 'hub' && $activeDmTab === 'search'} />
       </div>
     {:else if $activeTopNavTab === 'squads'}
       {#each $squads as squad}

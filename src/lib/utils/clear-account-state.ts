@@ -127,6 +127,7 @@ export function clearAccountState(npub?: string): void {
     friends: null,
     requests: null,
     pending: null,
+    search: null,
     pinned: null,
   });
   lastOpenedSquadId.set(null);

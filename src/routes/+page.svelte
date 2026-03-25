@@ -64,6 +64,8 @@
     requestsList,
     pendingList,
     pinnedList,
+    allDmEntriesUnified,
+    dmSidebarCategoryForNpub,
     lastOpenedDmByTab,
     lastOpenedSquadId,
     lastOpenedChannelId,
@@ -120,6 +122,19 @@
   $: if (walletSidebarInvalidContext && $walletSidebarOpen) {
     closeWalletSidebar();
   }
+
+  /** Pin control: hidden on Requests/Pending tabs; on Search tab only for Friends/Pinned conversations. */
+  $: showDmPinOption = (() => {
+    const tab = $activeDmTab;
+    if (tab === 'requests' || tab === 'pending') return false;
+    if (tab === 'search') {
+      const id = $activeDmId;
+      if (!id) return false;
+      const cat = dmSidebarCategoryForNpub(id, $dmChatsByNpub, $pinnedDmNpubs);
+      return cat === 'friends' || cat === 'pinned';
+    }
+    return true;
+  })();
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
@@ -225,7 +240,9 @@
             ? $requestsList
             : tab === 'pending'
               ? $pendingList
-              : $pinnedList;
+              : tab === 'search'
+                ? $allDmEntriesUnified
+                : $pinnedList;
       const lastOpened = $lastOpenedDmByTab[tab];
       const stillInList = lastOpened && list.some((e: DmEntry) => e.npub === lastOpened);
       const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
@@ -1095,7 +1112,7 @@
                 acceptingChannelInNetworkId={acceptingChannelInNetworkId}
                 acceptingNetworkInviteId={acceptingNetworkInviteId}
                 showOptionsMenu={true}
-                showPinOption={$activeDmTab !== 'requests' && $activeDmTab !== 'pending'}
+                showPinOption={showDmPinOption}
                 onSaveNickname={async (value: string) => {
                   const id = $activeDmId;
                   if (!id) return;

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { setEvmAddress } from "./auth";
 
 /**
  * Check if an encrypted private key is stored locally
@@ -43,7 +44,7 @@ export async function encryptAndSaveEvmKey(
     password: pin
   });
   await invoke('set_evm_pkey', { evmPkey: encryptedEvm });
-  await invoke('set_evm_address', { address: evmAddress });
+  await setEvmAddress(evmAddress);
 }
 
 /**

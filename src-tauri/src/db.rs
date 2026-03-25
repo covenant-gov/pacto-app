@@ -325,17 +325,23 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
 }
 
 #[command]
-pub fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+    let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        rusqlite::params!["evm_address", &address],
-    ).map_err(|e| format!("Failed to insert evm_address: {}", e))?;
+        rusqlite::params!["evm_address", &trimmed],
+    )
+    .map_err(|e| format!("Failed to insert evm_address: {}", e))?;
     if let Ok(npub) = crate::account_manager::get_current_account() {
         let _ = conn.execute(
             "UPDATE profiles SET evm_address = ?1 WHERE npub = ?2",
-            rusqlite::params![&address, npub],
+            rusqlite::params![&trimmed, npub],
         );
+        let mut state = crate::STATE.lock().await;
+        if let Some(p) = state.get_profile_mut(&npub) {
+            p.evm_address = crate::evm::normalize_hex_address(&trimmed).unwrap_or(trimmed);
+        }
     }
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -401,7 +407,7 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
     if matches {
         return Ok(());
     }
-    set_evm_address(handle.clone(), correct)?;
+    set_evm_address(handle.clone(), correct).await?;
     Ok(())
 }
 
