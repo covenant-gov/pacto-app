@@ -35,7 +35,14 @@
     type PendingMlsWelcome,
   } from '../lib/api/nostr';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
-  import { formatWalletTxAnnouncement } from '../lib/wallet/dm-messages';
+  import {
+    formatWalletTxAnnouncement,
+    formatWalletPeerInfoGrant,
+    formatWalletPeerInfoDecline,
+    type WalletPeerInfoRequestPayload,
+  } from '../lib/wallet/dm-messages';
+  import { getEvmAddress } from '../lib/api/auth';
+  import { setDmPeerEvmAddress } from '../lib/api/wallet-peers';
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
@@ -100,6 +107,9 @@
     type Channel,
     type Network,
     type Squad,
+    acceptedWalletPeerInfoRequestMessageIds,
+    declinedWalletPeerInfoRequestMessageIds,
+    dmWalletPeerExchangeTick,
   } from '../stores/app';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import { portal } from '../lib/utils/portal';
@@ -460,6 +470,71 @@
   let acceptingChannelInSquadId: string | null = null;
   let acceptingChannelInNetworkId: string | null = null;
   let acceptingNetworkInviteId: string | null = null;
+  let acceptingWalletPeerInfoRequestId: string | null = null;
+
+  async function handleAcceptWalletPeerInfoRequest(
+    msg: DmMessage,
+    payload: WalletPeerInfoRequestPayload
+  ) {
+    const peerNpub = $activeDmId;
+    if (!peerNpub) return;
+    if (payload.requester_npub !== peerNpub) {
+      showToast('This request does not match this conversation.');
+      return;
+    }
+    if (acceptingWalletPeerInfoRequestId) return;
+    acceptingWalletPeerInfoRequestId = msg.id;
+    try {
+      const myAddr = await getEvmAddress();
+      if (!myAddr?.trim()) {
+        showToast('Your wallet address is not ready. Try again in a moment.');
+        return;
+      }
+      await setDmPeerEvmAddress(peerNpub, payload.requester_evm_address);
+      const me = get(currentUser)?.npub;
+      if (!me) return;
+      const grantJson = formatWalletPeerInfoGrant({
+        request_id: payload.request_id,
+        grantor_npub: me,
+        evm_address: myAddr.trim(),
+      });
+      const ok = await handleDmSend(grantJson);
+      if (!ok) {
+        showToast(
+          'Could not send confirmation. Your device saved their address; try sending the confirmation again from chat.'
+        );
+        return;
+      }
+      acceptedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
+        ids.includes(msg.id) ? ids : [...ids, msg.id]
+      );
+      declinedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
+        ids.filter((id) => id !== msg.id)
+      );
+      dmWalletPeerExchangeTick.update((t: number) => t + 1);
+      showToast('You shared your wallet address.');
+    } catch (e: unknown) {
+      dmError('Accept wallet peer info failed', e);
+      showToast('Could not complete wallet exchange.');
+    } finally {
+      acceptingWalletPeerInfoRequestId = null;
+    }
+  }
+
+  async function handleDeclineWalletPeerInfoRequest(
+    msg: DmMessage,
+    payload: WalletPeerInfoRequestPayload
+  ) {
+    declinedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
+      ids.includes(msg.id) ? ids : [...ids, msg.id]
+    );
+    acceptedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
+      ids.filter((id) => id !== msg.id)
+    );
+    const declineJson = formatWalletPeerInfoDecline({ request_id: payload.request_id });
+    const ok = await handleDmSend(declineJson);
+    if (!ok) showToast('Could not send decline.');
+  }
 
   async function acceptAnnouncementsInvite(
     type: 'squad' | 'network',
@@ -1111,6 +1186,9 @@
                 acceptingChannelInSquadId={acceptingChannelInSquadId}
                 acceptingChannelInNetworkId={acceptingChannelInNetworkId}
                 acceptingNetworkInviteId={acceptingNetworkInviteId}
+                onAcceptWalletPeerInfoRequest={handleAcceptWalletPeerInfoRequest}
+                onDeclineWalletPeerInfoRequest={handleDeclineWalletPeerInfoRequest}
+                acceptingWalletPeerInfoRequestId={acceptingWalletPeerInfoRequestId}
                 showOptionsMenu={true}
                 showPinOption={showDmPinOption}
                 onSaveNickname={async (value: string) => {

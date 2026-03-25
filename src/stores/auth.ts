@@ -77,7 +77,7 @@ export async function createAccount(pin: string): Promise<void> {
     
     // Encrypt and save private key + mnemonic
     await encryptAndSaveKey(keys.private, pin);
-    // Connect first so kind 0 (with `evm_address`) can reach relays after PIN setup.
+    // Connect first so optional Kind 0 profile refresh can reach relays after PIN setup.
     dmLog('createAccount: connect()');
     await apiConnect();
     dmLog('createAccount: connect() done');

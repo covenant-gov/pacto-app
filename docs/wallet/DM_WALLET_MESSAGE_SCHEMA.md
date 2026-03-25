@@ -47,7 +47,7 @@ Must match **`WalletAssetCode`** in `src/lib/wallet/assets.ts`:
 - Rationale: avoids floating-point drift; matches backend “decimal string” input described alongside the WalletBar product spec.
 - Restrictions for v1:
   - Non-empty after trim.
-  - Match `^[0-9]+(\.[0-9]+)?$` (no sign, no scientific notation).
+  - Match `^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$` (no sign, no scientific notation); allows a leading-dot fraction (e.g. `".00001"`).
   - Reasonable length cap (e.g. ≤ 32 characters) to bound message size.
 
 ### Identifiers

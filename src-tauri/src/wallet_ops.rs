@@ -365,8 +365,11 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
         ));
     }
 
-    let peer_addr_opt = db::get_profile_evm_address(&app, &to_npub)
+    let dm_peer = db::get_dm_peer_evm_stored(&app, &to_npub)
         .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.clone())))?;
+    let profile_peer = db::get_profile_evm_address(&app, &to_npub)
+        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.clone())))?;
+    let peer_addr_opt = dm_peer.or(profile_peer);
 
     let Some(peer_raw) = peer_addr_opt else {
         log::warn!(
@@ -376,7 +379,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
         );
         return Err(wallet_err_json(
             "MISSING_PEER_EVM_ADDRESS",
-            "This contact has no EVM payout address on file. They must use Pacto with a published profile address or you need a synced profile that includes evm_address.",
+            "This contact has no EVM payout address saved for this DM. Use Request wallet information in the wallet sidebar so they can share their address privately.",
             Some(to_npub.clone()),
         ));
     };

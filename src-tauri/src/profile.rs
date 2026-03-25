@@ -33,7 +33,7 @@ pub struct Profile {
     pub avatar_cached: String,
     /// Local cached path for banner image (for offline support)
     pub banner_cached: String,
-    /// Ethereum payout address (0x…) from Nostr metadata custom `evm_address` and/or local account sync.
+    /// Ethereum payout address (0x…) for this profile row: local account or legacy sync only; not from Kind 0.
     #[serde(default)]
     pub evm_address: String,
 }
@@ -145,19 +145,6 @@ impl Profile {
         if let Some(nip05) = meta.nip05 {
             if self.nip05 != nip05 {
                 self.nip05 = nip05;
-                changed = true;
-            }
-        }
-
-        // Pacto wallet: optional `evm_address` in Nostr metadata JSON (custom map).
-        if let Some(norm) = meta
-            .custom
-            .get("evm_address")
-            .and_then(|j| j.as_str())
-            .and_then(|s| crate::evm::normalize_hex_address(s))
-        {
-            if norm != self.evm_address {
-                self.evm_address = norm;
                 changed = true;
             }
         }
@@ -562,11 +549,7 @@ pub async fn update_profile(name: String, avatar: String, banner: String, about:
         meta = meta.lud16(&profile.lud16);
     }
 
-    // Pacto wallet: peers read `evm_address` from kind 0 `content` JSON (NIP-01 custom map).
-    // Without this, `set_evm_address` only updates the local row — senders never see the payout address.
-    if let Some(addr) = crate::evm::normalize_hex_address(profile.evm_address.trim()) {
-        meta = meta.custom_field("evm_address", addr);
-    }
+    // EVM payout addresses are not published on Kind 0 (pairwise DM exchange only).
 
     // Serialize the metadata to JSON for the event content
     let metadata_json = serde_json::to_string(&meta).unwrap();

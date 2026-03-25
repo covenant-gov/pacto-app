@@ -394,7 +394,7 @@
         <!-- Profile Info or Edit Form -->
         <div class="info-section">
           {#if isEditing}
-            <h2>Edit profile</h2>
+            <h2>Edit Profile</h2>
             {#if saveError}
               <p class="edit-error" role="alert">{saveError}</p>
             {/if}

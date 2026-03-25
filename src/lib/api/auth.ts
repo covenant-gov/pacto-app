@@ -65,7 +65,7 @@ export async function setEvmAddress(address: string): Promise<void> {
   try {
     await updateProfile({ name: '', avatar: '', banner: '', about: '' });
   } catch {
-    // Relays offline or client not ready; DB and in-memory profile still hold the address.
+    // Relays offline or client not ready; local profile still holds the address. Kind 0 no longer includes `evm_address`.
   }
 }
 

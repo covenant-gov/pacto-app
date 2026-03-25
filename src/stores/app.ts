@@ -13,6 +13,8 @@ import {
   declinedChannelInviteMessageIds,
   acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
 } from './invite-decisions';
 
 // Re-export invite decision stores for consumers (e.g. +page, clear-account-state)
@@ -25,6 +27,8 @@ export {
   declinedChannelInviteMessageIds,
   acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
 };
 
 /** Current npub for persistence: scoped localStorage keys use this. Set on login, cleared on logout. */
@@ -91,6 +95,9 @@ export type WalletSendPrefillPayload = {
 };
 
 export const walletSendPrefillFromRequest = writable<WalletSendPrefillPayload | null>(null);
+
+/** Increment after a DM peer wallet exchange is persisted so WalletBar re-checks `get_dm_peer_evm_address`. */
+export const dmWalletPeerExchangeTick = writable(0);
 
 export function toggleWalletSidebar(): void {
   walletSidebarOpen.update((open) => !open);
