@@ -4,29 +4,71 @@
  */
 
 import { createPublicClient, type Chain, type PublicClient, fallback, http } from 'viem';
-import { sepolia } from 'viem/chains';
+import { mainnet, optimism, sepolia } from 'viem/chains';
 
-/** Supported chains (PoC: Sepolia first; extend for mainnet/L2s later). */
+/**
+ * Supported chains for the embedded wallet (DM WalletBar + Squad Safe).
+ * Token addresses per chain: `wallet-assets.json` and `assets.ts`.
+ */
 export const SUPPORTED_CHAINS = {
+  mainnet,
+  optimism,
   sepolia,
 } as const;
 
 export type SupportedChainId = keyof typeof SUPPORTED_CHAINS;
 
-/** Default chain for the PoC (Squad Safe on Sepolia). */
+/** Default chain */
 export const DEFAULT_CHAIN_ID: SupportedChainId = 'sepolia';
 
 /** Request timeout for RPC calls (public RPCs can be slow). */
 const RPC_TIMEOUT_MS = 20_000;
 
-/** Default RPC URL(s) per chain. First is primary; others used as fallback. */
+/**
+ * Default RPC URL(s) per chain. First is primary; others used as fallback.
+ * Superseded when `VITE_WALLET_RPC_*` is set (see `getEffectiveRpcUrlsForChain`).
+ */
 const DEFAULT_RPC_URLS: Record<SupportedChainId, string[]> = {
+  mainnet: ['https://ethereum.publicnode.com', 'https://1rpc.io/eth'],
+  optimism: ['https://mainnet.optimism.io', 'https://optimism.publicnode.com'],
   sepolia: [
-    'https://rpc.sepolia.org',
     'https://ethereum-sepolia-rpc.publicnode.com',
+    'https://1rpc.io/sepolia',
+    'https://sepolia.drpc.org',
     'https://rpc2.sepolia.org',
+    'https://rpc.sepolia.org',
   ],
 };
+
+const VITE_RPC_ENV_KEYS: Record<SupportedChainId, keyof ImportMetaEnv> = {
+  mainnet: 'VITE_WALLET_RPC_MAINNET',
+  optimism: 'VITE_WALLET_RPC_OPTIMISM',
+  sepolia: 'VITE_WALLET_RPC_SEPOLIA',
+};
+
+function parseCommaSeparatedUrls(value: unknown): string[] | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const parts = s
+    .split(',')
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+  return parts.length > 0 ? parts : null;
+}
+
+/**
+ * Resolved RPC URL list for a chain: `VITE_WALLET_RPC_*` if set (comma-separated),
+ * otherwise built-in defaults. Use for viem public clients and for parity with
+ * backend RPC configuration described in `docs/wallet/RPC_AND_VIEM_ARCHITECTURE.md`.
+ */
+export function getEffectiveRpcUrlsForChain(chainId: SupportedChainId): string[] {
+  const key = VITE_RPC_ENV_KEYS[chainId];
+  const raw = import.meta.env[key];
+  const fromEnv = parseCommaSeparatedUrls(raw);
+  if (fromEnv) return fromEnv;
+  return DEFAULT_RPC_URLS[chainId];
+}
 
 /**
  * Get the chain and RPC URLs for the given chain id.
@@ -36,7 +78,7 @@ export function getChainConfig(chainId: SupportedChainId = DEFAULT_CHAIN_ID): {
   rpcUrls: string[];
 } {
   const chain = SUPPORTED_CHAINS[chainId];
-  const rpcUrls = DEFAULT_RPC_URLS[chainId];
+  const rpcUrls = getEffectiveRpcUrlsForChain(chainId);
   return { chain, rpcUrls };
 }
 

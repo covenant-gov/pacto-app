@@ -1,5 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { PendingMlsWelcome } from '../lib/api/nostr';
+import type { SupportedChainId } from '../lib/wallet/chains';
+import { hydrateWalletSummaryCacheFromDisk } from '../lib/wallet/wallet-summary-cache';
 import {
   initInviteDecisionPersistence,
   getInviteDecisionLoadEntries,
@@ -9,6 +11,8 @@ import {
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
+  acceptedWalletTxRequestMessageIds,
+  declinedWalletTxRequestMessageIds,
 } from './invite-decisions';
 
 // Re-export invite decision stores for consumers (e.g. +page, clear-account-state)
@@ -19,6 +23,8 @@ export {
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
+  acceptedWalletTxRequestMessageIds,
+  declinedWalletTxRequestMessageIds,
 };
 
 /** Current npub for persistence: scoped localStorage keys use this. Set on login, cleared on logout. */
@@ -67,6 +73,32 @@ pinnedDmNpubs.subscribe((set) => {
 
 // New Chat flow: when true, show npub + message form instead of DM list/thread
 export const composingNewChat = writable<boolean>(false);
+
+/**
+ * When true, WalletBar is shown for whoever the active DM is (Friends / Pinned hub only).
+ * Globally toggled: open stays on while switching chats until the user closes from any thread or leaves valid DM context.
+ */
+export const walletSidebarOpen = writable<boolean>(false);
+
+/** One-shot: accepting a `wallet_tx_request` pre-fills the send modal and opens the wallet sidebar. Not persisted. */
+export type WalletSendPrefillPayload = {
+  targetNpub: string;
+  network: SupportedChainId;
+  asset: string;
+  amount: string;
+  requestId: string;
+  requestMessageId: string;
+};
+
+export const walletSendPrefillFromRequest = writable<WalletSendPrefillPayload | null>(null);
+
+export function toggleWalletSidebar(): void {
+  walletSidebarOpen.update((open) => !open);
+}
+
+export function closeWalletSidebar(): void {
+  walletSidebarOpen.set(false);
+}
 
 // DM entry for display in the sidebar
 export interface DmEntry {
@@ -560,5 +592,6 @@ export function loadAccountState(npub: string): void {
   } catch {
     // ignore parse errors
   }
+  hydrateWalletSummaryCacheFromDisk(npub);
 }
 

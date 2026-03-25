@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     muted INTEGER NOT NULL DEFAULT 0,
     bot INTEGER NOT NULL DEFAULT 0,
     avatar_cached TEXT NOT NULL DEFAULT '',
-    banner_cached TEXT NOT NULL DEFAULT ''
+    banner_cached TEXT NOT NULL DEFAULT '',
+    evm_address TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_profiles_npub ON profiles(npub);
 CREATE INDEX IF NOT EXISTS idx_profiles_name ON profiles(name);
@@ -506,6 +507,26 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         ).map_err(|e| format!("Failed to add banner_cached column: {}", e))?;
 
         println!("[Migration] Cached image columns added successfully");
+    }
+
+    // Migration: embedded wallet — peer payout address (from Nostr metadata custom `evm_address` + local account row)
+    let has_evm_address_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name='evm_address'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|count| count > 0)
+        .unwrap_or(false);
+
+    if !has_evm_address_col {
+        println!("[Migration] Adding evm_address column to profiles...");
+        conn.execute(
+            "ALTER TABLE profiles ADD COLUMN evm_address TEXT NOT NULL DEFAULT ''",
+            [],
+        )
+        .map_err(|e| format!("Failed to add evm_address column: {}", e))?;
+        println!("[Migration] evm_address column added successfully");
     }
 
     // Migration 3: Create events table for flat event-based storage

@@ -29,7 +29,11 @@ Squad / Network
 
 [Vector](https://vectorapp.io/) - Private decentralized messenger built on Nostr
 
-Pacto forked the Rust [backend of Vector](https://github.com/VectorPrivacy/Vector/tree/master/src-tauri) for the Nostr E2EE/MLS messaging, cryptographic, and database management logic. While Vector offers a Signal-style privacy messenger with mini-app support, Pacto extends the codebase to enable Discord-inspired communities that are governable through embedded blockchain primitives.
+Pacto forked the Rust [backend of Vector](https://github.com/VectorPrivacy/Vector/tree/master/src-tauri) for the Nostr E2EE/MLS messaging. While Vector offers a Signal-style privacy messenger with mini-app support, Pacto extends the codebase to enable Discord-inspired communities that are governable through embedded blockchain primitives.
+
+## Developer documentation
+
+- **Embedded wallet (RPC, DM message schema, pricing, tx lifecycle):** [docs/wallet/README.md](./docs/wallet/README.md)
 
 ## Build Prerequisites
 

@@ -33,6 +33,9 @@ pub struct Profile {
     pub avatar_cached: String,
     /// Local cached path for banner image (for offline support)
     pub banner_cached: String,
+    /// Ethereum payout address (0x…) from Nostr metadata custom `evm_address` and/or local account sync.
+    #[serde(default)]
+    pub evm_address: String,
 }
 
 impl Default for Profile {
@@ -62,6 +65,7 @@ impl Profile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
+            evm_address: String::new(),
         }
     }
 
@@ -141,6 +145,19 @@ impl Profile {
         if let Some(nip05) = meta.nip05 {
             if self.nip05 != nip05 {
                 self.nip05 = nip05;
+                changed = true;
+            }
+        }
+
+        // Pacto wallet: optional `evm_address` in Nostr metadata JSON (custom map).
+        if let Some(norm) = meta
+            .custom
+            .get("evm_address")
+            .and_then(|j| j.as_str())
+            .and_then(|s| crate::evm::normalize_hex_address(s))
+        {
+            if norm != self.evm_address {
+                self.evm_address = norm;
                 changed = true;
             }
         }

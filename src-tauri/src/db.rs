@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use rusqlite::OptionalExtension;
 use tauri::{AppHandle, command, Runtime};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -38,6 +39,8 @@ pub struct SlimProfile {
     bot: bool,
     avatar_cached: String,
     banner_cached: String,
+    #[serde(default)]
+    evm_address: String,
     // Omitting: messages, last_updated, mine
 }
 
@@ -60,6 +63,7 @@ impl Default for SlimProfile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
+            evm_address: String::new(),
         }
     }
 }
@@ -83,6 +87,7 @@ impl From<&Profile> for SlimProfile {
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
             banner_cached: profile.banner_cached.clone(),
+            evm_address: profile.evm_address.clone(),
         }
     }
 }
@@ -109,6 +114,7 @@ impl SlimProfile {
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
             banner_cached: self.banner_cached.clone(),
+            evm_address: self.evm_address.clone(),
         }
     }
 }
@@ -117,7 +123,7 @@ impl SlimProfile {
 pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached, evm_address FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let profiles = stmt.query_map([], |row| {
@@ -158,6 +164,7 @@ pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<S
             bot: row.get::<_, i32>(14)? != 0,
             avatar_cached: validated_avatar_cached,
             banner_cached: validated_banner_cached,
+            evm_address: row.get::<_, String>(17).unwrap_or_default(),
         })
     })
     .map_err(|e| format!("Failed to query profiles: {}", e))?
@@ -176,8 +183,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached, evm_address)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -194,7 +201,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             muted = excluded.muted,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
-            banner_cached = excluded.banner_cached",
+            banner_cached = excluded.banner_cached,
+            evm_address = excluded.evm_address",
         rusqlite::params![
             profile.id,  // This is the npub
             profile.name,
@@ -213,6 +221,7 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.bot as i32,
             profile.avatar_cached,
             profile.banner_cached,
+            profile.evm_address,
         ],
     ).map_err(|e| format!("Failed to insert profile: {}", e))?;
 
@@ -320,14 +329,38 @@ pub fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Res
     let conn = crate::account_manager::get_db_connection(&handle)?;
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        rusqlite::params!["evm_address", address],
+        rusqlite::params!["evm_address", &address],
     ).map_err(|e| format!("Failed to insert evm_address: {}", e))?;
+    if let Ok(npub) = crate::account_manager::get_current_account() {
+        let _ = conn.execute(
+            "UPDATE profiles SET evm_address = ?1 WHERE npub = ?2",
+            rusqlite::params![&address, npub],
+        );
+    }
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
 
-#[command]
-pub fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
+/// Embedded wallet: payout address stored for a contact (`profiles.evm_address`).
+pub fn get_profile_evm_address<R: Runtime>(
+    handle: &AppHandle<R>,
+    npub: &str,
+) -> Result<Option<String>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let r: Option<String> = conn
+        .query_row(
+            "SELECT evm_address FROM profiles WHERE npub = ?1",
+            rusqlite::params![npub],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read profile evm_address: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(r.filter(|s| !s.trim().is_empty()))
+}
+
+/// Read `evm_address` from settings without repair (internal use).
+pub(crate) fn read_stored_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let result: Option<String> = conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
@@ -336,6 +369,46 @@ pub fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String
     ).ok();
     crate::account_manager::return_db_connection(conn);
     Ok(result)
+}
+
+/// If the encrypted EVM key decrypts, recompute the **canonical** Ethereum address (same as
+/// MetaMask) and persist it when it differs from stored `evm_address` (fixes legacy bug that
+/// hashed the leading `0x04` byte).
+pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+    let enc = match get_evm_pkey(handle.clone())? {
+        Some(e) => e,
+        None => return Ok(()),
+    };
+    let decrypted = match internal_decrypt(enc, None).await {
+        Ok(d) => d,
+        Err(_) => return Ok(()),
+    };
+    let key_hex = decrypted.trim().strip_prefix("0x").unwrap_or(decrypted.trim());
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
+    if key_bytes.len() != 32 {
+        return Ok(());
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&key_bytes);
+    let correct = crate::evm::address_from_evm_secret_32(&arr)?;
+    let stored = read_stored_evm_address(handle.clone())?;
+    let matches = stored
+        .as_deref()
+        .and_then(crate::evm::normalize_hex_address)
+        .zip(crate::evm::normalize_hex_address(&correct))
+        .map(|(a, b)| a == b)
+        .unwrap_or(false);
+    if matches {
+        return Ok(());
+    }
+    set_evm_address(handle.clone(), correct)?;
+    Ok(())
+}
+
+#[command]
+pub async fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
+    let _ = repair_evm_address_if_needed(&handle).await;
+    read_stored_evm_address(handle)
 }
 
 /// Get stored Safe address for a squad or network by id. Returns None if not set.

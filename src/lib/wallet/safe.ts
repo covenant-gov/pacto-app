@@ -46,7 +46,7 @@ export interface SafeState {
 
 /**
  * Read Safe state from chain: owners, threshold, nonce, and native balance.
- * Uses the default chain (Sepolia for PoC). Fails if the address is not a contract or not a Safe.
+ * Uses the default chain (Sepolia). Fails if the address is not a contract or not a Safe.
  */
 export async function getSafeState(
   safeAddress: Address,

@@ -1,7 +1,7 @@
 /**
  * Wallet client and account usage (read-only from frontend).
  * - Address comes from the backend (get_evm_address); the private key never leaves the Tauri process.
- * - Signing: for Safe PoC we will use a Tauri command that signs in the backend (Phase 4).
+ * - Signing: use a Tauri command in the Rust layer so the private key stays in the app process.
  */
 
 import type { Address } from 'viem';
