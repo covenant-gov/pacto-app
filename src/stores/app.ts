@@ -13,6 +13,8 @@ import {
   declinedChannelInviteMessageIds,
   acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
 } from './invite-decisions';
 
 // Re-export invite decision stores for consumers (e.g. +page, clear-account-state)
@@ -25,6 +27,8 @@ export {
   declinedChannelInviteMessageIds,
   acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
 };
 
 /** Current npub for persistence: scoped localStorage keys use this. Set on login, cleared on logout. */
@@ -54,8 +58,8 @@ export const activeView = writable<ViewType>('hub');
 // Members panel (right-hand bar in squad/network channel view): keep open across tab switches until user closes
 export const showMembersPanel = writable<boolean>(false);
 
-// DMs: which sub-tab (Friends, Requests, Pending, Pinned)
-export type DmTab = 'friends' | 'requests' | 'pending' | 'pinned';
+// DMs: which sub-tab (Friends, Requests, Pending, Search, Pinned)
+export type DmTab = 'friends' | 'requests' | 'pending' | 'search' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
 
 const PINNED_DM_NPUBS_PREFIX = 'pacto_pinned_dm_npubs';
@@ -91,6 +95,9 @@ export type WalletSendPrefillPayload = {
 };
 
 export const walletSendPrefillFromRequest = writable<WalletSendPrefillPayload | null>(null);
+
+/** Increment after a DM peer wallet exchange is persisted so WalletBar re-checks `get_dm_peer_evm_address`. */
+export const dmWalletPeerExchangeTick = writable(0);
 
 export function toggleWalletSidebar(): void {
   walletSidebarOpen.update((open) => !open);
@@ -147,6 +154,43 @@ export const pinnedList = derived(
     return toDmEntries($m, (c) => set.has(c.npub) && c.hasFromMe && c.hasFromThem);
   }
 );
+
+/** Pinned + Friends + Requests + Pending for the Search tab: deduped by npub, sorted by last activity. */
+export const allDmEntriesUnified = derived(
+  [pinnedList, dmList, requestsList, pendingList, dmChatsByNpub] as const,
+  ([$pinned, $friends, $requests, $pending, $chats]) => {
+    const map = new Map<string, DmEntry>();
+    for (const e of $pinned) map.set(e.npub, e);
+    for (const e of $friends) {
+      if (!map.has(e.npub)) map.set(e.npub, e);
+    }
+    for (const e of $requests) {
+      if (!map.has(e.npub)) map.set(e.npub, e);
+    }
+    for (const e of $pending) {
+      if (!map.has(e.npub)) map.set(e.npub, e);
+    }
+    return [...map.values()].sort(
+      (a, b) => ($chats[b.npub]?.lastAt ?? 0) - ($chats[a.npub]?.lastAt ?? 0)
+    );
+  }
+);
+
+export type DmSidebarCategory = 'pinned' | 'friends' | 'requests' | 'pending';
+
+/** Which DM bucket a conversation belongs to (for Search tab labels). */
+export function dmSidebarCategoryForNpub(
+  npub: string,
+  chats: Record<string, DmChatState>,
+  pinned: Set<string>
+): DmSidebarCategory {
+  const c = chats[npub];
+  if (!c) return 'friends';
+  if (pinned.has(npub) && c.hasFromMe && c.hasFromThem) return 'pinned';
+  if (c.hasFromMe && c.hasFromThem) return 'friends';
+  if (!c.hasFromMe && c.hasFromThem) return 'requests';
+  return 'pending';
+}
 
 /** Add/update a DM in the map. */
 export function setDmChatState(
@@ -235,11 +279,12 @@ export const activeDmId = writable<string | null>(null);
 // Invite decision persistence wired from invite-decisions.ts
 initInviteDecisionPersistence(persistenceKey);
 
-// Last opened chat per tab (Friends / Requests / Pending / Pinned) so switching tabs shows that chat if still in section
+// Last opened chat per tab (Friends / Requests / Pending / Search / Pinned) so switching tabs restores that chat if still in section
 export const lastOpenedDmByTab = writable<Record<DmTab, string | null>>({
   friends: null,
   requests: null,
   pending: null,
+  search: null,
   pinned: null,
 });
 

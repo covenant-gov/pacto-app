@@ -9,7 +9,8 @@ export const WALLET_TX_ANNOUNCEMENT_WIRE_TYPE = 'wallet_tx_announcement';
 
 const SCHEMA_VERSION = 1;
 
-const AMOUNT_REGEX = /^[0-9]+(\.[0-9]+)?$/;
+/** Decimal string: integer part, `.fraction`, or leading-dot fraction (e.g. `.00001`). At least one digit required. */
+const AMOUNT_REGEX = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 const MAX_AMOUNT_LEN = 32;
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
@@ -188,4 +189,145 @@ export function getFulfilledWalletRequestIdsFromMessages(
     if (ann?.request_id) s.add(ann.request_id);
   }
   return s;
+}
+
+/** DM-only pairwise wallet exchange (not published on Kind 0). */
+export const WALLET_PEER_INFO_REQUEST_WIRE_TYPE = 'wallet_peer_info_request';
+export const WALLET_PEER_INFO_GRANT_WIRE_TYPE = 'wallet_peer_info_grant';
+export const WALLET_PEER_INFO_DECLINE_WIRE_TYPE = 'wallet_peer_info_decline';
+
+const EVM_ADDR_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+function isWireEvmAddress(s: unknown): s is string {
+  return typeof s === 'string' && EVM_ADDR_REGEX.test(s.trim());
+}
+
+export interface WalletPeerInfoRequestPayload {
+  type: typeof WALLET_PEER_INFO_REQUEST_WIRE_TYPE;
+  version: typeof SCHEMA_VERSION;
+  request_id: string;
+  requester_npub: string;
+  requester_evm_address: string;
+}
+
+export interface WalletPeerInfoGrantPayload {
+  type: typeof WALLET_PEER_INFO_GRANT_WIRE_TYPE;
+  version: typeof SCHEMA_VERSION;
+  request_id: string;
+  grantor_npub: string;
+  evm_address: string;
+}
+
+export interface WalletPeerInfoDeclinePayload {
+  type: typeof WALLET_PEER_INFO_DECLINE_WIRE_TYPE;
+  version: typeof SCHEMA_VERSION;
+  request_id: string;
+}
+
+export function formatWalletPeerInfoRequest(
+  payload: Omit<WalletPeerInfoRequestPayload, 'type' | 'version'> & { version?: number }
+): string {
+  return JSON.stringify({
+    version: SCHEMA_VERSION,
+    type: WALLET_PEER_INFO_REQUEST_WIRE_TYPE,
+    request_id: payload.request_id,
+    requester_npub: payload.requester_npub,
+    requester_evm_address: payload.requester_evm_address.trim(),
+  });
+}
+
+export function formatWalletPeerInfoGrant(
+  payload: Omit<WalletPeerInfoGrantPayload, 'type' | 'version'> & { version?: number }
+): string {
+  return JSON.stringify({
+    version: SCHEMA_VERSION,
+    type: WALLET_PEER_INFO_GRANT_WIRE_TYPE,
+    request_id: payload.request_id,
+    grantor_npub: payload.grantor_npub,
+    evm_address: payload.evm_address.trim(),
+  });
+}
+
+export function formatWalletPeerInfoDecline(
+  payload: Omit<WalletPeerInfoDeclinePayload, 'type' | 'version'> & { version?: number }
+): string {
+  return JSON.stringify({
+    version: SCHEMA_VERSION,
+    type: WALLET_PEER_INFO_DECLINE_WIRE_TYPE,
+    request_id: payload.request_id,
+  });
+}
+
+export function parseWalletPeerInfoRequest(content: string): WalletPeerInfoRequestPayload | null {
+  if (!content || typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const o = parsed as Record<string, unknown>;
+  if (o.type !== WALLET_PEER_INFO_REQUEST_WIRE_TYPE) return null;
+  if (o.version !== SCHEMA_VERSION) return null;
+  if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
+  if (!isLikelyNpub(o.requester_npub)) return null;
+  if (!isWireEvmAddress(o.requester_evm_address)) return null;
+  return {
+    type: WALLET_PEER_INFO_REQUEST_WIRE_TYPE,
+    version: SCHEMA_VERSION,
+    request_id: o.request_id,
+    requester_npub: o.requester_npub,
+    requester_evm_address: o.requester_evm_address.trim(),
+  };
+}
+
+export function parseWalletPeerInfoGrant(content: string): WalletPeerInfoGrantPayload | null {
+  if (!content || typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const o = parsed as Record<string, unknown>;
+  if (o.type !== WALLET_PEER_INFO_GRANT_WIRE_TYPE) return null;
+  if (o.version !== SCHEMA_VERSION) return null;
+  if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
+  if (!isLikelyNpub(o.grantor_npub)) return null;
+  if (!isWireEvmAddress(o.evm_address)) return null;
+  return {
+    type: WALLET_PEER_INFO_GRANT_WIRE_TYPE,
+    version: SCHEMA_VERSION,
+    request_id: o.request_id,
+    grantor_npub: o.grantor_npub,
+    evm_address: o.evm_address.trim(),
+  };
+}
+
+export function parseWalletPeerInfoDecline(content: string): WalletPeerInfoDeclinePayload | null {
+  if (!content || typeof content !== 'string') return null;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const o = parsed as Record<string, unknown>;
+  if (o.type !== WALLET_PEER_INFO_DECLINE_WIRE_TYPE) return null;
+  if (o.version !== SCHEMA_VERSION) return null;
+  if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
+  return {
+    type: WALLET_PEER_INFO_DECLINE_WIRE_TYPE,
+    version: SCHEMA_VERSION,
+    request_id: o.request_id,
+  };
 }

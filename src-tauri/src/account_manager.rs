@@ -695,6 +695,30 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] squad_safe table created");
     }
 
+    let has_dm_peer_evm: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dm_peer_evm'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_dm_peer_evm {
+        println!("[Migration] Creating dm_peer_evm table (pairwise wallet address exchange)...");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS dm_peer_evm (
+                my_npub TEXT NOT NULL,
+                peer_npub TEXT NOT NULL,
+                evm_address TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (my_npub, peer_npub)
+            );"#,
+        )
+        .map_err(|e| format!("Failed to create dm_peer_evm table: {}", e))?;
+        println!("[Migration] dm_peer_evm table created");
+    }
+
     Ok(())
 }
 

@@ -28,6 +28,9 @@ import {
   declinedChannelInviteMessageIds,
   acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
+  dmWalletPeerExchangeTick,
   backendGroupMessages,
   groupSendError,
   pendingMlsWelcomes,
@@ -127,6 +130,7 @@ export function clearAccountState(npub?: string): void {
     friends: null,
     requests: null,
     pending: null,
+    search: null,
     pinned: null,
   });
   lastOpenedSquadId.set(null);
@@ -147,6 +151,9 @@ export function clearAccountState(npub?: string): void {
   declinedChannelInviteMessageIds.set([]);
   acceptedWalletTxRequestMessageIds.set([]);
   declinedWalletTxRequestMessageIds.set([]);
+  acceptedWalletPeerInfoRequestMessageIds.set([]);
+  declinedWalletPeerInfoRequestMessageIds.set([]);
+  dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
   groupSendError.set(null);
   pendingMlsWelcomes.set([]);

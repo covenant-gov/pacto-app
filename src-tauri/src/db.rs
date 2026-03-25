@@ -325,17 +325,23 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
 }
 
 #[command]
-pub fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+    let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        rusqlite::params!["evm_address", &address],
-    ).map_err(|e| format!("Failed to insert evm_address: {}", e))?;
+        rusqlite::params!["evm_address", &trimmed],
+    )
+    .map_err(|e| format!("Failed to insert evm_address: {}", e))?;
     if let Ok(npub) = crate::account_manager::get_current_account() {
         let _ = conn.execute(
             "UPDATE profiles SET evm_address = ?1 WHERE npub = ?2",
-            rusqlite::params![&address, npub],
+            rusqlite::params![&trimmed, npub],
         );
+        let mut state = crate::STATE.lock().await;
+        if let Some(p) = state.get_profile_mut(&npub) {
+            p.evm_address = crate::evm::normalize_hex_address(&trimmed).unwrap_or(trimmed);
+        }
     }
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -401,7 +407,7 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
     if matches {
         return Ok(());
     }
-    set_evm_address(handle.clone(), correct)?;
+    set_evm_address(handle.clone(), correct).await?;
     Ok(())
 }
 
@@ -409,6 +415,65 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
 pub async fn get_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let _ = repair_evm_address_if_needed(&handle).await;
     read_stored_evm_address(handle)
+}
+
+/// Pairwise DM wallet exchange: read persisted payout address for `peer_npub` (current account scope).
+pub fn get_dm_peer_evm_stored<R: Runtime>(
+    handle: &AppHandle<R>,
+    peer_npub: &str,
+) -> Result<Option<String>, String> {
+    let my_npub = crate::account_manager::get_current_account()?;
+    let peer = peer_npub.trim();
+    if peer.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let r: Option<String> = conn
+        .query_row(
+            "SELECT evm_address FROM dm_peer_evm WHERE my_npub = ?1 AND peer_npub = ?2",
+            rusqlite::params![my_npub.as_str(), peer],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read dm_peer_evm: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(r.filter(|s| !s.trim().is_empty()))
+}
+
+#[command]
+pub fn get_dm_peer_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    peer_npub: String,
+) -> Result<Option<String>, String> {
+    get_dm_peer_evm_stored(&handle, &peer_npub)
+}
+
+#[command]
+pub fn set_dm_peer_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    peer_npub: String,
+    address: String,
+) -> Result<(), String> {
+    let my_npub = crate::account_manager::get_current_account()?;
+    let peer = peer_npub.trim();
+    if peer.is_empty() {
+        return Err("peer_npub is empty".to_string());
+    }
+    let norm = crate::evm::normalize_hex_address(address.trim())
+        .ok_or_else(|| "Invalid EVM address".to_string())?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO dm_peer_evm (my_npub, peer_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(my_npub, peer_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![my_npub.as_str(), peer, norm, now_ms],
+    )
+    .map_err(|e| format!("Failed to set dm_peer_evm: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
 }
 
 /// Get stored Safe address for a squad or network by id. Returns None if not set.

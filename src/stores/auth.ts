@@ -77,13 +77,13 @@ export async function createAccount(pin: string): Promise<void> {
     
     // Encrypt and save private key + mnemonic
     await encryptAndSaveKey(keys.private, pin);
-    if (keys.evm_private_key && keys.evm_address) {
-      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
-    }
-    // Connect to relays
+    // Connect first so optional Kind 0 profile refresh can reach relays after PIN setup.
     dmLog('createAccount: connect()');
     await apiConnect();
     dmLog('createAccount: connect() done');
+    if (keys.evm_private_key && keys.evm_address) {
+      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
+    }
 
     // Set frontend state and load npub-scoped persistence (squads, last open, etc.)
     const npub = await getCurrentAccount();
@@ -126,13 +126,12 @@ export async function importAccount(privateKey: string, pin: string): Promise<vo
     
     // Encrypt and save the private key
     await encryptAndSaveKey(keys.private, pin);
-    if (keys.evm_private_key && keys.evm_address) {
-      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
-    }
-    // Connect to relays
     dmLog('importAccount: connect()');
     await apiConnect();
     dmLog('importAccount: connect() done');
+    if (keys.evm_private_key && keys.evm_address) {
+      await encryptAndSaveEvmKey(keys.evm_private_key, keys.evm_address, pin);
+    }
 
     // Get current account npub from backend
     const npub = await getCurrentAccount();

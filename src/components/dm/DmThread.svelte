@@ -4,12 +4,18 @@
   import InviteCard from './InviteCard.svelte';
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
   import WalletTxAnnouncementCard from '../wallet/WalletTxAnnouncementCard.svelte';
+  import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import {
     parseWalletTxRequest,
     parseWalletTxAnnouncement,
+    parseWalletPeerInfoRequest,
+    parseWalletPeerInfoGrant,
+    parseWalletPeerInfoDecline,
     getFulfilledWalletRequestIdsFromMessages,
+    type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
+  import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import {
     parseChannelInSquadMessage,
     parseChannelInNetworkMessage,
@@ -30,6 +36,9 @@
     declinedNetworkInviteIds,
     acceptedWalletTxRequestMessageIds,
     declinedWalletTxRequestMessageIds,
+    acceptedWalletPeerInfoRequestMessageIds,
+    declinedWalletPeerInfoRequestMessageIds,
+    dmWalletPeerExchangeTick,
     type DmMessage,
     walletSidebarOpen,
     walletSendPrefillFromRequest,
@@ -71,6 +80,42 @@
   export let onSaveNickname: (value: string) => Promise<void> = async () => {};
   export let onDeleteChat: (() => void) | undefined = undefined;
   export let showWalletButton: boolean = false;
+  export let onAcceptWalletPeerInfoRequest: ((msg: DmMessage, payload: WalletPeerInfoRequestPayload) => void | Promise<void>) =
+    () => {};
+  export let onDeclineWalletPeerInfoRequest: ((
+    msg: DmMessage,
+    payload: WalletPeerInfoRequestPayload
+  ) => void | Promise<void>) = () => {};
+  export let acceptingWalletPeerInfoRequestId: string | null = null;
+
+  /** Apply inbound grant messages once so the peer payout address is persisted without showing it in the UI. */
+  let appliedWalletGrantIds = new Set<string>();
+  let appliedWalletGrantsForNpub: string | null = null;
+
+  $: if (npub !== appliedWalletGrantsForNpub) {
+    appliedWalletGrantsForNpub = npub;
+    appliedWalletGrantIds = new Set();
+  }
+
+  $: (() => {
+    const uid = $currentUser?.npub;
+    if (!uid || !npub) return;
+    for (const msg of messages) {
+      if (msg.mine) continue;
+      const g = parseWalletPeerInfoGrant(msg.content ?? '');
+      if (!g || g.grantor_npub !== npub) continue;
+      if (appliedWalletGrantIds.has(msg.id)) continue;
+      appliedWalletGrantIds.add(msg.id);
+      void setDmPeerEvmAddress(npub, g.evm_address).then(
+        () => {
+          dmWalletPeerExchangeTick.update((t: number) => t + 1);
+        },
+        () => {
+          appliedWalletGrantIds.delete(msg.id);
+        }
+      );
+    }
+  })();
 
   function truncateNpub(n: string): string {
     if (n.length <= 16) return n;
@@ -364,6 +409,9 @@
         {@const channelInNetworkPayload = parseChannelInNetworkMessage(msg.content ?? '')}
         {@const networkInvitePayload = parseNetworkInviteMessage(msg.content ?? '')}
         {@const invitePayload = parseSquadInviteMessage(msg.content ?? '')}
+        {@const walletPeerInfoRequestPayload = parseWalletPeerInfoRequest(msg.content ?? '')}
+        {@const walletPeerInfoGrantPayload = parseWalletPeerInfoGrant(msg.content ?? '')}
+        {@const walletPeerInfoDeclinePayload = parseWalletPeerInfoDecline(msg.content ?? '')}
         {@const walletTxRequestPayload = parseWalletTxRequest(msg.content ?? '')}
         {@const walletTxAnnouncementPayload = parseWalletTxAnnouncement(msg.content ?? '')}
         {@const isInvite = !!(channelInSquadPayload || channelInNetworkPayload || networkInvitePayload || invitePayload)}
@@ -423,6 +471,37 @@
             accepting={acceptingSquadInviteId === msg.id}
             onAccept={() => onAcceptSquadInvite(msg, invitePayload.groupId)}
             onDecline={() => onDeclineSquad(msg)}
+          />
+        {:else if walletPeerInfoRequestPayload}
+          {@const wpeerReqStatus = $acceptedWalletPeerInfoRequestMessageIds.includes(msg.id)
+            ? 'accepted'
+            : $declinedWalletPeerInfoRequestMessageIds.includes(msg.id)
+              ? 'declined'
+              : 'pending'}
+          {@const wpeerName = getInviterDisplay(msg, npub, $profiles).inviterName}
+          <WalletPeerExchangeCard
+            variant={msg.mine ? 'request-out' : 'request-in'}
+            peerName={wpeerName}
+            status={wpeerReqStatus}
+            accepting={acceptingWalletPeerInfoRequestId === msg.id}
+            onAccept={msg.mine
+              ? undefined
+              : () => onAcceptWalletPeerInfoRequest(msg, walletPeerInfoRequestPayload)}
+            onDecline={msg.mine
+              ? undefined
+              : () => onDeclineWalletPeerInfoRequest(msg, walletPeerInfoRequestPayload)}
+          />
+        {:else if walletPeerInfoGrantPayload}
+          {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles).inviterName}
+          <WalletPeerExchangeCard
+            variant={msg.mine ? 'grant-out' : 'grant-in'}
+            peerName={wpeerGrantName}
+          />
+        {:else if walletPeerInfoDeclinePayload}
+          {@const wpeerDeclName = getInviterDisplay(msg, npub, $profiles).inviterName}
+          <WalletPeerExchangeCard
+            variant={msg.mine ? 'decline-out' : 'decline-in'}
+            peerName={wpeerDeclName}
           />
         {:else if walletTxRequestPayload}
           {@const walletFulfilled = fulfilledWalletRequestIds.has(walletTxRequestPayload.request_id)}

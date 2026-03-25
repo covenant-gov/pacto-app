@@ -33,6 +33,7 @@
   import { showToast } from '../../stores/toast';
   import type { WalletSendPrefillPayload } from '../../stores/app';
   import { formatWalletTxRequest } from '../../lib/wallet/dm-messages';
+  import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
 
   export let mode: 'send' | 'request';
   export let npub: string;
@@ -73,7 +74,7 @@
     appliedPrefillKey = prefillKey;
     chainId = formPrefill.network;
     assetCode = formPrefill.asset;
-    amountStr = formPrefill.amount;
+    amountStr = normalizeLeadingDotDecimalInput(formPrefill.amount.trim());
     linkedRequestId = formPrefill.requestId;
   }
 
@@ -236,9 +237,15 @@
               ? 'USD estimate unavailable for this asset.'
               : 'Enter an amount to see USD estimate.';
 
+  function onAmountInput(e: Event) {
+    const el = e.currentTarget as HTMLInputElement;
+    amountStr = normalizeLeadingDotDecimalInput(el.value);
+  }
+
   async function handleConfirm() {
     if (!amountValid || sending || !selectedOpt) return;
     if (mode === 'send' && insufficientFunds) return;
+    const amountHuman = normalizeLeadingDotDecimalInput(amountStr.trim());
     const erc20Transfer =
       selectedOpt.kind === 'erc20' && selectedOpt.address
         ? { address: selectedOpt.address as string, decimals: selectedOpt.decimals }
@@ -256,7 +263,7 @@
           request_id: crypto.randomUUID(),
           network: chainId,
           asset: assetCode,
-          amount: amountStr.trim(),
+          amount: amountHuman,
           created_at_ms: Date.now(),
         });
         const ok = await postDm(content);
@@ -284,7 +291,7 @@
         npub,
         chainId,
         assetCode,
-        amountStr.trim(),
+        amountHuman,
         erc20Transfer
       );
       if (out.ok) {
@@ -293,7 +300,7 @@
             result: out.result,
             network: chainId,
             asset: assetCode,
-            amount: amountStr.trim(),
+            amount: amountHuman,
             ...(linkedRequestId !== '' ? { requestId: linkedRequestId } : {}),
           });
         }
@@ -356,7 +363,8 @@
         inputmode="decimal"
         autocomplete="off"
         placeholder="0.0"
-        bind:value={amountStr}
+        value={amountStr}
+        on:input={onAmountInput}
         disabled={sending}
         aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
         aria-label="Amount"

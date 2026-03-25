@@ -5,6 +5,10 @@ import {
   formatWalletTxRequest,
   formatWalletTxAnnouncement,
   getFulfilledWalletRequestIdsFromMessages,
+  parseWalletPeerInfoRequest,
+  parseWalletPeerInfoGrant,
+  parseWalletPeerInfoDecline,
+  formatWalletPeerInfoRequest,
 } from './dm-messages';
 
 const VALID_REQUEST_JSON =
@@ -51,6 +55,14 @@ describe('parseWalletTxRequest', () => {
         '{"version":1,"type":"wallet_tx_request","request_id":"x","network":"sepolia","asset":"ETH","amount":1}'
       )
     ).toBeNull();
+  });
+
+  it('accepts amount with leading dot (e.g. .00001)', () => {
+    const j =
+      '{"version":1,"type":"wallet_tx_request","request_id":"54a38b38-11ee-4214-a38f-b4f48b3f4f23","network":"sepolia","asset":"ETH","amount":".00001","created_at_ms":1774413697229}';
+    const p = parseWalletTxRequest(j);
+    expect(p).not.toBeNull();
+    expect(p!.amount).toBe('.00001');
   });
 
   it('rejects unknown network', () => {
@@ -127,6 +139,49 @@ describe('parseWalletTxAnnouncement', () => {
       })
     );
     expect(again).toEqual(p);
+  });
+});
+
+const NPUB_A = 'npub1aaaaaaaaaaaaaa';
+const NPUB_B = 'npub1bbbbbbbbbbbbbb';
+const ADDR_A = '0xabcdef0123456789abcdef0123456789abcdef01';
+
+describe('wallet peer info exchange', () => {
+  it('parses and formats wallet_peer_info_request', () => {
+    const j = formatWalletPeerInfoRequest({
+      request_id: 'rid-1',
+      requester_npub: NPUB_A,
+      requester_evm_address: ADDR_A,
+    });
+    const p = parseWalletPeerInfoRequest(j);
+    expect(p).not.toBeNull();
+    expect(p!.request_id).toBe('rid-1');
+    expect(p!.requester_npub).toBe(NPUB_A);
+    expect(p!.requester_evm_address).toBe(ADDR_A);
+  });
+
+  it('rejects request with invalid address', () => {
+    expect(
+      parseWalletPeerInfoRequest(
+        `{"version":1,"type":"wallet_peer_info_request","request_id":"x","requester_npub":"${NPUB_A}","requester_evm_address":"not-hex"}`
+      )
+    ).toBeNull();
+  });
+
+  it('parses wallet_peer_info_grant', () => {
+    const j = `{"version":1,"type":"wallet_peer_info_grant","request_id":"rid-1","grantor_npub":"${NPUB_B}","evm_address":"${ADDR_A}"}`;
+    const g = parseWalletPeerInfoGrant(j);
+    expect(g).not.toBeNull();
+    expect(g!.grantor_npub).toBe(NPUB_B);
+    expect(g!.evm_address).toBe(ADDR_A);
+  });
+
+  it('parses wallet_peer_info_decline', () => {
+    const d = parseWalletPeerInfoDecline(
+      '{"version":1,"type":"wallet_peer_info_decline","request_id":"rid-1"}'
+    );
+    expect(d).not.toBeNull();
+    expect(d!.request_id).toBe('rid-1');
   });
 });
 

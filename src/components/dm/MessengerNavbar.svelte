@@ -1,5 +1,19 @@
 <script lang="ts">
-  import { activeDmTab, dmList, pendingList, requestsList, pinnedList, activeDmId, type DmEntry } from '../../stores/app';
+  import {
+    activeDmTab,
+    dmList,
+    pendingList,
+    requestsList,
+    pinnedList,
+    activeDmId,
+    allDmEntriesUnified,
+    dmChatsByNpub,
+    pinnedDmNpubs,
+    dmSidebarCategoryForNpub,
+    type DmEntry,
+    type DmTab,
+    type DmSidebarCategory,
+  } from '../../stores/app';
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import userPlaceholder from '../../icons/user-placeholder.svg';
@@ -11,20 +25,54 @@
         ? 'Requests'
         : $activeDmTab === 'pending'
           ? 'Pending'
-          : 'Pinned';
-  $: entries =
-    $activeDmTab === 'friends'
-      ? $dmList
-      : $activeDmTab === 'requests'
-        ? $requestsList
-        : $activeDmTab === 'pending'
-          ? $pendingList
-          : $pinnedList;
+          : $activeDmTab === 'search'
+            ? 'Search'
+            : 'Pinned';
 
   function displayName(entry: DmEntry): string {
     const profile = $profiles[entry.npub];
     if (profile) return getProfileDisplayName(profile);
     return entry.name?.trim() || truncateNpub(entry.npub);
+  }
+
+  /** Search tab: filter unified list by npub or display name (case-insensitive substring). */
+  let dmSearchQuery = '';
+
+  function matchesDmSearch(entry: DmEntry, rawQuery: string): boolean {
+    const q = rawQuery.trim().toLowerCase();
+    if (!q) return true;
+    if (entry.npub.toLowerCase().includes(q)) return true;
+    return displayName(entry).toLowerCase().includes(q);
+  }
+
+  function tabSourceList(tab: DmTab): DmEntry[] {
+    if (tab === 'friends') return $dmList as DmEntry[];
+    if (tab === 'requests') return $requestsList as DmEntry[];
+    if (tab === 'pending') return $pendingList as DmEntry[];
+    if (tab === 'pinned') return $pinnedList as DmEntry[];
+    return $allDmEntriesUnified as DmEntry[];
+  }
+
+  $: filteredEntries = (() => {
+    const tab = $activeDmTab;
+    const list = tabSourceList(tab);
+    if (tab === 'search' && dmSearchQuery.trim() !== '') {
+      return list.filter((e) => matchesDmSearch(e, dmSearchQuery));
+    }
+    return list;
+  })();
+
+  function categoryLabel(cat: DmSidebarCategory): string {
+    switch (cat) {
+      case 'pinned':
+        return 'Pinned';
+      case 'friends':
+        return 'Friends';
+      case 'requests':
+        return 'Requests';
+      case 'pending':
+        return 'Pending';
+    }
   }
 
   function truncateNpub(npub: string): string {
@@ -66,18 +114,39 @@
     <h2 class="messenger-title">{title}</h2>
   </div>
 
+  {#if $activeDmTab === 'search'}
+    <div class="messenger-search-wrap">
+      <label class="messenger-search-label" for="messenger-dm-search">Search</label>
+      <input
+        id="messenger-dm-search"
+        type="search"
+        class="messenger-search-input"
+        placeholder="Name or npub (all lists)…"
+        bind:value={dmSearchQuery}
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Search direct messages by name or npub"
+      />
+    </div>
+  {/if}
+
   <div class="dm-list-container">
-    {#if entries.length > 0}
+    {#if filteredEntries.length > 0}
       <ul class="dm-list" role="list">
-        {#each entries as entry (entry.npub)}
-          {@const avatarSrc = getProfileAvatarSrc($profiles[entry.npub])}
+        {#each filteredEntries as raw ((raw as DmEntry).npub)}
+          {@const row = raw as DmEntry}
+          {@const avatarSrc = getProfileAvatarSrc($profiles[row.npub])}
+          {@const cat =
+            $activeDmTab === 'search'
+              ? dmSidebarCategoryForNpub(row.npub, $dmChatsByNpub, $pinnedDmNpubs)
+              : null}
           <li>
             <button
               type="button"
               class="dm-row"
-              class:active={$activeDmId === entry.npub}
-              on:click={() => selectDm(entry.npub)}
-              on:keydown={(e) => e.key === 'Enter' && selectDm(entry.npub)}
+              class:active={$activeDmId === row.npub}
+              on:click={() => selectDm(row.npub)}
+              on:keydown={(ev) => ev.key === 'Enter' && selectDm(row.npub)}
             >
               <span class="dm-avatar">
                 {#if avatarSrc}
@@ -86,7 +155,12 @@
                   <img src={userPlaceholder} alt="" class="dm-avatar-placeholder" />
                 {/if}
               </span>
-              <span class="dm-name">{displayName(entry)}</span>
+              <span class="dm-name-block">
+                <span class="dm-name">{displayName(row)}</span>
+                {#if cat}
+                  <span class="dm-category">{categoryLabel(cat)}</span>
+                {/if}
+              </span>
             </button>
           </li>
         {/each}
@@ -94,14 +168,18 @@
     {:else}
       <div class="empty-state">
         <p>
-        {$activeDmTab === 'friends'
-          ? 'No DMs yet'
-          : $activeDmTab === 'requests'
-            ? 'No requests'
-            : $activeDmTab === 'pending'
-              ? 'No pending chats'
-              : 'No pinned DMs'}
-      </p>
+          {$activeDmTab === 'search' && dmSearchQuery.trim() !== ''
+            ? 'No matches'
+            : $activeDmTab === 'search'
+              ? 'No DMs yet'
+              : $activeDmTab === 'friends'
+                ? 'No DMs yet'
+                : $activeDmTab === 'requests'
+                  ? 'No requests'
+                  : $activeDmTab === 'pending'
+                    ? 'No pending chats'
+                    : 'No pinned DMs'}
+        </p>
       </div>
     {/if}
   </div>
@@ -142,6 +220,46 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .messenger-search-wrap {
+    padding: 8px 12px 10px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+
+  .messenger-search-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .messenger-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    font-size: 0.875rem;
+    font-family: inherit;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    outline: none;
+  }
+
+  .messenger-search-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .messenger-search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
   }
 
   .dm-list-container {
@@ -210,12 +328,28 @@
     opacity: 0.7;
   }
 
-  .dm-name {
+  .dm-name-block {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .dm-name {
+    width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .dm-category {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
   }
 
   .empty-state {

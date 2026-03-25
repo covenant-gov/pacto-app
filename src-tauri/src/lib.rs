@@ -403,7 +403,7 @@ impl ChatState {
 }
 
 lazy_static! {
-    static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
+    pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
 }
 
 #[tauri::command]
@@ -6071,6 +6071,8 @@ pub fn run() {
             db::set_evm_pkey,
             db::get_evm_address,
             db::set_evm_address,
+            db::get_dm_peer_evm_address,
+            db::set_dm_peer_evm_address,
             db::get_safe,
             db::set_safe,
             db::get_seed,

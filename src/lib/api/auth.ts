@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { updateProfile } from "./nostr";
 
 // Type definitions matching Rust structs
 export interface LoginKeyPair {
@@ -61,6 +62,11 @@ export async function getEvmAddress(): Promise<string | null> {
  */
 export async function setEvmAddress(address: string): Promise<void> {
   await invoke('set_evm_address', { address });
+  try {
+    await updateProfile({ name: '', avatar: '', banner: '', about: '' });
+  } catch {
+    // Relays offline or client not ready; local profile still holds the address. Kind 0 no longer includes `evm_address`.
+  }
 }
 
 /**
