@@ -34,6 +34,11 @@ use util::{get_file_type_description, calculate_file_hash, format_bytes};
 
 mod evm;
 
+mod wallet_prices;
+mod wallet_chain_config;
+mod wallet_security;
+mod wallet_ops;
+
 #[cfg(target_os = "android")]
 #[path = "android/mod.rs"]
 mod android;
@@ -6159,6 +6164,9 @@ pub fn run() {
             load_mls_keypackages,
             export_keys,
             sign_evm_hash,
+            wallet_prices::wallet_get_usd_spot_prices,
+            wallet_ops::get_wallet_summary,
+            wallet_ops::wallet_build_and_send_transaction,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

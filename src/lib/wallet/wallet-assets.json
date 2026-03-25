@@ -1,0 +1,65 @@
+{
+  "$comment": "ETH native and USDC/USDT on Ethereum, Optimism, and Sepolia. Re-verify Sepolia USDT on Etherscan before production-like testing; testnet deployments can change.",
+  "version": 1,
+  "networks": {
+    "mainnet": {
+      "viemChainKey": "mainnet",
+      "displayName": "Ethereum mainnet",
+      "explorerTxPath": "https://etherscan.io/tx/",
+      "native": {
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+          "decimals": 6
+        },
+        "USDT": {
+          "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+          "decimals": 6
+        }
+      }
+    },
+    "optimism": {
+      "viemChainKey": "optimism",
+      "displayName": "Optimism",
+      "explorerTxPath": "https://optimistic.etherscan.io/tx/",
+      "native": {
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+          "decimals": 6
+        },
+        "USDT": {
+          "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+          "decimals": 6
+        }
+      }
+    },
+    "sepolia": {
+      "viemChainKey": "sepolia",
+      "displayName": "Sepolia",
+      "explorerTxPath": "https://sepolia.etherscan.io/tx/",
+      "native": {
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+          "decimals": 6,
+          "note": "Circle USDC on Sepolia (testnet)"
+        },
+        "USDT": {
+          "address": "0x523c8591fbe215b5af0bead65e65df783a37bcbc",
+          "decimals": 6,
+          "note": "Common Sepolia test USDT; confirm on Sepolia Etherscan before relying on liquidity"
+        }
+      }
+    }
+  }
+}

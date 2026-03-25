@@ -57,6 +57,14 @@
         {#if timestamp}<time datetime={timestamp}>{formatTime(timestamp)}</time>{/if}
       </p>
     {/if}
+    <div class="safe-actions">
+      <button type="button" class="safe-btn" disabled>
+        Sign
+      </button>
+      <button type="button" class="safe-btn safe-btn-secondary" disabled>
+        Execute
+      </button>
+    </div>
   </div>
 {/if}
 
@@ -100,5 +108,26 @@
 
   .safe-meta-sep {
     opacity: 0.8;
+  }
+
+  .safe-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .safe-btn {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .safe-btn-secondary {
+    border-style: dashed;
   }
 </style>

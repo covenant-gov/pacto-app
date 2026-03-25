@@ -1,0 +1,21 @@
+---
+description: Do not reference issue or ticket IDs in application source
+alwaysApply: true
+---
+
+# No issue IDs in source
+
+- **Never** put tracker references in application code: no `WALLET-105`, `REF-001`, `GH-123`, Jira keys, or similar in:
+  - comments and docblocks
+  - string literals (including user-visible copy)
+  - inline `//` / `/* */` next to implementations
+- Describe behavior in plain language only (e.g. “focus trap; restore focus on close”).
+- Use **tracked design docs** under `docs/` (e.g. `docs/wallet/`) for anything linked from code or user-visible strings. Keep internal checklists or scratch notes out of `src/`, `src-tauri/`, scripts, and shipped config; optional private doc trees (e.g. gitignored) must not be the only home for paths cited in the repo.
+
+```ts
+// ❌ BAD
+/** Modal focus trap (see WALLET-105). */
+
+// ✅ GOOD
+/** Modal: focus trap and restore previous focus on close. */
+```

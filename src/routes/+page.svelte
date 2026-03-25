@@ -2,18 +2,41 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { listen } from '@tauri-apps/api/event';
-  import Navbar from '../components/Navbar.svelte';
-  import TopNavbar from '../components/TopNavbar.svelte';
-  import ParentNavbar from '../components/ParentNavbar.svelte';
-  import ChatView from '../components/ChatView.svelte';
-  import ParentDashboard from '../components/ParentDashboard.svelte';
-  import Profile from '../components/Profile.svelte';
-  import MessengerNavbar from '../components/MessengerNavbar.svelte';
-  import MessengerChatView from '../components/MessengerChatView.svelte';
-  import DmThread from '../components/DmThread.svelte';
-  import Toast from '../components/Toast.svelte';
-  import { getDmMessages, getChatMessageCount, sendDmMessage, queueProfileSync, fetchMessages, markAsRead, startTyping, setNickname, listPendingMlsWelcomes, acceptMlsWelcome, parseSquadInviteMessage, parseChannelInSquadMessage, parseChannelInNetworkMessage, parseNetworkInviteMessage, syncMlsGroupsNow, deleteDmChatBackend, getSafe, setSafe } from '../lib/api/nostr';
+  import Navbar from '../components/layout/Navbar.svelte';
+  import TopNavbar from '../components/layout/TopNavbar.svelte';
+  import ParentNavbar from '../components/layout/ParentNavbar.svelte';
+  import ChatView from '../components/channel/ChatView.svelte';
+  import ParentDashboard from '../components/parent/ParentDashboard.svelte';
+  import Profile from '../components/profile/Profile.svelte';
+  import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
+  import MessengerChatView from '../components/dm/MessengerChatView.svelte';
+  import DmThread from '../components/dm/DmThread.svelte';
+  import WalletBar from '../components/wallet/WalletBar.svelte';
+  import Toast from '../components/ui/Toast.svelte';
+  import {
+    getDmMessages,
+    getChatMessageCount,
+    sendDmMessage,
+    queueProfileSync,
+    fetchMessages,
+    markAsRead,
+    startTyping,
+    setNickname,
+    listPendingMlsWelcomes,
+    acceptMlsWelcome,
+    parseSquadInviteMessage,
+    parseChannelInSquadMessage,
+    parseChannelInNetworkMessage,
+    parseNetworkInviteMessage,
+    syncMlsGroupsNow,
+    deleteDmChatBackend,
+    getSafe,
+    setSafe,
+    type PendingMlsWelcome,
+  } from '../lib/api/nostr';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
+  import { formatWalletTxAnnouncement } from '../lib/wallet/dm-messages';
+  import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
@@ -27,6 +50,8 @@
     activeDmTab,
     activeDmId,
     composingNewChat,
+    walletSidebarOpen,
+    closeWalletSidebar,
     backendDmMessages,
     backendGroupMessages,
     pendingMlsWelcomes,
@@ -67,8 +92,12 @@
     safeByParentId,
     type DmMessage,
     type DmTab,
+    type DmEntry,
+    type DmChatState,
+    type SyncStatus,
     type Channel,
     type Network,
+    type Squad,
   } from '../stores/app';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import { portal } from '../lib/utils/portal';
@@ -80,19 +109,65 @@
     showToast($pendingReadyToast.text, $pendingReadyToast.goTo);
     pendingReadyToast.set(null);
   }
+
+  /** Wallet sidebar only valid on DMs hub, Friends/Pinned, not while composing new chat. */
+  $: walletSidebarInvalidContext =
+    $activeTopNavTab !== 'dms' ||
+    $activeView !== 'hub' ||
+    ($activeDmTab !== 'friends' && $activeDmTab !== 'pinned') ||
+    $composingNewChat;
+
+  $: if (walletSidebarInvalidContext && $walletSidebarOpen) {
+    closeWalletSidebar();
+  }
+
   const LOAD_OLDER_PAGE_SIZE = 50;
 
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
   let acceptedSquadInviteGroupIds = new Set<string>();
 
-  /** Hydrate Safe address from backend when dashboard is shown (once per squad/network). */
+  /** Hydrate Safe address from backend when dashboard is shown or via background prefetch (once per squad/network). */
   let safeHydratedIds = new Set<string>();
   $: dashboardParentId = $activeChannelId === DASHBOARD_CHANNEL_ID ? ($activeTopNavTab === 'squads' ? $activeSquadId : $activeNetworkId) ?? null : null;
   $: if (dashboardParentId && !safeHydratedIds.has(dashboardParentId)) {
     safeHydratedIds.add(dashboardParentId);
     getSafe(dashboardParentId).then((addr) => {
-      if (addr != null) safeByParentId.update((m) => ({ ...m, [dashboardParentId]: addr }));
+      if (addr != null)
+        safeByParentId.update((m: Record<string, string>) => ({ ...m, [dashboardParentId]: addr }));
     });
+  }
+
+  /** After login, refresh embedded wallet balances in the background (cache only; no DM open). */
+  let walletSummaryPrefetchKey: string | null = null;
+  $: {
+    const npub = $isAuthenticated && $currentUser ? $currentUser.npub : null;
+    if (!npub) {
+      walletSummaryPrefetchKey = null;
+    } else if (walletSummaryPrefetchKey !== npub) {
+      walletSummaryPrefetchKey = npub;
+      scheduleWalletSummaryBackgroundPrefetch(npub);
+    }
+  }
+
+  /** Background prefetch: on app start/load, best-effort fetch of Safe addresses for all known parents (squads + networks). */
+  let initialSafePrefetchDone = false;
+  $: if (!initialSafePrefetchDone && ($squads.length > 0 || $networks.length > 0)) {
+    initialSafePrefetchDone = true;
+    const parentIds = [
+      ...$squads.map((s: Squad) => s.id),
+      ...$networks.map((n: Network) => n.id),
+    ];
+    for (const pid of parentIds) {
+      if (!pid || safeHydratedIds.has(pid)) continue;
+      safeHydratedIds.add(pid);
+      getSafe(pid).then((addr) => {
+        if (addr != null) {
+          safeByParentId.update((m: Record<string, string>) => ({ ...m, [pid]: addr }));
+        }
+      }).catch(() => {
+        // Ignore failures; dashboard-level fetch and announce-cards will keep state consistent.
+      });
+    }
   }
 
   /** When user accepts a channel invite (squad or network) we store mapping so mls_welcome_accepted can add channel to the right parent. */
@@ -115,20 +190,20 @@
     };
     if (parentType === 'squad') {
       const list = get(squads);
-      const squad = list.find((s) => s.id === parentId);
+      const squad = list.find((s: Squad) => s.id === parentId);
       if (squad) {
         newChannel.order = squad.channels.length;
-        squads.update((l) =>
-          l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
+        squads.update((l: Squad[]) =>
+          l.map((s: Squad) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
         );
       }
     } else {
       const list = get(networks);
-      const network = list.find((n) => n.id === parentId);
+      const network = list.find((n: Network) => n.id === parentId);
       if (network) {
         newChannel.order = network.channels.length;
-        networks.update((l) =>
-          l.map((n) => (n.id !== network.id ? n : { ...n, channels: [...n.channels, newChannel] }))
+        networks.update((l: Network[]) =>
+          l.map((n: Network) => (n.id !== network.id ? n : { ...n, channels: [...n.channels, newChannel] }))
         );
       }
     }
@@ -152,7 +227,7 @@
               ? $pendingList
               : $pinnedList;
       const lastOpened = $lastOpenedDmByTab[tab];
-      const stillInList = lastOpened && list.some((e) => e.npub === lastOpened);
+      const stillInList = lastOpened && list.some((e: DmEntry) => e.npub === lastOpened);
       const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
       activeDmId.set(npub);
     }
@@ -160,7 +235,7 @@
 
   // Remember which chat was last opened per tab (so tab switch restores it)
   $: if ($activeTopNavTab === 'dms' && $activeDmId) {
-    lastOpenedDmByTab.update((byTab) => ({
+    lastOpenedDmByTab.update((byTab: Record<DmTab, string | null>) => ({
       ...byTab,
       [$activeDmTab]: $activeDmId,
     }));
@@ -174,11 +249,11 @@
     lastOpenedSquadId.set(sid);
     const cid = $activeChannelId;
     if (cid && !cid.startsWith('creating-')) {
-      const squad = $squads.find((s) => s.id === sid);
-      const cidBelongsToSquad = squad?.channels.some((c) => c.groupId === cid) ?? false;
+      const squad = $squads.find((s: Squad) => s.id === sid);
+      const cidBelongsToSquad = squad?.channels.some((c: Channel) => c.groupId === cid) ?? false;
       if (cidBelongsToSquad) {
         lastOpenedChannelId.set(cid);
-        lastChannelBySquadId.update((m) => {
+        lastChannelBySquadId.update((m: Record<string, string>) => {
           const next = { ...m, [sid]: cid };
           if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-squads persist', { sid: sid.slice(0, 12), cid: cid.slice(0, 20) });
           return next;
@@ -194,12 +269,12 @@
     lastOpenedNetworkId.set(nid);
     const networkCid = $activeChannelId;
     if (networkCid && !networkCid.startsWith('creating-')) {
-      const net = $networks.find((n) => n.id === nid);
-      const cidBelongsToNetwork = net?.channels.some((c) => c.groupId === networkCid) ?? false;
+      const net = $networks.find((n: Network) => n.id === nid);
+      const cidBelongsToNetwork = net?.channels.some((c: Channel) => c.groupId === networkCid) ?? false;
       if (cidBelongsToNetwork) {
         if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-networks persist (network only)', { nid: nid?.slice(0, 12), networkCid: networkCid?.slice(0, 20) });
         lastOpenedNetworkChannelId.set(networkCid);
-        lastChannelByNetworkId.update((m) => ({ ...m, [nid]: networkCid }));
+        lastChannelByNetworkId.update((m: Record<string, string>) => ({ ...m, [nid]: networkCid }));
       }
     }
   }
@@ -207,13 +282,17 @@
   // Never leave channel empty when a squad is selected: restore last channel for this squad or default to first (announcements). Dashboard (virtual channel) is valid.
   $: if ($activeTopNavTab === 'squads' && $activeSquadId && $squads.length > 0) {
     const sid = $activeSquadId;
-    const squad = $squads.find((s) => s.id === sid);
+    const squad = $squads.find((s: Squad) => s.id === sid);
     if (squad) {
-      const sorted = [...squad.channels].sort((a, b) => a.order - b.order);
+      const sorted = [...squad.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForSquad = $lastChannelBySquadId[sid];
-      const activeInSquad = $activeChannelId && (sorted.some((c) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
-      const lastInSquad = lastForSquad && (sorted.some((c) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
+      const activeInSquad =
+        $activeChannelId &&
+        (sorted.some((c: Channel) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
+      const lastInSquad =
+        lastForSquad &&
+        (sorted.some((c: Channel) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
       const validChannel =
         activeInSquad ? $activeChannelId
           : lastInSquad ? lastForSquad
@@ -228,13 +307,17 @@
   // Never leave channel empty when a network is selected: restore last channel for this network or default to first (announcements). Dashboard (virtual channel) is valid.
   $: if ($activeTopNavTab === 'networks' && $activeNetworkId && $networks.length > 0) {
     const nid = $activeNetworkId;
-    const net = $networks.find((n) => n.id === nid);
+    const net = $networks.find((n: Network) => n.id === nid);
     if (net) {
-      const sorted = [...net.channels].sort((a, b) => a.order - b.order);
+      const sorted = [...net.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForNet = $lastChannelByNetworkId[nid];
-      const activeInNet = $activeChannelId && (sorted.some((c) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
-      const lastInNet = lastForNet && (sorted.some((c) => c.groupId === lastForNet) || lastForNet === DASHBOARD_CHANNEL_ID);
+      const activeInNet =
+        $activeChannelId &&
+        (sorted.some((c: Channel) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
+      const lastInNet =
+        lastForNet &&
+        (sorted.some((c: Channel) => c.groupId === lastForNet) || lastForNet === DASHBOARD_CHANNEL_ID);
       const validChannel =
         activeInNet ? $activeChannelId
           : lastInNet ? lastForNet
@@ -262,8 +345,8 @@
     const npub = $activeDmId;
     if (!npub) return [];
     const list = [...($backendDmMessages[npub] ?? [])];
-    list.sort((a, b) => a.at - b.at);
-    const squadInviteCount = list.filter((m) => parseSquadInviteMessage(m.content ?? '') !== null).length;
+    list.sort((a: DmMessage, b: DmMessage) => a.at - b.at);
+    const squadInviteCount = list.filter((m: DmMessage) => parseSquadInviteMessage(m.content ?? '') !== null).length;
     if (list.length > 0 || npub) console.log('[Squad/Invite] mergedDmMessages for', npub?.slice(0, 24) + '…', 'count=', list.length, 'squadInviteMsgs=', squadInviteCount);
     return list;
   })();
@@ -275,7 +358,7 @@
     queueProfileSync(npub).catch(() => {});
     getChatMessageCount(npub)
       .then((count) => {
-        messageCountByChat.update((byChat) => ({ ...byChat, [npub]: count }));
+        messageCountByChat.update((byChat: Record<string, number>) => ({ ...byChat, [npub]: count }));
       })
       .catch((err) => {
         dmError('open conversation: getChatMessageCount failed', err);
@@ -284,7 +367,7 @@
       .then((msgs) => {
         dmLog('open conversation: messages loaded', { npub: npub.slice(0, 20) + '…', count: msgs.length });
         const loaded = msgs as DmMessage[];
-        backendDmMessages.update((byNpub) => {
+        backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
           const existing = byNpub[npub] ?? [];
           const loadedIds = new Set(loaded.map((m) => m.id));
           // Keep messages from state that aren't in the loaded set (e.g. just-sent squad invite from message_new)
@@ -292,7 +375,7 @@
           const merged = [...loaded, ...fromExisting];
           return { ...byNpub, [npub]: merged };
         });
-        loadedOffsetByChat.update((by) => ({ ...by, [npub]: PAGE_SIZE }));
+        loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [npub]: PAGE_SIZE }));
         // Mark as read up to the latest message (backend returns newest first)
         const lastMessageId = msgs.length > 0 ? (msgs[0] as DmMessage).id : null;
         markAsRead(npub, lastMessageId).catch(() => {});
@@ -308,17 +391,17 @@
     dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
     getChatMessageCount(groupId)
       .then((count) => {
-        messageCountByChat.update((by) => ({ ...by, [groupId]: count }));
+        messageCountByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: count }));
       })
       .catch((err) => dmError('open channel: getChatMessageCount failed', err));
     getDmMessages(groupId, PAGE_SIZE, 0)
       .then((msgs) => {
         dmLog('open channel: messages loaded', { groupId: groupId.slice(0, 20) + '…', count: msgs.length });
-        backendGroupMessages.update((byGroup) => ({
+        backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => ({
           ...byGroup,
           [groupId]: msgs as DmMessage[],
         }));
-        loadedOffsetByChat.update((by) => ({ ...by, [groupId]: PAGE_SIZE }));
+        loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: PAGE_SIZE }));
       })
       .catch((err) => dmError('open channel: getDmMessages failed', err));
   }
@@ -331,7 +414,7 @@
     dmLog('loadOlder', { npub: npub.slice(0, 20) + '…', offset: currentOffset });
     try {
       const older = await getDmMessages(npub, LOAD_OLDER_PAGE_SIZE, currentOffset);
-      backendDmMessages.update((byNpub) => {
+      backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[npub] ?? [];
         const ids = new Set(list.map((m) => m.id));
         const newMsgs = (older as DmMessage[]).filter((m) => !ids.has(m.id));
@@ -339,7 +422,10 @@
         dmLog('loadOlder: prepending', { count: newMsgs.length });
         return { ...byNpub, [npub]: [...newMsgs, ...list] };
       });
-      loadedOffsetByChat.update((by) => ({ ...by, [npub]: currentOffset + LOAD_OLDER_PAGE_SIZE }));
+      loadedOffsetByChat.update((by: Record<string, number>) => ({
+        ...by,
+        [npub]: currentOffset + LOAD_OLDER_PAGE_SIZE,
+      }));
     } catch (err) {
       dmError('loadOlder failed', err);
     } finally {
@@ -364,7 +450,7 @@
     messageId: string
   ): Promise<void> {
     const welcomes = await listPendingMlsWelcomes();
-    const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
+    const welcome = welcomes.find((w: PendingMlsWelcome) => w.nostr_group_id === payload.groupId);
     if (!welcome) {
       const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
       err.noWelcome = true;
@@ -386,11 +472,11 @@
         createdAt: now,
         updatedAt: now,
       };
-      squads.update((list) => [...list, newSquad]);
+      squads.update((list: Squad[]) => [...list, newSquad]);
       activeSquadId.set(newSquad.id);
       activeChannelId.set(payload.groupId);
       activeView.set('hub');
-      acceptedSquadInviteIds.update((ids) => (ids.includes(messageId) ? ids : [...ids, messageId]));
+      acceptedSquadInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     } else {
       const newNetwork: Network = {
         id: payload.groupId,
@@ -400,12 +486,12 @@
         createdAt: now,
         updatedAt: now,
       };
-      networks.update((list) => [...list, newNetwork]);
+      networks.update((list: Network[]) => [...list, newNetwork]);
       activeNetworkId.set(newNetwork.id);
       activeChannelId.set(payload.groupId);
       activeTopNavTab.set('networks');
       activeView.set('hub');
-      acceptedNetworkInviteIds.update((ids) => (ids.includes(messageId) ? ids : [...ids, messageId]));
+      acceptedNetworkInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     }
   }
 
@@ -428,7 +514,7 @@
     acceptingChannelInSquadId = msg.id;
     try {
       const welcomes = await listPendingMlsWelcomes();
-      const welcome = welcomes.find((w) => w.nostr_group_id === payload.channelGroupId);
+      const welcome = welcomes.find((w: PendingMlsWelcome) => w.nostr_group_id === payload.channelGroupId);
       if (!welcome) {
         dmError('Accept channel in squad: no pending welcome for channel', payload.channelGroupId);
         return;
@@ -440,7 +526,9 @@
       });
       acceptedSquadInviteGroupIds.add(payload.channelGroupId);
       await acceptMlsWelcome(welcome.id);
-      acceptedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+      acceptedChannelInviteMessageIds.update((ids: string[]) =>
+        ids.includes(msg.id) ? ids : [...ids, msg.id]
+      );
     } catch (e) {
       dmError('Accept channel invite failed', e);
       channelInvitePendingAccept.delete(payload.channelGroupId);
@@ -458,7 +546,7 @@
     acceptingChannelInNetworkId = msg.id;
     try {
       const welcomes = await listPendingMlsWelcomes();
-      const welcome = welcomes.find((w) => w.nostr_group_id === payload.channelGroupId);
+      const welcome = welcomes.find((w: PendingMlsWelcome) => w.nostr_group_id === payload.channelGroupId);
       if (!welcome) {
         dmError('Accept channel in network: no pending welcome for channel', payload.channelGroupId);
         return;
@@ -470,7 +558,9 @@
       });
       acceptedSquadInviteGroupIds.add(payload.channelGroupId);
       await acceptMlsWelcome(welcome.id);
-      acceptedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+      acceptedChannelInviteMessageIds.update((ids: string[]) =>
+        ids.includes(msg.id) ? ids : [...ids, msg.id]
+      );
     } catch (e) {
       dmError('Accept channel in network invite failed', e);
       channelInvitePendingAccept.delete(payload.channelGroupId);
@@ -521,9 +611,9 @@
     }, 400);
   }
 
-  async function handleDmSend(content: string) {
+  async function handleDmSend(content: string): Promise<boolean> {
     const id = $activeDmId;
-    if (!id) return;
+    if (!id) return false;
     dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
     $dmSendError = null;
     try {
@@ -535,11 +625,34 @@
           'dm_send'
         );
       }
+      return ok;
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSend error', e);
+      return false;
     }
+  }
+
+  /** Dev-only: post a test `wallet_tx_announcement` to validate the in-thread card (fake tx hash). */
+  async function devPostWalletTxAnnouncementStub() {
+    const peerNpub = get(activeDmId);
+    const me = get(currentUser)?.npub;
+    if (!peerNpub || !me) {
+      showToast('Open a DM and ensure you are logged in.');
+      return;
+    }
+    const content = formatWalletTxAnnouncement({
+      network: 'sepolia',
+      asset: 'ETH',
+      amount: '0.001',
+      tx_hash: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      from_npub: me,
+      to_npub: peerNpub,
+      block_number: '1',
+    });
+    const ok = await handleDmSend(content);
+    if (ok) showToast('Dev: posted test wallet_tx_announcement (fake tx).');
   }
 
   /** Ungrouped channels UI removed; keep store empty. */
@@ -554,23 +667,28 @@
     clearUngroupedChannels();
     // Restore last opened squad/channel: use per-squad last channel only (so Networks tab can't overwrite it), else first (announcements)
     const lastSquadId = $lastOpenedSquadId;
-    const squad = lastSquadId ? $squads.find((s) => s.id === lastSquadId) : null;
+    const squad = lastSquadId ? $squads.find((s: Squad) => s.id === lastSquadId) : null;
     const mapSnapshot = { ...$lastChannelBySquadId };
     if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page restore-to-squads', { lastSquadId: lastSquadId?.slice(0, 12), squadId: squad?.id?.slice(0, 12), lastChannelBySquadId: mapSnapshot, lastForSquad: squad ? mapSnapshot[squad.id]?.slice(0, 20) : undefined });
     if (squad) {
-      const sorted = [...squad.channels].sort((a, b) => a.order - b.order);
+      const sorted = [...squad.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       const firstCh = sorted[0];
       const lastForSquad = $lastChannelBySquadId[squad.id];
-      const lastValid = lastForSquad && (sorted.some((c) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
-      const setChannelId = lastValid && lastForSquad === DASHBOARD_CHANNEL_ID
-        ? DASHBOARD_CHANNEL_ID
-        : (lastValid ? sorted.find((c) => c.groupId === lastForSquad)?.groupId : firstCh?.groupId) ?? firstCh?.groupId ?? null;
+      const lastValid =
+        lastForSquad &&
+        (sorted.some((c: Channel) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
+      const setChannelId =
+        lastValid && lastForSquad === DASHBOARD_CHANNEL_ID
+          ? DASHBOARD_CHANNEL_ID
+          : (lastValid ? sorted.find((c: Channel) => c.groupId === lastForSquad)?.groupId : firstCh?.groupId) ??
+            firstCh?.groupId ??
+            null;
       if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page restore-to-squads set', { squadId: squad.id.slice(0, 12), lastForSquad: lastForSquad?.slice(0, 20), lastValid, setChannelId: setChannelId?.slice(0, 20), firstChId: firstCh?.groupId?.slice(0, 20) });
       activeSquadId.set(squad.id);
       activeChannelId.set(setChannelId);
     } else if ($squads.length > 0 && !$activeSquadId) {
       const first = $squads[0];
-      const sorted = [...first.channels].sort((a, b) => a.order - b.order);
+      const sorted = [...first.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       activeSquadId.set(first.id);
       activeChannelId.set(sorted[0]?.groupId ?? null);
     }
@@ -578,10 +696,10 @@
     prevTopNavTab = 'networks';
     // Restore last-opened network/channel: prefer per-network last channel, then global last, then first (announcements)
     const lastNetId = $lastOpenedNetworkId;
-    const net = lastNetId ? $networks.find((n) => n.id === lastNetId) : null;
+    const net = lastNetId ? $networks.find((n: Network) => n.id === lastNetId) : null;
     if (net) {
       activeNetworkId.set(net.id);
-      const sorted = [...net.channels].sort((a, b) => a.order - b.order);
+      const sorted = [...net.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       const firstCh = sorted[0];
       const lastChanId = $lastOpenedNetworkChannelId;
       const lastForNet = $lastChannelByNetworkId[net.id];
@@ -589,17 +707,17 @@
       const ch =
         lastIsDashboard
           ? null
-          : lastChanId && sorted.some((c) => c.groupId === lastChanId)
-            ? sorted.find((c) => c.groupId === lastChanId)
-            : lastForNet && sorted.some((c) => c.groupId === lastForNet)
-              ? sorted.find((c) => c.groupId === lastForNet)
+          : lastChanId && sorted.some((c: Channel) => c.groupId === lastChanId)
+            ? sorted.find((c: Channel) => c.groupId === lastChanId)
+            : lastForNet && sorted.some((c: Channel) => c.groupId === lastForNet)
+              ? sorted.find((c: Channel) => c.groupId === lastForNet)
               : firstCh;
       activeChannelId.set(lastIsDashboard ? DASHBOARD_CHANNEL_ID : (ch?.groupId ?? firstCh?.groupId ?? null));
     } else if ($networks.length > 0) {
-      const currentNet = $activeNetworkId ? $networks.find((n) => n.id === $activeNetworkId) : null;
+      const currentNet = $activeNetworkId ? $networks.find((n: Network) => n.id === $activeNetworkId) : null;
       if (!currentNet) {
         const first = $networks[0];
-        const firstCh = first.channels.slice().sort((a, b) => a.order - b.order)[0];
+        const firstCh = first.channels.slice().sort((a: Channel, b: Channel) => a.order - b.order)[0];
         activeNetworkId.set(first.id);
         activeChannelId.set(firstCh?.groupId ?? null);
       }
@@ -613,7 +731,7 @@
       if (cid && !cid.startsWith('creating-')) {
         lastOpenedSquadId.set(sid);
         lastOpenedChannelId.set(cid);
-        lastChannelBySquadId.update((m) => ({ ...m, [sid]: cid }));
+        lastChannelBySquadId.update((m: Record<string, string>) => ({ ...m, [sid]: cid }));
       }
     }
     // Persist network channel when leaving Networks tab so it restores correctly when returning
@@ -623,7 +741,7 @@
       if (cid && !cid.startsWith('creating-')) {
         lastOpenedNetworkId.set(nid);
         lastOpenedNetworkChannelId.set(cid);
-        lastChannelByNetworkId.update((m) => ({ ...m, [nid]: cid }));
+        lastChannelByNetworkId.update((m: Record<string, string>) => ({ ...m, [nid]: cid }));
       }
     }
     prevTopNavTab = $activeTopNavTab;
@@ -667,7 +785,7 @@
         replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
         replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null }).replied_to_has_attachment,
       };
-      backendDmMessages.update((byNpub) => {
+      backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[chat_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byNpub;
         // Replace optimistic message (opt-*) with same content when backend confirms (avoids duplicate)
@@ -677,7 +795,7 @@
         return { ...byNpub, [chat_id]: [...withoutOpt, m] };
       });
       // Update Friends/Requests/Pending: OR in message flags so we never lose a true (chat can move to Friends when they reply)
-      dmChatsByNpub.update((map) => {
+      dmChatsByNpub.update((map: Record<string, DmChatState>) => {
         const cur = map[chat_id];
         const hadChat = chat_id in map;
         const next = {
@@ -697,7 +815,7 @@
         clearTimeout(clearTimeoutId);
         typingClearTimeouts.delete(chat_id);
       }
-      typingByChat.update((by) => {
+      typingByChat.update((by: Record<string, string[]>) => {
         if (!by[chat_id]?.length) return by;
         return { ...by, [chat_id]: [] };
       });
@@ -722,21 +840,30 @@
           replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null }).replied_to_has_attachment,
         };
         if (chat_id.startsWith('npub1')) {
-          backendDmMessages.update((byNpub) => {
+          backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
             const list = byNpub[chat_id] ?? [];
             const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
-            return { ...byNpub, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
+            return {
+              ...byNpub,
+              [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
+            };
           });
         } else {
           // Group chat: replace old_id with real message so sender doesn't see duplicate (pending-* → real id)
-          backendGroupMessages.update((byGroup) => {
+          backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
             const list = byGroup[chat_id] ?? [];
             const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
-            return { ...byGroup, [chat_id]: [...out, m].sort((a, b) => a.at - b.at) };
+            return {
+              ...byGroup,
+              [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
+            };
           });
           const announce = parseAnnouncement(m.content);
           if (announce?.type === 'squad_safe_updated') {
-            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+            safeByParentId.update((byId: Record<string, string>) => ({
+              ...byId,
+              [announce.payload.squad_id]: announce.payload.safe_address,
+            }));
           }
         }
       }
@@ -752,7 +879,7 @@
     });
 
     const unlistenSyncProgress = listen('sync_progress', () => {
-      dmSyncStatus.update((s) => (s === 'idle' ? 'syncing' : s));
+      dmSyncStatus.update((s: SyncStatus) => (s === 'idle' ? 'syncing' : s));
     });
 
     const unlistenSyncFinished = listen('sync_finished', () => {
@@ -765,7 +892,7 @@
       const { conversation_id, typers } = e.payload;
       if (!conversation_id.startsWith('npub1')) return;
       const list = typers ?? [];
-      typingByChat.update((by) => ({ ...by, [conversation_id]: list }));
+      typingByChat.update((by: Record<string, string[]>) => ({ ...by, [conversation_id]: list }));
 
       // Clear "Typing" after TYPING_EXPIRY_SEC if we don't get another update (backend doesn't re-emit on expiry)
       const existing = typingClearTimeouts.get(conversation_id);
@@ -774,7 +901,7 @@
       if (list.length > 0) {
         const t = setTimeout(() => {
           typingClearTimeouts.delete(conversation_id);
-          typingByChat.update((by) => {
+          typingByChat.update((by: Record<string, string[]>) => {
             const next = { ...by };
             if (next[conversation_id]?.length) next[conversation_id] = [];
             return next;
@@ -799,7 +926,7 @@
         replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
         replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null }).replied_to_has_attachment,
       };
-      backendGroupMessages.update((byGroup) => {
+      backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
         const list = byGroup[group_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byGroup;
         // Remove optimistic placeholder (opt-* or pending-*) so we don't show duplicate when real message arrives
@@ -810,7 +937,10 @@
       });
       const announce = parseAnnouncement(m.content);
       if (announce?.type === 'squad_safe_updated') {
-            safeByParentId.update((byId) => ({ ...byId, [announce.payload.squad_id]: announce.payload.safe_address }));
+            safeByParentId.update((byId: Record<string, string>) => ({
+              ...byId,
+              [announce.payload.squad_id]: announce.payload.safe_address,
+            }));
           }
       if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
@@ -850,13 +980,13 @@
         return;
       }
       const list = get(squads);
-      const singleChannelSquads = list.filter((s) => s.channels.length === 1);
+      const singleChannelSquads = list.filter((s: Squad) => s.channels.length === 1);
       if (singleChannelSquads.length === 1) {
         const squad = singleChannelSquads[0];
         const name = group_id.slice(0, 12) + '…';
         const newChannel: Channel = { name, groupId: group_id, order: squad.channels.length };
-        squads.update((l) =>
-          l.map((s) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
+        squads.update((l: Squad[]) =>
+          l.map((s: Squad) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
         );
         return;
       }
@@ -925,7 +1055,8 @@
       {:else if $activeTopNavTab === 'dms'}
         <div class="dm-area">
           <MessengerNavbar />
-          <div class="dm-area-center">
+          <div class="dm-main-row">
+            <div class="dm-area-center">
             {#if $dmSyncStatus !== 'idle'}
               <p class="dm-sync-banner dm-sync-{$dmSyncStatus}" role="status">
                 {$dmSyncStatus === 'syncing' ? 'Updating messages…' : 'Up to date'}
@@ -947,17 +1078,25 @@
                 onAcceptChannelInSquad={handleAcceptChannelInSquad}
                 onAcceptChannelInNetwork={handleAcceptChannelInNetwork}
                 onAcceptNetworkInvite={handleAcceptNetworkInvite}
-                onDeclineSquad={(msg) => declinedSquadInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
-                onDeclineNetwork={(msg) => declinedNetworkInviteIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
-                onDeclineChannelInSquad={(msg) => declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
-                onDeclineChannelInNetwork={(msg) => declinedChannelInviteMessageIds.update((ids) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineSquad={(msg: DmMessage) =>
+                  declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineNetwork={(msg: DmMessage) =>
+                  declinedNetworkInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
+                onDeclineChannelInSquad={(msg: DmMessage) =>
+                  declinedChannelInviteMessageIds.update((ids: string[]) =>
+                    ids.includes(msg.id) ? ids : [...ids, msg.id]
+                  )}
+                onDeclineChannelInNetwork={(msg: DmMessage) =>
+                  declinedChannelInviteMessageIds.update((ids: string[]) =>
+                    ids.includes(msg.id) ? ids : [...ids, msg.id]
+                  )}
                 acceptingSquadInviteId={acceptingSquadInviteId}
                 acceptingChannelInSquadId={acceptingChannelInSquadId}
                 acceptingChannelInNetworkId={acceptingChannelInNetworkId}
                 acceptingNetworkInviteId={acceptingNetworkInviteId}
                 showOptionsMenu={true}
                 showPinOption={$activeDmTab !== 'requests' && $activeDmTab !== 'pending'}
-                onSaveNickname={async (value) => {
+                onSaveNickname={async (value: string) => {
                   const id = $activeDmId;
                   if (!id) return;
                   try {
@@ -982,6 +1121,7 @@
                     showToast('Could not delete chat. Please try again.');
                   });
                 }}
+                showWalletButton={$activeDmTab === 'friends' || $activeDmTab === 'pinned' /* wallet: Friends + Pinned only; not Pending/Requests/new chat */ }
               />
             {:else}
               <div class="dm-empty">
@@ -989,22 +1129,48 @@
               </div>
             {/if}
             </div>
+            </div>
+            {#if $walletSidebarOpen && $activeDmId && !walletSidebarInvalidContext}
+              <WalletBar
+                npub={$activeDmId}
+                postDmPlaintext={handleDmSend}
+                onDevPostTestWalletAnnouncement={import.meta.env.DEV ? devPostWalletTxAnnouncementStub : undefined}
+              />
+            {/if}
           </div>
         </div>
       {:else}
         <div class="parent-area">
           <ParentNavbar type={$activeTopNavTab === 'networks' ? 'network' : 'squad'} />
-          {#if $activeChannelId === DASHBOARD_CHANNEL_ID && ($activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId) : $networks.find((n) => n.id === $activeNetworkId))}
+          {#if $activeChannelId === DASHBOARD_CHANNEL_ID && ($activeTopNavTab === 'squads' ? $squads.find((s: Squad) => s.id === $activeSquadId) : $networks.find((n: Network) => n.id === $activeNetworkId))}
             <ParentDashboard
-              parent={$activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!}
+              parent={$activeTopNavTab === 'squads'
+                ? $squads.find((s: Squad) => s.id === $activeSquadId)!
+                : $networks.find((n: Network) => n.id === $activeNetworkId)!}
               parentType={$activeTopNavTab === 'networks' ? 'network' : 'squad'}
-              safeAddress={$safeByParentId[($activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId) : $networks.find((n) => n.id === $activeNetworkId))?.id ?? ''] ?? null}
+              safeAddress={$safeByParentId[
+                ($activeTopNavTab === 'squads'
+                  ? $squads.find((s: Squad) => s.id === $activeSquadId)
+                  : $networks.find((n: Network) => n.id === $activeNetworkId))?.id ?? ''
+              ] ?? null}
               onConfirmSetSafe={async (safeAddress: string) => {
-                const p = $activeTopNavTab === 'squads' ? $squads.find((s) => s.id === $activeSquadId)! : $networks.find((n) => n.id === $activeNetworkId)!;
+                const p =
+                  $activeTopNavTab === 'squads'
+                    ? $squads.find((s: Squad) => s.id === $activeSquadId)!
+                    : $networks.find((n: Network) => n.id === $activeNetworkId)!;
                 await setSafe(p.id, safeAddress);
-                const announcementsGroupId = p.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ?? p.channels[0]?.groupId;
-                if (announcementsGroupId) await sendDmMessage(announcementsGroupId, buildAnnounceContent({ type: ANNOUNCE_TYPE_SAFE_UPDATED, payload: { squad_id: p.id, safe_address: safeAddress } }));
-                safeByParentId.update((m) => ({ ...m, [p.id]: safeAddress }));
+                const announcementsGroupId =
+                  p.channels.find((c: Channel) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
+                  p.channels[0]?.groupId;
+                if (announcementsGroupId)
+                  await sendDmMessage(
+                    announcementsGroupId,
+                    buildAnnounceContent({
+                      type: ANNOUNCE_TYPE_SAFE_UPDATED,
+                      payload: { squad_id: p.id, safe_address: safeAddress },
+                    })
+                  );
+                safeByParentId.update((m: Record<string, string>) => ({ ...m, [p.id]: safeAddress }));
               }}
             />
           {:else}
@@ -1061,6 +1227,15 @@
     min-height: 0;
     display: flex;
     flex-direction: row;
+  }
+
+  .dm-main-row {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
   }
 
   .dm-area-center {
