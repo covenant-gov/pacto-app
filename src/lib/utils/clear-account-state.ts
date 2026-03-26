@@ -53,7 +53,9 @@ import {
   typingByChat,
   dmSendError,
   setCurrentNpubForPersistence,
+  treasurySafesByParentId,
 } from '../../stores/app';
+import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { theme } from '../../stores/theme';
@@ -122,6 +124,8 @@ export function clearAccountState(npub?: string): void {
   clearWalletSummaryCacheStore();
   clearAccountLocalStorage(npub);
 
+  treasurySafesByParentId.set({});
+  safeStateByTreasuryId.set({});
   squads.set([]);
   pinnedDmNpubs.set(new Set());
   dmChatsByNpub.set({});

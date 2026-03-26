@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { PendingMlsWelcome } from '../lib/api/nostr';
 import type { SupportedChainId } from '../lib/wallet/chains';
+import type { TreasurySafeEntry } from '../lib/treasury/treasury-safes';
 import { hydrateWalletSummaryCacheFromDisk } from '../lib/wallet/wallet-summary-cache';
 import {
   initInviteDecisionPersistence,
@@ -341,8 +342,13 @@ export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
 export const DASHBOARD_CHANNEL_ID = '__dashboard__';
 export const DASHBOARD_CHANNEL_NAME = 'dashboard';
 
-/** Safe address by id (squad or network id). Updated when we receive safe_updated announce-cards in # announcements. */
-export const safeByParentId = writable<Record<string, string>>({});
+/**
+ * Treasury Safe rows per parent id (squad or network). Updated from SQLite and when
+ * `squad_safe_updated` announce-cards arrive in #announcements.
+ */
+export const treasurySafesByParentId = writable<Record<string, TreasurySafeEntry[]>>({});
+
+export type { TreasurySafeEntry };
 
 /** Normalize a channel from storage (drops legacy `id` if present). */
 function normalizeChannel(ch: { name: string; groupId: string; order: number }): Channel {

@@ -10,6 +10,8 @@
   export let onClose: () => void;
   /** When false, overlay click and Escape do not close (e.g. in-flight async work). */
   export let dismissible = true;
+  /** Extra class on the inner dialog panel (e.g. wider layout). */
+  export let contentClass = '';
 
   let dialogEl: HTMLDivElement;
 
@@ -83,7 +85,7 @@
 <div class="modal-overlay" on:click={handleOverlayClick}>
   <div
     bind:this={dialogEl}
-    class="modal-content"
+    class="modal-content {contentClass}"
     role="dialog"
     aria-modal="true"
     aria-busy={dismissible ? undefined : 'true'}

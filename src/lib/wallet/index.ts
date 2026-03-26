@@ -16,6 +16,9 @@ export { getCurrentAddress, getPublicClient, getBalance } from './client';
 export {
   getWalletSummary,
   walletBuildAndSendTransaction,
+  parseWalletOpError,
+  safeDeployProxy,
+  userFacingDeploySafeMessage,
   type WalletSummary,
   type WalletSummaryResult,
   type WalletSummaryNetwork,
@@ -24,6 +27,8 @@ export {
   type WalletSendResultOutcome,
   type WalletOpParsedError,
   type WalletTransferSuccessDetail,
+  type SafeDeployProxyResult,
+  type SafeDeployProxyOutcome,
 } from './backend-wallet';
 export { getSafeState, type SafeState } from './safe';
 export {

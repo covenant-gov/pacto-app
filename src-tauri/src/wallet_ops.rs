@@ -148,7 +148,7 @@ async fn erc20_balance(
     decode_balance_of_return(out.as_ref())
 }
 
-fn parse_address(s: &str) -> Result<Address, String> {
+pub(crate) fn parse_address(s: &str) -> Result<Address, String> {
     let t = s.trim();
     let h = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
     if h.len() != 40 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {

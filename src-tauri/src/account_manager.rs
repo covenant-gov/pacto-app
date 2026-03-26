@@ -126,6 +126,28 @@ CREATE TABLE IF NOT EXISTS squad_safe (
     safe_address TEXT NOT NULL
 );
 
+-- Treasury Safes per squad/network parent (multiple rows per parent). Migrated from squad_safe when present.
+CREATE TABLE IF NOT EXISTS parent_treasury_safe (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT NOT NULL,
+    safe_address TEXT NOT NULL,
+    chain TEXT NOT NULL DEFAULT 'sepolia',
+    label TEXT NOT NULL DEFAULT '',
+    created_at_ms INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_parent_treasury_unique ON parent_treasury_safe(parent_id, safe_address, chain);
+CREATE INDEX IF NOT EXISTS idx_parent_treasury_parent ON parent_treasury_safe(parent_id, created_at_ms);
+
+-- Squad/network parent id + member npub -> EVM payout address (from MLS squad_member_evm_share)
+CREATE TABLE IF NOT EXISTS squad_member_evm (
+    parent_id TEXT NOT NULL,
+    member_npub TEXT NOT NULL,
+    evm_address TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (parent_id, member_npub)
+);
+CREATE INDEX IF NOT EXISTS idx_squad_member_evm_parent ON squad_member_evm(parent_id);
+
 -- Events table: flat, protocol-aligned storage for all Nostr events
 -- Every event (message, reaction, attachment, etc.) is a separate row
 -- This is the PRIMARY storage for all message data
@@ -695,6 +717,59 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] squad_safe table created");
     }
 
+    let has_parent_treasury_safe: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='parent_treasury_safe'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_parent_treasury_safe {
+        println!("[Migration] Creating parent_treasury_safe table...");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS parent_treasury_safe (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT NOT NULL,
+                safe_address TEXT NOT NULL,
+                chain TEXT NOT NULL DEFAULT 'sepolia',
+                label TEXT NOT NULL DEFAULT '',
+                created_at_ms INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_parent_treasury_unique ON parent_treasury_safe(parent_id, safe_address, chain);
+            CREATE INDEX IF NOT EXISTS idx_parent_treasury_parent ON parent_treasury_safe(parent_id, created_at_ms);"#,
+        )
+        .map_err(|e| format!("Failed to create parent_treasury_safe table: {}", e))?;
+        println!("[Migration] parent_treasury_safe table created");
+    }
+
+    let pt_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM parent_treasury_safe",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    let squad_safe_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM squad_safe", [], |row| row.get(0))
+        .unwrap_or(0);
+    if pt_count == 0 && squad_safe_count > 0 {
+        println!("[Migration] Copying squad_safe rows into parent_treasury_safe…");
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT INTO parent_treasury_safe (id, parent_id, safe_address, chain, label, created_at_ms)
+             SELECT lower(hex(randomblob(16))), squad_id, safe_address, 'sepolia', '', ?1
+             FROM squad_safe",
+            [now_ms],
+        )
+        .map_err(|e| format!("Failed to migrate squad_safe to parent_treasury_safe: {}", e))?;
+        println!("[Migration] squad_safe → parent_treasury_safe copy done");
+    }
+
     let has_dm_peer_evm: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dm_peer_evm'",
@@ -717,6 +792,31 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         )
         .map_err(|e| format!("Failed to create dm_peer_evm table: {}", e))?;
         println!("[Migration] dm_peer_evm table created");
+    }
+
+    let has_squad_member_evm: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_member_evm'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_squad_member_evm {
+        println!("[Migration] Creating squad_member_evm table...");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squad_member_evm (
+                parent_id TEXT NOT NULL,
+                member_npub TEXT NOT NULL,
+                evm_address TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (parent_id, member_npub)
+            );
+            CREATE INDEX IF NOT EXISTS idx_squad_member_evm_parent ON squad_member_evm(parent_id);"#,
+        )
+        .map_err(|e| format!("Failed to create squad_member_evm table: {}", e))?;
+        println!("[Migration] squad_member_evm table created");
     }
 
     Ok(())

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { TreasurySafeEntry } from "../treasury/treasury-safes";
 import { dmLog } from "../utils/dm-debug";
 
 /**
@@ -296,7 +297,7 @@ export async function listMlsGroups(): Promise<string[]> {
 }
 
 /**
- * Get stored Safe address for a squad or network (by id). Backend: get_safe.
+ * Get first stored Safe address for a parent (legacy). Prefer `listParentTreasurySafes`.
  */
 export async function getSafe(parentId: string): Promise<string | null> {
   const addr = (await invoke('get_safe', { parentId })) as string | null;
@@ -304,10 +305,30 @@ export async function getSafe(parentId: string): Promise<string | null> {
 }
 
 /**
- * Set Safe address for a squad or network (by id). Backend: set_safe. Caller should then post safe_updated announce-card to # announcements.
+ * Replace all treasury rows for this parent with a single Sepolia Safe. Prefer `addParentTreasurySafe` for multi-Safe.
  */
 export async function setSafe(parentId: string, safeAddress: string): Promise<void> {
   await invoke('set_safe', { parentId, safeAddress });
+}
+
+/** All linked Safes for a parent, ordered by `createdAtMs`. Backend: list_parent_treasury_safes. */
+export async function listParentTreasurySafes(parentId: string): Promise<TreasurySafeEntry[]> {
+  return (await invoke('list_parent_treasury_safes', { parentId })) as TreasurySafeEntry[];
+}
+
+/** Idempotent upsert of one treasury row. Backend: add_parent_treasury_safe. */
+export async function addParentTreasurySafe(
+  parentId: string,
+  safeAddress: string,
+  options?: { chain?: string; label?: string; entryId?: string }
+): Promise<void> {
+  await invoke('add_parent_treasury_safe', {
+    parentId,
+    safeAddress,
+    chain: options?.chain ?? null,
+    label: options?.label ?? null,
+    entryId: options?.entryId ?? null,
+  });
 }
 
 /** MLS group metadata (from get_mls_group_metadata). */

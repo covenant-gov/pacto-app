@@ -84,7 +84,7 @@ export type WalletSendResultOutcome =
   | { ok: true; result: WalletSendResult }
   | { ok: false; message: string; parsed?: WalletOpParsedError };
 
-function tryParseWalletOpError(raw: string): WalletOpParsedError | null {
+export function parseWalletOpError(raw: string): WalletOpParsedError | null {
   const t = raw.trim();
   if (!t.startsWith('{')) return null;
   try {
@@ -138,7 +138,68 @@ export async function walletBuildAndSendTransaction(
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
           : 'Send failed.';
-    const parsed = tryParseWalletOpError(raw);
+    const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }
+}
+
+/** Result from `safe_deploy_proxy` (camelCase from Tauri). */
+export interface SafeDeployProxyResult {
+  txHash: string;
+  safeAddress: string;
+  chain: string;
+  chainId: number;
+}
+
+export type SafeDeployProxyOutcome =
+  | { ok: true; result: SafeDeployProxyResult }
+  | { ok: false; message: string; parsed?: WalletOpParsedError };
+
+/**
+ * Deploy a new Safe 1.3.0 via the proxy factory using the embedded EVM key (pays gas).
+ * Owners must be unique `0x` hex addresses; backend sorts and validates.
+ */
+export async function safeDeployProxy(
+  network: SupportedChainId,
+  owners: string[],
+  threshold: number,
+  saltNonce?: string | null
+): Promise<SafeDeployProxyOutcome> {
+  if (!isTauri()) {
+    return { ok: false, message: 'Deploy is only available in the desktop app.' };
+  }
+  try {
+    const result = await invoke<SafeDeployProxyResult>('safe_deploy_proxy', {
+      network,
+      owners,
+      threshold,
+      saltNonce: saltNonce ?? null,
+    });
+    return { ok: true, result };
+  } catch (e) {
+    const raw =
+      typeof e === 'string'
+        ? e
+        : e != null && typeof (e as Error).message === 'string'
+          ? (e as Error).message
+          : 'Deploy failed.';
+    const parsed = parseWalletOpError(raw);
+    return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
+  }
+}
+
+/** Short user-facing copy for Safe deploy when the JSON message is noisy RPC text. */
+export function userFacingDeploySafeMessage(parsed: WalletOpParsedError | undefined): string {
+  if (!parsed) return 'Deploy failed.';
+  const { code, message } = parsed;
+  if (code === 'SEND_FAILED' && message.length > 120) {
+    return 'Could not submit the transaction. Check your native balance and network connection.';
+  }
+  if (code === 'RPC_CONNECT') {
+    return "Couldn't reach the RPC. Try again in a moment or set PACTO_WALLET_RPC_* if you use custom endpoints.";
+  }
+  if (code === 'NO_EVM_KEY') {
+    return 'No embedded wallet key on this account. Use an account that was created or imported with an EVM wallet.';
+  }
+  return message;
 }

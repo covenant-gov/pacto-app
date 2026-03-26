@@ -476,33 +476,224 @@ pub fn set_dm_peer_evm_address<R: Runtime>(
     Ok(())
 }
 
-/// Get stored Safe address for a squad or network by id. Returns None if not set.
-#[command]
-pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<Option<String>, String> {
-    let conn = crate::account_manager::get_db_connection(&handle)?;
-    let result: Option<String> = conn.query_row(
-        "SELECT safe_address FROM squad_safe WHERE squad_id = ?1",
-        rusqlite::params![parent_id],
-        |row| row.get(0)
-    ).ok();
-    crate::account_manager::return_db_connection(conn);
-    Ok(result)
+fn normalize_treasury_chain(raw: Option<&str>) -> String {
+    match raw
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .as_deref()
+    {
+        Some("mainnet") | Some("ethereum") | Some("eth") => "mainnet".to_string(),
+        Some("optimism") | Some("op") => "optimism".to_string(),
+        Some("sepolia") | None => "sepolia".to_string(),
+        _ => "sepolia".to_string(),
+    }
 }
 
-/// Set Safe address for a squad or network. PoC: no access control (trusted setup).
-#[command]
-pub fn set_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String, safe_address: String) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(&handle)?;
+fn new_treasury_row_id(entry_id: Option<&str>) -> String {
+    if let Some(s) = entry_id.map(str::trim).filter(|s| !s.is_empty()) {
+        if s.len() >= 8
+            && s.len() <= 72
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return s.to_string();
+        }
+    }
+    format!(
+        "pt-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
+}
+
+fn upsert_parent_treasury_row<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    safe_address_norm: &str,
+    chain: &str,
+    label: &str,
+    entry_id: Option<&str>,
+) -> Result<(), String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Err("parent_id is empty".to_string());
+    }
+    let chain_norm = normalize_treasury_chain(Some(chain));
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let id = new_treasury_row_id(entry_id);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
     conn.execute(
-        "INSERT OR REPLACE INTO squad_safe (squad_id, safe_address) VALUES (?1, ?2)",
-        rusqlite::params![parent_id, safe_address],
-    ).map_err(|e| format!("Failed to set parent Safe: {}", e))?;
+        "INSERT INTO parent_treasury_safe (id, parent_id, safe_address, chain, label, created_at_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(parent_id, safe_address, chain) DO UPDATE SET
+           label = CASE WHEN excluded.label != '' THEN excluded.label ELSE parent_treasury_safe.label END",
+        rusqlite::params![
+            id,
+            pid,
+            safe_address_norm,
+            chain_norm,
+            label,
+            now_ms
+        ],
+    )
+    .map_err(|e| format!("Failed to upsert parent_treasury_safe: {}", e))?;
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
 
-/// If content is a squad_safe_updated (or safe_updated) announce-card JSON, update stored mapping. No-op otherwise.
-/// Wire format uses "squad_id" in payload for backward compat; it holds the parent id (squad or network).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParentTreasurySafeRow {
+    pub id: String,
+    pub parent_id: String,
+    pub safe_address: String,
+    pub chain: String,
+    pub label: String,
+    pub created_at_ms: i64,
+}
+
+/// Legacy: first stored Safe address for a parent (oldest `created_at_ms`). Prefer `list_parent_treasury_safes`.
+#[command]
+pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<Option<String>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT safe_address FROM parent_treasury_safe WHERE parent_id = ?1 ORDER BY created_at_ms ASC LIMIT 1",
+            rusqlite::params![pid],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read parent_treasury_safe: {}", e))?;
+    let result = if result.is_none() {
+        conn.query_row("SELECT safe_address FROM squad_safe WHERE squad_id = ?1", rusqlite::params![pid], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()
+        .map_err(|e| format!("Failed to read squad_safe: {}", e))?
+    } else {
+        result
+    };
+    crate::account_manager::return_db_connection(conn);
+    Ok(result)
+}
+
+/// Replace all treasury Safes for this parent with a single Sepolia entry (legacy Set Safe / migration).
+#[command]
+pub fn set_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String, safe_address: String) -> Result<(), String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Err("parent_id is empty".to_string());
+    }
+    let norm = crate::evm::normalize_hex_address(safe_address.trim())
+        .ok_or_else(|| "Invalid EVM address".to_string())?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "DELETE FROM parent_treasury_safe WHERE parent_id = ?1",
+        rusqlite::params![pid],
+    )
+    .map_err(|e| format!("Failed to clear parent_treasury_safe: {}", e))?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let id = new_treasury_row_id(None);
+    conn.execute(
+        "INSERT INTO parent_treasury_safe (id, parent_id, safe_address, chain, label, created_at_ms) VALUES (?1, ?2, ?3, 'sepolia', '', ?4)",
+        rusqlite::params![id, pid, norm, now_ms],
+    )
+    .map_err(|e| format!("Failed to insert parent_treasury_safe: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+/// Idempotent add: merges by `(parent_id, safe_address, chain)`. Optional `entry_id` stabilizes row id on first insert.
+#[command]
+pub fn add_parent_treasury_safe<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    safe_address: String,
+    chain: Option<String>,
+    label: Option<String>,
+    entry_id: Option<String>,
+) -> Result<(), String> {
+    let norm = crate::evm::normalize_hex_address(safe_address.trim())
+        .ok_or_else(|| "Invalid EVM address".to_string())?;
+    let ch = normalize_treasury_chain(chain.as_deref());
+    let lb_raw = label.as_deref().unwrap_or("").trim();
+    let lb = if lb_raw.len() > 200 {
+        &lb_raw[..200]
+    } else {
+        lb_raw
+    };
+    upsert_parent_treasury_row(&handle, &parent_id, &norm, ch.as_str(), lb, entry_id.as_deref())
+}
+
+#[command]
+pub fn list_parent_treasury_safes<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Vec<ParentTreasurySafeRow>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, parent_id, safe_address, chain, label, created_at_ms FROM parent_treasury_safe WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
+        )
+        .map_err(|e| format!("Failed to list parent_treasury_safe: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![pid], |row| {
+            Ok(ParentTreasurySafeRow {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                safe_address: row.get(2)?,
+                chain: row.get(3)?,
+                label: row.get(4)?,
+                created_at_ms: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query parent_treasury_safe: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    if out.is_empty() {
+        let legacy: Option<String> = conn
+            .query_row(
+                "SELECT safe_address FROM squad_safe WHERE squad_id = ?1",
+                rusqlite::params![pid],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read squad_safe: {}", e))?;
+        if let Some(addr) = legacy {
+            out.push(ParentTreasurySafeRow {
+                id: format!("legacy-{}", pid),
+                parent_id: pid.to_string(),
+                safe_address: addr,
+                chain: "sepolia".to_string(),
+                label: String::new(),
+                created_at_ms: 0,
+            });
+        }
+    }
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+/// If content is a squad_safe_updated announce JSON, upsert a treasury row (idempotent per parent + address + chain).
+/// Wire format uses `squad_id` for the parent id. Optional: `chain`, `label`, `entry_id`.
 pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
@@ -516,14 +707,160 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
         None => return,
     };
     let parent_id = match p.get("squad_id").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        None => return,
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
     };
     let safe_address = match p.get("safe_address").and_then(|v| v.as_str()) {
-        Some(s) => s,
-        None => return,
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
     };
-    let _ = set_safe(handle.clone(), parent_id.to_string(), safe_address.to_string());
+    let Some(norm) = crate::evm::normalize_hex_address(safe_address) else {
+        return;
+    };
+    let chain = normalize_treasury_chain(p.get("chain").and_then(|v| v.as_str()));
+    let lb_raw = p
+        .get("label")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+    let lb = if lb_raw.len() > 200 {
+        &lb_raw[..200]
+    } else {
+        lb_raw
+    };
+    let entry_id = p.get("entry_id").and_then(|v| v.as_str());
+    let _ = upsert_parent_treasury_row(handle, parent_id, &norm, chain.as_str(), lb, entry_id);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadMemberEvmRow {
+    pub member_npub: String,
+    pub evm_address: String,
+    pub updated_at_ms: i64,
+}
+
+/// Persist this account's squad-visible EVM address for a parent (same id as squad/network root and announcements MLS group in current UX).
+#[command]
+pub fn upsert_squad_member_evm<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    evm_address: String,
+) -> Result<(), String> {
+    let member_npub = crate::account_manager::get_current_account()?;
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Err("parent_id is empty".to_string());
+    }
+    let norm = crate::evm::normalize_hex_address(evm_address.trim())
+        .ok_or_else(|| "Invalid EVM address".to_string())?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![parent, member_npub.as_str(), norm, now_ms],
+    )
+    .map_err(|e| format!("Failed to upsert squad_member_evm: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+#[command]
+pub fn list_squad_member_evm<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Vec<SquadMemberEvmRow>, String> {
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT member_npub, evm_address, updated_at_ms FROM squad_member_evm WHERE parent_id = ?1 ORDER BY member_npub ASC",
+        )
+        .map_err(|e| format!("Failed to list squad_member_evm: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![parent], |row| {
+            Ok(SquadMemberEvmRow {
+                member_npub: row.get(0)?,
+                evm_address: row.get(1)?,
+                updated_at_ms: row.get(2)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query squad_member_evm: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+/// If `content` is a `squad_member_evm_share` JSON from MLS, store a normalized address for `author_npub` only.
+pub fn try_apply_squad_member_evm_share<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_member_evm_share") {
+        return;
+    }
+    let version_ok = match parsed.get("version") {
+        None => true,
+        Some(v) => v.as_u64() == Some(1),
+    };
+    if !version_ok {
+        return;
+    }
+    let Some(p) = parsed.get("payload").filter(|v| v.is_object()) else {
+        return;
+    };
+    let Some(parent_id) = p
+        .get("parent_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let Some(raw_addr) = p
+        .get("evm_address")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    let Some(norm) = crate::evm::normalize_hex_address(raw_addr) else {
+        return;
+    };
+
+    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
+        return;
+    };
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let _ = conn.execute(
+        "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![parent_id, author, norm, now_ms],
+    );
+    crate::account_manager::return_db_connection(conn);
 }
 
 #[command]

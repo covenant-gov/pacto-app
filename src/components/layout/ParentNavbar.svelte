@@ -34,6 +34,7 @@
     createAnnouncementsGroupAndChannel,
     loadMembersForParent,
   } from '../../lib/parent-navbar';
+  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
   import {
     createGroupChat,
     getMlsGroupMembers,
@@ -407,6 +408,10 @@
             }
           }
         }
+        const annForShare = getAnnouncementsChannel(parent);
+        publishSquadMemberEvmShare(parent.id, annForShare.groupId).catch((e) =>
+          console.warn('[ParentNavbar] EVM share after new channel failed', e)
+        );
       } catch (e) {
         createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
         setTimeout(() => {

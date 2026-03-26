@@ -30,11 +30,13 @@
     parseNetworkInviteMessage,
     syncMlsGroupsNow,
     deleteDmChatBackend,
-    getSafe,
-    setSafe,
+    listParentTreasurySafes,
+    addParentTreasurySafe,
     type PendingMlsWelcome,
   } from '../lib/api/nostr';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
+  import { getExplorerTxUrl } from '../lib/wallet/assets';
+  import { parseSupportedChainId } from '../lib/wallet/chains';
   import {
     formatWalletTxAnnouncement,
     formatWalletPeerInfoGrant,
@@ -42,6 +44,7 @@
     type WalletPeerInfoRequestPayload,
   } from '../lib/wallet/dm-messages';
   import { getEvmAddress } from '../lib/api/auth';
+  import { publishSquadMemberEvmShare } from '../lib/squad/squad-member-evm-share';
   import { setDmPeerEvmAddress } from '../lib/api/wallet-peers';
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
@@ -98,7 +101,8 @@
     bumpMembershipVersion,
     ANNOUNCEMENTS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
-    safeByParentId,
+    treasurySafesByParentId,
+    type TreasurySafeEntry,
     type DmMessage,
     type DmTab,
     type DmEntry,
@@ -151,15 +155,24 @@
   /** Group IDs we just accepted as squad invites — skip "Add to squad" modal for these. */
   let acceptedSquadInviteGroupIds = new Set<string>();
 
-  /** Hydrate Safe address from backend when dashboard is shown or via background prefetch (once per squad/network). */
-  let safeHydratedIds = new Set<string>();
+  /** Hydrate treasury Safes from backend when dashboard is shown or via background prefetch (once per squad/network). */
+  let treasuryHydratedIds = new Set<string>();
+  async function mergeTreasurySafesForParent(parentId: string) {
+    if (!parentId) return;
+    try {
+      const rows = await listParentTreasurySafes(parentId);
+      treasurySafesByParentId.update((m: Record<string, TreasurySafeEntry[]>) => ({
+        ...m,
+        [parentId]: rows,
+      }));
+    } catch {
+      /* ignore */
+    }
+  }
   $: dashboardParentId = $activeChannelId === DASHBOARD_CHANNEL_ID ? ($activeTopNavTab === 'squads' ? $activeSquadId : $activeNetworkId) ?? null : null;
-  $: if (dashboardParentId && !safeHydratedIds.has(dashboardParentId)) {
-    safeHydratedIds.add(dashboardParentId);
-    getSafe(dashboardParentId).then((addr) => {
-      if (addr != null)
-        safeByParentId.update((m: Record<string, string>) => ({ ...m, [dashboardParentId]: addr }));
-    });
+  $: if (dashboardParentId && !treasuryHydratedIds.has(dashboardParentId)) {
+    treasuryHydratedIds.add(dashboardParentId);
+    mergeTreasurySafesForParent(dashboardParentId);
   }
 
   /** After login, refresh embedded wallet balances in the background (cache only; no DM open). */
@@ -175,23 +188,17 @@
   }
 
   /** Background prefetch: on app start/load, best-effort fetch of Safe addresses for all known parents (squads + networks). */
-  let initialSafePrefetchDone = false;
-  $: if (!initialSafePrefetchDone && ($squads.length > 0 || $networks.length > 0)) {
-    initialSafePrefetchDone = true;
+  let initialTreasuryPrefetchDone = false;
+  $: if (!initialTreasuryPrefetchDone && ($squads.length > 0 || $networks.length > 0)) {
+    initialTreasuryPrefetchDone = true;
     const parentIds = [
       ...$squads.map((s: Squad) => s.id),
       ...$networks.map((n: Network) => n.id),
     ];
     for (const pid of parentIds) {
-      if (!pid || safeHydratedIds.has(pid)) continue;
-      safeHydratedIds.add(pid);
-      getSafe(pid).then((addr) => {
-        if (addr != null) {
-          safeByParentId.update((m: Record<string, string>) => ({ ...m, [pid]: addr }));
-        }
-      }).catch(() => {
-        // Ignore failures; dashboard-level fetch and announce-cards will keep state consistent.
-      });
+      if (!pid || treasuryHydratedIds.has(pid)) continue;
+      treasuryHydratedIds.add(pid);
+      mergeTreasurySafesForParent(pid).catch(() => {});
     }
   }
 
@@ -585,6 +592,9 @@
       activeView.set('hub');
       acceptedNetworkInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     }
+    publishSquadMemberEvmShare(payload.groupId, payload.groupId).catch((e) =>
+      dmError('publishSquadMemberEvmShare after accept', e)
+    );
   }
 
   async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
@@ -952,10 +962,7 @@
           });
           const announce = parseAnnouncement(m.content);
           if (announce?.type === 'squad_safe_updated') {
-            safeByParentId.update((byId: Record<string, string>) => ({
-              ...byId,
-              [announce.payload.squad_id]: announce.payload.safe_address,
-            }));
+            mergeTreasurySafesForParent(announce.payload.squad_id);
           }
         }
       }
@@ -1029,10 +1036,7 @@
       });
       const announce = parseAnnouncement(m.content);
       if (announce?.type === 'squad_safe_updated') {
-            safeByParentId.update((byId: Record<string, string>) => ({
-              ...byId,
-              [announce.payload.squad_id]: announce.payload.safe_address,
-            }));
+            mergeTreasurySafesForParent(announce.payload.squad_id);
           }
       if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
@@ -1064,6 +1068,9 @@
           channelInviteInfo.parentId,
           group_id,
           channelInviteInfo.channelName
+        );
+        publishSquadMemberEvmShare(channelInviteInfo.parentId, channelInviteInfo.parentId).catch((e) =>
+          dmError('publishSquadMemberEvmShare after channel welcome', e)
         );
         return;
       }
@@ -1243,29 +1250,52 @@
                 ? $squads.find((s: Squad) => s.id === $activeSquadId)!
                 : $networks.find((n: Network) => n.id === $activeNetworkId)!}
               parentType={$activeTopNavTab === 'networks' ? 'network' : 'squad'}
-              safeAddress={$safeByParentId[
+              treasurySafes={$treasurySafesByParentId[
                 ($activeTopNavTab === 'squads'
                   ? $squads.find((s: Squad) => s.id === $activeSquadId)
                   : $networks.find((n: Network) => n.id === $activeNetworkId))?.id ?? ''
-              ] ?? null}
-              onConfirmSetSafe={async (safeAddress: string) => {
+              ] ?? []}
+              onConfirmImportSafe={async (params: {
+                safeAddress: string;
+                chain: string;
+                label: string;
+                entryId: string;
+                txHash?: string;
+              }) => {
                 const p =
                   $activeTopNavTab === 'squads'
                     ? $squads.find((s: Squad) => s.id === $activeSquadId)!
                     : $networks.find((n: Network) => n.id === $activeNetworkId)!;
-                await setSafe(p.id, safeAddress);
+                await addParentTreasurySafe(p.id, params.safeAddress, {
+                  chain: params.chain,
+                  label: params.label,
+                  entryId: params.entryId,
+                });
                 const announcementsGroupId =
                   p.channels.find((c: Channel) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
                   p.channels[0]?.groupId;
-                if (announcementsGroupId)
+                if (announcementsGroupId) {
+                  const chainKey = parseSupportedChainId(params.chain);
+                  const txHex = params.txHash?.trim();
+                  const explorerTxUrl =
+                    txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
                   await sendDmMessage(
                     announcementsGroupId,
                     buildAnnounceContent({
                       type: ANNOUNCE_TYPE_SAFE_UPDATED,
-                      payload: { squad_id: p.id, safe_address: safeAddress },
+                      payload: {
+                        squad_id: p.id,
+                        safe_address: params.safeAddress,
+                        chain: params.chain,
+                        label: params.label || undefined,
+                        entry_id: params.entryId,
+                        tx_hash: txHex || undefined,
+                        explorer_tx_url: explorerTxUrl ?? undefined,
+                      },
                     })
                   );
-                safeByParentId.update((m: Record<string, string>) => ({ ...m, [p.id]: safeAddress }));
+                }
+                await mergeTreasurySafesForParent(p.id);
               }}
             />
           {:else}
