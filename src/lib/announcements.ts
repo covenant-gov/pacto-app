@@ -17,6 +17,18 @@ export const ANNOUNCE_TYPE_SAFE_PROPOSAL = 'safe_proposal';
 export interface SquadSafeUpdatedPayload {
   squad_id: string;
   safe_address: string;
+  /** `sepolia` | `mainnet` | `optimism` (normalized server-side). */
+  chain?: string;
+  label?: string;
+  /** Stable row id for first insert; optional. */
+  entry_id?: string;
+  /** Set when the Safe was created via factory deploy; `0x` + 64 hex. */
+  tx_hash?: string;
+  /**
+   * Optional absolute URL to the deployment transaction on a block explorer.
+   * Clients may omit this and derive a link from `chain` + `tx_hash`.
+   */
+  explorer_tx_url?: string;
 }
 /** Alias for parent-agnostic code. Same shape as SquadSafeUpdatedPayload. */
 export type SafeUpdatedPayload = SquadSafeUpdatedPayload;

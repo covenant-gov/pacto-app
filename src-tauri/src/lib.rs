@@ -38,6 +38,7 @@ mod wallet_prices;
 mod wallet_chain_config;
 mod wallet_security;
 mod wallet_ops;
+mod safe_deploy;
 
 #[cfg(target_os = "android")]
 #[path = "android/mod.rs"]
@@ -2392,6 +2393,7 @@ async fn notifs() -> Result<bool, String> {
                                 "message": record,
                                 "group_name": group_name
                             }));
+                            db::try_apply_squad_member_evm_share(&handle, &record.content, record.npub.as_deref());
                             db::apply_parent_safe_announce(&handle, &record.content);
                         }
                     }
@@ -6075,6 +6077,10 @@ pub fn run() {
             db::set_dm_peer_evm_address,
             db::get_safe,
             db::set_safe,
+            db::list_parent_treasury_safes,
+            db::add_parent_treasury_safe,
+            db::upsert_squad_member_evm,
+            db::list_squad_member_evm,
             db::get_seed,
             db::set_seed,
             db::get_sql_setting,
@@ -6169,6 +6175,7 @@ pub fn run() {
             wallet_prices::wallet_get_usd_spot_prices,
             wallet_ops::get_wallet_summary,
             wallet_ops::wallet_build_and_send_transaction,
+            safe_deploy::safe_deploy_proxy,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

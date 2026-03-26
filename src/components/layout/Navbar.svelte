@@ -13,6 +13,7 @@
   import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatSquadInviteMessage, formatNetworkInviteMessage } from '../../lib/api/nostr';
+  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
   import { pendingReadyToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../../lib/utils/profile';
@@ -291,6 +292,9 @@
               console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
+          publishSquadMemberEvmShare(groupId, groupId).catch((e) =>
+            console.warn('[Navbar] squad EVM share failed', e)
+          );
         } catch (e) {
           console.error(
             '[Navbar] createParentWithAnnouncements(squad): createGroupChat failed',
@@ -375,6 +379,9 @@
               console.warn('[Navbar] send network invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
+          publishSquadMemberEvmShare(groupId, groupId).catch((e) =>
+            console.warn('[Navbar] network EVM share failed', e)
+          );
         } catch (e) {
           console.error(
             '[Navbar] createParentWithAnnouncements(network): createGroupChat failed',

@@ -1,60 +1,63 @@
 import { writable } from 'svelte/store';
 import type { Address } from 'viem';
+import type { TreasurySafeEntry } from '$lib/treasury/treasury-safes';
+import { parseSupportedChainId, type SupportedChainId } from '$lib/wallet/chains';
 import { getSafeState, type SafeState } from '$lib/wallet/safe';
 
 export interface SafeStateEntry {
+  treasuryEntryId: string;
   safeAddress: string;
+  chainId: SupportedChainId;
   state: SafeState | null;
   error: string | null;
   loading: boolean;
   lastFetchedAt: number | null;
 }
 
-/** Cache of last-fetched Safe state keyed by parent id (squad or network id). */
-export const safeStateByParentId = writable<Record<string, SafeStateEntry>>({});
+/** Cache of last-fetched Safe on-chain state keyed by treasury row id (`TreasurySafeEntry.id`). */
+export const safeStateByTreasuryId = writable<Record<string, SafeStateEntry>>({});
 
-const inflightByParentId = new Map<string, Promise<void>>();
+const inflightByTreasuryId = new Map<string, Promise<void>>();
 const STALE_AFTER_MS = 30_000;
 
 /**
- * Refresh Safe state for a parent.
- * - Shows cached state immediately (if present)
- * - Triggers background refresh when stale / forced
- * - Dedupes concurrent fetches per parent id
+ * Refresh Safe read state for one treasury list row.
+ * Dedupes concurrent fetches per `entry.id`.
  */
-export async function refreshSafeStateForParent(
-  parentId: string,
-  safeAddress: string,
+export async function refreshSafeStateForTreasuryEntry(
+  entry: TreasurySafeEntry,
   opts?: { force?: boolean }
 ): Promise<void> {
-  if (!parentId || !safeAddress) return;
+  if (!entry?.id || !entry.safeAddress) return;
 
-  const key = parentId;
-  const existing = inflightByParentId.get(key);
+  const key = entry.id;
+  const chainId = parseSupportedChainId(entry.chain);
+  const existing = inflightByTreasuryId.get(key);
   if (existing) return existing;
 
   const now = Date.now();
   let shouldFetch = true;
 
-  safeStateByParentId.update((map) => {
+  safeStateByTreasuryId.update((map) => {
     const cur = map[key];
-    const sameAddr = cur?.safeAddress === safeAddress;
+    const same =
+      cur?.safeAddress === entry.safeAddress && cur?.chainId === chainId;
     const freshEnough =
       !!cur?.lastFetchedAt && now - cur.lastFetchedAt < STALE_AFTER_MS;
 
-    if (sameAddr && !opts?.force) {
+    if (same && !opts?.force) {
       if (cur.loading || freshEnough) {
         shouldFetch = false;
         return map;
       }
-      // Mark as loading but keep cached state for smooth UX.
       return { ...map, [key]: { ...cur, loading: true, error: null } };
     }
 
-    // New parent entry or address changed: avoid showing mismatched state.
     const next: SafeStateEntry = {
-      safeAddress,
-      state: sameAddr ? cur?.state ?? null : null,
+      treasuryEntryId: key,
+      safeAddress: entry.safeAddress,
+      chainId,
+      state: same ? cur?.state ?? null : null,
       error: null,
       loading: true,
       lastFetchedAt: cur?.lastFetchedAt ?? null,
@@ -66,10 +69,12 @@ export async function refreshSafeStateForParent(
 
   const p = (async () => {
     try {
-      const state = await getSafeState(safeAddress as Address);
-      safeStateByParentId.update((map) => {
+      const state = await getSafeState(entry.safeAddress as Address, chainId);
+      safeStateByTreasuryId.update((map) => {
         const cur = map[key];
-        if (!cur || cur.safeAddress !== safeAddress) return map;
+        if (!cur || cur.safeAddress !== entry.safeAddress || cur.chainId !== chainId) {
+          return map;
+        }
         return {
           ...map,
           [key]: {
@@ -83,9 +88,9 @@ export async function refreshSafeStateForParent(
       });
     } catch (e) {
       const msg = (e as Error)?.message ?? 'Failed to read Safe';
-      safeStateByParentId.update((map) => {
+      safeStateByTreasuryId.update((map) => {
         const cur = map[key];
-        if (!cur || cur.safeAddress !== safeAddress) return map;
+        if (!cur || cur.safeAddress !== entry.safeAddress) return map;
         return {
           ...map,
           [key]: {
@@ -97,11 +102,10 @@ export async function refreshSafeStateForParent(
         };
       });
     } finally {
-      inflightByParentId.delete(key);
+      inflightByTreasuryId.delete(key);
     }
   })();
 
-  inflightByParentId.set(key, p);
+  inflightByTreasuryId.set(key, p);
   return p;
 }
-

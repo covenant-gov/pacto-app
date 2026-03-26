@@ -105,3 +105,19 @@ export function createWalletPublicClient(
     transport: fallback(transports),
   });
 }
+
+/** Map stored / announce chain strings to a supported chain id (default Sepolia). */
+export function parseSupportedChainId(raw: string | undefined | null): SupportedChainId {
+  const c = (raw ?? 'sepolia').trim().toLowerCase();
+  if (c === 'mainnet' || c === 'ethereum' || c === 'eth') return 'mainnet';
+  if (c === 'optimism' || c === 'op') return 'optimism';
+  return 'sepolia';
+}
+
+/** Block explorer "address" URL for wallet/Safe deep links (opens in system browser). */
+export function explorerAddressUrl(chainId: SupportedChainId, address: string): string {
+  const raw = SUPPORTED_CHAINS[chainId]?.blockExplorers?.default?.url;
+  const base = typeof raw === 'string' ? raw.replace(/\/$/, '') : '';
+  if (!base || !address.trim()) return '';
+  return `${base}/address/${address.trim()}`;
+}

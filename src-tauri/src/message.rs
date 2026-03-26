@@ -291,29 +291,11 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
             .unwrap();
     // Create persistent pending_id that will live for the entire function
     let pending_id = Arc::new(String::from("pending-") + &current_time.as_nanos().to_string());
-    let msg = Message {
-        id: pending_id.as_ref().clone(),
-        content,
-        replied_to,
-        replied_to_content: None, // Will be populated when loaded from DB
-        replied_to_npub: None,
-        replied_to_has_attachment: None,
-        preview_metadata: None,
-        at: current_time.as_millis() as u64,
-        attachments: Vec::new(),
-        reactions: Vec::new(),
-        pending: true,
-        failed: false,
-        mine: true,
-        npub: None, // Pending messages don't need npub (they're always mine)
-        wrapper_event_id: None, // Will be set when message is sent
-        edited: false,
-        edit_history: None,
-    };
-    // Grab our pubkey first
+    // Grab our pubkey first (needed for MLS group sender npub on optimistic UI + roster ingest)
     let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
     let my_public_key = signer.get_public_key().await.unwrap();
+    let my_npub_for_msg = my_public_key.to_bech32().ok();
 
     // Detect if this is a group chat or DM
     // First check if a chat already exists and use its type
@@ -329,6 +311,30 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
             // Otherwise it's a group_id
             !receiver.starts_with("npub1")
         }
+    };
+
+    let msg = Message {
+        id: pending_id.as_ref().clone(),
+        content,
+        replied_to,
+        replied_to_content: None, // Will be populated when loaded from DB
+        replied_to_npub: None,
+        replied_to_has_attachment: None,
+        preview_metadata: None,
+        at: current_time.as_millis() as u64,
+        attachments: Vec::new(),
+        reactions: Vec::new(),
+        pending: true,
+        failed: false,
+        mine: true,
+        npub: if is_group_chat {
+            my_npub_for_msg.clone()
+        } else {
+            None
+        },
+        wrapper_event_id: None, // Will be set when message is sent
+        edited: false,
+        edit_history: None,
     };
     
     // Add message to appropriate chat type
@@ -364,6 +370,7 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
                 "group_id": &receiver,
                 "message": &msg
             })).unwrap();
+            db::try_apply_squad_member_evm_share(&handle, &msg.content, msg.npub.as_deref());
             db::apply_parent_safe_announce(&handle, &msg.content);
         } else {
             handle.emit("message_new", serde_json::json!({
