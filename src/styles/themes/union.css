@@ -1,0 +1,40 @@
+/* Union — Navy Union palette (Concept #2): deep navy/black field, cream type, steel chrome, orange accent.
+ * Typography is global (app.css); this file is colors only, same pattern as techno.css.
+ */
+[data-theme="union"] {
+  --bg-page: #0a1628;
+  --bg-panel: #111d32;
+  --bg-elevated: #152238;
+  --bg-hover: #1e3554;
+
+  --text-primary: #f7f4ec;
+  --text-secondary: #c5d4e8;
+  --text-muted: #94a3b8;
+
+  --border: #3d5a80;
+  --border-subtle: #243b53;
+
+  --accent: #f97316;
+  --accent-hover: #ea580c;
+  --danger: #f87171;
+  --success: #4ade80;
+  --warning: #fbbf24;
+
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--accent);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--accent);
+
+  --icon-dropdown-filter: brightness(0) invert(1);
+
+  --channel-active-bg: #f7f4ec;
+  --channel-active-fg: #0a1628;
+
+  --union-orange: #f97316;
+  --union-cream: #f7f4ec;
+  --union-steel: #8babc8;
+  --union-navy: #0a1628;
+  --union-black: #05080f;
+  --union-grey: #94a3b8;
+}

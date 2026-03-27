@@ -190,6 +190,11 @@ impl ChatState {
         }
     }
 
+    /// Reset in-memory chats and sync progress (logout, or before binding a new key).
+    fn clear_session(&mut self) {
+        *self = Self::new();
+    }
+
     /// Load a Vector Profile in to the state from our SlimProfile database format
     async fn from_db_profile(&mut self, slim: SlimProfile) {
         // Check if profile already exists
@@ -3842,7 +3847,11 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
     let mut profile = Profile::new();
     profile.id = npub.clone();
     profile.mine = true;
-    STATE.lock().await.profiles.push(profile);
+    {
+        let mut st = STATE.lock().await;
+        st.clear_session();
+        st.profiles.push(profile);
+    }
 
     // Initialize profile database and set as current account
     if let Some(handle) = TAURI_APP.get() {
@@ -4116,8 +4125,9 @@ async fn is_scanning() -> bool {
 
 #[tauri::command]
 async fn logout<R: Runtime>(handle: AppHandle<R>) {
-    // Lock the state to ensure nothing is added to the DB before restart
-    let _guard = STATE.lock().await;
+    // Lock the state while we wipe disk and session so nothing races with stale in-memory chats.
+    let mut state = STATE.lock().await;
+    state.clear_session();
 
     // Close the database connection pool BEFORE attempting to delete files
     // This is critical on Windows where open file handles prevent deletion
@@ -4158,6 +4168,7 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
     // (Clearing client allows create_account/login to set a new one without restart.)
     clear_nostr_client();
     let _ = account_manager::clear_current_account();
+    // `state` guard dropped here
 }
 
 /// Creates a new Nostr keypair derived from a BIP39 Seed Phrase
@@ -4183,7 +4194,11 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     let mut profile = Profile::new();
     profile.id = npub.clone();
     profile.mine = true;
-    STATE.lock().await.profiles.push(profile);
+    {
+        let mut st = STATE.lock().await;
+        st.clear_session();
+        st.profiles.push(profile);
+    }
 
     // Save the seed in memory, ready for post-pin-setup encryption
     let _ = MNEMONIC_SEED.set(mnemonic_string);

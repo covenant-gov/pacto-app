@@ -3,14 +3,14 @@
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
   import { isAuthenticated, checkAuthStatus } from '../stores/auth';
-  import { getStoredTheme, setTheme } from '../stores/theme';
+  import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
 
   let loading = true;
 
   onMount(async () => {
     // Sync theme from localStorage so store matches (inline script already set data-theme to avoid flash)
     const stored = getStoredTheme();
-    if (stored) setTheme(stored);
+    setTheme(stored ?? DEFAULT_THEME);
 
     await checkAuthStatus();
     loading = false;

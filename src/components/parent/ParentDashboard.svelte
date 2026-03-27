@@ -279,10 +279,6 @@
     {/if}
     {#if displayedTreasurySafes.length === 0}
       <p class="no-safe">No Safe linked yet.</p>
-      <div class="treasury-empty-btns">
-        <button type="button" class="btn-primary" on:click={openDeploySafe}>Deploy Safe</button>
-        <button type="button" class="btn-secondary" on:click={openSetSafe}>Import Safe</button>
-      </div>
     {:else}
       <ul class="treasury-safe-card-list" role="list">
         {#each displayedTreasurySafes as entry (entry.id)}
@@ -516,14 +512,16 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 8px 16px;
+    height: 48px;
+    min-height: 48px;
+    padding: 0 16px;
     border-bottom: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     flex-shrink: 0;
   }
 
   .dashboard-view-nav-label {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 500;
     color: var(--text-muted);
     text-transform: uppercase;
@@ -541,9 +539,8 @@
   }
 
   .dashboard-mode-segment {
-    padding: 0 18px;
-    min-height: 34px;
-    font-size: 0.875rem;
+    padding: 0 22px;
+    font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-muted);
     background: transparent;
@@ -858,12 +855,6 @@
   .treasury-deploy-btn {
     flex-shrink: 0;
   }
-  .treasury-empty-btns {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-  }
   .treasury-import-btn {
     flex-shrink: 0;
   }
@@ -945,7 +936,7 @@
   .no-safe {
     color: var(--text-muted);
     font-size: 0.875rem;
-    margin: 0 0 12px 0;
+    margin: 0;
   }
   .safe-state-meta {
     font-size: 0.875rem;

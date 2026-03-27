@@ -58,7 +58,7 @@ import {
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
-import { theme } from '../../stores/theme';
+import { DEFAULT_THEME, theme } from '../../stores/theme';
 import { recentEmojisStore } from '../../stores/emojis';
 
 /** Legacy (non-scoped) keys to remove for backwards compatibility. */
@@ -181,9 +181,9 @@ export function clearAccountState(npub?: string): void {
   typingByChat.set({});
   dmSendError.set(null);
 
-  theme.set('default');
+  theme.set(DEFAULT_THEME);
   if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', 'default');
+    document.documentElement.setAttribute('data-theme', DEFAULT_THEME);
   }
   recentEmojisStore.set([]);
   // favoriteEmojis: emojis.ts keeps them in module-level state; we cleared the
