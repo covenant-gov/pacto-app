@@ -1,0 +1,41 @@
+/* Midnight — moody violet/indigo night, magenta highlights, lilac type
+   (inspired by purple nocturnal / mesh artwork references). Typography: app.css only. */
+[data-theme="midnight"] {
+  /* Surfaces: elevated lighter than page so cards/rumors read as distinct planes */
+  --bg-page: #12081f;
+  --bg-panel: #1a0f2e;
+  --bg-elevated: #261a3d;
+  --bg-hover: #352d54;
+
+  --text-primary: #faf7ff;
+  --text-secondary: #e8dcf8;
+  --text-muted: #c4b4de;
+
+  --border: #7c4dcb;
+  --border-subtle: #4a3d68;
+
+  --accent: #e879f9;
+  --accent-hover: #d946ef;
+  --danger: #fb7185;
+  --success: #34d399;
+  --warning: #fbbf24;
+
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--accent);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--accent);
+
+  --icon-dropdown-filter: brightness(0) invert(1);
+
+  /* Channel row: lit ridge on dark field */
+  --channel-active-bg: #4f3d78;
+  --channel-active-fg: #faf7ff;
+
+  /* Optional flourishes (badges, dots) */
+  --midnight-violet: #7c3aed;
+  --midnight-magenta: #e879f9;
+  --midnight-indigo: #1e1b4b;
+  --midnight-lilac: #e9d5ff;
+  --midnight-glow: #f0abfc;
+}

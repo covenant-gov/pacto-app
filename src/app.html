@@ -10,15 +10,21 @@
     <script src="/js/twemoji.min.js"></script>
     <script src="/js/dompurify.min.js"></script>
     <style>
-      html, body { background-color: #1c1c1c; }
+      html, body { background-color: #1a1f28; }
     </style>
     <script>
       (function() {
         try {
           var t = localStorage.getItem('pacto_theme');
-          if (t === 'default' || t === 'light' || t === 'colorful') {
-            document.documentElement.setAttribute('data-theme', t);
+          if (
+            t !== 'midnight' &&
+            t !== 'techno' &&
+            t !== 'dark-techno' &&
+            t !== 'union'
+          ) {
+            t = 'dark-techno';
           }
+          document.documentElement.setAttribute('data-theme', t);
         } catch (e) {}
       })();
     </script>

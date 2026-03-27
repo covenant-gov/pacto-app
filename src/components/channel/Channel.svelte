@@ -36,8 +36,8 @@
   }
 
   .channel.active {
-    background: var(--border);
-    color: var(--text-primary);
+    background: var(--channel-active-bg, var(--border));
+    color: var(--channel-active-fg, var(--text-primary));
   }
 
   .icon {

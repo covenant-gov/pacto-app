@@ -8,7 +8,7 @@
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-  import { theme, setTheme, type Theme } from '../../stores/theme';
+  import { theme, setTheme, THEME_OPTIONS } from '../../stores/theme';
   import { activeView } from '../../stores/app';
   import backIcon from '../../icons/chevron-double-left.svg';
 
@@ -483,11 +483,16 @@
               <h2 id="theme-heading" class="theme-section-title">Appearance</h2>
               <span class="theme-label">Theme</span>
               <div class="theme-options" role="radiogroup" aria-label="App theme">
-                {#each ['default', 'light', 'colorful'] as t}
-                  {@const value = t as Theme}
+                {#each THEME_OPTIONS as opt (opt.value)}
                   <label class="theme-option">
-                    <input type="radio" name="theme" value={value} checked={$theme === value} on:change={() => setTheme(value)} />
-                    <span class="theme-option-label">{value === 'default' ? 'Dark' : value === 'light' ? 'Light' : 'Midnight'}</span>
+                    <input
+                      type="radio"
+                      name="theme"
+                      value={opt.value}
+                      checked={$theme === opt.value}
+                      on:change={() => setTheme(opt.value)}
+                    />
+                    <span class="theme-option-label">{opt.label}</span>
                   </label>
                 {/each}
               </div>

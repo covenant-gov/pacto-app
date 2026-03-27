@@ -155,7 +155,7 @@
     activeDmId: string | null,
     profilesMap: Record<string, NostrProfile | undefined>
   ): { inviterName: string; inviterAvatarSrc: string | null } {
-    const otherNpub = msg.mine ? activeDmId : msg.npub;
+    const otherNpub = msg.mine ? activeDmId : msg.npub ?? activeDmId;
     if (!otherNpub) return { inviterName: 'Someone', inviterAvatarSrc: null };
     const profile = profilesMap[otherNpub];
     const inviterName = getProfileDisplayName(profile ?? null) || otherNpub.slice(0, 12) + '…';
@@ -180,7 +180,9 @@
       base.authorName = 'You';
       base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
     } else {
-      const senderProfile = msg.npub ? $profiles[msg.npub] : null;
+      // DM backend omits `message.npub` (see rumor.rs: implicit peer = chat id); use thread `npub`.
+      const senderNpub = msg.npub ?? npub;
+      const senderProfile = senderNpub ? $profiles[senderNpub] : null;
       base.authorName = getProfileDisplayName(senderProfile);
       base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
     }
