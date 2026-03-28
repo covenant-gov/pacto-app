@@ -36,6 +36,8 @@ pub struct SlimProfile {
     nip05: String,
     status: Status,
     muted: bool,
+    #[serde(default)]
+    blocked: bool,
     bot: bool,
     avatar_cached: String,
     banner_cached: String,
@@ -60,6 +62,7 @@ impl Default for SlimProfile {
             nip05: String::new(),
             status: Status::new(),
             muted: false,
+            blocked: false,
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
@@ -84,6 +87,7 @@ impl From<&Profile> for SlimProfile {
             nip05: profile.nip05.clone(),
             status: profile.status.clone(),
             muted: profile.muted,
+            blocked: profile.blocked,
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
             banner_cached: profile.banner_cached.clone(),
@@ -111,6 +115,7 @@ impl SlimProfile {
             last_updated: 0,      // Default value
             mine: false,          // Default value
             muted: self.muted,
+            blocked: self.blocked,
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
             banner_cached: self.banner_cached.clone(),
@@ -123,13 +128,13 @@ impl SlimProfile {
 pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached, evm_address FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let profiles = stmt.query_map([], |row| {
         // Get cached paths and validate they exist on disk
-        let avatar_cached: String = row.get(15)?;
-        let banner_cached: String = row.get(16)?;
+        let avatar_cached: String = row.get(16)?;
+        let banner_cached: String = row.get(17)?;
 
         // Only use cached paths if the files actually exist
         let validated_avatar_cached = if !avatar_cached.is_empty() && std::path::Path::new(&avatar_cached).exists() {
@@ -161,10 +166,11 @@ pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<S
                 url: row.get(12)?,
             },
             muted: row.get::<_, i32>(13)? != 0,
-            bot: row.get::<_, i32>(14)? != 0,
+            blocked: row.get::<_, i32>(14)? != 0,
+            bot: row.get::<_, i32>(15)? != 0,
             avatar_cached: validated_avatar_cached,
             banner_cached: validated_banner_cached,
-            evm_address: row.get::<_, String>(17).unwrap_or_default(),
+            evm_address: row.get::<_, String>(18).unwrap_or_default(),
         })
     })
     .map_err(|e| format!("Failed to query profiles: {}", e))?
@@ -183,8 +189,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, bot, avatar_cached, banner_cached, evm_address)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -199,6 +205,7 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             status_content = excluded.status_content,
             status_url = excluded.status_url,
             muted = excluded.muted,
+            blocked = excluded.blocked,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
             banner_cached = excluded.banner_cached,
@@ -218,6 +225,7 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.status.title,
             profile.status.url,
             profile.muted as i32,
+            profile.blocked as i32,
             profile.bot as i32,
             profile.avatar_cached,
             profile.banner_cached,
@@ -1935,15 +1943,38 @@ pub async fn wrapper_event_exists<R: Runtime>(
     };
 
     // Check in events table (unified storage)
-    let exists: bool = conn.query_row(
+    let in_events: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
         rusqlite::params![wrapper_event_id],
         |row| row.get(0)
     ).map_err(|e| format!("Failed to check wrapper event existence: {}", e))?;
 
+    let in_discarded: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM discarded_giftwraps WHERE wrapper_id = ?1)",
+            rusqlite::params![wrapper_event_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
     crate::account_manager::return_db_connection(conn);
 
-    Ok(exists)
+    Ok(in_events || in_discarded)
+}
+
+/// Remember a gift-wrap id we intentionally did not store (e.g. blocked DM peer) so historic sync skips re-decrypt.
+pub async fn record_discarded_giftwrap<R: Runtime>(
+    handle: &AppHandle<R>,
+    wrapper_id: &str,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle).map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT OR IGNORE INTO discarded_giftwraps (wrapper_id) VALUES (?1)",
+        [wrapper_id],
+    )
+    .map_err(|e| format!("Failed to record discarded giftwrap: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
 }
 
 /// Update the wrapper event ID for an existing event

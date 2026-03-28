@@ -10,7 +10,7 @@
   import pinIcon from '../../icons/pin.svg';
   import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
-  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
+  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeDmId, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatSquadInviteMessage, formatNetworkInviteMessage } from '../../lib/api/nostr';
   import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
@@ -69,6 +69,8 @@
   function startNewChat() {
     $composingNewChat = true;
     $activeView = 'hub';
+    $activeDmTab = 'pending';
+    $activeDmId = null;
   }
 
   function openProfile() {

@@ -21,10 +21,13 @@
     parseChannelInNetworkMessage,
     parseNetworkInviteMessage,
     parseSquadInviteMessage,
+    toggleDmBlock,
   } from '../../lib/api/nostr';
   import type { NostrProfile } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
   import {
+    activeDmTab,
+    lastOpenedDmByTab,
     pinnedDmNpubs,
     dmSendError,
     typingByChat,
@@ -43,6 +46,7 @@
     walletSidebarOpen,
     walletSendPrefillFromRequest,
     toggleWalletSidebar,
+    type DmTab,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
@@ -227,7 +231,29 @@
       next.add(npub);
       return next;
     });
+    lastOpenedDmByTab.update((byTab: Record<DmTab, string | null>) => ({ ...byTab, pinned: npub }));
+    activeDmTab.set('pinned');
     menuOpen = false;
+  }
+
+  async function toggleBlockUser() {
+    menuOpen = false;
+    try {
+      const nowBlocked = await toggleDmBlock(npub);
+      if (nowBlocked) {
+        pinnedDmNpubs.update((s) => {
+          if (!s.has(npub)) return s;
+          const next = new Set(s);
+          next.delete(npub);
+          return next;
+        });
+        showToast('Blocked. New messages from this user are ignored. Relays may still deliver data to the app.');
+      } else {
+        showToast('User unblocked.');
+      }
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : 'Could not update block status.');
+    }
   }
 
   function unpinDm() {
@@ -321,6 +347,9 @@
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
                       Set Nickname
                     </button>
+                    <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={toggleBlockUser}>
+                      {$profiles[npub]?.blocked ? 'Unblock User' : 'Block User'}
+                    </button>
                     {#if showPinOption}
                       {#if $pinnedDmNpubs.has(npub)}
                         <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
@@ -342,7 +371,7 @@
                           onDeleteChat();
                         }}
                       >
-                        Delete chat
+                        Delete Chat
                       </button>
                     {/if}
                   </div>

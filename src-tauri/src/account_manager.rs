@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     status_content TEXT NOT NULL DEFAULT '',
     status_url TEXT NOT NULL DEFAULT '',
     muted INTEGER NOT NULL DEFAULT 0,
+    blocked INTEGER NOT NULL DEFAULT 0,
     bot INTEGER NOT NULL DEFAULT 0,
     avatar_cached TEXT NOT NULL DEFAULT '',
     banner_cached TEXT NOT NULL DEFAULT '',
@@ -158,6 +159,11 @@ CREATE TABLE IF NOT EXISTS evm_accounts (
     imported_enc TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_evm_accounts_scheme_hd ON evm_accounts(scheme, hd_index);
+
+-- Gift wraps discarded due to local block list (dedupe only; relays may resend)
+CREATE TABLE IF NOT EXISTS discarded_giftwraps (
+    wrapper_id TEXT PRIMARY KEY NOT NULL
+);
 
 -- Events table: flat, protocol-aligned storage for all Nostr events
 -- Every event (message, reaction, attachment, etc.) is a separate row
@@ -561,6 +567,35 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to add evm_address column: {}", e))?;
         println!("[Migration] evm_address column added successfully");
     }
+
+    // Local DM block list (client-side; does not change relay behavior)
+    let has_blocked_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name='blocked'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|count| count > 0)
+        .unwrap_or(false);
+
+    if !has_blocked_col {
+        println!("[Migration] Adding blocked column to profiles...");
+        conn.execute(
+            "ALTER TABLE profiles ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .map_err(|e| format!("Failed to add blocked column: {}", e))?;
+        println!("[Migration] blocked column added successfully");
+    }
+
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS discarded_giftwraps (
+            wrapper_id TEXT PRIMARY KEY NOT NULL
+        );
+    "#,
+    )
+    .map_err(|e| format!("Failed to create discarded_giftwraps: {}", e))?;
 
     // Migration 3: Create events table for flat event-based storage
     // This is the new protocol-aligned storage format where all events (messages, reactions,

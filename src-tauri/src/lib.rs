@@ -362,7 +362,7 @@ impl ChatState {
                 ChatType::DirectMessage => {
                     // For DMs, chat.id is the other participant's npub
                     if let Some(profile) = self.get_profile(&chat.id) {
-                        if profile.muted {
+                        if profile.muted || profile.blocked {
                             skip_for_profile_mute = true;
                         }
                     }
@@ -1393,6 +1393,27 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                 }
             }
 
+            // Local block list: relays still deliver gift wraps; we discard decrypted payloads from this peer.
+            if !is_mine {
+                let peer_blocked = {
+                    let state = STATE.lock().await;
+                    state
+                        .get_profile(&contact)
+                        .map(|p| p.blocked)
+                        .unwrap_or(false)
+                };
+                if peer_blocked {
+                    if let Some(handle) = TAURI_APP.get() {
+                        let _ = db::record_discarded_giftwrap(&handle, &wrapper_event_id).await;
+                    }
+                    {
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
+                    return true;
+                }
+            }
+
             // Convert rumor to RumorEvent for protocol-agnostic processing
             let rumor_event = RumorEvent {
                 id: rumor.id.unwrap(),
@@ -1625,8 +1646,8 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
                 let state = STATE.lock().await;
                 match state.get_profile(contact) {
                     Some(profile) => {
-                        if profile.muted {
-                            None // Profile is muted, don't send notification
+                        if profile.muted || profile.blocked {
+                            None
                         } else {
                             let display_name = if !profile.nickname.is_empty() {
                                 profile.nickname.clone()
@@ -1727,8 +1748,8 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
                 let state = STATE.lock().await;
                 match state.get_profile(contact) {
                     Some(profile) => {
-                        if profile.muted {
-                            None // Profile is muted, don't send notification
+                        if profile.muted || profile.blocked {
+                            None
                         } else {
                             let display_name = if !profile.nickname.is_empty() {
                                 profile.nickname.clone()
@@ -6158,6 +6179,7 @@ pub fn run() {
             profile::upload_avatar,
             chat::mark_as_read,
             profile::toggle_muted,
+            profile::toggle_blocked,
             profile::set_nickname,
             profile::get_profile,
             message::message,
