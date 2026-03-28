@@ -4,7 +4,7 @@ Review before **public v1**. Remove from code when alpha/dev cohort no longer ne
 
 | ID | Summary | Code / entry points | Note |
 |----|---------|---------------------|------|
-| LF-003 | Peer **send** falls back to **`profiles.evm_address`** when **`dm_peer_evm`** is empty (alpha installs that synced payout from old Kind 0 metadata) | `wallet_build_and_send_transaction` in `wallet_ops.rs`; `get_profile_evm_address` in `db.rs` | [LF-003-peer-evm-send-fallback.md](./LF-003-peer-evm-send-fallback.md) |
+| LF-003 | Peer **send**: **`dm_peer_evm`** first; else **`profiles.evm_address`** (may come from peer Kind 0 sync or older DB) | `resolve_peer_send_address` in `wallet_ops.rs`; `get_profile_evm_address` in `db.rs` | [LF-003-peer-evm-send-fallback.md](./LF-003-peer-evm-send-fallback.md) |
 | LF-002 | WalletBar **Tokens** dropdown prefs in localStorage (`pacto_wallet_bar_token_filter` / older JSON visibility); migrate to `pacto_wallet_watched_erc20_v1_*` | `legacyModeToRows`; `loadWatchedErc20Rows` in `watched-tokens.ts` | [LF-002-wallet-bar-token-filter-migration.md](./LF-002-wallet-bar-token-filter-migration.md) |
 | LF-001 | Wrong EVM `evm_address` stored (hashed `0x04` prefix); auto-repair from decrypted EVM key | `db::repair_evm_address_if_needed`; `db::get_evm_address`; `get_wallet_summary` | [LF-001-evm-address-repair.md](./LF-001-evm-address-repair.md) |
 

@@ -50,7 +50,7 @@
 
 <div class="top-navbar" role="tablist" aria-label="Main view">
   <span class="top-navbar-label" aria-hidden="true">View</span>
-  <div class="mode-switcher" role="group" aria-label="DMs, Squads, or Networks">
+  <div class="mode-switcher" role="group" aria-label="Main views">
     {#each tabs as tab}
       <button
         type="button"
@@ -89,7 +89,7 @@
     letter-spacing: 0.04em;
   }
 
-  /* Segmented control: one pill containing three segments */
+  /* Segmented control: one pill containing one segment per main view */
   .mode-switcher {
     display: inline-flex;
     align-items: stretch;

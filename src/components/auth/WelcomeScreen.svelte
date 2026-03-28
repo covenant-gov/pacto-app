@@ -18,7 +18,7 @@
         Create Account
       </button>
       <button class="btn-secondary" on:click={onImportKeys}>
-        Import Existing Keys
+        Import with recovery phrase
       </button>
     </div>
 

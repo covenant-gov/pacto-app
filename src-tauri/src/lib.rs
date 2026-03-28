@@ -33,6 +33,7 @@ mod util;
 use util::{get_file_type_description, calculate_file_hash, format_bytes};
 
 mod evm;
+mod evm_accounts;
 
 mod wallet_prices;
 mod wallet_chain_config;
@@ -108,10 +109,26 @@ pub(crate) fn get_blossom_servers() -> Vec<String> {
 }
 
 
-static MNEMONIC_SEED: OnceCell<String> = OnceCell::new();
 static ENCRYPTION_KEY: OnceCell<[u8; 32]> = OnceCell::new();
 
-/// Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
+// In-memory recovery phrase until `encrypt` persists it via `set_seed`; cleared on logout; replaced on each successful import/create.
+lazy_static! {
+    static ref MNEMONIC_SEED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+}
+
+fn mnemonic_seed_set(phrase: String) {
+    *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = Some(phrase);
+}
+
+fn mnemonic_seed_clear() {
+    *MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned") = None;
+}
+
+pub(crate) fn mnemonic_seed_get() -> Option<String> {
+    MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned").clone()
+}
+
+// Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
 lazy_static! {
     static ref NOSTR_CLIENT: std::sync::RwLock<Option<Arc<Client>>> = std::sync::RwLock::new(None);
 }
@@ -3791,50 +3808,8 @@ async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     }))
 }
 
-#[tauri::command]
-async fn login(import_key: String) -> Result<LoginKeyPair, String> {
-    let keys: Keys;
-
-    // If we're already logged in (i.e: Developer Mode with frontend hot-loading), just return the existing keys.
-    if let Ok(client) = get_nostr_client() {
-        let signer = client.signer().await.unwrap();
-        let new_keys = Keys::parse(&import_key).unwrap();
-
-        /* Derive our Public Key from the Import and Existing key sets */
-        let prev_npub = signer.get_public_key().await.unwrap().to_bech32().unwrap();
-        let new_npub = new_keys.public_key.to_bech32().unwrap();
-        if prev_npub == new_npub {
-            // Simply return the same KeyPair and allow the frontend to continue login as usual
-            let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&new_keys.secret_key().to_secret_bytes())
-                .map(|t| (Some(t.0), Some(t.1)))
-                .unwrap_or((None, None));
-            return Ok(LoginKeyPair {
-                public: signer.get_public_key().await.unwrap().to_bech32().unwrap(),
-                private: new_keys.secret_key().to_bech32().unwrap(),
-                evm_private_key,
-                evm_address,
-            });
-        } else {
-            // This shouldn't happen in the real-world, but just in case...
-            return Err(String::from("An existing Nostr Client instance exists, but a second incompatible key import was requested."));
-        }
-    }
-
-    // If it's an nsec, import that
-    if import_key.starts_with("nsec") {
-        match Keys::parse(&import_key) {
-            Ok(parsed) => keys = parsed,
-            Err(_) => return Err(String::from("Invalid nsec")),
-        };
-    } else {
-        // Otherwise, we'll try importing it as a mnemonic seed phrase (BIP-39)
-        match Keys::from_mnemonic(import_key, Some(String::new())) {
-            Ok(parsed) => keys = parsed,
-            Err(_) => return Err(String::from("Invalid Seed Phrase")),
-        };
-    }
-
-    // Initialise the Nostr client
+/// Build client and profile state after keys are resolved (mnemonic- or nsec-derived).
+async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
         .signer(keys.clone())
         .opts(ClientOptions::new().gossip(false))
@@ -3842,8 +3817,7 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
         .build();
     set_nostr_client(client);
 
-    // Add our profile (at least, the npub of it) to our state
-    let npub = keys.public_key.to_bech32().unwrap();
+    let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
     let mut profile = Profile::new();
     profile.id = npub.clone();
     profile.mine = true;
@@ -3853,38 +3827,122 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
         st.profiles.push(profile);
     }
 
-    // Initialize profile database and set as current account
     if let Some(handle) = TAURI_APP.get() {
         let app_data = handle.path().app_local_data_dir().ok();
         if let Some(data_dir) = app_data {
             let profile_db = data_dir.join(&npub).join("vector.db");
             if profile_db.exists() {
-                // Existing account - just set as current
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
+                let _ = evm_accounts::ensure_ready(handle.clone()).await;
+            } else if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
+                eprintln!("[Login] Failed to initialize profile database: {}", e);
+            } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
+                eprintln!("[Login] Failed to set current account: {}", e);
             } else {
-                // New account - initialize database and set as current
-                if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
-                    eprintln!("[Login] Failed to initialize profile database: {}", e);
-                } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
-                    eprintln!("[Login] Failed to set current account: {}", e);
-                } else {
-                    println!("[Login] Initialized new profile database and set current account: {}", npub);
-                }
+                println!("[Login] Initialized new profile database and set current account: {}", npub);
             }
         }
     }
 
-    let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
-        .map(|t| (Some(t.0), Some(t.1)))
-        .unwrap_or((None, None));
+    let (evm_private_key, evm_address) =
+        if let Some(m) = crate::mnemonic_seed_get() {
+            evm::derive_eth_bip44_v1_from_mnemonic_phrase(&m, 0)
+                .map(|(k, a)| (Some(k), Some(a)))
+                .unwrap_or((None, None))
+        } else if let Some(handle) = TAURI_APP.get() {
+            match db::read_stored_evm_address(handle.clone()) {
+                Ok(Some(addr)) if addr.len() >= 42 => (None, Some(addr)),
+                _ => evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+                    .map(|t| (Some(t.0), Some(t.1)))
+                    .unwrap_or((None, None)),
+            }
+        } else {
+            evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+                .map(|t| (Some(t.0), Some(t.1)))
+                .unwrap_or((None, None))
+        };
 
     Ok(LoginKeyPair {
         public: npub,
-        private: keys.secret_key().to_bech32().unwrap(),
+        private: keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
         evm_private_key,
         evm_address,
     })
+}
+
+/// Import a new profile from a BIP-39 recovery phrase only (`login` remains nsec for unlock).
+#[tauri::command]
+async fn login_with_recovery_phrase(mnemonic: String) -> Result<LoginKeyPair, String> {
+    let trimmed = mnemonic.trim();
+    if trimmed.is_empty() {
+        return Err("Enter your recovery phrase".to_string());
+    }
+    if trimmed.starts_with("nsec") {
+        return Err("Use your recovery phrase only here, not an nsec key.".to_string());
+    }
+    let words: Vec<&str> = trimmed.split_whitespace().collect();
+    if words.len() != 12 && words.len() != 24 {
+        return Err("Recovery phrase must be 12 or 24 words.".to_string());
+    }
+    clear_nostr_client();
+    let phrase = words.join(" ");
+    let keys = Keys::from_mnemonic(phrase.clone(), None).map_err(|_| {
+        "Invalid recovery phrase. Check spelling and word count.".to_string()
+    })?;
+    mnemonic_seed_set(phrase);
+    complete_login_from_keys(keys).await
+}
+
+/// Unlock or dev hot-reload: **nsec only**. Recovery phrase importers must use `login_with_recovery_phrase`.
+#[tauri::command]
+async fn login(import_key: String) -> Result<LoginKeyPair, String> {
+    let import_key = import_key.trim();
+    if import_key.is_empty() {
+        return Err("Missing key".to_string());
+    }
+
+    if let Ok(client) = get_nostr_client() {
+        let signer = client.signer().await.map_err(|e| e.to_string())?;
+        let new_keys = Keys::parse(import_key).map_err(|_| "Invalid nsec".to_string())?;
+
+        let prev_npub = signer
+            .get_public_key()
+            .await
+            .map_err(|e| e.to_string())?
+            .to_bech32()
+            .map_err(|e| e.to_string())?;
+        let new_npub = new_keys
+            .public_key
+            .to_bech32()
+            .map_err(|e| e.to_string())?;
+        if prev_npub != new_npub {
+            return Err(
+                "A different key is already loaded. Restart the app or use the recovery phrase import flow."
+                    .to_string(),
+            );
+        }
+        let (evm_private_key, evm_address) =
+            evm::derive_evm_hex_from_nostr_secret(&new_keys.secret_key().to_secret_bytes())
+                .map(|t| (Some(t.0), Some(t.1)))
+                .unwrap_or((None, None));
+        return Ok(LoginKeyPair {
+            public: prev_npub,
+            private: new_keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
+            evm_private_key,
+            evm_address,
+        });
+    }
+
+    if !import_key.starts_with("nsec") {
+        return Err(
+            "Unlock uses your saved profile. Use Import on the welcome screen for a recovery phrase."
+                .to_string(),
+        );
+    }
+
+    let keys = Keys::parse(import_key).map_err(|_| "Invalid nsec".to_string())?;
+    complete_login_from_keys(keys).await
 }
 
 /// Returns `true` if the client has connected, `false` if it was already connected
@@ -3960,14 +4018,10 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
 async fn encrypt(input: String, password: Option<String>) -> String {
     let res = crypto::internal_encrypt(input, password).await;
 
-    // If we have one; save the in-memory seedphrase in an encrypted at-rest format
-    match MNEMONIC_SEED.get() {
-        Some(seed) => {
-            // Save the seed phrase to the database
-            let handle = TAURI_APP.get().unwrap();
-            let _ = db::set_seed(handle.clone(), seed.to_string()).await;
-        }
-        _ => ()
+    // If we have one; save the in-memory seed phrase in an encrypted at-rest format
+    if let Some(seed) = mnemonic_seed_get() {
+        let handle = TAURI_APP.get().unwrap();
+        let _ = db::set_seed(handle.clone(), seed).await;
     }
 
     // Check if we have a pending invite acceptance to broadcast
@@ -4168,6 +4222,7 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
     // (Clearing client allows create_account/login to set a new one without restart.)
     clear_nostr_client();
     let _ = account_manager::clear_current_account();
+    mnemonic_seed_clear();
     // `state` guard dropped here
 }
 
@@ -4201,15 +4256,15 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     }
 
     // Save the seed in memory, ready for post-pin-setup encryption
-    let _ = MNEMONIC_SEED.set(mnemonic_string);
+    mnemonic_seed_set(mnemonic_string.clone());
 
     // Store npub temporarily - database will be created when set_pkey is called (after user sets PIN)
     // This prevents creating "dead accounts" if user quits before setting a PIN
     account_manager::set_pending_account(npub.clone())?;
 
-    // Derive EVM key from Nostr secret for embedded wallet
-    let (evm_private_key, evm_address) = evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
-        .map(|t| (Some(t.0), Some(t.1)))
+    // BIP-44 account #0 from the same recovery phrase as Nostr (see docs/wallet/HD_DERIVATION_V1.md).
+    let (evm_private_key, evm_address) = evm::derive_eth_bip44_v1_from_mnemonic_phrase(&mnemonic_string, 0)
+        .map(|(k, a)| (Some(k), Some(a)))
         .unwrap_or((None, None));
 
     Ok(LoginKeyPair {
@@ -4236,8 +4291,8 @@ async fn export_keys() -> Result<serde_json::Value, String> {
     };
     
     // Try to get seed phrase from memory first
-    let seed_phrase = if let Some(seed) = MNEMONIC_SEED.get() {
-        Some(seed.clone())
+    let seed_phrase = if let Some(seed) = mnemonic_seed_get() {
+        Some(seed)
     } else {
         // If not in memory, try to get from database
         if ENCRYPTION_KEY.get().is_some() {
@@ -4251,22 +4306,21 @@ async fn export_keys() -> Result<serde_json::Value, String> {
         }
     };
     
-    // EVM private key (when present): decrypt with same cached PIN key as nsec
-    let evm_private_key = if let Some(enc_evm) = db::get_evm_pkey(handle.clone())? {
-        match crypto::internal_decrypt(enc_evm, None).await {
-            Ok(decrypted) => Some(decrypted),
-            Err(_) => None,
-        }
-    } else {
-        None
+    // Active EVM account (when resolvable): same decryption path as wallet send.
+    let evm_private_key = match evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone()).await {
+        Ok(k) => Some(k),
+        Err(_) => None,
     };
+
+    let evm_accounts = evm_accounts::export_all_evm_account_keys_plaintext(handle.clone()).await?;
 
     let response = serde_json::json!({
         "nsec": nsec,
         "seed_phrase": seed_phrase,
-        "evm_private_key": evm_private_key
+        "evm_private_key": evm_private_key,
+        "evm_accounts": evm_accounts
     });
-    
+
     Ok(response)
 }
 
@@ -4285,12 +4339,9 @@ async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Re
         return Err("Hash must be exactly 32 bytes".to_string());
     }
 
-    // Load and decrypt EVM private key.
-    let enc_evm = db::get_evm_pkey(handle.clone())?
-        .ok_or_else(|| "EVM key not set".to_string())?;
-    let evm_private_key = crypto::internal_decrypt(enc_evm, None)
+    let evm_private_key = evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone())
         .await
-        .map_err(|_| "Failed to decrypt EVM key".to_string())?;
+        .map_err(|_| "Failed to resolve EVM signing key".to_string())?;
 
     let key_hex = evm_private_key.trim().strip_prefix("0x").unwrap_or(&evm_private_key);
     let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
@@ -6149,6 +6200,7 @@ pub fn run() {
             decode_blurhash,
             download_attachment,
             login,
+            login_with_recovery_phrase,
             #[cfg(debug_assertions)]
             debug_hot_reload_sync,
             notifs,
@@ -6190,6 +6242,12 @@ pub fn run() {
             wallet_prices::wallet_get_usd_spot_prices,
             wallet_ops::get_wallet_summary,
             wallet_ops::wallet_build_and_send_transaction,
+            evm_accounts::list_evm_accounts,
+            evm_accounts::add_evm_account,
+            evm_accounts::import_evm_account,
+            evm_accounts::update_evm_account,
+            evm_accounts::set_active_evm_account,
+            evm_accounts::set_default_shared_evm_account,
             safe_deploy::safe_deploy_proxy,
             regenerate_device_keypackage,
             // MLS core commands

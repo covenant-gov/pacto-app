@@ -13,10 +13,13 @@
 
   $: networkLabel = getWalletNetworkDisplayName(payload.network);
   $: title = `${payload.amount} ${payload.asset}`;
-  $: subtitle = networkLabel;
+  $: fromAddr = payload.from_evm_address.trim();
+  $: fromAddrShort =
+    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
+  $: subtitle = `${networkLabel} · ${fromAddrShort}`;
   $: bodyText = isMine
-    ? `You requested this payment on ${networkLabel}.`
-    : `${peerDisplayName} requested you send this amount.`;
+    ? `You requested this payment on ${networkLabel} (account ${fromAddrShort}).`
+    : `${peerDisplayName} requested you send this amount (their account ${fromAddrShort}).`;
   /** Keep declined expanded so each side sees clear copy; accepted/fulfilled stay compact. */
   $: collapsed = status === 'accepted' || status === 'fulfilled';
 </script>

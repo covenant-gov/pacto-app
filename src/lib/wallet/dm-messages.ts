@@ -16,6 +16,12 @@ const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
 const NETWORKS = new Set<string>(['mainnet', 'optimism', 'sepolia']);
 
+const EVM_ADDR_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+function isWireEvmAddress(s: unknown): s is string {
+  return typeof s === 'string' && EVM_ADDR_REGEX.test(s.trim());
+}
+
 function isSupportedNetwork(s: unknown): s is SupportedChainId {
   return typeof s === 'string' && NETWORKS.has(s);
 }
@@ -54,6 +60,8 @@ export interface WalletTxRequestPayload {
   network: SupportedChainId;
   asset: string;
   amount: string;
+  /** Posting user’s active EVM signer (`0x` + 40 hex). Required on the wire for v1. */
+  from_evm_address: string;
   created_at_ms?: number;
 }
 
@@ -66,6 +74,8 @@ export interface WalletTxAnnouncementPayload {
   tx_hash: string;
   from_npub: string;
   to_npub: string;
+  /** EVM account that signed the transfer (`0x` + 40 hex). Required on the wire for v1. */
+  from_evm_address: string;
   request_id?: string;
   block_number?: string;
 }
@@ -80,6 +90,11 @@ export function formatWalletTxRequest(payload: Omit<WalletTxRequestPayload, 'typ
     amount: payload.amount,
   };
   if (payload.created_at_ms != null) body.created_at_ms = payload.created_at_ms;
+  const from = typeof payload.from_evm_address === 'string' ? payload.from_evm_address.trim() : '';
+  if (!isWireEvmAddress(from)) {
+    throw new Error('from_evm_address must be a 0x-prefixed 20-byte hex address');
+  }
+  body.from_evm_address = from;
   return JSON.stringify(body);
 }
 
@@ -98,6 +113,11 @@ export function formatWalletTxAnnouncement(
   };
   if (payload.request_id != null) body.request_id = payload.request_id;
   if (payload.block_number != null) body.block_number = payload.block_number;
+  const from = typeof payload.from_evm_address === 'string' ? payload.from_evm_address.trim() : '';
+  if (!isWireEvmAddress(from)) {
+    throw new Error('from_evm_address must be a 0x-prefixed 20-byte hex address');
+  }
+  body.from_evm_address = from;
   return JSON.stringify(body);
 }
 
@@ -125,15 +145,18 @@ export function parseWalletTxRequest(content: string): WalletTxRequestPayload | 
   if (o.created_at_ms !== undefined) {
     if (typeof o.created_at_ms !== 'number' || !Number.isFinite(o.created_at_ms)) return null;
   }
-  return {
+  if (!isWireEvmAddress(o.from_evm_address)) return null;
+  const out: WalletTxRequestPayload = {
     type: WALLET_TX_REQUEST_WIRE_TYPE,
     version: SCHEMA_VERSION,
     request_id: o.request_id,
     network: o.network,
     asset: o.asset,
     amount: o.amount.trim(),
+    from_evm_address: (o.from_evm_address as string).trim(),
     ...(o.created_at_ms !== undefined ? { created_at_ms: o.created_at_ms } : {}),
   };
+  return out;
 }
 
 /**
@@ -160,6 +183,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
   if (!isLikelyNpub(o.from_npub) || !isLikelyNpub(o.to_npub)) return null;
   if (o.request_id !== undefined && typeof o.request_id !== 'string') return null;
   if (!isOptionalBlockNumber(o.block_number)) return null;
+  if (!isWireEvmAddress(o.from_evm_address)) return null;
 
   const out: WalletTxAnnouncementPayload = {
     type: WALLET_TX_ANNOUNCEMENT_WIRE_TYPE,
@@ -170,6 +194,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
     tx_hash: o.tx_hash,
     from_npub: o.from_npub,
     to_npub: o.to_npub,
+    from_evm_address: (o.from_evm_address as string).trim(),
   };
   if (typeof o.request_id === 'string' && o.request_id.length > 0) out.request_id = o.request_id;
   if (typeof o.block_number === 'string') out.block_number = o.block_number;
@@ -195,12 +220,6 @@ export function getFulfilledWalletRequestIdsFromMessages(
 export const WALLET_PEER_INFO_REQUEST_WIRE_TYPE = 'wallet_peer_info_request';
 export const WALLET_PEER_INFO_GRANT_WIRE_TYPE = 'wallet_peer_info_grant';
 export const WALLET_PEER_INFO_DECLINE_WIRE_TYPE = 'wallet_peer_info_decline';
-
-const EVM_ADDR_REGEX = /^0x[a-fA-F0-9]{40}$/;
-
-function isWireEvmAddress(s: unknown): s is string {
-  return typeof s === 'string' && EVM_ADDR_REGEX.test(s.trim());
-}
 
 export interface WalletPeerInfoRequestPayload {
   type: typeof WALLET_PEER_INFO_REQUEST_WIRE_TYPE;

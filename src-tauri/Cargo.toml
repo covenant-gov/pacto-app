@@ -69,6 +69,7 @@ url = "2.5"
 # Use alloy 1.x: 0.15.x `alloy-consensus` does not build against serde 1.0.228+.
 # `reqwest` + `reqwest-rustls-tls` enable the JSON-RPC HTTP client (default-features = false drops them otherwise → "No transports enabled").
 alloy = { version = "1.0.41", default-features = false, features = ["provider-http", "signer-local", "sol-types", "rpc-types", "reqwest", "reqwest-rustls-tls"] }
+bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "std"] }
 
 # Android-only dependencies
 [target.'cfg(target_os = "android")'.dependencies]

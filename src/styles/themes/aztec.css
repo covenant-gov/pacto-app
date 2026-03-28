@@ -1,0 +1,39 @@
+/* Aztec — deep warm black field, cream type, chartreuse accent (aligned with aztec.network mood).
+ * Typography: app.css only.
+ */
+[data-theme="aztec"] {
+  --bg-page: #161614;
+  --bg-panel: #1e1e1c;
+  --bg-elevated: #262624;
+  --bg-hover: #30302d;
+
+  --text-primary: #f7f5f0;
+  --text-secondary: #ccc6ba;
+  --text-muted: #8c867a;
+
+  --border: #45443f;
+  --border-subtle: #2e2d2a;
+
+  --accent: #d4f266;
+  --accent-hover: #e7ff8c;
+  --danger: #ff6b7a;
+  --success: #6ee7b7;
+  --warning: #fcd34d;
+
+  --code-bg: var(--bg-elevated);
+  --code-border: var(--border-subtle);
+  --blockquote-border: var(--accent);
+  --spoiler-bg: var(--text-primary);
+  --reply-border: var(--accent);
+
+  --icon-dropdown-filter: brightness(0) invert(1);
+
+  --channel-active-bg: #323d28;
+  --channel-active-fg: #f7f5f0;
+
+  --aztec-lime: #d4f266;
+  --aztec-cream: #f7f5f0;
+  --aztec-ink: #161614;
+  --aztec-stone: #8c867a;
+  --aztec-moss: #6ee7b7;
+}

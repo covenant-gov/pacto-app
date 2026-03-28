@@ -12,33 +12,24 @@
   function handleSubmit() {
     const trimmed = privateKey.trim();
     localError = null;
-    
+
     if (!trimmed) {
-      localError = 'Please enter your private key or recovery phrase';
+      localError = 'Please enter your recovery phrase';
       return;
     }
-    
-    // Check if it's a mnemonic (12 or 24 words)
-    const words = trimmed.split(/\s+/).filter(w => w.length > 0);
-    const isMnemonic = words.length === 12 || words.length === 24;
-    
-    if (isMnemonic) {
-      if (words.length !== 12 && words.length !== 24) {
-        localError = `Invalid mnemonic: expected 12 or 24 words, got ${words.length}`;
-        return;
-      }
-      onImport(trimmed);
-    } else {
-      if (!trimmed.startsWith('nsec1')) {
-        localError = 'Please enter either an nsec key (starting with "nsec1") or a 12/24-word recovery phrase';
-        return;
-      }
-      if (trimmed.length !== 63) {
-        localError = `Invalid nsec key length. Expected 63 characters, got ${trimmed.length}`;
-        return;
-      }
-      onImport(trimmed);
+
+    const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
+    if (words.length !== 12 && words.length !== 24) {
+      localError = `Recovery phrase must be 12 or 24 words (you entered ${words.length})`;
+      return;
     }
+
+    if (trimmed.startsWith('nsec1')) {
+      localError = 'Use your recovery phrase here, not an nsec key';
+      return;
+    }
+
+    onImport(words.join(' '));
   }
 
   function handlePaste(event: ClipboardEvent) {
@@ -60,9 +51,9 @@
 <div class="key-import-container">
   <div class="key-import-content">
     <div class="import-header">
-      <h2>Import Your Keys</h2>
+      <h2>Import your account</h2>
       <p class="import-subtitle">
-        Enter your nsec key or 12-word recovery phrase
+        Enter your 12- or 24-word recovery phrase
       </p>
     </div>
 
@@ -74,7 +65,7 @@
       <textarea
         bind:value={privateKey}
         on:paste={handlePaste}
-        placeholder="nsec1... or 12-word recovery phrase"
+        placeholder="word1 word2 word3 … (12 or 24 words)"
         disabled={isValidating}
         class="key-textarea"
         rows="4"
@@ -99,7 +90,7 @@
     </div>
 
     <div class="import-notice">
-      <p>⚠️ Your private key will be encrypted with a PIN and stored securely on this device.</p>
+      <p>⚠️ Your recovery phrase will be encrypted with a PIN and stored securely on this device.</p>
     </div>
   </div>
 </div>

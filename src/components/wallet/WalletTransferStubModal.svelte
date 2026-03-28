@@ -34,6 +34,7 @@
   import type { WalletSendPrefillPayload } from '../../stores/app';
   import { formatWalletTxRequest } from '../../lib/wallet/dm-messages';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
 
   export let mode: 'send' | 'request';
   export let npub: string;
@@ -259,12 +260,20 @@
       sendError = null;
       sending = true;
       try {
+        const fromEvm = await getActiveEvmSignerAddress();
+        if (!fromEvm) {
+          const msg = 'No active EVM account. Open Settings → Wallet first.';
+          sendError = { message: msg };
+          showToast(msg);
+          return;
+        }
         const content = formatWalletTxRequest({
           request_id: crypto.randomUUID(),
           network: chainId,
           asset: assetCode,
           amount: amountHuman,
           created_at_ms: Date.now(),
+          from_evm_address: fromEvm,
         });
         const ok = await postDm(content);
         if (ok) {

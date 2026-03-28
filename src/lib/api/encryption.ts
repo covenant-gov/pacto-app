@@ -81,23 +81,31 @@ export async function clearStoredKey(): Promise<void> {
 }
 
 /**
- * Validate if a string is a valid Nostr private key format
- * @param key - Private key in hex or nsec format
- * @returns True if valid format
+ * Validate if a string is a valid Nostr private key format (nsec or 64-char hex).
+ * Use for unlock / advanced paths — **not** for onboarding import (use `validateRecoveryPhraseForImport`).
  */
 export function validatePrivateKeyFormat(key: string): boolean {
   const trimmed = key.trim();
-  
-  // Check nsec format (bech32)
+
   if (trimmed.startsWith('nsec1')) {
-    return trimmed.length === 63; // Standard nsec length
+    return trimmed.length === 63;
   }
-  
-  // Check hex format
+
   if (/^[0-9a-fA-F]{64}$/.test(trimmed)) {
     return true;
   }
-  
+
   return false;
+}
+
+/**
+ * Import onboarding: 12- or 24-word recovery phrase only (rejects nsec / hex).
+ */
+export function validateRecoveryPhraseForImport(input: string): boolean {
+  const t = input.trim();
+  if (!t || t.startsWith('nsec1')) return false;
+  if (/^[0-9a-fA-F]{64}$/.test(t)) return false;
+  const words = t.split(/\s+/).filter((w) => w.length > 0);
+  return words.length === 12 || words.length === 24;
 }
 

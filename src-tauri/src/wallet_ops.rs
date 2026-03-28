@@ -15,6 +15,7 @@ use tauri::{AppHandle, Runtime};
 
 use crate::crypto;
 use crate::db;
+use crate::evm_accounts;
 use crate::wallet_chain_config;
 use crate::wallet_prices;
 use crate::wallet_security;
@@ -208,6 +209,7 @@ pub async fn get_wallet_summary<R: Runtime>(
     app: AppHandle<R>,
     watched_erc20s: Vec<WatchedErc20Input>,
 ) -> Result<WalletSummary, String> {
+    let _ = evm_accounts::ensure_ready(app.clone()).await;
     let _ = db::repair_evm_address_if_needed(&app).await;
     let addr_str = db::read_stored_evm_address(app.clone())?
         .ok_or_else(|| "No EVM address for this account. Log in again or set your wallet address.".to_string())?;
@@ -333,7 +335,44 @@ pub async fn get_wallet_summary<R: Runtime>(
     })
 }
 
-/// Tauri command: resolve peer `profiles.evm_address`, build tx, sign with stored EVM key, broadcast, wait for receipt.
+fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> Result<Address, String> {
+    if to_npub.trim().is_empty() {
+        return Err(wallet_err_json(
+            "MISSING_RECIPIENT",
+            "Recipient npub or EVM address is required.",
+            None,
+        ));
+    }
+    let dm_peer = db::get_dm_peer_evm_stored(app, to_npub)
+        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
+    let profile_peer = db::get_profile_evm_address(app, to_npub)
+        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
+    let peer_addr_opt = dm_peer.or(profile_peer);
+
+    let Some(peer_raw) = peer_addr_opt else {
+        log::warn!(
+            target: "pacto_wallet",
+            "wallet_build_and_send_transaction: missing evm_address for npub prefix={}…",
+            to_npub.chars().take(16).collect::<String>()
+        );
+        return Err(wallet_err_json(
+            "MISSING_PEER_EVM_ADDRESS",
+            "This contact has no EVM payout address saved for this DM. Use Request wallet information in the wallet sidebar so they can share their address privately.",
+            Some(to_npub.to_string()),
+        ));
+    };
+
+    parse_address(&peer_raw).map_err(|e| {
+        wallet_err_json(
+            "INVALID_PEER_EVM_ADDRESS",
+            e,
+            Some(to_npub.to_string()),
+        )
+    })
+}
+
+/// Tauri command: resolve peer EVM from `to_npub`, **or** use `to_address_evm` when set (Settings → Wallet send-to-address).
+/// When `to_address_evm` is non-empty after trim, it is the recipient and `to_npub` is ignored for resolution.
 #[tauri::command]
 pub async fn wallet_build_and_send_transaction<R: Runtime>(
     app: AppHandle<R>,
@@ -342,6 +381,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     asset: String,
     amount: String,
     erc20_transfer: Option<Erc20TransferSpec>,
+    to_address_evm: Option<String>,
 ) -> Result<WalletSendResult, String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -365,40 +405,29 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
         ));
     }
 
-    let dm_peer = db::get_dm_peer_evm_stored(&app, &to_npub)
-        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.clone())))?;
-    let profile_peer = db::get_profile_evm_address(&app, &to_npub)
-        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.clone())))?;
-    let peer_addr_opt = dm_peer.or(profile_peer);
-
-    let Some(peer_raw) = peer_addr_opt else {
-        log::warn!(
-            target: "pacto_wallet",
-            "wallet_build_and_send_transaction: missing evm_address for npub prefix={}…",
-            to_npub.chars().take(16).collect::<String>()
-        );
-        return Err(wallet_err_json(
-            "MISSING_PEER_EVM_ADDRESS",
-            "This contact has no EVM payout address saved for this DM. Use Request wallet information in the wallet sidebar so they can share their address privately.",
-            Some(to_npub.clone()),
-        ));
-    };
-
-    let to_addr = match parse_address(&peer_raw) {
-        Ok(a) => a,
-        Err(e) => {
-            return Err(wallet_err_json(
-                "INVALID_PEER_EVM_ADDRESS",
-                e,
-                Some(to_npub.clone()),
-            ))
+    let to_addr = if let Some(hex) = to_address_evm {
+        let t = hex.trim();
+        if !t.is_empty() {
+            parse_address(t).map_err(|e| {
+                wallet_err_json(
+                    "INVALID_TO_ADDRESS",
+                    format!("Invalid recipient address: {}", e),
+                    None,
+                )
+            })?
+        } else {
+            resolve_peer_send_address(&app, &to_npub)?
         }
+    } else {
+        resolve_peer_send_address(&app, &to_npub)?
     };
 
     let urls = wallet_chain_config::rpc_urls_for(net);
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
+
+    let _ = evm_accounts::ensure_ready(app.clone()).await;
 
     let enc = db::get_evm_pkey(app.clone())
         .map_err(|e| wallet_err_json("DB_ERROR", e, None))?

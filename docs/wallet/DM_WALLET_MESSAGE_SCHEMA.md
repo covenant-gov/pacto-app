@@ -15,7 +15,7 @@ They are **not** the same envelope as squad/network **`# announcements`** messag
 
 - Every object includes **`version`** (integer). The current spec is **`version: 1`**.
 - Clients **must** reject (do not render as wallet UI) objects with **`version`** greater than the highest version they implement (forward compatibility).
-- Clients **may** accept unknown **`version`** 0 or missing `version` only if explicitly documented later; for v1 implement **require** `version === 1`.
+- Implementations **require** **`version === 1`** for these wallet types; missing or other values are treated as plain text, not wallet cards.
 
 ---
 
@@ -73,12 +73,13 @@ Posted by the user who **creates** the request. The **recipient** is the other p
 | `network`     | string  | yes      | `mainnet` \| `optimism` \| `sepolia`. |
 | `asset`       | string  | yes      | `ETH` \| `USDC` \| `USDT`. |
 | `amount`      | string  | yes      | Human decimal amount (see above). |
+| `from_evm_address` | string | yes | Posting user’s **active** EVM signer: `0x` + 40 hex. |
 | `created_at_ms` | number | no     | Unix ms when the client created the request (for display ordering). |
 
 ### Example (compact, production)
 
 ```json
-{"version":1,"type":"wallet_tx_request","request_id":"550e8400-e29b-41d4-a716-446655440000","network":"sepolia","asset":"ETH","amount":"0.05","created_at_ms":1710000000000}
+{"version":1,"type":"wallet_tx_request","request_id":"550e8400-e29b-41d4-a716-446655440000","network":"sepolia","asset":"ETH","amount":"0.05","from_evm_address":"0x1111111111111111111111111111111111111111","created_at_ms":1710000000000}
 ```
 
 ---
@@ -97,6 +98,7 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 | `tx_hash`      | string | yes      | `0x` + 64 hex. |
 | `from_npub`    | string | yes      | Sender’s npub. |
 | `to_npub`      | string | yes      | Recipient’s npub. |
+| `from_evm_address` | string | yes | EVM account that **signed** the transfer: `0x` + 40 hex (should match on-chain `from`). |
 | `request_id`   | string | no       | If present, ties this transfer to a prior `wallet_tx_request` (e.g. “paid this request”). |
 | `block_number` | string | no       | Decimal string block number from receipt (optional; avoids JS int issues if very large). |
 
@@ -105,7 +107,7 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 ### Example (compact, production)
 
 ```json
-{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1sender…","to_npub":"npub1recipient…","request_id":"550e8400-e29b-41d4-a716-446655440000","block_number":"12345678"}
+{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1sender…","to_npub":"npub1recipient…","from_evm_address":"0x1111111111111111111111111111111111111111","request_id":"550e8400-e29b-41d4-a716-446655440000","block_number":"12345678"}
 ```
 
 ---

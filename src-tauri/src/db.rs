@@ -324,8 +324,8 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
     Ok(result)
 }
 
-#[command]
-pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+/// Active signing address only (`settings.evm_address`). Does not update `profiles.evm_address` (peer-facing default is separate).
+pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
     conn.execute(
@@ -333,18 +333,14 @@ pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) 
         rusqlite::params!["evm_address", &trimmed],
     )
     .map_err(|e| format!("Failed to insert evm_address: {}", e))?;
-    if let Ok(npub) = crate::account_manager::get_current_account() {
-        let _ = conn.execute(
-            "UPDATE profiles SET evm_address = ?1 WHERE npub = ?2",
-            rusqlite::params![&trimmed, npub],
-        );
-        let mut state = crate::STATE.lock().await;
-        if let Some(p) = state.get_profile_mut(&npub) {
-            p.evm_address = crate::evm::normalize_hex_address(&trimmed).unwrap_or(trimmed);
-        }
-    }
     crate::account_manager::return_db_connection(conn);
     Ok(())
+}
+
+/// Persists **`settings.evm_address`** (active signing address). Mine **`profiles.evm_address`** and Kind 0 are updated when the client publishes profile metadata (e.g. `update_profile` after onboarding).
+#[command]
+pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+    set_wallet_signing_evm_address(handle, address).await
 }
 
 /// Embedded wallet: payout address stored for a contact (`profiles.evm_address`).
@@ -407,7 +403,7 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
     if matches {
         return Ok(());
     }
-    set_evm_address(handle.clone(), correct).await?;
+    set_wallet_signing_evm_address(handle.clone(), correct).await?;
     Ok(())
 }
 

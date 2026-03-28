@@ -149,16 +149,15 @@ export async function updateProfile(params: {
   avatar: string;
   banner: string;
   about: string;
-}): Promise<boolean> {
+}): Promise<void> {
   dmLog('update_profile', { nameLen: params.name?.length ?? 0 });
-  const ok = (await invoke('update_profile', {
+  await invoke('update_profile', {
     name: params.name ?? '',
     avatar: params.avatar ?? '',
     banner: params.banner ?? '',
     about: params.about ?? '',
-  })) as boolean;
-  dmLog('update_profile result', { ok });
-  return ok;
+  });
+  dmLog('update_profile result', { ok: true });
 }
 
 /**

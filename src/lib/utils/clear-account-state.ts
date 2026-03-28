@@ -41,6 +41,7 @@ import {
   channelMessages,
   composingNewChat,
   activeTopNavTab,
+  activeSettingsAreaTab,
   activeDmTab,
   activeView,
   showMembersPanel,
@@ -91,6 +92,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_channel_by_network',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
+  'pacto_wallet_ui_enabled_chains_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
 
@@ -168,6 +170,7 @@ export function clearAccountState(npub?: string): void {
   channelMessages.set({});
   composingNewChat.set(false);
   activeTopNavTab.set('squads');
+  activeSettingsAreaTab.set('profile');
   activeDmTab.set('friends');
   activeView.set('hub');
   showMembersPanel.set(false);
