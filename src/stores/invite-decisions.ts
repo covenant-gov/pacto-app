@@ -1,6 +1,7 @@
 /**
- * Persisted invite decisions (squad, network, channel-invite) and local DM wallet request responses.
+ * Persisted invite decisions (squad, network, channel-invite) and local DM wallet / peer responses.
  * Channel invites are unified: one accept/decline store for channels in squads or networks.
+ * Payment requests use only `declined` persistence; completion is inferred from `wallet_tx_announcement`.
  * Wire up via initInviteDecisionPersistence(getKey); load via getInviteDecisionLoadEntries(npub).
  */
 
@@ -16,7 +17,6 @@ export const INVITE_DECISION_SCOPED_PREFIXES = [
   'pacto_invite_declined_network',
   'pacto_invite_accepted_channel',
   'pacto_invite_declined_channel',
-  'pacto_wallet_tx_request_accepted',
   'pacto_wallet_tx_request_declined',
   'pacto_wallet_peer_info_request_accepted',
   'pacto_wallet_peer_info_request_declined',
@@ -30,8 +30,6 @@ export const declinedNetworkInviteIds = writable<string[]>([]);
 export const acceptedChannelInviteMessageIds = writable<string[]>([]);
 /** Unified: message IDs for declined channel invites (squad or network). */
 export const declinedChannelInviteMessageIds = writable<string[]>([]);
-/** DM `wallet_tx_request` messages the user accepted (opens pre-filled send + links announcement via `request_id`). */
-export const acceptedWalletTxRequestMessageIds = writable<string[]>([]);
 /** DM `wallet_tx_request` messages the user declined. */
 export const declinedWalletTxRequestMessageIds = writable<string[]>([]);
 /** DM `wallet_peer_info_request` messages the user accepted (sent grant back). */
@@ -46,7 +44,6 @@ const STORES = [
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
-  acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,

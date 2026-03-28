@@ -12,7 +12,6 @@ import {
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
-  acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
@@ -26,7 +25,6 @@ export {
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
-  acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
@@ -308,6 +306,8 @@ export interface DmMessage {
   content: string;
   at: number;
   mine: boolean;
+  /** Local-only row: block / unblock notice in the thread (not from relays). */
+  is_local_announcement?: boolean;
   npub?: string;
   pending?: boolean;
   failed?: boolean;
@@ -323,6 +323,25 @@ export interface DmMessage {
 
 // Backend DM messages (from get_message_views + message_new). Keyed by npub.
 export const backendDmMessages = writable<Record<string, DmMessage[]>>({});
+
+/** Local-only lines shown in the thread (e.g. block / unblock). Merged at display time; not sent to relays. */
+export const dmThreadAnnouncementsByNpub = writable<Record<string, DmMessage[]>>({});
+
+export function appendDmThreadAnnouncement(npub: string, content: string): void {
+  const trimmedNpub = npub.trim();
+  if (!trimmedNpub) return;
+  dmThreadAnnouncementsByNpub.update((m) => {
+    const list = m[trimmedNpub] ?? [];
+    const msg: DmMessage = {
+      id: `local-announce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      content,
+      at: Date.now(),
+      mine: true,
+      is_local_announcement: true,
+    };
+    return { ...m, [trimmedNpub]: [...list, msg] };
+  });
+}
 
 // Total message count per chat (from get_chat_message_count when opening a DM). Used for "load older" pagination.
 export const messageCountByChat = writable<Record<string, number>>({});

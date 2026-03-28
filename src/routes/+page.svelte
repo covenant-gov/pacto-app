@@ -64,6 +64,7 @@
     walletSidebarOpen,
     closeWalletSidebar,
     backendDmMessages,
+    dmThreadAnnouncementsByNpub,
     backendGroupMessages,
     pendingMlsWelcomes,
     ungroupedChannels,
@@ -94,6 +95,7 @@
     declinedChannelInviteMessageIds,
     dmChatsByNpub,
     pinnedDmNpubs,
+    blockedDmNpubs,
     dmSendError,
     deleteDmChat,
     revertDmChat,
@@ -277,7 +279,13 @@
   }
 
   // Highlight the tab that matches the open thread (e.g. Pending → Friends when they reply). Skip Search so the unified list stays active.
-  $: if ($activeTopNavTab === 'dms' && $activeDmId && $activeDmTab !== 'search') {
+  // While viewing a locally blocked peer, do not auto-switch tabs (conversation can be hidden from the list but stay open).
+  $: if (
+    $activeTopNavTab === 'dms' &&
+    $activeDmId &&
+    $activeDmTab !== 'search' &&
+    !$blockedDmNpubs.has($activeDmId)
+  ) {
     const desiredTab = dmSidebarCategoryForNpub($activeDmId, $dmChatsByNpub, $pinnedDmNpubs) as DmTab;
     if ($activeDmTab !== desiredTab) {
       lastOpenedDmByTab.update((byTab: Record<DmTab, string | null>) => ({
@@ -391,7 +399,9 @@
   $: mergedDmMessages = (() => {
     const npub = $activeDmId;
     if (!npub) return [];
-    const list = [...($backendDmMessages[npub] ?? [])];
+    const backend = [...($backendDmMessages[npub] ?? [])];
+    const announcements = [...($dmThreadAnnouncementsByNpub[npub] ?? [])];
+    const list = [...backend, ...announcements];
     list.sort((a: DmMessage, b: DmMessage) => a.at - b.at);
     const squadInviteCount = list.filter((m: DmMessage) => parseSquadInviteMessage(m.content ?? '') !== null).length;
     if (list.length > 0 || npub) console.log('[Squad/Invite] mergedDmMessages for', npub?.slice(0, 24) + '…', 'count=', list.length, 'squadInviteMsgs=', squadInviteCount);
