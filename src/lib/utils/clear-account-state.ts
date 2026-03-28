@@ -27,7 +27,6 @@ import {
   declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
-  acceptedWalletTxRequestMessageIds,
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
@@ -49,6 +48,7 @@ import {
   walletSidebarOpen,
   walletSendPrefillFromRequest,
   backendDmMessages,
+  dmThreadAnnouncementsByNpub,
   messageCountByChat,
   loadedOffsetByChat,
   dmSyncStatus,
@@ -73,6 +73,8 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
   'pacto_last_network_id',
   'pacto_last_network_channel_id',
   'pacto_pinned_dm_npubs',
+  // Legacy: payment request "accepted" was removed; clear leftover keys.
+  'pacto_wallet_tx_request_accepted',
   ...INVITE_DECISION_SCOPED_PREFIXES,
   'pacto_theme',
   'recentEmojis',
@@ -94,6 +96,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
   'pacto_wallet_ui_enabled_chains_v1',
+  'pacto_wallet_tx_request_accepted',
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
 
@@ -157,7 +160,6 @@ export function clearAccountState(npub?: string): void {
   declinedNetworkInviteIds.set([]);
   acceptedChannelInviteMessageIds.set([]);
   declinedChannelInviteMessageIds.set([]);
-  acceptedWalletTxRequestMessageIds.set([]);
   declinedWalletTxRequestMessageIds.set([]);
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
@@ -180,6 +182,7 @@ export function clearAccountState(npub?: string): void {
   walletSendPrefillFromRequest.set(null);
 
   backendDmMessages.set({});
+  dmThreadAnnouncementsByNpub.set({});
   messageCountByChat.set({});
   loadedOffsetByChat.set({});
   dmSyncStatus.set('idle');

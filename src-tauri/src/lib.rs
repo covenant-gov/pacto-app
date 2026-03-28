@@ -1522,6 +1522,43 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
     }
 }
 
+/// Display name for a DM peer from in-memory profile cache (fallback: shortened npub).
+fn dm_peer_display_name(state: &ChatState, npub: &str) -> String {
+    match state.get_profile(npub) {
+        Some(p) if !p.nickname.is_empty() => p.nickname.clone(),
+        Some(p) if !p.name.is_empty() => p.name.clone(),
+        Some(p) if !p.display_name.is_empty() => p.display_name.clone(),
+        _ => {
+            if npub.len() > 16 {
+                format!("{}…{}", &npub[..8], &npub[npub.len() - 4..])
+            } else {
+                npub.to_string()
+            }
+        }
+    }
+}
+
+/// If `content` is a `wallet_tx_announcement` JSON DM, return a role-specific OS notification body; otherwise `None`.
+fn try_wallet_tx_announcement_notify_body(
+    content: &str,
+    is_mine: bool,
+    peer_npub: &str,
+    state: &ChatState,
+) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("wallet_tx_announcement") {
+        return None;
+    }
+    let amount = v.get("amount").and_then(|a| a.as_str())?;
+    let asset = v.get("asset").and_then(|a| a.as_str())?;
+    let peer_name = dm_peer_display_name(state, peer_npub);
+    Some(if is_mine {
+        format!("You transferred\n{} {}\nto {}", amount, asset, peer_name)
+    } else {
+        format!("{}\ntransferred\n{} {}\nto you", peer_name, amount, asset)
+    })
+}
+
 /// Handle a processed text message
 async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_new: bool, wrapper_event_id: &str) -> bool {
     // Check if message already exists in database (important for sync with partial message loading)
@@ -1640,30 +1677,46 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
             })).unwrap();
         }
 
-        // Send OS notification for incoming messages (only after confirming message is new)
-        if !is_mine && is_new {
-            let display_info = {
-                let state = STATE.lock().await;
-                match state.get_profile(contact) {
-                    Some(profile) => {
-                        if profile.muted || profile.blocked {
-                            None
-                        } else {
-                            let display_name = if !profile.nickname.is_empty() {
-                                profile.nickname.clone()
-                            } else if !profile.name.is_empty() {
-                                profile.name.clone()
+        // OS notification: incoming DMs, and outgoing `wallet_tx_announcement` (transfer completed)
+        if is_new {
+            if !is_mine {
+                let display_info = {
+                    let state = STATE.lock().await;
+                    match state.get_profile(contact) {
+                        Some(profile) => {
+                            if profile.muted || profile.blocked {
+                                None
                             } else {
-                                String::from("New Message")
-                            };
-                            Some((display_name, msg.content.clone()))
+                                let display_name = if !profile.nickname.is_empty() {
+                                    profile.nickname.clone()
+                                } else if !profile.name.is_empty() {
+                                    profile.name.clone()
+                                } else if !profile.display_name.is_empty() {
+                                    profile.display_name.clone()
+                                } else {
+                                    String::from("New Message")
+                                };
+                                let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
+                                    .unwrap_or_else(|| msg.content.clone());
+                                Some((display_name, body))
+                            }
+                        }
+                        None => {
+                            let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
+                                .unwrap_or_else(|| msg.content.clone());
+                            Some((String::from("New Message"), body))
                         }
                     }
-                    None => Some((String::from("New Message"), msg.content.clone())),
+                };
+                if let Some((display_name, content)) = display_info {
+                    let notification = NotificationData::direct_message(display_name, content);
+                    show_notification_generic(notification);
                 }
-            };
-            if let Some((display_name, content)) = display_info {
-                let notification = NotificationData::direct_message(display_name, content);
+            } else if let Some(body) = {
+                let state = STATE.lock().await;
+                try_wallet_tx_announcement_notify_body(&msg.content, true, contact, &state)
+            } {
+                let notification = NotificationData::dm_wallet_sent(body);
                 show_notification_generic(notification);
             }
         }
@@ -3277,6 +3330,17 @@ impl NotificationData {
             body: content,
             group_name: None,
             sender_name: Some(sender_name),
+        }
+    }
+
+    /// Outgoing on-chain transfer announcement (`wallet_tx_announcement`); title is product-neutral.
+    fn dm_wallet_sent(body: String) -> Self {
+        Self {
+            notification_type: NotificationType::DirectMessage,
+            title: "Transfer sent".to_string(),
+            body,
+            group_name: None,
+            sender_name: None,
         }
     }
 

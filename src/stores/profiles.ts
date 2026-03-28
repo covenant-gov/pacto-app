@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { dmChatsByNpub, activeDmId, blockedDmNpubs, dmSyncStatus, type DmChatState } from './app';
+import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './app';
 import { currentUser } from './auth';
 import { showToast } from './toast';
 
@@ -154,9 +154,6 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
           );
           return next;
         });
-        if (profile.blocked && get(activeDmId) === profile.id) {
-          activeDmId.set(null);
-        }
       }
     });
   } catch (error) {

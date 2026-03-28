@@ -6,7 +6,7 @@
   export let isMine: boolean;
   /** Display name of the counterparty (the other person in the DM). */
   export let peerDisplayName: string;
-  export let status: 'pending' | 'accepted' | 'declined' | 'fulfilled';
+  export let status: 'pending' | 'declined' | 'fulfilled';
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
@@ -20,8 +20,8 @@
   $: bodyText = isMine
     ? `You requested this payment on ${networkLabel} (account ${fromAddrShort}).`
     : `${peerDisplayName} requested you send this amount (their account ${fromAddrShort}).`;
-  /** Keep declined expanded so each side sees clear copy; accepted/fulfilled stay compact. */
-  $: collapsed = status === 'accepted' || status === 'fulfilled';
+  /** Declined stays expanded; fulfilled compacts to amount + Paid. */
+  $: collapsed = status === 'fulfilled';
 </script>
 
 <div
@@ -48,8 +48,6 @@
       {/if}
     {:else if isMine}
       <p class="wallet-tx-request-hint">Waiting for the other person to respond.</p>
-    {:else if status === 'accepted'}
-      <p class="wallet-tx-request-status wallet-tx-request-status-accepted" aria-live="polite">Accepted</p>
     {:else if status === 'declined'}
       <p class="wallet-tx-request-status wallet-tx-request-status-declined" aria-live="polite">Declined</p>
       {#if isMine}
@@ -218,10 +216,6 @@
   .wallet-tx-request-status {
     margin: 0;
     font-size: 0.8125rem;
-  }
-
-  .wallet-tx-request-status-accepted {
-    color: var(--success);
   }
 
   .wallet-tx-request-status-fulfilled {

@@ -4,15 +4,20 @@
   import { getEmojiList, recentEmojisStore, addToRecentEmojis, searchEmojis } from '../../stores/emojis';
 
   export let channelName: string = "";
+  /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
+  export let placeholderOverride: string | undefined = undefined;
   export let onSend: (content: string) => void = () => {};
   /** Optional: called when user types (e.g. to send typing indicator). */
   export let onTyping: (() => void) | undefined = undefined;
   /** When true, input and send are disabled (e.g. channel still being created). */
   export let disabled: boolean = false;
 
+  $: inputPlaceholder = placeholderOverride ?? `Message #${channelName}`;
+
   let messageText = "";
   let textareaEl: HTMLTextAreaElement | undefined;
   let emojiPickerOpen = false;
+  $: if (disabled) emojiPickerOpen = false;
   let emojiPickerEl: HTMLDivElement | undefined;
   let emojiSearchQuery = "";
 
@@ -31,6 +36,7 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (disabled) return;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -47,6 +53,7 @@
   }
 
   async function insertEmoji(emoji: string) {
+    if (disabled) return;
     const ta = textareaEl;
     const start = ta ? (ta.selectionStart ?? messageText.length) : messageText.length;
     const end = ta ? (ta.selectionEnd ?? messageText.length) : messageText.length;
@@ -96,12 +103,12 @@
         bind:value={messageText}
         on:keydown={handleKeydown}
         on:input={handleInput}
-        placeholder="Message #{channelName}"
+        placeholder={inputPlaceholder}
         class="message-input"
         rows="1"
         {disabled}
       ></textarea>
-      {#if emojiPickerOpen}
+      {#if emojiPickerOpen && !disabled}
         <div
           class="emoji-picker"
           bind:this={emojiPickerEl}

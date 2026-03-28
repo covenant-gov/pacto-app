@@ -9,6 +9,10 @@
   import { showToast } from '../../stores/toast';
 
   export let payload: WalletTxAnnouncementPayload;
+  /** DM counterparty display name (thread peer). */
+  export let peerDisplayName: string;
+  /** True when the signed-in user posted this announcement (`from_npub`). */
+  export let viewerIsSender: boolean;
 
   $: networkLabel = getWalletNetworkDisplayName(payload.network);
   $: fromAddr = payload.from_evm_address.trim();
@@ -27,7 +31,15 @@
   <div class="wallet-tx-announce-icon" aria-hidden="true">✓</div>
   <div class="wallet-tx-announce-body">
     <p class="wallet-tx-announce-badge">Transfer confirmed</p>
-    <p class="wallet-tx-announce-title">{payload.amount} {payload.asset}</p>
+    <div class="wallet-tx-announce-role">
+      <span class="wallet-tx-announce-role-line">
+        {viewerIsSender ? 'You transferred' : `${peerDisplayName} transferred`}
+      </span>
+      <span class="wallet-tx-announce-role-amount">{payload.amount} {payload.asset}</span>
+      <span class="wallet-tx-announce-role-line">
+        {viewerIsSender ? `to ${peerDisplayName}` : 'to you'}
+      </span>
+    </div>
     <p class="wallet-tx-announce-subtitle">{networkLabel} · from {fromAddrShort}</p>
     <div class="wallet-tx-announce-hash-row">
       <p class="wallet-tx-announce-hash" title={payload.tx_hash}>
@@ -98,11 +110,24 @@
     color: var(--success);
   }
 
-  .wallet-tx-announce-title {
-    margin: 0 0 4px 0;
+  .wallet-tx-announce-role {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0 0 6px 0;
+  }
+
+  .wallet-tx-announce-role-line {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: var(--text-secondary);
+  }
+
+  .wallet-tx-announce-role-amount {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
+    line-height: 1.3;
   }
 
   .wallet-tx-announce-subtitle {
