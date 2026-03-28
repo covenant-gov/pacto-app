@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { login as apiLogin, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
-import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validatePrivateKeyFormat } from '../lib/api/encryption';
+import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
+import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validatePrivateKeyFormat, validateRecoveryPhraseForImport } from '../lib/api/encryption';
 import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { clearAccountState } from '../lib/utils/clear-account-state';
@@ -106,23 +106,21 @@ export async function createAccount(pin: string): Promise<void> {
 }
 
 /**
- * Import existing keys and create account
- * @param privateKey - Private key in nsec or hex format
+ * Import an existing profile from a BIP-39 recovery phrase only.
+ * @param recoveryPhrase - 12- or 24-word phrase
  * @param pin - 6-digit PIN for encryption
  */
-export async function importAccount(privateKey: string, pin: string): Promise<void> {
+export async function importAccount(recoveryPhrase: string, pin: string): Promise<void> {
   authLoading.set(true);
   authError.set(null);
 
   try {
     clearAccountState();
-    // Validate key format
-    if (!validatePrivateKeyFormat(privateKey)) {
-      throw new Error('Invalid private key format');
+    if (!validateRecoveryPhraseForImport(recoveryPhrase)) {
+      throw new Error('Enter a valid 12- or 24-word recovery phrase');
     }
 
-    // Login with the imported key
-    const keys = await apiLogin(privateKey);
+    const keys = await loginWithRecoveryPhrase(recoveryPhrase);
     
     // Encrypt and save the private key
     await encryptAndSaveKey(keys.private, pin);

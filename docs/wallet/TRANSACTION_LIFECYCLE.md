@@ -17,7 +17,7 @@ DM messages are **immutable**, so we cannot reliably “upgrade” a single mess
    - `status` indicates **success** (EIP-155: `0x1` success; failed/`0x0` is an error).
 4. **Only then:**
    - Close the send modal (or show final success state).
-   - Post the **`wallet_tx_announcement`** DM with amount, asset, network, `tx_hash`, and a **confirmed** status label (field-level shape: [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md)).
+   - Post the **`wallet_tx_announcement`** DM with amount, asset, network, `tx_hash`, **`from_evm_address`** (active signer), and a **confirmed** status label (field-level shape: [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md)).
 5. If receipt wait **times out**, return a **structured error** that includes `tx_hash` (when known) and copy that tells the user to check a block explorer — **do not** post a DM that claims the transfer succeeded.
 
 ### What we do *not* do for MVP

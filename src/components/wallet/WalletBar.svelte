@@ -23,7 +23,9 @@
     getMatchingCachedSummary,
     persistWalletSummaryCache,
   } from '../../lib/wallet';
+  import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
   import { formatWalletTxAnnouncement } from '../../lib/wallet/dm-messages';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import {
     walletSendPrefillFromRequest,
@@ -154,20 +156,49 @@
     reloadWatchedRows();
   }
 
+  let enabledChainSet: Set<SupportedChainId> = new Set(WALLET_ASSETS_CHAIN_IDS as SupportedChainId[]);
+  $: {
+    void accountNpub;
+    void $walletUiEnabledChainsTick;
+    enabledChainSet = new Set(
+      accountNpub ? loadWalletEnabledChains(accountNpub) : [...WALLET_ASSETS_CHAIN_IDS]
+    );
+  }
+
+  /** If the stored filter points at a chain the user disabled in Wallet view, fall back to "all". */
+  $: if (networkFilter !== 'all' && !enabledChainSet.has(networkFilter)) {
+    networkFilter = 'all';
+    saveNetworkFilter();
+  }
+
   function networksForBalanceList(
     s: WalletSummary | null,
-    filter: 'all' | SupportedChainId
+    filter: 'all' | SupportedChainId,
+    enabled: Set<SupportedChainId>
   ): WalletSummaryNetwork[] {
     if (!s) return [];
-    return s.networks.filter((n) => (filter === 'all' ? true : n.network === filter));
+    const nets = s.networks.filter((n) => enabled.has(n.network as SupportedChainId));
+    return nets.filter((n) => (filter === 'all' ? true : n.network === filter));
   }
 
   let networksForBalance: WalletSummaryNetwork[] = [];
-  $: networksForBalance = networksForBalanceList(summary, networkFilter);
+  $: networksForBalance = networksForBalanceList(summary, networkFilter, enabledChainSet);
 
-  /** Options for the network dropdown (always all chains that have summary rows). */
-  let networkSelectOptions: WalletSummaryNetwork[] = [];
-  $: networkSelectOptions = (summary?.networks ?? []) as WalletSummaryNetwork[];
+  /**
+   * Network dropdown matches Wallet settings toggles (enabled chains), not only chains that appear
+   * in the latest summary (zero-balance or missing RPC rows would otherwise disappear from the list).
+   */
+  let networkDropdownChainIds: SupportedChainId[] = [];
+  $: networkDropdownChainIds = WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledChainSet.has(id));
+
+  /** Total USD for listed networks only (matches toggles in Wallet view). */
+  let barTotalUsdApprox: number = 0;
+  $: barTotalUsdApprox = networksForBalance.reduce(
+    (sum, net) =>
+      sum +
+      net.assets.reduce((s, a) => s + ((a as WalletSummaryAsset).usdValue ?? 0), 0),
+    0
+  );
 
   async function refreshSummary() {
     const wire = watchedRowsToWire(watchedErc20Rows);
@@ -212,6 +243,13 @@
       return;
     }
     const { result, network, asset, amount } = detail;
+    const fromEvm = await getActiveEvmSignerAddress();
+    if (!fromEvm) {
+      showToast(
+        'Transfer confirmed, but the payment note was skipped (active EVM address unavailable).'
+      );
+      return;
+    }
     const content = formatWalletTxAnnouncement({
       network,
       asset,
@@ -219,6 +257,7 @@
       tx_hash: result.txHash,
       from_npub: me,
       to_npub: npub,
+      from_evm_address: fromEvm,
       ...(detail.requestId != null && detail.requestId !== ''
         ? { request_id: detail.requestId }
         : {}),
@@ -322,11 +361,9 @@
           bind:value={networkFilter}
           on:change={saveNetworkFilter}
         >
-          <option value="all">All networks</option>
-          {#each networkSelectOptions as net (net.network)}
-            <option value={net.network}
-              >{getWalletNetworkDisplayName(net.network as SupportedChainId)}</option
-            >
+          <option value="all">All enabled networks</option>
+          {#each networkDropdownChainIds as chainId (chainId)}
+            <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
           {/each}
         </select>
         <button
@@ -338,7 +375,7 @@
         </button>
       </div>
       <p class="wallet-bar-total">
-        Total (approx.) <strong>${summary.totalUsdApprox.toFixed(2)}</strong>
+        Total (approx.) <strong>${barTotalUsdApprox.toFixed(2)}</strong>
         <span class="wallet-bar-total-meta">via {summary.prices.source}</span>
       </p>
       {#if networksForBalance.length === 0}

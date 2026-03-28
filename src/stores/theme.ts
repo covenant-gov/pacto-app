@@ -12,6 +12,7 @@ export const THEME_OPTIONS = [
   { value: 'dark-techno', label: 'Dark-Techno' },
   { value: 'union', label: 'Union' },
   { value: 'midnight', label: 'Midnight' },
+  { value: 'aztec', label: 'Aztec' },
 ] as const;
 
 export type Theme = (typeof THEME_OPTIONS)[number]['value'];

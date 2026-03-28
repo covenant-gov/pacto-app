@@ -11,6 +11,9 @@
   export let payload: WalletTxAnnouncementPayload;
 
   $: networkLabel = getWalletNetworkDisplayName(payload.network);
+  $: fromAddr = payload.from_evm_address.trim();
+  $: fromAddrShort =
+    fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
   $: explorerUrl = getExplorerTxUrl(payload.network, payload.tx_hash);
   $: explorerLabel = explorerTxLinkLabel(payload.network);
 
@@ -25,7 +28,7 @@
   <div class="wallet-tx-announce-body">
     <p class="wallet-tx-announce-badge">Transfer confirmed</p>
     <p class="wallet-tx-announce-title">{payload.amount} {payload.asset}</p>
-    <p class="wallet-tx-announce-subtitle">{networkLabel}</p>
+    <p class="wallet-tx-announce-subtitle">{networkLabel} · from {fromAddrShort}</p>
     <div class="wallet-tx-announce-hash-row">
       <p class="wallet-tx-announce-hash" title={payload.tx_hash}>
         {payload.tx_hash.slice(0, 10)}…{payload.tx_hash.slice(-8)}

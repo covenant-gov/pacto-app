@@ -117,7 +117,9 @@ export async function walletBuildAndSendTransaction(
   network: SupportedChainId,
   asset: string,
   amount: string,
-  erc20Transfer?: { address: string; decimals: number } | null
+  erc20Transfer?: { address: string; decimals: number } | null,
+  /** When set, send to this `0x` address (Settings → Wallet). `toNpub` is then ignored by the backend. */
+  toAddressEvm?: string | null
 ): Promise<WalletSendResultOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Sending is only available in the desktop app.' };
@@ -129,6 +131,7 @@ export async function walletBuildAndSendTransaction(
       asset,
       amount: amount.trim(),
       erc20Transfer: erc20Transfer ?? null,
+      toAddressEvm: toAddressEvm?.trim() ? toAddressEvm.trim() : null,
     });
     return { ok: true, result };
   } catch (e) {

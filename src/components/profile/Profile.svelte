@@ -2,14 +2,17 @@
   import { onMount } from 'svelte';
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { logout, currentUser } from '../../stores/auth';
-  import { exportKeys, getEvmAddress } from '../../lib/api/auth';
+  import { exportKeys, type EvmAccountExportRow } from '../../lib/api/auth';
   import { loadAndDecryptKey } from '../../lib/api/encryption';
   import { updateProfile, uploadAvatar } from '../../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+  import { showToast } from '../../stores/toast';
   import { theme, setTheme, THEME_OPTIONS } from '../../stores/theme';
-  import { activeView } from '../../stores/app';
+  import { activeView, activeSettingsAreaTab } from '../../stores/app';
+  import WalletView from '../wallet/WalletView.svelte';
   import backIcon from '../../icons/chevron-double-left.svg';
 
   function goBack() {
@@ -35,6 +38,7 @@
   let editAvatarUrl = '';
   let editBannerUrl = '';
   let saveError: string | null = null;
+  let savingProfile = false;
   let uploadingAvatar = false;
   let uploadingBanner = false;
   
@@ -42,18 +46,23 @@
   let showExportModal = false;
   let showPinModal = false;
   let showLogoutConfirm = false;
-  let exportedKeys: { nsec: string; seed_phrase?: string; evm_private_key?: string | null } | null = null;
+  let exportedKeys: {
+    nsec: string;
+    seed_phrase?: string;
+    evm_private_key?: string | null;
+    evm_accounts?: EvmAccountExportRow[];
+  } | null = null;
   let pinDigits = ['', '', '', '', '', ''];
   let pinError = '';
   let isExporting = false;
-  let copiedNsec = false;
-  let copiedSeed = false;
-  let copiedEvm = false;
+  /** Tracks which control last copied: `nsec`, `seed`, or an EVM account `id`. */
+  let copiedKey: string | null = null;
+  let revealedNsec = false;
+  let revealedSeed = false;
+  /** EVM account row id → plaintext visible */
+  let revealedEvm: Record<string, boolean> = {};
   let pinInputs: HTMLInputElement[] = [];
 
-  // EVM address (public, no PIN) for Profile display
-  let evmAddress: string | null = null;
-  let copiedEvmAddress = false;
   let copiedNpub = false;
 
   // Watch for changes to userNpub and load profile
@@ -67,8 +76,6 @@
     try {
       error = null;
       await loadProfile(npub);
-      const addr = await getEvmAddress();
-      evmAddress = addr;
     } catch (e: any) {
       error = e.message || 'Failed to load profile';
       console.error('Profile load error:', e);
@@ -159,8 +166,9 @@
   }
 
   async function handleSaveProfile() {
-    if (!profile) return;
+    if (!profile || savingProfile) return;
     saveError = null;
+    savingProfile = true;
     try {
       await updateProfile({
         name: editName.trim(),
@@ -169,10 +177,14 @@
         about: editAbout.trim(),
       });
       isEditing = false;
-      // profile_update event will update the store and UI
-    } catch (e: any) {
+      showToast('Profile published to the network.');
+    } catch (e: unknown) {
       console.error('Save profile failed:', e);
-      saveError = e?.message || 'Failed to save profile';
+      const msg = getInvokeErrorMessage(e, 'Could not publish profile.');
+      saveError = msg;
+      showToast(msg);
+    } finally {
+      savingProfile = false;
     }
   }
 
@@ -293,9 +305,32 @@
   function closeExportModal() {
     showExportModal = false;
     exportedKeys = null;
-    copiedNsec = false;
-    copiedSeed = false;
-    copiedEvm = false;
+    copiedKey = null;
+    revealedNsec = false;
+    revealedSeed = false;
+    revealedEvm = {};
+  }
+
+  function toggleEvmReveal(id: string) {
+    revealedEvm = { ...revealedEvm, [id]: !revealedEvm[id] };
+  }
+
+  function shortEthAddr(addr: string): string {
+    const a = addr.trim();
+    if (a.length <= 14) return a;
+    return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  }
+
+  async function copySecret(text: string, copyId: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedKey = copyId;
+      setTimeout(() => {
+        if (copiedKey === copyId) copiedKey = null;
+      }, 2000);
+    } catch (e) {
+      console.error('Failed to copy:', e);
+    }
   }
 
   function closePinModal() {
@@ -304,35 +339,77 @@
     pinError = '';
   }
 
-  async function copyToClipboard(text: string, type: 'nsec' | 'seed' | 'evm') {
-    try {
-      await navigator.clipboard.writeText(text);
-      if (type === 'nsec') {
-        copiedNsec = true;
-        setTimeout(() => copiedNsec = false, 2000);
-      } else if (type === 'seed') {
-        copiedSeed = true;
-        setTimeout(() => copiedSeed = false, 2000);
-      } else {
-        copiedEvm = true;
-        setTimeout(() => copiedEvm = false, 2000);
-      }
-    } catch (e) {
-      console.error('Failed to copy:', e);
-    }
-  }
 </script>
 
 <div class="profile-view">
   <div class="profile-container">
-    <div class="profile-header">
+    <div class="profile-top-row">
       <button type="button" class="profile-back" on:click={goBack} aria-label="Back to DMs or Squads">
         <img src={backIcon} alt="" class="profile-back-icon" />
         <span>Back</span>
       </button>
+      {#if userNpub}
+      <div class="settings-mode-bar" role="tablist" aria-label="Account and preferences">
+        <button
+          type="button"
+          role="tab"
+          class="settings-mode-tab"
+          class:active={$activeSettingsAreaTab === 'profile'}
+          aria-selected={$activeSettingsAreaTab === 'profile'}
+          on:click={() => activeSettingsAreaTab.set('profile')}
+        >
+          Profile
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-mode-tab"
+          class:active={$activeSettingsAreaTab === 'wallet'}
+          aria-selected={$activeSettingsAreaTab === 'wallet'}
+          on:click={() => activeSettingsAreaTab.set('wallet')}
+        >
+          Wallet
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="settings-mode-tab"
+          class:active={$activeSettingsAreaTab === 'settings'}
+          aria-selected={$activeSettingsAreaTab === 'settings'}
+          on:click={() => activeSettingsAreaTab.set('settings')}
+        >
+          Settings
+        </button>
+      </div>
+      {/if}
     </div>
-    
-    {#if loading}
+
+    {#if $activeSettingsAreaTab === 'wallet'}
+      <div class="settings-panel settings-panel--wallet">
+        <WalletView />
+      </div>
+    {:else if $activeSettingsAreaTab === 'settings'}
+      <div class="settings-panel settings-panel--app">
+        <section class="theme-section" aria-labelledby="theme-heading">
+          <h2 id="theme-heading" class="theme-section-title">Appearance</h2>
+          <span class="theme-label">Theme</span>
+          <div class="theme-options" role="radiogroup" aria-label="App theme">
+            {#each THEME_OPTIONS as opt (opt.value)}
+              <label class="theme-option">
+                <input
+                  type="radio"
+                  name="theme"
+                  value={opt.value}
+                  checked={$theme === opt.value}
+                  on:change={() => setTheme(opt.value)}
+                />
+                <span class="theme-option-label">{opt.label}</span>
+              </label>
+            {/each}
+          </div>
+        </section>
+      </div>
+    {:else if loading}
       <div class="loading-state">
         <div class="spinner"></div>
         <p>Loading profile...</p>
@@ -399,20 +476,36 @@
               <p class="edit-error" role="alert">{saveError}</p>
             {/if}
             <label class="edit-label" for="edit-name">Name</label>
-            <input id="edit-name" type="text" class="edit-input" bind:value={editName} placeholder="Display name" />
+            <input
+              id="edit-name"
+              type="text"
+              class="edit-input"
+              bind:value={editName}
+              placeholder="Display name"
+              disabled={savingProfile}
+            />
             <label class="edit-label" for="edit-about">About</label>
-            <textarea id="edit-about" class="edit-textarea" bind:value={editAbout} placeholder="Bio" rows="3"></textarea>
+            <textarea
+              id="edit-about"
+              class="edit-textarea"
+              bind:value={editAbout}
+              placeholder="Bio"
+              rows="3"
+              disabled={savingProfile}
+            ></textarea>
             <div class="edit-image-buttons">
-              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={uploadingAvatar}>
+              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={uploadingAvatar || savingProfile}>
                 {uploadingAvatar ? 'Uploading…' : 'Change avatar'}
               </button>
-              <button type="button" class="btn-edit-image" on:click={handleChangeBanner} disabled={uploadingBanner}>
+              <button type="button" class="btn-edit-image" on:click={handleChangeBanner} disabled={uploadingBanner || savingProfile}>
                 {uploadingBanner ? 'Uploading…' : 'Change banner'}
               </button>
             </div>
             <div class="edit-actions">
-              <button type="button" class="btn-cancel-edit" on:click={cancelEditing}>Cancel</button>
-              <button type="button" class="btn-save-edit" on:click={handleSaveProfile}>Save</button>
+              <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>Cancel</button>
+              <button type="button" class="btn-save-edit" on:click={handleSaveProfile} disabled={savingProfile}>
+                {savingProfile ? 'Publishing…' : 'Save'}
+              </button>
             </div>
           {:else}
             <h2>{profile.display_name || profile.name || 'Anonymous'}</h2>
@@ -460,43 +553,8 @@
                   {copiedNpub ? '✓ Copied' : 'Copy'}
                 </button>
               </p>
-              {#if evmAddress}
-                <p class="meta evm-address-line">
-                  <span>EVM address:</span>
-                  <span class="evm-address-value">{evmAddress}</span>
-                  <button type="button" class="btn-copy-inline" on:click={async () => {
-                    try {
-                      await navigator.clipboard.writeText(evmAddress ?? '');
-                      copiedEvmAddress = true;
-                      setTimeout(() => copiedEvmAddress = false, 2000);
-                    } catch (_) {}
-                  }}>
-                    {copiedEvmAddress ? '✓ Copied' : 'Copy'}
-                  </button>
-                </p>
-              {/if}
               <p class="meta">Muted: {profile.muted ? 'Yes' : 'No'} | Bot: {profile.bot ? 'Yes' : 'No'}</p>
             </div>
-
-            <!-- Appearance -->
-            <section class="theme-section" aria-labelledby="theme-heading">
-              <h2 id="theme-heading" class="theme-section-title">Appearance</h2>
-              <span class="theme-label">Theme</span>
-              <div class="theme-options" role="radiogroup" aria-label="App theme">
-                {#each THEME_OPTIONS as opt (opt.value)}
-                  <label class="theme-option">
-                    <input
-                      type="radio"
-                      name="theme"
-                      value={opt.value}
-                      checked={$theme === opt.value}
-                      on:change={() => setTheme(opt.value)}
-                    />
-                    <span class="theme-option-label">{opt.label}</span>
-                  </label>
-                {/each}
-              </div>
-            </section>
 
             <!-- Actions -->
             <div class="profile-actions">
@@ -604,36 +662,141 @@
       <div class="key-section">
         <div class="key-header">
           <h3>Private Key (nsec)</h3>
-          <button class="btn-copy" on:click={() => copyToClipboard(exportedKeys!.nsec, 'nsec')}>
-            {copiedNsec ? '✓ Copied' : 'Copy'}
-          </button>
         </div>
-        <div class="key-value">{exportedKeys.nsec}</div>
+        <div class="key-value secret-value-shell">
+          <div class="secret-value-main">
+            {#if revealedNsec}
+              <span class="secret-plain">{exportedKeys.nsec}</span>
+            {:else}
+              <span class="secret-mask" aria-hidden="true">•••••••••••••••••••••••••••••••••</span>
+            {/if}
+          </div>
+          <div class="secret-toolbar">
+            <button
+              type="button"
+              class="btn-reveal-secret"
+              aria-pressed={revealedNsec}
+              aria-label={revealedNsec ? 'Hide nsec' : 'Reveal nsec'}
+              title={revealedNsec ? 'Hide' : 'Reveal'}
+              on:click={() => (revealedNsec = !revealedNsec)}
+            >
+              {#if revealedNsec}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                </svg>
+              {:else}
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              {/if}
+            </button>
+            <button type="button" class="btn-copy" on:click={() => copySecret(exportedKeys!.nsec, 'nsec')}>
+              {copiedKey === 'nsec' ? '✓ Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
       </div>
-      
+
       <!-- Seed Phrase (if available) -->
       {#if exportedKeys.seed_phrase}
         <div class="key-section">
           <div class="key-header">
             <h3>Recovery Phrase (12 words)</h3>
-            <button class="btn-copy" on:click={() => copyToClipboard(exportedKeys!.seed_phrase!, 'seed')}>
-              {copiedSeed ? '✓ Copied' : 'Copy'}
-            </button>
           </div>
-          <div class="key-value seed-phrase">{exportedKeys.seed_phrase}</div>
+          <div class="key-value secret-value-shell">
+            <div class="secret-value-main">
+              {#if revealedSeed}
+                <span class="secret-plain seed-phrase">{exportedKeys.seed_phrase}</span>
+              {:else}
+                <span class="secret-mask" aria-hidden="true">•••• •••• •••• •••• •••• •••• •••• •••• •••• •••• •••• ••••</span>
+              {/if}
+            </div>
+            <div class="secret-toolbar">
+              <button
+                type="button"
+                class="btn-reveal-secret"
+                aria-pressed={revealedSeed}
+                aria-label={revealedSeed ? 'Hide recovery phrase' : 'Reveal recovery phrase'}
+                title={revealedSeed ? 'Hide' : 'Reveal'}
+                on:click={() => (revealedSeed = !revealedSeed)}
+              >
+                {#if revealedSeed}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                  </svg>
+                {:else}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                {/if}
+              </button>
+              <button type="button" class="btn-copy" on:click={() => copySecret(exportedKeys!.seed_phrase!, 'seed')}>
+                {copiedKey === 'seed' ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
         </div>
       {/if}
 
-      <!-- EVM private key (if available) -->
-      {#if exportedKeys.evm_private_key}
+      <!-- All EVM account private keys -->
+      {#if exportedKeys.evm_accounts?.length}
         <div class="key-section">
           <div class="key-header">
-            <h3>EVM private key</h3>
-            <button class="btn-copy" on:click={() => copyToClipboard(exportedKeys!.evm_private_key!, 'evm')}>
-              {copiedEvm ? '✓ Copied' : 'Copy'}
-            </button>
+            <h3>EVM accounts</h3>
           </div>
-          <div class="key-value">{exportedKeys.evm_private_key}</div>
+          <p class="evm-export-intro">Each row is one wallet address. Copy works without revealing the key.</p>
+          <ul class="evm-export-list">
+            {#each exportedKeys.evm_accounts as acc (acc.id)}
+              <li class="evm-export-card">
+                <p class="evm-export-meta">
+                  <span class="evm-export-addr">{shortEthAddr(acc.address)}</span>
+                  {#if acc.label?.trim()}
+                    <span> · {acc.label.trim()}</span>
+                  {/if}
+                  {#if acc.hdIndex != null}
+                    <span> · Derived #{acc.hdIndex}</span>
+                  {:else if acc.scheme === 'imported_private_key'}
+                    <span> · Imported</span>
+                  {/if}
+                </p>
+                <div class="key-value secret-value-shell">
+                  <div class="secret-value-main">
+                    {#if revealedEvm[acc.id]}
+                      <span class="secret-plain">{acc.privateKey}</span>
+                    {:else}
+                      <span class="secret-mask" aria-hidden="true">•••••••••••••••••••••••••••••••••</span>
+                    {/if}
+                  </div>
+                  <div class="secret-toolbar">
+                    <button
+                      type="button"
+                      class="btn-reveal-secret"
+                      aria-pressed={revealedEvm[acc.id] === true}
+                      aria-label={revealedEvm[acc.id] ? 'Hide EVM private key' : 'Reveal EVM private key'}
+                      title={revealedEvm[acc.id] ? 'Hide' : 'Reveal'}
+                      on:click={() => toggleEvmReveal(acc.id)}
+                    >
+                      {#if revealedEvm[acc.id]}
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                        </svg>
+                      {:else}
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="reveal-icon" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      {/if}
+                    </button>
+                    <button type="button" class="btn-copy" on:click={() => copySecret(acc.privateKey, acc.id)}>
+                      {copiedKey === acc.id ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+              </li>
+            {/each}
+          </ul>
         </div>
       {/if}
       
@@ -666,13 +829,90 @@
     margin: 0 auto;
     padding: 32px;
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
-  .profile-header {
+  .profile-top-row {
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    margin-bottom: 32px;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 24px;
+    min-width: 0;
+  }
+
+  /* Match TopNavbar `.mode-switcher` / `.mode-segment` (slim segmented control). */
+  .settings-mode-bar {
+    display: flex;
+    align-items: stretch;
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .settings-mode-tab {
+    flex: 1;
+    min-width: 0;
+    padding: 0 14px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1.2;
+    font-family: inherit;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+    outline: none;
+  }
+
+  .settings-mode-tab:hover:not(.active) {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+
+  .settings-mode-tab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .settings-mode-tab.active {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .settings-panel {
+    min-width: 0;
+  }
+
+  .settings-panel--wallet {
+    margin: 0 calc(-1 * 32px);
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .settings-panel--wallet :global(.wallet-view) {
+    border-radius: 0;
+  }
+
+  .settings-panel--app {
+    padding-bottom: 48px;
+  }
+
+  .settings-panel--app .theme-section {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
   }
 
   h1 {
@@ -685,10 +925,13 @@
   .profile-back {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
-    padding: 8px 14px;
+    padding: 0 14px;
+    min-height: 0;
     font-size: 0.9375rem;
     font-weight: 500;
+    line-height: 1.2;
     color: var(--text-secondary);
     background: transparent;
     border: 1px solid var(--border);
@@ -697,6 +940,7 @@
     transition: color 0.15s, background-color 0.15s, border-color 0.15s;
     outline: none;
     flex-shrink: 0;
+    box-sizing: border-box;
   }
 
   .profile-back:hover {
@@ -970,6 +1214,12 @@
     border-color: var(--accent);
   }
 
+  .edit-input:disabled,
+  .edit-textarea:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
   .edit-textarea {
     resize: vertical;
     min-height: 72px;
@@ -1018,9 +1268,14 @@
     outline: none;
   }
 
-  .btn-cancel-edit:hover {
+  .btn-cancel-edit:hover:not(:disabled) {
     background: var(--border-subtle);
     color: var(--text-primary);
+  }
+
+  .btn-cancel-edit:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .btn-save-edit {
@@ -1035,8 +1290,13 @@
     outline: none;
   }
 
-  .btn-save-edit:hover {
+  .btn-save-edit:hover:not(:disabled) {
     background: var(--accent-hover);
+  }
+
+  .btn-save-edit:disabled {
+    opacity: 0.85;
+    cursor: wait;
   }
 
   .btn-edit-profile {
@@ -1234,6 +1494,99 @@
     word-break: break-all;
     line-height: 1.6;
     border: 1px solid var(--border-subtle);
+  }
+
+  .secret-value-shell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+    justify-content: space-between;
+  }
+
+  .secret-value-main {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .secret-plain {
+    color: var(--text-secondary);
+  }
+
+  .secret-mask {
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    user-select: none;
+  }
+
+  .secret-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .btn-reveal-secret {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .btn-reveal-secret:hover {
+    border-color: var(--text-muted);
+    background: var(--bg-hover);
+  }
+
+  .btn-reveal-secret[aria-pressed='true'] {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .reveal-icon {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  .evm-export-intro {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin: 0 0 12px 0;
+    line-height: 1.45;
+  }
+
+  .evm-export-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .evm-export-card {
+    margin: 0;
+    padding: 0;
+  }
+
+  .evm-export-meta {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    margin: 0 0 8px 0;
+    line-height: 1.4;
+  }
+
+  .evm-export-addr {
+    font-family: 'Courier New', monospace;
+    color: var(--text-primary);
   }
 
   .seed-phrase {

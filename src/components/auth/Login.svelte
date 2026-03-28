@@ -4,7 +4,7 @@
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError } from '../../stores/auth';
-  import { validatePrivateKeyFormat } from '../../lib/api/encryption';
+  import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
 
   type AuthStep = 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
 
@@ -45,11 +45,11 @@
 
   // --- Key Import Actions ---
   function handleKeyImported(key: string) {
-    if (!validatePrivateKeyFormat(key)) {
-      error = 'Invalid private key format. Use nsec or hex format.';
+    if (!validateRecoveryPhraseForImport(key)) {
+      error = 'Enter a valid 12- or 24-word recovery phrase';
       return;
     }
-    
+
     privateKey = key;
     currentStep = 'pin-create';
     error = null;

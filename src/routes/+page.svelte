@@ -47,6 +47,7 @@
   import { publishSquadMemberEvmShare } from '../lib/squad/squad-member-evm-share';
   import { setDmPeerEvmAddress } from '../lib/api/wallet-peers';
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
+  import { getActiveEvmSignerAddress } from '../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import { isAuthenticated, currentUser } from '../stores/auth';
@@ -744,6 +745,11 @@
       showToast('Open a DM and ensure you are logged in.');
       return;
     }
+    const fromEvm = await getActiveEvmSignerAddress();
+    if (!fromEvm) {
+      showToast('Dev: set up an active EVM account in Settings → Wallet first.');
+      return;
+    }
     const content = formatWalletTxAnnouncement({
       network: 'sepolia',
       asset: 'ETH',
@@ -751,6 +757,7 @@
       tx_hash: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
       from_npub: me,
       to_npub: peerNpub,
+      from_evm_address: fromEvm,
       block_number: '1',
     });
     const ok = await handleDmSend(content);

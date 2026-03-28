@@ -10,12 +10,18 @@ export interface LoginKeyPair {
 }
 
 /**
- * Login with a private key (imports existing account)
- * @param importKey - Private key in nsec format OR 12-word BIP39 mnemonic
- * @returns Public and private keys
+ * Unlock or dev hot-reload: **nsec only**. For onboarding import use `loginWithRecoveryPhrase`.
  */
 export async function login(importKey: string = ''): Promise<LoginKeyPair> {
   return await invoke('login', { importKey });
+}
+
+/**
+ * Import a new profile from a BIP-39 recovery phrase (12 or 24 words).
+ * Sets in-memory seed so the first `encrypt` after PIN persists it like `create_account`.
+ */
+export async function loginWithRecoveryPhrase(mnemonic: string): Promise<LoginKeyPair> {
+  return await invoke('login_with_recovery_phrase', { mnemonic });
 }
 
 /**
@@ -65,7 +71,7 @@ export async function setEvmAddress(address: string): Promise<void> {
   try {
     await updateProfile({ name: '', avatar: '', banner: '', about: '' });
   } catch {
-    // Relays offline or client not ready; local profile still holds the address. Kind 0 no longer includes `evm_address`.
+    // Relays offline or client not ready; local state still holds the address. Kind 0 `evm_address` follows the default-shared publish path when `update_profile` succeeds.
   }
 }
 
@@ -85,14 +91,24 @@ export async function listAllAccounts(): Promise<string[]> {
   return await invoke('list_all_accounts');
 }
 
+export type EvmAccountExportRow = {
+  id: string;
+  scheme: string;
+  hdIndex: number | null;
+  address: string;
+  label: string;
+  privateKey: string;
+};
+
 /**
  * Export account keys (requires PIN for decryption)
- * @returns Object containing nsec, optional seed_phrase, and optional evm_private_key
  */
 export async function exportKeys(): Promise<{
   nsec: string;
   seed_phrase?: string;
   evm_private_key?: string | null;
+  /** Present after unlock; each entry includes `privateKey` (0x + hex). */
+  evm_accounts?: EvmAccountExportRow[];
 }> {
   return await invoke('export_keys');
 }

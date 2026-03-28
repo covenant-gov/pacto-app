@@ -4,6 +4,7 @@ use tauri_plugin_fs::FsExt;
 
 use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
+use crate::evm_accounts;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
 
@@ -33,7 +34,7 @@ pub struct Profile {
     pub avatar_cached: String,
     /// Local cached path for banner image (for offline support)
     pub banner_cached: String,
-    /// Ethereum payout address (0x…) for this profile row: local account or legacy sync only; not from Kind 0.
+    /// Ethereum payout address (0x…): Kind 0 `evm_address` for others; for **mine**, the default-shared wallet account (may differ from active signing address).
     #[serde(default)]
     pub evm_address: String,
 }
@@ -146,6 +147,18 @@ impl Profile {
             if self.nip05 != nip05 {
                 self.nip05 = nip05;
                 changed = true;
+            }
+        }
+
+        // evm_address (optional Kind 0 extension; stored in custom map when deserialized from relays)
+        if let Some(raw) = meta.custom.get("evm_address") {
+            if let Some(s) = raw.as_str() {
+                let norm = crate::evm::normalize_hex_address(s.trim())
+                    .unwrap_or_else(|| s.trim().to_string());
+                if self.evm_address != norm {
+                    self.evm_address = norm;
+                    changed = true;
+                }
             }
         }
 
@@ -469,33 +482,47 @@ pub async fn load_profile(npub: String) -> bool {
     }
 }
 
-#[tauri::command]
-pub async fn update_profile(name: String, avatar: String, banner: String, about: String) -> bool {
-    let client = get_nostr_client().expect("Nostr client not initialized");
+fn merge_evm_into_kind0_json(meta: &Metadata, evm: Option<String>) -> Result<String, serde_json::Error> {
+    let mut v = serde_json::to_value(meta)?;
+    if let serde_json::Value::Object(ref mut m) = v {
+        match evm {
+            Some(ref s) => {
+                let t = s.trim();
+                if !t.is_empty() {
+                    let norm = crate::evm::normalize_hex_address(t).unwrap_or_else(|| t.to_string());
+                    m.insert(
+                        "evm_address".to_string(),
+                        serde_json::Value::String(norm),
+                    );
+                } else {
+                    m.remove("evm_address");
+                }
+            }
+            None => {
+                m.remove("evm_address");
+            }
+        }
+    }
+    serde_json::to_string(&v)
+}
 
-    // Grab our pubkey
-    let signer = client.signer().await.unwrap();
-    let my_public_key = signer.get_public_key().await.unwrap();
-
-    // Get our profile
-    let mut meta: Metadata;
-    let mut state = STATE.lock().await;
-    let profile = state
-        .get_profile(&my_public_key.to_bech32().unwrap())
-        .unwrap();
-
-    // We'll apply the changes to the previous profile and carry-on the rest
-    meta = Metadata::new().name(if name.is_empty() {
-        &profile.name
+fn build_metadata_from_vector_profile(
+    profile: &Profile,
+    name: &str,
+    avatar: &str,
+    banner: &str,
+    about: &str,
+) -> Metadata {
+    let mut meta = Metadata::new().name(if name.is_empty() {
+        profile.name.as_str()
     } else {
-        &name
+        name
     });
 
-    // Optional avatar
     let avatar_url_str = if avatar.is_empty() {
         profile.avatar.as_str()
     } else {
-        avatar.as_str()
+        avatar
     };
     if !avatar_url_str.is_empty() {
         if let Ok(url) = Url::parse(avatar_url_str) {
@@ -503,11 +530,10 @@ pub async fn update_profile(name: String, avatar: String, banner: String, about:
         }
     }
 
-    // Optional banner
     let banner_url_str = if banner.is_empty() {
         profile.banner.as_str()
     } else {
-        banner.as_str()
+        banner
     };
     if !banner_url_str.is_empty() {
         if let Ok(url) = Url::parse(banner_url_str) {
@@ -515,81 +541,134 @@ pub async fn update_profile(name: String, avatar: String, banner: String, about:
         }
     }
 
-    // Add display_name
     if !profile.display_name.is_empty() {
         meta = meta.display_name(&profile.display_name);
     }
 
-    // Add about
     meta = meta.about(if about.is_empty() {
-        &profile.about
+        profile.about.as_str()
     } else {
-        &about
+        about
     });
 
-    // Add website
     if !profile.website.is_empty() {
         if let Ok(url) = Url::parse(&profile.website) {
             meta = meta.website(url);
         }
     }
 
-    // Add nip05
     if !profile.nip05.is_empty() {
         meta = meta.nip05(&profile.nip05);
     }
 
-    // Add lud06
     if !profile.lud06.is_empty() {
         meta = meta.lud06(&profile.lud06);
     }
 
-    // Add lud16
     if !profile.lud16.is_empty() {
         meta = meta.lud16(&profile.lud16);
     }
 
-    // EVM payout addresses are not published on Kind 0 (pairwise DM exchange only).
+    meta
+}
 
-    // Serialize the metadata to JSON for the event content
-    let metadata_json = serde_json::to_string(&meta).unwrap();
+async fn publish_vector_profile_kind0(
+    name: String,
+    avatar: String,
+    banner: String,
+    about: String,
+) -> Result<(), String> {
+    let handle = TAURI_APP
+        .get()
+        .cloned()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+    let client = get_nostr_client()?;
 
-    // Create the metadata event with the Vector tag
-    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json)
-        .tag(Tag::custom(TagKind::Custom(String::from("client").into()), vec!["vector"]));
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let my_public_key = signer
+        .get_public_key()
+        .await
+        .map_err(|e| e.to_string())?;
+    let npub = my_public_key.to_bech32().map_err(|e| e.to_string())?;
 
-    // Broadcast the profile update
-    match client.send_event_builder(metadata_event).await {
-        Ok(_) => {
-            // Apply our Metadata to our Profile
-            let npub = my_public_key.to_bech32().unwrap();
-            let profile_mutable = state
-                .get_profile_mut(&npub)
-                .unwrap();
-            profile_mutable.from_metadata(meta);
+    let meta = {
+        let state = STATE.lock().await;
+        let profile = state
+            .get_profile(&npub)
+            .ok_or_else(|| "Profile not found".to_string())?;
+        build_metadata_from_vector_profile(&profile, &name, &avatar, &banner, &about)
+    };
 
-            // Update the frontend
-            let handle = TAURI_APP.get().unwrap();
-            handle.emit("profile_update", &profile_mutable).unwrap();
+    let evm_for_kind0 =
+        evm_accounts::resolve_default_shared_evm_address_string(handle.clone()).await;
+    let metadata_json =
+        merge_evm_into_kind0_json(&meta, evm_for_kind0.clone()).map_err(|e| e.to_string())?;
 
-            // Save to database
-            let profile_clone = profile_mutable.clone();
-            let avatar_url = profile_mutable.avatar.clone();
-            let banner_url = profile_mutable.banner.clone();
-            drop(state); // Release lock before async operations
+    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone()).tag(
+        Tag::custom(
+            TagKind::Custom(String::from("client").into()),
+            vec!["vector"],
+        ),
+    );
 
-            db::set_profile(handle.clone(), profile_clone).await.ok();
+    client
+        .send_event_builder(metadata_event)
+        .await
+        .map_err(|e| e.to_string())?;
 
-            // Cache avatar/banner images in the background for offline access
-            let npub_clone = npub.clone();
-            tokio::spawn(async move {
-                cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
-            });
+    let meta_published = serde_json::from_str::<Metadata>(&metadata_json).unwrap_or(meta);
 
-            true
-        }
-        Err(_) => false
-    }
+    let (profile_clone, avatar_url, banner_url) = {
+        let mut state = STATE.lock().await;
+        let profile_mutable = state
+            .get_profile_mut(&npub)
+            .ok_or_else(|| "Profile not found".to_string())?;
+        profile_mutable.from_metadata(meta_published);
+        profile_mutable.last_updated = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let handle_emit = TAURI_APP.get().ok_or_else(|| "App handle not initialized".to_string())?;
+        handle_emit
+            .emit("profile_update", &*profile_mutable)
+            .map_err(|e| e.to_string())?;
+
+        (
+            profile_mutable.clone(),
+            profile_mutable.avatar.clone(),
+            profile_mutable.banner.clone(),
+        )
+    };
+
+    let handle_emit = TAURI_APP
+        .get()
+        .cloned()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+    db::set_profile(handle_emit.clone(), profile_clone)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let npub_clone = npub.clone();
+    tokio::spawn(async move {
+        cache_profile_images(&npub_clone, &avatar_url, &banner_url).await;
+    });
+
+    Ok(())
+}
+
+pub(crate) async fn republish_kind0_metadata_with_wallet_default() -> Result<(), String> {
+    publish_vector_profile_kind0(String::new(), String::new(), String::new(), String::new()).await
+}
+
+#[tauri::command]
+pub async fn update_profile(
+    name: String,
+    avatar: String,
+    banner: String,
+    about: String,
+) -> Result<(), String> {
+    publish_vector_profile_kind0(name, avatar, banner, about).await
 }
 
 #[tauri::command]
@@ -621,7 +700,6 @@ pub async fn update_status(status: String) -> bool {
         Err(_) => false,
     }
 }
-
 /// Uploads an avatar or banner image with progress reporting
 /// `upload_type` should be "avatar" or "banner" to specify which is being uploaded
 #[tauri::command]

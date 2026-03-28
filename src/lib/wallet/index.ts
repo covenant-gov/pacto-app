@@ -12,7 +12,7 @@ export {
   type SupportedChainId,
 } from './chains';
 
-export { getCurrentAddress, getPublicClient, getBalance } from './client';
+export { getPublicClient } from './client';
 export {
   getWalletSummary,
   walletBuildAndSendTransaction,

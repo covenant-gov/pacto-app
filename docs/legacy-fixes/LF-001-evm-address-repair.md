@@ -11,8 +11,8 @@ Legacy derivation used `keccak256(0x04 || x || y)` (65 bytes). Ethereum uses `ke
 
 ## What we shipped
 
-- **Permanent:** `evm::address_from_evm_secret_32` / `derive_evm_from_nostr_secret` with canonical hash. User-facing: **[`docs/wallet/EVM_ADDRESS_DERIVATION.md`](../wallet/EVM_ADDRESS_DERIVATION.md)**.
-- **Legacy only:** `db::repair_evm_address_if_needed` and call sites that rewrite `settings.evm_address` + `profiles.evm_address` when they disagree with the key-derived address.
+- **Permanent:** `evm::address_from_evm_secret_32` and nostr-linked derivation used via `derive_evm_hex_from_nostr_secret` (canonical hash, no `0x04` in keccak input). User-facing: **[`docs/wallet/EVM_ADDRESS_DERIVATION.md`](../wallet/EVM_ADDRESS_DERIVATION.md)**.
+- **Legacy only:** `db::repair_evm_address_if_needed` rewrites **`settings.evm_address`** (active signer) when it disagrees with the decrypted key-derived address (**`set_wallet_signing_evm_address`**). Mine **`profiles.evm_address`** / Kind 0 update on a separate republish path.
 
 ## Code locations
 
@@ -21,7 +21,7 @@ Legacy derivation used `keccak256(0x04 || x || y)` (65 bytes). Ethereum uses `ke
 
 ## User-facing / relay impact
 
-Repair updates **local** DB only. **Nostr profile** `evm_address` may stay wrong until the user republishes metadata.
+Repair updates **local `settings.evm_address`** only. **Kind 0** `evm_address` for *mine* updates when the user runs **`update_profile`** or **`republish_kind0_metadata_with_wallet_default`** (default-shared merge).
 
 ## Removal checklist (before public v1)
 

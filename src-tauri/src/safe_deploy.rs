@@ -15,6 +15,7 @@ use tauri::{AppHandle, Runtime};
 
 use crate::crypto;
 use crate::db;
+use crate::evm_accounts;
 use crate::wallet_chain_config;
 use crate::wallet_ops;
 use crate::wallet_security;
@@ -230,6 +231,15 @@ pub async fn safe_deploy_proxy<R: Runtime>(
         return Err(wallet_ops::wallet_err_json(
             "RPC_CONFIG",
             "no RPC URL configured",
+            None,
+        ));
+    }
+
+    let treasury_ok = evm_accounts::active_account_allows_treasury_signing(app.clone()).await?;
+    if !treasury_ok {
+        return Err(wallet_ops::wallet_err_json(
+            "IMPORTED_ACCOUNT_NOT_ALLOWED",
+            "Treasury and Safe deployment require a wallet address derived from your recovery phrase. In Settings → Wallet, set the active signer to a derived account (not an imported private key).",
             None,
         ));
     }

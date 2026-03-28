@@ -148,6 +148,17 @@ CREATE TABLE IF NOT EXISTS squad_member_evm (
 );
 CREATE INDEX IF NOT EXISTS idx_squad_member_evm_parent ON squad_member_evm(parent_id);
 
+-- EVM accounts (phrase-derived + imported); see `evm_accounts` module and docs/wallet/HD_DERIVATION_V1.md
+CREATE TABLE IF NOT EXISTS evm_accounts (
+    id TEXT PRIMARY KEY NOT NULL,
+    scheme TEXT NOT NULL,
+    hd_index INTEGER,
+    address TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    imported_enc TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_evm_accounts_scheme_hd ON evm_accounts(scheme, hd_index);
+
 -- Events table: flat, protocol-aligned storage for all Nostr events
 -- Every event (message, reaction, attachment, etc.) is a separate row
 -- This is the PRIMARY storage for all message data
@@ -817,6 +828,33 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         )
         .map_err(|e| format!("Failed to create squad_member_evm table: {}", e))?;
         println!("[Migration] squad_member_evm table created");
+    }
+
+    let has_evm_accounts: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='evm_accounts'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_evm_accounts {
+        println!("[Migration] Creating evm_accounts table (multi-account EVM)...");
+        conn
+            .execute_batch(
+                r#"CREATE TABLE IF NOT EXISTS evm_accounts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    scheme TEXT NOT NULL,
+                    hd_index INTEGER,
+                    address TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT '',
+                    imported_enc TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_evm_accounts_scheme_hd ON evm_accounts(scheme, hd_index);"#,
+            )
+            .map_err(|e| format!("Failed to create evm_accounts table: {}", e))?;
+        println!("[Migration] evm_accounts table created");
     }
 
     Ok(())
