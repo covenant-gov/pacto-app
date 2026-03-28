@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeDmId, composingNewChat, addPendingDm, backendDmMessages, dmSendError } from '../../stores/app';
+  import { activeDmId, activeDmTab, composingNewChat, addPendingDm, backendDmMessages, dmSendError } from '../../stores/app';
   import { sendDmMessage } from '../../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../../lib/utils/dm-debug';
@@ -38,6 +38,7 @@
 
     // Ensure the new chat appears in Pending (we sent first; moves to Friends when they reply)
     addPendingDm(trimmedNpub);
+    activeDmTab.set('pending');
     dmLog('MessengerChatView: added to Pending, optimistic message');
 
     // Add optimistic message so the sender sees their message immediately

@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { dmChatsByNpub, activeDmId, dmSyncStatus, type DmChatState } from './app';
+import { dmChatsByNpub, activeDmId, blockedDmNpubs, dmSyncStatus, type DmChatState } from './app';
 import { currentUser } from './auth';
 import { showToast } from './toast';
 
@@ -42,6 +42,13 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
           profilesMap[profile.id] = profile;
         }
         profiles.set(profilesMap);
+        blockedDmNpubs.set(
+          new Set(
+            Object.entries(profilesMap)
+              .filter(([, p]) => p.blocked)
+              .map(([id]) => id)
+          )
+        );
         dmLog('init_finished: profiles store set', Object.keys(profilesMap).length);
       }
 
@@ -140,7 +147,16 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       const profile = event.payload as NostrProfile;
       if (profile?.id) {
         dmLog('profile_update', { npub: profile.id.slice(0, 20) + '…', name: profile.display_name || profile.name });
-        profiles.update(p => ({ ...p, [profile.id]: profile }));
+        profiles.update((p) => {
+          const next = { ...p, [profile.id]: { ...p[profile.id], ...profile } };
+          blockedDmNpubs.set(
+            new Set(Object.entries(next).filter(([, x]) => x.blocked).map(([k]) => k))
+          );
+          return next;
+        });
+        if (profile.blocked && get(activeDmId) === profile.id) {
+          activeDmId.set(null);
+        }
       }
     });
   } catch (error) {

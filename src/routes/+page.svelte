@@ -276,6 +276,18 @@
     }));
   }
 
+  // Highlight the tab that matches the open thread (e.g. Pending → Friends when they reply). Skip Search so the unified list stays active.
+  $: if ($activeTopNavTab === 'dms' && $activeDmId && $activeDmTab !== 'search') {
+    const desiredTab = dmSidebarCategoryForNpub($activeDmId, $dmChatsByNpub, $pinnedDmNpubs) as DmTab;
+    if ($activeDmTab !== desiredTab) {
+      lastOpenedDmByTab.update((byTab: Record<DmTab, string | null>) => ({
+        ...byTab,
+        [desiredTab]: $activeDmId,
+      }));
+      activeDmTab.set(desiredTab);
+    }
+  }
+
   const SQUAD_CHANNEL_DEBUG = false; // [SquadChannel] set true to trace squad channel persistence
   // Remember last opened squad/channel (so switching to Squads view restores it) and per-squad last channel.
   // Only write channel when it belongs to this squad (avoid overwriting with network channel when we've just switched to Squads and activeChannelId is still the network channel).

@@ -29,6 +29,9 @@ pub struct Profile {
     pub last_updated: u64,
     pub mine: bool,
     pub muted: bool,
+    /// Local-only: discard incoming DMs from this npub after unwrap (relays still deliver wraps).
+    #[serde(default)]
+    pub blocked: bool,
     pub bot: bool,
     /// Local cached path for avatar image (for offline support)
     pub avatar_cached: String,
@@ -63,6 +66,7 @@ impl Profile {
             last_updated: 0,
             mine: false,
             muted: false,
+            blocked: false,
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
@@ -782,6 +786,34 @@ pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Res
     Ok(upload_url)
 }
 
+
+/// Toggles blocked status (local DM block; incoming decrypted content is dropped).
+#[tauri::command]
+pub async fn toggle_blocked(npub: String) -> bool {
+    let handle = TAURI_APP.get().unwrap();
+
+    let (updated, new_blocked) = {
+        let mut st = STATE.lock().await;
+        if st.get_profile_mut(&npub).is_none() {
+            let mut profile = Profile::new();
+            profile.id = npub.clone();
+            profile.mine = false;
+            st.profiles.push(profile);
+        }
+        match st.get_profile_mut(&npub) {
+            Some(profile) => {
+                profile.blocked = !profile.blocked;
+                (profile.clone(), profile.blocked)
+            }
+            None => return false,
+        }
+    };
+
+    let _ = handle.emit("profile_update", &updated);
+    db::set_profile(handle.clone(), updated).await.unwrap();
+    let _ = crate::update_unread_counter(handle.clone()).await;
+    new_blocked
+}
 
 /// Toggles the muted status of a profile
 #[tauri::command]

@@ -8,6 +8,7 @@ import {
   squads,
   networks,
   pinnedDmNpubs,
+  blockedDmNpubs,
   dmChatsByNpub,
   activeDmId,
   lastOpenedDmByTab,
@@ -130,6 +131,7 @@ export function clearAccountState(npub?: string): void {
   safeStateByTreasuryId.set({});
   squads.set([]);
   pinnedDmNpubs.set(new Set());
+  blockedDmNpubs.set(new Set());
   dmChatsByNpub.set({});
   activeDmId.set(null);
   lastOpenedDmByTab.set({

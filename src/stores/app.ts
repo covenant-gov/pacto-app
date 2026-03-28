@@ -80,6 +80,9 @@ pinnedDmNpubs.subscribe((set) => {
   }
 });
 
+/** Local block list (npubs hidden from DM sidebar; backend drops new incoming wraps after decrypt). */
+export const blockedDmNpubs = writable<Set<string>>(new Set());
+
 // New Chat flow: when true, show npub + message form instead of DM list/thread
 export const composingNewChat = writable<boolean>(false);
 
@@ -139,24 +142,27 @@ function toDmEntries(map: Record<string, DmChatState>, filter: (c: DmChatState) 
 }
 
 export const dmList = derived(
-  [dmChatsByNpub, pinnedDmNpubs] as const,
-  ([$m, $pinned]) =>
-    toDmEntries($m, (c) => c.hasFromMe && c.hasFromThem && !$pinned.has(c.npub))
+  [dmChatsByNpub, pinnedDmNpubs, blockedDmNpubs] as const,
+  ([$m, $pinned, $blocked]) =>
+    toDmEntries(
+      $m,
+      (c) => c.hasFromMe && c.hasFromThem && !$pinned.has(c.npub) && !$blocked.has(c.npub)
+    )
 );
 // Requests: they messaged us, we haven't replied. Includes invite-only DMs (squad/network/channel-in-squad) from non-friends.
-export const requestsList = derived(dmChatsByNpub, ($m) =>
-  toDmEntries($m, (c) => !c.hasFromMe && c.hasFromThem)
+export const requestsList = derived([dmChatsByNpub, blockedDmNpubs] as const, ([$m, $blocked]) =>
+  toDmEntries($m, (c) => !c.hasFromMe && c.hasFromThem && !$blocked.has(c.npub))
 );
 // Pending: we messaged them, they haven't replied. Includes conversations where we sent an invite and they haven't replied.
-export const pendingList = derived(dmChatsByNpub, ($m) =>
-  toDmEntries($m, (c) => c.hasFromMe && !c.hasFromThem)
+export const pendingList = derived([dmChatsByNpub, blockedDmNpubs] as const, ([$m, $blocked]) =>
+  toDmEntries($m, (c) => c.hasFromMe && !c.hasFromThem && !$blocked.has(c.npub))
 );
 
 export const pinnedList = derived(
-  [dmChatsByNpub, pinnedDmNpubs] as const,
-  ([$m, $pinned]) => {
+  [dmChatsByNpub, pinnedDmNpubs, blockedDmNpubs] as const,
+  ([$m, $pinned, $blocked]) => {
     const set = $pinned;
-    return toDmEntries($m, (c) => set.has(c.npub) && c.hasFromMe && c.hasFromThem);
+    return toDmEntries($m, (c) => set.has(c.npub) && c.hasFromMe && c.hasFromThem && !$blocked.has(c.npub));
   }
 );
 
