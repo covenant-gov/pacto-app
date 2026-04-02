@@ -18,6 +18,7 @@
   import WalletImportTokensModal from './WalletImportTokensModal.svelte';
   import WalletHomeSendModal from './WalletHomeSendModal.svelte';
   import WalletReceiveModal from './WalletReceiveModal.svelte';
+  import AztecWalletView from './AztecWalletView.svelte';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -243,6 +244,17 @@
   /** Kind 0 / profile default; when unset, receiving matches the signing address. */
   $: profileDefaultEvmAddress = evmAccountList.find((a) => a.isDefaultShared)?.address?.trim() || null;
   $: displayReceivingAddress = profileDefaultEvmAddress ?? evmAddress;
+
+  // Aztec wallet state
+  let aztecActiveTab: 'evm' | 'aztec' = 'evm';
+
+  function switchToAztecTab() {
+    aztecActiveTab = 'aztec';
+  }
+
+  function switchToEvmTab() {
+    aztecActiveTab = 'evm';
+  }
 </script>
 
 <div class="wallet-view" aria-labelledby="wallet-view-title">
@@ -564,6 +576,35 @@
     </div>
   </div>
 {/if}
+
+<!-- Aztec Wallet Section -->
+<section class="wallet-view-section wallet-view-aztec-section" aria-labelledby="wallet-aztec-heading">
+  <div class="wallet-view-section-head">
+    <h2 id="wallet-aztec-heading" class="wallet-view-h2">Aztec Wallet</h2>
+    <div class="wallet-view-tabs">
+      <button
+        type="button"
+        class="wallet-view-tab"
+        class:wallet-view-tab-active={aztecActiveTab === 'evm'}
+        on:click={switchToEvmTab}
+      >
+        EVM
+      </button>
+      <button
+        type="button"
+        class="wallet-view-tab"
+        class:wallet-view-tab-active={aztecActiveTab === 'aztec'}
+        on:click={switchToAztecTab}
+      >
+        Aztec
+      </button>
+    </div>
+  </div>
+
+  {#if aztecActiveTab === 'aztec'}
+    <AztecWalletView />
+  {/if}
+</section>
 
 <style>
   .wallet-view {
@@ -1032,4 +1073,40 @@
     border: 1px solid var(--border);
     border-radius: 8px;
   }
+
+  /* Aztec Wallet Styles */
+  .wallet-view-aztec-section {
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 32px;
+    padding-top: 28px;
+  }
+
+  .wallet-view-tabs {
+    display: flex;
+    gap: 4px;
+  }
+
+  .wallet-view-tab {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .wallet-view-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .wallet-view-tab-active {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border-color: var(--text-primary);
+  }
+
 </style>

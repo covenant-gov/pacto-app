@@ -892,6 +892,38 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] evm_accounts table created");
     }
 
+    // Migration: Create aztec_accounts table
+    let has_aztec_accounts: bool = conn
+        .query_row(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='aztec_accounts'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .is_ok();
+
+    if !has_aztec_accounts {
+        println!("[Migration] Creating aztec_accounts table...");
+        conn
+            .execute_batch(
+                r#"CREATE TABLE IF NOT EXISTS aztec_accounts (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    evm_account_id TEXT NOT NULL,
+                    aztec_address TEXT NOT NULL,
+                    partial_address TEXT NOT NULL,
+                    privacy_secret_enc TEXT NOT NULL,
+                    public_keys_hash TEXT NOT NULL,
+                    is_deployed INTEGER NOT NULL DEFAULT 0,
+                    salt TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY (evm_account_id) REFERENCES evm_accounts(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_aztec_address ON aztec_accounts(aztec_address);
+                CREATE INDEX IF NOT EXISTS idx_aztec_evm ON aztec_accounts(evm_account_id);"#,
+            )
+            .map_err(|e| format!("Failed to create aztec_accounts table: {}", e))?;
+        println!("[Migration] aztec_accounts table created");
+    }
+
     Ok(())
 }
 

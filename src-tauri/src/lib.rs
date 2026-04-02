@@ -41,6 +41,10 @@ mod wallet_security;
 mod wallet_ops;
 mod safe_deploy;
 
+// Aztec integration
+mod aztec_sidecar;
+mod aztec_wallet;
+
 #[cfg(target_os = "android")]
 #[path = "android/mod.rs"]
 mod android;
@@ -6335,6 +6339,19 @@ pub fn run() {
             evm_accounts::set_active_evm_account,
             evm_accounts::set_default_shared_evm_account,
             safe_deploy::safe_deploy_proxy,
+            // Aztec wallet commands
+            aztec_wallet::aztec_start_sidecar,
+            aztec_wallet::aztec_stop_sidecar,
+            aztec_wallet::aztec_sidecar_health,
+            aztec_wallet::aztec_sidecar_info,
+            aztec_wallet::aztec_debug_info,
+            aztec_wallet::aztec_connect_node,
+            aztec_wallet::aztec_get_node_info,
+            aztec_wallet::aztec_create_account_from_evm,
+            aztec_wallet::aztec_get_account,
+            aztec_wallet::aztec_get_balance,
+            aztec_wallet::aztec_build_and_send_transfer,
+            aztec_wallet::aztec_get_test_accounts,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

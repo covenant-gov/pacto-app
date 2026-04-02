@@ -22,6 +22,14 @@
     type WatchedErc20Row,
     getMatchingCachedSummary,
     persistWalletSummaryCache,
+    type WalletNetworkType,
+    AZTEC_CHAIN,
+    formatAztecAddress,
+    startAztecSidecar,
+    getAztecSidecarHealth,
+    getAztecAccount,
+    createAztecAccountFromEvm,
+    type AztecAccountInfo,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
   import { formatWalletTxAnnouncement } from '../../lib/wallet/dm-messages';
@@ -73,6 +81,14 @@
   /** `all` = every chain; otherwise one `SupportedChainId`. */
   let networkFilter: 'all' | SupportedChainId = 'all';
 
+  /** Network type: EVM or Aztec */
+  let networkType: WalletNetworkType = 'evm';
+
+  /** Aztec state */
+  let aztecAccount: AztecAccountInfo | null = null;
+  let aztecLoading = false;
+  let aztecError: string | null = null;
+
   function parseNetworkFilter(raw: string | null): 'all' | SupportedChainId {
     if (!raw || raw === 'all') return 'all';
     if (WALLET_ASSETS_CHAIN_IDS.includes(raw as SupportedChainId)) return raw as SupportedChainId;
@@ -87,6 +103,46 @@
   function saveNetworkFilter() {
     if (typeof localStorage === 'undefined') return;
     localStorage.setItem(STORAGE_NETWORK, networkFilter);
+  }
+
+  async function initAztec() {
+    if (aztecLoading) return;
+    aztecLoading = true;
+    aztecError = null;
+
+    try {
+      // Start sidecar
+      await startAztecSidecar(4892);
+
+      // Check if we have an existing account
+      const existing = await getAztecAccount();
+      if (existing) {
+        aztecAccount = existing;
+      } else {
+        // Create new account from EVM key
+        const result = await createAztecAccountFromEvm();
+        if (result.ok) {
+          aztecAccount = result.account;
+        } else {
+          aztecError = result.message;
+        }
+      }
+    } catch (e) {
+      aztecError = String(e);
+    } finally {
+      aztecLoading = false;
+    }
+  }
+
+  function switchToAztec() {
+    networkType = 'aztec';
+    if (!aztecAccount && !aztecLoading) {
+      initAztec();
+    }
+  }
+
+  function switchToEvm() {
+    networkType = 'evm';
   }
 
   /** Logged-in account: watched ERC-20 list is keyed by this npub. */
@@ -334,17 +390,76 @@
   <section class="wallet-bar-section" aria-labelledby="wallet-balance-heading">
     <div class="wallet-bar-section-head">
       <h3 id="wallet-balance-heading" class="wallet-bar-section-title">Balance</h3>
-      <button
-        type="button"
-        class="wallet-bar-refresh"
-        disabled={summaryLoading}
-        on:click={refreshSummary}
-        aria-label="Refresh balances"
-      >
-        {summaryLoading ? '…' : 'Refresh'}
-      </button>
+      <div class="wallet-bar-tabs">
+        <button
+          type="button"
+          class="wallet-bar-tab"
+          class:wallet-bar-tab-active={networkType === 'evm'}
+          on:click={switchToEvm}
+        >
+          EVM
+        </button>
+        <button
+          type="button"
+          class="wallet-bar-tab"
+          class:wallet-bar-tab-active={networkType === 'aztec'}
+          on:click={switchToAztec}
+        >
+          Aztec
+        </button>
+      </div>
+      {#if networkType === 'evm'}
+        <button
+          type="button"
+          class="wallet-bar-refresh"
+          disabled={summaryLoading}
+          on:click={refreshSummary}
+          aria-label="Refresh balances"
+        >
+          {summaryLoading ? '…' : 'Refresh'}
+        </button>
+      {/if}
     </div>
-    {#if summaryLoading && !summary}
+
+    {#if networkType === 'aztec'}
+      {#if aztecLoading}
+        <p class="wallet-bar-placeholder">Loading Aztec account…</p>
+      {:else if aztecError}
+        <p class="wallet-bar-error" role="alert">{aztecError}</p>
+      {:else if aztecAccount}
+        <div class="wallet-bar-aztec-info">
+          <p class="wallet-bar-aztec-address">
+            <span class="wallet-bar-aztec-label">Address:</span>
+            <code class="wallet-bar-aztec-addr">{formatAztecAddress(aztecAccount.aztecAddress)}</code>
+          </p>
+          <p class="wallet-bar-aztec-status">
+            <span class="wallet-bar-aztec-label">Status:</span>
+            <span class="wallet-bar-aztec-badge" class:wallet-bar-aztec-badge-deployed={aztecAccount.isDeployed}>
+              {aztecAccount.isDeployed ? 'Deployed' : 'Not Deployed'}
+            </span>
+          </p>
+          {#if !aztecAccount.isDeployed}
+            <p class="wallet-bar-aztec-hint">
+              Deploy your account to send transactions. You need Fee Juice for deployment.
+            </p>
+          {/if}
+        </div>
+        <ul class="wallet-bar-netlist">
+          <li class="wallet-bar-net">
+            <span class="wallet-bar-net-name">{AZTEC_CHAIN.name}</span>
+            <ul class="wallet-bar-assets">
+              <li>
+                <span class="wallet-bar-asset-sym">ETH</span>
+                <span class="wallet-bar-asset-amt">0.0</span>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      {:else}
+        <p class="wallet-bar-placeholder">No Aztec account available.</p>
+      {/if}
+
+    {:else if summaryLoading && !summary}
       <p class="wallet-bar-placeholder">Loading balances…</p>
     {:else if summary}
       {#if summaryError}
@@ -607,6 +722,85 @@
 
   .wallet-bar-section-head .wallet-bar-section-title {
     margin: 0;
+  }
+
+  .wallet-bar-tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .wallet-bar-tab {
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .wallet-bar-tab:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+
+  .wallet-bar-tab-active {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+    border-color: var(--text-primary);
+  }
+
+  .wallet-bar-aztec-info {
+    padding: 12px;
+    background: var(--bg-elevated);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 0.8125rem;
+  }
+
+  .wallet-bar-aztec-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-right: 6px;
+  }
+
+  .wallet-bar-aztec-address {
+    margin: 0 0 8px;
+  }
+
+  .wallet-bar-aztec-addr {
+    font-size: 0.75rem;
+    color: var(--text-primary);
+  }
+
+  .wallet-bar-aztec-status {
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .wallet-bar-aztec-badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--warning);
+    color: var(--bg-primary);
+  }
+
+  .wallet-bar-aztec-badge-deployed {
+    background: var(--success);
+  }
+
+  .wallet-bar-aztec-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
   }
 
   .wallet-bar-filters {

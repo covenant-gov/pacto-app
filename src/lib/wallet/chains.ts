@@ -18,6 +18,38 @@ export const SUPPORTED_CHAINS = {
 
 export type SupportedChainId = keyof typeof SUPPORTED_CHAINS;
 
+/**
+ * Aztec chain configuration
+ */
+export const AZTEC_CHAIN = {
+  id: 'aztec-testnet',
+  name: 'Aztec Testnet',
+  rpcUrl: 'https://rpc.testnet.aztec-labs.com',
+  explorerUrl: 'https://testnet.aztecscan.xyz',
+  l1ChainId: 11155111, // Sepolia
+  rollupVersion: 4127419662,
+} as const;
+
+export type AztecChainId = typeof AZTEC_CHAIN.id;
+
+/**
+ * All wallet network types (EVM or Aztec)
+ */
+export type WalletNetworkType = 'evm' | 'aztec';
+
+/**
+ * Get explorer URL for a network
+ */
+export function getExplorerUrl(networkType: WalletNetworkType, address: string, chainId?: SupportedChainId): string {
+  if (networkType === 'aztec') {
+    return `${AZTEC_CHAIN.explorerUrl}/address/${address}`;
+  }
+  if (chainId && explorerAddressUrl(chainId, address)) {
+    return explorerAddressUrl(chainId, address)!;
+  }
+  return '';
+}
+
 /** Default chain */
 export const DEFAULT_CHAIN_ID: SupportedChainId = 'sepolia';
 

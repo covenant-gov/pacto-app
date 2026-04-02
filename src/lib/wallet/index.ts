@@ -6,10 +6,14 @@
 export {
   SUPPORTED_CHAINS,
   DEFAULT_CHAIN_ID,
+  AZTEC_CHAIN,
   getChainConfig,
   getEffectiveRpcUrlsForChain,
   createWalletPublicClient,
+  getExplorerUrl,
   type SupportedChainId,
+  type AztecChainId,
+  type WalletNetworkType,
 } from './chains';
 
 export { getPublicClient } from './client';
@@ -87,3 +91,31 @@ export {
 } from './wallet-summary-cache';
 export { scheduleWalletSummaryBackgroundPrefetch } from './wallet-summary-prefetch';
 export { copyTextToClipboard } from './clipboard-copy';
+
+// Aztec wallet exports
+export {
+  startAztecSidecar,
+  stopAztecSidecar,
+  getAztecSidecarHealth,
+  getAztecSidecarInfo,
+  getAztecDebugInfo,
+  connectAztecNode,
+  getAztecNodeInfo,
+  createAztecAccountFromEvm,
+  getAztecAccount,
+  getAztecTestAccounts,
+  getAztecBalance,
+  sendAztecTransfer,
+  isAztecAddress,
+  formatAztecAddress,
+  type AztecAccountInfo,
+  type AztecWalletSummary,
+  type AztecTokenBalance,
+  type AztecTransferRequest,
+  type AztecTransferResult,
+  type SidecarInfo,
+  type SidecarHealth,
+  type CreateAccountResult,
+  type BalanceResult,
+  type TransferResult,
+} from './aztec-backend';
