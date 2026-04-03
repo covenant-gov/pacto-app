@@ -68,7 +68,7 @@ Implementing Aztec wallet support in Pacto application for private ZK transactio
 | File | Changes |
 |------|---------|
 | `src-tauri/src/lib.rs` | Added Aztec module registration |
-| `src-tauri/tauri.conf.json` | Changed identifier to `com.pacto` |
+| `src-tauri/tauri.conf.json` | Changed identifier to `io.pacto` |
 | `src/lib/wallet/chains.ts` | Added Aztec chain config |
 | `src/lib/wallet/index.ts` | Exported Aztec wallet functions |
 | `src/components/wallet/WalletView.svelte` | Added Aztec tab |

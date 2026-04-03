@@ -142,6 +142,23 @@ async function initAztecModules() {
   return aztecModules;
 }
 
+/**
+ * Deterministic field element from EVM signing key + tag so the same key always yields the same counterfactual account.
+ * Privacy secret should eventually be tied to the wallet mnemonic in Rust; for now this derives from the EVM key only.
+ */
+function pactoFrFromTaggedEvmKey(evmPrivateKeyHex: string, tag: string) {
+  const Fr = aztecModules.Fr as { fromBufferReduce: (b: Buffer) => unknown };
+  const trimmed = evmPrivateKeyHex.trim();
+  const normalized = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+  const keyBuf = Buffer.from(normalized, 'hex');
+  if (keyBuf.length !== 32) {
+    throw new Error('EVM private key must be 32 bytes');
+  }
+  const tagBuf = Buffer.from(tag, 'utf8');
+  const hash = crypto.createHash('sha256').update(Buffer.concat([tagBuf, keyBuf])).digest();
+  return Fr.fromBufferReduce(hash);
+}
+
 async function getAztecNode(rpcUrl: string) {
   if (aztecNode && (aztecNode as { url?: string }).url === rpcUrl) {
     log('INFO', 'getAztecNode: Returning cached node for', { rpcUrl });
@@ -260,33 +277,64 @@ const handlers: Record<string, (params: Record<string, unknown>) => Promise<unkn
   
   // Account
   async 'account.createFromEVMKey'(params) {
-    const { evmPrivateKey, privacySecret, salt, rpcUrl } = params as {
+    const { evmPrivateKey, rpcUrl } = params as {
       evmPrivateKey: string;
-      privacySecret?: string;
-      salt?: string;
       rpcUrl?: string;
     };
-    
+
     log('INFO', 'account.createFromEVMKey called', { evmPrivateKey: evmPrivateKey?.slice(0, 10) + '...' });
-    
+
     if (!evmPrivateKey) throw new Error('evmPrivateKey required');
-    
+
     try {
-      log('INFO', 'Step 1: Initializing Aztec modules...');
       await initAztecModules();
-      log('INFO', 'Step 1 complete: Aztec modules initialized');
-      
-      log('INFO', 'Step 2: Getting Aztec node connection...');
-      const testNode = await getAztecNode(rpcUrl || 'https://rpc.testnet.aztec-labs.com');
-      log('INFO', 'Step 2 complete: Got node connection');
-      
-      // Simple test - just return success without doing actual account creation
-      return {
-        success: true,
-        message: 'Account creation handler reached successfully',
-        evmKeyPrefix: evmPrivateKey.slice(0, 10),
+
+      const { AccountManager, EcdsaKAccountContract } = aztecModules as {
+        AccountManager: {
+          create: (
+            wallet: unknown,
+            secretKey: unknown,
+            accountContract: unknown,
+            salt?: unknown
+          ) => Promise<{
+            getCompleteAddress: () => Promise<{
+              address: { toString: () => string };
+              partialAddress: { toString: () => string };
+              publicKeys: {
+                masterNullifierPublicKey: { toString: () => string };
+                masterIncomingViewingPublicKey: { toString: () => string };
+              };
+            }>;
+          }>;
+        };
+        EcdsaKAccountContract: new (buf: Buffer) => unknown;
       };
-      
+
+      const node = await getAztecNode(rpcUrl || 'https://rpc.testnet.aztec-labs.com');
+
+      const hex = evmPrivateKey.trim().startsWith('0x') ? evmPrivateKey.trim() : `0x${evmPrivateKey.trim()}`;
+      const privateKeyBuffer = Buffer.from(hex.slice(2), 'hex');
+      if (privateKeyBuffer.length !== 32) {
+        throw new Error('EVM private key must be 32 bytes');
+      }
+
+      const ecdsaAccount = new EcdsaKAccountContract(privateKeyBuffer);
+      const privacySecret = pactoFrFromTaggedEvmKey(hex, 'pacto-aztec-privacy-v1');
+      const instanceSalt = pactoFrFromTaggedEvmKey(hex, 'pacto-aztec-account-salt-v1');
+
+      log('INFO', 'Creating AccountManager (counterfactual address)...');
+      const accountManager = await AccountManager.create(node, privacySecret as never, ecdsaAccount, instanceSalt as never);
+      const completeAddress = await accountManager.getCompleteAddress();
+
+      return {
+        address: completeAddress.address.toString(),
+        partialAddress: completeAddress.partialAddress.toString(),
+        publicKeys: {
+          npkM: completeAddress.publicKeys.masterNullifierPublicKey.toString(),
+          ivpkM: completeAddress.publicKeys.masterIncomingViewingPublicKey.toString(),
+        },
+        isDeployed: false,
+      };
     } catch (error) {
       log('ERROR', 'Account creation failed', { error: String(error), stack: (error as Error).stack });
       throw error;
@@ -489,9 +537,11 @@ export async function startServer(port = PORT): Promise<{ port: number; token: s
     log('WARN', 'Server already running');
     return { port, token: authToken || '' };
   }
-  
-  await initAztecModules();
-  
+
+  // Listen before Aztec imports so the supervisor can reach /health and /rpc immediately.
+  // `initAztecModules()` is heavy; handlers call it on demand.
+  log('INFO', 'Binding HTTP server (Aztec modules load on first RPC that needs them)');
+
   return new Promise((resolve) => {
     server = createServer(handleRequest);
     

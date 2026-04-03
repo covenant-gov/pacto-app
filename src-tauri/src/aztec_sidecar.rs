@@ -11,6 +11,18 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::time::interval;
 use log::{info, warn, error, debug};
 use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
+
+/// HTTP client for the Node sidecar: disable idle reuse (avoids stale connections to `http.createServer`),
+/// and allow long Aztec operations.
+static SIDECAR_HTTP: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .pool_max_idle_per_host(0)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("reqwest client for Aztec sidecar")
+});
 
 const SIDECAR_DEFAULT_PORT: u16 = 4892;
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(30);
@@ -61,11 +73,7 @@ impl SidecarSupervisor {
     /// Check if the sidecar is running
     pub fn is_running(&self) -> bool {
         let running = self.state.is_running();
-        if running {
-            info!("is_running() returned true");
-        } else {
-            info!("is_running() returned false");
-        }
+        debug!("aztec sidecar is_running -> {}", running);
         running
     }
 
@@ -80,7 +88,7 @@ impl SidecarSupervisor {
             // Even if running flag is set, verify the sidecar is actually responsive
             let port = *self.state.port.read().await;
             let health_url = format!("http://127.0.0.1:{}/health", port);
-            match reqwest::get(&health_url).await {
+            match SIDECAR_HTTP.get(&health_url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     info!("Existing sidecar is responsive on port {}", port);
                     return self.get_info().await;
@@ -96,7 +104,7 @@ impl SidecarSupervisor {
         // This handles the case where a sidecar was started by a previous process run
         info!("Checking for existing sidecar on port {}...", port);
         let health_url = format!("http://127.0.0.1:{}/health", port);
-        if let Ok(resp) = reqwest::get(&health_url).await {
+        if let Ok(resp) = SIDECAR_HTTP.get(&health_url).send().await {
             if resp.status().is_success() {
                 info!("Found existing sidecar on port {}, testing RPC endpoint...", port);
                 
@@ -108,7 +116,7 @@ impl SidecarSupervisor {
                     "params": { "test": "startup check" }
                 });
                 
-                let rpc_ready = match reqwest::Client::new()
+                let rpc_ready = match SIDECAR_HTTP
                     .post(&rpc_url)
                     .json(&ping_body)
                     .timeout(Duration::from_secs(5))
@@ -195,8 +203,21 @@ impl SidecarSupervisor {
         }
 
         // Start the process
-        info!("Spawning sidecar process...");
-        let mut child = match tokio::process::Command::new("node")
+        info!(
+            "Spawning sidecar: node {:?} --port {}",
+            sidecar_path, port
+        );
+
+        let script_path = std::path::Path::new(&sidecar_path);
+        let sidecar_project_root = script_path.parent().and_then(|p| p.parent());
+        let mut cmd = tokio::process::Command::new("node");
+        if let Some(root) = sidecar_project_root {
+            if root.join("package.json").exists() {
+                cmd.current_dir(root);
+                info!("Sidecar process cwd: {} (for node_modules / native addons)", root.display());
+            }
+        }
+        let mut child = match cmd
             .arg(&sidecar_path)
             .arg("--port")
             .arg(port.to_string())
@@ -205,7 +226,11 @@ impl SidecarSupervisor {
             .spawn()
         {
             Ok(child) => {
-                info!("Sidecar process spawned successfully with PID: {:?}", child.id());
+                info!(
+                    "Sidecar child spawned (pid={:?}, requested_port={})",
+                    child.id(),
+                    port
+                );
                 child
             }
             Err(e) => {
@@ -214,8 +239,25 @@ impl SidecarSupervisor {
             }
         };
 
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    warn!(target: "aztec_sidecar::stderr", "{}", line);
+                }
+            });
+        }
+
         // Wait briefly for startup and capture the auth token and actual port from stdout
-        let (auth_token, actual_port) = self.wait_for_startup(&mut child, port).await?;
+        let (auth_token, actual_port) = match self.wait_for_startup(&mut child, port).await {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = child.kill().await;
+                return Err(e);
+            }
+        };
         
         info!("Sidecar startup complete with token prefix: {}", 
               &auth_token[..auth_token.len().min(8)]);
@@ -223,7 +265,7 @@ impl SidecarSupervisor {
         // CRITICAL: Do health check BEFORE setting running=true
         info!("Verifying sidecar is accessible on port {} before marking as running...", actual_port);
         let health_url = format!("http://127.0.0.1:{}/health", actual_port);
-        let health_resp = reqwest::get(&health_url).await;
+        let health_resp = SIDECAR_HTTP.get(&health_url).send().await;
         
         match &health_resp {
             Ok(resp) if resp.status().is_success() => {
@@ -247,7 +289,7 @@ impl SidecarSupervisor {
             "method": "system.ping",
             "params": {}
         });
-        match reqwest::Client::new()
+        match SIDECAR_HTTP
             .post(&ping_url)
             .json(&ping_body)
             .timeout(Duration::from_secs(5))
@@ -288,7 +330,7 @@ impl SidecarSupervisor {
         
         // Final verification
         let final_health_url = format!("http://127.0.0.1:{}/health", actual_port);
-        match reqwest::get(&final_health_url).await {
+        match SIDECAR_HTTP.get(&final_health_url).send().await {
             Ok(resp) if resp.status().is_success() => {
                 info!("Final health check passed - sidecar is ready!");
             }
@@ -339,7 +381,9 @@ impl SidecarSupervisor {
         let port = *self.state.port.read().await;
         let url = format!("http://127.0.0.1:{}/health", port);
 
-        let response = reqwest::get(&url)
+        let response = SIDECAR_HTTP
+            .get(&url)
+            .send()
             .await
             .map_err(|e| format!("Health check failed: {}", e))?;
 
@@ -376,7 +420,7 @@ impl SidecarSupervisor {
         });
         
         info!("test_rpc_call: Trying system.echo first");
-        match reqwest::Client::new()
+        match SIDECAR_HTTP
             .post(&url)
             .json(&echo_body)
             .timeout(Duration::from_secs(5))
@@ -438,11 +482,11 @@ impl SidecarSupervisor {
         
         info!("test_account_creation: Testing account.createFromEVMKey");
         let start_time = std::time::Instant::now();
-        match reqwest::Client::new()
+        match SIDECAR_HTTP
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&create_body)
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(120))
             .send()
             .await
         {
@@ -485,11 +529,13 @@ impl SidecarSupervisor {
     /// Make a request to the sidecar
     pub async fn request(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
         let port = *self.state.port.read().await;
+        if port == 0 {
+            return Err("Sidecar port not set; start the sidecar first".to_string());
+        }
         let url = format!("http://127.0.0.1:{}/rpc", port);
-        
+
         info!("Making request to sidecar: {} on port {}", method, port);
-        
-        // Log the params for debugging
+
         info!("Request params: {:?}", params);
 
         let request_body = serde_json::json!({
@@ -498,21 +544,21 @@ impl SidecarSupervisor {
             "params": params
         });
 
-        // Build client - use simple new() like test_rpc_call does
-        let client = reqwest::Client::new();
-        
         info!("Sending request to {}", url);
-        
-        let mut req = client
+
+        let response = SIDECAR_HTTP
             .post(&url)
             .header("Content-Type", "application/json")
-            .json(&request_body);
-        
-        info!("Sending request...");
-        let response = req.send().await
+            .header("Connection", "close")
+            .json(&request_body)
+            .send()
+            .await
             .map_err(|e| {
-                error!("Request failed: {}", e);
-                format!("Request failed: {}", e)
+                error!("Request failed: {} (url={})", e, url);
+                format!(
+                    "Request failed: {}. If the sidecar exited, check stderr (aztec_sidecar::stderr) and run: cd sidecar && npm ci",
+                    e
+                )
             })?;
         
         info!("Got response, status: {}", response.status());
@@ -547,7 +593,7 @@ impl SidecarSupervisor {
                 let port = *state.port.read().await;
                 let url = format!("http://127.0.0.1:{}/health", port);
 
-                match reqwest::get(&url).await {
+                match SIDECAR_HTTP.get(&url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         // Healthy
                     }
@@ -579,24 +625,23 @@ impl SidecarSupervisor {
     fn find_sidecar_binary(&self) -> Result<String, String> {
         // Check common locations
         let candidates = [
-            // Development (relative to project root)
+            // Development (relative to project root / CWD when running `tauri dev`)
             std::path::Path::new("sidecar/dist/index.js"),
             std::path::Path::new("../sidecar/dist/index.js"),
             std::path::Path::new("./sidecar/dist/index.js"),
-            // Absolute path for development
-            std::path::Path::new("/home/karyia/Code/Pacto/pacto-app/sidecar/dist/index.js"),
-            // Installed
+            // Installed / placeholder
             std::path::Path::new("aztec-sidecar"),
-            // Bundled (will be in resources)
         ];
 
         for candidate in &candidates {
             info!("Checking for sidecar at: {:?}", candidate);
             if candidate.exists() {
-                info!("Found sidecar at: {:?}", candidate);
-                return candidate.to_str()
+                let resolved = std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
+                info!("Using sidecar script (exists): {}", resolved.display());
+                return resolved
+                    .to_str()
                     .map(String::from)
-                    .ok_or_else(|| "Invalid path".to_string());
+                    .ok_or_else(|| "Invalid sidecar path".to_string());
             }
         }
 
@@ -611,71 +656,158 @@ impl SidecarSupervisor {
         let stdout = child.stdout.take()
             .ok_or("Failed to capture stdout")?;
         
-        let mut reader = BufReader::new(stdout).lines();
-        
-        // Wait for startup message with auth token and actual port
-        let timeout_result = tokio::time::timeout(Duration::from_secs(15), async {
+        let reader = BufReader::new(stdout).lines();
+
+        const STARTUP_LOG_DEADLINE: Duration = Duration::from_secs(45);
+        info!(
+            "Waiting up to {:?} for sidecar ready line (Auth token:) on stdout; stderr is logged separately",
+            STARTUP_LOG_DEADLINE
+        );
+
+        // Return reader from phase one so we keep draining stdout; otherwise the pipe closes and Node can get EPIPE on console.log.
+        let read_phase = async move {
+            let mut reader = reader;
             let mut found_token: Option<String> = None;
             let mut actual_port = port;
-            
+            let mut line_count: u32 = 0;
+            let mut last_lines: Vec<String> = Vec::with_capacity(12);
+
             while let Ok(Some(line)) = reader.next_line().await {
-                debug!("Sidecar stdout: {}", line);
-                
+                line_count += 1;
+                debug!(target: "aztec_sidecar::stdout", "line {}: {}", line_count, line);
+                if last_lines.len() >= 12 {
+                    last_lines.remove(0);
+                }
+                last_lines.push(line.clone());
+
                 // Look for the auth token in the output
                 if line.contains("Auth token:") {
                     if let Some(token) = line.split("Auth token:").nth(1) {
                         let trimmed = token.trim();
                         found_token = Some(trimmed.to_string());
-                        info!("Captured auth token, prefix: {}", &trimmed[..trimmed.len().min(8)]);
+                        info!(
+                            "Captured auth token from stdout (line {}), prefix: {}",
+                            line_count,
+                            &trimmed[..trimmed.len().min(8)]
+                        );
                     }
                 }
-                
-                // Look for the actual port
+
+                // Legacy/alternate marker (if server prints it)
                 if line.contains("Server port:") {
                     if let Some(port_str) = line.split("Server port:").nth(1) {
                         if let Ok(p) = port_str.trim().parse::<u16>() {
                             actual_port = p;
-                            info!("Detected sidecar actual port: {}", actual_port);
+                            info!("Detected sidecar Server port line -> {}", actual_port);
                         }
                     }
                 }
-                
-                // Log errors
-                if line.contains("Error") || line.contains("error") {
-                    error!("Sidecar ERROR: {}", line);
+
+                // index.ts prints "Listening on: http://127.0.0.1:PORT"
+                if let Some(idx) = line.find("127.0.0.1:") {
+                    let rest = &line[idx + "127.0.0.1:".len()..];
+                    let port_part = rest.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("");
+                    if let Ok(p) = port_part.parse::<u16>() {
+                        actual_port = p;
+                        debug!("Parsed listening port from stdout: {}", actual_port);
+                    }
                 }
-                
-                info!("Sidecar: {}", line);
-                
-                // If we have the token, we can stop after a few more lines to ensure we get the port
+
+                if line.to_lowercase().contains("error") {
+                    error!(target: "aztec_sidecar::stdout", "Sidecar stdout (possible error): {}", line);
+                }
+
+                info!(target: "aztec_sidecar::stdout", "[{}] {}", line_count, line);
+
                 if found_token.is_some() {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     break;
                 }
             }
-            
-            if found_token.is_none() {
-                warn!("Failed to capture auth token from sidecar output");
-            }
-            
-            (found_token, actual_port)
-        }).await;
 
-        match timeout_result {
-            Ok((Some(token), actual_port)) => Ok((token, actual_port)),
-            Ok((None, actual_port)) => {
-                // Try health check as fallback
+            if found_token.is_none() {
+                warn!(
+                    "No 'Auth token:' line after {} stdout line(s). Last lines:\n---\n{}\n---",
+                    line_count,
+                    last_lines.join("\n")
+                );
+            }
+
+            ((found_token, actual_port, line_count, last_lines), reader)
+        };
+
+        let timeout_result = tokio::time::timeout(STARTUP_LOG_DEADLINE, read_phase).await;
+
+        let ((found_token, actual_port, line_count, last_lines), stdout_reader) = match timeout_result {
+            Ok(v) => v,
+            Err(_elapsed) => {
+                error!(
+                    "Timeout waiting for sidecar Auth token line (>{:?}). Check stderr logs and that sidecar/dist/index.js is built.",
+                    STARTUP_LOG_DEADLINE
+                );
+                return Err(format!(
+                    "Timeout waiting for sidecar to start (>{:?}). See RUST_LOG=aztec_sidecar=debug,pacto_lib=info for stdout/stderr details.",
+                    STARTUP_LOG_DEADLINE
+                ));
+            }
+        };
+
+        tokio::spawn(async move {
+            let mut reader = stdout_reader;
+            while let Ok(Some(line)) = reader.next_line().await {
+                debug!(target: "aztec_sidecar::stdout", "{}", line);
+            }
+        });
+
+        match found_token {
+            Some(token) => Ok((token, actual_port)),
+            None => {
+                info!(
+                    "Auth token missing after stdout; probing http://127.0.0.1:{}/health ({} stdout lines seen)",
+                    actual_port, line_count
+                );
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 let url = format!("http://127.0.0.1:{}/health", actual_port);
-                
-                if reqwest::get(&url).await.is_ok() {
-                    info!("Sidecar responded on health check, generating fallback token");
-                    Ok((uuid::Uuid::new_v4().to_string(), actual_port))
-                } else {
-                    Err(format!("Sidecar not responding on port {}. Check if sidecar is already running.", actual_port))
+
+                match SIDECAR_HTTP.get(&url).send().await {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let body = resp.text().await.unwrap_or_default();
+                        if status.is_success() {
+                            info!(
+                                "Health probe OK ({}); using fallback auth token (no Auth token line on stdout)",
+                                status
+                            );
+                            Ok((uuid::Uuid::new_v4().to_string(), actual_port))
+                        } else {
+                            error!(
+                                "Health probe failed: status={} body_prefix={:?}",
+                                status,
+                                body.chars().take(200).collect::<String>()
+                            );
+                            Err(format!(
+                                "Sidecar not healthy on port {} (HTTP {}). Last stdout lines:\n{}",
+                                actual_port,
+                                status,
+                                last_lines.join("\n")
+                            ))
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            "Health probe connection error on port {}: {}; stdout_lines={}",
+                            actual_port, e, line_count
+                        );
+                        Err(format!(
+                            "Sidecar not responding on port {} ({}). stdout lines: {}. Last lines:\n{}.\nIf `node` exited immediately, check terminal logs for aztec_sidecar::stderr.\nBuild sidecar: cd sidecar && npm ci && npm run build",
+                            actual_port,
+                            e,
+                            line_count,
+                            last_lines.join("\n")
+                        ))
+                    }
                 }
             }
-            Err(_) => Err("Timeout waiting for sidecar to start".to_string()),
         }
     }
 
@@ -690,8 +822,7 @@ impl SidecarSupervisor {
             "params": {}
         });
 
-        let client = reqwest::Client::new();
-        let mut request = client.post(&url).json(&request_body);
+        let mut request = SIDECAR_HTTP.post(&url).json(&request_body);
 
         if let Some(token) = auth_token.as_ref() {
             request = request.header("Authorization", format!("Bearer {}", token));

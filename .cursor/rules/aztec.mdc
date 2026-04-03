@@ -1,0 +1,35 @@
+---
+description: Aztec sidecar, SDK, and wallet work (Node, Rust bridge, UI)
+globs: sidecar/**/*,src-tauri/src/aztec*.rs,src/lib/wallet/aztec*.ts,src/components/wallet/Aztec*.svelte,docs/issues/aztec/**/*.md
+alwaysApply: false
+---
+
+# Aztec in Pacto
+
+Pacto uses a **Node sidecar** (Aztec.js / PXE-related flows), a **Rust** supervisor and Tauri commands, and **Svelte** that calls Rust only—not the sidecar directly. Planning and spikes live under `docs/issues/aztec/`; shipped wallet behavior docs under `docs/wallet/` when ready.
+
+## SDK and networks
+
+- **Pin** `@aztec/*` versions in the sidecar `package.json`; do not float “latest” in code or CI without an explicit bump.
+- **SDK vs node version** can differ; align with the [Networks](https://docs.aztec.network/networks) page and the docs version you are targeting before changing RPC or APIs.
+- Prefer **official Aztec docs and TypeDoc** over guessed APIs; see [AI tooling](https://docs.aztec.network/developers/ai_tooling) for MCP / `llms.txt` if you need up-to-date context.
+
+## Contracts and Noir (if you touch `aztec compile` projects)
+
+- Use the **`aztec` CLI** for compile/test (`aztec compile`, `aztec test`), not raw `nargo compile` / `nargo test` alone for Aztec contracts—incomplete artifacts are a common failure mode.
+- In Aztec.nr, default hashing to **Poseidon2** unless a spec requires otherwise; do not default to Pedersen for new work.
+
+## Sidecar and Rust bridge
+
+- Treat the sidecar as **untrusted from other processes**: bind to **loopback**, use a **shared secret or token** for HTTP/RPC from Rust, and avoid exposing it to the webview.
+- **Never log** mnemonics, private keys, raw proofs, or pasteable secrets. Redact RPC URLs that embed API keys.
+- When debugging RPC from Rust vs curl, compare **method, body, headers, and connection reuse**; document findings in `docs/issues/aztec/` rather than only in comments.
+
+## Errors and fallbacks
+
+- For **wallet and sidecar** code paths, avoid **silent** catches that return `null` or placeholder addresses when a value is required; surface failures to the caller with a clear code or message so UI and logs stay honest.
+- Do not add **long retry/polling loops** unless product asks for it; they hide real errors and can block the app.
+
+## Source hygiene
+
+- Follow the repo rule: **no tracker IDs** in `src/`, `src-tauri/`, or user-visible strings; use `docs/` for references.

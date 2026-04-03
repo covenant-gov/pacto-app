@@ -84,6 +84,18 @@ async function initAztecModules() {
     log('SUCCESS', 'Aztec modules loaded');
     return aztecModules;
 }
+function pactoFrFromTaggedEvmKey(evmPrivateKeyHex, tag) {
+    const Fr = aztecModules.Fr;
+    const trimmed = evmPrivateKeyHex.trim();
+    const normalized = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+    const keyBuf = Buffer.from(normalized, 'hex');
+    if (keyBuf.length !== 32) {
+        throw new Error('EVM private key must be 32 bytes');
+    }
+    const tagBuf = Buffer.from(tag, 'utf8');
+    const hash = crypto.createHash('sha256').update(Buffer.concat([tagBuf, keyBuf])).digest();
+    return Fr.fromBufferReduce(hash);
+}
 async function getAztecNode(rpcUrl) {
     if (aztecNode && aztecNode.url === rpcUrl) {
         log('INFO', 'getAztecNode: Returning cached node for', { rpcUrl });
@@ -184,22 +196,33 @@ const handlers = {
     },
     // Account
     async 'account.createFromEVMKey'(params) {
-        const { evmPrivateKey, privacySecret, salt, rpcUrl } = params;
+        const { evmPrivateKey, rpcUrl } = params;
         log('INFO', 'account.createFromEVMKey called', { evmPrivateKey: evmPrivateKey?.slice(0, 10) + '...' });
         if (!evmPrivateKey)
             throw new Error('evmPrivateKey required');
         try {
-            log('INFO', 'Step 1: Initializing Aztec modules...');
             await initAztecModules();
-            log('INFO', 'Step 1 complete: Aztec modules initialized');
-            log('INFO', 'Step 2: Getting Aztec node connection...');
-            const testNode = await getAztecNode(rpcUrl || 'https://rpc.testnet.aztec-labs.com');
-            log('INFO', 'Step 2 complete: Got node connection');
-            // Simple test - just return success without doing actual account creation
+            const { AccountManager, EcdsaKAccountContract } = aztecModules;
+            const node = await getAztecNode(rpcUrl || 'https://rpc.testnet.aztec-labs.com');
+            const hex = evmPrivateKey.trim().startsWith('0x') ? evmPrivateKey.trim() : `0x${evmPrivateKey.trim()}`;
+            const privateKeyBuffer = Buffer.from(hex.slice(2), 'hex');
+            if (privateKeyBuffer.length !== 32) {
+                throw new Error('EVM private key must be 32 bytes');
+            }
+            const ecdsaAccount = new EcdsaKAccountContract(privateKeyBuffer);
+            const privacySecret = pactoFrFromTaggedEvmKey(hex, 'pacto-aztec-privacy-v1');
+            const instanceSalt = pactoFrFromTaggedEvmKey(hex, 'pacto-aztec-account-salt-v1');
+            log('INFO', 'Creating AccountManager (counterfactual address)...');
+            const accountManager = await AccountManager.create(node, privacySecret, ecdsaAccount, instanceSalt);
+            const completeAddress = await accountManager.getCompleteAddress();
             return {
-                success: true,
-                message: 'Account creation handler reached successfully',
-                evmKeyPrefix: evmPrivateKey.slice(0, 10),
+                address: completeAddress.address.toString(),
+                partialAddress: completeAddress.partialAddress.toString(),
+                publicKeys: {
+                    npkM: completeAddress.publicKeys.masterNullifierPublicKey.toString(),
+                    ivpkM: completeAddress.publicKeys.masterIncomingViewingPublicKey.toString(),
+                },
+                isDeployed: false,
             };
         }
         catch (error) {
@@ -368,7 +391,7 @@ export async function startServer(port = PORT) {
         log('WARN', 'Server already running');
         return { port, token: authToken || '' };
     }
-    await initAztecModules();
+    log('INFO', 'Binding HTTP server (Aztec modules load on first RPC that needs them)');
     return new Promise((resolve) => {
         server = createServer(handleRequest);
         server.listen(port, HOST, () => {
