@@ -29,6 +29,10 @@ Extend the **DM view wallet sidebar** (the panel next to the active conversation
 - Full governance or complex Aztec contract interactions (see stakeholder [embedded-wallet-plan.md](https://github.com/covenant-gov/pacto-app/blob/feat/aztec-wallet/docs/issues/aztec/embedded-wallet-plan.md)).
 - Final DM announcement/request payload design for Aztec (**TBD** with privacy review).
 
+## Phased execution (executable steps)
+
+Executable step lists for ISSUE 03 will be **written after ISSUE 01 and ISSUE 02 are complete** and the team has done a **short reflection** (what the sidecar API and key/export surfaces actually are, which Aztec network is primary, and what DM peer metadata is available). This avoids churn from speculative steps that would be rewritten once 01/02 land.
+
 ## Completion checklist (to refine after 01 + 02)
 
 - [ ] EVM/Aztec mode switch in DM WalletBar with theme-consistent styling.

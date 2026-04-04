@@ -52,6 +52,80 @@ Automated tests should demonstrate that the app **does not regress** when the si
 
 Tests may live under `src-tauri` (Rust integration tests) and/or a small script invoked from `npm test` / CI; choose what fits the existing Pacto layout.
 
+## Phased execution
+
+Each phase below is a natural **git commit** (or small stack of commits) so reviewers can follow incremental diffs. At the end of a phase, **run any tests listed** before merging or opening the next phase; add new tests in the same phase when the behavior is introduced.
+
+### Phase 1 — Sidecar package skeleton
+
+1. Create the sidecar directory (e.g. `sidecar/aztec-pxe/`) with `package.json`, pinned dependencies (minimal `@aztec/*` first, or a pure stub with no Aztec imports until health/version work end-to-end).
+2. Implement `index` (or `main`) that parses argv or env, binds **loopback only** (`127.0.0.1`), and exposes **health** + **version** (HTTP or stdin/stdout JSON line—pick one and document it).
+3. Add npm scripts: `dev` (run with node), `build` (produce the artifact your packaging strategy needs).
+4. **Verify**: `npm run dev` (or equivalent) responds to health locally; no Tauri yet.
+
+**Tests (recommended):** unit or script that starts the process, hits health, exits (optional in CI if binary not bundled yet).
+
+**Commit:** sidecar package + README in sidecar folder describing how to run.
+
+### Phase 2 — Binary layout and Tauri bundle wiring
+
+1. Add a build step that outputs the sidecar with the **correct Tauri naming**: `src-tauri/binaries/<name>-<target-triple>[.exe]` (see [Tauri sidecar guide](https://v2.tauri.app/learn/sidecar-nodejs/) for host tuple).
+2. Set `bundle.externalBin` in `tauri.conf.json` to that basename.
+3. Document in `docs/wallet/` (stub section is fine) the **exact** binary name and how devs obtain the missing triple locally.
+
+**Tests:** none mandatory yet beyond manual `ls src-tauri/binaries`; optional script that fails CI if expected file missing for current host.
+
+**Commit:** `tauri.conf.json`, binaries path, build script, doc note.
+
+### Phase 3 — Capabilities and shell permissions
+
+1. Update `src-tauri/capabilities/default.json` (or scoped capability) with **minimal** `shell:allow-execute` (or current plugin equivalent) for the sidecar only—**no** broad `args: true` beyond what is required.
+2. Confirm **dev** and **release** capability sets match how the app ships.
+
+**Tests:** manual `tauri dev` smoke: app launches; no permission errors when spawning is wired (Phase 4).
+
+**Commit:** capabilities only.
+
+### Phase 4 — Rust supervisor: spawn, health, stop
+
+1. Add a small Rust module (e.g. `sidecar_supervisor` or `aztec_sidecar`) that: spawns the sidecar via Tauri’s shell/sidecar API, waits for health, stores child handle / port token.
+2. Implement **stop** on demand and register **cleanup on app exit** (and document behavior if the app is force-killed).
+3. Generate a **runtime auth token** (or shared secret file in temp) and pass it to the sidecar env; reject requests without it on the HTTP server (if HTTP).
+
+**Tests:** Rust `#[test]` or integration test using `cargo test` that mocks or uses a **stub** sidecar if the real binary is not in CI (feature-gate or `#[ignore]` with instructions).
+
+**Commit:** Rust supervisor + internal API; no UI.
+
+### Phase 5 — Tauri commands (frontend contract)
+
+1. Expose narrow commands, e.g. `aztec_sidecar_start`, `aztec_sidecar_stop`, `aztec_sidecar_health` (names illustrative).
+2. Implement **idempotent start**: second call returns OK without duplicate listener.
+3. Enforce **timeouts** on health and on JSON-RPC calls.
+4. Wire **no** direct frontend → sidecar URL; frontend calls **only** `invoke`.
+
+**Tests:** extend integration tests or add tests that call the command layer (may require Tauri test harness if available; otherwise document manual checklist and keep Rust unit tests for supervisor logic).
+
+**Commit:** commands + error types.
+
+### Phase 6 — Failure modes and automated regression tests
+
+1. Implement or stub a **slow** handler to test stop-during-work (supervisor must not panic).
+2. Simulate **crash** (kill child) and verify **restart** with backoff works.
+3. Add CI job step: build sidecar for runner host, then run tests; **skip with clear log** if binary absent.
+
+**Tests:** this phase is primarily **test additions**; all scenarios from “Testing (mandatory)” above should be covered or explicitly deferred with rationale in `docs/wallet/`.
+
+**Commit:** tests + any supervisor fixes.
+
+### Phase 7 — Documentation and handoff
+
+1. Finalize `docs/wallet/` “Aztec sidecar runtime”: architecture diagram or bullet list (start/stop, ports, token, commands).
+2. Link this issue and the Tauri guide.
+
+**Tests:** none.
+
+**Commit:** docs only.
+
 ## Acceptance criteria
 
 - [ ] Sidecar is built and bundled for **at least one** desktop target used in development (document other targets as follow-ups).
