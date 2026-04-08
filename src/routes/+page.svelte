@@ -30,6 +30,8 @@
     parseChannelInNetworkMessage,
     parseNetworkInviteMessage,
     syncMlsGroupsNow,
+    getMlsGroupMembers,
+    backfillSquadMemberEvmFromProfiles,
     deleteDmChatBackend,
     listParentTreasurySafes,
     addParentTreasurySafe,
@@ -621,9 +623,36 @@
       activeView.set('hub');
       acceptedNetworkInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     }
-    publishSquadMemberEvmShare(payload.groupId).catch((e) =>
-      dmError('publishSquadMemberEvmShare after accept', e)
-    );
+    try {
+      await syncMlsGroupsNow(payload.groupId);
+    } catch (e) {
+      dmError('syncMlsGroupsNow after accept invite', e);
+    }
+    try {
+      const membersResult = await getMlsGroupMembers(payload.groupId);
+      const memberNpubs = (membersResult.members ?? []) as string[];
+      await backfillSquadMemberEvmFromProfiles(payload.groupId, memberNpubs);
+    } catch (e) {
+      dmError('backfillSquadMemberEvmFromProfiles after accept', e);
+    }
+    bumpMembershipVersion(payload.groupId);
+    pendingReadyToast.set({
+      text: `${payload.name} is ready!`,
+      goTo:
+        type === 'squad'
+          ? {
+              type: 'squad',
+              name: payload.name,
+              id: payload.groupId,
+              channelId: payload.groupId,
+            }
+          : {
+              type: 'network',
+              name: payload.name,
+              id: payload.groupId,
+              channelId: payload.groupId,
+            },
+    });
   }
 
   async function handleAcceptSquadInvite(msg: DmMessage, groupId: string) {
@@ -1104,9 +1133,9 @@
           group_id,
           channelInviteInfo.channelName
         );
-        publishSquadMemberEvmShare(channelInviteInfo.parentId).catch((e) =>
-          dmError('publishSquadMemberEvmShare after channel welcome', e)
-        );
+        void publishSquadMemberEvmShare(channelInviteInfo.parentId).then((ok) => {
+          if (!ok) dmError('publishSquadMemberEvmShare after channel welcome', new Error('share failed'));
+        });
         return;
       }
       if (acceptedSquadInviteGroupIds.has(group_id)) {

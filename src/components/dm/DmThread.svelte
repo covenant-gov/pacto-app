@@ -507,6 +507,8 @@
             inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
             status={inviteStatus}
             accepting={acceptingSquadInviteId === msg.id}
+            inviteMessageId={msg.id}
+            announcementsGroupId={invitePayload.groupId}
             onAccept={() => onAcceptSquadInvite(msg, invitePayload.groupId)}
             onDecline={() => onDeclineSquad(msg)}
           />

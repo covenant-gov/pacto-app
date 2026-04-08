@@ -32,10 +32,11 @@ export function clearToast(): void {
 export function showToast(text: string, goTo?: ToastGoTo): void {
   clearToast();
   toastMessage.set(goTo ? { text, goTo } : { text });
+  const ms = goTo ? Math.max(TOAST_DURATION_MS, 12_000) : TOAST_DURATION_MS;
   clearTimeoutId = setTimeout(() => {
     toastMessage.set(null);
     clearTimeoutId = null;
-  }, TOAST_DURATION_MS);
+  }, ms);
 }
 
 /**

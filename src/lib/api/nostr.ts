@@ -573,6 +573,17 @@ export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembe
   return result;
 }
 
+/** Insert missing `squad_member_evm` rows from local profile addresses if we already have them cached. */
+export async function backfillSquadMemberEvmFromProfiles(
+  parentId: string,
+  memberNpubs: string[]
+): Promise<number> {
+  return (await invoke('backfill_squad_member_evm_missing_from_profiles', {
+    parentId,
+    memberNpubs,
+  })) as number;
+}
+
 /**
  * Leave an MLS group. Backend: leave_mls_group.
  */

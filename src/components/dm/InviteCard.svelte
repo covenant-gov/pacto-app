@@ -1,4 +1,11 @@
 <script lang="ts">
+  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
+  import {
+    sharedSquadInviteEvmMessageIds,
+    skippedSquadInviteEvmMessageIds,
+  } from '../../stores/invite-decisions';
+  import { showToast } from '../../stores/toast';
+
   /**
    * Unified invite card for DM thread: squad, network, channel-in-squad, channel-in-network.
    * Same layout and behavior; variant controls title, subtitle, body text, and optional badge.
@@ -15,6 +22,25 @@
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
+  /** For squad invites: DM message id (persists share/skip for the post-accept EVM step). */
+  export let inviteMessageId = '';
+  /** Announcements MLS group id (roster parent); required for the EVM share step. */
+  export let announcementsGroupId = '';
+
+  let squadEvmSharing = false;
+
+  $: squadEvmDecisionDone =
+    !inviteMessageId ||
+    $sharedSquadInviteEvmMessageIds.includes(inviteMessageId) ||
+    $skippedSquadInviteEvmMessageIds.includes(inviteMessageId);
+
+  $: showSquadEvmPrompt =
+    variant === 'squad' &&
+    status === 'accepted' &&
+    !isMine &&
+    announcementsGroupId.trim().length > 0 &&
+    inviteMessageId.length > 0 &&
+    !squadEvmDecisionDone;
 
   $: title = (() => {
     if (variant === 'squad') return squadName;
@@ -56,7 +82,34 @@
 
   $: showBadge = variant === 'network';
   $: isNetworkVariant = variant === 'network';
-  $: collapsed = status === 'accepted' || status === 'declined';
+  $: collapsed = (status === 'accepted' || status === 'declined') && !showSquadEvmPrompt;
+
+  async function handleShareSquadEvm(): Promise<void> {
+    if (squadEvmSharing || !announcementsGroupId.trim() || !inviteMessageId) return;
+    squadEvmSharing = true;
+    try {
+      const ok = await publishSquadMemberEvmShare(announcementsGroupId.trim());
+      if (!ok) {
+        showToast('Could not share your signer address. Check your wallet and try again.');
+        return;
+      }
+      sharedSquadInviteEvmMessageIds.update((ids) =>
+        ids.includes(inviteMessageId) ? ids : [...ids, inviteMessageId]
+      );
+      skippedSquadInviteEvmMessageIds.update((ids) => ids.filter((id) => id !== inviteMessageId));
+      showToast('Squad signer address shared.');
+    } finally {
+      squadEvmSharing = false;
+    }
+  }
+
+  function handleSkipSquadEvm(): void {
+    if (!inviteMessageId) return;
+    skippedSquadInviteEvmMessageIds.update((ids) =>
+      ids.includes(inviteMessageId) ? ids : [...ids, inviteMessageId]
+    );
+    sharedSquadInviteEvmMessageIds.update((ids) => ids.filter((id) => id !== inviteMessageId));
+  }
 </script>
 
 <div
@@ -85,6 +138,29 @@
       <!-- Sender: no actions -->
     {:else if status === 'accepted'}
       <p class="invite-card-status invite-card-status-accepted" aria-live="polite">Accepted</p>
+      {#if showSquadEvmPrompt}
+        <p class="invite-card-evm-caption">
+          Share your squad signer address with members? It shows in the roster and when deploying a Safe.
+        </p>
+        <div class="invite-card-actions invite-card-actions-evm">
+          <button
+            type="button"
+            class="invite-card-btn invite-card-btn-accept"
+            disabled={squadEvmSharing}
+            on:click={handleShareSquadEvm}
+          >
+            {squadEvmSharing ? 'Sharing…' : 'Share signer address'}
+          </button>
+          <button
+            type="button"
+            class="invite-card-btn invite-card-btn-decline"
+            disabled={squadEvmSharing}
+            on:click={handleSkipSquadEvm}
+          >
+            Not now
+          </button>
+        </div>
+      {/if}
     {:else if status === 'declined'}
       <p class="invite-card-status invite-card-status-declined" aria-live="polite">Declined</p>
     {:else}
@@ -154,6 +230,17 @@
   .invite-card.collapsed .invite-card-subtitle,
   .invite-card.collapsed .invite-card-text {
     display: none;
+  }
+
+  .invite-card-evm-caption {
+    margin: 8px 0 0 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .invite-card-actions-evm {
+    margin-top: 10px;
   }
 
   .invite-card.collapsed .invite-card-status {

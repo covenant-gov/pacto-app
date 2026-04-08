@@ -37,8 +37,6 @@
   let channelMembers: string[] = [];
   type SquadMemberEvmRow = { memberNpub: string; evmAddress: string; updatedAtMs: number };
   let roster: Record<string, string> = {};
-  /** Per-member address typed in this modal only (not saved to roster). Enables signers who have not posted squad_member_evm_share. */
-  let manualEvmByNpub: Record<string, string> = {};
   let myEvm: string | null = null;
 
   let deployNetwork: SupportedChainId = 'sepolia';
@@ -61,7 +59,7 @@
   function effectiveEvm(npub: string): string | undefined {
     const shared = roster[npub];
     if (shared?.trim()) return shared.trim();
-    return normalizeMyWalletAddress(manualEvmByNpub[npub]) ?? undefined;
+    return undefined;
   }
 
   /** Accepts optional `0x`; must be 20 bytes hex. */
@@ -82,8 +80,11 @@
   }
 
   $: sortedMembers = sortedMemberNpubs(channelMembers);
-  /** MLS members except you; your wallet is controlled only by "Include me as an owner". */
-  $: signersListNpubs = sortedMembers.filter((n) => n !== ($currentUser?.npub ?? ''));
+  /** #announcements peers who shared a squad roster address (excludes you; use "Include me"). */
+  $: signersListNpubs = sortedMembers.filter((n) => {
+    if (n === ($currentUser?.npub ?? '')) return false;
+    return !!roster[n]?.trim();
+  });
 
   /**
    * Inline map (no helper fn): Svelte 5 reactive statements may not register deps read inside nested
@@ -191,7 +192,6 @@
     }
 
     roster = r;
-    manualEvmByNpub = {};
     selectedMemberNpubs = [];
     thresholdInput = '1';
     loading = false;
@@ -218,7 +218,7 @@
     const owners = ownerAddresses;
     if (owners.length === 0) {
       deployError =
-        'Select at least one other signer (roster or pasted address), and/or include yourself with a wallet address.';
+        'Select at least one other signer who shared a roster address, and/or include yourself with a wallet address.';
       return;
     }
     if (owners.length > DEPLOY_SAFE_MAX_SIGNERS) {
@@ -274,8 +274,8 @@
 >
   <h2 id={titleId}>Deploy Safe</h2>
   <p id={descId} class="deploy-safe-desc">
-    Create a new multisig on-chain. Co-signers need an EVM address (from the squad roster, or enter one below for this
-    deploy only). Gas is paid from your embedded wallet.
+    Create a new multisig on-chain. Only members who shared a squad signer address on #announcements appear below. Gas is
+    paid from your embedded wallet.
   </p>
 
   {#if loading}
@@ -290,28 +290,20 @@
 
     <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
     <p class="deploy-safe-signers-hint muted">
-      Roster addresses come from #announcements when members share from Roles or join. If someone has not shared yet,
-      paste their signer <code class="deploy-safe-code">0x</code> address in the field for that row (used only for this
-      Safe). You are not listed here; use &quot;Include me as an owner&quot; for your wallet. At most
+      Addresses come from #announcements when someone shares from a squad invite or Change signer. Members who have not
+      shared are not listed. You are not listed here; use &quot;Include me as an owner&quot; for your wallet. At most
       {DEPLOY_SAFE_MAX_SIGNERS} owners total.
     </p>
     <ul class="deploy-safe-member-list" role="list">
       {#each signersListNpubs as npub (npub)}
-        {@const shared = rosterEvm(npub)}
-        {@const eff = effectiveEvm(npub)}
-        {@const disabled = !eff || deploySaving}
-        <li class="deploy-safe-member-row" class:disabled-row={!eff}>
+        {@const addr = rosterEvm(npub)}
+        <li class="deploy-safe-member-row">
           <input
             id={`deploy-m-${npub.slice(0, 12)}`}
             type="checkbox"
             checked={selectedMemberNpubs.includes(npub)}
-            {disabled}
-            title={!eff
-              ? 'Enter a valid 0x address for this member, or wait until they share to the squad roster.'
-              : undefined}
-            aria-label={!eff
-              ? 'Unavailable: add an EVM address'
-              : `Signer ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
+            disabled={deploySaving || !addr}
+            aria-label={`Signer ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
             on:click|preventDefault={() => toggleMember(npub)}
           />
           {#if getProfileAvatarSrc($profiles[npub])}
@@ -324,32 +316,7 @@
               >{getProfileDisplayName($profiles[npub]) ||
                 (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
             >
-            <span class="deploy-safe-member-evm muted"
-              >{shared
-                ? shortAddress(shared)
-                : eff
-                  ? `${shortAddress(eff)} (this modal)`
-                  : 'Not on roster — add address below'}</span
-            >
-            {#if !shared}
-              <input
-                type="text"
-                class="deploy-safe-manual-evm"
-                placeholder="0x… signer address"
-                value={manualEvmByNpub[npub] ?? ''}
-                disabled={deploySaving}
-                autocomplete="off"
-                spellcheck={false}
-                aria-label={`EVM signer address for ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
-                on:input={(e) => {
-                  const v = (e.currentTarget as HTMLInputElement).value;
-                  manualEvmByNpub = { ...manualEvmByNpub, [npub]: v };
-                  if (selectedMemberNpubs.includes(npub) && !normalizeMyWalletAddress(v)) {
-                    selectedMemberNpubs = selectedMemberNpubs.filter((x) => x !== npub);
-                  }
-                }}
-              />
-            {/if}
+            <span class="deploy-safe-member-evm muted">{addr ? shortAddress(addr) : ''}</span>
           </div>
         </li>
       {/each}
@@ -359,8 +326,8 @@
       <p class="muted deploy-safe-empty">No members loaded. Open the dashboard again or check MLS sync.</p>
     {:else if signersListNpubs.length === 0}
       <p class="muted deploy-safe-empty">
-        No other members in this channel. Use &quot;Include me as an owner&quot; for a 1-of-1 Safe, or invite others
-        and add their <code class="deploy-safe-code">0x</code> addresses above when they have not shared to the roster yet.
+        No one else has shared a signer address yet. Use &quot;Include me as an owner&quot; for a 1-of-1 Safe, or ask
+        members to share from their squad invite or Roles.
       </p>
     {/if}
 
@@ -507,10 +474,6 @@
     border-bottom: none;
   }
 
-  .deploy-safe-member-row.disabled-row {
-    opacity: 0.65;
-  }
-
   .deploy-safe-avatar {
     width: 32px;
     height: 32px;
@@ -534,29 +497,6 @@
   .deploy-safe-member-meta--grow {
     flex: 1;
     min-width: 0;
-  }
-
-  .deploy-safe-manual-evm {
-    margin-top: 6px;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-  }
-
-  .deploy-safe-manual-evm:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  .deploy-safe-code {
-    font-family: ui-monospace, monospace;
-    font-size: 0.85em;
   }
 
   .deploy-safe-member-name {

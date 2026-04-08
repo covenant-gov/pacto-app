@@ -413,9 +413,9 @@
           }
         }
         const annForShare = getAnnouncementsChannel(parent);
-        publishSquadMemberEvmShare(annForShare.groupId).catch((e) =>
-          console.warn('[ParentNavbar] EVM share after new channel failed', e)
-        );
+        void publishSquadMemberEvmShare(annForShare.groupId).then((ok) => {
+          if (!ok) console.warn('[ParentNavbar] EVM share after new channel failed');
+        });
       } catch (e) {
         createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
         setTimeout(() => {

@@ -74,9 +74,13 @@
     saving = true;
     error = '';
     try {
-      await publishSquadMemberEvmShare(announcementsGroupId.trim(), {
+      const ok = await publishSquadMemberEvmShare(announcementsGroupId.trim(), {
         evmAddress: addr,
       });
+      if (!ok) {
+        error = 'Could not update signer.';
+        return;
+      }
       showToast(
         'Signer address updated for this ' +
           (parentKind === 'squad' ? 'squad' : 'network') +

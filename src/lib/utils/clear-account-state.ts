@@ -60,7 +60,6 @@ import {
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
-import { DEFAULT_THEME, theme } from '../../stores/theme';
 import { recentEmojisStore } from '../../stores/emojis';
 
 /** Legacy (non-scoped) keys to remove for backwards compatibility. */
@@ -76,7 +75,6 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
   // Legacy: payment request "accepted" was removed; clear leftover keys.
   'pacto_wallet_tx_request_accepted',
   ...INVITE_DECISION_SCOPED_PREFIXES,
-  'pacto_theme',
   'recentEmojis',
   'favoriteEmojis',
   '__pacto_init_finished_unlisten',
@@ -189,10 +187,7 @@ export function clearAccountState(npub?: string): void {
   typingByChat.set({});
   dmSendError.set(null);
 
-  theme.set(DEFAULT_THEME);
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', DEFAULT_THEME);
-  }
+  /** Appearance theme is device-level (`pacto_theme`); keep it across logout / new account / import. */
   recentEmojisStore.set([]);
   // favoriteEmojis: emojis.ts keeps them in module-level state; we cleared the
   // localStorage key so after restart they're empty. No exported reset for in-memory.

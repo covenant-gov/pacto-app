@@ -6238,6 +6238,7 @@ pub fn run() {
             db::add_parent_treasury_safe,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
+            db::backfill_squad_member_evm_missing_from_profiles,
             db::get_seed,
             db::set_seed,
             db::get_sql_setting,
