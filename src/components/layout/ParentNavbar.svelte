@@ -4,6 +4,7 @@
   import CreateChannelModal from '../channel/CreateChannelModal.svelte';
   import InviteToParentModal from '../channel/InviteToParentModal.svelte';
   import ExitParentModal from '../channel/ExitParentModal.svelte';
+  import ChangeParentSignerModal from '../parent/ChangeParentSignerModal.svelte';
   import Modal from '../ui/Modal.svelte';
   import {
     squads,
@@ -96,6 +97,9 @@
       : $networks.length > 0
         ? 'Select a network'
         : 'No networks';
+
+  $: canChangeSigner =
+    !!activeParent && !creating && activeParent.channels.length > 0;
 
   let retryingCreate = false;
   let inviteErrorBanner = '';
@@ -409,7 +413,7 @@
           }
         }
         const annForShare = getAnnouncementsChannel(parent);
-        publishSquadMemberEvmShare(parent.id, annForShare.groupId).catch((e) =>
+        publishSquadMemberEvmShare(annForShare.groupId).catch((e) =>
           console.warn('[ParentNavbar] EVM share after new channel failed', e)
         );
       } catch (e) {
@@ -577,6 +581,17 @@
   let showExitModal = false;
   let exitError = '';
 
+  let showChangeSignerModal = false;
+
+  function openChangeSignerModal() {
+    if (!canChangeSigner || !activeParent) return;
+    showChangeSignerModal = true;
+  }
+
+  function closeChangeSignerModal() {
+    showChangeSignerModal = false;
+  }
+
   // --- WIP: Juice funding & governance modals ---
   let showAddJuiceModal = false;
   let showInitGovernanceModal = false;
@@ -702,6 +717,7 @@
   onInvite={openInviteModal}
   onAddJuice={openAddJuiceModal}
   onInitGovernance={openInitGovernanceModal}
+  onChangeSigner={canChangeSigner ? openChangeSignerModal : undefined}
   onExitSquad={type === 'squad' ? openExitModal : undefined}
   onExitNetwork={type === 'network' ? openExitModal : undefined}
 />
@@ -756,6 +772,17 @@
   onClose={closeExitModal}
   onConfirm={handleExitParent}
 />
+
+{#if activeParent}
+  <ChangeParentSignerModal
+    open={showChangeSignerModal}
+    parentKind={type}
+    parentName={activeParent.name}
+    parentId={activeParent.id}
+    announcementsGroupId={getAnnouncementsChannel(activeParent).groupId}
+    onClose={closeChangeSignerModal}
+  />
+{/if}
 
 {#if showAddJuiceModal}
   <Modal titleId="add-juice-title" descriptionId="add-juice-desc" onClose={() => (showAddJuiceModal = false)}>

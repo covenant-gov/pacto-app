@@ -1185,8 +1185,8 @@ async fn get_message_views<R: Runtime>(
     limit: usize,
     offset: usize,
 ) -> Result<Vec<Message>, String> {
-    // Convert chat identifier to database ID
-    let chat_int_id = db::get_chat_id_by_identifier(&handle, &chat_id)?;
+    // Convert chat identifier to database ID (MLS groups: create row if missing so new channels load)
+    let chat_int_id = db::resolve_chat_id_for_message_load(&handle, &chat_id)?;
 
     // Get materialized message views from events
     let messages = db::get_message_views(&handle, chat_int_id, limit, offset).await?;
@@ -5875,16 +5875,22 @@ async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
         if old_count != new_count {
             eprintln!(
                 "[MLS] Synced participants for group {}: {} -> {} members",
-                &group_id[..8],
+                &group_id[..8.min(group_id.len())],
                 old_count,
                 new_count
             );
+            if let Some(app) = TAURI_APP.get() {
+                let _ = app.emit(
+                    "mls_group_updated",
+                    serde_json::json!({ "group_id": group_id.clone() }),
+                );
+            }
         }
-        
+
         // Save updated chat to disk
         let chat_clone = chat.clone();
         drop(state);
-        
+
         if let Some(handle) = TAURI_APP.get() {
             if let Err(e) = db::save_chat(handle.clone(), &chat_clone).await {
                 eprintln!("[MLS] Failed to save chat after syncing participants: {}", e);

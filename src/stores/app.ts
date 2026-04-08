@@ -85,8 +85,8 @@ export const blockedDmNpubs = writable<Set<string>>(new Set());
 export const composingNewChat = writable<boolean>(false);
 
 /**
- * When true, WalletBar is shown for whoever the active DM is (Friends / Pinned hub only).
- * Globally toggled: open stays on while switching chats until the user closes from any thread or leaves valid DM context.
+ * When true, WalletBar is shown whenever the user is in a valid DM wallet context (Friends/Pinned hub with a thread).
+ * Open/closed is only changed by the user (toggle in thread) or sign-out; navigating to Squads/Networks does not clear it.
  */
 export const walletSidebarOpen = writable<boolean>(false);
 

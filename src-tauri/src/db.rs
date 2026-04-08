@@ -736,7 +736,7 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
     let _ = upsert_parent_treasury_row(handle, parent_id, &norm, chain.as_str(), lb, entry_id);
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadMemberEvmRow {
     pub member_npub: String,
@@ -777,32 +777,60 @@ pub fn upsert_squad_member_evm<R: Runtime>(
 pub fn list_squad_member_evm<R: Runtime>(
     handle: AppHandle<R>,
     parent_id: String,
+    alt_parent_id: Option<String>,
 ) -> Result<Vec<SquadMemberEvmRow>, String> {
     let parent = parent_id.trim();
     if parent.is_empty() {
         return Ok(Vec::new());
     }
+    let alt = alt_parent_id
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && *s != parent)
+        .map(|s| s.to_string());
+
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let mut stmt = conn
         .prepare(
             "SELECT member_npub, evm_address, updated_at_ms FROM squad_member_evm WHERE parent_id = ?1 ORDER BY member_npub ASC",
         )
         .map_err(|e| format!("Failed to list squad_member_evm: {}", e))?;
-    let rows = stmt
-        .query_map(rusqlite::params![parent], |row| {
-            Ok(SquadMemberEvmRow {
-                member_npub: row.get(0)?,
-                evm_address: row.get(1)?,
-                updated_at_ms: row.get(2)?,
+
+    let mut best: std::collections::HashMap<String, SquadMemberEvmRow> =
+        std::collections::HashMap::new();
+    let mut take_rows = |pid: &str| -> Result<(), String> {
+        let rows = stmt
+            .query_map(rusqlite::params![pid], |row| {
+                Ok(SquadMemberEvmRow {
+                    member_npub: row.get(0)?,
+                    evm_address: row.get(1)?,
+                    updated_at_ms: row.get(2)?,
+                })
             })
-        })
-        .map_err(|e| format!("Failed to query squad_member_evm: {}", e))?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r.map_err(|e| e.to_string())?);
+            .map_err(|e| format!("Failed to query squad_member_evm: {}", e))?;
+        for r in rows {
+            let row = r.map_err(|e| e.to_string())?;
+            best.entry(row.member_npub.clone())
+                .and_modify(|existing| {
+                    if row.updated_at_ms > existing.updated_at_ms {
+                        *existing = row.clone();
+                    }
+                })
+                .or_insert(row);
+        }
+        Ok(())
+    };
+
+    take_rows(parent)?;
+    if let Some(ref a) = alt {
+        take_rows(a)?;
     }
+
     drop(stmt);
     crate::account_manager::return_db_connection(conn);
+
+    let mut out: Vec<SquadMemberEvmRow> = best.into_values().collect();
+    out.sort_by(|a, b| a.member_npub.cmp(&b.member_npub));
     Ok(out)
 }
 
@@ -1028,6 +1056,24 @@ fn get_or_create_chat_id<R: Runtime>(
     }
 
     Ok(id)
+}
+
+/// Virtual channel ids (UI-only, no MLS history row until first real message elsewhere).
+fn is_pseudo_chat_identifier(id: &str) -> bool {
+    id == "__dashboard__"
+}
+
+/// Resolve `chats.id` for loading message history. MLS groups get a DB row on demand so a brand-new
+/// channel does not error before the first persisted message. DMs (`npub1`) and pseudo channels stay lookup-only.
+pub fn resolve_chat_id_for_message_load<R: Runtime>(
+    handle: &AppHandle<R>,
+    chat_identifier: &str,
+) -> Result<i64, String> {
+    if chat_identifier.starts_with("npub1") || is_pseudo_chat_identifier(chat_identifier) {
+        get_chat_id_by_identifier(handle, chat_identifier)
+    } else {
+        get_or_create_chat_id(handle, chat_identifier)
+    }
 }
 
 /// Helper function to get integer chat ID from identifier (lookup only, no creation)
@@ -1774,7 +1820,7 @@ pub async fn get_chat_messages_paginated<R: Runtime>(
     offset: usize,
 ) -> Result<Vec<Message>, String> {
     // Get integer chat ID
-    let chat_int_id = get_chat_id_by_identifier(handle, chat_id)?;
+    let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     // Use the events-based message views
     get_message_views(handle, chat_int_id, limit, offset).await
 }
@@ -1785,14 +1831,8 @@ pub async fn get_chat_message_count<R: Runtime>(
     handle: &AppHandle<R>,
     chat_id: &str,
 ) -> Result<usize, String> {
+    let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     let conn = crate::account_manager::get_db_connection(handle)?;
-
-    // Get integer chat ID from identifier
-    let chat_int_id: i64 = conn.query_row(
-        "SELECT id FROM chats WHERE chat_identifier = ?1",
-        rusqlite::params![chat_id],
-        |row| row.get(0)
-    ).map_err(|e| format!("Chat not found: {}", e))?;
 
     // Count message events (kind 14 = DM, kind 15 = file) from events table
     let count: i64 = conn.query_row(
@@ -1814,7 +1854,7 @@ pub async fn get_chat_last_messages<R: Runtime>(
     count: usize,
 ) -> Result<Vec<Message>, String> {
     // Get integer chat ID
-    let chat_int_id = get_chat_id_by_identifier(handle, chat_id)?;
+    let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     // Use the events-based message views
     get_message_views(handle, chat_int_id, count, 0).await
 }
@@ -1851,7 +1891,7 @@ pub async fn get_messages_around_id<R: Runtime>(
     target_message_id: &str,
     context_before: usize,
 ) -> Result<Vec<Message>, String> {
-    let chat_int_id = get_chat_id_by_identifier(handle, chat_id)?;
+    let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
 
     // First, find the timestamp of the target message (don't require chat_id match in case of edge cases)
     let target_timestamp: i64 = {
