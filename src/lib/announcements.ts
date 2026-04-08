@@ -5,6 +5,11 @@
  * Applies to both squads and networks (parent = squad or network).
  */
 
+import { SQUAD_MEMBER_EVM_SHARE_TYPE } from './squad/squad-member-evm-share';
+
+/** Roster sync: member shared preferred EVM signer for this parent ({@link SQUAD_MEMBER_EVM_SHARE_TYPE}). */
+export const ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE = SQUAD_MEMBER_EVM_SHARE_TYPE;
+
 /** Wire format: "squad_safe_updated". Payload.squad_id is the parent id (squad or network). */
 export const ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED = 'squad_safe_updated';
 /** Alias for parent-agnostic code. Same value as ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED. */
@@ -49,12 +54,19 @@ export interface SafeProposalPayload {
   created_at?: number;
 }
 
-export type AnnouncePayload = SquadSafeUpdatedPayload | SafeProposalPayload;
+/** Payload for squad_member_evm_share (may include optional version on wire JSON root). */
+export interface SquadMemberEvmSharePayload {
+  parent_id: string;
+  evm_address: string;
+}
+
+export type AnnouncePayload = SquadSafeUpdatedPayload | SafeProposalPayload | SquadMemberEvmSharePayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED; payload: SquadSafeUpdatedPayload }
-  | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
+  | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload }
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload };
 
 function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
   return (
@@ -75,6 +87,17 @@ function isSafeProposalPayload(p: unknown): p is SafeProposalPayload {
     typeof q.amount === 'string' &&
     typeof q.token === 'string' &&
     typeof q.proposer_npub === 'string'
+  );
+}
+
+function isSquadMemberEvmSharePayload(p: unknown): p is SquadMemberEvmSharePayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  return (
+    typeof q.parent_id === 'string' &&
+    q.parent_id.trim().length > 0 &&
+    typeof q.evm_address === 'string' &&
+    q.evm_address.trim().length > 0
   );
 }
 
@@ -99,6 +122,9 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   }
   if (type === ANNOUNCE_TYPE_SAFE_PROPOSAL && isSafeProposalPayload(payload)) {
     return { type: ANNOUNCE_TYPE_SAFE_PROPOSAL, payload };
+  }
+  if (type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE && isSquadMemberEvmSharePayload(payload)) {
+    return { type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE, payload };
   }
   return null;
 }

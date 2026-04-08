@@ -474,6 +474,7 @@
                 id={message.id}
                 announce={parsed}
                 authorName={props.authorName}
+                authorNpub={message.npub}
                 timestamp={props.timestamp}
               />
             {:else}

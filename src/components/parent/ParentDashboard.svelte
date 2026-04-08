@@ -18,6 +18,7 @@
   import friendsIcon from '../../icons/friends.svg';
   import DeploySafeModal from './DeploySafeModal.svelte';
   import { showToast } from '../../stores/toast';
+  import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
 
   /** Sub-views under #announcements dashboard; future: driven by configurable widgets per community. */
   type ParentDashboardView = 'treasury' | 'governance' | 'roles';
@@ -77,9 +78,11 @@
 
   async function loadSquadMemberEvm() {
     const pid = parentId;
-    if (!pid) return;
+    if (!pid && !announcementsGroupId) return;
     try {
-      const rows = await invoke<SquadMemberEvmRow[]>('list_squad_member_evm', { parentId: pid });
+      const q = listSquadMemberEvmInvokeArgs(pid ?? '', announcementsGroupId);
+      if (!q.parentId) return;
+      const rows = await invoke<SquadMemberEvmRow[]>('list_squad_member_evm', q);
       const m: Record<string, string> = {};
       for (const r of rows) m[r.memberNpub] = r.evmAddress;
       squadMemberEvmByNpub = m;

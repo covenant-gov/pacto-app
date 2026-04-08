@@ -486,13 +486,12 @@
 
 <style>
   .wallet-bar {
-    flex: 0 0 min(320px, 32vw);
-    min-width: 240px;
-    max-width: 360px;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid var(--bg-elevated);
     background-color: var(--bg-hover);
     box-sizing: border-box;
   }

@@ -39,6 +39,8 @@
   export let onAddJuice: (() => void) | undefined = undefined;
   /** Open the "Initialize Governance" WIP modal for this parent (optional). */
   export let onInitGovernance: (() => void) | undefined = undefined;
+  /** Squad/network roster signer (EVM); does not edit on-chain Safe owners. */
+  export let onChangeSigner: (() => void) | undefined = undefined;
   /** Only used when type === 'squad'. */
   export let onExitSquad: (() => void) | undefined = undefined;
   /** Only used when type === 'network'. */
@@ -52,6 +54,7 @@
   $: initGovLabel = 'Initialize Governance';
   $: showAddJuice = typeof onAddJuice === 'function';
   $: showInitGovernance = typeof onInitGovernance === 'function';
+  $: showChangeSigner = typeof onChangeSigner === 'function';
   $: showExitSquad = type === 'squad' && typeof onExitSquad === 'function';
   $: showExitNetwork = type === 'network' && typeof onExitNetwork === 'function';
   $: showExit = showExitSquad || showExitNetwork;
@@ -120,6 +123,19 @@
                   }}
                 >
                   {initGovLabel}
+                </button>
+              {/if}
+              {#if showChangeSigner && onChangeSigner}
+                <button
+                  type="button"
+                  class="parent-menu-item"
+                  role="menuitem"
+                  on:click={() => {
+                    menuOpen = false;
+                    onChangeSigner();
+                  }}
+                >
+                  Change signer
                 </button>
               {/if}
               {#if showExit && onExit}

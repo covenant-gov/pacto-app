@@ -30,6 +30,7 @@
     evmAccountSchemeLabel,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
+  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
 
   let importModalOpen = false;
   let homeSendOpen = false;
@@ -137,6 +138,13 @@
     const t = a.trim();
     if (t.length < 18) return t;
     return `${t.slice(0, 10)}…${t.slice(-8)}`;
+  }
+
+  async function copyAccountAddress(address: string) {
+    const t = address.trim();
+    if (!t) return;
+    const ok = await copyTextToClipboard(t);
+    showToast(ok ? 'Address copied' : 'Could not copy address');
   }
 
   function resetAccountFormFields() {
@@ -357,6 +365,30 @@
                     on:click={() => openEditAccountModal(acc)}
                   >
                     …
+                  </button>
+                  <button
+                    type="button"
+                    class="wallet-view-account-copy-icon-btn"
+                    disabled={accountsLoading || !acc.address?.trim()}
+                    aria-label="Copy address to clipboard"
+                    title="Copy address"
+                    on:click|stopPropagation={() => copyAccountAddress(acc.address)}
+                  >
+                    <svg
+                      class="wallet-view-account-copy-svg"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
                   </button>
                 </div>
               </li>
@@ -930,6 +962,36 @@
   .wallet-view-account-more:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .wallet-view-account-copy-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .wallet-view-account-copy-icon-btn:hover:not(:disabled) {
+    border-color: var(--text-muted);
+    background: var(--bg-elevated);
+    color: var(--accent);
+  }
+
+  .wallet-view-account-copy-icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .wallet-view-account-copy-svg {
+    display: block;
   }
 
   .wallet-view-account-badge {

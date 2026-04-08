@@ -12,6 +12,7 @@
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
   import DmThread from '../components/dm/DmThread.svelte';
   import WalletBar from '../components/wallet/WalletBar.svelte';
+  import ResizableSidebar from '../components/ui/ResizableSidebar.svelte';
   import Toast from '../components/ui/Toast.svelte';
   import {
     getDmMessages,
@@ -62,7 +63,6 @@
     activeDmId,
     composingNewChat,
     walletSidebarOpen,
-    closeWalletSidebar,
     backendDmMessages,
     dmThreadAnnouncementsByNpub,
     backendGroupMessages,
@@ -129,16 +129,15 @@
     pendingReadyToast.set(null);
   }
 
-  /** Wallet sidebar only valid on DMs hub, Friends/Pinned, not while composing new chat. */
+  /** When true, the DM wallet panel is not shown (other top nav, DM tab, or new chat), but open state stays until the user closes it. */
   $: walletSidebarInvalidContext =
     $activeTopNavTab !== 'dms' ||
     $activeView !== 'hub' ||
     ($activeDmTab !== 'friends' && $activeDmTab !== 'pinned') ||
     $composingNewChat;
 
-  $: if (walletSidebarInvalidContext && $walletSidebarOpen) {
-    closeWalletSidebar();
-  }
+  $: dmWalletSidebarVisible =
+    $walletSidebarOpen && !!$activeDmId && !walletSidebarInvalidContext;
 
   /** Pin control: hidden on Requests/Pending tabs; on Search tab only for Friends/Pinned conversations. */
   $: showDmPinOption = (() => {
@@ -442,8 +441,15 @@
       });
   }
 
-  // Load group messages when opening a squad or network channel. Skip placeholder "creating-*" channels.
-  $: if ($activeChannelId && !$activeChannelId.startsWith('creating-')) {
+  // Load group messages when opening a squad or network channel. Skip placeholder "creating-*" and the
+  // virtual #dashboard view (not an MLS group).
+  // Only when Squads/Networks is active: `activeChannelId` persists when switching to DMs — do not call DM/group APIs from DMs tab.
+  $: if (
+    $activeChannelId &&
+    $activeChannelId !== DASHBOARD_CHANNEL_ID &&
+    !$activeChannelId.startsWith('creating-') &&
+    ($activeTopNavTab === 'squads' || $activeTopNavTab === 'networks')
+  ) {
     const groupId = $activeChannelId;
     dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
     getChatMessageCount(groupId)
@@ -615,7 +621,7 @@
       activeView.set('hub');
       acceptedNetworkInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     }
-    publishSquadMemberEvmShare(payload.groupId, payload.groupId).catch((e) =>
+    publishSquadMemberEvmShare(payload.groupId).catch((e) =>
       dmError('publishSquadMemberEvmShare after accept', e)
     );
   }
@@ -1098,7 +1104,7 @@
           group_id,
           channelInviteInfo.channelName
         );
-        publishSquadMemberEvmShare(channelInviteInfo.parentId, channelInviteInfo.parentId).catch((e) =>
+        publishSquadMemberEvmShare(channelInviteInfo.parentId).catch((e) =>
           dmError('publishSquadMemberEvmShare after channel welcome', e)
         );
         return;
@@ -1148,6 +1154,10 @@
       const gid = event.payload?.group_id;
       if (gid) bumpMembershipVersion(gid);
     });
+    const unlistenGroupInitialSync = listen<{ group_id?: string }>('mls_group_initial_sync', (event) => {
+      const gid = event.payload?.group_id;
+      if (gid) bumpMembershipVersion(gid);
+    });
     const unlistenGroupLeft = listen<{ group_id?: string }>('mls_group_left', (event) => {
       const gid = event.payload?.group_id;
       if (gid) bumpMembershipVersion(gid);
@@ -1166,6 +1176,7 @@
       unlistenChannelAddedToSquad.then((fn) => fn());
       unlistenChannelAddedToNetwork.then((fn) => fn());
       unlistenGroupUpdated.then((fn) => fn());
+      unlistenGroupInitialSync.then((fn) => fn());
       unlistenGroupLeft.then((fn) => fn());
     };
   });
@@ -1184,7 +1195,7 @@
         <div class="dm-area">
           <MessengerNavbar />
           <div class="dm-main-row">
-            <div class="dm-area-center">
+            <div class="dm-area-center" class:dm-area-center--wallet-open={dmWalletSidebarVisible}>
             {#if $dmSyncStatus !== 'idle'}
               <p class="dm-sync-banner dm-sync-{$dmSyncStatus}" role="status">
                 {$dmSyncStatus === 'syncing' ? 'Updating messages…' : 'Up to date'}
@@ -1261,12 +1272,21 @@
             {/if}
             </div>
             </div>
-            {#if $walletSidebarOpen && $activeDmId && !walletSidebarInvalidContext}
-              <WalletBar
-                npub={$activeDmId}
-                postDmPlaintext={handleDmSend}
-                onDevPostTestWalletAnnouncement={import.meta.env.DEV ? devPostWalletTxAnnouncementStub : undefined}
-              />
+            {#if dmWalletSidebarVisible && $activeDmId}
+              <ResizableSidebar
+                edge="trailing"
+                sidebarClass="dm-wallet-resizable"
+                persistKey="pacto_dm_wallet_sidebar_width"
+                minWidth={240}
+                maxWidth={900}
+                initialWidth={300}
+              >
+                <WalletBar
+                  npub={$activeDmId}
+                  postDmPlaintext={handleDmSend}
+                  onDevPostTestWalletAnnouncement={import.meta.env.DEV ? devPostWalletTxAnnouncementStub : undefined}
+                />
+              </ResizableSidebar>
             {/if}
           </div>
         </div>
@@ -1399,6 +1419,14 @@
     display: flex;
     flex-direction: column;
     padding: 0 16px 0 16px;
+  }
+
+  .dm-area-center--wallet-open {
+    padding-right: 0;
+  }
+
+  :global(.dm-wallet-resizable) {
+    background-color: var(--bg-hover);
   }
 
   .dm-main {

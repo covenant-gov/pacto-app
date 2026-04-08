@@ -294,7 +294,7 @@
               console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          publishSquadMemberEvmShare(groupId, groupId).catch((e) =>
+          publishSquadMemberEvmShare(groupId).catch((e) =>
             console.warn('[Navbar] squad EVM share failed', e)
           );
         } catch (e) {
@@ -381,7 +381,7 @@
               console.warn('[Navbar] send network invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          publishSquadMemberEvmShare(groupId, groupId).catch((e) =>
+          publishSquadMemberEvmShare(groupId).catch((e) =>
             console.warn('[Navbar] network EVM share failed', e)
           );
         } catch (e) {

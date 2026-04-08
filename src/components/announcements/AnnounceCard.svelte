@@ -2,17 +2,32 @@
   import {
     ANNOUNCE_TYPE_SAFE_UPDATED,
     ANNOUNCE_TYPE_SAFE_PROPOSAL,
+    ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
     type AnnounceMessage,
   } from '../../lib/announcements';
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
+  import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
 
   export let id: string = '';
   export let announce: AnnounceMessage;
   export let authorName: string = '';
+  /** Sender npub (MLS group messages); used by signer-share card to highlight which member posted this update. */
+  export let authorNpub: string | undefined = undefined;
   export let timestamp: string = '';
 
-  const isSafeAnnounce =
-    announce.type === ANNOUNCE_TYPE_SAFE_UPDATED || announce.type === ANNOUNCE_TYPE_SAFE_PROPOSAL;
+  type SafeAnnounceOnly = Extract<
+    AnnounceMessage,
+    | { type: typeof ANNOUNCE_TYPE_SAFE_UPDATED }
+    | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL }
+  >;
+
+  $: safeAnnounceOnly =
+    announce.type === ANNOUNCE_TYPE_SAFE_UPDATED || announce.type === ANNOUNCE_TYPE_SAFE_PROPOSAL
+      ? (announce as SafeAnnounceOnly)
+      : null;
+
+  $: signerSharePayload =
+    announce.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ? announce.payload : null;
 
   function formatTime(isoString: string): string {
     const date = new Date(isoString);
@@ -25,8 +40,15 @@
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
-  {#if isSafeAnnounce}
-    <SafeAnnounceBody {announce} {authorName} {timestamp} />
+  {#if signerSharePayload}
+    <SignerShareAnnounceBody
+      payload={signerSharePayload}
+      {authorName}
+      {authorNpub}
+      {timestamp}
+    />
+  {:else if safeAnnounceOnly}
+    <SafeAnnounceBody announce={safeAnnounceOnly} {authorName} {timestamp} />
   {:else}
     <div class="announce-body">
       <p class="announce-title">Announcement</p>
