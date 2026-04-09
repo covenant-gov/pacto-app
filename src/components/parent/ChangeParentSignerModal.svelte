@@ -74,9 +74,13 @@
     saving = true;
     error = '';
     try {
-      await publishSquadMemberEvmShare(announcementsGroupId.trim(), {
+      const ok = await publishSquadMemberEvmShare(announcementsGroupId.trim(), {
         evmAddress: addr,
       });
+      if (!ok) {
+        error = 'Could not update signer.';
+        return;
+      }
       showToast(
         'Signer address updated for this ' +
           (parentKind === 'squad' ? 'squad' : 'network') +
@@ -241,6 +245,45 @@
     justify-content: flex-end;
     gap: 10px;
     margin-top: 20px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover, var(--accent));
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   :global(.change-signer-modal-panel) {

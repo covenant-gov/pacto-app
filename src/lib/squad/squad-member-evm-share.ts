@@ -43,26 +43,28 @@ export type PublishSquadMemberEvmShareOptions = {
 export async function publishSquadMemberEvmShare(
   announcementsMlsGroupId: string,
   options?: PublishSquadMemberEvmShareOptions
-): Promise<void> {
+): Promise<boolean> {
   const rosterId = announcementsMlsGroupId.trim();
-  if (!rosterId) return;
+  if (!rosterId) return false;
   const explicit = options?.evmAddress?.trim();
   const fromWallet =
     explicit ||
     (await getActiveEvmSignerAddress())?.trim() ||
     (await getEvmAddress())?.trim() ||
     '';
-  if (!fromWallet) return;
+  if (!fromWallet) return false;
   try {
     await invoke('upsert_squad_member_evm', { parentId: rosterId, evmAddress: fromWallet });
   } catch (e) {
     console.warn('[squad-member-evm] upsert_squad_member_evm failed', e);
-    return;
+    return false;
   }
   const json = formatSquadMemberEvmShare(rosterId, fromWallet);
   try {
     await sendDmMessage(rosterId, json);
   } catch (e) {
     console.warn('[squad-member-evm] sendDmMessage failed', e);
+    return false;
   }
+  return true;
 }

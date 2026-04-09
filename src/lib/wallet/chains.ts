@@ -121,3 +121,24 @@ export function explorerAddressUrl(chainId: SupportedChainId, address: string): 
   if (!base || !address.trim()) return '';
   return `${base}/address/${address.trim()}`;
 }
+
+/**
+ * Safe{Wallet} web app home URL (`?safe=<shortName>:<address>`).
+ * Short prefixes match the query format used on https://app.safe.global
+ */
+const SAFE_APP_CHAIN_PREFIX: Record<SupportedChainId, string> = {
+  mainnet: 'eth',
+  sepolia: 'sep',
+  optimism: 'oeth',
+};
+
+const SAFE_APP_ORIGIN = 'https://app.safe.global';
+
+export function safeAppHomeUrl(chainId: SupportedChainId, address: string): string {
+  const prefix = SAFE_APP_CHAIN_PREFIX[chainId];
+  const raw = address.trim().toLowerCase();
+  if (!prefix || !raw) return '';
+  const norm = raw.startsWith('0x') ? raw : `0x${raw}`;
+  if (!/^0x[a-f0-9]{40}$/.test(norm)) return '';
+  return `${SAFE_APP_ORIGIN}/home?safe=${prefix}:${norm}`;
+}

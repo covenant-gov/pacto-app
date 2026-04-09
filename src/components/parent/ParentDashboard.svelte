@@ -10,7 +10,7 @@
   import { getMlsGroupMembers } from '../../lib/api/nostr';
   import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
   import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
-  import { explorerAddressUrl, parseSupportedChainId } from '../../lib/wallet/chains';
+  import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../lib/wallet/chains';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
@@ -176,6 +176,11 @@
     if (url) openExternalUrl(url);
   }
 
+  function openTreasurySafeApp(entry: TreasurySafeEntry) {
+    const url = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress);
+    if (url) openExternalUrl(url);
+  }
+
   async function confirmSetSafe() {
     const addr = setSafeInput.trim();
     if (!addr) {
@@ -287,6 +292,7 @@
         {#each displayedTreasurySafes as entry (entry.id)}
           {@const st = $safeStateByTreasuryId[entry.id]}
           {@const exUrl = explorerAddressUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
+          {@const safeAppUrl = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
           <li class="treasury-safe-card">
             <div class="treasury-card-top">
               <span class="treasury-pill treasury-pill-chain">{entry.chain}</span>
@@ -295,10 +301,27 @@
               {/if}
             </div>
             <code class="treasury-card-address">{entry.safeAddress}</code>
-            {#if exUrl}
-              <button type="button" class="btn-link treasury-explorer-link" on:click={() => openTreasuryExplorer(entry)}>
-                View on explorer
-              </button>
+            {#if exUrl || safeAppUrl}
+              <div class="treasury-card-links">
+                {#if exUrl}
+                  <button
+                    type="button"
+                    class="btn-link treasury-explorer-link"
+                    on:click={() => openTreasuryExplorer(entry)}
+                  >
+                    View on explorer
+                  </button>
+                {/if}
+                {#if safeAppUrl}
+                  <button
+                    type="button"
+                    class="btn-link treasury-explorer-link"
+                    on:click={() => openTreasurySafeApp(entry)}
+                  >
+                    Open in Safe
+                  </button>
+                {/if}
+              </div>
             {/if}
             {#if st?.state}
               <dl class="safe-state-dl treasury-card-dl">
@@ -903,8 +926,16 @@
     margin-bottom: 8px;
     color: var(--text-primary);
   }
-  .treasury-explorer-link {
+  .treasury-card-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
     margin-bottom: 8px;
+  }
+
+  .treasury-explorer-link {
+    margin: 0;
   }
   .treasury-card-dl {
     margin-top: 8px;

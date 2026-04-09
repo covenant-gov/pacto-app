@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import { invoke } from '@tauri-apps/api/core';
   import { getEvmAddress } from '../../lib/api/auth';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
@@ -41,9 +42,6 @@
 
   /** Send structured DM text to the active thread (same path as the composer). Used for `wallet_tx_announcement` after a confirmed send. */
   export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
-
-  /** Vite dev only: posts a fake `wallet_tx_announcement` to validate the thread card. */
-  export let onDevPostTestWalletAnnouncement: (() => void | Promise<void>) | undefined = undefined;
 
   let sendModalOpen = false;
   let requestModalOpen = false;
@@ -97,24 +95,46 @@
   let peerWalletReady = false;
   let walletInfoRequestSending = false;
 
+  const EVM_PAYOUT_RE = /^0x[a-fA-F0-9]{40}$/;
+
+  /** Same resolution as send: `dm_peer_evm`, then peer profile `evm_address` (Kind 0). */
   async function syncPeerWalletReady() {
     if (!npub) {
       peerWalletReady = false;
       return;
     }
     try {
-      const a = await getDmPeerEvmAddress(npub);
-      peerWalletReady = !!a?.trim();
+      const fromDm = await getDmPeerEvmAddress(npub);
+      if (fromDm?.trim()) {
+        peerWalletReady = true;
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+    const fromStore = contactProfile?.evm_address?.trim() ?? '';
+    if (EVM_PAYOUT_RE.test(fromStore)) {
+      peerWalletReady = true;
+      return;
+    }
+    try {
+      const p = (await invoke('get_profile', { npub })) as { evm_address?: string; evmAddress?: string };
+      const a = (p?.evm_address ?? p?.evmAddress ?? '').trim();
+      peerWalletReady = EVM_PAYOUT_RE.test(a);
     } catch {
       peerWalletReady = false;
     }
   }
 
-  $: npub, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
+  $: npub, contactProfile, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
 
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;
-    if (!me || !npub || walletInfoRequestSending || peerWalletReady) return;
+    if (!me || !npub || walletInfoRequestSending) return;
+    if (peerWalletReady) {
+      showToast('You already have a payout address for this contact.');
+      return;
+    }
     const post = postDmPlaintext;
     if (!post) {
       showToast('Use the desktop app to send this request.');
@@ -122,8 +142,9 @@
     }
     walletInfoRequestSending = true;
     try {
-      const addr = await getEvmAddress();
-      if (!addr?.trim()) {
+      const addr =
+        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
+      if (!addr) {
         showToast('Your wallet address is not ready yet.');
         return;
       }
@@ -413,8 +434,8 @@
   {#if !peerWalletReady}
     <div class="wallet-bar-init">
       <p class="wallet-bar-init-text">
-        Their payout address for this chat is not on your device yet. Send a private request; if they accept,
-        both of you can send to each other.
+        Their payout address for this chat is not on your device yet. Send a private request (your address is
+        included). When they accept, both of you can send to each other without a second request.
       </p>
       <button
         type="button"
@@ -422,7 +443,7 @@
         disabled={walletInfoRequestSending || !$currentUser}
         on:click={sendWalletInfoRequest}
       >
-        {walletInfoRequestSending ? 'Sending…' : 'Request wallet information'}
+        {walletInfoRequestSending ? 'Sending…' : 'Send exchange request'}
       </button>
     </div>
   {:else}
@@ -440,16 +461,6 @@
       <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" on:click={() => (requestModalOpen = true)}>
         Request
       </button>
-      {#if onDevPostTestWalletAnnouncement}
-        <button
-          type="button"
-          class="wallet-bar-btn wallet-bar-btn-dev"
-          title="Sends a valid wallet_tx_announcement JSON with a fake tx hash (development builds only)."
-          on:click={() => onDevPostTestWalletAnnouncement?.()}
-        >
-          Post test announcement (dev)
-        </button>
-      {/if}
     </div>
   {/if}
 </aside>
@@ -828,18 +839,5 @@
   .wallet-bar-btn-secondary {
     background-color: var(--border);
     color: var(--text-primary);
-  }
-
-  .wallet-bar-btn-dev {
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px dashed var(--border);
-    font-size: 0.75rem;
-    padding: 8px 10px;
-  }
-
-  .wallet-bar-btn-dev:hover {
-    color: var(--text-secondary);
-    border-color: var(--text-muted);
   }
 </style>

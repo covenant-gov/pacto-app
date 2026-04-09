@@ -20,6 +20,8 @@ export const INVITE_DECISION_SCOPED_PREFIXES = [
   'pacto_wallet_tx_request_declined',
   'pacto_wallet_peer_info_request_accepted',
   'pacto_wallet_peer_info_request_declined',
+  'pacto_squad_invite_evm_shared',
+  'pacto_squad_invite_evm_skipped',
 ] as const;
 
 export const acceptedSquadInviteIds = writable<string[]>([]);
@@ -36,6 +38,10 @@ export const declinedWalletTxRequestMessageIds = writable<string[]>([]);
 export const acceptedWalletPeerInfoRequestMessageIds = writable<string[]>([]);
 /** DM `wallet_peer_info_request` messages the user declined. */
 export const declinedWalletPeerInfoRequestMessageIds = writable<string[]>([]);
+/** Squad invite DM message IDs where the invitee chose to share their EVM address to the squad roster. */
+export const sharedSquadInviteEvmMessageIds = writable<string[]>([]);
+/** Squad invite DM message IDs where the invitee declined sharing (not listed as a Deploy Safe co-signer until they share later). */
+export const skippedSquadInviteEvmMessageIds = writable<string[]>([]);
 
 const STORES = [
   acceptedSquadInviteIds,
@@ -47,6 +53,8 @@ const STORES = [
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
+  sharedSquadInviteEvmMessageIds,
+  skippedSquadInviteEvmMessageIds,
 ] as const;
 
 function persist(prefix: string, ids: string[], getKey: PersistenceKeyGetter): void {
