@@ -1443,7 +1443,9 @@ pub async fn save_message<R: Runtime>(
 /// Convert a Message to a StoredEvent for the flat event architecture
 fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>) -> StoredEvent {
     // Determine event kind based on whether message has attachments
-    let kind = if !message.attachments.is_empty() {
+    let kind = if let Some(k) = message.rumor_kind {
+        k
+    } else if !message.attachments.is_empty() {
         event_kind::FILE_ATTACHMENT
     } else {
         event_kind::PRIVATE_DIRECT_MESSAGE
@@ -2953,6 +2955,7 @@ pub async fn get_message_views<R: Runtime>(
             wrapper_event_id: event.wrapper_event_id,
             edited,
             edit_history,
+            rumor_kind: None,
         };
         messages.push(message);
     }

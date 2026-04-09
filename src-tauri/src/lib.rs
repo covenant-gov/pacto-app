@@ -59,6 +59,8 @@ mod profile_sync;
 mod chat;
 pub use chat::{Chat, ChatType, ChatMetadata};
 
+mod dashboard_poll;
+
 mod rumor;
 pub use rumor::{RumorEvent, RumorContext, RumorProcessingResult, ConversationType, process_rumor};
 
@@ -1448,6 +1450,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                         RumorProcessingResult::Reaction(reaction) => {
                             handle_reaction(reaction, &contact).await
                         }
+                        RumorProcessingResult::DashboardPollCreate(_) | RumorProcessingResult::DashboardPollVoteIngested => false,
                         RumorProcessingResult::TypingIndicator { profile_id, until } => {
                             // Update the chat's typing participants
                             let active_typers = {
@@ -2308,6 +2311,87 @@ async fn notifs() -> Result<bool, String> {
                                                                 
                                                                 None // Don't emit as message
                                                             }
+                                                            RumorProcessingResult::DashboardPollCreate(mut message) => {
+                                                                if !message.replied_to.is_empty() {
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        let _ = db::populate_reply_context(&handle, &mut message).await;
+                                                                    }
+                                                                }
+                                                                let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
+                                                                let (was_added, _active_typers, should_notify) = {
+                                                                    let mut state = crate::STATE.lock().await;
+                                                                    let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
+                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
+                                                                        !chat.muted && !message.mine
+                                                                    } else {
+                                                                        false
+                                                                    };
+                                                                    let _typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
+                                                                        chat.update_typing_participant(sender_npub.clone(), 0);
+                                                                        chat.get_active_typers()
+                                                                    } else {
+                                                                        Vec::new()
+                                                                    };
+                                                                    (added, _typers, notify)
+                                                                };
+                                                                if was_added && should_notify {
+                                                                    let (sender_name, group_name) = {
+                                                                        let state = crate::STATE.lock().await;
+                                                                        let sender = if let Some(profile) = state.get_profile(&sender_npub) {
+                                                                            if !profile.nickname.is_empty() {
+                                                                                profile.nickname.clone()
+                                                                            } else if !profile.name.is_empty() {
+                                                                                profile.name.clone()
+                                                                            } else {
+                                                                                "Someone".to_string()
+                                                                            }
+                                                                        } else {
+                                                                            "Someone".to_string()
+                                                                        };
+                                                                        let group = if let Some(chat) = state.get_chat(&group_id_for_persist) {
+                                                                            chat.metadata.get_name().unwrap_or("Group Chat").to_string()
+                                                                        } else {
+                                                                            "Group Chat".to_string()
+                                                                        };
+                                                                        (sender, group)
+                                                                    };
+                                                                    let notification = NotificationData::group_message(
+                                                                        sender_name,
+                                                                        group_name,
+                                                                        "New poll — vote in Dashboard → Polls.".to_string(),
+                                                                    );
+                                                                    show_notification_generic(notification);
+                                                                }
+                                                                if was_added {
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        let group_name = crate::db::load_mls_groups(handle).await
+                                                                            .ok()
+                                                                            .and_then(|groups| {
+                                                                                groups.into_iter()
+                                                                                    .find(|g| g.group_id == group_id_for_persist || g.engine_group_id == group_id_for_persist)
+                                                                                    .map(|g| g.name)
+                                                                            });
+                                                                        let _ = handle.emit("mls_message_new", serde_json::json!({
+                                                                            "group_id": group_id_for_persist,
+                                                                            "message": &message,
+                                                                            "group_name": group_name
+                                                                        }));
+                                                                        let chat_to_save = {
+                                                                            let state = crate::STATE.lock().await;
+                                                                            state.get_chat(&group_id_for_persist).cloned()
+                                                                        };
+                                                                        if let Some(chat) = chat_to_save {
+                                                                            use crate::db::{save_chat, save_chat_messages};
+                                                                            let _ = save_chat(handle.clone(), &chat).await;
+                                                                            let _ = save_chat_messages(handle.clone(), &group_id_for_persist, &chat.messages).await;
+                                                                        }
+                                                                    }
+                                                                    Some(message)
+                                                                } else {
+                                                                    None
+                                                                }
+                                                            }
+                                                            RumorProcessingResult::DashboardPollVoteIngested => None,
                                                             RumorProcessingResult::TypingIndicator { profile_id, until } => {
                                                                 // Handle typing indicators in real-time
                                                                 let active_typers = {
@@ -6236,6 +6320,9 @@ pub fn run() {
             db::set_safe,
             db::list_parent_treasury_safes,
             db::add_parent_treasury_safe,
+            dashboard_poll::list_dashboard_polls,
+            dashboard_poll::send_dashboard_poll_create,
+            dashboard_poll::send_dashboard_poll_vote,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::backfill_squad_member_evm_missing_from_profiles,

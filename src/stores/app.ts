@@ -58,6 +58,33 @@ export const activeChannelId = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
+/** #dashboard segmented mode: one remembered tab for all squads and networks (per account). */
+export type ParentDashboardChannelMode = 'treasury' | 'governance' | 'roles' | 'polls';
+
+const PARENT_DASHBOARD_MODE_PREFIX = 'pacto_parent_dashboard_mode';
+
+function parseParentDashboardChannelMode(raw: string | null): ParentDashboardChannelMode {
+  const v = raw?.trim();
+  if (v === 'treasury' || v === 'governance' || v === 'roles' || v === 'polls') return v;
+  return 'treasury';
+}
+
+export const parentDashboardChannelMode = writable<ParentDashboardChannelMode>('treasury');
+
+/** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
+export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
+
+parentDashboardChannelMode.subscribe((mode) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(PARENT_DASHBOARD_MODE_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, mode);
+  } catch {
+    // ignore quota
+  }
+});
+
 // Members panel (right-hand bar in squad/network channel view): keep open across tab switches until user closes
 export const showMembersPanel = writable<boolean>(false);
 
@@ -669,6 +696,8 @@ export function loadAccountState(npub: string): void {
         setStore([]);
       }
     }
+    const rawDashboardMode = localStorage.getItem(`${PARENT_DASHBOARD_MODE_PREFIX}_${npub}`);
+    parentDashboardChannelMode.set(parseParentDashboardChannelMode(rawDashboardMode));
   } catch {
     // ignore parse errors
   }

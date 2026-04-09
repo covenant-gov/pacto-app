@@ -56,6 +56,8 @@ import {
   dmSendError,
   setCurrentNpubForPersistence,
   treasurySafesByParentId,
+  parentDashboardChannelMode,
+  dashboardPollReplicaNonceByParentId,
 } from '../../stores/app';
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
@@ -91,6 +93,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_network_id',
   'pacto_last_network_channel_id',
   'pacto_last_channel_by_network',
+  'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
   'pacto_wallet_ui_enabled_chains_v1',
@@ -129,6 +132,7 @@ export function clearAccountState(npub?: string): void {
   clearAccountLocalStorage(npub);
 
   treasurySafesByParentId.set({});
+  dashboardPollReplicaNonceByParentId.set({});
   safeStateByTreasuryId.set({});
   squads.set([]);
   pinnedDmNpubs.set(new Set());
@@ -175,6 +179,7 @@ export function clearAccountState(npub?: string): void {
   activeSettingsAreaTab.set('profile');
   activeDmTab.set('friends');
   activeView.set('hub');
+  parentDashboardChannelMode.set('treasury');
   showMembersPanel.set(false);
   walletSidebarOpen.set(false);
   walletSendPrefillFromRequest.set(null);

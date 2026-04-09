@@ -69,6 +69,9 @@ pub struct Message {
     /// Full edit history (original + all edits), ordered chronologically
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_history: Option<Vec<EditEntry>>,
+    /// When set, persist this Nostr kind in `events` instead of inferring from attachments (e.g. 30078 poll create).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub rumor_kind: Option<u16>,
 }
 
 impl Default for Message {
@@ -91,6 +94,7 @@ impl Default for Message {
             wrapper_event_id: None,
             edited: false,
             edit_history: None,
+            rumor_kind: None,
         }
     }
 }
@@ -335,6 +339,7 @@ pub async fn message(receiver: String, content: String, replied_to: String, file
         wrapper_event_id: None, // Will be set when message is sent
         edited: false,
         edit_history: None,
+        rumor_kind: None,
     };
     
     // Add message to appropriate chat type

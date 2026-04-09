@@ -106,6 +106,7 @@
     ANNOUNCEMENTS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
     treasurySafesByParentId,
+    dashboardPollReplicaNonceByParentId,
     type TreasurySafeEntry,
     type DmMessage,
     type DmTab,
@@ -1171,6 +1172,14 @@
       if (gid) bumpMembershipVersion(gid);
     });
 
+    const unlistenDashboardPollReplica = listen('dashboard_poll_replica_updated', (event) => {
+      const raw = event.payload as Record<string, unknown> | undefined;
+      const pidRaw = raw?.parent_id ?? raw?.parentId;
+      const pid = typeof pidRaw === 'string' ? pidRaw.trim() : '';
+      if (!pid) return;
+      dashboardPollReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
+    });
+
     return () => {
       unlistenNew.then((fn) => fn());
       unlistenUpdate.then((fn) => fn());
@@ -1186,6 +1195,7 @@
       unlistenGroupUpdated.then((fn) => fn());
       unlistenGroupInitialSync.then((fn) => fn());
       unlistenGroupLeft.then((fn) => fn());
+      unlistenDashboardPollReplica.then((fn) => fn());
     };
   });
 </script>
