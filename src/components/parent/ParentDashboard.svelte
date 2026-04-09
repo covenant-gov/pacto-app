@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { tick, onDestroy } from 'svelte';
+  import { tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
   import type { Squad, Network } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
@@ -9,6 +8,7 @@
     showMembersPanel,
     membershipVersionByGroupId,
     parentDashboardChannelMode,
+    dashboardPollReplicaNonceByParentId,
     type ParentDashboardChannelMode,
   } from '../../stores/app';
   import {
@@ -70,9 +70,9 @@
   let parentPollsList: ParentPoll[] = [];
   let pollsScrollEl: HTMLDivElement | null = null;
   let pollBallotRefresh = 0;
-  let pollReplicaUnlisten: (() => void) | undefined;
-  let lastPollReplicaListenerParent: string | undefined;
-  let pollVoteInFlight = false;
+  /** While set, that poll’s vote row is submitting; the option id is the button showing "Sending...". */
+  let pollVoteSendingPollId: string | null = null;
+  let pollVoteSendingOptionId: string | null = null;
 
   function dashboardPollDtoToParentPoll(d: DashboardPollDto): ParentPoll {
     return {
@@ -104,25 +104,6 @@
     }
   }
 
-  async function ensurePollReplicaListener(): Promise<void> {
-    const pid = parentId?.trim() || undefined;
-    if (pid === lastPollReplicaListenerParent && pollReplicaUnlisten) return;
-    lastPollReplicaListenerParent = pid;
-    pollReplicaUnlisten?.();
-    pollReplicaUnlisten = undefined;
-    if (!pid) return;
-    const scope = pid;
-    pollReplicaUnlisten = await listen('dashboard_poll_replica_updated', (e) => {
-      const p = e.payload as { parent_id?: string };
-      if (p.parent_id === scope) void refreshDashboardPollsList();
-    });
-  }
-
-  $: void ensurePollReplicaListener();
-
-  onDestroy(() => {
-    pollReplicaUnlisten?.();
-  });
   let setSafeInput = '';
   let setSafeChain: 'sepolia' | 'mainnet' | 'optimism' = 'sepolia';
   let setSafeLabel = '';
@@ -132,7 +113,13 @@
   $: parentId = parent?.id;
   $: viewerNpub = $currentUser?.npub ?? '';
 
+  /** Per-parent counter from +page listener on `dashboard_poll_replica_updated` (always mounted). */
+  $: pollReplicaNonceForParent = parentId?.trim()
+    ? ($dashboardPollReplicaNonceByParentId[parentId.trim()] ?? 0)
+    : 0;
+
   $: if (dashboardView === 'polls' && parentId?.trim()) {
+    void pollReplicaNonceForParent;
     void refreshDashboardPollsList();
   }
 
@@ -340,8 +327,9 @@
       showToast('No announcements channel for this parent.');
       return;
     }
-    if (pollVoteInFlight) return;
-    pollVoteInFlight = true;
+    if (pollVoteSendingPollId === pollId) return;
+    pollVoteSendingPollId = pollId;
+    pollVoteSendingOptionId = optionId;
     try {
       await sendDashboardPollVote({
         announcementsGroupId: gid,
@@ -355,7 +343,8 @@
     } catch (e) {
       showToast(getInvokeErrorMessage(e, 'Vote failed.'));
     } finally {
-      pollVoteInFlight = false;
+      pollVoteSendingPollId = null;
+      pollVoteSendingOptionId = null;
     }
   }
 
@@ -653,17 +642,28 @@
                   {/if}
                   <ul class="dashboard-poll-options" role="list">
                     {#each poll.options as opt (opt.id)}
+                      {@const sendingThis =
+                        pollVoteSendingPollId === poll.id && pollVoteSendingOptionId === opt.id}
                       <li class="dashboard-poll-option">
                         <span class="dashboard-poll-option-label">{opt.label}</span>
                         <span class="dashboard-poll-option-count">{opt.votes}</span>
                         <button
                           type="button"
                           class="dashboard-poll-vote-btn"
-                          class:voted={myOpt === opt.id}
-                          disabled={!viewerNpub?.trim() || pollVoteInFlight}
+                          class:voted={myOpt === opt.id && !sendingThis}
+                          aria-busy={sendingThis}
+                          disabled={!viewerNpub?.trim() || pollVoteSendingPollId === poll.id}
                           on:click={() => castPollVote(poll.id, opt.id)}
                         >
-                          {myOpt === opt.id ? 'Your vote' : myOpt ? 'Change vote' : 'Vote'}
+                          {#if sendingThis}
+                            Sending...
+                          {:else if myOpt === opt.id}
+                            Your vote
+                          {:else if myOpt}
+                            Change vote
+                          {:else}
+                            Vote
+                          {/if}
                         </button>
                       </li>
                     {/each}

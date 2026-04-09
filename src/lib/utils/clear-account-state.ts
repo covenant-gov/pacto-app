@@ -57,6 +57,7 @@ import {
   setCurrentNpubForPersistence,
   treasurySafesByParentId,
   parentDashboardChannelMode,
+  dashboardPollReplicaNonceByParentId,
 } from '../../stores/app';
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
@@ -131,6 +132,7 @@ export function clearAccountState(npub?: string): void {
   clearAccountLocalStorage(npub);
 
   treasurySafesByParentId.set({});
+  dashboardPollReplicaNonceByParentId.set({});
   safeStateByTreasuryId.set({});
   squads.set([]);
   pinnedDmNpubs.set(new Set());

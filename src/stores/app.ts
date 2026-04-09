@@ -71,6 +71,9 @@ function parseParentDashboardChannelMode(raw: string | null): ParentDashboardCha
 
 export const parentDashboardChannelMode = writable<ParentDashboardChannelMode>('treasury');
 
+/** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
+export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
+
 parentDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(PARENT_DASHBOARD_MODE_PREFIX);
