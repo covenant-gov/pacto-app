@@ -304,7 +304,7 @@
             checked={selectedMemberNpubs.includes(npub)}
             disabled={deploySaving || !addr}
             aria-label={`Signer ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
-            on:click|preventDefault={() => toggleMember(npub)}
+            on:change={() => toggleMember(npub)}
           />
           {#if getProfileAvatarSrc($profiles[npub])}
             <img src={getProfileAvatarSrc($profiles[npub])} alt="" class="deploy-safe-avatar" />
@@ -467,7 +467,12 @@
   }
 
   .deploy-safe-member-row > input[type='checkbox'] {
-    margin-top: 8px;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 8px 0 0 0;
+    cursor: pointer;
+    accent-color: var(--accent);
   }
 
   .deploy-safe-member-row:last-child {
@@ -522,6 +527,15 @@
     cursor: pointer;
   }
 
+  .deploy-safe-checkbox input[type='checkbox'] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
   .deploy-safe-warn {
     font-size: 0.8125rem;
     margin: 0 0 8px 0;
@@ -548,6 +562,45 @@
     justify-content: flex-end;
     gap: 10px;
     margin-top: 20px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover, var(--accent));
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   :global(.deploy-safe-modal-panel) {

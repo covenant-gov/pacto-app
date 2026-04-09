@@ -6,7 +6,7 @@
     type SafeProposalPayload,
   } from '../../../lib/announcements';
   import { getExplorerTxUrl } from '../../../lib/wallet/assets';
-  import { parseSupportedChainId, explorerAddressUrl } from '../../../lib/wallet/chains';
+  import { parseSupportedChainId, explorerAddressUrl, safeAppHomeUrl } from '../../../lib/wallet/chains';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
 
@@ -41,6 +41,7 @@
     safePayload?.explorer_tx_url?.trim() ||
     (txHash ? getExplorerTxUrl(chainId, txHash) : null);
   $: safeExplorerUrl = safePayload ? explorerAddressUrl(chainId, safePayload.safe_address) : '';
+  $: safeAppUrl = safePayload ? safeAppHomeUrl(chainId, safePayload.safe_address) : '';
 
   async function copySafeAddress(addr: string) {
     const ok = await copyTextToClipboard(addr);
@@ -79,7 +80,12 @@
           target="_blank"
           rel="noopener noreferrer"
         >
-          View Safe
+          View on explorer
+        </a>
+      {/if}
+      {#if safeAppUrl}
+        <a class="safe-explorer-link" href={safeAppUrl} target="_blank" rel="noopener noreferrer">
+          Open in Safe
         </a>
       {/if}
     </div>

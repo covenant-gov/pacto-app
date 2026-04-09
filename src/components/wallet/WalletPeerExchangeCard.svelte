@@ -39,7 +39,7 @@
   $: body = (() => {
     switch (variant) {
       case 'request-in':
-        return `${peerName} asked to exchange payout addresses so you can send assets in this chat. Your address is only stored on each of your devices if you accept.`;
+        return `${peerName} asked to exchange payout addresses. Their address is included; if you accept, yours is sent back and both devices store both addresses.`;
       case 'request-out':
         return `Waiting for ${peerName} to accept or decline.`;
       case 'grant-in':

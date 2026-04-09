@@ -247,6 +247,45 @@
     margin-top: 20px;
   }
 
+  .btn-primary,
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover, var(--accent));
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
   :global(.change-signer-modal-panel) {
     max-width: 480px;
   }

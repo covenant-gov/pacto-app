@@ -39,6 +39,8 @@ export interface NostrProfile {
   // Cached image paths (for offline support)
   avatar_cached: string;
   banner_cached: string;
+  /** Kind 0 / DB payout `0x` when present (send path also uses `dm_peer_evm` first). */
+  evm_address?: string;
 }
 
 /**
