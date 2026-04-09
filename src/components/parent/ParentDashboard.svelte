@@ -34,6 +34,7 @@
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import type { ParentPoll } from '../../lib/parent/parent-polls';
   import { getPollBallotMap, pollReferenceToken, setPollBallot } from '../../lib/parent/parent-polls';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
 
   /** Sub-views under #announcements dashboard; future: driven by configurable widgets per community. */
   type ParentDashboardView = ParentDashboardChannelMode;
@@ -323,7 +324,7 @@
       await refreshDashboardPollsList();
       showToast('Poll published.');
     } catch (e) {
-      const msg = (e as Error)?.message?.trim() || 'Failed to publish poll.';
+      const msg = getInvokeErrorMessage(e, 'Failed to publish poll.');
       showToast(msg);
       throw new Error(msg);
     }
@@ -352,7 +353,7 @@
       await refreshDashboardPollsList();
       pollBallotRefresh++;
     } catch (e) {
-      showToast((e as Error)?.message?.trim() || 'Vote failed.');
+      showToast(getInvokeErrorMessage(e, 'Vote failed.'));
     } finally {
       pollVoteInFlight = false;
     }

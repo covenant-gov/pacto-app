@@ -632,9 +632,9 @@ export async function sendDashboardPollCreate(params: {
   options: { id: string; label: string }[];
 }): Promise<void> {
   await invoke('send_dashboard_poll_create', {
-    announcements_group_id: params.announcementsGroupId,
-    parent_id: params.parentId,
-    poll_id: params.pollId,
+    announcementsGroupId: params.announcementsGroupId,
+    parentId: params.parentId,
+    pollId: params.pollId,
     title: params.title,
     description: params.description,
     options: params.options,
@@ -648,9 +648,9 @@ export async function sendDashboardPollVote(params: {
   optionId: string;
 }): Promise<void> {
   await invoke('send_dashboard_poll_vote', {
-    announcements_group_id: params.announcementsGroupId,
-    parent_id: params.parentId,
-    poll_id: params.pollId,
-    option_id: params.optionId,
+    announcementsGroupId: params.announcementsGroupId,
+    parentId: params.parentId,
+    pollId: params.pollId,
+    optionId: params.optionId,
   });
 }

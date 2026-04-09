@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from '../ui/Modal.svelte';
   import type { ParentPoll, ParentPollOption } from '../../lib/parent/parent-polls';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
 
   export let open: boolean;
   export let parentId: string;
@@ -74,7 +75,7 @@
       reset();
       onClose();
     } catch (e) {
-      error = (e as Error)?.message?.trim() || 'Could not publish poll.';
+      error = getInvokeErrorMessage(e, 'Could not publish poll.');
     } finally {
       saving = false;
     }
