@@ -18,6 +18,9 @@ export const ANNOUNCE_TYPE_SAFE_UPDATED = ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED;
 /** Wire format for new Safe proposal. Payload includes parent_id, to, amount, token, proposer_npub, id. */
 export const ANNOUNCE_TYPE_SAFE_PROPOSAL = 'safe_proposal';
 
+/** New dashboard poll posted to the announcements MLS group; vote in Dashboard → Polls. */
+export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
+
 /** Payload for safe_updated announce. squad_id in JSON is the parent id (squad or network). */
 export interface SquadSafeUpdatedPayload {
   squad_id: string;
@@ -60,13 +63,27 @@ export interface SquadMemberEvmSharePayload {
   evm_address: string;
 }
 
-export type AnnouncePayload = SquadSafeUpdatedPayload | SafeProposalPayload | SquadMemberEvmSharePayload;
+/** Payload for dashboard_poll_created (matches MLS rumor JSON). */
+export interface DashboardPollCreatedPayload {
+  parent_id: string;
+  poll_id: string;
+  title: string;
+  description?: string;
+  options: { id: string; label: string }[];
+}
+
+export type AnnouncePayload =
+  | SquadSafeUpdatedPayload
+  | SafeProposalPayload
+  | SquadMemberEvmSharePayload
+  | DashboardPollCreatedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED; payload: SquadSafeUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload }
-  | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload };
+  | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload }
+  | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload };
 
 function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
   return (
@@ -101,6 +118,29 @@ function isSquadMemberEvmSharePayload(p: unknown): p is SquadMemberEvmSharePaylo
   );
 }
 
+function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  if (
+    typeof q.parent_id !== 'string' ||
+    !q.parent_id.trim() ||
+    typeof q.poll_id !== 'string' ||
+    !q.poll_id.trim() ||
+    typeof q.title !== 'string' ||
+    !q.title.trim()
+  ) {
+    return false;
+  }
+  if (!Array.isArray(q.options) || q.options.length < 2) return false;
+  for (const opt of q.options) {
+    if (!opt || typeof opt !== 'object') return false;
+    const o = opt as Record<string, unknown>;
+    if (typeof o.id !== 'string' || typeof o.label !== 'string') return false;
+    if (!o.id.trim() || !o.label.trim()) return false;
+  }
+  return true;
+}
+
 /**
  * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
  */
@@ -125,6 +165,9 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   }
   if (type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE && isSquadMemberEvmSharePayload(payload)) {
     return { type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE, payload };
+  }
+  if (type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED && isDashboardPollCreatedPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED, payload };
   }
   return null;
 }

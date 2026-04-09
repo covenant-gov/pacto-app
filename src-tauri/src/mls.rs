@@ -1287,6 +1287,33 @@ impl MlsService {
                                     }
                                 }
                             }
+                            RumorProcessingResult::DashboardPollCreate(msg) => {
+                                if let Some(handle) = TAURI_APP.get() {
+                                    if let Ok(exists) = crate::db::message_exists_in_db(&handle, &msg.id).await {
+                                        if exists {
+                                            continue;
+                                        }
+                                    }
+                                }
+                                let was_added = {
+                                    let mut state = STATE.lock().await;
+                                    state.add_message_to_chat(&chat_id, msg.clone())
+                                };
+                                if was_added {
+                                    if let Some(handle) = TAURI_APP.get() {
+                                        handle.emit("mls_message_new", serde_json::json!({
+                                            "group_id": gid_for_fetch,
+                                            "message": msg,
+                                        })).unwrap_or_else(|e| {
+                                            eprintln!("[MLS] Failed to emit mls_message_new (poll create): {}", e);
+                                        });
+                                    }
+                                    if let Some(handle) = TAURI_APP.get() {
+                                        let _ = crate::db::save_message(handle.clone(), &chat_id, &msg).await;
+                                    }
+                                }
+                            }
+                            RumorProcessingResult::DashboardPollVoteIngested => {}
                             RumorProcessingResult::TypingIndicator { profile_id, until } => {
                                 // Update the chat's typing participants
                                 let active_typers = {

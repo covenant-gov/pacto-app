@@ -1,13 +1,23 @@
 <script lang="ts">
+  import { tick, onDestroy } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
+  import { listen } from '@tauri-apps/api/event';
   import type { Squad, Network } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_NAME,
     showMembersPanel,
     membershipVersionByGroupId,
+    parentDashboardChannelMode,
+    type ParentDashboardChannelMode,
   } from '../../stores/app';
-  import { getMlsGroupMembers } from '../../lib/api/nostr';
+  import {
+    getMlsGroupMembers,
+    listDashboardPolls,
+    sendDashboardPollCreate,
+    sendDashboardPollVote,
+    type DashboardPollDto,
+  } from '../../lib/api/nostr';
   import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
   import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
   import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../lib/wallet/chains';
@@ -17,18 +27,24 @@
   import { safeStateByTreasuryId, refreshSafeStateForTreasuryEntry } from '../../stores/safe';
   import friendsIcon from '../../icons/friends.svg';
   import DeploySafeModal from './DeploySafeModal.svelte';
+  import CreatePollModal from './CreatePollModal.svelte';
   import { showToast } from '../../stores/toast';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
+  import { currentUser } from '../../stores/auth';
+  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
+  import type { ParentPoll } from '../../lib/parent/parent-polls';
+  import { getPollBallotMap, pollReferenceToken, setPollBallot } from '../../lib/parent/parent-polls';
 
   /** Sub-views under #announcements dashboard; future: driven by configurable widgets per community. */
-  type ParentDashboardView = 'treasury' | 'governance' | 'roles';
+  type ParentDashboardView = ParentDashboardChannelMode;
   const DASHBOARD_VIEWS: { id: ParentDashboardView; label: string }[] = [
     { id: 'treasury', label: 'Treasury' },
     { id: 'governance', label: 'Governance' },
     { id: 'roles', label: 'Roles' },
+    { id: 'polls', label: 'Polls' },
   ];
 
-  let dashboardView: ParentDashboardView = 'treasury';
+  $: dashboardView = $parentDashboardChannelMode;
 
   export let parent: Squad | Network;
   export let parentType: 'squad' | 'network' = 'squad';
@@ -49,6 +65,63 @@
 
   let showSetSafeModal = false;
   let showDeploySafeModal = false;
+  let showCreatePollModal = false;
+  let parentPollsList: ParentPoll[] = [];
+  let pollsScrollEl: HTMLDivElement | null = null;
+  let pollBallotRefresh = 0;
+  let pollReplicaUnlisten: (() => void) | undefined;
+  let lastPollReplicaListenerParent: string | undefined;
+  let pollVoteInFlight = false;
+
+  function dashboardPollDtoToParentPoll(d: DashboardPollDto): ParentPoll {
+    return {
+      id: d.id,
+      parentId: d.parent_id,
+      title: d.title,
+      description: d.description ?? '',
+      createdAtMs: d.created_at_ms,
+      options: d.options.map((o) => ({
+        id: o.id,
+        label: o.label,
+        votes: Number(o.votes),
+      })),
+    };
+  }
+
+  async function refreshDashboardPollsList(): Promise<void> {
+    const pid = parentId?.trim();
+    if (!pid) {
+      parentPollsList = [];
+      return;
+    }
+    try {
+      const rows = await listDashboardPolls(pid);
+      parentPollsList = rows.map(dashboardPollDtoToParentPoll);
+    } catch {
+      parentPollsList = [];
+      showToast('Could not load polls.');
+    }
+  }
+
+  async function ensurePollReplicaListener(): Promise<void> {
+    const pid = parentId?.trim() || undefined;
+    if (pid === lastPollReplicaListenerParent && pollReplicaUnlisten) return;
+    lastPollReplicaListenerParent = pid;
+    pollReplicaUnlisten?.();
+    pollReplicaUnlisten = undefined;
+    if (!pid) return;
+    const scope = pid;
+    pollReplicaUnlisten = await listen('dashboard_poll_replica_updated', (e) => {
+      const p = e.payload as { parent_id?: string };
+      if (p.parent_id === scope) void refreshDashboardPollsList();
+    });
+  }
+
+  $: void ensurePollReplicaListener();
+
+  onDestroy(() => {
+    pollReplicaUnlisten?.();
+  });
   let setSafeInput = '';
   let setSafeChain: 'sepolia' | 'mainnet' | 'optimism' = 'sepolia';
   let setSafeLabel = '';
@@ -56,6 +129,35 @@
   let setSafeSaving = false;
 
   $: parentId = parent?.id;
+  $: viewerNpub = $currentUser?.npub ?? '';
+
+  $: if (dashboardView === 'polls' && parentId?.trim()) {
+    void refreshDashboardPollsList();
+  }
+
+  /** Bumps when the feed tail changes (new poll / switch parent), not on vote-only updates. */
+  $: pollsFeedScrollKey =
+    dashboardView === 'polls'
+      ? `${parentId ?? ''}:${parentPollsList.length}:${parentPollsList.at(-1)?.id ?? ''}`
+      : '';
+
+  async function scrollPollsFeedToBottom() {
+    await tick();
+    const el = pollsScrollEl;
+    if (!el || dashboardView !== 'polls') return;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  $: if (dashboardView === 'polls') {
+    void pollsFeedScrollKey;
+    void scrollPollsFeedToBottom();
+  }
+
+  $: pollBallotMap = (() => {
+    void pollBallotRefresh;
+    if (!viewerNpub || !parentId) return {} as Record<string, string>;
+    return getPollBallotMap(viewerNpub, parentId);
+  })();
   $: displayedTreasurySafes = [...(treasurySafes ?? [])].slice(0, TREASURY_SAFE_UI_CAP);
   $: treasuryStateKey = displayedTreasurySafes.map((e) => e.id).join('|');
   $: if (dashboardView === 'treasury' && treasuryStateKey) {
@@ -106,7 +208,7 @@
   }
 
   function selectDashboardView(id: ParentDashboardView) {
-    dashboardView = id;
+    parentDashboardChannelMode.set(id);
     if (id === 'roles' && announcementsGroupId) loadDashboardMembers();
   }
 
@@ -179,6 +281,91 @@
   function openTreasurySafeApp(entry: TreasurySafeEntry) {
     const url = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress);
     if (url) openExternalUrl(url);
+  }
+
+  function openCreatePollModal() {
+    if (!viewerNpub?.trim()) {
+      showToast('Sign in to create polls.');
+      return;
+    }
+    if (!parentId?.trim()) {
+      showToast('This dashboard is not ready yet.');
+      return;
+    }
+    showCreatePollModal = true;
+  }
+
+  function closeCreatePollModal() {
+    showCreatePollModal = false;
+  }
+
+  async function handlePollCreated(poll: ParentPoll) {
+    const gid = announcementsGroupId;
+    if (!viewerNpub?.trim() || !parentId?.trim()) {
+      const msg = 'Sign in to create polls.';
+      showToast(msg);
+      throw new Error(msg);
+    }
+    if (!gid?.trim()) {
+      const msg = 'No announcements channel for this parent.';
+      showToast(msg);
+      throw new Error(msg);
+    }
+    try {
+      await sendDashboardPollCreate({
+        announcementsGroupId: gid,
+        parentId: parentId.trim(),
+        pollId: poll.id,
+        title: poll.title,
+        description: poll.description,
+        options: poll.options.map((o) => ({ id: o.id, label: o.label })),
+      });
+      await refreshDashboardPollsList();
+      showToast('Poll published.');
+    } catch (e) {
+      const msg = (e as Error)?.message?.trim() || 'Failed to publish poll.';
+      showToast(msg);
+      throw new Error(msg);
+    }
+  }
+
+  async function castPollVote(pollId: string, optionId: string) {
+    if (!viewerNpub?.trim() || !parentId?.trim()) {
+      showToast('Sign in to vote.');
+      return;
+    }
+    const gid = announcementsGroupId;
+    if (!gid?.trim()) {
+      showToast('No announcements channel for this parent.');
+      return;
+    }
+    if (pollVoteInFlight) return;
+    pollVoteInFlight = true;
+    try {
+      await sendDashboardPollVote({
+        announcementsGroupId: gid,
+        parentId: parentId.trim(),
+        pollId,
+        optionId,
+      });
+      setPollBallot(viewerNpub, parentId, pollId, optionId);
+      await refreshDashboardPollsList();
+      pollBallotRefresh++;
+    } catch (e) {
+      showToast((e as Error)?.message?.trim() || 'Vote failed.');
+    } finally {
+      pollVoteInFlight = false;
+    }
+  }
+
+  async function copyPollIdToClipboard(id: string) {
+    const ok = await copyTextToClipboard(id);
+    showToast(ok ? 'Poll ID copied.' : 'Could not copy.');
+  }
+
+  async function copyPollChatReference(id: string) {
+    const ok = await copyTextToClipboard(pollReferenceToken(id));
+    showToast(ok ? 'Chat reference copied.' : 'Could not copy.');
   }
 
   async function confirmSetSafe() {
@@ -258,16 +445,15 @@
         {/each}
       </div>
     </div>
-    <div class="parent-dashboard-body">
-      <div class="parent-dashboard">
-  <div class="dashboard-header">
-    <h2 class="dashboard-title">{parent.name}</h2>
-    {#if parentType === 'network' && (parent as Network).memberSquads?.length}
+    <div class="parent-dashboard-body" class:parent-dashboard-body--polls={dashboardView === 'polls'}>
+      <div class="parent-dashboard" class:parent-dashboard--polls={dashboardView === 'polls'}>
+  {#if parentType === 'network' && (parent as Network).memberSquads?.length}
+    <div class="dashboard-header">
       <p class="dashboard-subtitle">
         {(parent as Network).memberSquads.map((s) => s.name).join(', ')}
       </p>
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   {#if dashboardView === 'treasury'}
   <section class="dashboard-section" aria-labelledby="safe-heading">
@@ -363,7 +549,7 @@
       available to governance widgets as the stack grows.
     </p>
   </section>
-  {:else}
+  {:else if dashboardView === 'roles'}
   <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-heading">
     <h3 id="roles-heading" class="section-heading">Roles</h3>
     <p class="dashboard-placeholder-text dashboard-placeholder-lead">
@@ -412,6 +598,88 @@
       <p class="dashboard-placeholder-text muted">No announcements channel for this {parentType}.</p>
     {/if}
   </section>
+  {:else if dashboardView === 'polls'}
+  <div class="dashboard-polls-shell">
+    <div
+      class="dashboard-polls-scroll"
+      bind:this={pollsScrollEl}
+      role="feed"
+      aria-label="Polls"
+    >
+      <div class="dashboard-polls-scroll-inner">
+        {#if !parentId?.trim()}
+          <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">Dashboard is loading…</p>
+        {:else}
+          {#if !viewerNpub?.trim()}
+            <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
+              Sign in to vote or create polls. Tallies below sync from the announcements channel.
+            </p>
+          {/if}
+          {#if parentPollsList.length === 0}
+            {#if viewerNpub?.trim()}
+              <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
+                No polls yet. Create one with the button below.
+              </p>
+            {/if}
+          {:else}
+            <ul class="dashboard-polls-list" role="list">
+              {#each parentPollsList as poll (poll.id)}
+                {@const myOpt = pollBallotMap[poll.id]}
+                <li class="dashboard-poll-card">
+                  <div class="dashboard-poll-id-row">
+                    <span class="dashboard-poll-id-label">Poll ID</span>
+                    <code class="dashboard-poll-id" title={poll.id}>{poll.id}</code>
+                    <div class="dashboard-poll-id-actions">
+                      <button
+                        type="button"
+                        class="btn-link dashboard-poll-copy"
+                        on:click={() => copyPollIdToClipboard(poll.id)}
+                      >
+                        Copy ID
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-link dashboard-poll-copy"
+                        on:click={() => copyPollChatReference(poll.id)}
+                      >
+                        Copy chat ref
+                      </button>
+                    </div>
+                  </div>
+                  <h3 class="dashboard-poll-title">{poll.title}</h3>
+                  {#if poll.description}
+                    <p class="dashboard-poll-desc">{poll.description}</p>
+                  {/if}
+                  <ul class="dashboard-poll-options" role="list">
+                    {#each poll.options as opt (opt.id)}
+                      <li class="dashboard-poll-option">
+                        <span class="dashboard-poll-option-label">{opt.label}</span>
+                        <span class="dashboard-poll-option-count">{opt.votes}</span>
+                        <button
+                          type="button"
+                          class="dashboard-poll-vote-btn"
+                          class:voted={myOpt === opt.id}
+                          disabled={!viewerNpub?.trim() || pollVoteInFlight}
+                          on:click={() => castPollVote(poll.id, opt.id)}
+                        >
+                          {myOpt === opt.id ? 'Your vote' : myOpt ? 'Change vote' : 'Vote'}
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        {/if}
+      </div>
+    </div>
+    <div class="dashboard-polls-composer">
+      <button type="button" class="btn-primary dashboard-polls-create-btn" on:click={openCreatePollModal}>
+        Create poll
+      </button>
+    </div>
+  </div>
   {/if}
       </div>
     </div>
@@ -463,6 +731,15 @@
       });
       showToast('Safe deployed and added to treasury.');
     }}
+  />
+{/if}
+
+{#if showCreatePollModal && parentId}
+  <CreatePollModal
+    open={showCreatePollModal}
+    parentId={parentId}
+    onClose={closeCreatePollModal}
+    onCreate={handlePollCreated}
   />
 {/if}
 
@@ -534,6 +811,195 @@
     min-height: 0;
   }
 
+  .parent-dashboard-body--polls {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .parent-dashboard--polls {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 16px;
+  }
+
+  .parent-dashboard--polls .dashboard-header {
+    flex-shrink: 0;
+  }
+
+  .dashboard-polls-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .dashboard-polls-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  /** Pin short feeds to the bottom of the viewport like a chat transcript. */
+  .dashboard-polls-scroll-inner {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    box-sizing: border-box;
+  }
+
+  .dashboard-polls-feed-msg {
+    margin: 0;
+  }
+
+  .dashboard-polls-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .dashboard-poll-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+  }
+
+  .dashboard-poll-id-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .dashboard-poll-id-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    width: 100%;
+  }
+
+  .dashboard-poll-id {
+    font-size: 0.75rem;
+    word-break: break-all;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .dashboard-poll-id-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-left: auto;
+  }
+
+  .dashboard-poll-copy {
+    font-size: 0.8125rem;
+    padding: 0;
+  }
+
+  .dashboard-poll-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 6px 0;
+  }
+
+  .dashboard-poll-desc {
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    margin: 0 0 12px 0;
+  }
+
+  .dashboard-poll-options {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dashboard-poll-option {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px auto;
+    gap: 10px;
+    align-items: center;
+    font-size: 0.875rem;
+  }
+
+  .dashboard-poll-option-label {
+    color: var(--text-primary);
+  }
+
+  .dashboard-poll-option-count {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
+  .dashboard-poll-vote-btn {
+    font-size: 0.8125rem;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .dashboard-poll-vote-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .dashboard-poll-vote-btn:disabled {
+    cursor: default;
+    opacity: 0.85;
+  }
+
+  .dashboard-poll-vote-btn.voted {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--bg-panel);
+  }
+
+  .dashboard-polls-composer {
+    flex-shrink: 0;
+    padding-top: 12px;
+    margin-top: 8px;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+  }
+
+  .dashboard-polls-create-btn {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+  }
+
   .dashboard-view-nav {
     display: flex;
     align-items: center;
@@ -565,7 +1031,7 @@
   }
 
   .dashboard-mode-segment {
-    padding: 0 22px;
+    padding: 0 14px;
     font-size: 0.9375rem;
     font-weight: 500;
     color: var(--text-muted);
@@ -837,13 +1303,7 @@
     max-width: 560px;
   }
   .dashboard-header {
-    margin-bottom: 24px;
-  }
-  .dashboard-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
+    margin-bottom: 16px;
   }
   .dashboard-subtitle {
     font-size: 0.875rem;

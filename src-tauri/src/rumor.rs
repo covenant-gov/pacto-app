@@ -93,6 +93,10 @@ pub enum RumorProcessingResult {
     UnknownEvent(StoredEvent),
     /// Event was ignored (invalid, expired, or should not be stored)
     Ignored,
+    /// Dashboard poll created (MLS Kind 30078); shown in #announcements feed
+    DashboardPollCreate(Message),
+    /// Dashboard poll vote ingested (silent; tallies only)
+    DashboardPollVoteIngested,
     /// A message edit event
     Edit {
         /// The ID of the message being edited
@@ -142,9 +146,13 @@ pub async fn process_rumor(
         Kind::Reaction => {
             process_reaction(rumor, context).await
         }
-        // Application-specific data (typing indicators, etc.)
+        // Application-specific data (typing, dashboard polls, etc.)
         Kind::ApplicationSpecificData => {
-            process_app_specific(rumor, context).await
+            if crate::dashboard_poll::has_dashboard_poll_d_tag(&rumor.tags) {
+                process_dashboard_poll_rumor(rumor, context).await
+            } else {
+                process_app_specific(rumor, context).await
+            }
         }
         // Unknown or unsupported kind - store for future compatibility
         _ => {
@@ -226,6 +234,7 @@ async fn process_text_message(
         wrapper_event_id: None, // Set by caller after processing
         edited: false,
         edit_history: None,
+        rumor_kind: None,
     };
     
     Ok(RumorProcessingResult::TextMessage(msg))
@@ -398,6 +407,7 @@ async fn process_file_attachment(
         wrapper_event_id: None, // Set by caller after processing
         edited: false,
         edit_history: None,
+        rumor_kind: None,
     };
     
     Ok(RumorProcessingResult::FileAttachment(msg))
@@ -481,7 +491,7 @@ async fn process_edit_event(
 /// Currently handles typing indicators for real-time status updates.
 async fn process_app_specific(
     rumor: RumorEvent,
-    context: RumorContext,
+    _context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     // Check if this is a typing indicator
     if is_typing_indicator(&rumor) {
@@ -580,4 +590,84 @@ fn is_typing_indicator(rumor: &RumorEvent) -> bool {
     let is_typing_content = rumor.content == "typing";
     
     has_vector_tag && is_typing_content
+}
+
+/// MLS Kind 30078 + `d` tag `pacto_dashboard_poll`: poll create (announcement-shaped JSON) or vote.
+async fn process_dashboard_poll_rumor(
+    rumor: RumorEvent,
+    context: RumorContext,
+) -> Result<RumorProcessingResult, String> {
+    if context.conversation_type != ConversationType::MlsGroup {
+        return Ok(RumorProcessingResult::Ignored);
+    }
+    let handle = TAURI_APP
+        .get()
+        .ok_or_else(|| "App handle not initialized".to_string())?;
+    let group_id = context.conversation_id.clone();
+
+    if let Some(vote) = crate::dashboard_poll::try_parse_vote(&rumor.content) {
+        let voter = rumor
+            .pubkey
+            .to_bech32()
+            .map_err(|e| format!("pubkey bech32: {}", e))?;
+        let ms = extract_millisecond_timestamp(&rumor) as i64;
+        if crate::dashboard_poll::db_apply_vote(
+            handle,
+            &vote.poll_id,
+            &voter,
+            &vote.option_id,
+            &rumor.id.to_hex(),
+            ms,
+        )? {
+            crate::dashboard_poll::emit_poll_replica_updated(&vote.parent_id, Some(&vote.poll_id));
+        }
+        return Ok(RumorProcessingResult::DashboardPollVoteIngested);
+    }
+
+    if let Some(env) = crate::dashboard_poll::try_parse_create_announce(&rumor.content) {
+        let created_by = rumor
+            .pubkey
+            .to_bech32()
+            .map_err(|e| format!("pubkey bech32: {}", e))?;
+        let ms = extract_millisecond_timestamp(&rumor) as i64;
+        let upsert = crate::dashboard_poll::db_insert_poll_create(
+            handle,
+            &group_id,
+            &rumor.id.to_hex(),
+            ms,
+            &created_by,
+            &env.payload,
+        )?;
+        if matches!(
+            upsert,
+            crate::dashboard_poll::PollCreateUpsert::IgnoredConflictingPayload
+        ) {
+            return Ok(RumorProcessingResult::Ignored);
+        }
+        let ms_timestamp = extract_millisecond_timestamp(&rumor);
+        let msg = Message {
+            id: rumor.id.to_hex(),
+            content: rumor.content.clone(),
+            replied_to: String::new(),
+            replied_to_content: None,
+            replied_to_npub: None,
+            replied_to_has_attachment: None,
+            preview_metadata: None,
+            attachments: Vec::new(),
+            reactions: Vec::new(),
+            at: ms_timestamp,
+            mine: context.is_mine,
+            pending: false,
+            failed: false,
+            npub: Some(created_by),
+            wrapper_event_id: None,
+            edited: false,
+            edit_history: None,
+            rumor_kind: Some(crate::stored_event::event_kind::APPLICATION_SPECIFIC),
+        };
+        crate::dashboard_poll::emit_poll_replica_updated(&env.payload.parent_id, Some(&env.payload.poll_id));
+        return Ok(RumorProcessingResult::DashboardPollCreate(msg));
+    }
+
+    Ok(RumorProcessingResult::Ignored)
 }

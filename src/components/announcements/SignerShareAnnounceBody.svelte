@@ -145,7 +145,7 @@
           <div class="signer-roster-name">
             <span class="signer-roster-display">{disp}</span>
             {#if row.isMessageAuthor}
-              <span class="signer-roster-badge">This message</span>
+              <span class="signer-roster-badge">This Signer updated</span>
             {/if}
           </div>
           <div class="signer-roster-addr">
@@ -260,8 +260,7 @@
   .signer-roster-badge {
     font-size: 0.6875rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
     color: var(--accent);
   }
 

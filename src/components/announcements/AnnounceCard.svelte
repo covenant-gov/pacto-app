@@ -3,10 +3,12 @@
     ANNOUNCE_TYPE_SAFE_UPDATED,
     ANNOUNCE_TYPE_SAFE_PROPOSAL,
     ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
+    ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
     type AnnounceMessage,
   } from '../../lib/announcements';
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
   import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
+  import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
 
   export let id: string = '';
   export let announce: AnnounceMessage;
@@ -29,6 +31,9 @@
   $: signerSharePayload =
     announce.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ? announce.payload : null;
 
+  $: dashboardPollPayload =
+    announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null;
+
   function formatTime(isoString: string): string {
     const date = new Date(isoString);
     return date.toLocaleTimeString('en-US', {
@@ -40,7 +45,13 @@
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
-  {#if signerSharePayload}
+  {#if dashboardPollPayload}
+    <DashboardPollCreatedAnnounceBody
+      payload={dashboardPollPayload}
+      {authorName}
+      {timestamp}
+    />
+  {:else if signerSharePayload}
     <SignerShareAnnounceBody
       payload={signerSharePayload}
       {authorName}

@@ -607,3 +607,50 @@ export async function syncMlsGroupsNow(groupId?: string | null): Promise<{ synce
   dmLog('sync_mls_groups_now result', { synced, total });
   return { synced, total };
 }
+
+/** Local replica row for dashboard polls (SQLite + MLS ingest). */
+export interface DashboardPollDto {
+  id: string;
+  parent_id: string;
+  title: string;
+  description: string;
+  options: { id: string; label: string; votes: number }[];
+  created_at_ms: number;
+  created_by_npub: string;
+}
+
+export async function listDashboardPolls(parentId: string): Promise<DashboardPollDto[]> {
+  return (await invoke('list_dashboard_polls', { parentId })) as DashboardPollDto[];
+}
+
+export async function sendDashboardPollCreate(params: {
+  announcementsGroupId: string;
+  parentId: string;
+  pollId: string;
+  title: string;
+  description: string;
+  options: { id: string; label: string }[];
+}): Promise<void> {
+  await invoke('send_dashboard_poll_create', {
+    announcements_group_id: params.announcementsGroupId,
+    parent_id: params.parentId,
+    poll_id: params.pollId,
+    title: params.title,
+    description: params.description,
+    options: params.options,
+  });
+}
+
+export async function sendDashboardPollVote(params: {
+  announcementsGroupId: string;
+  parentId: string;
+  pollId: string;
+  optionId: string;
+}): Promise<void> {
+  await invoke('send_dashboard_poll_vote', {
+    announcements_group_id: params.announcementsGroupId,
+    parent_id: params.parentId,
+    poll_id: params.pollId,
+    option_id: params.optionId,
+  });
+}
