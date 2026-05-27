@@ -39,10 +39,29 @@ export interface WalletAssetsFile {
 
 export const WALLET_ASSETS = walletAssetsJson as WalletAssetsFile;
 
-const CHAIN_KEYS = ['mainnet', 'optimism', 'sepolia'] as const satisfies readonly SupportedChainId[];
+const CHAIN_KEYS = [
+  'mainnet',
+  'arbitrum',
+  'optimism',
+  'gnosis',
+  'sepolia',
+] as const satisfies readonly SupportedChainId[];
 
 /** Chains that have a row in wallet-assets.json (must match SupportedChainId). */
 export const WALLET_ASSETS_CHAIN_IDS: readonly SupportedChainId[] = CHAIN_KEYS;
+
+export type WalletChainGroupId = 'l1' | 'l2' | 'testnet';
+
+/** Enabled-chains UI grouping (L1 / L2 / testnet). */
+export const WALLET_CHAIN_GROUPS: ReadonlyArray<{
+  id: WalletChainGroupId;
+  label: string;
+  chains: readonly SupportedChainId[];
+}> = [
+  { id: 'l1', label: 'L1', chains: ['mainnet'] },
+  { id: 'l2', label: 'L2', chains: ['arbitrum', 'optimism', 'gnosis'] },
+  { id: 'testnet', label: 'Testnet', chains: ['sepolia'] },
+];
 
 export function getWalletAssetsForChain(chainId: SupportedChainId): WalletNetworkAssets | undefined {
   return WALLET_ASSETS.networks[chainId];

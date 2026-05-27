@@ -1,0 +1,19 @@
+---
+description: Greenfield codebase — prefer breaking changes and slim code over legacy compatibility
+alwaysApply: true
+---
+# Greenfield: no legacy accommodation
+
+**Product has not shipped a public alpha.** Optimize for **clear, minimal code paths** and **current architecture**. Do **not** add or preserve:
+
+- Compatibility shims for superseded layouts (e.g. triple MLS defaults, old dashboard tab slugs, alternate poll routing) unless the user explicitly asks for a migration project.
+- Dual-read / detection branches “just in case” old local state exists.
+- Comments and helpers whose only purpose is older wire formats or pre-refactor UX naming.
+
+**Do:**
+
+- Prefer **breaking changes** when they delete branches and simplify behavior.
+- Invalidate stale persisted keys by **documenting one-line reset behavior** or accepting reset-to-default on unknown values — **not** mapping tables for every old slug unless explicitly required.
+- Put **normative posture** in tracked specs under `docs/` and `ai-docs/` (see companion governance / MLS docs); keep `src/` and `src-tauri/` free of long compatibility essays.
+
+If unsure whether something is “legacy,” default to **single path** and note the assumption in a **design doc**, not scattered through code.

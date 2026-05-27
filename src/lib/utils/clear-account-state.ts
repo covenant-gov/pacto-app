@@ -15,12 +15,15 @@ import {
   lastOpenedSquadId,
   lastOpenedChannelId,
   lastChannelBySquadId,
+  lastHubChannelNameBySquadId,
   activeSquadId,
   activeChannelId,
+  activeHubChannelName,
   activeNetworkId,
   lastOpenedNetworkId,
   lastOpenedNetworkChannelId,
   lastChannelByNetworkId,
+  lastHubChannelNameByNetworkId,
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
   acceptedNetworkInviteIds,
@@ -41,7 +44,6 @@ import {
   channelMessages,
   composingNewChat,
   activeTopNavTab,
-  activeSettingsAreaTab,
   activeDmTab,
   activeView,
   showMembersPanel,
@@ -56,6 +58,7 @@ import {
   dmSendError,
   setCurrentNpubForPersistence,
   treasurySafesByParentId,
+  squadInfraByParentId,
   parentDashboardChannelMode,
   dashboardPollReplicaNonceByParentId,
 } from '../../stores/app';
@@ -90,13 +93,17 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_squad_id',
   'pacto_last_channel_id',
   'pacto_last_channel_by_squad',
+  'pacto_last_hub_channel_name_by_squad',
   'pacto_last_network_id',
   'pacto_last_network_channel_id',
   'pacto_last_channel_by_network',
+  'pacto_last_hub_channel_name_by_network',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_wallet_summary_cache_v1',
   'pacto_wallet_ui_enabled_chains_v1',
+  'pacto_wallet_preferred_network_v1',
+  'pacto_wallet_rpc_prefs_v1',
   'pacto_wallet_tx_request_accepted',
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
@@ -132,6 +139,7 @@ export function clearAccountState(npub?: string): void {
   clearAccountLocalStorage(npub);
 
   treasurySafesByParentId.set({});
+  squadInfraByParentId.set({});
   dashboardPollReplicaNonceByParentId.set({});
   safeStateByTreasuryId.set({});
   squads.set([]);
@@ -149,13 +157,16 @@ export function clearAccountState(npub?: string): void {
   lastOpenedSquadId.set(null);
   lastOpenedChannelId.set(null);
   lastChannelBySquadId.set({});
+  lastHubChannelNameBySquadId.set({});
   activeSquadId.set(null);
   activeChannelId.set(null);
+  activeHubChannelName.set(null);
   networks.set([]);
   activeNetworkId.set(null);
   lastOpenedNetworkId.set(null);
   lastOpenedNetworkChannelId.set(null);
   lastChannelByNetworkId.set({});
+  lastHubChannelNameByNetworkId.set({});
   acceptedSquadInviteIds.set([]);
   declinedSquadInviteIds.set([]);
   acceptedNetworkInviteIds.set([]);
@@ -176,10 +187,9 @@ export function clearAccountState(npub?: string): void {
   channelMessages.set({});
   composingNewChat.set(false);
   activeTopNavTab.set('squads');
-  activeSettingsAreaTab.set('profile');
   activeDmTab.set('friends');
   activeView.set('hub');
-  parentDashboardChannelMode.set('treasury');
+  parentDashboardChannelMode.set('governance');
   showMembersPanel.set(false);
   walletSidebarOpen.set(false);
   walletSendPrefillFromRequest.set(null);

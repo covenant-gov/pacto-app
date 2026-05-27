@@ -16,7 +16,7 @@ lazy_static! {
         Arc::new(Mutex::new(None));
 }
 
-/// SQL Schema for Vector database
+/// SQL Schema for Pacto database
 ///
 /// This schema uses selective encryption:
 /// - Encrypted: message content, private keys, seed phrases, MLS secrets
@@ -139,6 +139,36 @@ CREATE TABLE IF NOT EXISTS parent_treasury_safe (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_parent_treasury_unique ON parent_treasury_safe(parent_id, safe_address, chain);
 CREATE INDEX IF NOT EXISTS idx_parent_treasury_parent ON parent_treasury_safe(parent_id, created_at_ms);
 
+-- Deployed squad infra per parent (sponsor, pacto-gov stack, standalone Safes, etc.). Multiple rows per parent.
+CREATE TABLE IF NOT EXISTS squad_infra (
+    id TEXT PRIMARY KEY NOT NULL,
+    parent_id TEXT NOT NULL,
+    infra_type TEXT NOT NULL,
+    chain TEXT NOT NULL,
+    canonical_ref TEXT NOT NULL,
+    pacto_gov_revision TEXT,
+    provider_payload TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_squad_infra_parent ON squad_infra(parent_id, created_at_ms);
+
+-- Explicit squad contract allowlist (Phase I). Unofficial protocol targets beyond implicit infra refs.
+CREATE TABLE IF NOT EXISTS squad_contract_allowlist (
+    id TEXT PRIMARY KEY NOT NULL,
+    parent_id TEXT NOT NULL,
+    chain TEXT NOT NULL,
+    contract_address TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    added_by_npub TEXT NOT NULL,
+    abi_ref TEXT,
+    notes TEXT,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_allowlist_unique ON squad_contract_allowlist(parent_id, chain, contract_address);
+CREATE INDEX IF NOT EXISTS idx_squad_allowlist_parent ON squad_contract_allowlist(parent_id, created_at_ms);
+
 -- Squad/network parent id + member npub -> EVM payout address (from MLS squad_member_evm_share)
 CREATE TABLE IF NOT EXISTS squad_member_evm (
     parent_id TEXT NOT NULL,
@@ -149,6 +179,17 @@ CREATE TABLE IF NOT EXISTS squad_member_evm (
 );
 CREATE INDEX IF NOT EXISTS idx_squad_member_evm_parent ON squad_member_evm(parent_id);
 
+-- Per-squad preferred squad-purpose EVM account (local roster signing identity)
+CREATE TABLE IF NOT EXISTS squad_member_evm_account (
+    parent_id TEXT NOT NULL,
+    member_npub TEXT NOT NULL,
+    evm_account_id TEXT NOT NULL,
+    updated_at_ms INTEGER NOT NULL,
+    PRIMARY KEY (parent_id, member_npub),
+    FOREIGN KEY (evm_account_id) REFERENCES evm_accounts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_squad_member_evm_account_parent ON squad_member_evm_account(parent_id);
+
 -- EVM accounts (phrase-derived + imported); see `evm_accounts` module and docs/wallet/HD_DERIVATION_V1.md
 CREATE TABLE IF NOT EXISTS evm_accounts (
     id TEXT PRIMARY KEY NOT NULL,
@@ -156,7 +197,8 @@ CREATE TABLE IF NOT EXISTS evm_accounts (
     hd_index INTEGER,
     address TEXT NOT NULL,
     label TEXT NOT NULL DEFAULT '',
-    imported_enc TEXT
+    imported_enc TEXT,
+    purpose TEXT NOT NULL DEFAULT 'squad'
 );
 CREATE INDEX IF NOT EXISTS idx_evm_accounts_scheme_hd ON evm_accounts(scheme, hd_index);
 
@@ -183,6 +225,7 @@ CREATE TABLE IF NOT EXISTS events (
     failed INTEGER NOT NULL DEFAULT 0,
     wrapper_event_id TEXT,
     npub TEXT,
+    virtual_bucket TEXT,
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE SET NULL
 );
@@ -191,6 +234,7 @@ CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_reference ON events(reference_id) WHERE reference_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_wrapper ON events(wrapper_event_id) WHERE wrapper_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_user ON events(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_chat_vbucket ON events(chat_id, virtual_bucket);
 "#;
 
 /// Get the profile directory for a given npub (full npub, no truncation)
@@ -748,6 +792,40 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration 6] Backfilled npub for {} events", updated);
     }
 
+    // Virtual bucket column for MLS single-group routing (issue 6)
+    let events_has_vbucket: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('events') WHERE name='virtual_bucket'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    let events_table_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='events'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if events_table_exists && !events_has_vbucket {
+        println!("[Migration] Adding virtual_bucket column to events...");
+        conn.execute(
+            "ALTER TABLE events ADD COLUMN virtual_bucket TEXT",
+            [],
+        )
+        .map_err(|e| format!("Failed to add virtual_bucket column: {}", e))?;
+        println!("[Migration] virtual_bucket column added successfully");
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_chat_vbucket ON events(chat_id, virtual_bucket)",
+            [],
+        )
+        .map_err(|e| format!("Failed to create idx_events_chat_vbucket: {}", e))?;
+    }
+
     // Migration: squad_safe table (squad/network id -> Safe address)
     let has_squad_safe: bool = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_safe'",
@@ -816,6 +894,38 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] squad_safe → parent_treasury_safe copy done");
     }
 
+    let has_squad_infra: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_infra'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_squad_infra {
+        // TODO: delete after pre-alpha — drop disposable single-row governance table.
+        println!("[Migration] Replacing parent_governance with squad_infra…");
+        conn.execute("DROP TABLE IF EXISTS parent_governance", [])
+            .map_err(|e| format!("Failed to drop parent_governance: {}", e))?;
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squad_infra (
+                id TEXT PRIMARY KEY NOT NULL,
+                parent_id TEXT NOT NULL,
+                infra_type TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                canonical_ref TEXT NOT NULL,
+                pacto_gov_revision TEXT,
+                provider_payload TEXT,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_squad_infra_parent ON squad_infra(parent_id, created_at_ms);"#,
+        )
+        .map_err(|e| format!("Failed to create squad_infra table: {}", e))?;
+        println!("[Migration] squad_infra table created");
+    }
+
     let has_dm_peer_evm: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='dm_peer_evm'",
@@ -865,6 +975,33 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] squad_member_evm table created");
     }
 
+    // TODO: delete after pre-alpha — squad roster account binding per parent
+    let has_squad_member_evm_account: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_member_evm_account'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_squad_member_evm_account {
+        println!("[Migration] Creating squad_member_evm_account table...");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squad_member_evm_account (
+                parent_id TEXT NOT NULL,
+                member_npub TEXT NOT NULL,
+                evm_account_id TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (parent_id, member_npub),
+                FOREIGN KEY (evm_account_id) REFERENCES evm_accounts(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_squad_member_evm_account_parent ON squad_member_evm_account(parent_id);"#,
+        )
+        .map_err(|e| format!("Failed to create squad_member_evm_account table: {}", e))?;
+        println!("[Migration] squad_member_evm_account table created");
+    }
+
     let has_evm_accounts: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='evm_accounts'",
@@ -884,12 +1021,62 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
                     hd_index INTEGER,
                     address TEXT NOT NULL,
                     label TEXT NOT NULL DEFAULT '',
-                    imported_enc TEXT
+                    imported_enc TEXT,
+                    purpose TEXT NOT NULL DEFAULT 'squad'
                 );
                 CREATE INDEX IF NOT EXISTS idx_evm_accounts_scheme_hd ON evm_accounts(scheme, hd_index);"#,
             )
             .map_err(|e| format!("Failed to create evm_accounts table: {}", e))?;
         println!("[Migration] evm_accounts table created");
+    }
+
+    let has_evm_purpose: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('evm_accounts') WHERE name = 'purpose'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+    if has_evm_accounts && !has_evm_purpose {
+        println!(
+            "[Migration] TODO: delete after pre-alpha — add evm_accounts.purpose (existing rows → squad)"
+        );
+        conn.execute(
+            "ALTER TABLE evm_accounts ADD COLUMN purpose TEXT NOT NULL DEFAULT 'squad'",
+            [],
+        )
+        .map_err(|e| format!("Failed to add evm_accounts.purpose: {}", e))?;
+    }
+
+    let has_squad_allowlist: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_contract_allowlist'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+    if !has_squad_allowlist {
+        // TODO: delete after pre-alpha — squad contract allowlist (Phase I).
+        println!("[Migration] Creating squad_contract_allowlist table…");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squad_contract_allowlist (
+                id TEXT PRIMARY KEY NOT NULL,
+                parent_id TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                contract_address TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                added_by_npub TEXT NOT NULL,
+                abi_ref TEXT,
+                notes TEXT,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_allowlist_unique ON squad_contract_allowlist(parent_id, chain, contract_address);
+            CREATE INDEX IF NOT EXISTS idx_squad_allowlist_parent ON squad_contract_allowlist(parent_id, created_at_ms);"#,
+        )
+        .map_err(|e| format!("Failed to create squad_contract_allowlist table: {}", e))?;
     }
 
     // Dashboard polls replica (MLS sync; Tauri only)

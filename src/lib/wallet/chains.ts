@@ -4,13 +4,15 @@
  */
 
 import { createPublicClient, type Chain, type PublicClient, fallback, http } from 'viem';
-import { mainnet, optimism, sepolia } from 'viem/chains';
+import { arbitrum, gnosis, mainnet, optimism, sepolia } from 'viem/chains';
 
 /**
  * Supported chains for the embedded wallet (DM WalletBar + Squad Safe).
  * Token addresses per chain: `wallet-assets.json` and `assets.ts`.
  */
 export const SUPPORTED_CHAINS = {
+  arbitrum,
+  gnosis,
   mainnet,
   optimism,
   sepolia,
@@ -24,50 +26,20 @@ export const DEFAULT_CHAIN_ID: SupportedChainId = 'sepolia';
 /** Request timeout for RPC calls (public RPCs can be slow). */
 const RPC_TIMEOUT_MS = 20_000;
 
-/**
- * Default RPC URL(s) per chain. First is primary; others used as fallback.
- * Superseded when `VITE_WALLET_RPC_*` is set (see `getEffectiveRpcUrlsForChain`).
- */
-const DEFAULT_RPC_URLS: Record<SupportedChainId, string[]> = {
-  mainnet: ['https://ethereum.publicnode.com', 'https://1rpc.io/eth'],
-  optimism: ['https://mainnet.optimism.io', 'https://optimism.publicnode.com'],
-  sepolia: [
-    'https://ethereum-sepolia-rpc.publicnode.com',
-    'https://1rpc.io/sepolia',
-    'https://sepolia.drpc.org',
-    'https://rpc2.sepolia.org',
-    'https://rpc.sepolia.org',
-  ],
-};
+import { resolveUserRpcUrls } from './rpc-prefs';
+import { resolveProviderRpcUrls } from './rpc-providers';
 
-const VITE_RPC_ENV_KEYS: Record<SupportedChainId, keyof ImportMetaEnv> = {
-  mainnet: 'VITE_WALLET_RPC_MAINNET',
-  optimism: 'VITE_WALLET_RPC_OPTIMISM',
-  sepolia: 'VITE_WALLET_RPC_SEPOLIA',
-};
-
-function parseCommaSeparatedUrls(value: unknown): string[] | null {
-  if (value == null) return null;
-  const s = String(value).trim();
-  if (!s) return null;
-  const parts = s
-    .split(',')
-    .map((x) => x.trim())
-    .filter((x) => x.length > 0);
-  return parts.length > 0 ? parts : null;
-}
+/** Public RPC catalog for Settings default picker (no env or user overrides). */
+export { getCuratedRpcUrlsForChain } from './rpc-catalog';
 
 /**
- * Resolved RPC URL list for a chain: `VITE_WALLET_RPC_*` if set (comma-separated),
- * otherwise built-in defaults. Use for viem public clients and for parity with
- * backend RPC configuration described in `docs/wallet/RPC_AND_VIEM_ARCHITECTURE.md`.
+ * Resolved RPC URL list for a chain: operator provider key (e.g. Alchemy) if set,
+ * otherwise user default/personal prefs, then curated public defaults.
  */
 export function getEffectiveRpcUrlsForChain(chainId: SupportedChainId): string[] {
-  const key = VITE_RPC_ENV_KEYS[chainId];
-  const raw = import.meta.env[key];
-  const fromEnv = parseCommaSeparatedUrls(raw);
-  if (fromEnv) return fromEnv;
-  return DEFAULT_RPC_URLS[chainId];
+  const fromProvider = resolveProviderRpcUrls(chainId);
+  if (fromProvider.length > 0) return fromProvider;
+  return resolveUserRpcUrls(chainId);
 }
 
 /**
@@ -111,6 +83,8 @@ export function parseSupportedChainId(raw: string | undefined | null): Supported
   const c = (raw ?? 'sepolia').trim().toLowerCase();
   if (c === 'mainnet' || c === 'ethereum' || c === 'eth') return 'mainnet';
   if (c === 'optimism' || c === 'op') return 'optimism';
+  if (c === 'arbitrum' || c === 'arb') return 'arbitrum';
+  if (c === 'gnosis' || c === 'gno' || c === 'xdai') return 'gnosis';
   return 'sepolia';
 }
 
@@ -127,6 +101,8 @@ export function explorerAddressUrl(chainId: SupportedChainId, address: string): 
  * Short prefixes match the query format used on https://app.safe.global
  */
 const SAFE_APP_CHAIN_PREFIX: Record<SupportedChainId, string> = {
+  arbitrum: 'arb1',
+  gnosis: 'gno',
   mainnet: 'eth',
   sepolia: 'sep',
   optimism: 'oeth',

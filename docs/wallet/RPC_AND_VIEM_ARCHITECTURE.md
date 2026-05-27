@@ -1,28 +1,47 @@
 # RPC configuration and viem usage
 
-This document describes **RPC endpoints** (frontend and future backend) and **where viem runs** relative to signing. It is design reference for implementers.
+This document describes **RPC endpoints** (frontend and backend) and **where viem runs** relative to signing. It is design reference for implementers.
 
 ---
 
 ## 1. RPC URLs (environment and defaults)
 
-### Frontend (Svelte + Vite)
+### Operator provider keys (frontend + backend)
 
-- **Variables:** `VITE_WALLET_RPC_MAINNET`, `VITE_WALLET_RPC_OPTIMISM`, `VITE_WALLET_RPC_SEPOLIA`.
-- **Format:** One or more URLs separated by commas. The first entry is the primary endpoint; additional entries are used as fallbacks (same semantics as viem `fallback` transport in `createWalletPublicClient`).
-- **Unset:** Built-in public RPC lists in `src/lib/wallet/chains.ts` apply.
-- **Resolution:** `getEffectiveRpcUrlsForChain(chainId)` in `chains.ts` is the single place that merges env and defaults.
+One **Alchemy** API key builds per-chain URLs automatically:
 
-Copy `.env.example` to `.env` for local overrides. Never commit secrets; API keys in URLs belong in `.env` (gitignored).
+```text
+https://{host}.g.alchemy.com/v2/{ALCHEMY_RPC_KEY}
+```
 
-### Backend (Rust, future send and balance commands)
+| Network key | Alchemy host |
+|-------------|----------------|
+| `mainnet` | `eth-mainnet` |
+| `sepolia` | `eth-sepolia` |
+| `arbitrum` | `arb-mainnet` |
+| `optimism` | `opt-mainnet` |
+| `gnosis` | `gnosis-mainnet` |
 
-When the Tauri backend performs JSON-RPC (transaction broadcast, balance reads, nonce), it should use the **same logical endpoints** as the UI:
+- **Variable:** `ALCHEMY_RPC_KEY` in `.env` (see `.env.example`).
+- **Frontend:** Vite exposes `ALCHEMY_*` via `envPrefix` in `vite.config.ts`; resolution in `src/lib/wallet/rpc-providers.ts`.
+- **Backend:** Rust reads the same `ALCHEMY_RPC_KEY` at runtime in `src-tauri/src/evm/wallet_rpc_providers.rs`.
+- **Fallbacks:** When a key is set, curated public RPCs from `rpc-catalog.ts` / `wallet_chain_config.rs` are appended after the provider URL.
 
-- **Preferred:** Read RPC URLs from process environment at runtime, using names aligned with the frontend intent, e.g. `PACTO_WALLET_RPC_MAINNET`, `PACTO_WALLET_RPC_OPTIMISM`, `PACTO_WALLET_RPC_SEPOLIA`, with the same comma-separated multi-URL rule. A launcher or installer can set these alongside user-specific keys without embedding them in the bundle.
-- **Alternative:** A small config file under the app data directory, managed by settings UI later, still mapping to the same per-chain URL lists.
+Additional providers (e.g. Pocket) can be added by extending `RPC_PROVIDERS` (TS) and the Rust provider module — one env var per provider, same host-map pattern.
 
-Private keys remain in existing encrypted storage (PIN-derived); RPC URLs are not secrets in the same class as keys, but URLs that embed provider API keys should still be treated as sensitive and not logged.
+Copy `.env.example` to `.env` for local overrides. Never commit API keys.
+
+### User preferences (Settings → EVM)
+
+When no operator key is set, **personal RPC URLs** and the **default RPC picker** in Settings apply (`src/lib/wallet/rpc-prefs.ts`). Resolution order in `getEffectiveRpcUrlsForChain`:
+
+1. Operator provider key URL + curated fallbacks (if `ALCHEMY_RPC_KEY` is set)
+2. User default / personal RPC prefs
+3. Curated public defaults
+
+### Frontend resolution entry point
+
+`getEffectiveRpcUrlsForChain(chainId)` in `chains.ts` is the single merge point for viem read clients.
 
 ---
 
@@ -49,18 +68,22 @@ Private keys remain in existing encrypted storage (PIN-derived); RPC URLs are no
 
 | Concern | Layer | Mechanism |
 |--------|--------|-----------|
-| RPC URL selection (UI reads) | Frontend | `VITE_WALLET_*` + `getEffectiveRpcUrlsForChain` |
-| RPC URL selection (backend sends) | Backend | Env (or config file) mirroring the same per-chain lists |
-| Read-only JSON-RPC | Frontend | viem `createPublicClient` + `fallback` |
+| RPC URL selection (UI reads) | Frontend | `ALCHEMY_RPC_KEY` + user prefs + `getEffectiveRpcUrlsForChain` |
+| RPC URL selection (backend sends) | Backend | Same `ALCHEMY_RPC_KEY` via `wallet_rpc_providers.rs` + curated fallbacks |
+| Read-only JSON-RPC | Frontend | viem `createPublicClient` + `fallback` via **`src/lib/evm/read-plane.ts`** |
+| Generic contract reads (observation) | Frontend | `readContract` / `multicall` in **`read-plane.ts`** — not duplicated in Rust for ad-hoc ABIs |
 | WalletBar send / raw tx | Backend | Rust (Alloy): encode, sign, `eth_sendRawTransaction` |
+| Advanced opaque contract call | Backend | **`evm_send_advanced_contract_call`** — advanced-purpose signer only (`advanced_contract_call.rs`) |
+| Squad curated deploy / gov writes | Backend | Typed Alloy commands + squad-purpose gate (unchanged) |
 | USD spot display | Backend + TS | `wallet_get_usd_spot_prices` + `src/lib/wallet/pricing.ts` |
 | Wallet send “done” + DM card | Backend policy | Wait for **successful receipt** before return; see [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md) |
+| Advanced panel (Settings → EVM) | Frontend | **`WalletAdvancedPanel.svelte`** + `calldata-builder.ts`; simulate via viem `eth_call`, send via Tauri |
 
 ---
 
 ## 3. USD spot pricing
 
-Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on-chain feeds** on Ethereum mainnet (`eth_call` via JSON-RPC). Details, proxy addresses, and env vars (`PACTO_CHAINLINK_PRICE_RPC_URL`, `PACTO_WALLET_RPC_MAINNET`) are in [USD_PRICING.md](./USD_PRICING.md). There are no static price fallbacks; failures return an error for the UI. The frontend calls `wallet_get_usd_spot_prices`.
+Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on-chain feeds** on Ethereum mainnet (`eth_call` via JSON-RPC). Details, proxy addresses, and env (`ALCHEMY_RPC_KEY` for mainnet) are in [USD_PRICING.md](./USD_PRICING.md). There are no static price fallbacks; failures return an error for the UI. The frontend calls `wallet_get_usd_spot_prices`.
 
 ---
 

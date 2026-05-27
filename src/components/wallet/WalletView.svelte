@@ -8,8 +8,9 @@
     walletUiEnabledChainsTick,
     defaultWalletEnabledChains,
   } from '../../lib/wallet/wallet-ui-prefs';
+  import { DEFAULT_PREFERRED_NETWORK } from '../../lib/wallet/preferred-network';
   import type { SupportedChainId } from '../../lib/wallet/chains';
-  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
+  import { WALLET_ASSETS_CHAIN_IDS } from '../../lib/wallet/assets';
   import {
     loadWatchedErc20Rows,
     saveWatchedErc20Rows,
@@ -18,7 +19,6 @@
   import WalletImportTokensModal from './WalletImportTokensModal.svelte';
   import WalletHomeSendModal from './WalletHomeSendModal.svelte';
   import WalletReceiveModal from './WalletReceiveModal.svelte';
-  import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
   import {
@@ -27,16 +27,25 @@
     updateEvmAccountRow,
     importEvmAccountRow,
     setActiveEvmAccount,
-    evmAccountSchemeLabel,
+    setActiveAdvancedEvmAccount,
+    squadEvmAccounts,
+    type EvmAccountPurpose,
     type EvmAccountRow,
   } from '../../lib/wallet/evm-accounts';
-  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
+  import WalletAdvancedPanel from './WalletAdvancedPanel.svelte';
+  import DefaultWalletConfig from '../settings/DefaultWalletConfig.svelte';
+  import EvmAccountsSection from '../settings/EvmAccountsSection.svelte';
+  import EvmWalletExtras from '../settings/EvmWalletExtras.svelte';
+
+  /** When true, omit the standalone page title (embedded under Settings → EVM). */
+  export let embeddedInSettings = false;
 
   let importModalOpen = false;
   let homeSendOpen = false;
   let receiveOpen = false;
   let watchedRows: WatchedErc20Row[] = [];
   let enabledSet = new Set<SupportedChainId>(defaultWalletEnabledChains());
+  let tokenNetworkFilter: 'all' | SupportedChainId = DEFAULT_PREFERRED_NETWORK;
 
   $: accountNpub = $currentUser?.npub ?? null;
 
@@ -47,10 +56,10 @@
   let importKeyModalOpen = false;
   let importKeyInput = '';
   let importKeyBusy = false;
-  let importSetActive = true;
 
   /** Unified add / edit account modal (same fields as add). */
   let accountFormMode: 'add' | 'edit' | null = null;
+  let accountFormPurpose: EvmAccountPurpose = 'squad';
   let accountFormEditId: string | null = null;
   let accountFormLabel = '';
   let accountFormSetSigning = false;
@@ -121,32 +130,6 @@
     saveWatchedErc20Rows(accountNpub, next);
   }
 
-  const RPC_DOCS_URL = import.meta.env.VITE_WALLET_RPC_DOCS_URL as string | undefined;
-
-  function openRpcDocs() {
-    const u = typeof RPC_DOCS_URL === 'string' ? RPC_DOCS_URL.trim() : '';
-    if (u.startsWith('http://') || u.startsWith('https://')) {
-      openExternalUrl(u);
-    }
-  }
-
-  function onBuyCryptoClick() {
-    showToast('Buying crypto in the app is not available yet.');
-  }
-
-  function shortAddr(a: string): string {
-    const t = a.trim();
-    if (t.length < 18) return t;
-    return `${t.slice(0, 10)}…${t.slice(-8)}`;
-  }
-
-  async function copyAccountAddress(address: string) {
-    const t = address.trim();
-    if (!t) return;
-    const ok = await copyTextToClipboard(t);
-    showToast(ok ? 'Address copied' : 'Could not copy address');
-  }
-
   function resetAccountFormFields() {
     accountFormLabel = '';
     accountFormSetSigning = false;
@@ -160,14 +143,16 @@
     resetAccountFormFields();
   }
 
-  function openAddAccountModal() {
+  function openAddAccountModal(purpose: EvmAccountPurpose = 'squad') {
     resetAccountFormFields();
+    accountFormPurpose = purpose;
     accountFormMode = 'add';
   }
 
   function openEditAccountModal(acc: EvmAccountRow) {
     accountFormMode = 'edit';
     accountFormEditId = acc.id;
+    accountFormPurpose = acc.purpose;
     accountFormLabel = acc.label ?? '';
     accountFormSetSigning = acc.isActive;
     accountFormSetReceiving = acc.isDefaultShared;
@@ -182,10 +167,12 @@
     accountFormBusy = true;
     try {
       if (mode === 'add') {
+        const isAdvanced = accountFormPurpose === 'advanced';
         await addEvmAccountRow({
           label: accountFormLabel,
-          setActiveSigner: accountFormSetSigning,
-          setDefaultShared: accountFormSetReceiving,
+          setActiveSigner: isAdvanced ? false : accountFormSetSigning,
+          setDefaultShared: isAdvanced ? false : accountFormSetReceiving,
+          purpose: accountFormPurpose,
         });
         if (setReceiving) {
           showToast('Receiving address saved. Publishing profile metadata…');
@@ -193,11 +180,23 @@
           showToast('Account added.');
         }
       } else if (editId) {
+        const isAdvanced = accountFormPurpose === 'advanced';
+        const existing = evmAccountList.find((a) => a.id === editId);
+        const setSigning = embeddedInSettings
+          ? (existing?.isActive ?? false)
+          : isAdvanced
+            ? false
+            : accountFormSetSigning;
+        const setShared = embeddedInSettings
+          ? (existing?.isDefaultShared ?? false)
+          : isAdvanced
+            ? false
+            : accountFormSetReceiving;
         await updateEvmAccountRow({
           accountId: editId,
           label: accountFormLabel,
-          setActiveSigner: accountFormSetSigning,
-          setDefaultShared: accountFormSetReceiving,
+          setActiveSigner: setSigning,
+          setDefaultShared: setShared,
         });
         if (setReceiving) {
           showToast('Receiving address saved. Publishing profile metadata…');
@@ -226,6 +225,16 @@
     }
   }
 
+  async function onSetActiveAdvancedAccount(id: string) {
+    try {
+      await setActiveAdvancedEvmAccount(id);
+      await refreshEvmAddress();
+      showToast('Advanced signing account updated.');
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, 'Could not switch advanced account.'));
+    }
+  }
+
   async function submitImportKey() {
     if (!importKeyInput.trim()) {
       showToast('Paste a private key (0x + 64 hex).');
@@ -233,11 +242,11 @@
     }
     importKeyBusy = true;
     try {
-      await importEvmAccountRow(importKeyInput.trim(), importSetActive);
+      await importEvmAccountRow(importKeyInput.trim());
       importKeyModalOpen = false;
       importKeyInput = '';
       await refreshEvmAddress();
-      showToast('Imported account saved.');
+      showToast('Advanced account imported. Not used for squad roster or governance.');
     } catch (e) {
       showToast(getInvokeErrorMessage(e, 'Import failed.'));
     } finally {
@@ -251,227 +260,108 @@
   /** Kind 0 / profile default; when unset, receiving matches the signing address. */
   $: profileDefaultEvmAddress = evmAccountList.find((a) => a.isDefaultShared)?.address?.trim() || null;
   $: displayReceivingAddress = profileDefaultEvmAddress ?? evmAddress;
+  $: squadAccountList = squadEvmAccounts(evmAccountList);
+  $: accountFormIsAdvanced = accountFormPurpose === 'advanced';
 </script>
 
-<div class="wallet-view" aria-labelledby="wallet-view-title">
+<div class="wallet-view" class:wallet-view--embedded={embeddedInSettings} aria-labelledby={embeddedInSettings ? undefined : 'wallet-view-title'}>
   <div class="wallet-view-inner">
-    <header class="wallet-view-header">
-      <h1 id="wallet-view-title" class="wallet-view-title">EVM Wallet</h1>
-      <p class="wallet-view-lead">
-        Your embedded EVM wallet: send to any address, receive by sharing your address, and manage networks and tokens. Payment requests with
-        contacts stay in <strong>DMs</strong> (in-chat wallet panel). Nostr profile, backup, and logout: <strong>Settings → Profile</strong>.
-      </p>
-    </header>
-
-    {#if accountNpub}
-      <section class="wallet-view-section wallet-view-actions-section" aria-labelledby="wallet-actions-heading">
-        <h2 id="wallet-actions-heading" class="visually-hidden">Wallet actions</h2>
-        <div class="wallet-view-action-row">
-          <button
-            type="button"
-            class="wallet-view-btn wallet-view-btn-action"
-            on:click={() => (homeSendOpen = true)}
-            disabled={!evmAddress}
-          >
-            Send
-          </button>
-          <button
-            type="button"
-            class="wallet-view-btn wallet-view-btn-action wallet-view-btn-action-secondary"
-            on:click={() => (receiveOpen = true)}
-            disabled={!evmAddress}
-          >
-            Receive
-          </button>
-          <button type="button" class="wallet-view-btn wallet-view-btn-action-outline" on:click={onBuyCryptoClick}>
-            Buy crypto
-          </button>
-        </div>
-        {#if !evmAddress}
-          <p class="wallet-view-hint wallet-view-hint-tight">Unlock or wait for your wallet address to load to use Send and Receive.</p>
-        {/if}
-      </section>
+    {#if !embeddedInSettings}
+      <header class="wallet-view-header">
+        <h1 id="wallet-view-title" class="wallet-view-title">EVM Wallet</h1>
+        <p class="wallet-view-lead">
+          Your embedded EVM wallet: send to any address, receive by sharing your address, and manage networks and tokens. Payment requests with
+          contacts stay in <strong>DMs</strong> (in-chat wallet panel). Nostr profile, backup, and logout: <strong>Settings</strong>.
+        </p>
+      </header>
     {/if}
 
     {#if accountNpub}
-      <section class="wallet-view-section" aria-labelledby="wallet-accounts-heading">
-        <div class="wallet-view-section-head">
-          <h2 id="wallet-accounts-heading" class="wallet-view-h2">EVM Accounts</h2>
-          <div class="wallet-view-account-actions">
+      {#if embeddedInSettings}
+        <section class="wallet-view-section" aria-labelledby="wallet-default-config-heading">
+          <DefaultWalletConfig
+            accountNpub={accountNpub}
+            squadAccounts={squadAccountList}
+            accountsLoading={accountsLoading}
+            onSaved={refreshEvmAddress}
+          />
+        </section>
+      {:else}
+        <section class="wallet-view-section wallet-view-actions-section" aria-labelledby="wallet-actions-heading">
+          <h2 id="wallet-actions-heading" class="visually-hidden">Wallet actions</h2>
+          <div class="wallet-view-action-row">
             <button
               type="button"
-              class="wallet-view-btn wallet-view-btn-secondary"
+              class="wallet-view-btn wallet-view-btn-action"
+              on:click={() => (homeSendOpen = true)}
               disabled={!evmAddress}
-              on:click={openAddAccountModal}
             >
-              Add new EVM account
+              Send
             </button>
             <button
               type="button"
-              class="wallet-view-btn"
+              class="wallet-view-btn wallet-view-btn-action wallet-view-btn-action-secondary"
+              on:click={() => (receiveOpen = true)}
               disabled={!evmAddress}
-              on:click={() => {
-                importKeyModalOpen = true;
-              }}
             >
-              Import private key
+              Receive
             </button>
           </div>
-        </div>
-        <p class="wallet-view-hint">
-          Extra addresses are derived from your recovery phrase using standard Ethereum paths. Imported keys are not covered by that phrase.
-          Treasury and Safe deploy require a derived account (from your phrase) as the active signer, not an imported key.
-        </p>
-        {#if accountsLoading && evmAccountList.length === 0}
-          <p class="wallet-view-empty">Loading accounts…</p>
-        {:else if evmAccountList.length === 0}
-          <p class="wallet-view-empty">No accounts yet. Unlock your wallet or wait for sync.</p>
-        {:else}
-          <ul class="wallet-view-account-list">
-            {#each evmAccountList as acc (acc.id)}
-              <li class="wallet-view-account-row" class:wallet-view-account-active={acc.isActive}>
-                <label class="wallet-view-account-select">
-                  <input
-                    type="radio"
-                    name="active_evm_account"
-                    checked={acc.isActive}
-                    disabled={accountsLoading}
-                    on:change={() => onSetActiveAccount(acc.id)}
-                  />
-                  <span class="wallet-view-account-meta">
-                    <span class="wallet-view-account-scheme">{evmAccountSchemeLabel(acc.scheme)}</span>
-                    {#if acc.hdIndex != null}
-                      <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
-                    {/if}
-                    {#if acc.label?.trim()}
-                      <span class="wallet-view-account-name">· {acc.label.trim()}</span>
-                    {/if}
-                  </span>
-                </label>
-                <code class="wallet-view-account-addr" title={acc.address}>{shortAddr(acc.address)}</code>
-                <div class="wallet-view-account-tools">
-                  {#if acc.isActive}
-                    <span class="wallet-view-account-badge">Signer</span>
-                  {/if}
-                  {#if acc.isDefaultShared}
-                    <span class="wallet-view-account-badge">Receiver</span>
-                  {/if}
-                  <button
-                    type="button"
-                    class="wallet-view-account-more"
-                    disabled={accountsLoading}
-                    aria-label="Edit account name and roles"
-                    title="Edit name, signing address, receiving address"
-                    on:click={() => openEditAccountModal(acc)}
-                  >
-                    …
-                  </button>
-                  <button
-                    type="button"
-                    class="wallet-view-account-copy-icon-btn"
-                    disabled={accountsLoading || !acc.address?.trim()}
-                    aria-label="Copy address to clipboard"
-                    title="Copy address"
-                    on:click|stopPropagation={() => copyAccountAddress(acc.address)}
-                  >
-                    <svg
-                      class="wallet-view-account-copy-svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.75"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                  </button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
+          {#if !evmAddress}
+            <p class="wallet-view-hint wallet-view-hint-tight">Unlock or wait for your wallet address to load to use Send and Receive.</p>
+          {/if}
+        </section>
+      {/if}
     {/if}
 
-    <section class="wallet-view-section" aria-labelledby="wallet-networks-heading">
-      <h2 id="wallet-networks-heading" class="wallet-view-h2">Networks</h2>
-      <p class="wallet-view-hint">
-        Enable chains you use. At least one must stay on. Affects Send, this view, and the DM wallet sidebar.
-      </p>
-      <ul class="wallet-view-toggle-list">
-        {#each WALLET_ASSETS_CHAIN_IDS as chain (chain)}
-          <li>
-            <label class="wallet-view-toggle">
-              <input
-                type="checkbox"
-                checked={enabledSet.has(chain)}
-                disabled={enabledSet.has(chain) && enabledSet.size <= 1}
-                on:change={() => toggleChain(chain)}
-              />
-              <span>{getWalletNetworkDisplayName(chain)}</span>
-              <span class="wallet-view-chain-id">{chain}</span>
-            </label>
-          </li>
-        {/each}
-      </ul>
-    </section>
+    {#if accountNpub}
+      <EvmAccountsSection
+        {accountNpub}
+        {evmAddress}
+        {embeddedInSettings}
+        {evmAccountList}
+        {accountsLoading}
+        onSetActiveAccount={onSetActiveAccount}
+        onSetActiveAdvancedAccount={onSetActiveAdvancedAccount}
+        onEditAccount={openEditAccountModal}
+        onAddSquad={() => openAddAccountModal('squad')}
+        onAddAdvanced={() => openAddAccountModal('advanced')}
+        onImportKey={() => {
+          importKeyModalOpen = true;
+        }}
+      />
 
-    <section class="wallet-view-section" aria-labelledby="wallet-tokens-heading">
-      <div class="wallet-view-section-head">
-        <h2 id="wallet-tokens-heading" class="wallet-view-h2">Tokens to Track</h2>
-        <button type="button" class="wallet-view-btn" on:click={() => (importModalOpen = true)}>Import tokens</button>
+      <EvmWalletExtras
+        {accountNpub}
+        {enabledSet}
+        {watchedRows}
+        bind:tokenNetworkFilter
+        onToggleChain={toggleChain}
+        onRemoveWatchedRow={removeWatchedRow}
+        onImportTokens={() => {
+          importModalOpen = true;
+        }}
+      />
+
+      <div class="wallet-view-section">
+        <WalletAdvancedPanel enabledChainIds={enabledChainsOrdered} {embeddedInSettings} />
       </div>
-      <p class="wallet-view-hint">Tracked assets appear in Send and in the DM wallet sidebar (per network).</p>
-      {#if watchedRows.length === 0}
-        <p class="wallet-view-empty">No extra tokens yet. Native ETH balances still show when RPCs are available.</p>
-      {:else}
-        <ul class="wallet-view-token-list">
-          {#each watchedRows as row (row.id)}
-            <li class="wallet-view-token-row">
-              <div class="wallet-view-token-meta">
-                <span class="wallet-view-token-sym">{row.symbol}</span>
-                <span class="wallet-view-token-net">{getWalletNetworkDisplayName(row.network)}</span>
-                <code class="wallet-view-token-addr">{row.address.slice(0, 10)}…{row.address.slice(-6)}</code>
-                <span class="wallet-view-token-src">{row.source}</span>
-              </div>
-              <button type="button" class="wallet-view-btn-text" on:click={() => removeWatchedRow(row)}>Remove</button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
+    {/if}
 
-    <section class="wallet-view-section" aria-labelledby="wallet-rpc-heading">
-      <h2 id="wallet-rpc-heading" class="wallet-view-h2">RPC endpoints</h2>
-      <p class="wallet-view-hint">
-        Advanced: custom RPC URLs are documented in the repo at
-        <code class="wallet-view-code">docs/wallet/RPC_AND_VIEM_ARCHITECTURE.md</code>
-        (environment variables per chain).
-      </p>
-      {#if RPC_DOCS_URL && (RPC_DOCS_URL.startsWith('http://') || RPC_DOCS_URL.startsWith('https://'))}
-        <button type="button" class="wallet-view-btn wallet-view-btn-secondary" on:click={openRpcDocs}>
-          Open RPC documentation
-        </button>
-      {/if}
-    </section>
-
-    <aside class="wallet-view-alpha" role="note">
-      <strong>Alpha software.</strong>
-      Wallet and key handling have not been reviewed by an independent security audit. Use only funds you can afford to lose. See
-      <code class="wallet-view-code">docs/audits/README.md</code> in the repository.
-    </aside>
+    {#if !embeddedInSettings}
+      <aside class="wallet-view-alpha" role="note">
+        <strong>Alpha software.</strong>
+        Wallet and key handling have not been reviewed by an independent security audit. Use only funds you can afford to lose. See
+        <code class="wallet-view-code">docs/audits/README.md</code> in the repository.
+      </aside>
+    {/if}
   </div>
 </div>
 
 {#if accountNpub}
   <WalletImportTokensModal
     open={importModalOpen}
-    networkScope="all"
+    networkScope={tokenNetworkFilter}
     {accountNpub}
     onClose={() => (importModalOpen = false)}
     onSaved={() => {
@@ -479,21 +369,25 @@
       importModalOpen = false;
     }}
   />
-  <WalletHomeSendModal
-    open={homeSendOpen}
-    onClose={() => {
-      homeSendOpen = false;
-    }}
-    watchedAssetRows={watchedRows}
-    enabledChainIds={enabledChainsOrdered}
-  />
+  {#if !embeddedInSettings}
+    <WalletHomeSendModal
+      open={homeSendOpen}
+      onClose={() => {
+        homeSendOpen = false;
+      }}
+      watchedAssetRows={watchedRows}
+      enabledChainIds={enabledChainsOrdered}
+    />
+  {/if}
 {/if}
 
-<WalletReceiveModal
-  open={receiveOpen && !!displayReceivingAddress}
-  address={displayReceivingAddress ?? ''}
-  onClose={() => (receiveOpen = false)}
-/>
+{#if !embeddedInSettings}
+  <WalletReceiveModal
+    open={receiveOpen && !!displayReceivingAddress}
+    address={displayReceivingAddress ?? ''}
+    onClose={() => (receiveOpen = false)}
+  />
+{/if}
 
 {#if accountFormMode}
   <div
@@ -503,12 +397,31 @@
   ></div>
   <div class="wallet-view-modal" role="dialog" aria-labelledby="account-form-title" aria-modal="true">
     <h2 id="account-form-title" class="wallet-view-h2">
-      {accountFormMode === 'add' ? 'Add EVM account' : 'Edit EVM account'}
+      {#if accountFormMode === 'add'}
+        {accountFormIsAdvanced ? 'Add advanced account' : 'Add new account'}
+      {:else if accountFormIsAdvanced}
+        Edit advanced account
+      {:else}
+        Edit squad account
+      {/if}
     </h2>
     {#if accountFormMode === 'add'}
-      <p class="wallet-view-hint">
-        Creates a new address from your recovery phrase. Name is optional and only stored on this device.
-      </p>
+      {#if accountFormIsAdvanced}
+        <p class="wallet-view-hint wallet-view-hint-warn">
+          Advanced accounts are not used for squad roster, governance, treasury deploy, or your profile receiving address.
+        </p>
+        <p class="wallet-view-hint">
+          Creates a new derived address from your recovery phrase, tagged advanced-only.
+        </p>
+      {:else}
+        <p class="wallet-view-hint">
+          Creates a new squad address from your recovery phrase. Name is optional and only stored on this device.
+        </p>
+      {/if}
+    {:else if accountFormIsAdvanced}
+      <p class="wallet-view-hint">Update the display name. Advanced accounts cannot be squad signers or receiving addresses.</p>
+    {:else if embeddedInSettings}
+      <p class="wallet-view-hint">Update the display name. Signer and receiver are set in Default wallet config above.</p>
     {:else}
       <p class="wallet-view-hint">
         Update the display name and whether this account is the signer or published receiving address. Name is only stored on this device.
@@ -524,14 +437,16 @@
       bind:value={accountFormLabel}
       disabled={accountFormBusy}
     />
-    <label class="wallet-view-import-check">
-      <input type="checkbox" bind:checked={accountFormSetSigning} disabled={accountFormBusy} />
-      Use as signing address (Send, balances, DM wallet)
-    </label>
-    <label class="wallet-view-import-check">
-      <input type="checkbox" bind:checked={accountFormSetReceiving} disabled={accountFormBusy} />
-      Use as receiving address (profile / Kind 0; republishes your profile)
-    </label>
+    {#if !accountFormIsAdvanced && !embeddedInSettings}
+      <label class="wallet-view-import-check">
+        <input type="checkbox" bind:checked={accountFormSetSigning} disabled={accountFormBusy} />
+        Use as signing address (Send, balances, DM wallet)
+      </label>
+      <label class="wallet-view-import-check">
+        <input type="checkbox" bind:checked={accountFormSetReceiving} disabled={accountFormBusy} />
+        Use as receiving address (profile / Kind 0; republishes your profile)
+      </label>
+    {/if}
     <div class="wallet-view-modal-actions">
       <button
         type="button"
@@ -563,7 +478,10 @@
     }}
   ></div>
   <div class="wallet-view-modal" role="dialog" aria-labelledby="import-pk-title" aria-modal="true">
-    <h2 id="import-pk-title" class="wallet-view-h2">Import EVM private key</h2>
+    <h2 id="import-pk-title" class="wallet-view-h2">Import advanced private key</h2>
+    <p class="wallet-view-hint wallet-view-hint-warn">
+      Imported keys are always advanced-purpose. They cannot be squad signers, roster addresses, or profile receiving addresses.
+    </p>
     <p class="wallet-view-hint">
       Paste a standalone Ethereum private key (32-byte secret). It is encrypted like your other keys. Not recoverable from your recovery phrase.
     </p>
@@ -574,10 +492,6 @@
       bind:value={importKeyInput}
       disabled={importKeyBusy}
     ></textarea>
-    <label class="wallet-view-import-check">
-      <input type="checkbox" bind:checked={importSetActive} disabled={importKeyBusy} />
-      Use this account as the active signer after import
-    </label>
     <div class="wallet-view-modal-actions">
       <button
         type="button"
@@ -606,10 +520,21 @@
     background: var(--bg-page);
   }
 
+  .wallet-view--embedded {
+    background: transparent;
+    overflow: visible;
+  }
+
   .wallet-view-inner {
     max-width: 720px;
     margin: 0 auto;
     padding: 28px 32px 48px;
+  }
+
+  .wallet-view--embedded .wallet-view-inner {
+    max-width: none;
+    margin: 0;
+    padding: 24px 28px 28px;
   }
 
   .wallet-view-header {
@@ -723,6 +648,10 @@
     font-size: 0.8125rem;
     line-height: 1.5;
     color: var(--text-muted);
+  }
+
+  .wallet-view-hint-warn {
+    color: var(--text-primary);
   }
 
   .wallet-view-toggle-list {

@@ -1239,8 +1239,12 @@ impl MlsService {
                                         })).unwrap_or_else(|e| {
                                             eprintln!("[MLS] Failed to emit mls_message_new event: {}", e);
                                         });
-                                        crate::db::try_apply_squad_member_evm_share(handle, &msg.content, msg.npub.as_deref());
-                                        crate::db::apply_parent_safe_announce(handle, &msg.content);
+                                        crate::db::apply_inbox_virtual_bucket_side_effects(
+                                            handle,
+                                            msg.virtual_bucket.as_deref(),
+                                            &msg.content,
+                                            msg.npub.as_deref(),
+                                        );
                                     }
                                     
                                     // Save the new message to database immediately

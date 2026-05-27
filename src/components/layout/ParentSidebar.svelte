@@ -16,6 +16,8 @@
   export let subheading: string | undefined = undefined;
   export let channels: ParentChannel[] = [];
   export let activeChannelId: string | null = null;
+  /** Disambiguates selection when multiple channels share the active MLS group id. */
+  export let activeHubChannelName: string | null = null;
   export let activeView = 'hub';
   export let creating = false;
   export let createError = '';
@@ -31,16 +33,12 @@
   export let errorBanners: { id: string; text: string }[] = [];
   export let onDismissBanner: ((id: string) => void) | undefined = undefined;
 
-  export let onSelectChannel: (groupId: string) => void = () => {};
+  export let onSelectChannel: (channel: ParentChannel) => void = () => {};
   export let onCreateChannel: () => void = () => {};
   export let onRetryCreate: () => void = () => {};
   export let onInvite: () => void = () => {};
-  /** Open the "Add Juice" WIP modal for this parent (optional). */
-  export let onAddJuice: (() => void) | undefined = undefined;
-  /** Open the "Initialize Governance" WIP modal for this parent (optional). */
-  export let onInitGovernance: (() => void) | undefined = undefined;
-  /** Squad/network roster signer (EVM); does not edit on-chain Safe owners. */
-  export let onChangeSigner: (() => void) | undefined = undefined;
+  /** Placeholder: future per-parent EVM signer change from sidebar (use #dashboard → Settings today). */
+  export let onChangeEvmSigner: (() => void) | undefined = undefined;
   /** Only used when type === 'squad'. */
   export let onExitSquad: (() => void) | undefined = undefined;
   /** Only used when type === 'network'. */
@@ -49,12 +47,20 @@
   let menuOpen = false;
   const createErrorId = 'parent-create-error';
 
+  $: groupIdDupCount = channels.reduce<Record<string, number>>((acc, c) => {
+    acc[c.groupId] = (acc[c.groupId] ?? 0) + 1;
+    return acc;
+  }, {});
+  $: firstNameByGroupId = (() => {
+    const m: Record<string, string> = {};
+    for (const c of channels) {
+      if (!(c.groupId in m)) m[c.groupId] = c.name;
+    }
+    return m;
+  })();
+
   $: inviteLabel = type === 'squad' ? 'Invite to Squad' : 'Invite to Network';
-  $: addJuiceLabel = 'Add Juice';
-  $: initGovLabel = 'Initialize Governance';
-  $: showAddJuice = typeof onAddJuice === 'function';
-  $: showInitGovernance = typeof onInitGovernance === 'function';
-  $: showChangeSigner = typeof onChangeSigner === 'function';
+  $: showChangeEvmSigner = typeof onChangeEvmSigner === 'function';
   $: showExitSquad = type === 'squad' && typeof onExitSquad === 'function';
   $: showExitNetwork = type === 'network' && typeof onExitNetwork === 'function';
   $: showExit = showExitSquad || showExitNetwork;
@@ -99,43 +105,17 @@
               >
                 {inviteLabel}
               </button>
-              {#if showAddJuice && onAddJuice}
+              {#if showChangeEvmSigner && onChangeEvmSigner}
                 <button
                   type="button"
                   class="parent-menu-item"
                   role="menuitem"
                   on:click={() => {
                     menuOpen = false;
-                    onAddJuice();
+                    onChangeEvmSigner();
                   }}
                 >
-                  {addJuiceLabel}
-                </button>
-              {/if}
-              {#if showInitGovernance && onInitGovernance}
-                <button
-                  type="button"
-                  class="parent-menu-item"
-                  role="menuitem"
-                  on:click={() => {
-                    menuOpen = false;
-                    onInitGovernance();
-                  }}
-                >
-                  {initGovLabel}
-                </button>
-              {/if}
-              {#if showChangeSigner && onChangeSigner}
-                <button
-                  type="button"
-                  class="parent-menu-item"
-                  role="menuitem"
-                  on:click={() => {
-                    menuOpen = false;
-                    onChangeSigner();
-                  }}
-                >
-                  Change signer
+                  Change EVM Signer
                 </button>
               {/if}
               {#if showExit && onExit}
@@ -183,17 +163,22 @@
         />
       {:else}
         <div class="parent-channel-list">
-          {#each channels as channel (channel.groupId)}
+          {#each channels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
             <div
-              on:click={() => onSelectChannel(channel.groupId)}
-              on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel.groupId)}
+              on:click={() => onSelectChannel(channel)}
+              on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
               role="button"
               tabindex="0"
             >
               <Channel
                 name={channel.name}
                 type="text"
-                active={activeView === 'hub' && activeChannelId === channel.groupId}
+                active={activeView === 'hub' &&
+                  activeChannelId === channel.groupId &&
+                  (groupIdDupCount[channel.groupId] <= 1 ||
+                    activeHubChannelName === channel.name ||
+                    (activeHubChannelName == null &&
+                      firstNameByGroupId[channel.groupId] === channel.name))}
               />
             </div>
           {/each}

@@ -91,25 +91,10 @@ export async function listAllAccounts(): Promise<string[]> {
   return await invoke('list_all_accounts');
 }
 
-export type EvmAccountExportRow = {
-  id: string;
-  scheme: string;
-  hdIndex: number | null;
-  address: string;
-  label: string;
-  privateKey: string;
-};
-
 /**
- * Export account keys (requires PIN for decryption)
+ * Export one EVM account private key (requires PIN unlock / encryption key in memory).
  */
-export async function exportKeys(): Promise<{
-  nsec: string;
-  seed_phrase?: string;
-  evm_private_key?: string | null;
-  /** Present after unlock; each entry includes `privateKey` (0x + hex). */
-  evm_accounts?: EvmAccountExportRow[];
-}> {
-  return await invoke('export_keys');
+export async function exportEvmAccountKeyPlaintext(accountId: string): Promise<string> {
+  return await invoke<string>('export_evm_account_key_plaintext', { accountId });
 }
 

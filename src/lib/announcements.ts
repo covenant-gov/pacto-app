@@ -21,6 +21,25 @@ export const ANNOUNCE_TYPE_SAFE_PROPOSAL = 'safe_proposal';
 /** New dashboard poll posted to the announcements MLS group; vote in Dashboard → Polls. */
 export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
 
+/** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
+export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
+
+/** Payload for `governance_updated`. `parent_id` is the squad or network root id. */
+export interface GovernanceUpdatedPayload {
+  parent_id: string;
+  /** `pacto_gov` | `gnosis_safe` | `bread_coop` | `sponsor` (normalized server-side where applicable). */
+  provider: string;
+  /** Hat tree id, sponsor clone address, Safe sentinel, etc.; required non-empty on wire. */
+  canonical_ref: string;
+  /** Stable squad infra row id for multi-row merge (optional on wire until all clients emit it). */
+  entry_id?: string;
+  /** `sepolia` | `mainnet` | `optimism` — defaults server-side when omitted. */
+  chain?: string;
+  /** Upstream pacto-gov git commit at deploy time (optional). */
+  pacto_gov_revision?: string;
+  /** JSON string metadata (tx hash, addresses map, etc.). */
+  provider_payload?: string;
+}
 /** Payload for safe_updated announce. squad_id in JSON is the parent id (squad or network). */
 export interface SquadSafeUpdatedPayload {
   squad_id: string;
@@ -76,14 +95,16 @@ export type AnnouncePayload =
   | SquadSafeUpdatedPayload
   | SafeProposalPayload
   | SquadMemberEvmSharePayload
-  | DashboardPollCreatedPayload;
+  | DashboardPollCreatedPayload
+  | GovernanceUpdatedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED; payload: SquadSafeUpdatedPayload }
   | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload }
   | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload }
-  | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload };
+  | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload };
 
 function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
   return (
@@ -141,6 +162,19 @@ function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPay
   return true;
 }
 
+function isGovernanceUpdatedPayload(p: unknown): p is GovernanceUpdatedPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  return (
+    typeof q.parent_id === 'string' &&
+    q.parent_id.trim().length > 0 &&
+    typeof q.provider === 'string' &&
+    q.provider.trim().length > 0 &&
+    typeof q.canonical_ref === 'string' &&
+    q.canonical_ref.trim().length > 0
+  );
+}
+
 /**
  * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
  */
@@ -169,14 +203,19 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   if (type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED && isDashboardPollCreatedPayload(payload)) {
     return { type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED, payload };
   }
+  if (type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED && isGovernanceUpdatedPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED, payload };
+  }
   return null;
 }
 
 /**
  * Build content string for posting an announcement (e.g. from Set Safe flow or Create proposal).
+ * Includes `pacto_virtual_bucket` per routing ADR (`inbox` for governance automation; `polls` for poll-created wire).
  */
 export function buildAnnounceContent<T extends AnnounceMessage>(msg: T): string {
-  return JSON.stringify({ type: msg.type, payload: msg.payload });
+  const pacto_virtual_bucket = msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? 'polls' : 'inbox';
+  return JSON.stringify({ pacto_virtual_bucket, type: msg.type, payload: msg.payload });
 }
 
 /**

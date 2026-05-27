@@ -1,0 +1,8 @@
+---
+description: Do not delete repo content or policy unless the user explicitly asked to remove it
+alwaysApply: true
+---
+
+# No unrequested deletions
+
+- **Do not** treat overlapping edits as permission to remove unrelated policies (for example co-author rules, greenfield rules, or contributor constraints).

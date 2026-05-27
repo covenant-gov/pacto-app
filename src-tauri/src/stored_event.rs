@@ -120,6 +120,10 @@ pub struct StoredEvent {
     /// Sender's npub (for group chats where sender varies)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub npub: Option<String>,
+
+    /// Normalized MLS virtual bucket (`announcements` \| `inbox` \| `polls`) when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtual_bucket: Option<String>,
 }
 
 impl StoredEvent {
@@ -140,6 +144,7 @@ impl StoredEvent {
             failed: false,
             wrapper_event_id: None,
             npub: None,
+            virtual_bucket: None,
         }
     }
 
@@ -233,11 +238,15 @@ pub struct StoredEventBuilder {
     failed: bool,
     wrapper_event_id: Option<String>,
     npub: Option<String>,
+    virtual_bucket: Option<String>,
 }
 
 impl StoredEventBuilder {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            virtual_bucket: None,
+            ..Default::default()
+        }
     }
 
     pub fn id(mut self, id: impl Into<String>) -> Self {
@@ -305,6 +314,11 @@ impl StoredEventBuilder {
         self
     }
 
+    pub fn virtual_bucket(mut self, virtual_bucket: Option<String>) -> Self {
+        self.virtual_bucket = virtual_bucket;
+        self
+    }
+
     pub fn build(self) -> StoredEvent {
         StoredEvent {
             id: self.id,
@@ -321,6 +335,7 @@ impl StoredEventBuilder {
             failed: self.failed,
             wrapper_event_id: self.wrapper_event_id,
             npub: self.npub,
+            virtual_bucket: self.virtual_bucket,
         }
     }
 }

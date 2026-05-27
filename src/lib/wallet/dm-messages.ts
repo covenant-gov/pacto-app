@@ -14,7 +14,7 @@ const AMOUNT_REGEX = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 const MAX_AMOUNT_LEN = 32;
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
-const NETWORKS = new Set<string>(['mainnet', 'optimism', 'sepolia']);
+const NETWORKS = new Set<string>(['mainnet', 'arbitrum', 'optimism', 'gnosis', 'sepolia']);
 
 const EVM_ADDR_REGEX = /^0x[a-fA-F0-9]{40}$/;
 

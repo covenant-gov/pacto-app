@@ -33,13 +33,6 @@ mod util;
 use util::{get_file_type_description, calculate_file_hash, format_bytes};
 
 mod evm;
-mod evm_accounts;
-
-mod wallet_prices;
-mod wallet_chain_config;
-mod wallet_security;
-mod wallet_ops;
-mod safe_deploy;
 
 #[cfg(target_os = "android")]
 #[path = "android/mod.rs"]
@@ -60,6 +53,8 @@ mod chat;
 pub use chat::{Chat, ChatType, ChatMetadata};
 
 mod dashboard_poll;
+
+mod virtual_channel_bucket;
 
 mod rumor;
 pub use rumor::{RumorEvent, RumorContext, RumorProcessingResult, ConversationType, process_rumor};
@@ -1186,12 +1181,13 @@ async fn get_message_views<R: Runtime>(
     chat_id: String,
     limit: usize,
     offset: usize,
+    virtual_bucket_filter: Option<String>,
 ) -> Result<Vec<Message>, String> {
     // Convert chat identifier to database ID (MLS groups: create row if missing so new channels load)
     let chat_int_id = db::resolve_chat_id_for_message_load(&handle, &chat_id)?;
 
     // Get materialized message views from events
-    let messages = db::get_message_views(&handle, chat_int_id, limit, offset).await?;
+    let messages = db::get_message_views(&handle, chat_int_id, limit, offset, virtual_bucket_filter).await?;
 
     // Sync to backend state for cache compatibility (uses binary search for efficient insertion)
     if !messages.is_empty() {
@@ -2573,8 +2569,12 @@ async fn notifs() -> Result<bool, String> {
                                 "message": record,
                                 "group_name": group_name
                             }));
-                            db::try_apply_squad_member_evm_share(&handle, &record.content, record.npub.as_deref());
-                            db::apply_parent_safe_announce(&handle, &record.content);
+                            db::apply_inbox_virtual_bucket_side_effects(
+                                &handle,
+                                record.virtual_bucket.as_deref(),
+                                &record.content,
+                                record.npub.as_deref(),
+                            );
                         }
                     }
                 }
@@ -4003,7 +4003,7 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
             if profile_db.exists() {
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
-                let _ = evm_accounts::ensure_ready(handle.clone()).await;
+                let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
             } else if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
                 eprintln!("[Login] Failed to initialize profile database: {}", e);
             } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
@@ -4444,55 +4444,6 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     })
 }
 
-/// Export account keys (nsec and seed phrase if available)
-#[tauri::command]
-async fn export_keys() -> Result<serde_json::Value, String> {
-    // Try to get nsec from database first
-    let handle = TAURI_APP.get().unwrap();
-    let nsec = if let Some(enc_pkey) = db::get_pkey(handle.clone())? {
-        // Decrypt the nsec
-        match crypto::internal_decrypt(enc_pkey, None).await {
-            Ok(decrypted_nsec) => decrypted_nsec,
-            Err(_) => return Err("Failed to decrypt nsec".to_string()),
-        }
-    } else {
-        return Err("No nsec found in database".to_string());
-    };
-    
-    // Try to get seed phrase from memory first
-    let seed_phrase = if let Some(seed) = mnemonic_seed_get() {
-        Some(seed)
-    } else {
-        // If not in memory, try to get from database
-        if ENCRYPTION_KEY.get().is_some() {
-            match db::get_seed(handle.clone()).await {
-                Ok(Some(seed)) => Some(seed),
-                Ok(None) => None,
-                Err(_) => None,
-            }
-        } else {
-            None
-        }
-    };
-    
-    // Active EVM account (when resolvable): same decryption path as wallet send.
-    let evm_private_key = match evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone()).await {
-        Ok(k) => Some(k),
-        Err(_) => None,
-    };
-
-    let evm_accounts = evm_accounts::export_all_evm_account_keys_plaintext(handle.clone()).await?;
-
-    let response = serde_json::json!({
-        "nsec": nsec,
-        "seed_phrase": seed_phrase,
-        "evm_private_key": evm_private_key,
-        "evm_accounts": evm_accounts
-    });
-
-    Ok(response)
-}
-
 /// Sign a 32-byte Ethereum hash (hex string) with the stored EVM key.
 /// Returns a 65-byte signature as 0x-prefixed hex (r || s || v) where v is 27 or 28.
 #[tauri::command]
@@ -4508,7 +4459,7 @@ async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Re
         return Err("Hash must be exactly 32 bytes".to_string());
     }
 
-    let evm_private_key = evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone())
+    let evm_private_key = evm::evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone())
         .await
         .map_err(|_| "Failed to resolve EVM signing key".to_string())?;
 
@@ -6320,11 +6271,20 @@ pub fn run() {
             db::set_safe,
             db::list_parent_treasury_safes,
             db::add_parent_treasury_safe,
+            db::list_squad_infra,
+            db::list_squad_infra_canonical_refs,
+            db::list_squad_contract_allowlist,
+            db::upsert_squad_contract_allowlist,
+            db::remove_squad_contract_allowlist,
+            db::upsert_squad_infra,
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
+            db::upsert_squad_member_evm_account,
+            db::list_evm_account_squad_bindings,
+            db::resolve_squad_roster_evm_address,
             db::backfill_squad_member_evm_missing_from_profiles,
             db::get_seed,
             db::set_seed,
@@ -6417,18 +6377,35 @@ pub fn run() {
             clear_storage,
             load_mls_device_id,
             load_mls_keypackages,
-            export_keys,
             sign_evm_hash,
-            wallet_prices::wallet_get_usd_spot_prices,
-            wallet_ops::get_wallet_summary,
-            wallet_ops::wallet_build_and_send_transaction,
-            evm_accounts::list_evm_accounts,
-            evm_accounts::add_evm_account,
-            evm_accounts::import_evm_account,
-            evm_accounts::update_evm_account,
-            evm_accounts::set_active_evm_account,
-            evm_accounts::set_default_shared_evm_account,
-            safe_deploy::safe_deploy_proxy,
+            evm::wallet_prices::wallet_get_usd_spot_prices,
+            evm::wallet_ops::get_wallet_summary,
+            evm::wallet_ops::wallet_build_and_send_transaction,
+            evm::evm_accounts::list_evm_accounts,
+            evm::evm_accounts::export_evm_account_key_plaintext,
+            evm::evm_accounts::add_evm_account,
+            evm::evm_accounts::import_evm_account,
+            evm::evm_accounts::update_evm_account,
+            evm::evm_accounts::set_active_evm_account,
+            evm::evm_accounts::set_default_shared_evm_account,
+            evm::evm_accounts::set_active_advanced_evm_account,
+            evm::advanced_contract_call::evm_send_advanced_contract_call,
+            evm::squad_allowlist::evm_send_squad_allowlisted_contract_call,
+            evm::safe_deploy::safe_deploy_proxy,
+            evm::nave_pirata_deploy::deploy_nave_pirata_for_parent,
+            evm::squad_sponsor_deploy::deploy_squad_sponsor_for_parent,
+            evm::squad_sponsor_deposit::deposit_squad_sponsor,
+            evm::squad_sponsor_read::get_squad_sponsor_summary,
+            evm::squad_admin_deploy::deploy_squad_admin_for_parent,
+            evm::squad_admin_write::squad_admin_create_role,
+            evm::squad_admin_write::squad_admin_enable_executor,
+            evm::squad_admin_write::squad_admin_enable_full_permission,
+            evm::nave_pirata_read::get_nave_pirata_deployment,
+            evm::treasury_proposals_read::list_treasury_proposals,
+            evm::treasury_proposals_read::treasury_proposal_has_voted,
+            evm::hats_read::get_hats_tree,
+            evm::member_governance_read::get_member_hat_wearers,
+            evm::member_governance_read::get_squad_admin_executor_roles,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

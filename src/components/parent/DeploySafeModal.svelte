@@ -4,7 +4,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import Modal from '../ui/Modal.svelte';
   import { getMlsGroupMembers } from '../../lib/api/nostr';
-  import { getEvmAddress } from '../../lib/api/auth';
+  import { resolveSquadRosterEvmAddress } from '../../lib/squad/squad-roster-binding';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
     safeDeployProxy,
@@ -124,34 +124,13 @@
     selectedMemberNpubs = [...selectedMemberNpubs, npub];
   }
 
-  /** Load embedded wallet address alone so roster / MLS failures never leave `myEvm` unset. */
+  /** Load roster-bound address for this parent (per-squad binding when set). */
   async function loadMyWalletAddress(): Promise<void> {
     try {
-      let raw: string | null = null;
-      try {
-        raw = await getEvmAddress();
-      } catch {
-        raw = null;
-      }
-      if (raw != null && typeof raw !== 'string') {
-        raw = String(raw);
-      }
-      let normalized = normalizeMyWalletAddress(raw);
-      if (!normalized) {
-        const me = get(currentUser)?.npub;
-        if (me) {
-          try {
-            const prof = (await invoke('get_profile', { npub: me })) as {
-              evm_address?: string;
-              evmAddress?: string;
-            };
-            normalized = normalizeMyWalletAddress(
-              prof?.evm_address ?? prof?.evmAddress ?? null
-            );
-          } catch {
-            /* profile not in memory cache */
-          }
-        }
+      const me = get(currentUser)?.npub;
+      let normalized: string | null = null;
+      if (parentId.trim() && me) {
+        normalized = normalizeMyWalletAddress(await resolveSquadRosterEvmAddress(parentId, me));
       }
       myEvm = normalized;
       await tick();
@@ -234,7 +213,7 @@
     deploySaving = true;
     deployError = '';
     try {
-      const out = await safeDeployProxy(deployNetwork, owners, th, null);
+      const out = await safeDeployProxy(deployNetwork, owners, th, null, parentId);
       if (!out.ok) {
         const parsed = out.parsed ?? parseWalletOpError(out.message);
         let msg = parsed ? userFacingDeploySafeMessage(parsed) : out.message;
@@ -290,7 +269,7 @@
 
     <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
     <p class="deploy-safe-signers-hint muted">
-      Addresses come from #announcements when someone shares from a squad invite or Change signer. Members who have not
+      Addresses come from #announcements when members share a squad roster address (Inbox on join, or #dashboard → Settings). Members who have not
       shared are not listed. You are not listed here; use &quot;Include me as an owner&quot; for your wallet. At most
       {DEPLOY_SAFE_MAX_SIGNERS} owners total.
     </p>

@@ -1,0 +1,43 @@
+---
+description: Keep inline comments and config commentary brief; depth belongs in docs
+alwaysApply: true
+---
+
+# Brief inline commentary
+
+Assume a **senior developer** audience. Bias toward **under-explaining** in source and config files.
+
+## Do
+
+- One short line when a name or default is not self-evident.
+- Point to **`docs/`** or **`ai-docs/`** for architecture, env resolution, and operator setup — not a second copy in comments.
+
+## Do not
+
+- Tutorial-style blocks, host maps, resolution order, or “how to use this repo” essays in `.env.example`, `.env.*`, or next to implementations.
+- Repeat what the variable name already says.
+- **Public contract addresses** in `.env` or `.env.example` — they belong in tracked JSON or code (e.g. `pacto-protocol-addresses.json`), not operator env files. Never add factory, proxy, or protocol address overrides to env templates.
+
+```bash
+# ❌ BAD — belongs in docs/wallet/RPC_AND_VIEM_ARCHITECTURE.md
+# One Alchemy key builds all chain URLs: https://{host}.g.alchemy.com/v2/{key}
+# Hosts: eth-mainnet, eth-sepolia, ...
+
+# ✅ GOOD
+# ALCHEMY_RPC_KEY=
+```
+
+```bash
+# ❌ BAD — public protocol addresses belong in repo JSON, not env
+# PACTO_SQUAD_SPONSOR_FACTORY=0x...
+```
+
+```ts
+// ❌ BAD
+/** Resolves RPC URLs: provider key, then user prefs, then curated public fallbacks. See RPC doc. */
+
+// ✅ GOOD
+/** Operator key → user prefs → curated public URLs. */
+```
+
+Normative detail, smoke steps, and cross-links live in tracked docs — not in scattered inline commentary.

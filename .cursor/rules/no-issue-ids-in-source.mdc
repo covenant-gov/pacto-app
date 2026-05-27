@@ -1,16 +1,34 @@
 ---
-description: Do not reference issue or ticket IDs in application source
+description: No tracker IDs, spec § references, or checklist breadcrumbs in application source
 alwaysApply: true
 ---
 
-# No issue IDs in source
+# No tracker or spec-checklist noise in source
+
+## Issue and ticket IDs
 
 - **Never** put tracker references in application code: no `WALLET-105`, `REF-001`, `GH-123`, Jira keys, or similar in:
   - comments and docblocks
   - string literals (including user-visible copy)
   - inline `//` / `/* */` next to implementations
 - Describe behavior in plain language only (e.g. “focus trap; restore focus on close”).
-- Use **tracked design docs** under `docs/` (e.g. `docs/wallet/`) for anything linked from code or user-visible strings. Keep internal checklists or scratch notes out of `src/`, `src-tauri/`, scripts, and shipped config; optional private doc trees (e.g. gitignored) must not be the only home for paths cited in the repo.
+
+## Spec sections and “executable checklist” references
+
+- **Never** use comments or docblocks to tie code to internal write-ups: no **§** section markers (`§7`, `§8.3`, `§7–8.3`), no checklist-style breadcrumbs (`8.3`, “executable checklist”, “ModPol §…”, “see TECH_SPEC §…”), and no pointers that mean “we implemented backlog row _n_”.
+- Comments stay **minimal** and explain **what this code does** (and non-obvious **why** in one phrase if needed). Rationale, numbering, and cross-links belong in **`docs/`** and **`ai-docs/`**, not next to implementations.
+
+```ts
+// ❌ BAD
+/** Unified feed (ModPol §7–8.3). */
+
+// ✅ GOOD
+/** Unified dashboard proposal feed; vote and eligibility wiring stay per-tool. */
+```
+
+## Where longer design references live
+
+- Use **tracked design docs** under `docs/` (and internal specs under `ai-docs/` where appropriate). Keep internal checklists and scratch execution notes **out of** `src/`, `src-tauri/`, scripts, and shipped config; optional private doc trees must not be the only home for anything reviewers must follow.
 
 ```ts
 // ❌ BAD

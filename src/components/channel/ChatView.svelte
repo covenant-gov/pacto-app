@@ -5,8 +5,19 @@
   import MessageInput from '../dm/MessageInput.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
+  import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
+  import {
+    groupTimelineKey,
+    defaultTrioSharesSingleMlsGroup,
+    announceCardAllowedForTimelineBucket,
+    type VirtualBucket,
+  } from '../../lib/mls/virtual-channel-bucket';
+  import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
+  import SquadRosterKeyInboxCard from '../inbox/SquadRosterKeyInboxCard.svelte';
+  import { needsSquadRosterKeyChoice } from '../../lib/squad/squad-roster-key-choice';
   import {
     activeChannelId,
+    activeHubChannelName,
     squads,
     activeSquadId,
     activeTopNavTab,
@@ -17,6 +28,7 @@
     requestsList,
     pendingList,
     backendGroupMessages,
+    backendGroupTimelineMessages,
     messageCountByChat,
     loadedOffsetByChat,
     groupSendError,
@@ -24,6 +36,8 @@
     parentsCreatingAnnouncements,
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
+    INBOX_CHANNEL_NAME,
+    POLLS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
     membershipVersionByGroupId,
     type DmMessage,
@@ -50,10 +64,18 @@
   $: activeChannel = (() => {
     if (!activeParent || !$activeChannelId) return null;
     const sorted = [...activeParent.channels].sort((a, b) => a.order - b.order);
-    const ch = sorted.find((c) => c.groupId === $activeChannelId);
-    if (ch) return ch;
-    if ($activeTopNavTab === 'squads') return $ungroupedChannels.find((c) => c.groupId === $activeChannelId) ?? null;
-    return null;
+    const matches = sorted.filter((c) => c.groupId === $activeChannelId);
+    if (matches.length === 0) {
+      if ($activeTopNavTab === 'squads') return $ungroupedChannels.find((c) => c.groupId === $activeChannelId) ?? null;
+      return null;
+    }
+    if (matches.length === 1) return matches[0];
+    const pref = $activeHubChannelName?.trim();
+    if (pref) {
+      const hit = matches.find((c) => c.name === pref);
+      if (hit) return hit;
+    }
+    return [...matches].sort((a, b) => a.order - b.order)[0];
   })();
   $: activeSquad = $activeTopNavTab === 'squads' && activeParent ? (activeParent as Squad) : null;
   $: activeNetwork = $activeTopNavTab === 'networks' && activeParent ? (activeParent as Network) : null;
@@ -72,6 +94,10 @@
   $: channelName = activeChannel?.name || 'channel';
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
+  $: isInboxChannel = (activeParent && activeChannel?.name === INBOX_CHANNEL_NAME) ?? false;
+  $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel || isInboxChannel;
+  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isInboxChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
@@ -89,12 +115,50 @@
   let leavingChannel = false;
   let leaveChannelError = '';
 
+  let showRosterKeyCard = false;
+
+  async function refreshRosterKeyCard(): Promise<void> {
+    if (!isInboxChannel || !activeParent) {
+      showRosterKeyCard = false;
+      return;
+    }
+    showRosterKeyCard = await needsSquadRosterKeyChoice(activeParent.id, announcementsGroupIdForMembers);
+  }
+
+  $: if (isInboxChannel && activeParent && announcementsGroupIdForMembers) {
+    void refreshRosterKeyCard();
+  }
+
+  function onRosterKeyChoiceComplete(): void {
+    void refreshRosterKeyCard();
+  }
+
   $: currentMessages = (() => {
     if (!$activeChannelId) return [];
     const list = [...($backendGroupMessages[$activeChannelId] ?? [])];
     list.sort((a, b) => a.at - b.at);
     return list;
   })();
+
+  function channelNameToVirtualBucket(name: string): VirtualBucket | null {
+    if (name === ANNOUNCEMENTS_CHANNEL_NAME) return 'announcements';
+    if (name === INBOX_CHANNEL_NAME) return 'inbox';
+    if (name === POLLS_CHANNEL_NAME) return 'polls';
+    return null;
+  }
+
+  $: virtualBucketSingleGroup =
+    !!activeParent &&
+    !!$activeChannelId &&
+    $activeChannelId !== DASHBOARD_CHANNEL_ID &&
+    defaultTrioSharesSingleMlsGroup(activeParent.channels);
+
+  $: selectedVirtualBucket = activeChannel ? channelNameToVirtualBucket(activeChannel.name) : null;
+
+  $: virtualTimelineMessages =
+    virtualBucketSingleGroup && selectedVirtualBucket && $activeChannelId
+      ? [...($backendGroupTimelineMessages[groupTimelineKey($activeChannelId, selectedVirtualBucket)] ?? [])]
+      : currentMessages;
 
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
@@ -135,9 +199,10 @@
     return base;
   }
 
-  let prevChannelId: string | null = null;
-  $: if (prevChannelId !== $activeChannelId) {
-    prevChannelId = $activeChannelId;
+  let prevTimelineKeyForSendError: string | null = null;
+  $: messagesTimelineKey = `${$activeChannelId ?? ''}:${activeChannel?.name ?? ''}`;
+  $: if (prevTimelineKeyForSendError !== messagesTimelineKey) {
+    prevTimelineKeyForSendError = messagesTimelineKey;
     groupSendError.set(null);
   }
 
@@ -167,10 +232,10 @@
 
   async function handleSendMessage(content: string) {
     const groupId = $activeChannelId;
-    if (!groupId) return;
+    if (!groupId || isInboxChannel) return;
     groupSendError.set(null);
     try {
-      await sendDmMessage(groupId, content, '');
+      await sendDmMessage(groupId, content, '', { virtualBucket: 'announcements' });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
     } catch (e: unknown) {
@@ -229,10 +294,13 @@
             )
           );
           const still = $squads.find((s) => s.id === activeSquad.id);
-          activeChannelId.set(still?.channels[0]?.groupId ?? null);
+          const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
+          activeChannelId.set(sorted[0]?.groupId ?? null);
+          activeHubChannelName.set(sorted[0]?.name ?? null);
           if (still?.channels.length === 0) activeSquadId.set(null);
         } else {
           activeChannelId.set(null);
+          activeHubChannelName.set(null);
         }
         closeChannelMenu();
         return;
@@ -250,7 +318,9 @@
           )
         );
         const still = $squads.find((s) => s.id === activeSquad.id);
-        activeChannelId.set(still?.channels[0]?.groupId ?? null);
+        const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
+        activeChannelId.set(sorted[0]?.groupId ?? null);
+        activeHubChannelName.set(sorted[0]?.name ?? null);
         if (still?.channels.length === 0) activeSquadId.set(null);
       } else if (networkContaining) {
         networks.update((list) =>
@@ -263,10 +333,12 @@
         const still = get(networks).find((n) => n.id === networkContaining.id);
         const remaining = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
         activeChannelId.set(remaining[0]?.groupId ?? null);
+        activeHubChannelName.set(remaining[0]?.name ?? null);
         if (remaining.length === 0) activeNetworkId.set(null);
       } else {
         ungroupedChannels.update((ch) => ch.filter((c) => c.groupId !== groupId));
         activeChannelId.set(null);
+        activeHubChannelName.set(null);
       }
       closeChannelMenu();
     } catch (e: unknown) {
@@ -319,7 +391,7 @@
       const result = await getMlsGroupMembers(groupId);
       const inChannel = new Set(result.members ?? []);
       const myNpub = $currentUser?.npub;
-      if (activeSquad && !isAnnouncementsChannel) {
+      if (activeSquad && !hideChannelOverflowMenu) {
         const ann = activeSquad.channels[0];
         if (ann) {
           const annResult = await getMlsGroupMembers(ann.groupId);
@@ -355,27 +427,26 @@
   }
 
   let messagesContainer: HTMLDivElement | null = null;
-  let scrollPrevChannelId: string | null = null;
-  let lastScrolledToBottomChannelId: string | null = null;
-  $: if (currentMessages.length && messagesContainer) {
+  let scrollPrevTimelineKey: string | null = null;
+  let lastScrolledToBottomTimelineKey: string | null = null;
+  $: if (virtualTimelineMessages.length && messagesContainer) {
     const el = messagesContainer;
-    const channelId = $activeChannelId;
-    const channelJustChanged = channelId !== scrollPrevChannelId;
-    const firstTimeWithMessages = channelId !== lastScrolledToBottomChannelId;
+    const channelJustChanged = messagesTimelineKey !== scrollPrevTimelineKey;
+    const firstTimeWithMessages = messagesTimelineKey !== lastScrolledToBottomTimelineKey;
     setTimeout(() => {
       if (!el || !document.contains(el)) return;
       const isNearBottom =
         el.scrollHeight - el.scrollTop - el.clientHeight < 100;
       if (channelJustChanged || firstTimeWithMessages) {
         el.scrollTop = el.scrollHeight;
-        scrollPrevChannelId = channelId;
-        lastScrolledToBottomChannelId = channelId;
+        scrollPrevTimelineKey = messagesTimelineKey;
+        lastScrolledToBottomTimelineKey = messagesTimelineKey;
       } else if (isNearBottom) {
         el.scrollTop = el.scrollHeight;
       }
     }, 0);
   }
-  $: if ($activeChannelId !== scrollPrevChannelId && !currentMessages.length) scrollPrevChannelId = $activeChannelId;
+  $: if (messagesTimelineKey !== scrollPrevTimelineKey && !virtualTimelineMessages.length) scrollPrevTimelineKey = messagesTimelineKey;
 </script>
 
 <svelte:window
@@ -402,7 +473,7 @@
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
-          {#if !isAnnouncementsChannel}
+          {#if !hideChannelOverflowMenu}
             <button
               type="button"
               class="channel-menu-btn"
@@ -427,7 +498,7 @@
         </div>
         {#if channelMenuOpen}
           <div class="channel-menu-dropdown" role="menu">
-            {#if !isAnnouncementsChannel}
+            {#if !hideChannelOverflowMenu}
               <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
                 Invite to channel
               </button>
@@ -449,6 +520,14 @@
       <p class="channel-send-error" role="alert">{leaveChannelError}</p>
     {/if}
 
+    {#if isPollsChannel && activeParent}
+      <DashboardPollsPanel
+        parentId={activeParent.id}
+        pollsMlsGroupId={resolvePollsMlsGroupId(activeParent)}
+        variant="channel"
+      />
+    {/if}
+
     <div class="messages-container" bind:this={messagesContainer}>
       <div class="messages-list">
         {#if isChannelCreating}
@@ -466,13 +545,22 @@
               </button>
             </div>
           {/if}
-          {#each currentMessages as message (message.id)}
+          {#if isInboxChannel && showRosterKeyCard && activeParent && announcementsGroupIdForMembers}
+            <SquadRosterKeyInboxCard
+              parentId={activeParent.id}
+              announcementsGroupId={announcementsGroupIdForMembers}
+              onComplete={onRosterKeyChoiceComplete}
+            />
+          {/if}
+          {#each virtualTimelineMessages as message (message.id)}
             {@const props = toMessageProps(message)}
-            {@const parsed = channelName === ANNOUNCEMENTS_CHANNEL_NAME ? parseAnnouncement(message.content) : null}
-            {#if parsed}
+            {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
+            {@const announceForCard =
+              parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
+            {#if announceForCard}
               <AnnounceCard
                 id={message.id}
-                announce={parsed}
+                announce={announceForCard}
                 authorName={props.authorName}
                 authorNpub={message.npub}
                 timestamp={props.timestamp}
@@ -487,7 +575,7 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating || isInboxChannel} />
 
     <!-- Leave channel confirm -->
     {#if showLeaveChannelConfirm}

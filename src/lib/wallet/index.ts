@@ -41,6 +41,7 @@ export {
 export {
   WALLET_ASSETS,
   WALLET_ASSETS_CHAIN_IDS,
+  WALLET_CHAIN_GROUPS,
   getWalletAssetsForChain,
   getWalletNetworkDisplayName,
   getExplorerTxUrl,

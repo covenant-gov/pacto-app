@@ -487,10 +487,48 @@ fn normalize_treasury_chain(raw: Option<&str>) -> String {
         .as_deref()
     {
         Some("mainnet") | Some("ethereum") | Some("eth") => "mainnet".to_string(),
+        Some("arbitrum") | Some("arb") => "arbitrum".to_string(),
         Some("optimism") | Some("op") => "optimism".to_string(),
+        Some("gnosis") | Some("gno") | Some("xdai") => "gnosis".to_string(),
         Some("sepolia") | None => "sepolia".to_string(),
         _ => "sepolia".to_string(),
     }
+}
+
+fn normalize_infra_type(raw: &str) -> Result<String, String> {
+    let s = raw.trim().to_ascii_lowercase();
+    match s.as_str() {
+        "sponsor" | "squad_sponsor" => Ok("sponsor".to_string()),
+        "pacto_gov" | "pacto-gov" => Ok("pacto_gov".to_string()),
+        "squad_admin" | "squad-admin" => Ok("squad_admin".to_string()),
+        "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => Ok("standalone_safe".to_string()),
+        "bread_coop" | "bread-coop" | "bread" => Ok("bread_coop".to_string()),
+        _ => Err(format!("unknown squad infra type: {}", raw.trim())),
+    }
+}
+
+const SQUAD_INFRA_CANONICAL_REF_MAX: usize = 2048;
+const SQUAD_INFRA_REVISION_MAX: usize = 64;
+const SQUAD_INFRA_PAYLOAD_MAX: usize = 256_000;
+const SQUAD_INFRA_ID_MAX: usize = 72;
+
+fn new_squad_infra_id(entry_id: Option<&str>) -> String {
+    if let Some(s) = entry_id.map(str::trim).filter(|s| !s.is_empty()) {
+        if s.len() >= 8
+            && s.len() <= SQUAD_INFRA_ID_MAX
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return s.to_string();
+        }
+    }
+    format!(
+        "si-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
 }
 
 fn new_treasury_row_id(entry_id: Option<&str>) -> String {
@@ -696,6 +734,758 @@ pub fn list_parent_treasury_safes<R: Runtime>(
     Ok(out)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadInfraRow {
+    pub id: String,
+    pub parent_id: String,
+    pub infra_type: String,
+    pub chain: String,
+    pub canonical_ref: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pacto_gov_revision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_payload: Option<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+/// True when a persisted `sponsor` infra row exists for this parent.
+pub fn parent_has_sponsor_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<bool, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(false);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM squad_infra WHERE parent_id = ?1 AND infra_type = 'sponsor'",
+            rusqlite::params![pid],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to query sponsor infra: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(count > 0)
+}
+
+#[command]
+pub fn list_squad_infra<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Vec<SquadInfraRow>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, parent_id, infra_type, chain, canonical_ref, pacto_gov_revision, provider_payload, created_at_ms, updated_at_ms \
+             FROM squad_infra WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
+        )
+        .map_err(|e| format!("Failed to list squad_infra: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![pid], |row| {
+            Ok(SquadInfraRow {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                infra_type: row.get(2)?,
+                chain: row.get(3)?,
+                canonical_ref: row.get(4)?,
+                pacto_gov_revision: row.get(5)?,
+                provider_payload: row.get(6)?,
+                created_at_ms: row.get(7)?,
+                updated_at_ms: row.get(8)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query squad_infra: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+/// Distinct on-chain refs from local `squad_infra` rows (for Advanced panel soft-deny warnings).
+#[command]
+pub fn list_squad_infra_canonical_refs<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<String>, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT lower(trim(canonical_ref)) FROM squad_infra \
+             WHERE canonical_ref IS NOT NULL AND trim(canonical_ref) != '' \
+             ORDER BY 1",
+        )
+        .map_err(|e| format!("Failed to list squad_infra refs: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Failed to query squad_infra refs: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadContractAllowlistRow {
+    pub id: String,
+    pub parent_id: String,
+    pub chain: String,
+    pub contract_address: String,
+    pub label: String,
+    pub added_by_npub: String,
+    pub abi_ref: Option<String>,
+    pub notes: Option<String>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+fn normalize_allowlist_chain(raw: &str) -> Result<String, String> {
+    let c = raw.trim().to_ascii_lowercase();
+    if c.is_empty() {
+        return Err("Chain is required.".to_string());
+    }
+    Ok(c)
+}
+
+fn normalize_allowlist_address(raw: &str) -> Result<String, String> {
+    crate::evm::normalize_hex_address(raw.trim())
+        .ok_or_else(|| "Contract address must be a valid 0x address.".to_string())
+}
+
+pub fn allowlist_row_id(parent_id: &str, chain: &str, contract_address: &str) -> String {
+    format!(
+        "allowlist-{}-{}-{}",
+        parent_id.trim(),
+        chain.trim().to_ascii_lowercase(),
+        contract_address.trim().to_ascii_lowercase()
+    )
+}
+
+fn parent_has_pacto_gov_infra(conn: &rusqlite::Connection, parent_id: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM squad_infra WHERE parent_id = ?1 AND infra_type = 'pacto_gov'",
+        rusqlite::params![parent_id],
+        |r| r.get::<_, i64>(0),
+    )
+    .unwrap_or(0)
+        > 0
+}
+
+/// Interim v1: mutations require deployed Pacto Gov. Target: on-chain captain / allowlist-admin role.
+fn require_allowlist_mutation_allowed(conn: &rusqlite::Connection, parent_id: &str) -> Result<(), String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Err("parent_id is required.".to_string());
+    }
+    let _ = crate::account_manager::get_current_account()?;
+    if !parent_has_pacto_gov_infra(conn, pid) {
+        return Err(
+            "Allowlist editing requires deployed Pacto Gov for this parent (interim captain-gated policy)."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn collect_hex_addresses_from_json_value(v: &serde_json::Value, out: &mut std::collections::HashSet<String>) {
+    match v {
+        serde_json::Value::String(s) => {
+            if let Some(norm) = crate::evm::normalize_hex_address(s.trim()) {
+                out.insert(norm.to_ascii_lowercase());
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                collect_hex_addresses_from_json_value(item, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (_, val) in map {
+                collect_hex_addresses_from_json_value(val, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Implicit allowlist: squad infra refs, treasury Safes, and curated deploy env targets for `(parent_id, chain)`.
+pub fn implicit_allowlist_addresses<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+) -> Result<Vec<String>, String> {
+    let pid = parent_id.trim();
+    let chain_norm = normalize_allowlist_chain(chain)?;
+    if pid.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut out = std::collections::HashSet::new();
+    let conn = crate::account_manager::get_db_connection(handle)?;
+
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT canonical_ref, provider_payload FROM squad_infra WHERE parent_id = ?1 AND lower(chain) = ?2",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![pid, &chain_norm], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        });
+        if let Ok(rows) = rows {
+            for row in rows.flatten() {
+                if let Ok(addr) = normalize_allowlist_address(&row.0) {
+                    out.insert(addr.to_ascii_lowercase());
+                }
+                if let Some(payload) = row.1 {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&payload) {
+                        collect_hex_addresses_from_json_value(&v, &mut out);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT safe_address FROM parent_treasury_safe WHERE parent_id = ?1 AND lower(chain) = ?2",
+    ) {
+        let rows = stmt.query_map(rusqlite::params![pid, &chain_norm], |row| row.get::<_, String>(0));
+        if let Ok(rows) = rows {
+            for addr in rows.flatten() {
+                if let Ok(norm) = normalize_allowlist_address(&addr) {
+                    out.insert(norm.to_ascii_lowercase());
+                }
+            }
+        }
+    }
+
+    crate::account_manager::return_db_connection(conn);
+
+    if let Ok(gov) = crate::evm::pacto_chain_config::pacto_gov_deploy_addresses(&chain_norm) {
+        out.insert(format!("{:#x}", gov.nave_pirata_factory).to_ascii_lowercase());
+        out.insert(format!("{:#x}", gov.master_quartermaster).to_ascii_lowercase());
+        out.insert(format!("{:#x}", gov.master_mutiny).to_ascii_lowercase());
+        out.insert(format!("{:#x}", gov.master_treasury_authority).to_ascii_lowercase());
+        out.insert(format!("{:#x}", gov.master_squad_admin_impl).to_ascii_lowercase());
+        out.insert(format!("{:#x}", gov.master_squad_admin_ext_impl).to_ascii_lowercase());
+        if let Some(a) = gov.nave_pirata_registry {
+            out.insert(format!("{:#x}", a).to_ascii_lowercase());
+        }
+        if let Some(a) = gov.hats {
+            out.insert(format!("{:#x}", a).to_ascii_lowercase());
+        }
+    }
+    if let Ok(sp) = crate::evm::pacto_chain_config::squad_sponsor_deploy_addresses(&chain_norm) {
+        out.insert(format!("{:#x}", sp.squad_sponsor_factory).to_ascii_lowercase());
+        out.insert(format!("{:#x}", sp.pacto_sponsor_paymaster).to_ascii_lowercase());
+        out.insert(format!("{:#x}", sp.entry_point).to_ascii_lowercase());
+    }
+    if let Some(net) = crate::evm::wallet_chain_config::network_by_key(&chain_norm) {
+        if let Some(sf) =
+            crate::evm::pacto_chain_config::safe_factory_addresses(&chain_norm, net.chain_id)
+        {
+            out.insert(format!("{:#x}", sf.proxy_factory).to_ascii_lowercase());
+            out.insert(format!("{:#x}", sf.singleton).to_ascii_lowercase());
+            out.insert(format!("{:#x}", sf.fallback_handler).to_ascii_lowercase());
+        }
+    }
+
+    let mut v: Vec<String> = out.into_iter().collect();
+    v.sort();
+    Ok(v)
+}
+
+pub fn is_allowlisted_contract_target<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    to_address: &str,
+) -> Result<bool, String> {
+    let to_norm = normalize_allowlist_address(to_address)?;
+    let to_lower = to_norm.to_ascii_lowercase();
+    let implicit = implicit_allowlist_addresses(handle, parent_id, chain)?;
+    if implicit.iter().any(|a| a == &to_lower) {
+        return Ok(true);
+    }
+    let pid = parent_id.trim();
+    let chain_norm = normalize_allowlist_chain(chain)?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM squad_contract_allowlist WHERE parent_id = ?1 AND lower(chain) = ?2 AND lower(contract_address) = ?3",
+            rusqlite::params![pid, &chain_norm, &to_lower],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    crate::account_manager::return_db_connection(conn);
+    Ok(n > 0)
+}
+
+#[command]
+pub fn list_squad_contract_allowlist<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Vec<SquadContractAllowlistRow>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(Vec::new());
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, parent_id, chain, contract_address, label, added_by_npub, abi_ref, notes, created_at_ms, updated_at_ms \
+             FROM squad_contract_allowlist WHERE parent_id = ?1 ORDER BY created_at_ms ASC",
+        )
+        .map_err(|e| format!("Failed to list squad_contract_allowlist: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![pid], |row| {
+            Ok(SquadContractAllowlistRow {
+                id: row.get(0)?,
+                parent_id: row.get(1)?,
+                chain: row.get(2)?,
+                contract_address: row.get(3)?,
+                label: row.get(4)?,
+                added_by_npub: row.get(5)?,
+                abi_ref: row.get(6)?,
+                notes: row.get(7)?,
+                created_at_ms: row.get(8)?,
+                updated_at_ms: row.get(9)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query squad_contract_allowlist: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+#[command]
+pub fn upsert_squad_contract_allowlist<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    chain: String,
+    contract_address: String,
+    label: String,
+    abi_ref: Option<String>,
+    notes: Option<String>,
+) -> Result<SquadContractAllowlistRow, String> {
+    let pid = parent_id.trim();
+    let chain_norm = normalize_allowlist_chain(&chain)?;
+    let addr_norm = normalize_allowlist_address(&contract_address)?;
+    let label_trim = label.trim().to_string();
+    let added_by = crate::account_manager::get_current_account()?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    require_allowlist_mutation_allowed(&conn, pid)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let id = allowlist_row_id(pid, &chain_norm, &addr_norm);
+    let abi = abi_ref
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let notes_out = notes
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let created_at_ms: i64 = conn
+        .query_row(
+            "SELECT created_at_ms FROM squad_contract_allowlist WHERE id = ?1",
+            rusqlite::params![&id],
+            |r| r.get(0),
+        )
+        .unwrap_or(now);
+    conn.execute(
+        "INSERT INTO squad_contract_allowlist (id, parent_id, chain, contract_address, label, added_by_npub, abi_ref, notes, created_at_ms, updated_at_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         ON CONFLICT(id) DO UPDATE SET label = excluded.label, abi_ref = excluded.abi_ref, notes = excluded.notes, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![
+            &id,
+            pid,
+            &chain_norm,
+            &addr_norm,
+            &label_trim,
+            &added_by,
+            &abi,
+            &notes_out,
+            created_at_ms,
+            now
+        ],
+    )
+    .map_err(|e| format!("Failed to upsert squad_contract_allowlist: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(SquadContractAllowlistRow {
+        id,
+        parent_id: pid.to_string(),
+        chain: chain_norm,
+        contract_address: addr_norm,
+        label: label_trim,
+        added_by_npub: added_by,
+        abi_ref: abi,
+        notes: notes_out,
+        created_at_ms,
+        updated_at_ms: now,
+    })
+}
+
+#[command]
+pub fn remove_squad_contract_allowlist<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    id: String,
+) -> Result<(), String> {
+    let pid = parent_id.trim();
+    let row_id = id.trim();
+    if pid.is_empty() || row_id.is_empty() {
+        return Err("parent_id and id are required.".to_string());
+    }
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    require_allowlist_mutation_allowed(&conn, pid)?;
+    let n = conn
+        .execute(
+            "DELETE FROM squad_contract_allowlist WHERE id = ?1 AND parent_id = ?2",
+            rusqlite::params![row_id, pid],
+        )
+        .map_err(|e| format!("Failed to remove squad_contract_allowlist: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    if n == 0 {
+        return Err("Allowlist row not found.".to_string());
+    }
+    Ok(())
+}
+
+pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_contract_allowlist_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let parent_id = match p.get("parent_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let action = p.get("action").and_then(|v| v.as_str()).unwrap_or("upsert");
+    let entry_id = p
+        .get("entry_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if action == "remove" {
+        if let Some(id) = entry_id {
+            let conn = match crate::account_manager::get_db_connection(handle) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let _ = conn.execute(
+                "DELETE FROM squad_contract_allowlist WHERE id = ?1 AND parent_id = ?2",
+                rusqlite::params![id, parent_id],
+            );
+            crate::account_manager::return_db_connection(conn);
+        }
+        return;
+    }
+    let chain = match p.get("chain").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return,
+    };
+    let contract_address = match p.get("contract_address").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return,
+    };
+    let label = p
+        .get("label")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let added_by = p
+        .get("added_by_npub")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if added_by.is_empty() {
+        return;
+    }
+    let abi_ref = p
+        .get("abi_ref")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let notes = p.get("notes").and_then(|v| v.as_str()).map(str::to_string);
+    let conn = match crate::account_manager::get_db_connection(handle) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let chain_norm = match normalize_allowlist_chain(&chain) {
+        Ok(c) => c,
+        Err(_) => {
+            crate::account_manager::return_db_connection(conn);
+            return;
+        }
+    };
+    let addr_norm = match normalize_allowlist_address(&contract_address) {
+        Ok(a) => a,
+        Err(_) => {
+            crate::account_manager::return_db_connection(conn);
+            return;
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let id = entry_id
+        .map(str::to_string)
+        .unwrap_or_else(|| allowlist_row_id(parent_id, &chain_norm, &addr_norm));
+    let created_at_ms: i64 = conn
+        .query_row(
+            "SELECT created_at_ms FROM squad_contract_allowlist WHERE id = ?1",
+            rusqlite::params![&id],
+            |r| r.get(0),
+        )
+        .unwrap_or(now);
+    let _ = conn.execute(
+        "INSERT INTO squad_contract_allowlist (id, parent_id, chain, contract_address, label, added_by_npub, abi_ref, notes, created_at_ms, updated_at_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         ON CONFLICT(id) DO UPDATE SET label = excluded.label, abi_ref = excluded.abi_ref, notes = excluded.notes, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![
+            &id,
+            parent_id,
+            &chain_norm,
+            &addr_norm,
+            label.trim(),
+            added_by,
+            &abi_ref,
+            &notes,
+            created_at_ms,
+            now
+        ],
+    );
+    crate::account_manager::return_db_connection(conn);
+}
+
+#[cfg(test)]
+mod allowlist_tests {
+    use super::allowlist_row_id;
+
+    #[test]
+    fn stable_allowlist_row_id_normalizes_address_case() {
+        let id = allowlist_row_id(
+            "parent-1",
+            "sepolia",
+            "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefAB",
+        );
+        assert_eq!(
+            id,
+            "allowlist-parent-1-sepolia-0xabcdefabcdefabcdefabcdefabcdefabcdefab"
+        );
+    }
+}
+
+fn upsert_squad_infra_inner<R: Runtime>(
+    handle: &AppHandle<R>,
+    id: &str,
+    parent_id: &str,
+    infra_type: &str,
+    chain: Option<&str>,
+    canonical_ref: &str,
+    pacto_gov_revision: Option<&str>,
+    provider_payload: Option<&str>,
+) -> Result<(), String> {
+    let row_id = id.trim();
+    if row_id.is_empty() {
+        return Err("id is empty".to_string());
+    }
+    if row_id.len() > SQUAD_INFRA_ID_MAX {
+        return Err(format!("id exceeds {} characters", SQUAD_INFRA_ID_MAX));
+    }
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Err("parent_id is empty".to_string());
+    }
+    let kind = normalize_infra_type(infra_type)?;
+    let chain_norm = normalize_treasury_chain(chain);
+    let cref = canonical_ref.trim();
+    if cref.is_empty() {
+        return Err("canonical_ref is empty".to_string());
+    }
+    if cref.len() > SQUAD_INFRA_CANONICAL_REF_MAX {
+        return Err(format!(
+            "canonical_ref exceeds {} characters",
+            SQUAD_INFRA_CANONICAL_REF_MAX
+        ));
+    }
+    let rev: Option<String> = pacto_gov_revision
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            if s.len() > SQUAD_INFRA_REVISION_MAX {
+                s[..SQUAD_INFRA_REVISION_MAX].to_string()
+            } else {
+                s.to_string()
+            }
+        });
+    let payload = provider_payload.map(str::trim).filter(|s| !s.is_empty());
+    if payload.map(|p| p.len()).unwrap_or(0) > SQUAD_INFRA_PAYLOAD_MAX {
+        return Err(format!(
+            "provider_payload exceeds {} characters",
+            SQUAD_INFRA_PAYLOAD_MAX
+        ));
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let existing_created: Option<i64> = conn
+        .query_row(
+            "SELECT created_at_ms FROM squad_infra WHERE id = ?1",
+            rusqlite::params![row_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read squad_infra created_at: {}", e))?;
+    let created_ms = existing_created.unwrap_or(now_ms);
+    conn.execute(
+        "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, pacto_gov_revision, provider_payload, created_at_ms, updated_at_ms) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+         ON CONFLICT(id) DO UPDATE SET \
+           parent_id = excluded.parent_id, \
+           infra_type = excluded.infra_type, \
+           chain = excluded.chain, \
+           canonical_ref = excluded.canonical_ref, \
+           pacto_gov_revision = excluded.pacto_gov_revision, \
+           provider_payload = excluded.provider_payload, \
+           updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![
+            row_id,
+            pid,
+            kind,
+            chain_norm,
+            cref,
+            rev,
+            payload,
+            created_ms,
+            now_ms,
+        ],
+    )
+    .map_err(|e| format!("Failed to upsert squad_infra: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+/// Stable SQLite row id for the sponsor infra entry for this parent.
+pub fn squad_sponsor_infra_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("sponsor-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "sp-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
+/// Persist or refresh the sponsor infra row after deploy (and for announce ingest).
+pub fn persist_sponsor_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    sponsor_address: &str,
+    provider_payload: &str,
+) -> Result<(), String> {
+    let norm = crate::evm::normalize_hex_address(sponsor_address.trim())
+        .ok_or_else(|| "invalid sponsor address".to_string())?;
+    upsert_squad_infra_inner(
+        handle,
+        squad_sponsor_infra_row_id(parent_id).as_str(),
+        parent_id,
+        "sponsor",
+        Some(chain),
+        norm.as_str(),
+        None,
+        Some(provider_payload),
+    )
+}
+
+/// Stable SQLite row id for the squad-admin infra entry for this parent.
+pub fn squad_admin_infra_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("squad-admin-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "sa-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
+/// Persist or refresh the squad-admin infra row after deploy (and for announce ingest).
+pub fn persist_squad_admin_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    squad_admin_proxy: &str,
+    provider_payload: &str,
+) -> Result<(), String> {
+    let norm = crate::evm::normalize_hex_address(squad_admin_proxy.trim())
+        .ok_or_else(|| "invalid squad admin address".to_string())?;
+    upsert_squad_infra_inner(
+        handle,
+        squad_admin_infra_row_id(parent_id).as_str(),
+        parent_id,
+        "squad_admin",
+        Some(chain),
+        norm.as_str(),
+        None,
+        Some(provider_payload),
+    )
+}
+
+/// Insert or replace a squad infra row keyed by stable `id`. Preserves `created_at_ms` on update.
+#[command]
+pub fn upsert_squad_infra<R: Runtime>(
+    handle: AppHandle<R>,
+    id: String,
+    parent_id: String,
+    infra_type: String,
+    chain: Option<String>,
+    canonical_ref: String,
+    pacto_gov_revision: Option<String>,
+    provider_payload: Option<String>,
+) -> Result<(), String> {
+    upsert_squad_infra_inner(
+        &handle,
+        id.as_str(),
+        parent_id.as_str(),
+        infra_type.as_str(),
+        chain.as_deref(),
+        canonical_ref.as_str(),
+        pacto_gov_revision.as_deref(),
+        provider_payload.as_deref(),
+    )
+}
+
 /// If content is a squad_safe_updated announce JSON, upsert a treasury row (idempotent per parent + address + chain).
 /// Wire format uses `squad_id` for the parent id. Optional: `chain`, `label`, `entry_id`.
 pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
@@ -736,6 +1526,73 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
     let _ = upsert_parent_treasury_row(handle, parent_id, &norm, chain.as_str(), lb, entry_id);
 }
 
+/// If content is a `governance_updated` announce JSON, upsert `squad_infra` (merge by `entry_id` or generated id).
+/// Wire format: `payload.parent_id`, `payload.provider`, `payload.canonical_ref`; optional `chain`, `pacto_gov_revision`, `provider_payload`, `entry_id`.
+pub fn maybe_upsert_governance_from_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("governance_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let parent_id = match p.get("parent_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let provider = match p.get("provider").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let canonical_ref = match p.get("canonical_ref").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let chain = p.get("chain").and_then(|v| v.as_str()).and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
+    let pacto_rev = p
+        .get("pacto_gov_revision")
+        .and_then(|v| v.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        });
+    let provider_payload_str = p.get("provider_payload").and_then(|v| v.as_str()).and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    });
+    let entry_id = p.get("entry_id").and_then(|v| v.as_str());
+    let row_id = new_squad_infra_id(entry_id);
+    let _ = upsert_squad_infra_inner(
+        handle,
+        row_id.as_str(),
+        parent_id,
+        provider,
+        chain,
+        canonical_ref,
+        pacto_rev,
+        provider_payload_str,
+    );
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadMemberEvmRow {
@@ -758,6 +1615,7 @@ pub fn upsert_squad_member_evm<R: Runtime>(
     }
     let norm = crate::evm::normalize_hex_address(evm_address.trim())
         .ok_or_else(|| "Invalid EVM address".to_string())?;
+    crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str())?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -834,6 +1692,321 @@ pub fn list_squad_member_evm<R: Runtime>(
     Ok(out)
 }
 
+/// Lookup squad/network `parent_id` for an on-chain infra address (e.g. Squad Admin proxy).
+pub fn parent_id_for_canonical_infra_ref<R: Runtime>(
+    handle: &AppHandle<R>,
+    canonical_ref: &str,
+) -> Result<Option<String>, String> {
+    let Some(norm) = crate::evm::normalize_hex_address(canonical_ref.trim()) else {
+        return Ok(None);
+    };
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let parent: Option<String> = conn
+        .query_row(
+            "SELECT parent_id FROM squad_infra WHERE lower(canonical_ref) = lower(?1) ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![norm.as_str()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to lookup squad_infra parent: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(parent.filter(|s| !s.trim().is_empty()))
+}
+
+/// Local per-squad roster signing account binding for the current user.
+#[command]
+pub fn upsert_squad_member_evm_account<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    evm_account_id: String,
+) -> Result<SquadMemberEvmRow, String> {
+    let member_npub = crate::account_manager::get_current_account()?;
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Err("parent_id is empty".to_string());
+    }
+    let account_id = evm_account_id.trim();
+    if account_id.is_empty() {
+        return Err("evm_account_id is empty".to_string());
+    }
+
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let purpose: String = conn
+        .query_row(
+            "SELECT purpose FROM evm_accounts WHERE id = ?1",
+            rusqlite::params![account_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Unknown EVM account.".to_string())?;
+    if purpose.trim().eq_ignore_ascii_case("advanced") {
+        crate::account_manager::return_db_connection(conn);
+        return Err(
+            "Advanced-purpose EVM accounts cannot be linked to squad rosters.".to_string(),
+        );
+    }
+    let address: String = conn
+        .query_row(
+            "SELECT address FROM evm_accounts WHERE id = ?1",
+            rusqlite::params![account_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Unknown EVM account.".to_string())?;
+    crate::account_manager::return_db_connection(conn);
+
+    let norm = crate::evm::normalize_hex_address(address.trim())
+        .ok_or_else(|| "Invalid EVM address".to_string())?;
+    crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str())?;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    conn.execute(
+        "INSERT INTO squad_member_evm_account (parent_id, member_npub, evm_account_id, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_account_id = excluded.evm_account_id, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![parent, member_npub.as_str(), account_id, now_ms],
+    )
+    .map_err(|e| format!("Failed to upsert squad_member_evm_account: {}", e))?;
+    conn.execute(
+        "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
+        rusqlite::params![parent, member_npub.as_str(), norm, now_ms],
+    )
+    .map_err(|e| format!("Failed to upsert squad_member_evm: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+
+    Ok(SquadMemberEvmRow {
+        member_npub,
+        evm_address: norm,
+        updated_at_ms: now_ms,
+    })
+}
+
+pub(crate) fn get_squad_member_evm_account_id<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    member_npub: Option<&str>,
+) -> Result<Option<String>, String> {
+    let member = match member_npub.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(m) => m.to_string(),
+        None => crate::account_manager::get_current_account()?,
+    };
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let id: Option<String> = conn
+        .query_row(
+            "SELECT evm_account_id FROM squad_member_evm_account WHERE parent_id = ?1 AND member_npub = ?2",
+            rusqlite::params![parent, member.as_str()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read squad_member_evm_account: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(id.filter(|s| !s.trim().is_empty()))
+}
+
+#[derive(serde::Serialize)]
+pub struct EvmAccountSquadBindingRow {
+    pub evm_account_id: String,
+    pub parent_id: String,
+}
+
+/// All squad roster bindings for the current user keyed by EVM account id.
+#[command]
+pub fn list_evm_account_squad_bindings<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<Vec<EvmAccountSquadBindingRow>, String> {
+    let member_npub = crate::account_manager::get_current_account()?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT evm_account_id, parent_id FROM squad_member_evm_account WHERE member_npub = ?1 ORDER BY parent_id",
+        )
+        .map_err(|e| format!("Failed to prepare squad binding query: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![member_npub.as_str()], |r| {
+            Ok(EvmAccountSquadBindingRow {
+                evm_account_id: r.get(0)?,
+                parent_id: r.get(1)?,
+            })
+        })
+        .map_err(|e| format!("Failed to list squad bindings: {}", e))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| format!("Failed to read squad binding row: {}", e))?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod squad_binding_list_tests {
+    use super::EvmAccountSquadBindingRow;
+
+    fn list_bindings_for_member(
+        conn: &rusqlite::Connection,
+        member_npub: &str,
+    ) -> rusqlite::Result<Vec<EvmAccountSquadBindingRow>> {
+        let mut stmt = conn.prepare(
+            "SELECT evm_account_id, parent_id FROM squad_member_evm_account WHERE member_npub = ?1 ORDER BY parent_id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![member_npub], |r| {
+            Ok(EvmAccountSquadBindingRow {
+                evm_account_id: r.get(0)?,
+                parent_id: r.get(1)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    #[test]
+    fn lists_bindings_for_member_ordered_by_parent_id() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE squad_member_evm_account (
+                parent_id TEXT NOT NULL,
+                member_npub TEXT NOT NULL,
+                evm_account_id TEXT NOT NULL,
+                updated_at_ms INTEGER NOT NULL,
+                PRIMARY KEY (parent_id, member_npub)
+            );",
+        )
+        .expect("schema");
+        conn.execute(
+            "INSERT INTO squad_member_evm_account (parent_id, member_npub, evm_account_id, updated_at_ms) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["squad-z", "npub1member", "acc-1", 1_i64],
+        )
+        .expect("insert z");
+        conn.execute(
+            "INSERT INTO squad_member_evm_account (parent_id, member_npub, evm_account_id, updated_at_ms) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["squad-a", "npub1member", "acc-1", 2_i64],
+        )
+        .expect("insert a");
+        conn.execute(
+            "INSERT INTO squad_member_evm_account (parent_id, member_npub, evm_account_id, updated_at_ms) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params!["squad-a", "npub1other", "acc-2", 3_i64],
+        )
+        .expect("insert other member");
+
+        let rows = list_bindings_for_member(&conn, "npub1member").expect("query");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].parent_id, "squad-a");
+        assert_eq!(rows[1].parent_id, "squad-z");
+        assert!(rows.iter().all(|r| r.evm_account_id == "acc-1"));
+    }
+}
+
+pub(crate) fn roster_evm_address_for_member<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    member_npub: &str,
+) -> Result<Option<String>, String> {
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let addr: Option<String> = conn
+        .query_row(
+            "SELECT evm_address FROM squad_member_evm WHERE parent_id = ?1 AND member_npub = ?2",
+            rusqlite::params![parent, member_npub.trim()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read squad_member_evm: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(addr
+        .and_then(|a| crate::evm::normalize_hex_address(a.trim()))
+        .filter(|s| !s.is_empty()))
+}
+
+/// Resolve roster-bound `0x` address: per-squad account binding → roster row → active squad signer.
+#[command]
+pub fn resolve_squad_roster_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    member_npub: Option<String>,
+) -> Result<Option<String>, String> {
+    let parent = parent_id.trim();
+    if parent.is_empty() {
+        return Ok(None);
+    }
+    let member = match member_npub
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        Some(m) => m.to_string(),
+        None => crate::account_manager::get_current_account()?,
+    };
+
+    if let Some(account_id) = get_squad_member_evm_account_id(&handle, parent, Some(member.as_str()))? {
+        let conn = crate::account_manager::get_db_connection(&handle)?;
+        let addr: Option<String> = conn
+            .query_row(
+                "SELECT address FROM evm_accounts WHERE id = ?1",
+                rusqlite::params![account_id.as_str()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("Failed to read evm_accounts: {}", e))?;
+        crate::account_manager::return_db_connection(conn);
+        if let Some(a) = addr.and_then(|x| crate::evm::normalize_hex_address(x.trim())) {
+            return Ok(Some(a));
+        }
+    }
+
+    if let Some(addr) = roster_evm_address_for_member(&handle, parent, member.as_str())? {
+        return Ok(Some(addr));
+    }
+
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let active_id: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'active_evm_account_id'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("settings read: {}", e))?;
+    let addr = if let Some(id) = active_id.filter(|s| !s.trim().is_empty()) {
+        conn.query_row(
+            "SELECT address FROM evm_accounts WHERE id = ?1 AND lower(purpose) = 'squad'",
+            rusqlite::params![id.as_str()],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read active squad account: {}", e))?
+    } else {
+        None
+    };
+    crate::account_manager::return_db_connection(conn);
+    Ok(addr.and_then(|a| crate::evm::normalize_hex_address(a.trim())))
+}
+
+/// Applies treasury (`squad_safe_updated`), governance (`governance_updated`), and roster EVM (`squad_member_evm_share`)
+/// side effects only when the MLS chat row is classified into the **inbox** virtual bucket (routing ADR).
+pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
+    handle: &AppHandle<R>,
+    virtual_bucket: Option<&str>,
+    content: &str,
+    author_npub: Option<&str>,
+) {
+    if virtual_bucket != Some("inbox") {
+        return;
+    }
+    try_apply_squad_member_evm_share(handle, content, author_npub);
+    apply_parent_safe_announce(handle, content);
+    maybe_upsert_governance_from_announce(handle, content);
+    try_apply_squad_contract_allowlist_announce(handle, content);
+}
+
 /// If `content` is a `squad_member_evm_share` JSON from MLS, store a normalized address for `author_npub` only.
 pub fn try_apply_squad_member_evm_share<R: Runtime>(
     handle: &AppHandle<R>,
@@ -879,6 +2052,9 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     let Some(norm) = crate::evm::normalize_hex_address(raw_addr) else {
         return;
     };
+    if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(handle, norm.as_str()).is_err() {
+        return;
+    }
 
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return;
@@ -934,6 +2110,9 @@ pub fn backfill_squad_member_evm_missing_from_profiles<R: Runtime>(
             continue;
         };
         let Some(norm) = crate::evm::normalize_hex_address(raw.trim()) else {
+            continue;
+        };
+        if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str()).is_err() {
             continue;
         };
         conn.execute(
@@ -1477,6 +2656,10 @@ fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>
         }
     }
 
+    let virtual_bucket = message.virtual_bucket.clone().or_else(|| {
+        crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(kind, &message.content, &tags)
+    });
+
     StoredEvent {
         id: message.id.clone(),
         kind,
@@ -1495,6 +2678,7 @@ fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>
         failed: message.failed,
         wrapper_event_id: message.wrapper_event_id.clone(),
         npub: message.npub.clone(),
+        virtual_bucket,
     }
 }
 
@@ -1876,7 +3060,7 @@ pub async fn get_chat_messages_paginated<R: Runtime>(
     // Get integer chat ID
     let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     // Use the events-based message views
-    get_message_views(handle, chat_int_id, limit, offset).await
+    get_message_views(handle, chat_int_id, limit, offset, None).await
 }
 
 /// Get the total message count for a chat
@@ -1890,7 +3074,7 @@ pub async fn get_chat_message_count<R: Runtime>(
 
     // Count message events (kind 14 = DM, kind 15 = file) from events table
     let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15)",
+        "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15, 30078)",
         rusqlite::params![chat_int_id],
         |row| row.get(0)
     ).map_err(|e| format!("Failed to count messages: {}", e))?;
@@ -1910,7 +3094,7 @@ pub async fn get_chat_last_messages<R: Runtime>(
     // Get integer chat ID
     let chat_int_id = resolve_chat_id_for_message_load(handle, chat_id)?;
     // Use the events-based message views
-    get_message_views(handle, chat_int_id, count, 0).await
+    get_message_views(handle, chat_int_id, count, 0, None).await
 }
 
 /// For DM chats: whether there is at least one message from us and one from them.
@@ -1976,7 +3160,7 @@ pub async fn get_messages_around_id<R: Runtime>(
     let older_count: i64 = {
         let conn = crate::account_manager::get_db_connection(handle)?;
         let count = conn.query_row(
-            "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15) AND created_at < ?2",
+            "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15, 30078) AND created_at < ?2",
             rusqlite::params![chat_int_id, target_timestamp],
             |row| row.get(0)
         ).map_err(|e| format!("Failed to count older messages: {}", e))?;
@@ -1997,7 +3181,7 @@ pub async fn get_messages_around_id<R: Runtime>(
     let limit = total_count.saturating_sub(start_position);
 
     // offset = 0 to start from the newest and get all messages back to start_position
-    get_message_views(handle, chat_int_id, limit, 0).await
+    get_message_views(handle, chat_int_id, limit, 0, None).await
 }
 
 /// Check if a message/event exists in the database by its ID
@@ -2311,8 +3495,8 @@ pub async fn save_event<R: Runtime>(
         r#"
         INSERT OR IGNORE INTO events (
             id, kind, chat_id, user_id, content, tags, reference_id,
-            created_at, received_at, mine, pending, failed, wrapper_event_id, npub
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
         "#,
         rusqlite::params![
             event.id,
@@ -2329,6 +3513,7 @@ pub async fn save_event<R: Runtime>(
             event.failed as i32,
             event.wrapper_event_id,
             event.npub,
+            event.virtual_bucket,
         ],
     ).map_err(|e| format!("Failed to save event: {}", e))?;
 
@@ -2370,6 +3555,7 @@ pub async fn save_reaction_event<R: Runtime>(
         failed: false,
         wrapper_event_id: None,
         npub: Some(reaction.author_id.clone()),
+        virtual_bucket: None,
     };
 
     save_event(handle, &event).await
@@ -2415,6 +3601,7 @@ pub async fn save_edit_event<R: Runtime>(
         failed: false,
         wrapper_event_id: None,
         npub: Some(npub.to_string()),
+        virtual_bucket: None,
     };
 
     save_event(handle, &event).await
@@ -2483,7 +3670,7 @@ pub async fn get_events<R: Runtime>(
             let sql = format!(
                 r#"
                 SELECT id, kind, chat_id, user_id, content, tags, reference_id,
-                       created_at, received_at, mine, pending, failed, wrapper_event_id, npub
+                       created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
                 FROM events
                 WHERE chat_id = ?1 AND kind IN ({})
                 ORDER BY created_at DESC
@@ -2511,6 +3698,13 @@ pub async fn get_events<R: Runtime>(
                     ).map_err(|e| format!("Failed to query events: {}", e))?;
                     rows.filter_map(|r| r.ok()).collect()
                 },
+                3 => {
+                    let rows = stmt.query_map(
+                        rusqlite::params![chat_id, k[0] as i32, k[1] as i32, k[2] as i32, limit as i64, offset as i64],
+                        parse_event_row
+                    ).map_err(|e| format!("Failed to query events: {}", e))?;
+                    rows.filter_map(|r| r.ok()).collect()
+                },
                 _ => return Err("Unsupported number of kinds".to_string()),
             };
 
@@ -2519,7 +3713,7 @@ pub async fn get_events<R: Runtime>(
         } else {
             let sql = r#"
                 SELECT id, kind, chat_id, user_id, content, tags, reference_id,
-                       created_at, received_at, mine, pending, failed, wrapper_event_id, npub
+                       created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
                 FROM events
                 WHERE chat_id = ?1
                 ORDER BY created_at DESC
@@ -2576,6 +3770,7 @@ fn parse_event_row(row: &rusqlite::Row) -> rusqlite::Result<StoredEvent> {
         failed: row.get::<_, i32>(11)? != 0,
         wrapper_event_id: row.get(12)?,
         npub: row.get(13)?,
+        virtual_bucket: row.get(14)?,
     })
 }
 
@@ -2597,7 +3792,7 @@ pub async fn get_related_events<R: Runtime>(
     let sql = format!(
         r#"
         SELECT id, kind, chat_id, user_id, content, tags, reference_id,
-               created_at, received_at, mine, pending, failed, wrapper_event_id, npub
+               created_at, received_at, mine, pending, failed, wrapper_event_id, npub, virtual_bucket
         FROM events
         WHERE reference_id IN ({})
         ORDER BY created_at ASC
@@ -2631,6 +3826,7 @@ pub async fn get_related_events<R: Runtime>(
             failed: row.get::<_, i32>(11)? != 0,
             wrapper_event_id: row.get(12)?,
             npub: row.get(13)?,
+            virtual_bucket: row.get(14)?,
         })
     })
     .map_err(|e| format!("Failed to query related events: {}", e))?
@@ -2792,10 +3988,25 @@ pub async fn get_message_views<R: Runtime>(
     chat_id: i64,
     limit: usize,
     offset: usize,
+    virtual_bucket_filter: Option<String>,
 ) -> Result<Vec<Message>, String> {
-    // Step 1: Get message events (kind 14 and 15)
-    let message_kinds = [event_kind::PRIVATE_DIRECT_MESSAGE, event_kind::FILE_ATTACHMENT];
+    // Step 1: Timeline rows (text, file attachment, dashboard poll create)
+    let message_kinds = [
+        event_kind::PRIVATE_DIRECT_MESSAGE,
+        event_kind::FILE_ATTACHMENT,
+        event_kind::APPLICATION_SPECIFIC,
+    ];
     let message_events = get_events(handle, chat_id, Some(&message_kinds), limit, offset).await?;
+
+    let message_events: Vec<StoredEvent> = message_events
+        .into_iter()
+        .filter(|e| {
+            if e.kind != event_kind::APPLICATION_SPECIFIC {
+                return true;
+            }
+            crate::dashboard_poll::try_parse_vote(e.content.trim()).is_none()
+        })
+        .collect();
 
     if message_events.is_empty() {
         return Ok(Vec::new());
@@ -2899,14 +4110,21 @@ pub async fn get_message_views<R: Runtime>(
         // Get attachments from the lookup map (for kind=15 file messages)
         let attachments = attachments_by_msg.remove(&event.id).unwrap_or_default();
 
-        // Get original content (already decrypted by get_events())
+        // Get original content (already decrypted by get_events() where applicable)
         let original_content = if event.kind == event_kind::FILE_ATTACHMENT {
             // File attachment content is just an encrypted hash - don't display
             String::new()
         } else {
-            // Content already decrypted by get_events()
             event.content.clone()
         };
+
+        let virtual_bucket = event.virtual_bucket.clone().or_else(|| {
+            crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
+                event.kind,
+                &original_content,
+                &event.tags,
+            )
+        });
 
         // Check for edits and build edit history
         let (content, edited, edit_history) = if let Some(edits) = edits_by_msg.remove(&event.id) {
@@ -2955,7 +4173,11 @@ pub async fn get_message_views<R: Runtime>(
             wrapper_event_id: event.wrapper_event_id,
             edited,
             edit_history,
-            rumor_kind: None,
+            rumor_kind: match event.kind {
+                k if k == event_kind::APPLICATION_SPECIFIC => Some(k),
+                _ => None,
+            },
+            virtual_bucket,
         };
         messages.push(message);
     }
@@ -2981,6 +4203,13 @@ pub async fn get_message_views<R: Runtime>(
                     message.replied_to_has_attachment = Some(ctx.has_attachment);
                 }
             }
+        }
+    }
+
+    if let Some(want) = virtual_bucket_filter {
+        let w = want.trim();
+        if matches!(w, "announcements" | "inbox" | "polls") {
+            messages.retain(|m| m.virtual_bucket.as_deref() == Some(w));
         }
     }
 

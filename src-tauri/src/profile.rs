@@ -4,7 +4,7 @@ use tauri_plugin_fs::FsExt;
 
 use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
-use crate::evm_accounts;
+use crate::evm::evm_accounts;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
 

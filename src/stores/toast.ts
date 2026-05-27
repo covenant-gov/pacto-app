@@ -7,6 +7,8 @@ export interface ToastGoTo {
   name: string;
   id: string;
   channelId: string;
+  /** Selected hub row when channelId is shared by multiple sidebar channels. */
+  hubChannelName?: string;
 }
 
 export interface ToastState {

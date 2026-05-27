@@ -1,5 +1,6 @@
 <script lang="ts">
   import FormattedMessageBody from './FormattedMessageBody.svelte';
+  import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let id: string = '';
   export let authorName: string = '';
@@ -10,15 +11,6 @@
   export let replyToId: string | undefined = undefined;
   export let replyAuthorName: string | undefined = undefined;
   export let replyPreview: string | undefined = undefined;
-
-  function formatTime(isoString: string): string {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
 
   function jumpToReply() {
     if (!replyToId) return;
@@ -38,7 +30,7 @@
   <div class="message-content">
     <div class="message-header">
       <span class="author-name">{authorName}</span>
-      <span class="timestamp">{formatTime(timestamp)}</span>
+      <span class="timestamp"><time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time></span>
     </div>
     {#if replyToId && (replyAuthorName != null || replyPreview != null)}
       <div class="msg-reply" role="region" aria-label="Reply to {replyAuthorName ?? 'message'}">

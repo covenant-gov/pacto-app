@@ -1,10 +1,29 @@
 {
-  "$comment": "ETH native and USDC/USDT on Ethereum, Optimism, and Sepolia. Re-verify Sepolia USDT on Etherscan before production-like testing; testnet deployments can change.",
+  "$comment": "Native gas + USDC/USDT on Arbitrum, Ethereum, Gnosis, Optimism, and Sepolia. Re-verify Sepolia USDT on Etherscan before production-like testing; testnet deployments can change.",
   "version": 1,
   "networks": {
+    "arbitrum": {
+      "viemChainKey": "arbitrum",
+      "displayName": "Arbitrum",
+      "explorerTxPath": "https://arbiscan.io/tx/",
+      "native": {
+        "symbol": "ETH",
+        "decimals": 18
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "decimals": 6
+        },
+        "USDT": {
+          "address": "0xFd086bC7CD5C481DCC9C0eb917cc8Edfe4422517",
+          "decimals": 6
+        }
+      }
+    },
     "mainnet": {
       "viemChainKey": "mainnet",
-      "displayName": "Ethereum mainnet",
+      "displayName": "Ethereum",
       "explorerTxPath": "https://etherscan.io/tx/",
       "native": {
         "symbol": "ETH",
@@ -36,6 +55,25 @@
         },
         "USDT": {
           "address": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
+          "decimals": 6
+        }
+      }
+    },
+    "gnosis": {
+      "viemChainKey": "gnosis",
+      "displayName": "Gnosis",
+      "explorerTxPath": "https://gnosisscan.io/tx/",
+      "native": {
+        "symbol": "xDAI",
+        "decimals": 18
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0xDDAfbb505ad214D7b80b1fd83009367855f4BE58",
+          "decimals": 6
+        },
+        "USDT": {
+          "address": "0x4ECaBa5870353815aAec567b667cbF7856AEB2ad",
           "decimals": 6
         }
       }

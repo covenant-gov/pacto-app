@@ -20,11 +20,8 @@ Addresses are **Ethereum mainnet** aggregator contracts. Display prices are **US
 
 The Tauri command issues `eth_call` to an **Ethereum mainnet** endpoint. Resolution order:
 
-1. `PACTO_CHAINLINK_PRICE_RPC_URL` — single HTTPS URL (recommended for production).
-2. First URL in `PACTO_WALLET_RPC_MAINNET` if set (comma-separated list allowed; only the first is used here).
-3. Built-in default: `https://ethereum.publicnode.com` (read-only; suitable for development only).
-
-`VITE_WALLET_RPC_*` variables apply to the **frontend** viem client only; they are **not** visible to the Rust process unless you also set the `PACTO_*` variables in the environment that launches the desktop app.
+1. `ALCHEMY_RPC_KEY` → `https://eth-mainnet.g.alchemy.com/v2/{key}` when set (same var as wallet RPC).
+2. Built-in default: `https://ethereum.publicnode.com` (read-only; suitable for development only).
 
 ## Caching
 

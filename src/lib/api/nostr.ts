@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { TreasurySafeEntry } from "../treasury/treasury-safes";
+import type { VirtualBucket } from "../mls/virtual-channel-bucket";
 import { dmLog } from "../utils/dm-debug";
 
 /**
@@ -115,20 +116,39 @@ export async function deleteDmChatBackend(chatId: string): Promise<void> {
 }
 
 /**
- * Get paginated messages for a DM chat (backend: get_message_views).
+ * Get paginated messages for a DM chat (backend: `get_message_views`).
  * chat_id = npub for DMs; reads from backend DB (filled by fetch_messages from relays).
+ * Optional `virtualBucketFilter` narrows MLS timeline rows when the backend persists buckets (single-group virtual channels).
  */
 export async function getDmMessages(
   chatId: string,
   limit: number,
-  offset: number
-): Promise<Array<{ id: string; content: string; at: number; mine: boolean; npub?: string }>> {
+  offset: number,
+  options?: { virtualBucketFilter?: VirtualBucket | null }
+): Promise<
+  Array<{
+    id: string;
+    content: string;
+    at: number;
+    mine: boolean;
+    npub?: string;
+    virtual_bucket?: string | null;
+  }>
+> {
   dmLog('get_message_views', { chatId: chatId.slice(0, 20) + '…', limit, offset });
   const msgs = await invoke('get_message_views', {
     chatId,
     limit,
     offset,
-  }) as Array<{ id: string; content: string; at: number; mine: boolean; npub?: string }>;
+    virtualBucketFilter: options?.virtualBucketFilter ?? null,
+  }) as Array<{
+    id: string;
+    content: string;
+    at: number;
+    mine: boolean;
+    npub?: string;
+    virtual_bucket?: string | null;
+  }>;
   dmLog('get_message_views result', { count: msgs.length });
   return msgs;
 }
@@ -234,6 +254,13 @@ export async function markAsRead(chatId: string, messageId: string | null): Prom
   return ok;
 }
 
+export type MlsVirtualBucket = 'announcements' | 'inbox' | 'polls';
+
+export interface SendDmMessageOptions {
+  /** MLS Kind 14 text only; adds rumor tag `pacto_bucket` when set. Ignored for DMs. */
+  virtualBucket?: MlsVirtualBucket;
+}
+
 /**
  * Send a DM to an npub (NIP-17 gift wrap). Calls backend message command.
  * Also used for group messages: pass group_id as receiver.
@@ -241,7 +268,8 @@ export async function markAsRead(chatId: string, messageId: string | null): Prom
 export async function sendDmMessage(
   receiver: string,
   content: string,
-  repliedTo: string = ''
+  repliedTo: string = '',
+  options?: SendDmMessageOptions | null
 ): Promise<boolean> {
   dmLog('message (send DM)', { receiver: receiver.slice(0, 20) + '…', contentLen: content.length, repliedTo: repliedTo || '(none)' });
   const ok = (await invoke('message', {
@@ -249,6 +277,7 @@ export async function sendDmMessage(
     content,
     repliedTo,
     file: null,
+    virtualBucket: options?.virtualBucket ?? null,
   })) as boolean;
   dmLog('message result', { ok });
   return ok;
@@ -624,7 +653,8 @@ export async function listDashboardPolls(parentId: string): Promise<DashboardPol
 }
 
 export async function sendDashboardPollCreate(params: {
-  announcementsGroupId: string;
+  /** MLS chat id for poll rumors — use `resolvePollsMlsGroupId(parent)` (parent announcements scope). */
+  mlsGroupId: string;
   parentId: string;
   pollId: string;
   title: string;
@@ -632,7 +662,7 @@ export async function sendDashboardPollCreate(params: {
   options: { id: string; label: string }[];
 }): Promise<void> {
   await invoke('send_dashboard_poll_create', {
-    announcementsGroupId: params.announcementsGroupId,
+    mlsGroupId: params.mlsGroupId,
     parentId: params.parentId,
     pollId: params.pollId,
     title: params.title,
@@ -642,13 +672,14 @@ export async function sendDashboardPollCreate(params: {
 }
 
 export async function sendDashboardPollVote(params: {
-  announcementsGroupId: string;
+  /** Same MLS scope as create (`resolvePollsMlsGroupId`). */
+  mlsGroupId: string;
   parentId: string;
   pollId: string;
   optionId: string;
 }): Promise<void> {
   await invoke('send_dashboard_poll_vote', {
-    announcementsGroupId: params.announcementsGroupId,
+    mlsGroupId: params.mlsGroupId,
     parentId: params.parentId,
     pollId: params.pollId,
     optionId: params.optionId,

@@ -1,18 +1,10 @@
 <script lang="ts">
   import type { DashboardPollCreatedPayload } from '../../lib/announcements';
+  import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let payload: DashboardPollCreatedPayload;
   export let authorName: string;
   export let timestamp: string;
-
-  function formatTime(isoString: string): string {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
 </script>
 
 <div class="poll-announce-body">
@@ -24,7 +16,7 @@
   </p>
   <p class="poll-announce-meta">
     {#if authorName}{authorName}{/if}
-    {#if timestamp} — {formatTime(timestamp)}{/if}
+    {#if timestamp} — {formatMessageTimestamp(timestamp)}{/if}
   </p>
 </div>
 

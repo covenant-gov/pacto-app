@@ -8,6 +8,9 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [sveltekit()],
 
+  /** Expose `ALCHEMY_RPC_KEY` to the client (same var the Tauri backend reads). */
+  envPrefix: ['VITE_', 'ALCHEMY_'],
+
   clearScreen: false,
 
   server: {

@@ -11,7 +11,7 @@ Legacy derivation used `keccak256(0x04 || x || y)` (65 bytes). Ethereum uses `ke
 
 ## What we shipped
 
-- **Permanent:** `evm::address_from_evm_secret_32` and nostr-linked derivation used via `derive_evm_hex_from_nostr_secret` (canonical hash, no `0x04` in keccak input). User-facing: **[`docs/wallet/EVM_ADDRESS_DERIVATION.md`](../wallet/EVM_ADDRESS_DERIVATION.md)**.
+- **Permanent:** `evm::address_from_evm_secret_32` and nostr-linked derivation used via `derive_evm_hex_from_nostr_secret` (canonical hash, no `0x04` in keccak input). User-facing: **[`docs/wallet/HD_DERIVATION_V1.md`](../wallet/HD_DERIVATION_V1.md)** (address hash rule + legacy notes).
 - **Legacy only:** `db::repair_evm_address_if_needed` rewrites **`settings.evm_address`** (active signer) when it disagrees with the decrypted key-derived address (**`set_wallet_signing_evm_address`**). Mine **`profiles.evm_address`** / Kind 0 update on a separate republish path.
 
 ## Code locations
@@ -27,5 +27,5 @@ Repair updates **local `settings.evm_address`** only. **Kind 0** `evm_address` f
 
 - [ ] Decide: drop repair vs keep one release for migration.
 - [ ] If dropping: remove `repair_evm_address_if_needed`; simplify `get_evm_address`; remove duplicate repair in `get_wallet_summary`.
-- [ ] Keep canonical derivation in `evm.rs`; trim **EVM_ADDRESS_DERIVATION.md** legacy section if appropriate.
+- [ ] Keep canonical derivation in `evm.rs`; legacy notes stay in **HD_DERIVATION_V1.md**.
 - [ ] Update **CATALOG.md**.
