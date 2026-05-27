@@ -262,7 +262,7 @@
       try {
         const fromEvm = await getActiveEvmSignerAddress();
         if (!fromEvm) {
-          const msg = 'No active EVM account. Open Settings → Wallet first.';
+          const msg = 'No active EVM account. Set up accounts under Settings → EVM.';
           sendError = { message: msg };
           showToast(msg);
           return;

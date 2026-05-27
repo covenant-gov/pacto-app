@@ -9,6 +9,7 @@
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
   import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
   import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
+  import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let id: string = '';
   export let announce: AnnounceMessage;
@@ -33,15 +34,6 @@
 
   $: dashboardPollPayload =
     announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null;
-
-  function formatTime(isoString: string): string {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
@@ -65,7 +57,7 @@
       <p class="announce-title">Announcement</p>
       <p class="announce-meta">
         {#if authorName}{authorName}{/if}
-        {#if timestamp} — {formatTime(timestamp)}{/if}
+        {#if timestamp} — {formatMessageTimestamp(timestamp)}{/if}
       </p>
     </div>
   {/if}

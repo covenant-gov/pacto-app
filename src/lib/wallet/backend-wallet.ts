@@ -118,7 +118,7 @@ export async function walletBuildAndSendTransaction(
   asset: string,
   amount: string,
   erc20Transfer?: { address: string; decimals: number } | null,
-  /** When set, send to this `0x` address (Settings → Wallet). `toNpub` is then ignored by the backend. */
+  /** When set, send to this `0x` address from Settings. `toNpub` is then ignored by the backend. */
   toAddressEvm?: string | null
 ): Promise<WalletSendResultOutcome> {
   if (!isTauri()) {
@@ -166,7 +166,8 @@ export async function safeDeployProxy(
   network: SupportedChainId,
   owners: string[],
   threshold: number,
-  saltNonce?: string | null
+  saltNonce?: string | null,
+  parentId?: string | null,
 ): Promise<SafeDeployProxyOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Deploy is only available in the desktop app.' };
@@ -177,6 +178,7 @@ export async function safeDeployProxy(
       owners,
       threshold,
       saltNonce: saltNonce ?? null,
+      parentId: parentId?.trim() ? parentId.trim() : null,
     });
     return { ok: true, result };
   } catch (e) {
@@ -199,7 +201,7 @@ export function userFacingDeploySafeMessage(parsed: WalletOpParsedError | undefi
     return 'Could not submit the transaction. Check your native balance and network connection.';
   }
   if (code === 'RPC_CONNECT') {
-    return "Couldn't reach the RPC. Try again in a moment or set PACTO_WALLET_RPC_* if you use custom endpoints.";
+    return "Couldn't reach the RPC. Try again in a moment or set ALCHEMY_RPC_KEY in `.env` (see `.env.example`).";
   }
   if (code === 'NO_EVM_KEY') {
     return 'No embedded wallet key on this account. Use an account that was created or imported with an EVM wallet.';

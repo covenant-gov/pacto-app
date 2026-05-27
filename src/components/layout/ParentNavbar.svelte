@@ -4,19 +4,20 @@
   import CreateChannelModal from '../channel/CreateChannelModal.svelte';
   import InviteToParentModal from '../channel/InviteToParentModal.svelte';
   import ExitParentModal from '../channel/ExitParentModal.svelte';
-  import ChangeParentSignerModal from '../parent/ChangeParentSignerModal.svelte';
-  import Modal from '../ui/Modal.svelte';
   import {
     squads,
     networks,
     activeSquadId,
     activeNetworkId,
     activeChannelId,
+    activeHubChannelName,
     activeView,
     lastChannelBySquadId,
+    lastHubChannelNameBySquadId,
     lastOpenedNetworkId,
     lastOpenedNetworkChannelId,
     lastChannelByNetworkId,
+    lastHubChannelNameByNetworkId,
     dmList,
     requestsList,
     pendingList,
@@ -26,16 +27,19 @@
     removeParentCreatingAnnouncements,
     DASHBOARD_CHANNEL_ID,
     DASHBOARD_CHANNEL_NAME,
+    ANNOUNCEMENTS_CHANNEL_NAME,
     type Channel as ChannelType,
     type Squad,
     type Network,
   } from '../../stores/app';
   import {
     getAnnouncementsChannel,
-    createAnnouncementsGroupAndChannel,
+    createDefaultParentChannels,
+    uniqueChannelsByGroupIdPreservingOrder,
     loadMembersForParent,
+    defaultParentInvitePhysicalGroupTargets,
   } from '../../lib/parent-navbar';
-  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
+  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import {
     createGroupChat,
     getMlsGroupMembers,
@@ -61,14 +65,11 @@
       ? ($squads.find((s) => s.id === $activeSquadId) as Squad | undefined)
       : ($networks.find((n) => n.id === $activeNetworkId) as Network | undefined);
 
-  $: rawChannels =
-    type === 'squad' && activeParent
-      ? [...new Map((activeParent as Squad).channels.map((c) => [c.groupId, c])).values()].sort(
-          (a, b) => a.order - b.order
-        )
-      : activeParent
-        ? [...(activeParent as Network).channels].sort((a, b) => a.order - b.order)
-        : [];
+  $: rawChannels = activeParent
+    ? [...(type === 'squad' ? (activeParent as Squad).channels : (activeParent as Network).channels)].sort(
+        (a, b) => a.order - b.order
+      )
+    : [];
   // Prepend # dashboard above # announcements (dashboard is not an MLS channel)
   $: channels = activeParent
     ? [{ name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 }, ...rawChannels]
@@ -98,7 +99,7 @@
         ? 'Select a network'
         : 'No networks';
 
-  $: canChangeSigner =
+  $: canShowParentMenuActions =
     !!activeParent && !creating && activeParent.channels.length > 0;
 
   let retryingCreate = false;
@@ -116,15 +117,30 @@
   }
 
   // --- selectChannel ---
-  function selectChannel(groupId: string) {
-    activeChannelId.set(groupId);
+  function selectChannel(channel: { groupId: string; name: string }) {
+    activeChannelId.set(channel.groupId);
+    activeHubChannelName.set(channel.groupId === DASHBOARD_CHANNEL_ID ? null : channel.name);
     activeView.set('hub');
     if (type === 'squad' && $activeSquadId) {
-      lastChannelBySquadId.update((m) => ({ ...m, [$activeSquadId!]: groupId }));
+      const sid = $activeSquadId;
+      lastChannelBySquadId.update((m) => ({ ...m, [sid]: channel.groupId }));
+      lastHubChannelNameBySquadId.update((m) => {
+        const next = { ...m };
+        if (channel.groupId === DASHBOARD_CHANNEL_ID) delete next[sid];
+        else next[sid] = channel.name;
+        return next;
+      });
     } else if (type === 'network' && $activeNetworkId) {
-      lastOpenedNetworkId.set($activeNetworkId);
-      lastOpenedNetworkChannelId.set(groupId);
-      lastChannelByNetworkId.update((m) => ({ ...m, [$activeNetworkId]: groupId }));
+      const nid = $activeNetworkId;
+      lastOpenedNetworkId.set(nid);
+      lastOpenedNetworkChannelId.set(channel.groupId);
+      lastChannelByNetworkId.update((m) => ({ ...m, [nid]: channel.groupId }));
+      lastHubChannelNameByNetworkId.update((m) => {
+        const next = { ...m };
+        if (channel.groupId === DASHBOARD_CHANNEL_ID) delete next[nid];
+        else next[nid] = channel.name;
+        return next;
+      });
     }
   }
 
@@ -136,20 +152,42 @@
     if (!memberIds?.length) return;
     retryingCreate = true;
     try {
-      const { groupId, channel: announcementsChannel } = await createAnnouncementsGroupAndChannel(
-        memberIds
-      );
+      const { parentId: gid, channels } = await createDefaultParentChannels(memberIds);
       if (type === 'squad') {
         squads.update((list) =>
           list.map((s) =>
-            s.id !== parent.id ? s : { ...s, channels: [announcementsChannel], updatedAt: Date.now() }
+            s.id !== parent.id ? s : { ...s, id: gid, channels, updatedAt: Date.now() }
           )
         );
-        if (get(activeSquadId) === parent.id) activeChannelId.set(groupId);
-        lastChannelBySquadId.update((m) => ({ ...m, [parent.id]: groupId }));
+        if (get(activeSquadId) === parent.id) {
+          activeSquadId.set(gid);
+          activeChannelId.set(gid);
+          const hub =
+            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
+          activeHubChannelName.set(hub);
+        }
+        lastChannelBySquadId.update((m) => {
+          const next = { ...m };
+          delete next[parent.id];
+          return { ...next, [gid]: gid };
+        });
+        lastHubChannelNameBySquadId.update((m) => {
+          const next = { ...m };
+          delete next[parent.id];
+          const hubName =
+            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
+          return hubName ? { ...next, [gid]: hubName } : next;
+        });
         pendingReadyToast.set({
           text: `${(parent as Squad).name} is ready!`,
-          goTo: { type: 'squad', name: (parent as Squad).name, id: parent.id, channelId: groupId },
+          goTo: {
+            type: 'squad',
+            name: (parent as Squad).name,
+            id: gid,
+            channelId: gid,
+            hubChannelName:
+              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
+          },
         });
         removeParentCreatingAnnouncements(parent.id);
         parentCreateErrorById.update((m) => {
@@ -165,7 +203,7 @@
         const payload = formatSquadInviteMessage({
           type: 'squad_invite',
           squadName: (parent as Squad).name,
-          groupId,
+          groupId: gid,
         });
         for (const npub of memberIds) {
           try {
@@ -177,16 +215,40 @@
       } else {
         networks.update((list) =>
           list.map((n) =>
-            n.id !== parent.id ? n : { ...n, channels: [announcementsChannel], updatedAt: Date.now() }
+            n.id !== parent.id ? n : { ...n, id: gid, channels, updatedAt: Date.now() }
           )
         );
         if (get(activeNetworkId) === parent.id) {
-          activeChannelId.set(groupId);
-          lastOpenedNetworkChannelId.set(groupId);
+          activeNetworkId.set(gid);
+          activeChannelId.set(gid);
+          lastOpenedNetworkChannelId.set(gid);
+          const hub =
+            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
+          activeHubChannelName.set(hub);
         }
+        lastOpenedNetworkId.set(gid);
+        lastChannelByNetworkId.update((m) => {
+          const next = { ...m };
+          delete next[parent.id];
+          return { ...next, [gid]: gid };
+        });
+        lastHubChannelNameByNetworkId.update((m) => {
+          const next = { ...m };
+          delete next[parent.id];
+          const hubName =
+            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
+          return hubName ? { ...next, [gid]: hubName } : next;
+        });
         pendingReadyToast.set({
           text: `${(parent as Network).name} is ready!`,
-          goTo: { type: 'network', name: (parent as Network).name, id: parent.id, channelId: groupId },
+          goTo: {
+            type: 'network',
+            name: (parent as Network).name,
+            id: gid,
+            channelId: gid,
+            hubChannelName:
+              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
+          },
         });
         removeParentCreatingAnnouncements(parent.id);
         parentCreateErrorById.update((m) => {
@@ -202,7 +264,7 @@
         const payload = formatNetworkInviteMessage({
           type: 'network_invite',
           networkName: (parent as Network).name,
-          groupId,
+          groupId: gid,
           memberSquads: (parent as Network).memberSquads ?? [],
         });
         for (const npub of memberIds) {
@@ -262,7 +324,7 @@
       try {
         const allNpubs = new Set<string>();
         const myNpub = $currentUser?.npub;
-        for (const ch of net.channels) {
+        for (const ch of uniqueChannelsByGroupIdPreservingOrder(net.channels)) {
           try {
             const result = await getMlsGroupMembers(ch.groupId);
             for (const n of result.members ?? []) {
@@ -329,9 +391,11 @@
           s.id !== $activeSquadId ? s : { ...s, channels: [...s.channels, placeholderChannel] }
         )
       );
-      $activeChannelId = placeholderId;
-      $activeView = 'hub';
+      activeChannelId.set(placeholderId);
+      activeHubChannelName.set(name);
+      activeView.set('hub');
       lastChannelBySquadId.update((m) => ({ ...m, [$activeSquadId!]: placeholderId }));
+      lastHubChannelNameBySquadId.update((m) => ({ ...m, [$activeSquadId!]: name }));
     } else {
       networks.update((list) =>
         list.map((n) =>
@@ -339,10 +403,12 @@
         )
       );
       activeChannelId.set(placeholderId);
+      activeHubChannelName.set(name);
       activeView.set('hub');
       lastOpenedNetworkId.set($activeNetworkId!);
       lastOpenedNetworkChannelId.set(placeholderId);
       lastChannelByNetworkId.update((m) => ({ ...m, [$activeNetworkId!]: placeholderId }));
+      lastHubChannelNameByNetworkId.update((m) => ({ ...m, [$activeNetworkId!]: name }));
     }
 
     closeCreateChannelModal();
@@ -362,7 +428,10 @@
               return { ...s, channels: chs };
             })
           );
-          if (get(activeChannelId) === placeholderId) activeChannelId.set(groupId);
+          if (get(activeChannelId) === placeholderId) {
+            activeChannelId.set(groupId);
+            activeHubChannelName.set(name);
+          }
           const announcementsChannel = getAnnouncementsChannel(squad);
           const payload = formatChannelInSquadMessage({
             type: 'channel_in_squad',
@@ -390,7 +459,10 @@
               return { ...n, channels: chs };
             })
           );
-          if (get(activeChannelId) === placeholderId) activeChannelId.set(groupId);
+          if (get(activeChannelId) === placeholderId) {
+            activeChannelId.set(groupId);
+            activeHubChannelName.set(name);
+          }
           if (get(lastOpenedNetworkChannelId) === placeholderId) lastOpenedNetworkChannelId.set(groupId);
           const existingChannelGroupIds = network.channels
             .map((ch) => ch.groupId)
@@ -412,10 +484,6 @@
             }
           }
         }
-        const annForShare = getAnnouncementsChannel(parent);
-        void publishSquadMemberEvmShare(annForShare.groupId).then((ok) => {
-          if (!ok) console.warn('[ParentNavbar] EVM share after new channel failed');
-        });
       } catch (e) {
         createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
         setTimeout(() => {
@@ -433,7 +501,10 @@
           if (get(activeChannelId) === placeholderId) {
             const list = get(squads);
             const still = list.find((s) => s.id === squadId);
-            activeChannelId.set(still?.channels[0]?.groupId ?? null);
+            const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
+            const gid = sorted[0]?.groupId ?? null;
+            activeChannelId.set(gid);
+            activeHubChannelName.set(gid ? resolveHubChannelNameForGroupSelection(sorted, gid, null) : null);
           }
         } else {
           const networkId = get(activeNetworkId);
@@ -448,7 +519,9 @@
             const list = get(networks);
             const still = list.find((n) => n.id === networkId);
             const firstCh = still?.channels.slice().sort((a, b) => a.order - b.order)[0];
-            activeChannelId.set(firstCh?.groupId ?? null);
+            const gid = firstCh?.groupId ?? null;
+            activeChannelId.set(gid);
+            activeHubChannelName.set(gid ? resolveHubChannelNameForGroupSelection(still?.channels ?? [], gid, null) : null);
             lastOpenedNetworkChannelId.set(firstCh?.groupId ?? null);
           }
         }
@@ -509,7 +582,6 @@
   async function handleInvite() {
     const parent = activeParent;
     if (!parent) return;
-    const announcementsChannel = getAnnouncementsChannel(parent);
     const extraNpub = inviteByNpub.trim();
     const npubsToInvite = [
       ...selectedInviteNpubs,
@@ -530,6 +602,8 @@
     inviteErrorBanner = '';
     showInviteModal = false;
     inviting = true;
+    const announcementsChannel = getAnnouncementsChannel(parent);
+    const inviteTargets = defaultParentInvitePhysicalGroupTargets(parent);
     const groupId = announcementsChannel.groupId;
 
     ;(async () => {
@@ -542,8 +616,15 @@
           groupId,
         });
         for (const npub of npubsToInvite) {
+          for (const ch of inviteTargets) {
+            try {
+              await inviteMemberToGroup(ch.groupId, npub);
+            } catch (e) {
+              console.warn('[ParentNavbar] invite to squad MLS channel failed for', npub.slice(0, 20) + '…', e);
+              lastErr = friendlyMessage(getInvokeErrorMessage(e));
+            }
+          }
           try {
-            await inviteMemberToGroup(groupId, npub);
             await sendDmMessage(npub, payload);
           } catch (e) {
             console.warn('[ParentNavbar] invite to squad failed for', npub.slice(0, 20) + '…', e);
@@ -559,8 +640,14 @@
           memberSquads: network.memberSquads ?? [],
         });
         for (const npub of npubsToInvite) {
+          for (const ch of inviteTargets) {
+            try {
+              await inviteMemberToGroup(ch.groupId, npub);
+            } catch (e) {
+              lastErr = friendlyMessage(getInvokeErrorMessage(e));
+            }
+          }
           try {
-            await inviteMemberToGroup(groupId, npub);
             await sendDmMessage(npub, payload);
           } catch (e) {
             lastErr = friendlyMessage(getInvokeErrorMessage(e));
@@ -581,32 +668,12 @@
   let showExitModal = false;
   let exitError = '';
 
-  let showChangeSignerModal = false;
-
-  function openChangeSignerModal() {
-    if (!canChangeSigner || !activeParent) return;
-    showChangeSignerModal = true;
+  function showChangeEvmSignerPlaceholder() {
+    if (!canShowParentMenuActions || !activeParent) return;
+    showToast(
+      'Set your squad signer under Settings → Default wallet config (Edit).'
+    );
   }
-
-  function closeChangeSignerModal() {
-    showChangeSignerModal = false;
-  }
-
-  // --- WIP: Juice funding & governance modals ---
-  let showAddJuiceModal = false;
-  let showInitGovernanceModal = false;
-
-  function openAddJuiceModal() {
-    if (!activeParent) return;
-    showAddJuiceModal = true;
-  }
-
-  function openInitGovernanceModal() {
-    if (!activeParent) return;
-    showInitGovernanceModal = true;
-  }
-
-  const MOCK_MULTISIG_ADDRESS = '0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF';
 
   function openExitModal() {
     showExitModal = true;
@@ -629,14 +696,14 @@
       if (wasActive) {
         activeSquadId.set(null);
         activeChannelId.set(null);
+        activeHubChannelName.set(null);
       }
       showExitModal = false;
       exitError = '';
 
       (async () => {
         try {
-          for (const ch of squad.channels) {
-            if (ch.groupId.startsWith('creating-')) continue;
+          for (const ch of uniqueChannelsByGroupIdPreservingOrder(squad.channels)) {
             await leaveMlsGroup(ch.groupId);
           }
         } catch (e) {
@@ -644,7 +711,17 @@
           squads.update((list) => [...list, squad]);
           if (wasActive) {
             activeSquadId.set(squad.id);
-            activeChannelId.set(previousChannelId ?? squad.channels[0]?.groupId ?? null);
+            const gid = previousChannelId ?? squad.channels[0]?.groupId ?? null;
+            activeChannelId.set(gid);
+            activeHubChannelName.set(
+              gid
+                ? resolveHubChannelNameForGroupSelection(
+                    squad.channels,
+                    gid,
+                    get(lastHubChannelNameBySquadId)[squad.id] || null
+                  )
+                : null
+            );
           }
           showToast(`Could not exit squad "${squad.name}": ${msg}`);
         }
@@ -659,6 +736,7 @@
       if (wasActive) {
         activeNetworkId.set(null);
         activeChannelId.set(null);
+        activeHubChannelName.set(null);
         lastOpenedNetworkId.set(null);
         lastOpenedNetworkChannelId.set(null);
         lastChannelByNetworkId.update((m) => {
@@ -672,8 +750,7 @@
 
       (async () => {
         try {
-          for (const ch of network.channels) {
-            if (ch.groupId.startsWith('creating-')) continue;
+          for (const ch of uniqueChannelsByGroupIdPreservingOrder(network.channels)) {
             await leaveMlsGroup(ch.groupId);
           }
         } catch (e) {
@@ -681,7 +758,17 @@
           networks.update((list) => [...list, network]);
           if (wasActive) {
             activeNetworkId.set(network.id);
-            activeChannelId.set(previousChannelId ?? network.channels[0]?.groupId ?? null);
+            const gid = previousChannelId ?? network.channels[0]?.groupId ?? null;
+            activeChannelId.set(gid);
+            activeHubChannelName.set(
+              gid
+                ? resolveHubChannelNameForGroupSelection(
+                    network.channels,
+                    gid,
+                    get(lastHubChannelNameByNetworkId)[network.id] || null
+                  )
+                : null
+            );
             lastOpenedNetworkId.set(network.id);
             lastOpenedNetworkChannelId.set(previousChannelId ?? network.channels[0]?.groupId ?? null);
             lastChannelByNetworkId.update((m) => ({
@@ -702,6 +789,7 @@
   subheading={subheading}
   channels={channels}
   activeChannelId={$activeChannelId}
+  activeHubChannelName={$activeHubChannelName}
   activeView={$activeView}
   creating={Boolean(creating)}
   createError={createError}
@@ -715,9 +803,7 @@
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
   onInvite={openInviteModal}
-  onAddJuice={openAddJuiceModal}
-  onInitGovernance={openInitGovernanceModal}
-  onChangeSigner={canChangeSigner ? openChangeSignerModal : undefined}
+  onChangeEvmSigner={canShowParentMenuActions ? showChangeEvmSignerPlaceholder : undefined}
   onExitSquad={type === 'squad' ? openExitModal : undefined}
   onExitNetwork={type === 'network' ? openExitModal : undefined}
 />
@@ -772,195 +858,3 @@
   onClose={closeExitModal}
   onConfirm={handleExitParent}
 />
-
-{#if activeParent}
-  <ChangeParentSignerModal
-    open={showChangeSignerModal}
-    parentKind={type}
-    parentName={activeParent.name}
-    parentId={activeParent.id}
-    announcementsGroupId={getAnnouncementsChannel(activeParent).groupId}
-    onClose={closeChangeSignerModal}
-  />
-{/if}
-
-{#if showAddJuiceModal}
-  <Modal titleId="add-juice-title" descriptionId="add-juice-desc" onClose={() => (showAddJuiceModal = false)}>
-    <h2 id="add-juice-title">Add Juice</h2>
-    <p id="add-juice-desc" class="juice-subtitle">
-      Scan or copy the funding address below. Any funds sent here will cover gas fees for all members of this
-      {type === 'squad' ? ' squad' : ' network'}.
-    </p>
-    <div class="juice-card">
-      <div class="juice-qr-mock" aria-hidden="true"></div>
-      <div class="juice-address-block">
-        <p class="juice-address-label">Multisig funding address</p>
-        <code class="juice-address-value">{MOCK_MULTISIG_ADDRESS}</code>
-        <p class="juice-address-note">
-          This is a mock address for design and integration only. Do not send real funds on mainnet.
-        </p>
-      </div>
-    </div>
-    <div class="juice-actions">
-      <button type="button" class="juice-close-btn" on:click={() => (showAddJuiceModal = false)}>
-        Close
-      </button>
-    </div>
-  </Modal>
-{/if}
-
-{#if showInitGovernanceModal}
-  <Modal
-    titleId="init-governance-title"
-    descriptionId="init-governance-desc"
-    onClose={() => (showInitGovernanceModal = false)}
-  >
-    <h2 id="init-governance-title">Initialize Governance</h2>
-    <p id="init-governance-desc" class="gov-subtitle">
-      Initialize the Nave Pirata Hats Protocol tree for this {type === 'squad' ? 'squad' : 'network'}. You (the
-      initializer) will receive the <strong>Captain</strong> hat and all other members will receive
-      <strong> Crew</strong> hats. The Captain can be mutinied by the Crew to upgrade governance using contracts from
-      the Governance Library.
-    </p>
-    <div class="gov-lib-card">
-      <p class="gov-lib-title">Governance Library</p>
-      <p class="gov-lib-body">
-        This is a work-in-progress mock flow. The Governance Library will list contract templates you can use to evolve
-        your squad&apos;s decision-making over time.
-      </p>
-      <button type="button" class="gov-lib-btn" disabled>
-        View Gov Lib (WIP)
-      </button>
-    </div>
-    <div class="gov-actions">
-      <button type="button" class="gov-close-btn" on:click={() => (showInitGovernanceModal = false)}>
-        Close
-      </button>
-    </div>
-  </Modal>
-{/if}
-
-<style>
-  .juice-subtitle,
-  .gov-subtitle {
-    color: var(--text-muted);
-    font-size: 0.9375rem;
-    margin: 0 0 16px 0;
-  }
-
-  .juice-card {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 16px;
-    border-radius: 12px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    margin-bottom: 16px;
-  }
-
-  .juice-qr-mock {
-    width: 160px;
-    height: 160px;
-    border-radius: 12px;
-    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
-      linear-gradient(225deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
-      linear-gradient(45deg, rgba(255, 255, 255, 0.07) 25%, transparent 25%),
-      linear-gradient(315deg, rgba(255, 255, 255, 0.07) 25%, rgba(0, 0, 0, 0.02) 25%);
-    background-position:
-      8px 0,
-      8px 0,
-      0 0,
-      0 0;
-    background-size: 8px 8px;
-    background-repeat: repeat;
-    border: 1px dashed var(--border-subtle);
-  }
-
-  .juice-address-block {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .juice-address-label {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  .juice-address-value {
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-        monospace);
-    font-size: 0.875rem;
-    padding: 6px 8px;
-    border-radius: 6px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    word-break: break-all;
-  }
-
-  .juice-address-note {
-    margin: 4px 0 0 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .juice-actions,
-  .gov-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 8px;
-  }
-
-  .juice-close-btn,
-  .gov-close-btn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .juice-close-btn:hover,
-  .gov-close-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .gov-lib-card {
-    padding: 16px;
-    border-radius: 12px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    margin-bottom: 16px;
-  }
-
-  .gov-lib-title {
-    margin: 0 0 8px 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .gov-lib-body {
-    margin: 0 0 12px 0;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
-  .gov-lib-btn {
-    padding: 8px 14px;
-    border-radius: 8px;
-    border: none;
-    font-size: 0.875rem;
-    background: var(--border);
-    color: var(--text-secondary);
-    cursor: not-allowed;
-    opacity: 0.7;
-  }
-</style>

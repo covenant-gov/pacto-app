@@ -1,4 +1,7 @@
-//! Dashboard polls over MLS (announcements group): create + vote rumors, SQLite replica.
+//! Dashboard polls over MLS (Kind **30078**): poll-create plus silent vote rumors and a SQLite replica.
+//!
+//! Replica rows are keyed by **`parent_id`** (squad/network) and **`poll_id`**; `list_dashboard_polls` does not
+//! depend on MLS chat beyond ingest. The **`announcements_group_id`** column stores the ingress MLS chat id (the announcements scope used for Kind **30078** sends).
 
 use nostr_sdk::prelude::*;
 use rusqlite::OptionalExtension;
@@ -118,7 +121,7 @@ pub enum PollCreateUpsert {
 /// First-create wins for metadata; idempotent same-hash replay.
 pub fn db_insert_poll_create<R: Runtime>(
     handle: &AppHandle<R>,
-    announcements_group_id: &str,
+    mls_group_id: &str,
     create_event_id: &str,
     created_at_ms: i64,
     created_by_npub: &str,
@@ -154,7 +157,7 @@ pub fn db_insert_poll_create<R: Runtime>(
             rusqlite::params![
                 &payload.poll_id,
                 &payload.parent_id,
-                announcements_group_id,
+                mls_group_id,
                 &payload.title,
                 &payload.description,
                 &options_json,
@@ -178,9 +181,10 @@ fn option_id_valid_for_poll(options_json: &str, option_id: &str) -> bool {
     opts.iter().any(|o| o.id == option_id)
 }
 
-/// Last vote wins by `voted_at_ms`.
+/// Last vote wins by `voted_at_ms`. `parent_id` must match the poll row (wire sanity).
 pub fn db_apply_vote<R: Runtime>(
     handle: &AppHandle<R>,
+    parent_id: &str,
     poll_id: &str,
     voter_npub: &str,
     option_id: &str,
@@ -189,18 +193,22 @@ pub fn db_apply_vote<R: Runtime>(
 ) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
     let res = (|| {
-        let options_json: Option<String> = conn
+        let row: Option<(String, String)> = conn
             .query_row(
-                "SELECT options_json FROM dashboard_polls WHERE poll_id = ?1",
+                "SELECT options_json, parent_id FROM dashboard_polls WHERE poll_id = ?1",
                 [poll_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(|e| e.to_string())?;
 
-        let Some(options_json) = options_json else {
+        let Some((options_json, stored_parent)) = row else {
             return Ok(false);
         };
+
+        if stored_parent.trim() != parent_id.trim() {
+            return Ok(false);
+        }
 
         if !option_id_valid_for_poll(&options_json, option_id) {
             return Ok(false);
@@ -328,7 +336,7 @@ pub struct SendPollOptionInput {
 #[tauri::command]
 pub async fn send_dashboard_poll_create<R: Runtime>(
     handle: AppHandle<R>,
-    announcements_group_id: String,
+    mls_group_id: String,
     parent_id: String,
     poll_id: String,
     title: String,
@@ -380,18 +388,19 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
             TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
             [&poll_id],
         ))
+        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["polls"]))
         .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
 
     let built = rumor.build(pk);
     let create_hex = built.id.ok_or_else(|| "poll create rumor id missing".to_string())?;
     let create_id = create_hex.to_hex();
-    crate::mls::send_mls_message(&announcements_group_id, built, None).await?;
+    crate::mls::send_mls_message(&mls_group_id, built, None).await?;
 
     let created_by = pk.to_bech32().map_err(|e| e.to_string())?;
     let at_ms = final_time.as_millis() as i64;
     let _ = db_insert_poll_create(
         &handle,
-        &announcements_group_id,
+        &mls_group_id,
         &create_id,
         at_ms,
         &created_by,
@@ -420,16 +429,17 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
             edited: false,
             edit_history: None,
             rumor_kind: Some(event_kind::APPLICATION_SPECIFIC),
+            virtual_bucket: Some("polls".to_string()),
         };
         let was_added = {
             let mut state = crate::STATE.lock().await;
-            state.add_message_to_chat(&announcements_group_id, msg.clone())
+            state.add_message_to_chat(&mls_group_id, msg.clone())
         };
         if was_added {
-            let _ = db::save_message(h.clone(), &announcements_group_id, &msg).await;
+            let _ = db::save_message(h.clone(), &mls_group_id, &msg).await;
             let _ = h.emit(
                 "mls_message_new",
-                serde_json::json!({ "group_id": announcements_group_id, "message": msg }),
+                serde_json::json!({ "group_id": mls_group_id, "message": msg }),
             );
         }
     }
@@ -440,7 +450,7 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
 #[tauri::command]
 pub async fn send_dashboard_poll_vote<R: Runtime>(
     handle: AppHandle<R>,
-    announcements_group_id: String,
+    mls_group_id: String,
     parent_id: String,
     poll_id: String,
     option_id: String,
@@ -477,15 +487,24 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
             TagKind::Custom(std::borrow::Cow::Borrowed("option")),
             [&option_id],
         ))
+        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["polls"]))
         .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
 
     let built = rumor.build(pk);
     let vote_id = built.id.ok_or("rumor id missing")?.to_hex();
-    crate::mls::send_mls_message(&announcements_group_id, built, None).await?;
+    crate::mls::send_mls_message(&mls_group_id, built, None).await?;
 
     let voter = pk.to_bech32().map_err(|e| e.to_string())?;
     let voted_at = final_time.as_millis() as i64;
-    let _ = db_apply_vote(&handle, &poll_id, &voter, &option_id, &vote_id, voted_at)?;
+    let _ = db_apply_vote(
+        &handle,
+        &parent_id,
+        &poll_id,
+        &voter,
+        &option_id,
+        &vote_id,
+        voted_at,
+    )?;
     emit_poll_replica_updated(&parent_id, Some(&poll_id));
     Ok(())
 }

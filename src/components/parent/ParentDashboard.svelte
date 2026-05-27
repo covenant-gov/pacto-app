@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import type { Squad, Network } from '../../stores/app';
   import {
@@ -8,16 +7,9 @@
     showMembersPanel,
     membershipVersionByGroupId,
     parentDashboardChannelMode,
-    dashboardPollReplicaNonceByParentId,
     type ParentDashboardChannelMode,
   } from '../../stores/app';
-  import {
-    getMlsGroupMembers,
-    listDashboardPolls,
-    sendDashboardPollCreate,
-    sendDashboardPollVote,
-    type DashboardPollDto,
-  } from '../../lib/api/nostr';
+  import { getMlsGroupMembers } from '../../lib/api/nostr';
   import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
   import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
   import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../lib/wallet/chains';
@@ -25,24 +17,53 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { safeStateByTreasuryId, refreshSafeStateForTreasuryEntry } from '../../stores/safe';
+  import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto } from '../../lib/governance/api';
+  import {
+    getHatsTree,
+    getMemberHatWearers,
+    getNavePirataDeployment,
+    getSquadAdminExecutorRoles,
+    hasSponsorInfra,
+    listTreasuryProposals,
+    pactoGovInfraRow,
+    sponsorInfraRow,
+    treasuryProposalHasVoted,
+    withLegacyProvider,
+  } from '../../lib/governance/api';
+  import {
+    formatSquadAdminExecutorRoles,
+    hatChecksFromNaveDeployment,
+    parsePactoGovProviderPayload,
+  } from '../../lib/governance/pacto-gov-payload';
+  import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
+  import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
+  import { isTreasuryProposalActive } from '../../lib/governance/treasury-proposal-ui';
+  import { treasuryVaultHeading } from '../../lib/treasury/treasury-vault-labels';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import DeploySafeModal from './DeploySafeModal.svelte';
-  import CreatePollModal from './CreatePollModal.svelte';
+  import DeployNavePirataWizard from './governance/DeployNavePirataWizard.svelte';
+  import DeploySquadSponsorModal from './governance/DeploySquadSponsorModal.svelte';
+  import DeploySquadAdminModal from './governance/DeploySquadAdminModal.svelte';
+  import LaunchpadModal from './governance/LaunchpadModal.svelte';
+  import SquadSponsorTreasuryPanel from './governance/SquadSponsorTreasuryPanel.svelte';
+  import HatsTreeDiagram from './governance/HatsTreeDiagram.svelte';
+  import TreasuryProposalCard from './governance/TreasuryProposalCard.svelte';
+  import SmartContractSecuritySection from './governance/SmartContractSecuritySection.svelte';
+  import SquadRolesModal from './governance/SquadRolesModal.svelte';
   import { showToast } from '../../stores/toast';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
-  import { currentUser } from '../../stores/auth';
-  import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
-  import type { ParentPoll } from '../../lib/parent/parent-polls';
-  import { getPollBallotMap, pollReferenceToken, setPollBallot } from '../../lib/parent/parent-polls';
-  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
+  import { resolveDashboardPermissionsContext } from '../../lib/dashboard/permissions-panel';
 
-  /** Sub-views under #announcements dashboard; future: driven by configurable widgets per community. */
+  /** Sub-views under #dashboard: Governance, Roles Tree, Treasury, Settings. */
   type ParentDashboardView = ParentDashboardChannelMode;
   const DASHBOARD_VIEWS: { id: ParentDashboardView; label: string }[] = [
-    { id: 'treasury', label: 'Treasury' },
     { id: 'governance', label: 'Governance' },
-    { id: 'roles', label: 'Roles' },
-    { id: 'polls', label: 'Polls' },
+    { id: 'roles_tree', label: 'Roles Tree' },
+    { id: 'treasury', label: 'Treasury' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   $: dashboardView = $parentDashboardChannelMode;
@@ -52,6 +73,24 @@
 
   /** Linked Safes for this parent (from store + backend). */
   export let treasurySafes: TreasurySafeEntry[] = [];
+
+  /** Governance row when loaded (`undefined` = not hydrated yet). */
+  export let governanceConfig: ParentGovernanceDto | null | undefined = undefined;
+
+  /** All infra rows for this parent (`undefined` = not hydrated yet). */
+  export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
+
+  /** Persist, announce, and refresh store after sponsor deploy. */
+  export let onSponsorDeployComplete:
+    | ((params: {
+        parentId: string;
+        announcementsGroupId: string;
+        chain: string;
+        sponsorAddress: string;
+        providerPayload: string;
+        infraRowId: string;
+      }) => Promise<void>)
+    | undefined = undefined;
 
   /** Persist, announce, and refresh store. */
   export let onConfirmImportSafe:
@@ -64,45 +103,38 @@
       }) => Promise<void>)
     | undefined = undefined;
 
+  /** After successful Nave Pirata deploy: persist governance row, announce, refresh stores. */
+  export let onPactoGovDeployComplete:
+    | ((params: {
+        parentId: string;
+        announcementsGroupId: string;
+        chain: string;
+        topHatId: string;
+        providerPayload: string;
+        safeAddress: string;
+        txHash: string;
+      }) => Promise<void>)
+    | undefined = undefined;
+
+  /** Persist, announce, and refresh store after standalone Squad Admin deploy. */
+  export let onSquadAdminDeployComplete:
+    | ((params: {
+        parentId: string;
+        announcementsGroupId: string;
+        chain: string;
+        squadAdminProxy: string;
+        providerPayload: string;
+        infraRowId: string;
+      }) => Promise<void>)
+    | undefined = undefined;
+
   let showSetSafeModal = false;
   let showDeploySafeModal = false;
-  let showCreatePollModal = false;
-  let parentPollsList: ParentPoll[] = [];
-  let pollsScrollEl: HTMLDivElement | null = null;
-  let pollBallotRefresh = 0;
-  /** While set, that poll’s vote row is submitting; the option id is the button showing "Sending...". */
-  let pollVoteSendingPollId: string | null = null;
-  let pollVoteSendingOptionId: string | null = null;
-
-  function dashboardPollDtoToParentPoll(d: DashboardPollDto): ParentPoll {
-    return {
-      id: d.id,
-      parentId: d.parent_id,
-      title: d.title,
-      description: d.description ?? '',
-      createdAtMs: d.created_at_ms,
-      options: d.options.map((o) => ({
-        id: o.id,
-        label: o.label,
-        votes: Number(o.votes),
-      })),
-    };
-  }
-
-  async function refreshDashboardPollsList(): Promise<void> {
-    const pid = parentId?.trim();
-    if (!pid) {
-      parentPollsList = [];
-      return;
-    }
-    try {
-      const rows = await listDashboardPolls(pid);
-      parentPollsList = rows.map(dashboardPollDtoToParentPoll);
-    } catch {
-      parentPollsList = [];
-      showToast('Could not load polls.');
-    }
-  }
+  let showNaveWizard = false;
+  let showLaunchpad = false;
+  let showSponsorDeploy = false;
+  let showSquadAdminDeploy = false;
+  let showSquadRolesModal = false;
 
   let setSafeInput = '';
   let setSafeChain: 'sepolia' | 'mainnet' | 'optimism' = 'sepolia';
@@ -111,47 +143,224 @@
   let setSafeSaving = false;
 
   $: parentId = parent?.id;
-  $: viewerNpub = $currentUser?.npub ?? '';
 
-  /** Per-parent counter from +page listener on `dashboard_poll_replica_updated` (always mounted). */
-  $: pollReplicaNonceForParent = parentId?.trim()
-    ? ($dashboardPollReplicaNonceByParentId[parentId.trim()] ?? 0)
-    : 0;
+  $: sponsorRow = sponsorInfraRow(squadInfraRows);
+  $: hasSponsor = hasSponsorInfra(squadInfraRows);
 
-  $: if (dashboardView === 'polls' && parentId?.trim()) {
-    void pollReplicaNonceForParent;
-    void refreshDashboardPollsList();
-  }
-
-  /** Bumps when the feed tail changes (new poll / switch parent), not on vote-only updates. */
-  $: pollsFeedScrollKey =
-    dashboardView === 'polls'
-      ? `${parentId ?? ''}:${parentPollsList.length}:${parentPollsList.at(-1)?.id ?? ''}`
-      : '';
-
-  async function scrollPollsFeedToBottom() {
-    await tick();
-    const el = pollsScrollEl;
-    if (!el || dashboardView !== 'polls') return;
-    el.scrollTop = el.scrollHeight;
-  }
-
-  $: if (dashboardView === 'polls') {
-    void pollsFeedScrollKey;
-    void scrollPollsFeedToBottom();
-  }
-
-  $: pollBallotMap = (() => {
-    void pollBallotRefresh;
-    if (!viewerNpub || !parentId) return {} as Record<string, string>;
-    return getPollBallotMap(viewerNpub, parentId);
-  })();
   $: displayedTreasurySafes = [...(treasurySafes ?? [])].slice(0, TREASURY_SAFE_UI_CAP);
   $: treasuryStateKey = displayedTreasurySafes.map((e) => e.id).join('|');
-  $: if (dashboardView === 'treasury' && treasuryStateKey) {
+  $: if ((dashboardView === 'treasury' || dashboardView === 'governance') && treasuryStateKey) {
     displayedTreasurySafes.forEach((e) => {
       refreshSafeStateForTreasuryEntry(e);
     });
+  }
+
+  $: pactoGovRow = pactoGovInfraRow(squadInfraRows);
+  $: hasPactoGov = pactoGovRow != null;
+  $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
+  $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
+  $: vaultSafeCount = standaloneSafeInfraRows(squadInfraRows).length;
+  $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
+  $: pactoNetwork = (pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || 'sepolia') as
+    | 'sepolia'
+    | 'mainnet'
+    | 'optimism';
+  $: squadAdminNetwork = (squadAdminCtx?.chain?.trim() || 'sepolia') as 'sepolia' | 'mainnet' | 'optimism';
+  $: memberEvmOptionsForRoles = channelMembers
+    .map((npub) => {
+      const addr = squadMemberEvmByNpub[npub]?.trim();
+      if (!addr) return null;
+      const name = getProfileDisplayName($profiles[npub]) || npub.slice(0, 12);
+      return { address: addr, label: name };
+    })
+    .filter((row): row is { address: string; label: string } => row != null);
+
+  $: structureSummary = resolveDashboardStructureSummary(
+    squadInfraRows === undefined ? undefined : pactoGovRow,
+  );
+
+  $: permissionsGov =
+    pactoGovRow != null ? withLegacyProvider(pactoGovRow) : governanceConfig;
+  $: permissionsCtx = resolveDashboardPermissionsContext(permissionsGov);
+
+  let treasuryProposals: TreasuryProposalDto[] = [];
+  let treasuryProposalsLoading = false;
+  let treasuryProposalsError = '';
+  let treasuryProposalsKey = '';
+  let proposalHasVotedById: Record<string, boolean> = {};
+  let proposalVotesLoading = false;
+  let myVoterAddress = '';
+
+  let hatsTree: HatTreeNodeDto | null = null;
+  let hatsTreeLoading = false;
+  let hatsTreeError = '';
+  let hatsTreeKey = '';
+
+  let memberHatByAddress: Record<string, string> = {};
+  let memberRolesByAddress: Record<string, string> = {};
+  let settingsChainLoading = false;
+  let settingsChainError = '';
+  let settingsChainKey = '';
+
+  async function loadTreasuryProposalVotes() {
+    const ta = pactoPayload?.treasuryAuthority?.trim();
+    if (!ta || treasuryProposals.length === 0) {
+      proposalHasVotedById = {};
+      myVoterAddress = '';
+      return;
+    }
+    const me = $currentUser?.npub;
+    const voter = me ? squadMemberEvmByNpub[me]?.trim() : '';
+    myVoterAddress = voter;
+    if (!voter) {
+      proposalHasVotedById = {};
+      return;
+    }
+    const active = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status));
+    if (active.length === 0) {
+      proposalHasVotedById = {};
+      return;
+    }
+    proposalVotesLoading = true;
+    try {
+      const pairs = await Promise.all(
+        active.map(async (p) => {
+          const voted = await treasuryProposalHasVoted({
+            network: pactoNetwork,
+            treasuryAuthority: ta,
+            proposalId: p.proposalId,
+            voter,
+          });
+          return [p.proposalId, voted] as const;
+        }),
+      );
+      const map: Record<string, boolean> = {};
+      for (const [id, voted] of pairs) map[id] = voted;
+      proposalHasVotedById = map;
+    } catch {
+      proposalHasVotedById = {};
+    } finally {
+      proposalVotesLoading = false;
+    }
+  }
+
+  async function loadTreasuryProposals() {
+    const ta = pactoPayload?.treasuryAuthority?.trim();
+    const key = `${pactoNetwork}:${ta ?? ''}`;
+    if (!ta || treasuryProposalsKey === key) return;
+    treasuryProposalsKey = key;
+    treasuryProposalsLoading = true;
+    treasuryProposalsError = '';
+    try {
+      const rows = await listTreasuryProposals({ network: pactoNetwork, treasuryAuthority: ta });
+      treasuryProposals = [...rows].sort((a, b) => Number(b.proposalId) - Number(a.proposalId));
+      await loadTreasuryProposalVotes();
+    } catch (e) {
+      treasuryProposals = [];
+      proposalHasVotedById = {};
+      treasuryProposalsError = getInvokeErrorMessage(e, 'Could not load treasury proposals.');
+    } finally {
+      treasuryProposalsLoading = false;
+    }
+  }
+
+  function onTreasuryVoteClick() {
+    showToast(
+      'On-chain vote signing is not wired yet — your vote status is loaded from Treasury Authority.',
+    );
+  }
+
+  async function loadHatsTree() {
+    const topHat = pactoGovRow?.canonicalRef?.trim();
+    const key = `${pactoNetwork}:${topHat ?? ''}`;
+    if (!topHat || hatsTreeKey === key) return;
+    hatsTreeKey = key;
+    hatsTreeLoading = true;
+    hatsTreeError = '';
+    try {
+      hatsTree = await getHatsTree({ network: pactoNetwork, topHatId: topHat });
+    } catch (e) {
+      hatsTree = null;
+      hatsTreeError = getInvokeErrorMessage(e, 'Could not load Hats tree.');
+    } finally {
+      hatsTreeLoading = false;
+    }
+  }
+
+  async function loadSettingsChainContext() {
+    const topHat = pactoGovRow?.canonicalRef?.trim();
+    const squadAdmin = squadAdminCtx?.proxy?.trim() ?? '';
+    const key = `${pactoNetwork}:${topHat ?? ''}:${squadAdmin}:${Object.keys(squadMemberEvmByNpub).join(',')}`;
+    if ((!topHat && !squadAdmin) || settingsChainKey === key) return;
+    settingsChainKey = key;
+    settingsChainLoading = true;
+    settingsChainError = '';
+    memberHatByAddress = {};
+    memberRolesByAddress = {};
+    try {
+      const evmAddresses = Object.values(squadMemberEvmByNpub).filter(Boolean);
+      if (evmAddresses.length === 0) return;
+
+      if (topHat) {
+        const deployment = await getNavePirataDeployment({ network: pactoNetwork, topHatId: topHat });
+        const assignments = await getMemberHatWearers({
+          network: pactoNetwork,
+          memberAddresses: evmAddresses,
+          hatChecks: hatChecksFromNaveDeployment(deployment),
+        });
+        const hatMap: Record<string, string> = {};
+        for (const row of assignments) {
+          if (row.hats.length > 0) {
+            hatMap[row.address.toLowerCase()] = row.hats.map((h) => h.label).join(', ');
+          }
+        }
+        memberHatByAddress = hatMap;
+      }
+
+      if (squadAdmin) {
+        const roleNetwork = squadAdminCtx?.chain?.trim() || pactoNetwork;
+        const roleRows = await Promise.all(
+          evmAddresses.map(async (addr) => {
+            const roles = await getSquadAdminExecutorRoles({
+              network: roleNetwork,
+              squadAdminProxy: squadAdmin,
+              executorAddress: addr,
+            });
+            return {
+              address: addr.toLowerCase(),
+              label: formatSquadAdminExecutorRoles(roles),
+            };
+          }),
+        );
+        const roleMap: Record<string, string> = {};
+        for (const row of roleRows) {
+          if (row.label && row.label !== '—') {
+            roleMap[row.address] = row.label;
+          }
+        }
+        memberRolesByAddress = roleMap;
+      }
+    } catch (e) {
+      settingsChainError = getInvokeErrorMessage(e, 'Could not load on-chain Hats or Roles for members.');
+    } finally {
+      settingsChainLoading = false;
+    }
+  }
+
+  $: if (dashboardView === 'governance' && pactoPayload?.treasuryAuthority) {
+    void loadTreasuryProposals();
+  }
+
+  $: if (dashboardView === 'governance' && parentId) {
+    void loadSquadMemberEvm();
+  }
+
+  $: if (dashboardView === 'roles_tree' && pactoGovRow?.canonicalRef) {
+    void loadHatsTree();
+  }
+
+  $: if (dashboardView === 'settings' && (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)) {
+    void loadSettingsChainContext();
   }
 
   $: announcementsGroupId =
@@ -197,10 +406,10 @@
 
   function selectDashboardView(id: ParentDashboardView) {
     parentDashboardChannelMode.set(id);
-    if (id === 'roles' && announcementsGroupId) loadDashboardMembers();
+    if (id === 'settings' && announcementsGroupId) loadDashboardMembers();
   }
 
-  $: if (dashboardView === 'roles' && parentId) {
+  $: if (dashboardView === 'settings' && parentId) {
     loadSquadMemberEvm();
   }
 
@@ -238,16 +447,58 @@
     return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
 
+  function openLaunchpad() {
+    showLaunchpad = true;
+  }
+
+  function requireSponsorForInfra(action: () => void) {
+    if (!hasSponsor) {
+      showToast('Deploy squad sponsor first.');
+      showLaunchpad = true;
+      return;
+    }
+    action();
+  }
+
   function openSetSafe() {
-    showSetSafeModal = true;
-    setSafeInput = '';
-    setSafeChain = 'sepolia';
-    setSafeLabel = '';
-    setSafeError = '';
+    requireSponsorForInfra(() => {
+      showSetSafeModal = true;
+      setSafeInput = '';
+      setSafeChain = 'sepolia';
+      setSafeLabel = '';
+      setSafeError = '';
+    });
   }
 
   function openDeploySafe() {
-    showDeploySafeModal = true;
+    requireSponsorForInfra(() => {
+      showDeploySafeModal = true;
+    });
+  }
+
+  function openPactoGovDeploy() {
+    requireSponsorForInfra(() => {
+      if (pactoGovRow) {
+        selectDashboardView('governance');
+        return;
+      }
+      if (parentId?.trim()) showNaveWizard = true;
+    });
+  }
+
+  function openSponsorDeploy() {
+    if (parentId?.trim()) showSponsorDeploy = true;
+  }
+
+  function openSquadAdminDeploy() {
+    requireSponsorForInfra(() => {
+      if (hasSquadAdmin) {
+        selectDashboardView('settings');
+        showSquadRolesModal = true;
+        return;
+      }
+      if (parentId?.trim()) showSquadAdminDeploy = true;
+    });
   }
 
   function closeDeploySafeModal() {
@@ -269,93 +520,6 @@
   function openTreasurySafeApp(entry: TreasurySafeEntry) {
     const url = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress);
     if (url) openExternalUrl(url);
-  }
-
-  function openCreatePollModal() {
-    if (!viewerNpub?.trim()) {
-      showToast('Sign in to create polls.');
-      return;
-    }
-    if (!parentId?.trim()) {
-      showToast('This dashboard is not ready yet.');
-      return;
-    }
-    showCreatePollModal = true;
-  }
-
-  function closeCreatePollModal() {
-    showCreatePollModal = false;
-  }
-
-  async function handlePollCreated(poll: ParentPoll) {
-    const gid = announcementsGroupId;
-    if (!viewerNpub?.trim() || !parentId?.trim()) {
-      const msg = 'Sign in to create polls.';
-      showToast(msg);
-      throw new Error(msg);
-    }
-    if (!gid?.trim()) {
-      const msg = 'No announcements channel for this parent.';
-      showToast(msg);
-      throw new Error(msg);
-    }
-    try {
-      await sendDashboardPollCreate({
-        announcementsGroupId: gid,
-        parentId: parentId.trim(),
-        pollId: poll.id,
-        title: poll.title,
-        description: poll.description,
-        options: poll.options.map((o) => ({ id: o.id, label: o.label })),
-      });
-      await refreshDashboardPollsList();
-      showToast('Poll published.');
-    } catch (e) {
-      const msg = getInvokeErrorMessage(e, 'Failed to publish poll.');
-      showToast(msg);
-      throw new Error(msg);
-    }
-  }
-
-  async function castPollVote(pollId: string, optionId: string) {
-    if (!viewerNpub?.trim() || !parentId?.trim()) {
-      showToast('Sign in to vote.');
-      return;
-    }
-    const gid = announcementsGroupId;
-    if (!gid?.trim()) {
-      showToast('No announcements channel for this parent.');
-      return;
-    }
-    if (pollVoteSendingPollId === pollId) return;
-    pollVoteSendingPollId = pollId;
-    pollVoteSendingOptionId = optionId;
-    try {
-      await sendDashboardPollVote({
-        announcementsGroupId: gid,
-        parentId: parentId.trim(),
-        pollId,
-        optionId,
-      });
-      setPollBallot(viewerNpub, parentId, pollId, optionId);
-      await refreshDashboardPollsList();
-      pollBallotRefresh++;
-    } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Vote failed.'));
-    } finally {
-      pollVoteSendingPollId = null;
-      pollVoteSendingOptionId = null;
-    }
-  }
-
-  async function copyPollIdToClipboard(id: string) {
-    const ok = await copyTextToClipboard(id);
-    showToast(ok ? 'Poll ID copied.' : 'Could not copy.');
-  }
-
-  async function copyPollChatReference(id: string) {
-    const ok = await copyTextToClipboard(pollReferenceToken(id));
-    showToast(ok ? 'Chat reference copied.' : 'Could not copy.');
   }
 
   async function confirmSetSafe() {
@@ -390,6 +554,8 @@
         entryId,
       });
       closeSetSafeModal();
+      selectDashboardView('treasury');
+      showToast('Safe imported and added to treasury.');
     } catch (e) {
       setSafeError = (e as Error)?.message ?? 'Failed to import Safe';
     } finally {
@@ -435,8 +601,8 @@
         {/each}
       </div>
     </div>
-    <div class="parent-dashboard-body" class:parent-dashboard-body--polls={dashboardView === 'polls'}>
-      <div class="parent-dashboard" class:parent-dashboard--polls={dashboardView === 'polls'}>
+    <div class="parent-dashboard-body">
+      <div class="parent-dashboard">
   {#if parentType === 'network' && (parent as Network).memberSquads?.length}
     <div class="dashboard-header">
       <p class="dashboard-subtitle">
@@ -445,10 +611,100 @@
     </div>
   {/if}
 
-  {#if dashboardView === 'treasury'}
+  {#if dashboardView === 'governance'}
+  {#if squadInfraRows !== undefined && !hasSponsor}
+    <div class="sponsor-empty-banner" role="status">
+      <p class="sponsor-empty-banner-text">
+        Deploy squad sponsor first — it funds gas sponsorship and unlocks Pacto Gov and Safe deploy paths.
+      </p>
+      <button type="button" class="btn-primary" on:click={openLaunchpad}>Open Deploy</button>
+    </div>
+  {/if}
+  <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="governance-heading">
+    <h3 id="governance-heading" class="section-heading">Governance</h3>
+    {#if !pactoPayload?.treasuryAuthority}
+      <p class="dashboard-placeholder-text dashboard-placeholder-lead">
+        Treasury Authority proposals appear here after you deploy <strong>Pacto Gov</strong> from Deploy.
+      </p>
+      <button type="button" class="btn-primary governance-deploy-cta" on:click={openLaunchpad}>Deploy Pacto Gov</button>
+    {:else}
+      {#if treasuryProposalsLoading}
+        <p class="dashboard-placeholder-text muted">Loading treasury proposals…</p>
+      {:else if treasuryProposalsError}
+        <p class="chain-read-error" role="alert">{treasuryProposalsError}</p>
+      {:else if treasuryProposals.length === 0}
+        <p class="dashboard-placeholder-text muted">No treasury proposals on-chain yet for this deployment.</p>
+      {:else}
+        <ul class="proposal-card-list" role="list">
+          {#each treasuryProposals as proposal (proposal.proposalId)}
+            <TreasuryProposalCard
+              {proposal}
+              voterAddress={myVoterAddress}
+              hasVoted={proposalHasVotedById[proposal.proposalId]}
+              votePending={proposalVotesLoading}
+              onVoteYea={onTreasuryVoteClick}
+              onVoteNay={onTreasuryVoteClick}
+            />
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+  </section>
+  {:else if dashboardView === 'roles_tree'}
+  {#if squadInfraRows !== undefined && !hasSponsor}
+    <div class="sponsor-empty-banner" role="status">
+      <p class="sponsor-empty-banner-text">Deploy squad sponsor first using the Deploy button below.</p>
+      <button type="button" class="btn-primary" on:click={openLaunchpad}>Open Deploy</button>
+    </div>
+  {/if}
+  <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-tree-heading">
+    <h3 id="roles-tree-heading" class="section-heading">Roles Tree</h3>
+    {#if structureSummary === undefined}
+      <p class="dashboard-placeholder-text muted">Loading roles tree context…</p>
+    {:else if structureSummary === null}
+      <p class="dashboard-placeholder-text dashboard-placeholder-lead">
+        Hat tree and role structure show here once this {parentType} has a <strong>Pacto Gov</strong> deployment
+        (Deploy). Safe-only setups do not publish a Hats tree id yet.
+      </p>
+      <button type="button" class="btn-secondary roles-tree-deploy-cta" on:click={openLaunchpad}>Open Deploy</button>
+    {:else}
+      <p class="structure-summary-lead dashboard-placeholder-text">
+        Top hat for this {parentType} on <strong>{structureSummary.chainDisplayName}</strong> (chain id{' '}
+        <code class="structure-mono">{structureSummary.chainIdNumeric}</code>).
+      </p>
+      <dl class="structure-dl">
+        <dt>Tree / top hat id</dt>
+        <dd><code class="structure-mono">{structureSummary.treeIdRaw}</code></dd>
+      </dl>
+      {#if structureSummary.hatsExplorerUrl}
+        {@const hatsUrl = structureSummary.hatsExplorerUrl}
+        <p class="structure-actions">
+          <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(hatsUrl)}>
+            Open in Hats tree explorer
+          </button>
+        </p>
+      {:else}
+        <p class="dashboard-placeholder-text muted">Explorer link could not be built for this hat id format.</p>
+      {/if}
+      {#if hatsTreeLoading}
+        <p class="dashboard-placeholder-text muted">Loading Hats tree from chain…</p>
+      {:else if hatsTreeError}
+        <p class="chain-read-error" role="alert">{hatsTreeError}</p>
+      {:else if hatsTree}
+        <p class="roles-table-caption">On-chain tree</p>
+        <HatsTreeDiagram root={hatsTree} />
+      {/if}
+    {/if}
+  </section>
+  {:else if dashboardView === 'treasury'}
+  <SquadSponsorTreasuryPanel
+    parentId={parentId ?? ''}
+    {sponsorRow}
+    onOpenDeploy={openSponsorDeploy}
+  />
   <section class="dashboard-section" aria-labelledby="safe-heading">
     <div class="treasury-section-head">
-      <h3 id="safe-heading" class="section-heading">Multisig (Safe)</h3>
+      <h3 id="safe-heading" class="section-heading">Vaults</h3>
       {#if (treasurySafes?.length ?? 0) < TREASURY_SAFE_UI_CAP}
         <div class="treasury-action-btns">
           <button type="button" class="btn-primary treasury-deploy-btn" on:click={openDeploySafe}>Deploy Safe</button>
@@ -470,6 +726,7 @@
           {@const exUrl = explorerAddressUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
           {@const safeAppUrl = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
           <li class="treasury-safe-card">
+            <h4 class="treasury-vault-title">{treasuryVaultHeading(entry, pactoPayload)}</h4>
             <div class="treasury-card-top">
               <span class="treasury-pill treasury-pill-chain">{entry.chain}</span>
               {#if entry.label}
@@ -531,22 +788,46 @@
       </ul>
     {/if}
   </section>
-  {:else if dashboardView === 'governance'}
-  <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="gov-heading">
-    <h3 id="gov-heading" class="section-heading">Governance</h3>
-    <p class="dashboard-placeholder-text">
-      Proposal and voting flows for this {parentType} will live here. Treasury and roles data will stay
-      available to governance widgets as the stack grows.
-    </p>
-  </section>
-  {:else if dashboardView === 'roles'}
-  <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-heading">
-    <h3 id="roles-heading" class="section-heading">Roles</h3>
-    <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-      Official on-chain roles, accountability NFTs, and Hats-style delegations for members will surface
-      here. Each member’s EVM address will be listed for squad/network-scoped features once addresses
-      are shared with the group automatically on join or creation.
-    </p>
+  {:else if dashboardView === 'settings'}
+  {#if squadInfraRows !== undefined && !hasSponsor}
+    <div class="sponsor-empty-banner" role="status">
+      <p class="sponsor-empty-banner-text">Deploy squad sponsor first using the Deploy button below.</p>
+      <button type="button" class="btn-primary" on:click={openLaunchpad}>Open Deploy</button>
+    </div>
+  {/if}
+  <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="settings-heading">
+    <h3 id="settings-heading" class="section-heading">Settings</h3>
+    {#if permissionsCtx.phase === 'loading'}
+      <p class="dashboard-placeholder-text muted">Loading permissions context…</p>
+    {:else}
+      <p class="dashboard-placeholder-text dashboard-placeholder-lead">{permissionsCtx.leadNote}</p>
+      {#if permissionsCtx.pactoGovRevision}
+        <p class="permissions-revision muted">
+          pacto-gov revision <code class="permissions-revision-code">{permissionsCtx.pactoGovRevision}</code>
+        </p>
+      {/if}
+      {#if permissionsCtx.catalogRows.length > 0}
+        <div class="settings-actions-row">
+          <p class="roles-table-caption">Role model</p>
+          {#if squadAdminCtx}
+            <button type="button" class="btn-secondary settings-roles-btn" on:click={() => (showSquadRolesModal = true)}>
+              Manage squad roles
+            </button>
+          {/if}
+        </div>
+        <ul class="permissions-catalog-list" role="list">
+          {#each permissionsCtx.catalogRows as row (row.id)}
+            <li class="permissions-catalog-card">
+              <h4 class="permissions-catalog-title">{row.title}</h4>
+              <p class="permissions-catalog-summary">{row.summary}</p>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+    {#if settingsChainError}
+      <p class="chain-read-error" role="alert">{settingsChainError}</p>
+    {/if}
     {#if announcementsGroupId}
       {#if loadingMembers && channelMembers.length === 0}
         <p class="roles-loading">Loading members…</p>
@@ -575,8 +856,24 @@
                 <span class="roles-col-value" class:muted={!rosterEvm}
                   >{rosterEvm ? shortAddress(rosterEvm) : 'Not shared'}</span
                 >
+                <span class="roles-col-label">Hats</span>
+                <span class="roles-col-value" class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
+                  >{settingsChainLoading
+                    ? 'Loading…'
+                    : rosterEvm
+                      ? memberHatByAddress[rosterEvm.toLowerCase()] || '—'
+                      : 'Not shared'}</span
+                >
                 <span class="roles-col-label">Roles</span>
-                <span class="roles-col-value muted">—</span>
+                <span
+                  class="roles-col-value"
+                  class:muted={!rosterEvm || !memberRolesByAddress[rosterEvm.toLowerCase()]}
+                  >{settingsChainLoading
+                    ? 'Loading…'
+                    : rosterEvm
+                      ? memberRolesByAddress[rosterEvm.toLowerCase()] || '—'
+                      : 'Not shared'}</span
+                >
               </div>
             </li>
           {/each}
@@ -587,102 +884,17 @@
     {:else}
       <p class="dashboard-placeholder-text muted">No announcements channel for this {parentType}.</p>
     {/if}
+    <SmartContractSecuritySection
+      parentId={parentId ?? ''}
+      announcementsGroupId={announcementsGroupId ?? ''}
+      canManage={permissionsCtx.phase === 'pacto_gov'}
+    />
   </section>
-  {:else if dashboardView === 'polls'}
-  <div class="dashboard-polls-shell">
-    <div
-      class="dashboard-polls-scroll"
-      bind:this={pollsScrollEl}
-      role="feed"
-      aria-label="Polls"
-    >
-      <div class="dashboard-polls-scroll-inner">
-        {#if !parentId?.trim()}
-          <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">Dashboard is loading…</p>
-        {:else}
-          {#if !viewerNpub?.trim()}
-            <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
-              Sign in to vote or create polls. Tallies below sync from the announcements channel.
-            </p>
-          {/if}
-          {#if parentPollsList.length === 0}
-            {#if viewerNpub?.trim()}
-              <p class="dashboard-placeholder-text muted dashboard-polls-feed-msg">
-                No polls yet. Create one with the button below.
-              </p>
-            {/if}
-          {:else}
-            <ul class="dashboard-polls-list" role="list">
-              {#each parentPollsList as poll (poll.id)}
-                {@const myOpt = pollBallotMap[poll.id]}
-                <li class="dashboard-poll-card">
-                  <div class="dashboard-poll-id-row">
-                    <span class="dashboard-poll-id-label">Poll ID</span>
-                    <code class="dashboard-poll-id" title={poll.id}>{poll.id}</code>
-                    <div class="dashboard-poll-id-actions">
-                      <button
-                        type="button"
-                        class="btn-link dashboard-poll-copy"
-                        on:click={() => copyPollIdToClipboard(poll.id)}
-                      >
-                        Copy ID
-                      </button>
-                      <button
-                        type="button"
-                        class="btn-link dashboard-poll-copy"
-                        on:click={() => copyPollChatReference(poll.id)}
-                      >
-                        Copy chat ref
-                      </button>
-                    </div>
-                  </div>
-                  <h3 class="dashboard-poll-title">{poll.title}</h3>
-                  {#if poll.description}
-                    <p class="dashboard-poll-desc">{poll.description}</p>
-                  {/if}
-                  <ul class="dashboard-poll-options" role="list">
-                    {#each poll.options as opt (opt.id)}
-                      {@const sendingThis =
-                        pollVoteSendingPollId === poll.id && pollVoteSendingOptionId === opt.id}
-                      <li class="dashboard-poll-option">
-                        <span class="dashboard-poll-option-label">{opt.label}</span>
-                        <span class="dashboard-poll-option-count">{opt.votes}</span>
-                        <button
-                          type="button"
-                          class="dashboard-poll-vote-btn"
-                          class:voted={myOpt === opt.id && !sendingThis}
-                          aria-busy={sendingThis}
-                          disabled={!viewerNpub?.trim() || pollVoteSendingPollId === poll.id}
-                          on:click={() => castPollVote(poll.id, opt.id)}
-                        >
-                          {#if sendingThis}
-                            Sending...
-                          {:else if myOpt === opt.id}
-                            Your vote
-                          {:else if myOpt}
-                            Change vote
-                          {:else}
-                            Vote
-                          {/if}
-                        </button>
-                      </li>
-                    {/each}
-                  </ul>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        {/if}
-      </div>
-    </div>
-    <div class="dashboard-polls-composer">
-      <button type="button" class="btn-primary dashboard-polls-create-btn" on:click={openCreatePollModal}>
-        Create poll
-      </button>
-    </div>
-  </div>
   {/if}
       </div>
+    </div>
+    <div class="dashboard-deploy-bar">
+      <button type="button" class="btn-primary dashboard-deploy-btn" on:click={openLaunchpad}>Deploy</button>
     </div>
   </div>
   {#if $showMembersPanel}
@@ -731,16 +943,94 @@
         txHash: params.txHash,
       });
       showToast('Safe deployed and added to treasury.');
+      selectDashboardView('treasury');
     }}
   />
 {/if}
 
-{#if showCreatePollModal && parentId}
-  <CreatePollModal
-    open={showCreatePollModal}
-    parentId={parentId}
-    onClose={closeCreatePollModal}
-    onCreate={handlePollCreated}
+{#if showNaveWizard && parentId?.trim()}
+  <DeployNavePirataWizard
+    parentId={parentId.trim()}
+    {parentType}
+    onClose={() => {
+      showNaveWizard = false;
+    }}
+    onComplete={async (out) => {
+      await onPactoGovDeployComplete?.({
+        parentId: parentId.trim(),
+        announcementsGroupId: announcementsGroupId?.trim() ?? '',
+        chain: out.chain,
+        topHatId: out.topHatId,
+        providerPayload: out.providerPayload,
+        safeAddress: out.safeAddress,
+        txHash: out.txHash,
+      });
+      showNaveWizard = false;
+      selectDashboardView('governance');
+      showToast('Pacto Gov deployed — Governance and Roles Tree tabs are live.');
+    }}
+  />
+{/if}
+
+{#if showLaunchpad && parentId}
+  <LaunchpadModal
+    {parentType}
+    {hasSponsor}
+    {hasPactoGov}
+    {hasSquadAdmin}
+    {vaultSafeCount}
+    hasAnnouncementsChannel={!!announcementsGroupId}
+    onClose={() => {
+      showLaunchpad = false;
+    }}
+    onDeploySponsor={openSponsorDeploy}
+    onDeploySquadAdmin={openSquadAdminDeploy}
+    onDeployPactoGov={openPactoGovDeploy}
+    onDeploySafe={openDeploySafe}
+    onImportSafe={openSetSafe}
+  />
+{/if}
+
+{#if showSquadAdminDeploy && parentId?.trim()}
+  <DeploySquadAdminModal
+    parentId={parentId.trim()}
+    {parentType}
+    onClose={() => {
+      showSquadAdminDeploy = false;
+    }}
+    onComplete={async (out) => {
+      await onSquadAdminDeployComplete?.({
+        parentId: parentId.trim(),
+        announcementsGroupId: announcementsGroupId?.trim() ?? '',
+        chain: out.chain,
+        squadAdminProxy: out.squadAdminProxy,
+        providerPayload: out.providerPayload,
+        infraRowId: out.infraRowId,
+      });
+      showToast('Squad Admin deployed — open Settings to manage roles.');
+      selectDashboardView('settings');
+    }}
+  />
+{/if}
+
+{#if showSponsorDeploy && parentId?.trim()}
+  <DeploySquadSponsorModal
+    parentId={parentId.trim()}
+    {parentType}
+    onClose={() => {
+      showSponsorDeploy = false;
+    }}
+    onComplete={async (out) => {
+      await onSponsorDeployComplete?.({
+        parentId: parentId.trim(),
+        announcementsGroupId: announcementsGroupId?.trim() ?? '',
+        chain: out.chain,
+        sponsorAddress: out.sponsorAddress,
+        providerPayload: out.providerPayload,
+        infraRowId: out.infraRowId,
+      });
+      showToast('Squad sponsor deployed and saved.');
+    }}
   />
 {/if}
 
@@ -749,7 +1039,7 @@
     <div class="modal-content">
       <h3 id="set-safe-title">Import Safe</h3>
       <p class="modal-desc">
-        Add a Safe to this {parentType} treasury. Members see it after the announce posts to #announcements.
+        Add a Safe to this {parentType} treasury. Members see automated treasury notices in #inbox.
       </p>
       <label class="modal-field-label" for="import-safe-addr">Contract address</label>
       <input
@@ -788,6 +1078,14 @@
   </div>
 {/if}
 
+<SquadRolesModal
+  open={showSquadRolesModal}
+  onClose={() => (showSquadRolesModal = false)}
+  squadAdminProxy={squadAdminCtx?.proxy ?? ''}
+  network={squadAdminNetwork}
+  memberEvmOptions={memberEvmOptionsForRoles}
+/>
+
 <style>
   .parent-dashboard-layout {
     flex: 1;
@@ -812,193 +1110,37 @@
     min-height: 0;
   }
 
-  .parent-dashboard-body--polls {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .parent-dashboard--polls {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding-bottom: 16px;
-  }
-
-  .parent-dashboard--polls .dashboard-header {
+  .dashboard-deploy-bar {
     flex-shrink: 0;
-  }
-
-  .dashboard-polls-shell {
-    flex: 1;
-    min-height: 0;
     display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    margin-top: 8px;
-  }
-
-  .dashboard-polls-scroll {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 4px;
-  }
-
-  /** Pin short feeds to the bottom of the viewport like a chat transcript. */
-  .dashboard-polls-scroll-inner {
-    min-height: 100%;
-    display: flex;
-    flex-direction: column;
     justify-content: flex-end;
-    box-sizing: border-box;
-  }
-
-  .dashboard-polls-feed-msg {
-    margin: 0;
-  }
-
-  .dashboard-polls-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  .dashboard-poll-card {
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    padding: 14px 16px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
   }
 
-  .dashboard-poll-id-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border-subtle);
+  .dashboard-deploy-btn {
+    min-width: 120px;
   }
 
-  .dashboard-poll-id-label {
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-    width: 100%;
-  }
-
-  .dashboard-poll-id {
-    font-size: 0.75rem;
-    word-break: break-all;
-    color: var(--text-secondary);
-    flex: 1;
-    min-width: 0;
-  }
-
-  .dashboard-poll-id-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    margin-left: auto;
-  }
-
-  .dashboard-poll-copy {
-    font-size: 0.8125rem;
-    padding: 0;
-  }
-
-  .dashboard-poll-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 6px 0;
-  }
-
-  .dashboard-poll-desc {
-    font-size: 0.875rem;
-    line-height: 1.45;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
-  }
-
-  .dashboard-poll-options {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .dashboard-poll-option {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px auto;
-    gap: 10px;
-    align-items: center;
-    font-size: 0.875rem;
-  }
-
-  .dashboard-poll-option-label {
-    color: var(--text-primary);
-  }
-
-  .dashboard-poll-option-count {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    text-align: right;
-  }
-
-  .dashboard-poll-vote-btn {
-    font-size: 0.8125rem;
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--bg-panel);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .dashboard-poll-vote-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .dashboard-poll-vote-btn:disabled {
-    cursor: default;
-    opacity: 0.85;
-  }
-
-  .dashboard-poll-vote-btn.voted {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--bg-panel);
-  }
-
-  .dashboard-polls-composer {
-    flex-shrink: 0;
-    padding-top: 12px;
-    margin-top: 8px;
-    border-top: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-  }
-
-  .dashboard-polls-create-btn {
-    width: 100%;
-    padding: 12px 16px;
+  .sponsor-empty-banner {
+    margin: 0 16px 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-subtle);
     border-radius: 10px;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
+    background: var(--bg-elevated);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 16px;
+  }
+
+  .sponsor-empty-banner-text {
+    margin: 0;
+    flex: 1;
+    min-width: 200px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
   }
 
   .dashboard-view-nav {
@@ -1077,6 +1219,153 @@
   .dashboard-placeholder-text.muted,
   .muted {
     color: var(--text-muted);
+  }
+
+  .proposal-card-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .proposal-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-elevated);
+  }
+
+  .proposal-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .proposal-card-tool {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .proposal-card-chain {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .proposal-card-title {
+    margin: 0 0 6px 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .proposal-card-ref {
+    display: block;
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    word-break: break-all;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  .proposal-card-actions {
+    margin: 10px 0 0 0;
+  }
+
+  .structure-summary-lead {
+    margin-top: 0;
+  }
+
+  .structure-dl {
+    margin: 0 0 14px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    font-size: 0.875rem;
+  }
+
+  .structure-dl dt {
+    margin: 0;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .structure-dl dd {
+    margin: 0;
+    word-break: break-all;
+  }
+
+  .structure-mono {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    font-family: ui-monospace, monospace;
+  }
+
+  .structure-actions {
+    margin: 0 0 12px;
+  }
+
+  .structure-footnote {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
+  .permissions-revision {
+    margin: 0 0 14px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
+  .permissions-revision-code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+  }
+
+  .permissions-catalog-list {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .permissions-catalog-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-elevated);
+  }
+
+  .permissions-catalog-title {
+    margin: 0 0 6px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .permissions-catalog-summary {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+
+  .permissions-executor-placeholder {
+    margin: 0 0 16px;
+    font-size: 0.8125rem;
+    line-height: 1.45;
   }
 
   .roles-loading {
@@ -1324,12 +1613,39 @@
   }
   .treasury-section-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    flex-wrap: wrap;
     margin-bottom: 12px;
   }
+
+  .treasury-vault-title {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .governance-deploy-cta,
+  .roles-tree-deploy-cta {
+    margin-top: 8px;
+  }
+
+  .settings-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .settings-roles-btn {
+    font-size: 0.8125rem;
+    padding: 6px 12px;
+  }
+
   .treasury-section-head .section-heading {
     margin: 0;
   }

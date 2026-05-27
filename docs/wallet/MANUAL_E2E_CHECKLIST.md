@@ -8,7 +8,7 @@ Use this to verify send, request, announcements, and RPC behavior on a **test ne
 - [ ] **Sepolia USDC** (and optionally USDT) if testing stable transfers — fund the wallet from a faucet or bridge as needed.
 - [ ] **Two participants** in a **1:1 DM** on **Friends** or **Pinned** (wallet button and sidebar only appear there).
 - [ ] **Recipient** payout address is resolvable for the sender: prefer **`dm_peer_evm`** after **Request wallet information**; else **`profiles.evm_address`** (e.g. from relay Kind 0 sync). Without either, send returns **`MISSING_PEER_EVM_ADDRESS`**.
-- [ ] Optional: set **`PACTO_WALLET_RPC_SEPOLIA`** (comma-separated URLs) if public defaults are flaky. See [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) and [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
+- [ ] Optional: set **`ALCHEMY_RPC_KEY`** in `.env` if public defaults are flaky. See [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) and [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 ## A. Wallet bar & balances
 

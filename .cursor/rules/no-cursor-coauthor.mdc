@@ -1,0 +1,14 @@
+---
+description: Never add Cursor as a Git co-author or attribution trailer on commits or PRs
+alwaysApply: true
+---
+
+# No Cursor co-author attribution
+
+- **Never** add `Co-authored-by:` lines naming Cursor, a Cursor agent, or Cursor-affiliated emails to commits, amended commits, squash messages, merges, or Git trailers generated during agent work.
+- **Never** add Cursor-branded attribution blocks to PR descriptions, release notes, or changelog entries unless a human explicitly asks for a neutral “tool used” note—and even then, do **not** use fake co-author trailers that impersonate a contributor.
+- **Never** tell the user they should add Cursor as co-author for policy, etiquette, or completeness.
+
+Human authors own authorship; agents assist without claiming shared credit in Git metadata.
+
+Do **not** remove or narrow this rule unless the user explicitly asked to delete or replace it (see `.cursor/rules/no-unrequested-deletions.mdc`).

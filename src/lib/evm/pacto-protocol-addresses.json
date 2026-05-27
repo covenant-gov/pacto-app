@@ -1,0 +1,35 @@
+{
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia bundle: covenant-gov deploy (chainId 11155111).",
+  "version": 1,
+  "networks": {
+    "sepolia": {
+      "chainId": 11155111,
+      "meta": {
+        "deployer": "0x6522cE18D0098A2f98fB6E4a40C081F16d9a71e7"
+      },
+      "squadSponsor": {
+        "factory": "0x3994B38f9A0Cf542241FD9C959F94386e6733D6e",
+        "paymaster": "0x42C76dEbCF45507532B22Ca890C9091240311bD8",
+        "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+        "navePirataRegistry": "0x45127C1c92741C0dA38e1A73fbb97a8a2C46770f"
+      },
+      "pactoGov": {
+        "navePirataFactory": "0x44E42cf7b2DadDe6D5fc27B57625EaF3e3D41316",
+        "navePirataRegistry": "0x45127C1c92741C0dA38e1A73fbb97a8a2C46770f",
+        "masterQuartermaster": "0xE9C111428E23bd68C892785A6566DFc160358af1",
+        "masterMutiny": "0xeA647c49a3594EEb3Cf0f38f705F34e036d3733B",
+        "masterTreasuryAuthority": "0x3AfD425EEFC54d4d97f610C47D4a3cEAE0FeC298",
+        "masterSquadAdminImpl": "0x85A7B39ED76b84efd85619F6df939c711b14DB54",
+        "masterSquadAdminExtImpl": "0x55B4e8df8DC23e4f414025e252Db26cbA22e25F1",
+        "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137",
+        "roleHatClonesFactory": "0xB240e490980b3EF11c30d7476a40f43B3311Ad58",
+        "roleHatUpgrader": "0x327f1B3cdcabe6F1BC934bed768032B7b42906f7"
+      },
+      "safe": {
+        "proxyFactory": "0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67",
+        "singleton": "0x41675C099F32341bf84BFc5382aF534df5C7461a",
+        "fallbackHandler": "0x017062a1dE2FE6b99BE3d9d37841FeD19F573804"
+      }
+    }
+  }
+}

@@ -208,7 +208,18 @@ async fn process_text_message(
     
     // Extract millisecond-precision timestamp
     let ms_timestamp = extract_millisecond_timestamp(&rumor);
-    
+
+    let tag_vec: Vec<Vec<String>> = rumor.tags.iter()
+        .map(|tag| {
+            tag.as_slice().iter().map(|s| s.to_string()).collect()
+        })
+        .collect();
+    let vb = crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
+        Kind::PrivateDirectMessage.as_u16(),
+        &rumor.content,
+        &tag_vec,
+    );
+
     // Create the message
     let msg = Message {
         id: rumor.id.to_hex(),
@@ -235,6 +246,7 @@ async fn process_text_message(
         edited: false,
         edit_history: None,
         rumor_kind: None,
+        virtual_bucket: vb,
     };
     
     Ok(RumorProcessingResult::TextMessage(msg))
@@ -366,7 +378,18 @@ async fn process_file_attachment(
     
     // Extract millisecond-precision timestamp
     let ms_timestamp = extract_millisecond_timestamp(&rumor);
-    
+
+    let tag_vec: Vec<Vec<String>> = rumor.tags.iter()
+        .map(|tag| {
+            tag.as_slice().iter().map(|s| s.to_string()).collect()
+        })
+        .collect();
+    let vb = crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
+        15,
+        &rumor.content,
+        &tag_vec,
+    );
+
     // Create the attachment
     let attachment = Attachment {
         id: file_hash,
@@ -408,6 +431,7 @@ async fn process_file_attachment(
         edited: false,
         edit_history: None,
         rumor_kind: None,
+        virtual_bucket: vb,
     };
     
     Ok(RumorProcessingResult::FileAttachment(msg))
@@ -613,6 +637,7 @@ async fn process_dashboard_poll_rumor(
         let ms = extract_millisecond_timestamp(&rumor) as i64;
         if crate::dashboard_poll::db_apply_vote(
             handle,
+            &vote.parent_id,
             &vote.poll_id,
             &voter,
             &vote.option_id,
@@ -664,6 +689,7 @@ async fn process_dashboard_poll_rumor(
             edited: false,
             edit_history: None,
             rumor_kind: Some(crate::stored_event::event_kind::APPLICATION_SPECIFIC),
+            virtual_bucket: Some("polls".to_string()),
         };
         crate::dashboard_poll::emit_poll_replica_updated(&env.payload.parent_id, Some(&env.payload.poll_id));
         return Ok(RumorProcessingResult::DashboardPollCreate(msg));

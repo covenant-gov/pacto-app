@@ -1,4 +1,10 @@
-# Messaging overview — DM vs MLS groups
+# Messaging — DM vs MLS groups
+
+End-to-end view of **direct messages** vs **MLS group** chats: same inner rumor kinds, different wire transport and chat identifiers.
+
+**Related:** [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`docs/mls/`](../mls/), [`docs/storage-layout/`](../storage-layout/).
+
+---
 
 Pacto uses one **unified chat model** (`Chat` / `ChatType` in `src-tauri/src/chat.rs`). What differs is **how events arrive on the wire** and **what string identifies the conversation**.
 

@@ -289,6 +289,29 @@ function linkify(html: string): string {
 }
 
 /**
+ * Chat message header timestamp: short date + time (e.g. "May 26, 11:09 PM").
+ */
+export function formatMessageTimestamp(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const dateOpts: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+  };
+  if (date.getFullYear() !== now.getFullYear()) {
+    dateOpts.year = 'numeric';
+  }
+  const datePart = date.toLocaleDateString('en-US', dateOpts);
+  const timePart = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${datePart}, ${timePart}`;
+}
+
+/**
  * Parse, linkify bare URLs, sanitize, replace emoji with Twemoji img, then re-sanitize.
  */
 export function formatMessageContent(content: string): string {

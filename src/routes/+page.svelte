@@ -37,16 +37,16 @@
     addParentTreasurySafe,
     type PendingMlsWelcome,
   } from '../lib/api/nostr';
-  import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, parseAnnouncement } from '../lib/announcements';
+  import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, parseAnnouncement } from '../lib/announcements';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
   import { parseSupportedChainId } from '../lib/wallet/chains';
+  import { getAddress } from 'viem';
   import {
     formatWalletPeerInfoGrant,
     formatWalletPeerInfoDecline,
     type WalletPeerInfoRequestPayload,
   } from '../lib/wallet/dm-messages';
   import { getEvmAddress } from '../lib/api/auth';
-  import { publishSquadMemberEvmShare } from '../lib/squad/squad-member-evm-share';
   import { setDmPeerEvmAddress } from '../lib/api/wallet-peers';
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getActiveEvmSignerAddress } from '../lib/wallet/evm-accounts';
@@ -58,6 +58,7 @@
     squads,
     activeSquadId,
     activeChannelId,
+    activeHubChannelName,
     activeView,
     activeTopNavTab,
     activeDmTab,
@@ -83,7 +84,9 @@
     lastOpenedSquadId,
     lastOpenedChannelId,
     lastChannelBySquadId,
+    lastHubChannelNameBySquadId,
     lastChannelByNetworkId,
+    lastHubChannelNameByNetworkId,
     networks,
     activeNetworkId,
     lastOpenedNetworkId,
@@ -106,8 +109,10 @@
     ANNOUNCEMENTS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
     treasurySafesByParentId,
+    squadInfraByParentId,
     dashboardPollReplicaNonceByParentId,
     type TreasurySafeEntry,
+    type SquadInfraDto,
     type DmMessage,
     type DmTab,
     type DmEntry,
@@ -121,6 +126,26 @@
     dmWalletPeerExchangeTick,
   } from '../stores/app';
   import { pendingReadyToast, showToast } from '../stores/toast';
+  import {
+    listSquadInfra,
+    upsertSquadInfra,
+    pactoGovInfraId,
+    squadSponsorInfraId,
+    buildSponsorGovernanceAnnouncePayload,
+    buildPactoGovGovernanceAnnouncePayload,
+    buildStandaloneSafeGovernanceAnnouncePayload,
+    buildSquadAdminGovernanceAnnouncePayload,
+    squadAdminInfraId,
+    pactoGovTreasuryEntryId,
+    primaryGovernanceView,
+  } from '../lib/governance/api';
+  import {
+    buildStandaloneSafeProviderPayload,
+    isPactoGovTreasurySafe,
+    pactoGovPayloadFromInfra,
+  } from '../lib/governance/standalone-safe-payload';
+  import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
+  import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
   import { portal } from '../lib/utils/portal';
 
   const PAGE_SIZE = 100;
@@ -173,10 +198,245 @@
       /* ignore */
     }
   }
+
+  async function mergeSquadInfraForParent(parentId: string) {
+    if (!parentId) return;
+    try {
+      const rows = await listSquadInfra(parentId);
+      squadInfraByParentId.update((m: Record<string, SquadInfraDto[]>) => ({
+        ...m,
+        [parentId]: rows,
+      }));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function governanceCanonicalSafeRef(rawAddress: string): string {
+    try {
+      return getAddress(rawAddress.trim() as `0x${string}`);
+    } catch {
+      return rawAddress.trim();
+    }
+  }
+
+  /** Persist a standalone vault Safe infra row (one row per treasury entry; skips pacto-gov treasury). */
+  async function syncGovernanceAfterTreasurySafe(
+    p: Squad | Network,
+    params: {
+      safeAddress: string;
+      chain: string;
+      entryId: string;
+      label?: string;
+      txHash?: string;
+    },
+  ) {
+    if (params.entryId === pactoGovTreasuryEntryId(p.id)) {
+      return;
+    }
+
+    const rows = await listSquadInfra(p.id);
+    const pactoPayload = pactoGovPayloadFromInfra(rows);
+    const canonicalRef = governanceCanonicalSafeRef(params.safeAddress);
+    if (isPactoGovTreasurySafe(canonicalRef, pactoPayload)) {
+      return;
+    }
+
+    const providerPayload = buildStandaloneSafeProviderPayload({
+      treasuryEntryId: params.entryId,
+      safeAddress: canonicalRef,
+      label: params.label,
+      txHash: params.txHash,
+    });
+    await upsertSquadInfra({
+      id: params.entryId,
+      parentId: p.id,
+      infraType: 'standalone_safe',
+      chain: params.chain,
+      canonicalRef,
+      providerPayload,
+    });
+    const gid = resolveAutomatedAnnounceGroupId(p);
+    if (gid) {
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+          payload: buildStandaloneSafeGovernanceAnnouncePayload({
+            parentId: p.id,
+            safeAddress: canonicalRef,
+            chain: params.chain,
+            providerPayload,
+            entryId: params.entryId,
+          }),
+        }),
+        '',
+        { virtualBucket: 'inbox' },
+      );
+    }
+  }
+
+  async function finalizePactoGovDeploy(params: {
+    parentId: string;
+    announcementsGroupId: string;
+    chain: string;
+    topHatId: string;
+    providerPayload: string;
+    safeAddress: string;
+    txHash: string;
+  }) {
+    const entryId = pactoGovInfraId(params.parentId);
+    await upsertSquadInfra({
+      id: entryId,
+      parentId: params.parentId,
+      infraType: 'pacto_gov',
+      chain: params.chain,
+      canonicalRef: params.topHatId,
+      providerPayload: params.providerPayload,
+    });
+    const row =
+      get(squads).find((s: Squad) => s.id === params.parentId) ??
+      get(networks).find((n: Network) => n.id === params.parentId);
+    const gid =
+      (row ? resolveAutomatedAnnounceGroupId(row) : null) ?? params.announcementsGroupId.trim();
+
+    const safeCanonical = governanceCanonicalSafeRef(params.safeAddress);
+    const treasuryEntryId = pactoGovTreasuryEntryId(params.parentId);
+    await addParentTreasurySafe(params.parentId, safeCanonical, {
+      chain: params.chain,
+      label: '',
+      entryId: treasuryEntryId,
+    });
+
+    if (gid) {
+      const chainKey = parseSupportedChainId(params.chain);
+      const txHex = params.txHash?.trim();
+      const explorerTxUrl = txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_SAFE_UPDATED,
+          payload: {
+            squad_id: params.parentId,
+            safe_address: safeCanonical,
+            chain: params.chain,
+            entry_id: treasuryEntryId,
+            tx_hash: txHex || undefined,
+            explorer_tx_url: explorerTxUrl ?? undefined,
+          },
+        }),
+        '',
+        { virtualBucket: 'inbox' },
+      );
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+          payload: buildPactoGovGovernanceAnnouncePayload({
+            parentId: params.parentId,
+            topHatId: params.topHatId,
+            chain: params.chain,
+            providerPayload: params.providerPayload,
+            entryId,
+          }),
+        }),
+        '',
+        { virtualBucket: 'inbox' },
+      );
+    }
+    await mergeTreasurySafesForParent(params.parentId);
+    await mergeSquadInfraForParent(params.parentId);
+  }
+
+  async function finalizeSponsorDeploy(params: {
+    parentId: string;
+    announcementsGroupId: string;
+    chain: string;
+    sponsorAddress: string;
+    providerPayload: string;
+    infraRowId: string;
+  }) {
+    await upsertSquadInfra({
+      id: params.infraRowId || squadSponsorInfraId(params.parentId),
+      parentId: params.parentId,
+      infraType: 'sponsor',
+      chain: params.chain,
+      canonicalRef: params.sponsorAddress,
+      providerPayload: params.providerPayload,
+    });
+    const row =
+      get(squads).find((s: Squad) => s.id === params.parentId) ??
+      get(networks).find((n: Network) => n.id === params.parentId);
+    const gid =
+      (row ? resolveAutomatedAnnounceGroupId(row) : null) ?? params.announcementsGroupId.trim();
+    const entryId = params.infraRowId || squadSponsorInfraId(params.parentId);
+    if (gid) {
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+          payload: buildSponsorGovernanceAnnouncePayload({
+            parentId: params.parentId,
+            sponsorAddress: params.sponsorAddress,
+            chain: params.chain,
+            providerPayload: params.providerPayload,
+            entryId,
+          }),
+        }),
+        '',
+        { virtualBucket: 'inbox' },
+      );
+    }
+    await mergeSquadInfraForParent(params.parentId);
+  }
+
+  async function finalizeSquadAdminDeploy(params: {
+    parentId: string;
+    announcementsGroupId: string;
+    chain: string;
+    squadAdminProxy: string;
+    providerPayload: string;
+    infraRowId: string;
+  }) {
+    const entryId = params.infraRowId || squadAdminInfraId(params.parentId);
+    await upsertSquadInfra({
+      id: entryId,
+      parentId: params.parentId,
+      infraType: 'squad_admin',
+      chain: params.chain,
+      canonicalRef: params.squadAdminProxy,
+      providerPayload: params.providerPayload,
+    });
+    const row =
+      get(squads).find((s: Squad) => s.id === params.parentId) ??
+      get(networks).find((n: Network) => n.id === params.parentId);
+    const gid =
+      (row ? resolveAutomatedAnnounceGroupId(row) : null) ?? params.announcementsGroupId.trim();
+    if (gid) {
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+          payload: buildSquadAdminGovernanceAnnouncePayload({
+            parentId: params.parentId,
+            squadAdminProxy: params.squadAdminProxy,
+            chain: params.chain,
+            providerPayload: params.providerPayload,
+            entryId,
+          }),
+        }),
+        '',
+        { virtualBucket: 'inbox' },
+      );
+    }
+    await mergeSquadInfraForParent(params.parentId);
+  }
+
   $: dashboardParentId = $activeChannelId === DASHBOARD_CHANNEL_ID ? ($activeTopNavTab === 'squads' ? $activeSquadId : $activeNetworkId) ?? null : null;
   $: if (dashboardParentId && !treasuryHydratedIds.has(dashboardParentId)) {
     treasuryHydratedIds.add(dashboardParentId);
     mergeTreasurySafesForParent(dashboardParentId);
+    mergeSquadInfraForParent(dashboardParentId).catch(() => {});
   }
 
   /** After login, refresh embedded wallet balances in the background (cache only; no DM open). */
@@ -203,6 +463,7 @@
       if (!pid || treasuryHydratedIds.has(pid)) continue;
       treasuryHydratedIds.add(pid);
       mergeTreasurySafesForParent(pid).catch(() => {});
+      mergeSquadInfraForParent(pid).catch(() => {});
     }
   }
 
@@ -307,11 +568,19 @@
     if (cid && !cid.startsWith('creating-')) {
       const squad = $squads.find((s: Squad) => s.id === sid);
       const cidBelongsToSquad = squad?.channels.some((c: Channel) => c.groupId === cid) ?? false;
-      if (cidBelongsToSquad) {
+      if (cidBelongsToSquad && squad) {
         lastOpenedChannelId.set(cid);
         lastChannelBySquadId.update((m: Record<string, string>) => {
           const next = { ...m, [sid]: cid };
           if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-squads persist', { sid: sid.slice(0, 12), cid: cid.slice(0, 20) });
+          return next;
+        });
+        const hub =
+          resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
+        lastHubChannelNameBySquadId.update((m) => {
+          const next = { ...m };
+          if (!hub) delete next[sid];
+          else next[sid] = hub;
           return next;
         });
       } else if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-squads skip persist (cid not in squad)', { sid: sid.slice(0, 12), cid: cid.slice(0, 20) });
@@ -327,10 +596,18 @@
     if (networkCid && !networkCid.startsWith('creating-')) {
       const net = $networks.find((n: Network) => n.id === nid);
       const cidBelongsToNetwork = net?.channels.some((c: Channel) => c.groupId === networkCid) ?? false;
-      if (cidBelongsToNetwork) {
+      if (cidBelongsToNetwork && net) {
         if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-networks persist (network only)', { nid: nid?.slice(0, 12), networkCid: networkCid?.slice(0, 20) });
         lastOpenedNetworkChannelId.set(networkCid);
         lastChannelByNetworkId.update((m: Record<string, string>) => ({ ...m, [nid]: networkCid }));
+        const hub =
+          resolveHubChannelNameForGroupSelection(net.channels, networkCid, $activeHubChannelName) ?? '';
+        lastHubChannelNameByNetworkId.update((m) => {
+          const next = { ...m };
+          if (!hub) delete next[nid];
+          else next[nid] = hub;
+          return next;
+        });
       }
     }
   }
@@ -356,6 +633,11 @@
       if (validChannel && $activeChannelId !== validChannel) {
         if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page never-empty correct', { sid: sid.slice(0, 12), from: $activeChannelId?.slice(0, 20), to: validChannel?.slice(0, 20), reason: activeInSquad ? 'active' : lastInSquad ? 'lastForSquad' : 'firstCh', lastForSquad: lastForSquad?.slice(0, 20) });
         activeChannelId.set(validChannel);
+        const hub =
+          validChannel !== DASHBOARD_CHANNEL_ID
+            ? resolveHubChannelNameForGroupSelection(sorted, validChannel, $lastHubChannelNameBySquadId[sid])
+            : null;
+        activeHubChannelName.set(hub);
       }
     }
   }
@@ -380,6 +662,11 @@
             : firstCh ? DASHBOARD_CHANNEL_ID : null;
       if (validChannel && $activeChannelId !== validChannel) {
         activeChannelId.set(validChannel);
+        const hub =
+          validChannel !== DASHBOARD_CHANNEL_ID
+            ? resolveHubChannelNameForGroupSelection(sorted, validChannel, $lastHubChannelNameByNetworkId[nid])
+            : null;
+        activeHubChannelName.set(hub);
       }
     }
   }
@@ -612,6 +899,7 @@
       squads.update((list: Squad[]) => [...list, newSquad]);
       activeSquadId.set(newSquad.id);
       activeChannelId.set(payload.groupId);
+      activeHubChannelName.set(ANNOUNCEMENTS_CHANNEL_NAME);
       activeView.set('hub');
       acceptedSquadInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
     } else {
@@ -626,6 +914,7 @@
       networks.update((list: Network[]) => [...list, newNetwork]);
       activeNetworkId.set(newNetwork.id);
       activeChannelId.set(payload.groupId);
+      activeHubChannelName.set(ANNOUNCEMENTS_CHANNEL_NAME);
       activeTopNavTab.set('networks');
       activeView.set('hub');
       acceptedNetworkInviteIds.update((ids: string[]) => (ids.includes(messageId) ? ids : [...ids, messageId]));
@@ -832,11 +1121,17 @@
       if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page restore-to-squads set', { squadId: squad.id.slice(0, 12), lastForSquad: lastForSquad?.slice(0, 20), lastValid, setChannelId: setChannelId?.slice(0, 20), firstChId: firstCh?.groupId?.slice(0, 20) });
       activeSquadId.set(squad.id);
       activeChannelId.set(setChannelId);
+      const hub =
+        setChannelId && setChannelId !== DASHBOARD_CHANNEL_ID
+          ? resolveHubChannelNameForGroupSelection(sorted, setChannelId, $lastHubChannelNameBySquadId[squad.id])
+          : null;
+      activeHubChannelName.set(hub);
     } else if ($squads.length > 0 && !$activeSquadId) {
       const first = $squads[0];
       const sorted = [...first.channels].sort((a: Channel, b: Channel) => a.order - b.order);
       activeSquadId.set(first.id);
       activeChannelId.set(sorted[0]?.groupId ?? null);
+      activeHubChannelName.set(sorted[0]?.name ?? null);
     }
   } else if ($activeTopNavTab === 'networks' && prevTopNavTab !== 'networks') {
     prevTopNavTab = 'networks';
@@ -858,7 +1153,13 @@
             : lastForNet && sorted.some((c: Channel) => c.groupId === lastForNet)
               ? sorted.find((c: Channel) => c.groupId === lastForNet)
               : firstCh;
-      activeChannelId.set(lastIsDashboard ? DASHBOARD_CHANNEL_ID : (ch?.groupId ?? firstCh?.groupId ?? null));
+      const netCid = lastIsDashboard ? DASHBOARD_CHANNEL_ID : (ch?.groupId ?? firstCh?.groupId ?? null);
+      activeChannelId.set(netCid);
+      const hub =
+        netCid && netCid !== DASHBOARD_CHANNEL_ID
+          ? resolveHubChannelNameForGroupSelection(sorted, netCid, $lastHubChannelNameByNetworkId[net.id])
+          : null;
+      activeHubChannelName.set(hub);
     } else if ($networks.length > 0) {
       const currentNet = $activeNetworkId ? $networks.find((n: Network) => n.id === $activeNetworkId) : null;
       if (!currentNet) {
@@ -866,6 +1167,7 @@
         const firstCh = first.channels.slice().sort((a: Channel, b: Channel) => a.order - b.order)[0];
         activeNetworkId.set(first.id);
         activeChannelId.set(firstCh?.groupId ?? null);
+        activeHubChannelName.set(firstCh?.name ?? null);
       }
     }
   } else if ($activeTopNavTab !== 'squads') {
@@ -878,6 +1180,23 @@
         lastOpenedSquadId.set(sid);
         lastOpenedChannelId.set(cid);
         lastChannelBySquadId.update((m: Record<string, string>) => ({ ...m, [sid]: cid }));
+        const squad = $squads.find((s: Squad) => s.id === sid);
+        if (cid === DASHBOARD_CHANNEL_ID) {
+          lastHubChannelNameBySquadId.update((m) => {
+            const next = { ...m };
+            delete next[sid];
+            return next;
+          });
+        } else if (squad) {
+          const hub =
+            resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
+          lastHubChannelNameBySquadId.update((m) => {
+            const next = { ...m };
+            if (!hub) delete next[sid];
+            else next[sid] = hub;
+            return next;
+          });
+        }
       }
     }
     // Persist network channel when leaving Networks tab so it restores correctly when returning
@@ -888,6 +1207,23 @@
         lastOpenedNetworkId.set(nid);
         lastOpenedNetworkChannelId.set(cid);
         lastChannelByNetworkId.update((m: Record<string, string>) => ({ ...m, [nid]: cid }));
+        const net = $networks.find((n: Network) => n.id === nid);
+        if (cid === DASHBOARD_CHANNEL_ID) {
+          lastHubChannelNameByNetworkId.update((m) => {
+            const next = { ...m };
+            delete next[nid];
+            return next;
+          });
+        } else if (net) {
+          const hub =
+            resolveHubChannelNameForGroupSelection(net.channels, cid, $activeHubChannelName) ?? '';
+          lastHubChannelNameByNetworkId.update((m) => {
+            const next = { ...m };
+            if (!hub) delete next[nid];
+            else next[nid] = hub;
+            return next;
+          });
+        }
       }
     }
     prevTopNavTab = $activeTopNavTab;
@@ -899,6 +1235,7 @@
       const first = $squads[0];
       $activeSquadId = first.id;
       $activeChannelId = first.channels.length > 0 ? DASHBOARD_CHANNEL_ID : null;
+      activeHubChannelName.set(null);
     }
 
     // Pull DMs from Nostr relays when app loads (if already authenticated)
@@ -926,6 +1263,7 @@
         npub: message.npub,
         pending: message.pending,
         failed: message.failed,
+        virtual_bucket: (message as { virtual_bucket?: string | null }).virtual_bucket,
         replied_to: (message as { replied_to?: string }).replied_to,
         replied_to_content: (message as { replied_to_content?: string | null }).replied_to_content,
         replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
@@ -980,6 +1318,7 @@
           npub: message.npub,
           pending: message.pending,
           failed: message.failed,
+          virtual_bucket: (message as { virtual_bucket?: string | null }).virtual_bucket,
           replied_to: (message as { replied_to?: string }).replied_to,
           replied_to_content: (message as { replied_to_content?: string | null }).replied_to_content,
           replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
@@ -1007,6 +1346,9 @@
           const announce = parseAnnouncement(m.content);
           if (announce?.type === 'squad_safe_updated') {
             mergeTreasurySafesForParent(announce.payload.squad_id);
+          }
+          if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
+            mergeSquadInfraForParent(announce.payload.parent_id);
           }
         }
       }
@@ -1064,6 +1406,7 @@
         npub: message.npub,
         pending: message.pending,
         failed: message.failed,
+        virtual_bucket: (message as { virtual_bucket?: string | null }).virtual_bucket,
         replied_to: (message as { replied_to?: string }).replied_to,
         replied_to_content: (message as { replied_to_content?: string | null }).replied_to_content,
         replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
@@ -1080,8 +1423,11 @@
       });
       const announce = parseAnnouncement(m.content);
       if (announce?.type === 'squad_safe_updated') {
-            mergeTreasurySafesForParent(announce.payload.squad_id);
-          }
+        mergeTreasurySafesForParent(announce.payload.squad_id);
+      }
+      if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
+        mergeSquadInfraForParent(announce.payload.parent_id);
+      }
       if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
     });
 
@@ -1113,9 +1459,6 @@
           group_id,
           channelInviteInfo.channelName
         );
-        void publishSquadMemberEvmShare(channelInviteInfo.parentId).then((ok) => {
-          if (!ok) dmError('publishSquadMemberEvmShare after channel welcome', new Error('share failed'));
-        });
         return;
       }
       if (acceptedSquadInviteGroupIds.has(group_id)) {
@@ -1214,11 +1557,6 @@
           <MessengerNavbar />
           <div class="dm-main-row">
             <div class="dm-area-center" class:dm-area-center--wallet-open={dmWalletSidebarVisible}>
-            {#if $dmSyncStatus !== 'idle'}
-              <p class="dm-sync-banner dm-sync-{$dmSyncStatus}" role="status">
-                {$dmSyncStatus === 'syncing' ? 'Updating messages…' : 'Up to date'}
-              </p>
-            {/if}
             <div class="dm-main">
             {#if $composingNewChat}
               <MessengerChatView />
@@ -1318,6 +1656,27 @@
                   ? $squads.find((s: Squad) => s.id === $activeSquadId)
                   : $networks.find((n: Network) => n.id === $activeNetworkId))?.id ?? ''
               ] ?? []}
+              governanceConfig={(() => {
+                const id =
+                  ($activeTopNavTab === 'squads'
+                    ? $squads.find((s: Squad) => s.id === $activeSquadId)
+                    : $networks.find((n: Network) => n.id === $activeNetworkId))?.id ?? '';
+                if (!id) return undefined;
+                const rows = $squadInfraByParentId[id];
+                return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
+                  ? primaryGovernanceView(rows)
+                  : undefined;
+              })()}
+              squadInfraRows={(() => {
+                const id =
+                  ($activeTopNavTab === 'squads'
+                    ? $squads.find((s: Squad) => s.id === $activeSquadId)
+                    : $networks.find((n: Network) => n.id === $activeNetworkId))?.id ?? '';
+                if (!id) return undefined;
+                return Object.prototype.hasOwnProperty.call($squadInfraByParentId, id)
+                  ? ($squadInfraByParentId[id] ?? [])
+                  : undefined;
+              })()}
               onConfirmImportSafe={async (params: {
                 safeAddress: string;
                 chain: string;
@@ -1334,16 +1693,25 @@
                   label: params.label,
                   entryId: params.entryId,
                 });
-                const announcementsGroupId =
-                  p.channels.find((c: Channel) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId ??
-                  p.channels[0]?.groupId;
-                if (announcementsGroupId) {
+                try {
+                  await syncGovernanceAfterTreasurySafe(p, {
+                    safeAddress: params.safeAddress,
+                    chain: params.chain,
+                    entryId: params.entryId,
+                    label: params.label,
+                    txHash: params.txHash,
+                  });
+                } catch (e) {
+                  showToast(getInvokeErrorMessage(e, 'Treasury saved but governance sync failed.'));
+                }
+                const gid = resolveAutomatedAnnounceGroupId(p);
+                if (gid) {
                   const chainKey = parseSupportedChainId(params.chain);
                   const txHex = params.txHash?.trim();
                   const explorerTxUrl =
                     txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
                   await sendDmMessage(
-                    announcementsGroupId,
+                    gid,
                     buildAnnounceContent({
                       type: ANNOUNCE_TYPE_SAFE_UPDATED,
                       payload: {
@@ -1355,11 +1723,17 @@
                         tx_hash: txHex || undefined,
                         explorer_tx_url: explorerTxUrl ?? undefined,
                       },
-                    })
+                    }),
+                    '',
+                    { virtualBucket: 'inbox' },
                   );
                 }
                 await mergeTreasurySafesForParent(p.id);
+                await mergeSquadInfraForParent(p.id);
               }}
+              onPactoGovDeployComplete={finalizePactoGovDeploy}
+              onSponsorDeployComplete={finalizeSponsorDeploy}
+              onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
           {:else}
             <ChatView />
@@ -1449,26 +1823,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-  }
-
-  .dm-sync-banner {
-    margin: 0;
-    padding: 6px 24px;
-    font-size: 0.8125rem;
-    flex-shrink: 0;
-    width: 100%;
-    text-align: center;
-    box-sizing: border-box;
-  }
-
-  .dm-sync-syncing {
-    color: var(--text-secondary);
-    background-color: var(--bg-elevated);
-  }
-
-  .dm-sync-finished {
-    color: var(--text-muted);
-    background-color: #24804620;
   }
 
   .dm-empty {

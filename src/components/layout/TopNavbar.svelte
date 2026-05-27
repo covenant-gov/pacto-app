@@ -1,18 +1,26 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import {
     activeTopNavTab,
     activeView,
     activeSquadId,
     activeChannelId,
+    activeHubChannelName,
     activeNetworkId,
+    squads,
+    networks,
     lastOpenedSquadId,
     lastOpenedChannelId,
     lastChannelBySquadId,
+    lastHubChannelNameBySquadId,
     lastOpenedNetworkId,
     lastOpenedNetworkChannelId,
     lastChannelByNetworkId,
+    lastHubChannelNameByNetworkId,
+    DASHBOARD_CHANNEL_ID,
     type TopNavTab,
   } from '../../stores/app';
+  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
 
   const tabs: { id: TopNavTab; label: string }[] = [
     { id: 'dms', label: 'DMs' }, // 1-on-1 chat, non-governable
@@ -35,12 +43,36 @@
           if (DEBUG) console.log('[SquadChannel] TopNavbar persist squad', { sid: sid.slice(0, 12), cid: cid.slice(0, 20), mapKeys: Object.keys(next) });
           return next;
         });
+        const squad = get(squads).find((s) => s.id === sid);
+        if (cid === DASHBOARD_CHANNEL_ID) {
+          lastHubChannelNameBySquadId.update((m) => {
+            const next = { ...m };
+            delete next[sid];
+            return next;
+          });
+        } else {
+          const hub =
+            resolveHubChannelNameForGroupSelection(squad?.channels ?? [], cid, get(activeHubChannelName)) ?? '';
+          if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [sid]: hub }));
+        }
       }
       if ($activeTopNavTab === 'networks' && $activeNetworkId && cid && !cid.startsWith('creating-')) {
         const nid = $activeNetworkId;
         lastOpenedNetworkId.set(nid);
         lastOpenedNetworkChannelId.set(cid);
         lastChannelByNetworkId.update((m) => ({ ...m, [nid]: cid }));
+        const net = get(networks).find((n) => n.id === nid);
+        if (cid === DASHBOARD_CHANNEL_ID) {
+          lastHubChannelNameByNetworkId.update((m) => {
+            const next = { ...m };
+            delete next[nid];
+            return next;
+          });
+        } else {
+          const hub =
+            resolveHubChannelNameForGroupSelection(net?.channels ?? [], cid, get(activeHubChannelName)) ?? '';
+          if (hub) lastHubChannelNameByNetworkId.update((m) => ({ ...m, [nid]: hub }));
+        }
       }
     }
     $activeTopNavTab = id;

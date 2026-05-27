@@ -30,7 +30,7 @@ function isTauri(): boolean {
 }
 
 const USER_FACING_ORACLE_FAILURE =
-  'Live USD prices are unavailable. Chainlink feeds could not be read. Check your internet connection, or set PACTO_CHAINLINK_PRICE_RPC_URL / PACTO_WALLET_RPC_MAINNET for Ethereum mainnet JSON-RPC (see docs/wallet/USD_PRICING.md).';
+  'Live USD prices are unavailable. Chainlink feeds could not be read. Check your internet connection, or set ALCHEMY_RPC_KEY for Ethereum mainnet JSON-RPC (see docs/wallet/USD_PRICING.md).';
 
 /**
  * Fetches Chainlink-backed USD spot prices (90s server-side cache). Returns `ok: false` when

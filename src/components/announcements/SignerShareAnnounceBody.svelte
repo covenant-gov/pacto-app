@@ -10,6 +10,7 @@
   } from '../../stores/app';
   import { profiles } from '../../stores/profiles';
   import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let payload: SquadMemberEvmSharePayload;
   export let authorName: string;
@@ -27,15 +28,6 @@
   let loading = true;
   let loadError = '';
   let rosterRows: RosterRow[] = [];
-
-  function formatTime(isoString: string): string {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
 
   function shortAddr(addr: string): string {
     const a = addr.trim();
@@ -161,7 +153,7 @@
   {/if}
 
   <p class="signer-share-meta">
-    {#if timestamp}{formatTime(timestamp)}{/if}
+    {#if timestamp}{formatMessageTimestamp(timestamp)}{/if}
   </p>
 </div>
 

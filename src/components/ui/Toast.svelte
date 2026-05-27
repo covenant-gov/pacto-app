@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { toastMessage } from '../../stores/toast';
+  import { toastMessage, clearToast, type ToastGoTo } from '../../stores/toast';
   import {
+    squads,
+    networks,
     activeTopNavTab,
     activeSquadId,
     activeNetworkId,
     activeChannelId,
+    activeHubChannelName,
     activeView,
     lastOpenedSquadId,
     lastOpenedChannelId,
@@ -12,10 +15,13 @@
     lastOpenedNetworkChannelId,
     lastChannelBySquadId,
     lastChannelByNetworkId,
+    lastHubChannelNameBySquadId,
+    lastHubChannelNameByNetworkId,
+    DASHBOARD_CHANNEL_ID,
   } from '../../stores/app';
-  import { clearToast } from '../../stores/toast';
+  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
 
-  function goToSpace(goTo: { type: 'squad' | 'network'; name: string; id: string; channelId: string }) {
+  function goToSpace(goTo: ToastGoTo) {
     if (goTo.type === 'squad') {
       activeTopNavTab.set('squads');
       activeSquadId.set(goTo.id);
@@ -24,6 +30,13 @@
       lastOpenedSquadId.set(goTo.id);
       lastOpenedChannelId.set(goTo.channelId);
       lastChannelBySquadId.update((m) => ({ ...m, [goTo.id]: goTo.channelId }));
+      const squad = $squads.find((s) => s.id === goTo.id);
+      const hub =
+        goTo.channelId === DASHBOARD_CHANNEL_ID
+          ? null
+          : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], goTo.channelId, goTo.hubChannelName ?? null);
+      activeHubChannelName.set(hub);
+      if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [goTo.id]: hub }));
     } else {
       activeTopNavTab.set('networks');
       activeNetworkId.set(goTo.id);
@@ -32,6 +45,13 @@
       lastOpenedNetworkId.set(goTo.id);
       lastOpenedNetworkChannelId.set(goTo.channelId);
       lastChannelByNetworkId.update((m) => ({ ...m, [goTo.id]: goTo.channelId }));
+      const net = $networks.find((n) => n.id === goTo.id);
+      const hub =
+        goTo.channelId === DASHBOARD_CHANNEL_ID
+          ? null
+          : resolveHubChannelNameForGroupSelection(net?.channels ?? [], goTo.channelId, goTo.hubChannelName ?? null);
+      activeHubChannelName.set(hub);
+      if (hub) lastHubChannelNameByNetworkId.update((m) => ({ ...m, [goTo.id]: hub }));
     }
     clearToast();
   }

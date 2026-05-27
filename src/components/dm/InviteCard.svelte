@@ -1,11 +1,4 @@
 <script lang="ts">
-  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
-  import {
-    sharedSquadInviteEvmMessageIds,
-    skippedSquadInviteEvmMessageIds,
-  } from '../../stores/invite-decisions';
-  import { showToast } from '../../stores/toast';
-
   /**
    * Unified invite card for DM thread: squad, network, channel-in-squad, channel-in-network.
    * Same layout and behavior; variant controls title, subtitle, body text, and optional badge.
@@ -22,25 +15,6 @@
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
-  /** For squad invites: DM message id (persists share/skip for the post-accept EVM step). */
-  export let inviteMessageId = '';
-  /** Announcements MLS group id (roster parent); required for the EVM share step. */
-  export let announcementsGroupId = '';
-
-  let squadEvmSharing = false;
-
-  $: squadEvmDecisionDone =
-    !inviteMessageId ||
-    $sharedSquadInviteEvmMessageIds.includes(inviteMessageId) ||
-    $skippedSquadInviteEvmMessageIds.includes(inviteMessageId);
-
-  $: showSquadEvmPrompt =
-    variant === 'squad' &&
-    status === 'accepted' &&
-    !isMine &&
-    announcementsGroupId.trim().length > 0 &&
-    inviteMessageId.length > 0 &&
-    !squadEvmDecisionDone;
 
   $: title = (() => {
     if (variant === 'squad') return squadName;
@@ -82,34 +56,7 @@
 
   $: showBadge = variant === 'network';
   $: isNetworkVariant = variant === 'network';
-  $: collapsed = (status === 'accepted' || status === 'declined') && !showSquadEvmPrompt;
-
-  async function handleShareSquadEvm(): Promise<void> {
-    if (squadEvmSharing || !announcementsGroupId.trim() || !inviteMessageId) return;
-    squadEvmSharing = true;
-    try {
-      const ok = await publishSquadMemberEvmShare(announcementsGroupId.trim());
-      if (!ok) {
-        showToast('Could not share your signer address. Check your wallet and try again.');
-        return;
-      }
-      sharedSquadInviteEvmMessageIds.update((ids) =>
-        ids.includes(inviteMessageId) ? ids : [...ids, inviteMessageId]
-      );
-      skippedSquadInviteEvmMessageIds.update((ids) => ids.filter((id) => id !== inviteMessageId));
-      showToast('Squad signer address shared.');
-    } finally {
-      squadEvmSharing = false;
-    }
-  }
-
-  function handleSkipSquadEvm(): void {
-    if (!inviteMessageId) return;
-    skippedSquadInviteEvmMessageIds.update((ids) =>
-      ids.includes(inviteMessageId) ? ids : [...ids, inviteMessageId]
-    );
-    sharedSquadInviteEvmMessageIds.update((ids) => ids.filter((id) => id !== inviteMessageId));
-  }
+  $: collapsed = status === 'accepted' || status === 'declined';
 </script>
 
 <div
@@ -138,28 +85,10 @@
       <!-- Sender: no actions -->
     {:else if status === 'accepted'}
       <p class="invite-card-status invite-card-status-accepted" aria-live="polite">Accepted</p>
-      {#if showSquadEvmPrompt}
-        <p class="invite-card-evm-caption">
-          Share your squad signer address with members? It shows in the roster and when deploying a Safe.
+      {#if variant === 'squad'}
+        <p class="invite-card-evm-caption muted">
+          Set your roster signer in the squad <strong>#inbox</strong> channel when you open it.
         </p>
-        <div class="invite-card-actions invite-card-actions-evm">
-          <button
-            type="button"
-            class="invite-card-btn invite-card-btn-accept"
-            disabled={squadEvmSharing}
-            on:click={handleShareSquadEvm}
-          >
-            {squadEvmSharing ? 'Sharing…' : 'Share signer address'}
-          </button>
-          <button
-            type="button"
-            class="invite-card-btn invite-card-btn-decline"
-            disabled={squadEvmSharing}
-            on:click={handleSkipSquadEvm}
-          >
-            Not now
-          </button>
-        </div>
       {/if}
     {:else if status === 'declined'}
       <p class="invite-card-status invite-card-status-declined" aria-live="polite">Declined</p>
@@ -218,47 +147,16 @@
     font-size: 0.875rem;
   }
 
-  .invite-card.collapsed .invite-card-badge {
-    display: none;
-  }
-
-  .invite-card.collapsed .invite-card-title {
-    margin: 0;
-    font-size: 0.9375rem;
-  }
-
-  .invite-card.collapsed .invite-card-subtitle,
-  .invite-card.collapsed .invite-card-text {
-    display: none;
-  }
-
-  .invite-card-evm-caption {
-    margin: 8px 0 0 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-  }
-
-  .invite-card-actions-evm {
-    margin-top: 10px;
-  }
-
-  .invite-card.collapsed .invite-card-status {
-    margin-left: auto;
-    flex-shrink: 0;
-    font-size: 0.75rem;
-  }
-
   .invite-card-icon {
     flex-shrink: 0;
     width: 40px;
     height: 40px;
     border-radius: 8px;
-    background: var(--bg-panel);
+    overflow: hidden;
+    background: var(--bg-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
   }
 
   .invite-card-icon-img {
@@ -270,11 +168,7 @@
   .invite-card-icon-placeholder {
     font-size: 1.125rem;
     font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .invite-card.network-variant .invite-card-icon-placeholder {
-    color: var(--accent);
+    color: var(--text-secondary);
   }
 
   .invite-card-body {
@@ -283,7 +177,7 @@
   }
 
   .invite-card-badge {
-    margin: 0 0 2px 0;
+    margin: 0 0 4px 0;
     font-size: 0.6875rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -292,41 +186,49 @@
   }
 
   .invite-card-title {
-    margin: 0 0 4px 0;
-    font-size: 1rem;
+    margin: 0 0 2px 0;
     font-weight: 600;
+    font-size: 0.9375rem;
     color: var(--text-primary);
-    line-height: 1.3;
   }
 
   .invite-card-subtitle {
     margin: 0 0 4px 0;
     font-size: 0.75rem;
-    color: var(--text-muted);
-    line-height: 1.3;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    color: var(--text-secondary);
   }
 
   .invite-card-text {
-    margin: 0 0 10px 0;
+    margin: 0 0 8px 0;
     font-size: 0.8125rem;
     color: var(--text-secondary);
     line-height: 1.4;
   }
 
+  .invite-card.collapsed .invite-card-text,
+  .invite-card.collapsed .invite-card-subtitle,
+  .invite-card.collapsed .invite-card-evm-caption {
+    display: none;
+  }
+
   .invite-card-status {
     margin: 0;
     font-size: 0.8125rem;
+    font-weight: 500;
   }
 
   .invite-card-status-accepted {
-    color: var(--success);
+    color: var(--success, #2d8a4e);
   }
 
   .invite-card-status-declined {
     color: var(--text-muted);
+  }
+
+  .invite-card-evm-caption {
+    margin: 6px 0 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
   }
 
   .invite-card-actions {
@@ -336,35 +238,27 @@
   }
 
   .invite-card-btn {
-    padding: 6px 16px;
+    padding: 6px 12px;
+    border-radius: 6px;
     font-size: 0.8125rem;
     font-weight: 500;
-    border-radius: 6px;
     cursor: pointer;
-    border: none;
-  }
-
-  .invite-card-btn:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
+    border: 1px solid transparent;
   }
 
   .invite-card-btn-accept {
     background: var(--accent);
-    color: #fff;
-  }
-
-  .invite-card-btn-accept:hover:not(:disabled) {
-    background: var(--accent-hover);
+    color: var(--accent-contrast, #fff);
   }
 
   .invite-card-btn-decline {
-    background: transparent;
+    background: var(--bg-secondary);
     color: var(--text-secondary);
-    border: 1px solid var(--border);
+    border-color: var(--border-subtle);
   }
 
-  .invite-card-btn-decline:hover:not(:disabled) {
-    background: var(--bg-hover);
+  .invite-card-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>

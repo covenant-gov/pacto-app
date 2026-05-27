@@ -10,10 +10,11 @@
   import pinIcon from '../../icons/pin.svg';
   import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
-  import { squads, networks, activeSquadId, activeChannelId, activeView, activeTopNavTab, activeDmTab, activeDmId, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
+  import { squads, networks, activeSquadId, activeChannelId, activeHubChannelName, activeView, activeTopNavTab, activeDmTab, activeDmId, activeNetworkId, lastOpenedSquadId, lastOpenedChannelId, lastOpenedNetworkId, lastOpenedNetworkChannelId, lastChannelBySquadId, lastChannelByNetworkId, lastHubChannelNameBySquadId, lastHubChannelNameByNetworkId, composingNewChat, dmList, pinnedList, addParentCreatingAnnouncements, removeParentCreatingAnnouncements, parentCreateErrorById, parentPendingCreateMembers, ANNOUNCEMENTS_CHANNEL_NAME, DASHBOARD_CHANNEL_ID, type TopNavTab, type DmTab, type Squad, type Channel, type Network } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { createGroupChat, getMlsGroupMembers, sendDmMessage, formatSquadInviteMessage, formatNetworkInviteMessage } from '../../lib/api/nostr';
-  import { publishSquadMemberEvmShare } from '../../lib/squad/squad-member-evm-share';
+  import { createDefaultParentChannels } from '../../lib/parent-navbar';
+  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import { pendingReadyToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { getProfileDisplayName } from '../../lib/utils/profile';
@@ -36,6 +37,17 @@
     }
     $activeSquadId = squadId;
     $activeChannelId = nextChannelGroupId;
+    if (nextChannelGroupId === DASHBOARD_CHANNEL_ID || nextChannelGroupId === null) {
+      activeHubChannelName.set(null);
+    } else {
+      activeHubChannelName.set(
+        resolveHubChannelNameForGroupSelection(
+          sortedChannels,
+          nextChannelGroupId,
+          get(lastHubChannelNameBySquadId)[squadId] || null
+        )
+      );
+    }
     $activeView = 'hub';
   }
 
@@ -56,6 +68,17 @@
     $activeNetworkId = networkId;
     $lastOpenedNetworkId = networkId;
     $activeChannelId = nextChannelGroupId;
+    if (nextChannelGroupId === DASHBOARD_CHANNEL_ID || nextChannelGroupId === null) {
+      activeHubChannelName.set(null);
+    } else {
+      activeHubChannelName.set(
+        resolveHubChannelNameForGroupSelection(
+          sortedChannels,
+          nextChannelGroupId,
+          get(lastHubChannelNameByNetworkId)[networkId] || null
+        )
+      );
+    }
     if ($activeChannelId) $lastOpenedNetworkChannelId = $activeChannelId;
     $activeView = 'hub';
   }
@@ -77,6 +100,7 @@
     $activeView = 'profile';
     // Keep activeSquadId / activeNetworkId so last selection is restored when leaving Settings.
     $activeChannelId = null;
+    activeHubChannelName.set(null);
   }
 
   const addButtonLabels: Record<TopNavTab, string> = {
@@ -251,6 +275,7 @@
       squads.update((list) => [...list, squad]);
       activeSquadId.set(squad.id);
       activeChannelId.set(null);
+      activeHubChannelName.set(null);
       activeView.set('hub');
       if (options.setLastOpenedSquad) {
         activeTopNavTab.set('squads');
@@ -258,11 +283,11 @@
       }
       (async () => {
         try {
-          const groupId = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
-          const announcementsChannel: Channel = { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 };
+          const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
+          const groupId = parentId;
           squads.update((list) =>
             list.map((s) =>
-              s.id !== tempId ? s : { ...s, id: groupId, channels: [announcementsChannel], updatedAt: Date.now() }
+              s.id !== tempId ? s : { ...s, id: groupId, channels, updatedAt: Date.now() }
             )
           );
           removeParentCreatingAnnouncements(tempId);
@@ -279,13 +304,29 @@
           if (get(activeSquadId) === tempId) {
             activeSquadId.set(groupId);
             activeChannelId.set(groupId);
+            const hub =
+              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
+            activeHubChannelName.set(hub);
           }
           if (options.setLastOpenedSquad) {
             lastOpenedSquadId.set(groupId);
             lastOpenedChannelId.set(groupId);
             lastChannelBySquadId.update((m) => ({ ...m, [groupId]: groupId }));
+            const hubName =
+              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
+            if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
           }
-          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'squad', name, id: groupId, channelId: groupId } });
+          pendingReadyToast.set({
+            text: `${name} is ready!`,
+            goTo: {
+              type: 'squad',
+              name,
+              id: groupId,
+              channelId: groupId,
+              hubChannelName:
+                channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
+            },
+          });
           const payload = formatSquadInviteMessage({ type: 'squad_invite', squadName: name, groupId });
           for (const npub of memberNpubs) {
             try {
@@ -294,9 +335,6 @@
               console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          void publishSquadMemberEvmShare(groupId).then((ok) => {
-            if (!ok) console.warn('[Navbar] squad EVM share failed');
-          });
         } catch (e) {
           console.error(
             '[Navbar] createParentWithAnnouncements(squad): createGroupChat failed',
@@ -318,6 +356,7 @@
           if (get(activeSquadId) === tempId) {
             activeSquadId.set(null);
             activeChannelId.set(null);
+            activeHubChannelName.set(null);
           }
         }
       })();
@@ -338,15 +377,16 @@
       activeNetworkId.set(network.id);
       lastOpenedNetworkId.set(network.id);
       activeChannelId.set(null);
+      activeHubChannelName.set(null);
       activeView.set('hub');
       activeTopNavTab.set('networks');
       (async () => {
         try {
-          const groupId = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
-          const announcementsChannel: Channel = { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 };
+          const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
+          const groupId = parentId;
           networks.update((list) =>
             list.map((n) =>
-              n.id !== tempId ? n : { ...n, id: groupId, channels: [announcementsChannel], updatedAt: Date.now() }
+              n.id !== tempId ? n : { ...n, id: groupId, channels, updatedAt: Date.now() }
             )
           );
           removeParentCreatingAnnouncements(tempId);
@@ -364,10 +404,26 @@
             activeNetworkId.set(groupId);
             activeChannelId.set(groupId);
             lastOpenedNetworkChannelId.set(groupId);
+            const hub =
+              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
+            activeHubChannelName.set(hub);
           }
           lastOpenedNetworkId.set(groupId);
           lastChannelByNetworkId.update((m) => ({ ...m, [groupId]: groupId }));
-          pendingReadyToast.set({ text: `${name} is ready!`, goTo: { type: 'network', name, id: groupId, channelId: groupId } });
+          const hubName =
+            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
+          if (hubName) lastHubChannelNameByNetworkId.update((m) => ({ ...m, [groupId]: hubName }));
+          pendingReadyToast.set({
+            text: `${name} is ready!`,
+            goTo: {
+              type: 'network',
+              name,
+              id: groupId,
+              channelId: groupId,
+              hubChannelName:
+                channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
+            },
+          });
           const payload = formatNetworkInviteMessage({
             type: 'network_invite',
             networkName: name,
@@ -381,9 +437,6 @@
               console.warn('[Navbar] send network invite DM failed for', npub.slice(0, 20) + '…', e);
             }
           }
-          void publishSquadMemberEvmShare(groupId).then((ok) => {
-            if (!ok) console.warn('[Navbar] network EVM share failed');
-          });
         } catch (e) {
           console.error(
             '[Navbar] createParentWithAnnouncements(network): createGroupChat failed',
@@ -406,6 +459,7 @@
           if (get(activeNetworkId) === tempId) {
             activeNetworkId.set(null);
             activeChannelId.set(null);
+            activeHubChannelName.set(null);
           }
         }
       })();

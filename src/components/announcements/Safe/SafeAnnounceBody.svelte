@@ -9,6 +9,7 @@
   import { parseSupportedChainId, explorerAddressUrl, safeAppHomeUrl } from '../../../lib/wallet/chains';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
+  import { formatMessageTimestamp } from '../../../lib/utils/message-formatting';
 
   /** Safe-related announcement (address updated or proposal). */
   export let announce:
@@ -16,15 +17,6 @@
     | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
   export let authorName: string = '';
   export let timestamp: string = '';
-
-  function formatTime(isoString: string): string {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -114,7 +106,7 @@
       <p class="safe-meta">
         {#if authorName}{authorName}{/if}
         {#if authorName && timestamp}<span class="safe-meta-sep"> · </span>{/if}
-        {#if timestamp}<time datetime={timestamp}>{formatTime(timestamp)}</time>{/if}
+        {#if timestamp}<time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time>{/if}
       </p>
     {/if}
   </div>
@@ -130,7 +122,7 @@
       <p class="safe-meta">
         {#if authorName}{authorName}{/if}
         {#if authorName && timestamp}<span class="safe-meta-sep"> · </span>{/if}
-        {#if timestamp}<time datetime={timestamp}>{formatTime(timestamp)}</time>{/if}
+        {#if timestamp}<time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time>{/if}
       </p>
     {/if}
     <div class="safe-actions">

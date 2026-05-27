@@ -34,6 +34,7 @@ Pacto forked the Rust [backend of Vector](https://github.com/VectorPrivacy/Vecto
 ## Developer documentation
 
 - **Embedded wallet (RPC, DM message schema, pricing, tx lifecycle):** [docs/wallet/README.md](./docs/wallet/README.md)
+- **Governance contracts (pacto-gov):** [docs/wallet/PACTO_GOV.md](./docs/wallet/PACTO_GOV.md) — upstream [covenant-gov/pacto-gov](https://github.com/covenant-gov/pacto-gov); Alloy bindings in `src-tauri/src/evm/contracts/`.
 
 ## Build Prerequisites
 

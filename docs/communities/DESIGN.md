@@ -1,4 +1,15 @@
-# Communities — design notes (squads & in-app networks)
+# Communities — squads & in-app networks
+
+Squads and **Networks** share the same **MLS + channels** stack. Code uses `Squad` / `Network`, keys like `pacto_networks_<npub>` — this doc is the contributor map for that product area.
+
+| Concept | What it is |
+|---------|------------|
+| **Squad** | MLS channel group; stable id = **announcements MLS group id**. |
+| **Network** | Several squads under one umbrella (`memberSquads`); same id rule as squads. |
+
+**Related:** [`docs/mls/`](../mls/), [`docs/messaging/OVERVIEW.md`](../messaging/OVERVIEW.md). Code: grep `Squad`, `Network`, `pacto_squads`, `pacto_networks` in `src/stores/`.
+
+---
 
 ## 1. How they relate
 
