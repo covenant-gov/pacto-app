@@ -6,6 +6,7 @@
   import { getMlsGroupMembers } from '../../lib/api/nostr';
   import { resolveSquadRosterEvmAddress } from '../../lib/squad/squad-roster-binding';
   import type { SupportedChainId } from '../../lib/wallet/chains';
+  import ChainIdSelect from '../wallet/ChainIdSelect.svelte';
   import {
     safeDeployProxy,
     userFacingDeploySafeMessage,
@@ -19,7 +20,6 @@
 
   export let parentId: string;
   export let announcementsGroupId: string | null;
-  export let parentType: 'squad' | 'network' = 'squad';
   export let treasurySafeCount: number;
   export let onClose: () => void;
   export let onSuccess: (params: {
@@ -182,7 +182,7 @@
 
   async function confirmDeploy(): Promise<void> {
     if (treasurySafeCount >= TREASURY_SAFE_UI_CAP) {
-      deployError = `At most ${TREASURY_SAFE_UI_CAP} Safes are shown per ${parentType}.`;
+      deployError = `At most ${TREASURY_SAFE_UI_CAP} Safes are shown per squad.`;
       return;
     }
     if (!announcementsGroupId) {
@@ -261,11 +261,7 @@
     <p class="deploy-safe-loading">Loading members…</p>
   {:else}
     <label class="modal-field-label" for="deploy-safe-network">Network</label>
-    <select id="deploy-safe-network" class="input-select" bind:value={deployNetwork} disabled={deploySaving}>
-      <option value="sepolia">Sepolia</option>
-      <option value="mainnet">Ethereum</option>
-      <option value="optimism">Optimism</option>
-    </select>
+    <ChainIdSelect id="deploy-safe-network" bind:value={deployNetwork} disabled={deploySaving} />
 
     <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
     <p class="deploy-safe-signers-hint muted">

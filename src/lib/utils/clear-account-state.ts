@@ -4,80 +4,91 @@
  * the previous account's squads, DMs, or related state.
  */
 
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
-  squads,
-  networks,
+  activeTopNavTab,
+  DEFAULT_TOP_NAV_TAB,
+  activeView,
+  activeSquadId,
+  activeChannelId,
+  activeHubChannelName,
+  lastOpenedSquadId,
+  lastOpenedChannelId,
+  lastChannelBySquadId,
+  lastHubChannelNameBySquadId,
+  showMembersPanel,
+  parentDashboardChannelMode,
+  dashboardPollReplicaNonceByParentId,
+} from '../../stores/navigation';
+import {
   pinnedDmNpubs,
   blockedDmNpubs,
   dmChatsByNpub,
   activeDmId,
   lastOpenedDmByTab,
-  lastOpenedSquadId,
-  lastOpenedChannelId,
-  lastChannelBySquadId,
-  lastHubChannelNameBySquadId,
-  activeSquadId,
-  activeChannelId,
-  activeHubChannelName,
-  activeNetworkId,
-  lastOpenedNetworkId,
-  lastOpenedNetworkChannelId,
-  lastChannelByNetworkId,
-  lastHubChannelNameByNetworkId,
-  acceptedSquadInviteIds,
-  declinedSquadInviteIds,
-  acceptedNetworkInviteIds,
-  declinedNetworkInviteIds,
-  acceptedChannelInviteMessageIds,
-  declinedChannelInviteMessageIds,
-  declinedWalletTxRequestMessageIds,
-  acceptedWalletPeerInfoRequestMessageIds,
-  declinedWalletPeerInfoRequestMessageIds,
   dmWalletPeerExchangeTick,
-  backendGroupMessages,
-  groupSendError,
-  pendingMlsWelcomes,
-  parentsCreatingAnnouncements,
-  parentCreateErrorById,
-  parentPendingCreateMembers,
-  ungroupedChannels,
-  channelMessages,
   composingNewChat,
-  activeTopNavTab,
   activeDmTab,
-  activeView,
-  showMembersPanel,
   walletSidebarOpen,
   walletSendPrefillFromRequest,
   backendDmMessages,
   dmThreadAnnouncementsByNpub,
+  pactoAppInboxMessages,
   messageCountByChat,
   loadedOffsetByChat,
   dmSyncStatus,
   typingByChat,
   dmSendError,
-  setCurrentNpubForPersistence,
+} from '../../stores/dm';
+import {
+  acceptedSquadInviteIds,
+  declinedSquadInviteIds,
+  acceptedChannelInviteMessageIds,
+  declinedChannelInviteMessageIds,
+  declinedWalletTxRequestMessageIds,
+  acceptedWalletPeerInfoRequestMessageIds,
+  declinedWalletPeerInfoRequestMessageIds,
+} from '../../stores/invite-decisions';
+import {
+  squads,
   treasurySafesByParentId,
   squadInfraByParentId,
-  parentDashboardChannelMode,
-  dashboardPollReplicaNonceByParentId,
-} from '../../stores/app';
+  squadMemberEvmByParentId,
+  parentsCreatingAnnouncements,
+  parentCreateErrorById,
+  parentPendingCreateMembers,
+  ungroupedChannels,
+  channelMessages,
+} from '../../stores/squads';
+import {
+  backendGroupMessages,
+  groupSendError,
+  pendingMlsWelcomes,
+} from '../../stores/mls-chat';
 import { safeStateByTreasuryId } from '../../stores/safe';
 import { clearWalletSummaryCacheStore } from '../wallet/wallet-summary-cache';
+import { clearDashboardFetchMetaStores } from '../dashboard/dashboard-fetch-meta';
+import { clearGovernanceSnapshotCacheStore } from '../dashboard/governance-snapshot-cache';
+import { clearSettingsChainCacheStore, SETTINGS_CHAIN_CACHE_PREFIX } from '../dashboard/settings-chain-cache';
+import { TREASURY_SAFES_CACHE_PREFIX } from '../dashboard/treasury-safes-cache';
+import { SQUAD_INFRA_CACHE_PREFIX } from '../dashboard/squad-infra-cache';
+import { SQUAD_MEMBER_EVM_CACHE_PREFIX } from '../dashboard/squad-member-evm-cache';
+import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapshot-cache';
+import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache';
+import { resetInviteAcceptState } from '../invites/accept-invite';
+import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { recentEmojisStore } from '../../stores/emojis';
+import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';
+import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX } from '../commons/commons-join-request';
 
 /** Legacy (non-scoped) keys to remove for backwards compatibility. */
 const LEGACY_LOCAL_STORAGE_KEYS = [
   'pacto_squads',
-  'pacto_networks',
   'pacto_last_dm_npub',
   'pacto_last_squad_id',
   'pacto_last_channel_id',
-  'pacto_last_network_id',
-  'pacto_last_network_channel_id',
   'pacto_pinned_dm_npubs',
-  // Legacy: payment request "accepted" was removed; clear leftover keys.
   'pacto_wallet_tx_request_accepted',
   ...INVITE_DECISION_SCOPED_PREFIXES,
   'recentEmojis',
@@ -88,23 +99,27 @@ const LEGACY_LOCAL_STORAGE_KEYS = [
 /** Npub-scoped key prefixes (suffix is _<npub>). Invite decision keys from invite-decisions module. */
 const SCOPED_KEY_PREFIXES = [
   'pacto_squads',
-  'pacto_networks',
   'pacto_last_dm_npub',
   'pacto_last_squad_id',
   'pacto_last_channel_id',
   'pacto_last_channel_by_squad',
   'pacto_last_hub_channel_name_by_squad',
-  'pacto_last_network_id',
-  'pacto_last_network_channel_id',
-  'pacto_last_channel_by_network',
-  'pacto_last_hub_channel_name_by_network',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
+  'pacto_app_inbox',
   'pacto_wallet_summary_cache_v1',
+  TREASURY_SAFES_CACHE_PREFIX,
+  SQUAD_INFRA_CACHE_PREFIX,
+  SQUAD_MEMBER_EVM_CACHE_PREFIX,
+  GOVERNANCE_SNAPSHOT_CACHE_PREFIX,
+  SETTINGS_CHAIN_CACHE_PREFIX,
+  SAFE_STATE_DISK_CACHE_PREFIX,
   'pacto_wallet_ui_enabled_chains_v1',
   'pacto_wallet_preferred_network_v1',
   'pacto_wallet_rpc_prefs_v1',
   'pacto_wallet_tx_request_accepted',
+  PACTO_COMMONS_BROADCASTS_PREFIX,
+  PACTO_COMMONS_JOIN_REQUESTS_PREFIX,
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
 
@@ -135,11 +150,18 @@ function clearAccountLocalStorage(npub?: string): void {
  */
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
+  resetInviteAcceptState();
+  resetDashboardPrefetchSession();
+  resetCommonsPrefetchSession();
   clearWalletSummaryCacheStore();
+  clearDashboardFetchMetaStores();
+  clearGovernanceSnapshotCacheStore();
+  clearSettingsChainCacheStore();
   clearAccountLocalStorage(npub);
 
   treasurySafesByParentId.set({});
   squadInfraByParentId.set({});
+  squadMemberEvmByParentId.set({});
   dashboardPollReplicaNonceByParentId.set({});
   safeStateByTreasuryId.set({});
   squads.set([]);
@@ -161,16 +183,8 @@ export function clearAccountState(npub?: string): void {
   activeSquadId.set(null);
   activeChannelId.set(null);
   activeHubChannelName.set(null);
-  networks.set([]);
-  activeNetworkId.set(null);
-  lastOpenedNetworkId.set(null);
-  lastOpenedNetworkChannelId.set(null);
-  lastChannelByNetworkId.set({});
-  lastHubChannelNameByNetworkId.set({});
   acceptedSquadInviteIds.set([]);
   declinedSquadInviteIds.set([]);
-  acceptedNetworkInviteIds.set([]);
-  declinedNetworkInviteIds.set([]);
   acceptedChannelInviteMessageIds.set([]);
   declinedChannelInviteMessageIds.set([]);
   declinedWalletTxRequestMessageIds.set([]);
@@ -186,7 +200,7 @@ export function clearAccountState(npub?: string): void {
   ungroupedChannels.set([]);
   channelMessages.set({});
   composingNewChat.set(false);
-  activeTopNavTab.set('squads');
+  activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
   activeDmTab.set('friends');
   activeView.set('hub');
   parentDashboardChannelMode.set('governance');
@@ -196,6 +210,7 @@ export function clearAccountState(npub?: string): void {
 
   backendDmMessages.set({});
   dmThreadAnnouncementsByNpub.set({});
+  pactoAppInboxMessages.set([]);
   messageCountByChat.set({});
   loadedOffsetByChat.set({});
   dmSyncStatus.set('idle');
@@ -204,6 +219,4 @@ export function clearAccountState(npub?: string): void {
 
   /** Appearance theme is device-level (`pacto_theme`); keep it across logout / new account / import. */
   recentEmojisStore.set([]);
-  // favoriteEmojis: emojis.ts keeps them in module-level state; we cleared the
-  // localStorage key so after restart they're empty. No exported reset for in-memory.
 }

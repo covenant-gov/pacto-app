@@ -9,7 +9,6 @@
   import { getAddress, isAddress } from 'viem';
 
   export let parentId: string;
-  export let parentType: 'squad' | 'network' = 'squad';
   export let onClose: () => void;
   export let onComplete: (result: {
     txHash: string;
@@ -124,7 +123,7 @@
 >
   <h2 id={titleId}>Deploy Pacto Gov</h2>
   <p id={descId} class="nave-wizard-desc">
-    Deploy the Nave Pirata factory bundle for this {parentType}. Gas is paid from your embedded wallet. Factory and master
+    Deploy the Nave Pirata factory bundle for this squad. Gas is paid from your embedded wallet. Factory and master
     copy addresses must be configured for this machine (see env vars in <code class="nave-wizard-code">nave_pirata_deploy</code>
     module docs).
   </p>

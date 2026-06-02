@@ -1,6 +1,5 @@
 <script lang="ts">
   export let open = false;
-  export let parentType: 'squad' | 'network' = 'squad';
   export let parentName = '';
   export let subtitle = '';
   export let membersLabel = '';
@@ -44,8 +43,8 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-label="Create channel for {parentName || (parentType === 'squad' ? 'squad' : 'network')}"
-      data-parent-type={parentType}
+      aria-label="Create channel for {parentName || 'squad'}"
+      data-parent-type="squad"
       tabindex="0"
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}

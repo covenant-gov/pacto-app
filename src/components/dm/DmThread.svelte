@@ -1,30 +1,16 @@
 <script lang="ts">
-  import Message from './Message.svelte';
   import MessageInput from './MessageInput.svelte';
-  import InviteCard from './InviteCard.svelte';
-  import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
-  import WalletTxAnnouncementCard from '../wallet/WalletTxAnnouncementCard.svelte';
-  import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
+  import DmMessageRouter from './DmMessageRouter.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import {
-    parseWalletTxRequest,
-    parseWalletTxAnnouncement,
-    parseWalletPeerInfoRequest,
     parseWalletPeerInfoGrant,
-    parseWalletPeerInfoDecline,
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
-  import {
-    parseChannelInSquadMessage,
-    parseChannelInNetworkMessage,
-    parseNetworkInviteMessage,
-    parseSquadInviteMessage,
-    toggleDmBlock,
-  } from '../../lib/api/nostr';
-  import type { NostrProfile } from '../../lib/api/nostr';
+  import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
+  import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
   import {
     activeDmTab,
@@ -32,19 +18,9 @@
     pinnedDmNpubs,
     dmSendError,
     typingByChat,
-    acceptedSquadInviteIds,
-    declinedSquadInviteIds,
-    acceptedChannelInviteMessageIds,
-    declinedChannelInviteMessageIds,
-    acceptedNetworkInviteIds,
-    declinedNetworkInviteIds,
-    declinedWalletTxRequestMessageIds,
-    acceptedWalletPeerInfoRequestMessageIds,
-    declinedWalletPeerInfoRequestMessageIds,
     dmWalletPeerExchangeTick,
     type DmMessage,
     walletSidebarOpen,
-    walletSendPrefillFromRequest,
     toggleWalletSidebar,
     type DmTab,
     appendDmThreadAnnouncement,
@@ -64,22 +40,10 @@
     msg: DmMessage,
     payload: { channelGroupId: string; announcementsGroupId: string; channelName: string }
   ) => void = () => {};
-  export let onAcceptChannelInNetwork: (
-    msg: DmMessage,
-    payload: { networkId: string; channelGroupId: string; channelName: string }
-  ) => void = () => {};
-  export let onAcceptNetworkInvite: (
-    msg: DmMessage,
-    payload: { networkName: string; groupId: string; memberSquads: { id: string; name: string }[] }
-  ) => void = () => {};
   export let onDeclineSquad: (msg: DmMessage) => void = () => {};
-  export let onDeclineNetwork: (msg: DmMessage) => void = () => {};
   export let onDeclineChannelInSquad: (msg: DmMessage) => void = () => {};
-  export let onDeclineChannelInNetwork: (msg: DmMessage) => void = () => {};
   export let acceptingSquadInviteId: string | null = null;
   export let acceptingChannelInSquadId: string | null = null;
-  export let acceptingChannelInNetworkId: string | null = null;
-  export let acceptingNetworkInviteId: string | null = null;
   export let showOptionsMenu = true;
   export let showPinOption = true;
   export let onSaveNickname: (value: string) => Promise<void> = async () => {};
@@ -92,8 +56,9 @@
     payload: WalletPeerInfoRequestPayload
   ) => void | Promise<void>) = () => {};
   export let acceptingWalletPeerInfoRequestId: string | null = null;
+  export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
 
-  /** Apply inbound grant messages once so the peer payout address is persisted without showing it in the UI. */
+  $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
 
@@ -147,68 +112,16 @@
   }
   $: if (npub !== scrollPrevNpub && messages.length === 0) scrollPrevNpub = npub;
 
-  $: contactProfile = npub ? $profiles[npub] : null;
+  $: contactProfile = isPactoAppThread ? null : npub ? $profiles[npub] : null;
   $: peerBlockedByMe = contactProfile?.blocked === true;
-  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = contactProfile
-    ? getProfileDisplayName(contactProfile)
-    : npub
-      ? truncateNpub(npub)
-      : 'Unknown';
-
-  function getInviterDisplay(
-    msg: DmMessage,
-    activeDmId: string | null,
-    profilesMap: Record<string, NostrProfile | undefined>
-  ): { inviterName: string; inviterAvatarSrc: string | null } {
-    const otherNpub = msg.mine ? activeDmId : msg.npub ?? activeDmId;
-    if (!otherNpub) return { inviterName: 'Someone', inviterAvatarSrc: null };
-    const profile = profilesMap[otherNpub];
-    const inviterName = getProfileDisplayName(profile ?? null) || otherNpub.slice(0, 12) + '…';
-    const inviterAvatarSrc = profile ? getProfileAvatarSrc(profile) : null;
-    return { inviterName, inviterAvatarSrc };
-  }
-
-  function toMessageProps(msg: DmMessage) {
-    const currentUserNpub = $currentUser?.npub;
-    const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
-    const base = {
-      id: msg.id,
-      authorName: '',
-      content: msg.content,
-      timestamp: new Date(msg.at).toISOString(),
-      avatar: '',
-      replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
-      replyAuthorName: undefined as string | undefined,
-      replyPreview: undefined as string | undefined,
-    };
-    if (msg.mine) {
-      base.authorName = 'You';
-      base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
-    } else {
-      // DM backend omits `message.npub` (see rumor.rs: implicit peer = chat id); use thread `npub`.
-      const senderNpub = msg.npub ?? npub;
-      const senderProfile = senderNpub ? $profiles[senderNpub] : null;
-      base.authorName = getProfileDisplayName(senderProfile);
-      base.avatar = getProfileAvatarSrc(senderProfile) ?? '';
-    }
-    if (base.replyToId) {
-      const replyNpub = msg.replied_to_npub ?? undefined;
-      base.replyAuthorName =
-        replyNpub && currentUserNpub && replyNpub === currentUserNpub
-          ? 'You'
-          : replyNpub
-            ? getProfileDisplayName($profiles[replyNpub] ?? null)
-            : 'Unknown';
-      base.replyPreview =
-        msg.replied_to_has_attachment === true
-          ? 'Attachment'
-          : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
-            : 'Message';
-    }
-    return base;
-  }
+  $: contactAvatarSrc = isPactoAppThread ? null : getProfileAvatarSrc(contactProfile);
+  $: contactDisplayName = isPactoAppThread
+    ? PACTO_APP_DISPLAY_NAME
+    : contactProfile
+      ? getProfileDisplayName(contactProfile)
+      : npub
+        ? truncateNpub(npub)
+        : 'Unknown';
 
   let menuOpen = false;
   let showNicknameEdit = false;
@@ -299,11 +212,11 @@
 
 <div class="dm-thread">
   <div class="dm-thread-header">
-    <div class="dm-thread-header-avatar">
+    <div class="dm-thread-header-avatar" class:pacto-app-avatar={isPactoAppThread}>
       {#if contactAvatarSrc}
         <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
       {:else}
-        <span class="dm-thread-header-avatar-placeholder">{contactDisplayName.charAt(0).toUpperCase()}</span>
+        <span class="dm-thread-header-avatar-placeholder">{isPactoAppThread ? 'P' : contactDisplayName.charAt(0).toUpperCase()}</span>
       {/if}
     </div>
     <div class="dm-thread-header-info">
@@ -330,7 +243,7 @@
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
-            {#if showOptionsMenu}
+            {#if showOptionsMenu && !isPactoAppThread}
               <div class="dm-thread-header-actions">
                 <button
                   type="button"
@@ -383,7 +296,7 @@
               </div>
             {/if}
           </div>
-          {#if showWalletButton}
+          {#if showWalletButton && !isPactoAppThread}
             <button
               type="button"
               class="dm-thread-wallet-btn"
@@ -411,6 +324,7 @@
             </button>
           {/if}
         </div>
+        {#if !isPactoAppThread}
         <div class="dm-thread-npub-row">
           <span class="dm-thread-npub">{truncateNpub(npub)}</span>
           <button
@@ -427,6 +341,7 @@
             </span>
           </button>
         </div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -440,151 +355,23 @@
     {/if}
     {#if messages.length > 0}
       {#each messages as msg (msg.id)}
-        {#if msg.is_local_announcement}
-          <div class="dm-thread-announcement" role="status">{msg.content}</div>
-        {:else}
-        {@const channelInSquadPayload = parseChannelInSquadMessage(msg.content ?? '')}
-        {@const channelInNetworkPayload = parseChannelInNetworkMessage(msg.content ?? '')}
-        {@const networkInvitePayload = parseNetworkInviteMessage(msg.content ?? '')}
-        {@const invitePayload = parseSquadInviteMessage(msg.content ?? '')}
-        {@const walletPeerInfoRequestPayload = parseWalletPeerInfoRequest(msg.content ?? '')}
-        {@const walletPeerInfoGrantPayload = parseWalletPeerInfoGrant(msg.content ?? '')}
-        {@const walletPeerInfoDeclinePayload = parseWalletPeerInfoDecline(msg.content ?? '')}
-        {@const walletTxRequestPayload = parseWalletTxRequest(msg.content ?? '')}
-        {@const walletTxAnnouncementPayload = parseWalletTxAnnouncement(msg.content ?? '')}
-        {@const isInvite = !!(channelInSquadPayload || channelInNetworkPayload || networkInvitePayload || invitePayload)}
-        {@const inviterDisplay = isInvite ? getInviterDisplay(msg, npub, $profiles) : { inviterName: '', inviterAvatarSrc: null }}
-        {#if channelInSquadPayload}
-          {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
-          <InviteCard
-            variant="channel-in-squad"
-            squadName={channelInSquadPayload.squadName}
-            channelName={channelInSquadPayload.channelName}
-            isMine={msg.mine}
-            inviterName={inviterDisplay.inviterName}
-            inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
-            status={channelInviteStatus}
-            accepting={acceptingChannelInSquadId === msg.id}
-            onAccept={() => onAcceptChannelInSquad(msg, { channelGroupId: channelInSquadPayload.channelGroupId, announcementsGroupId: channelInSquadPayload.announcementsGroupId, channelName: channelInSquadPayload.channelName })}
-            onDecline={() => onDeclineChannelInSquad(msg)}
-          />
-        {:else if channelInNetworkPayload}
-          {@const channelInviteStatus = $acceptedChannelInviteMessageIds.includes(msg.id) ? 'accepted' : $declinedChannelInviteMessageIds.includes(msg.id) ? 'declined' : 'pending'}
-          <InviteCard
-            variant="channel-in-network"
-            networkName={channelInNetworkPayload.networkName}
-            channelName={channelInNetworkPayload.channelName}
-            memberSquads={channelInNetworkPayload.memberSquads ?? []}
-            isMine={msg.mine}
-            inviterName={inviterDisplay.inviterName}
-            inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
-            status={channelInviteStatus}
-            accepting={acceptingChannelInNetworkId === msg.id}
-            onAccept={() => onAcceptChannelInNetwork(msg, { networkId: channelInNetworkPayload.networkId, channelGroupId: channelInNetworkPayload.channelGroupId, channelName: channelInNetworkPayload.channelName })}
-            onDecline={() => onDeclineChannelInNetwork(msg)}
-          />
-        {:else if networkInvitePayload}
-          {@const networkInviteStatus = $acceptedNetworkInviteIds.includes(msg.id) ? 'accepted' : $declinedNetworkInviteIds.includes(msg.id) ? 'declined' : 'pending'}
-          <InviteCard
-            variant="network"
-            networkName={networkInvitePayload.networkName}
-            memberSquads={networkInvitePayload.memberSquads}
-            isMine={msg.mine}
-            inviterName={inviterDisplay.inviterName}
-            inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
-            status={networkInviteStatus}
-            accepting={acceptingNetworkInviteId === msg.id}
-            onAccept={() => onAcceptNetworkInvite(msg, networkInvitePayload)}
-            onDecline={() => onDeclineNetwork(msg)}
-          />
-        {:else if invitePayload}
-          {@const inviteStatus = $acceptedSquadInviteIds.includes(msg.id) ? 'accepted' : $declinedSquadInviteIds.includes(msg.id) ? 'declined' : 'pending'}
-          <InviteCard
-            variant="squad"
-            squadName={invitePayload.squadName}
-            isMine={msg.mine}
-            inviterName={inviterDisplay.inviterName}
-            inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
-            status={inviteStatus}
-            accepting={acceptingSquadInviteId === msg.id}
-            onAccept={() => onAcceptSquadInvite(msg, invitePayload.groupId)}
-            onDecline={() => onDeclineSquad(msg)}
-          />
-        {:else if walletPeerInfoRequestPayload}
-          {@const wpeerReqStatus = $acceptedWalletPeerInfoRequestMessageIds.includes(msg.id)
-            ? 'accepted'
-            : $declinedWalletPeerInfoRequestMessageIds.includes(msg.id)
-              ? 'declined'
-              : 'pending'}
-          {@const wpeerName = getInviterDisplay(msg, npub, $profiles).inviterName}
-          <WalletPeerExchangeCard
-            variant={msg.mine ? 'request-out' : 'request-in'}
-            peerName={wpeerName}
-            status={wpeerReqStatus}
-            accepting={acceptingWalletPeerInfoRequestId === msg.id}
-            onAccept={msg.mine
-              ? undefined
-              : () => onAcceptWalletPeerInfoRequest(msg, walletPeerInfoRequestPayload)}
-            onDecline={msg.mine
-              ? undefined
-              : () => onDeclineWalletPeerInfoRequest(msg, walletPeerInfoRequestPayload)}
-          />
-        {:else if walletPeerInfoGrantPayload}
-          {@const wpeerGrantName = getInviterDisplay(msg, npub, $profiles).inviterName}
-          <WalletPeerExchangeCard
-            variant={msg.mine ? 'grant-out' : 'grant-in'}
-            peerName={wpeerGrantName}
-          />
-        {:else if walletPeerInfoDeclinePayload}
-          {@const wpeerDeclName = getInviterDisplay(msg, npub, $profiles).inviterName}
-          <WalletPeerExchangeCard
-            variant={msg.mine ? 'decline-out' : 'decline-in'}
-            peerName={wpeerDeclName}
-          />
-        {:else if walletTxRequestPayload}
-          {@const walletFulfilled = fulfilledWalletRequestIds.has(walletTxRequestPayload.request_id)}
-          {@const walletReqStatus = walletFulfilled
-            ? 'fulfilled'
-            : $declinedWalletTxRequestMessageIds.includes(msg.id)
-              ? 'declined'
-              : 'pending'}
-          <WalletTxRequestCard
-            payload={walletTxRequestPayload}
-            isMine={msg.mine}
-            peerDisplayName={getInviterDisplay(msg, npub, $profiles).inviterName}
-            status={walletReqStatus}
-            accepting={false}
-            onAccept={() => {
-              declinedWalletTxRequestMessageIds.update((ids) => ids.filter((id) => id !== msg.id));
-              walletSendPrefillFromRequest.set({
-                targetNpub: npub,
-                network: walletTxRequestPayload.network,
-                asset: walletTxRequestPayload.asset,
-                amount: walletTxRequestPayload.amount,
-                requestId: walletTxRequestPayload.request_id,
-                requestMessageId: msg.id,
-              });
-              walletSidebarOpen.set(true);
-            }}
-            onDecline={() => {
-              declinedWalletTxRequestMessageIds.update((ids) =>
-                ids.includes(msg.id) ? ids : [...ids, msg.id]
-              );
-              if (!msg.mine) {
-                showToast('Payment request declined. The requester was not notified.');
-              }
-            }}
-          />
-        {:else if walletTxAnnouncementPayload}
-          <WalletTxAnnouncementCard
-            payload={walletTxAnnouncementPayload}
-            peerDisplayName={contactDisplayName}
-            viewerIsSender={$currentUser?.npub === walletTxAnnouncementPayload.from_npub}
-          />
-        {:else}
-          <Message {...toMessageProps(msg)} />
-        {/if}
-        {/if}
+        <DmMessageRouter
+          {msg}
+          {npub}
+          {isPactoAppThread}
+          {contactDisplayName}
+          {fulfilledWalletRequestIds}
+          {acceptingSquadInviteId}
+          {acceptingChannelInSquadId}
+          {acceptingWalletPeerInfoRequestId}
+          {onAcceptSquadInvite}
+          {onAcceptChannelInSquad}
+          {onDeclineSquad}
+          {onDeclineChannelInSquad}
+          {onAcceptWalletPeerInfoRequest}
+          {onDeclineWalletPeerInfoRequest}
+          {onOpenInviterChat}
+        />
       {/each}
     {:else}
       <p class="dm-thread-placeholder">No messages yet</p>
@@ -596,6 +383,7 @@
   {#if $dmSendError}
     <p class="dm-thread-error" role="alert">{$dmSendError}</p>
   {/if}
+  {#if !isPactoAppThread}
   <MessageInput
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? `Blocked #${truncateNpub(npub)}` : undefined}
@@ -603,6 +391,7 @@
     onSend={onSend}
     onTyping={onTyping}
   />
+  {/if}
 </div>
 
 <style>
@@ -674,13 +463,6 @@
   }
 
   .dm-thread-title-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .dm-thread-header-title-row {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -910,19 +692,6 @@
   .load-older-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-  }
-
-  .dm-thread-announcement {
-    max-width: 36rem;
-    margin: 12px auto;
-    padding: 8px 14px;
-    font-size: 0.8125rem;
-    line-height: 1.35;
-    text-align: center;
-    color: var(--text-secondary);
-    background: var(--bg-hover);
-    border-radius: 8px;
-    border: 1px solid var(--bg-elevated);
   }
 
   .dm-thread-placeholder {

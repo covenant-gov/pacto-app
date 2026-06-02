@@ -15,7 +15,7 @@ Polls for a squad/network parent are **replicated across members** via the paren
 | Parse / DB / commands | `src-tauri/src/dashboard_poll.rs` |
 | Rumor ingest | `src-tauri/src/rumor.rs` (`process_dashboard_poll_rumor`) |
 | Virtual bucket | `src-tauri/src/virtual_channel_bucket.rs`, `src/lib/mls/virtual-channel-bucket.ts` |
-| UI | `src/components/parent/DashboardPollsPanel.svelte`, `DashboardPollCreatedAnnounceBody.svelte` |
+| UI | `src/components/parent/DashboardPollsPanel.svelte`, `DashboardPollCreatedAnnounceBody.svelte`; dashboard tab shell in `src/components/parent/dashboard/` |
 | Send helpers | `src/lib/api/nostr.ts` (`sendDashboardPollCreate`, vote) |
 
 ## Manual smoke
@@ -25,4 +25,5 @@ Two clients on the same announcements group: create → both see announcement + 
 ## Related
 
 - [`docs/messaging/OVERVIEW.md`](../messaging/OVERVIEW.md) — MLS vs DM, Kind 444 path
+- [`docs/shell/LAYOUT.md`](../shell/LAYOUT.md) — dashboard tab components
 - [`docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md`](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md) — virtual buckets including polls

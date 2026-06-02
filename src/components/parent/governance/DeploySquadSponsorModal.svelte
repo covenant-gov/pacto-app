@@ -7,7 +7,6 @@
   import { parseEther } from 'viem';
 
   export let parentId: string;
-  export let parentType: 'squad' | 'network' = 'squad';
   export let onClose: () => void;
   export let onComplete: (result: {
     txHash: string;
@@ -66,7 +65,7 @@
 <Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-sponsor-modal-panel">
   <h2 id={titleId}>Deploy squad sponsor</h2>
   <p id={descId} class="sponsor-deploy-desc">
-    Creates a per-{parentType} sponsor clone from the factory. Gas is paid from your embedded wallet. Optional initial
+    Creates a per-squad sponsor clone from the factory. Gas is paid from your embedded wallet. Optional initial
     deposit seeds the sponsorship pool in the same transaction.
   </p>
 

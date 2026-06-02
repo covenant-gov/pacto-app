@@ -1,7 +1,5 @@
 /**
- * Persisted invite decisions (squad, network, channel-invite) and local DM wallet / peer responses.
- * Channel invites are unified: one accept/decline store for channels in squads or networks.
- * Payment requests use only `declined` persistence; completion is inferred from `wallet_tx_announcement`.
+ * Persisted invite decisions (squad, channel-invite) and local DM wallet / peer responses.
  * Wire up via initInviteDecisionPersistence(getKey); load via getInviteDecisionLoadEntries(npub).
  */
 
@@ -13,8 +11,6 @@ export type PersistenceKeyGetter = (prefix: string) => string | null;
 export const INVITE_DECISION_SCOPED_PREFIXES = [
   'pacto_invite_accepted_squad',
   'pacto_invite_declined_squad',
-  'pacto_invite_accepted_network',
-  'pacto_invite_declined_network',
   'pacto_invite_accepted_channel',
   'pacto_invite_declined_channel',
   'pacto_wallet_tx_request_declined',
@@ -24,11 +20,9 @@ export const INVITE_DECISION_SCOPED_PREFIXES = [
 
 export const acceptedSquadInviteIds = writable<string[]>([]);
 export const declinedSquadInviteIds = writable<string[]>([]);
-export const acceptedNetworkInviteIds = writable<string[]>([]);
-export const declinedNetworkInviteIds = writable<string[]>([]);
-/** Unified: message IDs for accepted channel invites (squad or network). */
+/** Message IDs for accepted channel invites. */
 export const acceptedChannelInviteMessageIds = writable<string[]>([]);
-/** Unified: message IDs for declined channel invites (squad or network). */
+/** Message IDs for declined channel invites. */
 export const declinedChannelInviteMessageIds = writable<string[]>([]);
 /** DM `wallet_tx_request` messages the user declined. */
 export const declinedWalletTxRequestMessageIds = writable<string[]>([]);
@@ -40,8 +34,6 @@ export const declinedWalletPeerInfoRequestMessageIds = writable<string[]>([]);
 const STORES = [
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
-  acceptedNetworkInviteIds,
-  declinedNetworkInviteIds,
   acceptedChannelInviteMessageIds,
   declinedChannelInviteMessageIds,
   declinedWalletTxRequestMessageIds,

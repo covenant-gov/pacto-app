@@ -8,6 +8,8 @@ vi.mock('./api/nostr', () => ({
 import { createGroupChat } from './api/nostr';
 import {
   createDefaultParentChannels,
+  defaultChannelRowsForGroupId,
+  ensureDefaultHubChannelRows,
   uniqueChannelsByGroupIdPreservingOrder,
   resolvePollsMlsGroupId,
   defaultParentInvitePhysicalGroupTargets,
@@ -17,6 +19,60 @@ import {
   INBOX_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from '../stores/app';
+
+describe('defaultChannelRowsForGroupId', () => {
+  it('returns announcements, inbox, and polls sharing one groupId', () => {
+    const rows = defaultChannelRowsForGroupId('g-shared');
+    expect(rows).toHaveLength(3);
+    expect(rows.map((c) => c.groupId)).toEqual(['g-shared', 'g-shared', 'g-shared']);
+    expect(rows.map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      INBOX_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+    ]);
+  });
+});
+
+describe('ensureDefaultHubChannelRows', () => {
+  it('backfills inbox and polls when only announcements was persisted on invite accept', () => {
+    const onlyAnn = [{ name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 }];
+    const fixed = ensureDefaultHubChannelRows(onlyAnn);
+    expect(fixed.map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      INBOX_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+    ]);
+    expect(new Set(fixed.map((c) => c.groupId))).toEqual(new Set(['g']));
+  });
+
+  it('leaves parents unchanged when all default hub rows exist', () => {
+    const full = defaultChannelRowsForGroupId('g');
+    expect(ensureDefaultHubChannelRows(full)).toEqual(full);
+  });
+
+  it('does not backfill when default rows use distinct MLS group ids', () => {
+    const split = [
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
+      { name: INBOX_CHANNEL_NAME, groupId: 'b', order: 1 },
+    ];
+    expect(ensureDefaultHubChannelRows(split)).toEqual(split);
+  });
+
+  it('preserves custom channels after backfill', () => {
+    const partial = [
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+      { name: 'general', groupId: 'other', order: 1 },
+    ];
+    const fixed = ensureDefaultHubChannelRows(partial);
+    expect(fixed.map((c) => c.name)).toEqual([
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      INBOX_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+      'general',
+    ]);
+    expect(fixed.find((c) => c.name === 'general')?.groupId).toBe('other');
+  });
+});
 
 describe('createDefaultParentChannels', () => {
   it('creates one MLS group and three channels sharing groupId', async () => {

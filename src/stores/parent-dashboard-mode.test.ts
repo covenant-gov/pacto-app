@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseParentDashboardChannelMode } from './app';
+import { parseParentDashboardChannelMode } from './navigation';
 
 describe('parseParentDashboardChannelMode', () => {
   it('accepts current slugs', () => {

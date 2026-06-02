@@ -6,7 +6,6 @@
   import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
 
   export let parentId: string;
-  export let parentType: 'squad' | 'network' = 'squad';
   /** When set, deploy uses captain_hat variant with this hat id. */
   export let captainHatId: string | null = null;
   export let onClose: () => void;

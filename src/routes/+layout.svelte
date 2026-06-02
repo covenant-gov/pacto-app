@@ -4,10 +4,13 @@
   import Login from '../components/auth/Login.svelte';
   import { isAuthenticated, checkAuthStatus } from '../stores/auth';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
+  import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
 
   let loading = true;
 
   onMount(async () => {
+    scheduleCommonsStartupPrefetch();
+
     // Sync theme from localStorage so store matches (inline script already set data-theme to avoid flash)
     const stored = getStoredTheme();
     setTheme(stored ?? DEFAULT_THEME);

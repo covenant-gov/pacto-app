@@ -54,6 +54,8 @@ pub use chat::{Chat, ChatType, ChatMetadata};
 
 mod dashboard_poll;
 
+mod commons;
+
 mod virtual_channel_bucket;
 
 mod rumor;
@@ -1603,51 +1605,8 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
                         announcements_group_id,
                         channel_group_id,
                         channel_name,
-                        "channel_added_to_squad",
-                        false,
                     );
                     return true;
-                }
-            }
-        }
-    }
-
-    // Channel-in-network: if this DM is a channel invite for a network we're already in, auto-accept
-    // and never show it as an invite (don't add to chat). Same structure as channel-in-squad.
-    if !is_mine {
-        if let Some((network_id, channel_group_id, channel_name, existing_channel_group_ids)) =
-            parse_channel_in_network_dm(&msg.content)
-        {
-            if !existing_channel_group_ids.is_empty() {
-                if let Some(handle) = TAURI_APP.get() {
-                    let handle = handle.clone();
-                    let in_network = match db::load_mls_groups(&handle).await {
-                        Ok(groups) => {
-                            let our_ids: std::collections::HashSet<String> = groups
-                                .iter()
-                                .flat_map(|g| {
-                                    [
-                                        g.group_id.to_lowercase(),
-                                        g.engine_group_id.to_lowercase(),
-                                    ]
-                                })
-                                .collect();
-                            existing_channel_group_ids.iter().any(|cid| {
-                                our_ids.contains(&cid.to_lowercase())
-                            })
-                        }
-                        Err(_) => false,
-                    };
-                    if in_network {
-                        spawn_accept_channel_welcome_and_emit(
-                            network_id.clone(),
-                            channel_group_id,
-                            channel_name,
-                            "channel_added_to_network",
-                            true,
-                        );
-                        return true;
-                    }
                 }
             }
         }
@@ -5540,15 +5499,11 @@ struct SimpleWelcome {
     member_count: u32,
 }
 
-/// Shared flow: get pending welcome for channel_group_id, accept it, emit event with same payload shape.
-/// event_name is "channel_added_to_squad" or "channel_added_to_network".
-/// add_network_id_alias: when true, payload includes "network_id" (same as announcements_group_id) for frontend compatibility.
+/// Shared flow: get pending welcome for channel_group_id, accept it, emit `channel_added_to_squad`.
 fn spawn_accept_channel_welcome_and_emit(
     announcements_group_id: String,
     channel_group_id: String,
     channel_name: String,
-    event_name: &'static str,
-    add_network_id_alias: bool,
 ) {
     tokio::spawn(async move {
         for _ in 0..10 {
@@ -5578,21 +5533,12 @@ fn spawn_accept_channel_welcome_and_emit(
                 .unwrap_or(false);
                 if accepted {
                     if let Some(app) = TAURI_APP.get() {
-                        let payload = if add_network_id_alias {
-                            serde_json::json!({
-                                "announcements_group_id": announcements_group_id,
-                                "network_id": announcements_group_id,
-                                "channel_group_id": channel_group_id,
-                                "channel_name": channel_name,
-                            })
-                        } else {
-                            serde_json::json!({
-                                "announcements_group_id": announcements_group_id,
-                                "channel_group_id": channel_group_id,
-                                "channel_name": channel_name,
-                            })
-                        };
-                        let _ = app.emit(event_name, payload);
+                        let payload = serde_json::json!({
+                            "announcements_group_id": announcements_group_id,
+                            "channel_group_id": channel_group_id,
+                            "channel_name": channel_name,
+                        });
+                        let _ = app.emit("channel_added_to_squad", payload);
                     }
                     break;
                 }
@@ -5613,29 +5559,6 @@ fn parse_channel_in_squad_dm(content: &str) -> Option<(String, String, String)> 
     let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
     let name = obj.get("channelName").and_then(|s| s.as_str())?;
     Some((announcements.to_string(), channel.to_string(), name.to_string()))
-}
-
-/// Parse DM content as channel_in_network payload; returns (network_id, channel_group_id, channel_name, existing_channel_group_ids) if valid.
-/// existing_channel_group_ids: MLS group ids of channels already in the network (used to detect "user already in network").
-fn parse_channel_in_network_dm(content: &str) -> Option<(String, String, String, Vec<String>)> {
-    let v: serde_json::Value = serde_json::from_str(content).ok()?;
-    let obj = v.as_object()?;
-    if obj.get("type").and_then(|t| t.as_str()) != Some("channel_in_network") {
-        return None;
-    }
-    let network_id = obj.get("networkId").and_then(|s| s.as_str())?;
-    let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
-    let name = obj.get("channelName").and_then(|s| s.as_str())?;
-    let existing: Vec<String> = obj
-        .get("existingChannelGroupIds")
-        .and_then(|a| a.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some((network_id.to_string(), channel.to_string(), name.to_string(), existing))
 }
 
 /// Get the welcome event id (hex) for a pending MLS welcome that matches the given channel group id.
@@ -6280,6 +6203,11 @@ pub fn run() {
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
+            commons::commons_publish_broadcast,
+            commons::commons_list_cached_broadcasts,
+            commons::commons_fetch_broadcasts,
+            commons::commons_get_local_active,
+            commons::commons_cancel_broadcast,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,

@@ -12,6 +12,7 @@
   let privateKey: string = '';
   let firstPin: string = '';
   let error: string | null = null;
+  let unlockInFlight = false;
 
   // Check if user has stored encrypted key on mount
   onMount(async () => {
@@ -94,12 +95,16 @@
   }
 
   async function handlePinUnlock(pin: string) {
+    if (unlockInFlight || $authLoading) return;
+    unlockInFlight = true;
     try {
       await unlockWithPin(pin);
       // On success, auth store will handle state and user will see app
     } catch (e: any) {
       error = e.message || 'Incorrect PIN';
       // Stay on unlock screen for retry
+    } finally {
+      unlockInFlight = false;
     }
   }
 

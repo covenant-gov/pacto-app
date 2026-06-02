@@ -391,11 +391,14 @@ export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
   return meta;
 }
 
-/** Structured payload for squad invite sent via DM (Approach A). */
+/** Structured payload for squad / squad-pair invite (DM until RNF-4 Pacto App thread). */
 export interface SquadInvitePayload {
   type: 'squad_invite';
   squadName: string;
   groupId: string;
+  kind?: 'squad' | 'squad-pair';
+  pairedSquads?: [{ id: string; name: string }, { id: string; name: string }];
+  invitedByNpub?: string;
 }
 
 const SQUAD_INVITE_TYPE = 'squad_invite';
@@ -406,7 +409,15 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
     if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === SQUAD_INVITE_TYPE) {
       const p = parsed as { squadName?: string; groupId?: string };
       if (typeof p.squadName === 'string' && typeof p.groupId === 'string') {
-        return { type: SQUAD_INVITE_TYPE, squadName: p.squadName, groupId: p.groupId };
+        const raw = parsed as SquadInvitePayload;
+        return {
+          type: SQUAD_INVITE_TYPE,
+          squadName: raw.squadName,
+          groupId: raw.groupId,
+          kind: raw.kind === 'squad-pair' ? 'squad-pair' : raw.kind === 'squad' ? 'squad' : undefined,
+          pairedSquads: raw.pairedSquads,
+          invitedByNpub: typeof raw.invitedByNpub === 'string' ? raw.invitedByNpub : undefined,
+        };
       }
     }
   } catch {
@@ -457,100 +468,6 @@ export function parseChannelInSquadMessage(content: string): ChannelInSquadPaylo
 }
 
 export function formatChannelInSquadMessage(payload: ChannelInSquadPayload): string {
-  return JSON.stringify(payload);
-}
-
-/** Payload for "new channel in existing network" DM (add channel to network; recipient may already be in network). */
-export interface ChannelInNetworkPayload {
-  type: 'channel_in_network';
-  networkId: string;
-  networkName: string;
-  channelGroupId: string;
-  channelName: string;
-  memberSquads?: { id: string; name: string }[];
-  /** MLS group ids of channels already in the network (used by backend to auto-accept if user is in any). Exclude the new channel's groupId. */
-  existingChannelGroupIds?: string[];
-}
-
-const CHANNEL_IN_NETWORK_TYPE = 'channel_in_network';
-
-export function parseChannelInNetworkMessage(content: string): ChannelInNetworkPayload | null {
-  try {
-    const parsed = JSON.parse(content) as unknown;
-    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === CHANNEL_IN_NETWORK_TYPE) {
-      const p = parsed as { networkId?: string; networkName?: string; channelGroupId?: string; channelName?: string; memberSquads?: unknown };
-      if (
-        typeof p.networkId === 'string' &&
-        typeof p.networkName === 'string' &&
-        typeof p.channelGroupId === 'string' &&
-        typeof p.channelName === 'string'
-      ) {
-        return {
-          type: CHANNEL_IN_NETWORK_TYPE,
-          networkId: p.networkId,
-          networkName: p.networkName,
-          channelGroupId: p.channelGroupId,
-          channelName: p.channelName,
-          memberSquads: isMemberSquadsArray(p.memberSquads) ? p.memberSquads : undefined,
-        };
-      }
-    }
-  } catch {
-    // not JSON or invalid shape
-  }
-  return null;
-}
-
-export function formatChannelInNetworkMessage(payload: ChannelInNetworkPayload): string {
-  return JSON.stringify(payload);
-}
-
-/** Payload for network invite sent via DM (invite to a network, not a squad). */
-export interface NetworkInvitePayload {
-  type: 'network_invite';
-  networkName: string;
-  groupId: string;
-  memberSquads: { id: string; name: string }[];
-}
-
-const NETWORK_INVITE_TYPE = 'network_invite';
-
-function isMemberSquadsArray(value: unknown): value is { id: string; name: string }[] {
-  if (!Array.isArray(value)) return false;
-  return value.every(
-    (item) =>
-      item &&
-      typeof item === 'object' &&
-      typeof (item as { id?: unknown }).id === 'string' &&
-      typeof (item as { name?: unknown }).name === 'string'
-  );
-}
-
-export function parseNetworkInviteMessage(content: string): NetworkInvitePayload | null {
-  try {
-    const parsed = JSON.parse(content) as unknown;
-    if (parsed && typeof parsed === 'object' && (parsed as { type?: string }).type === NETWORK_INVITE_TYPE) {
-      const p = parsed as { networkName?: string; groupId?: string; memberSquads?: unknown };
-      if (
-        typeof p.networkName === 'string' &&
-        typeof p.groupId === 'string' &&
-        isMemberSquadsArray(p.memberSquads)
-      ) {
-        return {
-          type: NETWORK_INVITE_TYPE,
-          networkName: p.networkName,
-          groupId: p.groupId,
-          memberSquads: p.memberSquads,
-        };
-      }
-    }
-  } catch {
-    // not JSON or invalid shape
-  }
-  return null;
-}
-
-export function formatNetworkInviteMessage(payload: NetworkInvitePayload): string {
   return JSON.stringify(payload);
 }
 

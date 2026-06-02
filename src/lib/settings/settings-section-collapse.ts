@@ -5,6 +5,7 @@ export const SETTINGS_SECTION_IDS = [
   'settings-nostr',
   'settings-evm',
   'settings-app',
+  'settings-dangerzone',
 ] as const;
 
 export type SettingsSectionId = (typeof SETTINGS_SECTION_IDS)[number];

@@ -2,10 +2,11 @@ import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
 import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validatePrivateKeyFormat, validateRecoveryPhraseForImport } from '../lib/api/encryption';
-import { refreshProfileNow, fetchMessages } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
+import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
+import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
+import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
-import { dmSyncStatus, activeTopNavTab, loadAccountState } from './app';
 
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
@@ -92,7 +93,7 @@ export async function createAccount(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set('squads');
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
 
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
@@ -140,23 +141,12 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set('squads');
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
-    // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
-    dmLog('importAccount: fetchMessages(true)');
-    dmSyncStatus.set('syncing');
-    fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
-
-    // Auto-refresh profile on login
-    try {
-      await refreshProfileNow(npub);
-    } catch (e) {
-      console.error('Auto profile refresh failed:', e);
-      // Don't fail login if profile refresh fails
-    }
+    authLoading.set(false);
+    runPostLoginNetworkSync(npub);
 
     dmLog('importAccount: done');
-    authLoading.set(false);
   } catch (error: any) {
     console.error('Import account failed:', error);
     authError.set(error.message || 'Failed to import account');
@@ -174,48 +164,26 @@ export async function unlockWithPin(pin: string): Promise<void> {
   authError.set(null);
 
   try {
-    // Decrypt the stored key
     const privateKey = await loadAndDecryptKey(pin);
-    
-    // Login with the decrypted key
     const keys = await apiLogin(privateKey);
-    
-    // Connect to relays
-    dmLog('unlockWithPin: connect()');
-    await apiConnect();
-    dmLog('unlockWithPin: connect() done');
-
-    // Get current account npub from backend
     const npub = await getCurrentAccount();
 
-    // Set auth state and load npub-scoped persistence (squads, last open, etc.)
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set('squads');
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
-    // Pull DMs from Nostr relays (backend fetches Gift Wraps, emits init_finished with chats)
-    dmLog('unlockWithPin: fetchMessages(true)');
-    dmSyncStatus.set('syncing');
-    fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
-
-    // Auto-refresh profile on login
-    try {
-      await refreshProfileNow(npub);
-    } catch (e) {
-      console.error('Auto profile refresh failed:', e);
-      // Don't fail login if profile refresh fails
-    }
+    runPostLoginNetworkSync(npub);
 
     dmLog('unlockWithPin: done');
-    authLoading.set(false);
   } catch (error: any) {
     console.error('Unlock failed:', error);
     authError.set(error.message || 'Incorrect PIN or failed to decrypt');
-    authLoading.set(false);
     throw error;
+  } finally {
+    authLoading.set(false);
   }
 }
 

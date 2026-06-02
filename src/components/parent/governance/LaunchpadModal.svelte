@@ -1,7 +1,6 @@
 <script lang="ts">
   import Modal from '../../ui/Modal.svelte';
 
-  export let parentType: 'squad' | 'network';
   export let hasSponsor: boolean;
   export let hasPactoGov: boolean;
   export let hasSquadAdmin: boolean;
@@ -24,7 +23,7 @@
 <Modal {titleId} descriptionId={descId} {onClose} contentClass="launchpad-modal-panel">
   <h2 id={titleId}>Deploy infra</h2>
   <p id={descId} class="launchpad-desc">
-    Choose on-chain infrastructure for this {parentType}. Squad sponsor funds gas sponsorship and must be deployed first.
+    Choose on-chain infrastructure for this squad. Squad sponsor funds gas sponsorship and must be deployed first.
   </p>
   {#if channelBlocked}
     <p class="launchpad-channel-note muted" role="status">
@@ -39,7 +38,7 @@
         {#if hasSponsor}
           Sponsor clone is deployed. Top up balance from the Treasury tab or deposit again after deploy.
         {:else}
-          Required first deploy — ERC-4337 gas pool for this {parentType}.
+          Required first deploy — ERC-4337 gas pool for this squad.
         {/if}
       </p>
       <button
@@ -61,7 +60,7 @@
         {#if otherInfraLocked}
           Deploy squad sponsor first.
         {:else if hasPactoGov}
-          Nave Pirata is deployed for this {parentType}. Open the Governance and Roles Tree tabs to explore on-chain state.
+          Nave Pirata is deployed for this squad. Open the Governance and Roles Tree tabs to explore on-chain state.
         {:else}
           Nave Pirata factory bundle (Hats tree, treasury authority, Safe module).
         {/if}
