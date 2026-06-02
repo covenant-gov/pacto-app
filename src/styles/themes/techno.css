@@ -31,4 +31,13 @@
   --techno-blue: #0891b2;
   --techno-orange: #ea580c;
   --techno-pink: #db2777;
+
+  --commons-tile-scrim-top: rgba(0, 0, 0, 0.04);
+  --commons-tile-scrim-mid: rgba(0, 0, 0, 0.1);
+  --commons-tile-scrim-bottom: rgba(0, 0, 0, 0.34);
+  --commons-tile-veil: rgba(247, 245, 242, 0.42);
+  --commons-tile-art-filter: brightness(1.12) contrast(1.03) saturate(1.08);
+  --commons-tile-text: #fff;
+  --commons-tile-title-shadow: 0 1px 8px rgba(0, 0, 0, 0.72);
+  --commons-tile-desc-shadow: 0 1px 6px rgba(0, 0, 0, 0.75);
 }

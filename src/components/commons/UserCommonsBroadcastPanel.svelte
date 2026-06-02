@@ -7,6 +7,11 @@
     publishUserCommonsBroadcast,
   } from '../../lib/commons/user-broadcast';
   import { formatBroadcastCooldownRemaining } from '../../lib/commons/squad-broadcast';
+  import {
+    COMMONS_BROADCAST_DURATION_ROWS,
+    formatCommonsBroadcastDuration,
+    type CommonsBroadcastDurationHours,
+  } from '../../lib/commons/broadcast-duration';
   import type { CommonsBroadcastLocalState } from '../../lib/commons/types';
   import { commonsUserHasActiveBroadcast } from '../../stores/commons-ui';
 
@@ -14,11 +19,9 @@
   /** Called after a successful publish (e.g. close modal). */
   export let onPublished: () => void = () => {};
 
-  type DurationHours = 24 | 48 | 72;
-
   let tags: string[] = [];
   let message = '';
-  let durationHours: DurationHours = 24;
+  let durationHours: CommonsBroadcastDurationHours = 24;
   let submitError = '';
   export let publishing = false;
   let loadingActive = true;
@@ -102,7 +105,7 @@
       Active until broadcast expires ({cooldownLabel} remaining).
     </p>
     <p class="broadcast-muted broadcast-cooldown-detail">
-      “{activeBroadcast.message}” · {activeBroadcast.durationHours} h
+      “{activeBroadcast.message}” · {formatCommonsBroadcastDuration(activeBroadcast.durationHours)}
       {#if activeBroadcast.audience}
         · {activeBroadcast.audience === 'new_user' ? 'New user' : 'Active user'}
       {/if}
@@ -121,18 +124,22 @@
   ></textarea>
 
   <span class="broadcast-label">Duration</span>
-  <div class="broadcast-duration-row" role="radiogroup" aria-label="Broadcast duration">
-    {#each [24, 48, 72] as hours (hours)}
-      <label class="broadcast-duration-option">
-        <input
-          type="radio"
-          name="user-commons-duration"
-          value={hours}
-          bind:group={durationHours}
-          disabled={onCooldown || publishing}
-        />
-        <span>{hours} h</span>
-      </label>
+  <div class="broadcast-duration" role="radiogroup" aria-label="Broadcast duration">
+    {#each COMMONS_BROADCAST_DURATION_ROWS as row, rowIndex (rowIndex)}
+      <div class="broadcast-duration-row">
+        {#each row as opt (opt.hours)}
+          <label class="broadcast-duration-option">
+            <input
+              type="radio"
+              name="user-commons-duration"
+              value={opt.hours}
+              bind:group={durationHours}
+              disabled={onCooldown || publishing}
+            />
+            <span>{opt.label}</span>
+          </label>
+        {/each}
+      </div>
     {/each}
   </div>
 
@@ -190,10 +197,16 @@
     margin-bottom: 16px;
   }
 
+  .broadcast-duration {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
   .broadcast-duration-row {
     display: flex;
     gap: 8px;
-    margin-bottom: 16px;
   }
 
   .broadcast-duration-option {

@@ -4,6 +4,8 @@ import { findCommonsTagCategory, commonsCategoryTagSlugs } from './tag-catalog';
 export type CommonsSubjectFilter = 'both' | 'squads' | 'users';
 export type CommonsAudienceFilter = 'any' | 'new_user' | 'active_user';
 
+export type CommonsBrowseMode = 'categories' | 'latest';
+
 export interface CommonsFeedFilters {
   /** Focused search: broadcast must include every tag (max 3 in UI). */
   tags: string[];

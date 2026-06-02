@@ -47,6 +47,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'ai',
     title: 'AI',
     description: 'Models, agents, and machine learning work.',
+    image: 'nick-land-ai.jpeg',
     children: [
       { tag: 'agents', title: 'Agents' },
       { tag: 'ai', title: 'AI' },
@@ -59,10 +60,11 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'anarchism',
     title: 'ANARCHISM',
     description: 'Autonomy, mutual aid, and horizontal organizing.',
-    image: 'anarchism.png',
+    image: 'black-block.jpeg',
     children: [
       { tag: 'anarchist', title: 'Anarchist' },
       { tag: 'autonomous', title: 'Autonomous' },
+      { tag: 'black_block', title: 'Black Block' },
       { tag: 'mutual_aid', title: 'Mutual Aid' },
       { tag: 'syndicalist', title: 'Syndicalist' },
     ],
@@ -71,6 +73,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'build',
     title: 'BUILD',
     description: 'Makers shipping tools, contracts, and apps.',
+    image: 'scaffold.jpeg',
     children: [
       { tag: 'builders', title: 'Builders' },
       { tag: 'design', title: 'Design' },
@@ -94,6 +97,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'crypto',
     title: 'CRYPTO',
     description: 'Chains, wallets, DeFi, and on-chain finance.',
+    image: 'nouns-nft.jpeg',
     children: [
       { tag: 'crypto', title: 'Crypto' },
       { tag: 'defi', title: 'DeFi' },
@@ -104,9 +108,24 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     ],
   },
   {
+    id: 'cooperatives',
+    title: 'COOPERATIVES',
+    description: 'Member-owned co-ops, credit unions, and shared enterprise.',
+    image: 'women-coop.jpeg',
+    children: [
+      { tag: 'bread', title: 'Bread' },
+      { tag: 'co_op', title: 'Co-op' },
+      { tag: 'credit_union', title: 'Credit Union' },
+      { tag: 'housing_coop', title: 'Housing Co-op' },
+      { tag: 'member_owned', title: 'Member Owned' },
+      { tag: 'worker_coop', title: 'Worker Co-op' },
+    ],
+  },
+  {
     id: 'culture',
     title: 'CULTURE',
     description: 'Art, sound, and creative work.',
+    image: 'curved-lines.jpeg',
     children: [
       { tag: 'art', title: 'Art' },
       { tag: 'film', title: 'Film' },
@@ -120,8 +139,10 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'dao',
     title: 'DAO',
     description: 'On-chain groups, multisigs, and collective treasuries.',
+    image: 'daohaus.jpeg',
     children: [
       { tag: 'dao', title: 'DAO' },
+      { tag: 'moloch', title: 'Moloch' },
       { tag: 'multisig', title: 'Multisig' },
       { tag: 'onchain', title: 'On-chain' },
       { tag: 'token_gov', title: 'Token Gov' },
@@ -131,8 +152,8 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'economics',
     title: 'ECONOMICS',
     description: 'Markets, planning, labor, and economic models.',
+    image: 'bricks.jpeg',
     children: [
-      { tag: 'co_op', title: 'Co-op' },
       { tag: 'economics', title: 'Economics' },
       { tag: 'free_market', title: 'Free Market' },
       { tag: 'labor', title: 'Labor' },
@@ -144,6 +165,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'governance',
     title: 'GOVERNANCE',
     description: 'How groups decide — across ideologies and scales.',
+    image: 'governance.jpeg',
     children: [
       { tag: 'coordination', title: 'Coordination' },
       { tag: 'decentralization', title: 'Decentralization' },
@@ -153,9 +175,22 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     ],
   },
   {
+    id: 'identity',
+    title: 'IDENTITY',
+    description: 'Community, belonging, and lived experience.',
+    image: 'double-rainbow.jpg',
+    children: [
+      { tag: 'bipoc', title: 'BIPOC' },
+      { tag: 'lgbtqia_plus', title: 'LGBTQIA+' },
+      { tag: 'trans', title: 'Trans' },
+      { tag: 'women', title: 'Women' },
+    ],
+  },
+  {
     id: 'knowledge',
     title: 'KNOWLEDGE',
     description: 'Research, science, and learning.',
+    image: 'aya.jpeg',
     children: [
       { tag: 'academia', title: 'Academia' },
       { tag: 'education', title: 'Education' },
@@ -168,6 +203,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'libertarianism',
     title: 'LIBERTARIANISM',
     description: 'Markets, capitalist organizing, and libertarian politics.',
+    image: 'libertarianism.jpeg',
     children: [
       { tag: 'capitalist', title: 'Capitalist' },
       { tag: 'libertarian', title: 'Libertarian' },
@@ -179,6 +215,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'local',
     title: 'LOCAL',
     description: 'People organizing by place and IRL.',
+    image: 'civil-rights-march.jpeg',
     children: [
       { tag: 'community', title: 'Community' },
       { tag: 'events', title: 'Events' },
@@ -190,6 +227,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'privacy',
     title: 'PRIVACY',
     description: 'Encryption, anonymity, and resisting surveillance.',
+    image: 'distorted-tv.jpeg',
     children: [
       { tag: 'anonymity', title: 'Anonymity' },
       { tag: 'cypherpunk', title: 'Cypherpunk' },
@@ -201,10 +239,10 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
   },
   {
     id: 'socialist',
-    title: 'SOCIALIST',
-    description: 'Social democracy, cooperatives, and reform organizing.',
+    title: 'SOCIALISM',
+    description: 'Social democracy, public ownership, and reform organizing.',
+    image: 'socialist-cloud.jpeg',
     children: [
-      { tag: 'cooperative', title: 'Cooperative' },
       { tag: 'left', title: 'Left' },
       { tag: 'public_ownership', title: 'Public Ownership' },
       { tag: 'reformist', title: 'Reformist' },
@@ -216,6 +254,7 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     id: 'technology',
     title: 'TECHNOLOGY',
     description: 'Hardware, software, networks, and systems.',
+    image: 'gamer.jpeg',
     children: [
       { tag: 'hardware', title: 'Hardware' },
       { tag: 'infra', title: 'Infra' },

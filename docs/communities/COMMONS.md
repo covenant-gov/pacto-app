@@ -108,7 +108,7 @@ Public **Kind 30078** ([NIP-33](https://github.com/nostr-protocol/nips/blob/mast
 | Rule | Detail |
 |------|--------|
 | Tags | 1–3; `^[a-z0-9_]{1,32}$` after lowercasing and stripping `#` |
-| TTL | `durationHours ∈ {24, 48, 72}` |
+| TTL | `durationHours ∈ {24, 48, 72, 168, 336, 720}` (168 = 7 d, 336 = 14 d, 720 = 30 d) |
 | Expiry | `expiresAt ≈ created_at + durationHours × 3600` (±60 s) |
 | Squad id | Must match `squad` tag and payload; stable announcements group id |
 | Expired | Dropped from feed and pruned from local cache |

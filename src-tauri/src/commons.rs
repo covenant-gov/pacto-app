@@ -140,7 +140,7 @@ pub fn normalize_commons_tags(raw: &[String]) -> Result<Vec<String>, String> {
 }
 
 fn valid_duration_hours(h: u32) -> bool {
-    matches!(h, 24 | 48 | 72)
+    matches!(h, 24 | 48 | 72 | 168 | 336 | 720)
 }
 
 fn valid_audience(a: &str) -> bool {
@@ -474,7 +474,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
         return Err("message is required".into());
     }
     if !valid_duration_hours(input.duration_hours) {
-        return Err("durationHours must be 24, 48, or 72".into());
+        return Err("durationHours must be 24, 48, 72, 168, 336, or 720".into());
     }
     let tags = normalize_commons_tags(&input.tags)?;
     if let Some(ref aud) = input.audience {

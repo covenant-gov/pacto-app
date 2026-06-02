@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import CommonsTopFilters from './CommonsTopFilters.svelte';
+  import CommonsCategoryFocus from './CommonsCategoryFocus.svelte';
   import CommonsTagBrowser from './CommonsTagBrowser.svelte';
   import CommonsTagMenu from './CommonsTagMenu.svelte';
   import CommonsPersonalPanel from './CommonsPersonalPanel.svelte';
@@ -13,6 +14,7 @@
     isCommonsBroadcastActive,
     prepareCommonsFeed,
     type CommonsAudienceFilter,
+    type CommonsBrowseMode,
     type CommonsSubjectFilter,
   } from '../../lib/commons/commons-feed';
   import {
@@ -21,7 +23,7 @@
     commonsFeedSyncing,
     refreshCommonsBroadcasts,
   } from '../../lib/commons/commons-prefetch';
-  import { COMMONS_TAG_GROUPS } from '../../lib/commons/tag-catalog';
+  import { COMMONS_TAG_GROUPS, findCommonsTagCategory } from '../../lib/commons/tag-catalog';
   import { activeTopNavTab } from '../../stores/navigation';
   import {
     commonsBroadcastModalClosedNonce,
@@ -32,6 +34,8 @@
 
   let filterTags: string[] = [...DEFAULT_COMMONS_FEED_FILTERS.tags];
   let filterCategoryId: string | null = DEFAULT_COMMONS_FEED_FILTERS.categoryId;
+  let focusedCategoryId: string | null = null;
+  let browseMode: CommonsBrowseMode = 'categories';
   let subjectFilter: CommonsSubjectFilter = DEFAULT_COMMONS_FEED_FILTERS.subjectFilter;
   let audienceFilter: CommonsAudienceFilter = DEFAULT_COMMONS_FEED_FILTERS.audienceFilter;
 
@@ -44,13 +48,26 @@
 
   $: feedFilters = { tags: filterTags, categoryId: filterCategoryId, subjectFilter, audienceFilter };
   $: filteredBroadcasts = prepareCommonsFeed($commonsBroadcasts, feedFilters);
-  $: hasFilters =
+  $: latestBroadcasts = prepareCommonsFeed($commonsBroadcasts, {
+    tags: [],
+    categoryId: null,
+    subjectFilter,
+    audienceFilter,
+  });
+  $: hasTagFilters =
     filterTags.length > 0 ||
     filterCategoryId != null ||
+    focusedCategoryId != null;
+  $: hasFilters =
+    hasTagFilters ||
     subjectFilter !== 'both' ||
     audienceFilter !== 'any';
-  // Passive tile browse: only when no filters are set and the focused menu is closed.
-  $: showTiles = !tagMenuOpen && !hasFilters;
+  $: showTileGrid =
+    browseMode === 'categories' && !tagMenuOpen && focusedCategoryId == null && !hasTagFilters;
+  $: categoryAllMode = focusedCategoryId != null && filterCategoryId != null && filterTags.length === 0;
+  $: focusedCategoryTitle = focusedCategoryId
+    ? (findCommonsTagCategory(focusedCategoryId)?.title ?? focusedCategoryId.toUpperCase())
+    : null;
 
   $: if ($commonsBroadcastModalClosedNonce !== lastModalClosedNonce) {
     lastModalClosedNonce = $commonsBroadcastModalClosedNonce;
@@ -90,19 +107,54 @@
     }
   }
 
-  /** Category tile: ANY of all tags in the category (shown as one category chip). */
+  /** Category tile: ANY of all tags in the category; opens focused drill-down. */
   function selectCategory(categoryId: string) {
+    browseMode = 'categories';
     tagMenuOpen = false;
-    if (filterCategoryId === categoryId) {
-      filterCategoryId = null;
-      return;
-    }
+    focusedCategoryId = categoryId;
     filterCategoryId = categoryId;
     filterTags = [];
   }
 
-  /** Focused tag pick (menu or category child): AND up to 3 tags. */
+  function clearCategoryFocus() {
+    focusedCategoryId = null;
+    filterCategoryId = null;
+    filterTags = [];
+  }
+
+  /** Tag pick inside focused category drill-down (AND up to 3, same category only). */
+  function toggleFocusedCategoryTag(tag: string) {
+    if (!focusedCategoryId) return;
+
+    if (filterCategoryId != null) {
+      filterCategoryId = null;
+      filterTags = [tag];
+      return;
+    }
+
+    if (filterTags.includes(tag)) {
+      filterTags = filterTags.filter((t) => t !== tag);
+      if (filterTags.length === 0) {
+        filterCategoryId = focusedCategoryId;
+      }
+      return;
+    }
+
+    if (filterTags.length >= 3) return;
+    filterTags = [...filterTags, tag];
+  }
+
+  function removeFilterTag(tag: string) {
+    filterTags = filterTags.filter((t) => t !== tag);
+    if (filterTags.length === 0 && focusedCategoryId) {
+      filterCategoryId = focusedCategoryId;
+    }
+  }
+
+  /** Global tag menu: AND up to 3 tags; exits category focus. */
   function selectFocusedTag(tag: string) {
+    browseMode = 'categories';
+    focusedCategoryId = null;
     filterCategoryId = null;
     if (filterTags.includes(tag)) {
       filterTags = filterTags.filter((t) => t !== tag);
@@ -211,6 +263,10 @@
       bind:subjectFilter
       bind:audienceFilter
       bind:tagMenuOpen
+      bind:focusedCategoryId
+      bind:browseMode
+      onRemoveTag={removeFilterTag}
+      onClearCategory={clearCategoryFocus}
     />
 
     {#if $commonsFeedError}
@@ -223,9 +279,47 @@
         {countsByTag}
         onToggleTag={selectFocusedTag}
       />
-    {/if}
+    {:else if browseMode === 'latest'}
+      {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
+        <p class="commons-state muted" role="status">Loading broadcasts…</p>
+      {:else if latestBroadcasts.length === 0}
+        <p class="commons-state muted" role="status">No broadcasts match your filters.</p>
+      {:else}
+        <ul class="commons-results" role="feed" aria-busy={$commonsFeedSyncing}>
+          {#each latestBroadcasts as broadcast (broadcast.eventId)}
+            <li>
+              <CommonsBroadcastCard {broadcast} />
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {:else if focusedCategoryId}
+      <CommonsCategoryFocus
+        categoryId={focusedCategoryId}
+        {categoryAllMode}
+        activeTags={filterTags}
+        {countsByTag}
+        onToggleTag={toggleFocusedCategoryTag}
+        onClearFocus={clearCategoryFocus}
+      />
 
-    {#if hasFilters}
+      {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
+        <p class="commons-state muted" role="status">Loading broadcasts…</p>
+      {:else if filteredBroadcasts.length === 0}
+        <p class="commons-state muted" role="status">No broadcasts match your filters.</p>
+        <p class="commons-state-hint muted">
+          Try ALL-{focusedCategoryTitle} or pick fewer tags.
+        </p>
+      {:else}
+        <ul class="commons-results" role="feed" aria-busy={$commonsFeedSyncing}>
+          {#each filteredBroadcasts as broadcast (broadcast.eventId)}
+            <li>
+              <CommonsBroadcastCard {broadcast} />
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {:else if hasFilters}
       {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
         <p class="commons-state muted" role="status">Loading broadcasts…</p>
       {:else if filteredBroadcasts.length === 0}
@@ -242,9 +336,9 @@
           {/each}
         </ul>
       {/if}
-    {:else if showTiles}
+    {:else if showTileGrid}
       <CommonsTagBrowser
-        activeCategoryId={filterCategoryId}
+        activeCategoryId={null}
         {countsByTag}
         onSelectCategory={selectCategory}
       />

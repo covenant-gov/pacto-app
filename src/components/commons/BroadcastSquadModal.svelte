@@ -10,6 +10,11 @@
     publishSquadCommonsBroadcast,
   } from '../../lib/commons/squad-broadcast';
   import { canBroadcastSquad } from '../../lib/commons/permissions';
+  import {
+    COMMONS_BROADCAST_DURATION_ROWS,
+    formatCommonsBroadcastDuration,
+    type CommonsBroadcastDurationHours,
+  } from '../../lib/commons/broadcast-duration';
   import { currentUser } from '../../stores/auth';
 
   export let squad: PublicSquadBroadcastTarget;
@@ -17,10 +22,8 @@
   export let broadcastAllowed = true;
   export let broadcastDeniedReason = 'Role required soon.';
 
-  type DurationHours = 24 | 48 | 72;
-
   let message = '';
-  let durationHours: DurationHours = 24;
+  let durationHours: CommonsBroadcastDurationHours = 24;
   let submitError = '';
   let publishing = false;
   let loadingActive = true;
@@ -129,7 +132,7 @@
         Active until broadcast expires ({cooldownLabel} remaining).
       </p>
       <p class="broadcast-muted broadcast-cooldown-detail">
-        “{activeBroadcast.message}” · {activeBroadcast.durationHours} h
+        “{activeBroadcast.message}” · {formatCommonsBroadcastDuration(activeBroadcast.durationHours)}
       </p>
     {/if}
 
@@ -145,18 +148,22 @@
     ></textarea>
 
     <span class="broadcast-label">Duration</span>
-    <div class="broadcast-duration-row" role="radiogroup" aria-label="Broadcast duration">
-      {#each [24, 48, 72] as hours (hours)}
-        <label class="broadcast-duration-option">
-          <input
-            type="radio"
-            name="squad-broadcast-duration"
-            value={hours}
-            bind:group={durationHours}
-            disabled={onCooldown || publishing}
-          />
-          <span>{hours} h</span>
-        </label>
+    <div class="broadcast-duration" role="radiogroup" aria-label="Broadcast duration">
+      {#each COMMONS_BROADCAST_DURATION_ROWS as row, rowIndex (rowIndex)}
+        <div class="broadcast-duration-row">
+          {#each row as opt (opt.hours)}
+            <label class="broadcast-duration-option">
+              <input
+                type="radio"
+                name="squad-broadcast-duration"
+                value={opt.hours}
+                bind:group={durationHours}
+                disabled={onCooldown || publishing}
+              />
+              <span>{opt.label}</span>
+            </label>
+          {/each}
+        </div>
       {/each}
     </div>
 
@@ -247,10 +254,16 @@
     margin-bottom: 16px;
   }
 
+  .broadcast-duration {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
   .broadcast-duration-row {
     display: flex;
     gap: 8px;
-    margin-bottom: 16px;
   }
 
   .broadcast-duration-option {

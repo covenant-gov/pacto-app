@@ -40,6 +40,7 @@
           {#if count > 0}
             <span class="commons-browser-badge">{count} live</span>
           {/if}
+          <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>
       </li>
     {/each}
@@ -75,7 +76,7 @@
     background-color: var(--bg-elevated);
     background-size: cover;
     background-position: center;
-    color: #fff;
+    color: var(--commons-tile-text, #fff);
     text-align: left;
   }
 
@@ -85,6 +86,7 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+    filter: var(--commons-tile-art-filter, none);
     transition: transform 0.3s ease;
   }
 
@@ -92,12 +94,13 @@
     position: absolute;
     inset: 0;
     z-index: 1;
-    background:
+    background-color: var(--commons-tile-veil, transparent);
+    background-image:
       linear-gradient(
         180deg,
-        rgba(0, 0, 0, 0.28) 0%,
-        rgba(0, 0, 0, 0.42) 45%,
-        rgba(0, 0, 0, 0.68) 100%
+        var(--commons-tile-scrim-top, rgba(0, 0, 0, 0.28)) 0%,
+        var(--commons-tile-scrim-mid, rgba(0, 0, 0, 0.42)) 45%,
+        var(--commons-tile-scrim-bottom, rgba(0, 0, 0, 0.68)) 100%
       );
   }
 
@@ -105,13 +108,11 @@
     position: absolute;
     inset: 0;
     z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
+    display: grid;
+    place-items: center;
     padding: 16px;
     box-sizing: border-box;
+    pointer-events: none;
   }
 
   .commons-browser-title {
@@ -119,18 +120,26 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+    text-shadow: var(--commons-tile-title-shadow, 0 1px 6px rgba(0, 0, 0, 0.5));
+    line-height: 1.2;
   }
 
   .commons-browser-desc {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 14px;
+    z-index: 2;
     font-size: 0.8125rem;
     line-height: 1.4;
     text-align: center;
-    max-width: 90%;
+    max-width: none;
+    margin: 0;
     opacity: 0;
     transform: translateY(6px);
     transition: opacity 0.15s ease, transform 0.15s ease;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+    text-shadow: var(--commons-tile-desc-shadow, 0 1px 4px rgba(0, 0, 0, 0.6));
+    pointer-events: none;
   }
 
   .commons-browser-tile:hover .commons-browser-desc,
@@ -143,17 +152,29 @@
     transform: scale(1.04);
   }
 
-  .commons-browser-tile-active,
-  .commons-browser-tile:focus-visible {
-    outline: 3px solid var(--accent);
-    outline-offset: -3px;
+  .commons-browser-frame {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--accent);
+    transition: box-shadow 0.2s ease;
+  }
+
+  .commons-browser-tile:hover:not(.commons-browser-tile-active) .commons-browser-frame {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  .commons-browser-tile-active .commons-browser-frame,
+  .commons-browser-tile:focus-visible .commons-browser-frame {
+    box-shadow: inset 0 0 0 2px var(--accent);
   }
 
   .commons-browser-badge {
     position: absolute;
     top: 10px;
     right: 10px;
-    z-index: 3;
+    z-index: 5;
     font-size: 0.6875rem;
     font-weight: 600;
     padding: 3px 8px;

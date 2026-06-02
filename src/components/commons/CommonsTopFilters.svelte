@@ -1,47 +1,80 @@
 <script lang="ts">
   import type {
     CommonsAudienceFilter,
+    CommonsBrowseMode,
     CommonsSubjectFilter,
   } from '../../lib/commons/commons-feed';
   import { findCommonsTagCategory } from '../../lib/commons/tag-catalog';
 
   export let tags: string[] = [];
   export let categoryId: string | null = null;
+  export let focusedCategoryId: string | null = null;
+  export let browseMode: CommonsBrowseMode = 'categories';
   export let subjectFilter: CommonsSubjectFilter = 'both';
   export let audienceFilter: CommonsAudienceFilter = 'any';
   /** Whether the focused tag (genre) menu is open; hides the passive tiles. */
   export let tagMenuOpen = false;
+  export let onRemoveTag: ((tag: string) => void) | undefined = undefined;
+  export let onClearCategory: (() => void) | undefined = undefined;
 
   $: categoryLabel = categoryId ? (findCommonsTagCategory(categoryId)?.title ?? categoryId) : null;
 
   function removeTag(tag: string) {
-    tags = tags.filter((t) => t !== tag);
+    if (onRemoveTag) onRemoveTag(tag);
+    else tags = tags.filter((t) => t !== tag);
   }
 
   function removeCategory() {
-    categoryId = null;
+    if (onClearCategory) onClearCategory();
+    else {
+      categoryId = null;
+      focusedCategoryId = null;
+    }
   }
 
   function toggleMenu() {
-    tagMenuOpen = !tagMenuOpen;
-    if (tagMenuOpen) categoryId = null;
+    if (tagMenuOpen) {
+      tagMenuOpen = false;
+      return;
+    }
+    browseMode = 'categories';
+    tagMenuOpen = true;
+    categoryId = null;
+    focusedCategoryId = null;
   }
 
-  // Categories = the default grid view; also resets all filters back to defaults.
-  function showCategories() {
+  /** Collapse tag library; keep selected tags and show results. */
+  function runTagSearch() {
+    tagMenuOpen = false;
+    browseMode = 'categories';
+  }
+
+  function showLatest() {
+    browseMode = 'latest';
     tags = [];
     categoryId = null;
-    subjectFilter = 'both';
-    audienceFilter = 'any';
+    focusedCategoryId = null;
     tagMenuOpen = false;
   }
 
-  $: isDefaultView =
-    !tagMenuOpen &&
-    tags.length === 0 &&
-    categoryId == null &&
-    subjectFilter === 'both' &&
-    audienceFilter === 'any';
+  // Categories = the default grid view; clears tag/category filters only.
+  function showCategories() {
+    browseMode = 'categories';
+    tags = [];
+    categoryId = null;
+    focusedCategoryId = null;
+    tagMenuOpen = false;
+  }
+
+  /** Tag-library search (not category drill-down). */
+  $: isTagLibrarySearch = tags.length > 0 && categoryId == null && focusedCategoryId == null;
+
+  $: isLatestActive = browseMode === 'latest' && !tagMenuOpen;
+  $: isCategoriesActive =
+    browseMode === 'categories' && !tagMenuOpen && !isTagLibrarySearch;
+  $: isTagsActive = tagMenuOpen && tags.length === 0;
+  $: isSearchActive = (tagMenuOpen && tags.length > 0) || isTagLibrarySearch;
+  $: showSearchButton = tagMenuOpen || isTagLibrarySearch;
 </script>
 
 <div class="commons-filters" role="search">
@@ -49,7 +82,15 @@
     <button
       type="button"
       class="commons-filters-browse"
-      class:is-open={isDefaultView}
+      class:is-open={isLatestActive}
+      on:click={showLatest}
+    >
+      Latest
+    </button>
+    <button
+      type="button"
+      class="commons-filters-browse"
+      class:is-open={isCategoriesActive}
       on:click={showCategories}
     >
       Categories
@@ -57,22 +98,32 @@
     <button
       type="button"
       class="commons-filters-browse"
-      class:is-open={tagMenuOpen}
+      class:is-open={isTagsActive}
       aria-expanded={tagMenuOpen}
       on:click={toggleMenu}
     >
       Tags
       <span class="commons-filters-browse-chevron" aria-hidden="true">{tagMenuOpen ? '–' : '+'}</span>
     </button>
+    {#if showSearchButton}
+      <button
+        type="button"
+        class="commons-filters-browse commons-filters-search"
+        class:is-open={isSearchActive}
+        on:click={runTagSearch}
+      >
+        Search
+      </button>
+    {/if}
 
     {#if categoryLabel}
       <ul class="commons-filters-chips" role="list">
         <li>
-          <span class="commons-filters-chip commons-filters-chip-category">{categoryLabel}</span>
+          <span class="commons-filters-chip commons-filters-chip-category">ALL-{categoryLabel}</span>
           <button
             type="button"
             class="commons-filters-chip-remove"
-            aria-label="Remove category {categoryLabel}"
+            aria-label="Remove ALL-{categoryLabel} filter"
             on:click={removeCategory}
           >
             ×

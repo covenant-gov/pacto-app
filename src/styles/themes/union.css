@@ -37,4 +37,13 @@
   --union-navy: #0a1628;
   --union-black: #05080f;
   --union-grey: #94a3b8;
+
+  --commons-tile-scrim-top: rgba(0, 0, 0, 0.28);
+  --commons-tile-scrim-mid: rgba(0, 0, 0, 0.42);
+  --commons-tile-scrim-bottom: rgba(0, 0, 0, 0.68);
+  --commons-tile-veil: transparent;
+  --commons-tile-art-filter: none;
+  --commons-tile-text: #fff;
+  --commons-tile-title-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  --commons-tile-desc-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
