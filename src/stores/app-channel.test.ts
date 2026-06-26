@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INBOX_CHANNEL_NAME, normalizeStoredChannel } from './app';
+import { INBOX_CHANNEL_NAME, normalizeStoredChannel } from './squads';
 
 describe('normalizeStoredChannel', () => {
   it('renames legacy monitor channel rows to inbox', () => {

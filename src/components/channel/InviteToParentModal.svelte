@@ -1,6 +1,5 @@
 <script lang="ts">
   export let open = false;
-  export let parentType: 'squad' | 'network' = 'squad';
   export let parentName = '';
   export let title = '';
   export let subtitle = '';
@@ -22,10 +21,7 @@
     (selectedNpubs.length > 0 || inviteByNpub.trim().length > 0) && !inviting;
 
   const titleId = 'invite-to-parent-modal-title';
-  $: ariaLabel =
-    (title || (parentType === 'squad' ? 'Invite to Squad' : 'Invite to Network')) +
-    ' for ' +
-    (parentName || (parentType === 'squad' ? 'squad' : 'network'));
+  $: ariaLabel = (title || 'Invite to Squad') + ' for ' + (parentName || 'squad');
 </script>
 
 {#if open}
@@ -42,12 +38,12 @@
       aria-modal="true"
       aria-labelledby={titleId}
       aria-label={ariaLabel}
-      data-parent-type={parentType}
+      data-parent-type="squad"
       tabindex="0"
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}
     >
-      <h2 id={titleId}>{title || (parentType === 'squad' ? 'Invite to Squad' : 'Invite to Network')}</h2>
+      <h2 id={titleId}>{title || 'Invite to Squad'}</h2>
       <p class="invite-to-parent-subtitle">{subtitle}</p>
       {#if loading}
         <p class="invite-to-parent-loading">Loading…</p>

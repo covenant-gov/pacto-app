@@ -165,9 +165,7 @@ mod tests {
     #[test]
     fn squad_id_matches_solidity_keccak256_string_bytes() {
         let id = squad_id_from_parent_id("squad-alpha");
-        assert_eq!(
-            id,
-            alloy::primitives::keccak256("squad-alpha".as_bytes()).into()
-        );
+        let expected = alloy::primitives::keccak256("squad-alpha".as_bytes());
+        assert_eq!(id, expected);
     }
 }

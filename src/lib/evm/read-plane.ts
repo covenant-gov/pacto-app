@@ -11,6 +11,7 @@ import {
   getContract,
 } from 'viem';
 import { createWalletPublicClient, type SupportedChainId } from '../wallet/chains';
+import { withReadPlaneLimit } from './read-plane-limiter';
 
 export class ReadPlaneError extends Error {
   readonly code: string;
@@ -42,12 +43,14 @@ export async function readContract<
 }): Promise<unknown> {
   const client = createWalletPublicClient(params.chainId);
   try {
-    return await client.readContract({
-      address: params.address,
-      abi: params.abi,
-      functionName: params.functionName,
-      args: params.args,
-    });
+    return await withReadPlaneLimit(() =>
+      client.readContract({
+        address: params.address,
+        abi: params.abi,
+        functionName: params.functionName,
+        args: params.args,
+      }),
+    );
   } catch (e) {
     throw wrapReadError(e, 'READ_CONTRACT_FAILED');
   }
@@ -65,7 +68,7 @@ export async function multicall(params: {
   if (!params.contracts.length) return [];
   const client = createWalletPublicClient(params.chainId);
   try {
-    return await client.multicall({ contracts: params.contracts });
+    return await withReadPlaneLimit(() => client.multicall({ contracts: params.contracts }));
   } catch (e) {
     throw wrapReadError(e, 'MULTICALL_FAILED');
   }
@@ -81,13 +84,15 @@ export async function simulateContractCall(params: {
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const client = createWalletPublicClient(params.chainId);
   try {
-    await client.call({
-      account: params.from,
-      to: params.to,
-      value: params.valueWei ?? 0n,
-      data: params.data,
-    });
-    return { ok: true };
+    await withReadPlaneLimit(() =>
+      client.call({
+        account: params.from,
+        to: params.to,
+        value: params.valueWei ?? 0n,
+        data: params.data,
+      }),
+    );
+    return { ok: true as const };
   } catch (e) {
     const msg =
       e != null && typeof (e as Error).message === 'string'

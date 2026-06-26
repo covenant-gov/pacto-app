@@ -1,6 +1,5 @@
 <script lang="ts">
   export let open = false;
-  export let type: 'squad' | 'network' = 'squad';
   export let parentName = '';
   export let error = '';
   export let exiting = false;
@@ -9,12 +8,11 @@
   export let onConfirm: () => void = () => {};
 
   const titleId = 'exit-parent-modal-title';
-  const parentLabel = type === 'squad' ? 'Squad' : 'Network';
-  $: title = type === 'squad' ? 'Exit Squad' : 'Exit Network';
-  $: confirmLabel = type === 'squad' ? 'Exit Squad' : 'Exit Network';
+  const title = 'Exit Squad';
+  const confirmLabel = 'Exit Squad';
   $: message = parentName
-    ? `Are you sure you want to exit "${parentName}"? All local storage associated with this ${parentLabel} will be erased and you will no longer be able to decrypt messages for this ${parentLabel}.`
-    : `Are you sure you want to exit this ${parentLabel.toLowerCase()}? All local storage associated with this ${parentLabel} will be erased and you will no longer be able to decrypt messages for this ${parentLabel}.`;
+    ? `Are you sure you want to exit "${parentName}"? All local storage associated with this squad will be erased and you will no longer be able to decrypt messages for this squad.`
+    : `Are you sure you want to exit this squad? All local storage associated with this squad will be erased and you will no longer be able to decrypt messages for this squad.`;
 </script>
 
 {#if open}

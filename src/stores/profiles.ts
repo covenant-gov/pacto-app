@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type NostrProfile } from '../lib/api/nostr';
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './app';
+import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
 import { currentUser } from './auth';
 import { showToast } from './toast';
 

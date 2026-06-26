@@ -11,7 +11,6 @@
     order: number;
   }
 
-  export let type: 'squad' | 'network' = 'squad';
   export let parentName = '';
   export let subheading: string | undefined = undefined;
   export let channels: ParentChannel[] = [];
@@ -37,12 +36,20 @@
   export let onCreateChannel: () => void = () => {};
   export let onRetryCreate: () => void = () => {};
   export let onInvite: () => void = () => {};
-  /** Placeholder: future per-parent EVM signer change from sidebar (use #dashboard → Settings today). */
-  export let onChangeEvmSigner: (() => void) | undefined = undefined;
-  /** Only used when type === 'squad'. */
+  export let showBroadcastSquad = false;
+  export let broadcastSquadDisabled = false;
+  export let broadcastSquadDisabledTitle = '';
+  export let onBroadcastSquad: (() => void) | undefined = undefined;
   export let onExitSquad: (() => void) | undefined = undefined;
-  /** Only used when type === 'network'. */
-  export let onExitNetwork: (() => void) | undefined = undefined;
+
+  /** Partner squad-pairs linked to the active hub. */
+  export let partnerSquads: { id: string; name: string }[] = [];
+  export let activePartnerSquadId: string | null = null;
+  export let onSelectPartnerSquad: (id: string) => void = () => {};
+
+  /** Show pair action on any hub with a pairable anchor squad. */
+  export let showPairWithSquadAction = false;
+  export let onPairWithSquad: (() => void) | undefined = undefined;
 
   let menuOpen = false;
   const createErrorId = 'parent-create-error';
@@ -59,13 +66,12 @@
     return m;
   })();
 
-  $: inviteLabel = type === 'squad' ? 'Invite to Squad' : 'Invite to Network';
-  $: showChangeEvmSigner = typeof onChangeEvmSigner === 'function';
-  $: showExitSquad = type === 'squad' && typeof onExitSquad === 'function';
-  $: showExitNetwork = type === 'network' && typeof onExitNetwork === 'function';
-  $: showExit = showExitSquad || showExitNetwork;
-  $: exitLabel = type === 'squad' ? 'Exit Squad' : 'Exit Network';
-  $: onExit = type === 'squad' ? onExitSquad : onExitNetwork;
+  $: showPartnerSquads = partnerSquads.length > 0 || showPairWithSquadAction;
+  $: inviteLabel = 'Invite to Squad';
+  $: showBroadcastSquadItem = showBroadcastSquad || broadcastSquadDisabled;
+  $: showExit = typeof onExitSquad === 'function';
+  $: exitLabel = 'Exit Squad';
+  $: onExit = onExitSquad;
 </script>
 
 <svelte:window
@@ -77,15 +83,15 @@
 
 <ResizableSidebar sidebarClass="parent-sidebar">
   {#if hasParent}
-    <div class="parent-heading" role="region" aria-label="{type === 'squad' ? 'Squad' : 'Network'} {parentName}">
+    <div class="parent-heading" role="region" aria-label="Squad {parentName}">
       <div class="parent-header-row">
         <h2 class="parent-name">{parentName}</h2>
         <div class="parent-header-actions">
           <button
             type="button"
             class="parent-menu-btn"
-            title="{type === 'squad' ? 'Squad' : 'Network'} options"
-            aria-label="{type === 'squad' ? 'Squad' : 'Network'} menu"
+            title="Squad options"
+            aria-label="Squad menu"
             on:click={() => (menuOpen = !menuOpen)}
             aria-haspopup="true"
             aria-expanded={menuOpen}
@@ -105,17 +111,21 @@
               >
                 {inviteLabel}
               </button>
-              {#if showChangeEvmSigner && onChangeEvmSigner}
+              {#if showBroadcastSquadItem}
                 <button
                   type="button"
                   class="parent-menu-item"
+                  class:parent-menu-item-disabled={broadcastSquadDisabled}
                   role="menuitem"
+                  disabled={broadcastSquadDisabled}
+                  title={broadcastSquadDisabled ? broadcastSquadDisabledTitle : undefined}
                   on:click={() => {
+                    if (broadcastSquadDisabled || !onBroadcastSquad) return;
                     menuOpen = false;
-                    onChangeEvmSigner();
+                    onBroadcastSquad();
                   }}
                 >
-                  Change EVM Signer
+                  Broadcast Squad
                 </button>
               {/if}
               {#if showExit && onExit}
@@ -186,6 +196,30 @@
         {#if channels.length > 0}
           <button type="button" class="parent-create-channel-btn" on:click={onCreateChannel}>
             + Create channel
+          </button>
+        {/if}
+        {#if showPartnerSquads}
+          <div class="partner-squads-section" role="navigation" aria-label="Partner Squads">
+            <p class="partner-squads-heading">Partner Squads</p>
+            {#if partnerSquads.length > 0}
+            <div class="partner-squad-list">
+              {#each partnerSquads as partner (partner.id)}
+                <button
+                  type="button"
+                  class="partner-squad-item"
+                  class:active={activePartnerSquadId === partner.id && activeView === 'hub'}
+                  on:click={() => onSelectPartnerSquad(partner.id)}
+                >
+                  {partner.name}
+                </button>
+              {/each}
+            </div>
+            {/if}
+          </div>
+        {/if}
+        {#if showPairWithSquadAction && typeof onPairWithSquad === 'function' && !creating}
+          <button type="button" class="parent-pair-squad-btn" on:click={onPairWithSquad}>
+            + Pair with squad…
           </button>
         {/if}
       {/if}
@@ -308,6 +342,17 @@
     color: var(--danger);
   }
 
+  .parent-menu-item-disabled,
+  .parent-menu-item:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .parent-menu-item-disabled:hover,
+  .parent-menu-item:disabled:hover {
+    background: none;
+  }
+
   .parent-error-banner {
     display: flex;
     align-items: center;
@@ -367,6 +412,72 @@
   }
 
   .parent-create-channel-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    border-color: var(--border);
+  }
+
+  .partner-squads-section {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .partner-squads-heading {
+    margin: 0 0 8px 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .partner-squad-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .partner-squad-item {
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .partner-squad-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .partner-squad-item.active {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .parent-pair-squad-btn {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: transparent;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .parent-pair-squad-btn:hover {
     background: var(--bg-hover);
     color: var(--text-secondary);
     border-color: var(--border);

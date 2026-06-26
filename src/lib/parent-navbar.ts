@@ -1,6 +1,5 @@
 /**
- * Shared logic for squad and network sidebars (ParentNavbar behaviour).
- * Used by ParentNavbar.svelte so squad and network behaviour is not duplicated.
+ * Shared channel helpers for squad parent sidebars (ParentNavbar).
  */
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
@@ -83,6 +82,49 @@ export function uniqueChannelsByGroupIdPreservingOrder(channels: Channel[]): Cha
   return out;
 }
 
+/** Default hub sidebar rows for an existing announcements MLS `groupId` (single-group default). */
+export function defaultChannelRowsForGroupId(groupId: string): Channel[] {
+  return [
+    { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 },
+    { name: INBOX_CHANNEL_NAME, groupId, order: 1 },
+    { name: POLLS_CHANNEL_NAME, groupId, order: 2 },
+  ];
+}
+
+/**
+ * Backfill missing `#inbox` / `#polls` rows when a parent only persisted `#announcements`
+ * (invite accept) but uses the single-group default MLS scope.
+ */
+export function ensureDefaultHubChannelRows(channels: Channel[]): Channel[] {
+  const ann = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
+  const gid = ann?.groupId?.trim();
+  if (!gid || gid.startsWith('creating-')) return channels;
+
+  const hasInbox = channels.some((c) => c.name === INBOX_CHANNEL_NAME);
+  const hasPolls = channels.some((c) => c.name === POLLS_CHANNEL_NAME);
+  if (hasInbox && hasPolls) return channels;
+
+  const defaultRows = channels.filter(
+    (c) =>
+      c.name === ANNOUNCEMENTS_CHANNEL_NAME ||
+      c.name === INBOX_CHANNEL_NAME ||
+      c.name === POLLS_CHANNEL_NAME
+  );
+  const singleGroupDefault =
+    defaultRows.length <= 1 || defaultRows.every((c) => c.groupId === ann!.groupId);
+  if (!singleGroupDefault) return channels;
+
+  const extras = channels.filter(
+    (c) =>
+      c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
+      c.name !== INBOX_CHANNEL_NAME &&
+      c.name !== POLLS_CHANNEL_NAME
+  );
+  const merged = defaultChannelRowsForGroupId(gid);
+  const custom = extras.map((c, i) => ({ ...c, order: 3 + i }));
+  return [...merged, ...custom];
+}
+
 /**
  * Create one MLS group for the parent default scope; announcements, inbox, and polls sidebar rows share its `groupId`.
  * Parent id remains that MLS id (roster and invites reference this id).
@@ -91,12 +133,7 @@ export async function createDefaultParentChannels(
   memberNpubs: string[]
 ): Promise<{ parentId: string; channels: Channel[] }> {
   const groupId = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
-  const channels: Channel[] = [
-    { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 },
-    { name: INBOX_CHANNEL_NAME, groupId, order: 1 },
-    { name: POLLS_CHANNEL_NAME, groupId, order: 2 },
-  ];
-  return { parentId: groupId, channels };
+  return { parentId: groupId, channels: defaultChannelRowsForGroupId(groupId) };
 }
 
 /**

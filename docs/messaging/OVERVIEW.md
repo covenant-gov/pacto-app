@@ -114,4 +114,12 @@ Historical sync uses filters such as **`pubkey(self).kind(GiftWrap).since…`**;
 
 ---
 
+## 7. Frontend shell (Svelte)
+
+Tauri → UI events are registered in one place: **`subscribeAppEvents`** (`src/lib/app/tauri-subscriptions.ts`), mounted from **`src/routes/+page.svelte`**. DM invite accept flows live in **`src/lib/invites/accept-invite.ts`**. Account hydration runs via **`loadAccountState`** (`src/stores/persistence.ts`).
+
+Full component and store map: [`docs/shell/LAYOUT.md`](../shell/LAYOUT.md).
+
+---
+
 *Consolidated from internal design notes; aligned with Pacto command names (`message`, not legacy `send_message`).*

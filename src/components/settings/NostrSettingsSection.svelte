@@ -13,7 +13,25 @@
   } from '../../lib/api/relays';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
+  import { currentUser } from '../../stores/auth';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
+
+  $: userNpub = $currentUser?.npub ?? '';
+
+  let copiedNpub = false;
+  let exportModalOpen = false;
+
+  async function copyNpub() {
+    if (!userNpub) return;
+    try {
+      await navigator.clipboard.writeText(userNpub);
+      copiedNpub = true;
+      setTimeout(() => (copiedNpub = false), 2000);
+    } catch (_) {
+      showToast('Could not copy nPub.');
+    }
+  }
 
   let relays: RelayInfo[] = [];
   let loading = true;
@@ -114,6 +132,46 @@
 
 <SettingsCollapsibleSection sectionId="settings-nostr" title="Nostr settings">
 
+  <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
+    <h3 id="nostr-npub-heading" class="nostr-settings-subheading">nPub</h3>
+    <p class="nostr-npub-note">
+      Same as <strong>Account ID</strong>  — your sharable public Nostr identity on relays, that is linked to your EVM accounts within the Pacto client.
+    </p>
+    {#if userNpub}
+      <div class="nostr-npub-row">
+        <code class="nostr-npub-value">{userNpub}</code>
+        <button
+          type="button"
+          class="nostr-npub-copy-btn"
+          aria-label={copiedNpub ? 'Copied' : 'Copy nPub'}
+          title={copiedNpub ? 'Copied' : 'Copy'}
+          on:click={copyNpub}
+        >
+          <svg
+            class="nostr-npub-copy-icon"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        </button>
+      </div>
+      <button type="button" class="nostr-export-key-btn" on:click={() => (exportModalOpen = true)}>
+        Export key
+      </button>
+    {:else}
+      <p class="nostr-settings-muted">Log in to see your nPub.</p>
+    {/if}
+  </div>
+
   <p class="nostr-settings-lead">
     Relays power your Kind 0 profile, direct messages, and squad channels. Defaults ship with the app; add your own
     <code class="nostr-settings-code">wss://</code> endpoints when needed.
@@ -213,7 +271,92 @@
   </div>
 </SettingsCollapsibleSection>
 
+<EvmAccountKeyExportModal
+  variant="nostr"
+  open={exportModalOpen}
+  npub={userNpub}
+  onClose={() => (exportModalOpen = false)}
+/>
+
 <style>
+  .nostr-npub-block {
+    margin-bottom: 28px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .nostr-npub-note {
+    margin: 0 0 12px 0;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    line-height: 1.45;
+  }
+
+  .nostr-npub-note strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .nostr-npub-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--bg-panel);
+  }
+
+  .nostr-npub-value {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    word-break: break-all;
+    color: var(--text-primary);
+  }
+
+  .nostr-npub-copy-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .nostr-npub-copy-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .nostr-export-key-btn {
+    margin-top: 12px;
+    min-height: 2rem;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  .nostr-export-key-btn:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+  }
+
   .nostr-settings-lead {
     margin: 0 0 24px 0;
     color: var(--text-secondary);

@@ -1,11 +1,7 @@
 <script lang="ts">
-  /**
-   * Unified invite card for DM thread: squad, network, channel-in-squad, channel-in-network.
-   * Same layout and behavior; variant controls title, subtitle, body text, and optional badge.
-   */
-  export let variant: 'squad' | 'network' | 'channel-in-squad' | 'channel-in-network';
+  /** Invite card for squad, squad-pair, or channel-in-squad DMs. */
+  export let variant: 'squad' | 'squad-pair' | 'channel-in-squad';
   export let squadName = '';
-  export let networkName = '';
   export let channelName = '';
   export let memberSquads: { id: string; name: string }[] = [];
   export let isMine: boolean;
@@ -15,56 +11,48 @@
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
+  /** Opens a DM with the inviter (Pacto App inbox). */
+  export let onMessageInviter: (() => void) | undefined = undefined;
 
   $: title = (() => {
-    if (variant === 'squad') return squadName;
-    if (variant === 'network') return networkName;
-    if (variant === 'channel-in-squad') return `${squadName} · #${channelName}`;
-    return `${networkName} · #${channelName}`;
+    if (variant === 'squad' || variant === 'squad-pair') return squadName;
+    return `${squadName} · #${channelName}`;
   })();
 
   $: memberSquadsLabel =
     memberSquads?.length > 0 ? memberSquads.map((s) => s.name).join(', ') : '';
   $: subtitle =
-    (variant === 'network' || variant === 'channel-in-network') && memberSquadsLabel
-      ? `Includes squads: ${memberSquadsLabel}`
-      : '';
+    variant === 'squad-pair' && memberSquadsLabel ? `Partner squads: ${memberSquadsLabel}` : '';
 
   $: bodyText = (() => {
     if (variant === 'squad') {
-      return isMine ? `You invited ${inviterName} to this squad.` : `${inviterName} invited you to this squad.`;
-    }
-    if (variant === 'network') {
-      return isMine ? `You invited ${inviterName} to this network.` : `${inviterName} invited you to this network.`;
-    }
-    if (variant === 'channel-in-squad') {
       return isMine
-        ? `You added ${inviterName} to #${channelName}.`
-        : `${inviterName} added you to #${channelName} in this squad.`;
+        ? `You invited ${inviterName} to this squad.`
+        : `${inviterName} invited you to join this squad.`;
+    }
+    if (variant === 'squad-pair') {
+      return isMine
+        ? `You invited ${inviterName} to this partner squad.`
+        : `${inviterName} invited you to join this partner squad.`;
     }
     return isMine
       ? `You added ${inviterName} to #${channelName}.`
-      : `${inviterName} added you to #${channelName} in this network.`;
+      : `${inviterName} added you to #${channelName} in this squad.`;
   })();
 
   $: iconPlaceholder =
-    variant === 'squad' && squadName
-      ? squadName.charAt(0).toUpperCase()
-      : variant === 'network'
-        ? 'N'
-        : '#';
+    variant === 'squad' || variant === 'squad-pair'
+      ? squadName
+        ? squadName.charAt(0).toUpperCase()
+        : 'S'
+      : '#';
 
-  $: showBadge = variant === 'network';
-  $: isNetworkVariant = variant === 'network';
+  $: showBadge = variant === 'squad-pair';
+  $: badgeLabel = 'Partner squad';
   $: collapsed = status === 'accepted' || status === 'declined';
 </script>
 
-<div
-  class="invite-card"
-  class:collapsed
-  class:network-variant={isNetworkVariant}
-  role="article"
->
+<div class="invite-card" class:collapsed role="article">
   <div class="invite-card-icon">
     {#if inviterAvatarSrc}
       <img src={inviterAvatarSrc} alt="" class="invite-card-icon-img" />
@@ -74,18 +62,27 @@
   </div>
   <div class="invite-card-body">
     {#if showBadge}
-      <p class="invite-card-badge">Network</p>
+      <p class="invite-card-badge">{badgeLabel}</p>
     {/if}
     <p class="invite-card-title">{title}</p>
     {#if subtitle}
       <p class="invite-card-subtitle">{subtitle}</p>
     {/if}
-    <p class="invite-card-text">{bodyText}</p>
+    <p class="invite-card-text">
+      {#if !isMine && onMessageInviter}
+        <button type="button" class="invite-card-inviter-link" on:click={onMessageInviter}>
+          {inviterName}
+        </button>
+        {variant === 'squad-pair' ? ' invited you to join this partner squad.' : variant === 'squad' ? ' invited you to join this squad.' : ` invited you.`}
+      {:else}
+        {bodyText}
+      {/if}
+    </p>
     {#if isMine}
       <!-- Sender: no actions -->
     {:else if status === 'accepted'}
       <p class="invite-card-status invite-card-status-accepted" aria-live="polite">Accepted</p>
-      {#if variant === 'squad'}
+      {#if variant === 'squad' || variant === 'squad-pair'}
         <p class="invite-card-evm-caption muted">
           Set your roster signer in the squad <strong>#inbox</strong> channel when you open it.
         </p>
@@ -126,10 +123,6 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     max-width: 380px;
-  }
-
-  .invite-card.network-variant {
-    border-left: 3px solid var(--accent);
   }
 
   .invite-card.collapsed {
@@ -203,6 +196,21 @@
     font-size: 0.8125rem;
     color: var(--text-secondary);
     line-height: 1.4;
+  }
+
+  .invite-card-inviter-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .invite-card-inviter-link:hover {
+    color: var(--accent-hover, var(--accent));
   }
 
   .invite-card.collapsed .invite-card-text,

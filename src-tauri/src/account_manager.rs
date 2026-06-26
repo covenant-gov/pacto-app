@@ -1106,6 +1106,9 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to create dashboard poll tables: {}", e))?;
 
+    crate::commons::ensure_commons_broadcasts_table(&conn)
+        .map_err(|e| format!("Failed to create commons_broadcasts table: {e}"))?;
+
     Ok(())
 }
 

@@ -46,7 +46,7 @@
     }
 
     // Check if all digits filled
-    if (digits.every(d => d !== '')) {
+    if (digits.every(d => d !== '') && !isProcessing) {
       const pin = digits.join('');
       // Reset the clear tracking so next error will trigger clear
       lastClearedForError = null;
@@ -93,7 +93,7 @@
     } else {
       inputs[5]?.blur();
       // Auto-submit if all filled
-      if (digits.every(d => d !== '')) {
+      if (digits.every(d => d !== '') && !isProcessing) {
         onComplete(digits.join(''));
       }
     }

@@ -21,8 +21,6 @@
     squads,
     activeSquadId,
     activeTopNavTab,
-    activeNetworkId,
-    networks,
     ungroupedChannels,
     dmList,
     requestsList,
@@ -42,7 +40,6 @@
     membershipVersionByGroupId,
     type DmMessage,
     type Squad,
-    type Network,
   } from '../../stores/app';
   import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, inviteMemberToGroup } from '../../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -54,13 +51,9 @@
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
-  // Single derivation: active parent (squad or network) and active channel from tab + ids + lists.
+  // Active squad (or squad-pair) parent and channel from tab + ids.
   $: activeParent =
-    $activeTopNavTab === 'squads'
-      ? ($squads.find((c) => c.id === $activeSquadId) ?? null)
-      : $activeTopNavTab === 'networks' && $activeNetworkId
-        ? ($networks.find((n) => n.id === $activeNetworkId) ?? null)
-        : null;
+    $activeTopNavTab === 'squads' ? ($squads.find((c) => c.id === $activeSquadId) ?? null) : null;
   $: activeChannel = (() => {
     if (!activeParent || !$activeChannelId) return null;
     const sorted = [...activeParent.channels].sort((a, b) => a.order - b.order);
@@ -77,8 +70,7 @@
     }
     return [...matches].sort((a, b) => a.order - b.order)[0];
   })();
-  $: activeSquad = $activeTopNavTab === 'squads' && activeParent ? (activeParent as Squad) : null;
-  $: activeNetwork = $activeTopNavTab === 'networks' && activeParent ? (activeParent as Network) : null;
+  $: activeSquad = activeParent as Squad | null;
 
   /** MLS group used for the members sidebar: announcements membership for the dashboard pseudo-channel. */
   $: announcementsGroupIdForMembers =
@@ -307,8 +299,6 @@
       }
       await leaveMlsGroup(groupId);
       const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
-      const netList = get(networks);
-      const networkContaining = netList.find((n) => n.channels.some((ch) => ch.groupId === groupId));
       if (inSquad && activeSquad) {
         squads.update((list) =>
           list.map((s) =>
@@ -322,19 +312,6 @@
         activeChannelId.set(sorted[0]?.groupId ?? null);
         activeHubChannelName.set(sorted[0]?.name ?? null);
         if (still?.channels.length === 0) activeSquadId.set(null);
-      } else if (networkContaining) {
-        networks.update((list) =>
-          list.map((n) =>
-            n.id !== networkContaining.id
-              ? n
-              : { ...n, channels: n.channels.filter((ch) => ch.groupId !== groupId) }
-          )
-        );
-        const still = get(networks).find((n) => n.id === networkContaining.id);
-        const remaining = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
-        activeChannelId.set(remaining[0]?.groupId ?? null);
-        activeHubChannelName.set(remaining[0]?.name ?? null);
-        if (remaining.length === 0) activeNetworkId.set(null);
       } else {
         ungroupedChannels.update((ch) => ch.filter((c) => c.groupId !== groupId));
         activeChannelId.set(null);

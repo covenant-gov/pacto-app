@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { activeDmId, activeDmTab, composingNewChat, addPendingDm, backendDmMessages, dmSendError } from '../../stores/app';
+  import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { activeDmId, activeDmTab, composingNewChat, addPendingDm, backendDmMessages, dmSendError, newChatDraftNpub, newChatDraftMessage } from '../../stores/app';
   import { sendDmMessage } from '../../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../../lib/utils/dm-debug';
@@ -8,6 +10,16 @@
   let npub = '';
   let messageText = '';
   let sending = false;
+
+  // Consume any prefill (e.g. a "Request DM" from a Commons user card), then clear it.
+  onMount(() => {
+    const draftNpub = get(newChatDraftNpub);
+    const draftMessage = get(newChatDraftMessage);
+    if (draftNpub) npub = draftNpub;
+    if (draftMessage) messageText = draftMessage;
+    newChatDraftNpub.set('');
+    newChatDraftMessage.set('');
+  });
 
   async function handleSend() {
     const trimmedNpub = npub.trim();

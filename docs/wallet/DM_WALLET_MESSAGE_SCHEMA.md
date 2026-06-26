@@ -139,10 +139,11 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 
 - **TypeScript:** `src/lib/wallet/dm-messages.ts` — `parseWalletTxRequest`, `parseWalletTxAnnouncement`, `formatWalletTxRequest`, `formatWalletTxAnnouncement`, `getFulfilledWalletRequestIdsFromMessages`.
 - **Tests:** `src/lib/wallet/dm-messages.test.ts` (`npm run test`).
-- **UI:** `WalletTxRequestCard` / `WalletTxAnnouncementCard` in `src/components/`; wired in `DmThread.svelte`.
+- **UI:** `WalletTxRequestCard` / `WalletTxAnnouncementCard` in `src/components/wallet/`; rendered by `DmMessageRouter.svelte` (mounted from `DmThread.svelte`).
 
 ---
 
 ## See also
 
 - [README.md](./README.md) — index of wallet docs.
+- [../shell/LAYOUT.md](../shell/LAYOUT.md) — `DmMessageRouter` and dashboard component map.

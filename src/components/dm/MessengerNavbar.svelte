@@ -10,6 +10,8 @@
     dmChatsByNpub,
     pinnedDmNpubs,
     dmSidebarCategoryForNpub,
+    PACTO_APP_DM_THREAD_ID,
+    PACTO_APP_DISPLAY_NAME,
     type DmEntry,
     type DmTab,
     type DmSidebarCategory,
@@ -131,6 +133,26 @@
   {/if}
 
   <div class="dm-list-container">
+    {#if $activeDmTab === 'pinned'}
+      <ul class="dm-list dm-list-pacto-app" role="list">
+        <li>
+          <button
+            type="button"
+            class="dm-row dm-row-pacto-app"
+            class:active={$activeDmId === PACTO_APP_DM_THREAD_ID}
+            on:click={() => selectDm(PACTO_APP_DM_THREAD_ID)}
+            on:keydown={(ev) => ev.key === 'Enter' && selectDm(PACTO_APP_DM_THREAD_ID)}
+          >
+            <span class="dm-avatar dm-avatar-pacto-app">
+              <span class="dm-avatar-pacto-app-letter" aria-hidden="true">P</span>
+            </span>
+            <span class="dm-name-block">
+              <span class="dm-name">{PACTO_APP_DISPLAY_NAME}</span>
+            </span>
+          </button>
+        </li>
+      </ul>
+    {/if}
     {#if filteredEntries.length > 0}
       <ul class="dm-list" role="list">
         {#each filteredEntries as raw ((raw as DmEntry).npub)}
@@ -165,7 +187,7 @@
           </li>
         {/each}
       </ul>
-    {:else}
+    {:else if $activeDmTab !== 'pinned'}
       <div class="empty-state">
         <p>
           {$activeDmTab === 'search' && dmSearchQuery.trim() !== ''
@@ -360,6 +382,25 @@
     color: var(--text-muted);
     font-size: 0.875rem;
     padding: 16px;
+  }
+
+  .dm-list-pacto-app {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .dm-avatar-pacto-app {
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dm-avatar-pacto-app-letter {
+    color: var(--accent-contrast, #fff);
+    font-weight: 700;
+    font-size: 0.875rem;
   }
 
   .resize-handle {

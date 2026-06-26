@@ -6,31 +6,24 @@
     activeSquadId,
     activeChannelId,
     activeHubChannelName,
-    activeNetworkId,
     squads,
-    networks,
     lastOpenedSquadId,
     lastOpenedChannelId,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
-    lastOpenedNetworkId,
-    lastOpenedNetworkChannelId,
-    lastChannelByNetworkId,
-    lastHubChannelNameByNetworkId,
     DASHBOARD_CHANNEL_ID,
     type TopNavTab,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
 
   const tabs: { id: TopNavTab; label: string }[] = [
-    { id: 'dms', label: 'DMs' }, // 1-on-1 chat, non-governable
-    { id: 'squads', label: 'Squads' }, // commune-level organizations (positioned below networks), governable
-    { id: 'networks', label: 'Networks' }, // [regional] delegation-level coordinations (positioned above squads), governable
+    { id: 'commons', label: 'Commons' },
+    { id: 'dms', label: 'DMs' },
+    { id: 'squads', label: 'Squads' },
   ];
 
-  const DEBUG = false; // [SquadChannel] set true to trace tab-switch persistence
+  const DEBUG = false;
   function selectTab(id: TopNavTab) {
-    // Persist current squad/network channel before switching so it restores when returning
     if (id !== $activeTopNavTab) {
       const cid = $activeChannelId;
       if (DEBUG) console.log('[SquadChannel] selectTab', { from: $activeTopNavTab, to: id, activeSquadId: $activeSquadId, activeChannelId: cid?.slice(0, 20) });
@@ -56,27 +49,9 @@
           if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [sid]: hub }));
         }
       }
-      if ($activeTopNavTab === 'networks' && $activeNetworkId && cid && !cid.startsWith('creating-')) {
-        const nid = $activeNetworkId;
-        lastOpenedNetworkId.set(nid);
-        lastOpenedNetworkChannelId.set(cid);
-        lastChannelByNetworkId.update((m) => ({ ...m, [nid]: cid }));
-        const net = get(networks).find((n) => n.id === nid);
-        if (cid === DASHBOARD_CHANNEL_ID) {
-          lastHubChannelNameByNetworkId.update((m) => {
-            const next = { ...m };
-            delete next[nid];
-            return next;
-          });
-        } else {
-          const hub =
-            resolveHubChannelNameForGroupSelection(net?.channels ?? [], cid, get(activeHubChannelName)) ?? '';
-          if (hub) lastHubChannelNameByNetworkId.update((m) => ({ ...m, [nid]: hub }));
-        }
-      }
     }
     $activeTopNavTab = id;
-    $activeView = 'hub'; // close Settings if open so the selected view is shown
+    $activeView = 'hub';
   }
 </script>
 
@@ -121,7 +96,6 @@
     letter-spacing: 0.04em;
   }
 
-  /* Segmented control: one pill containing one segment per main view */
   .mode-switcher {
     display: inline-flex;
     align-items: stretch;

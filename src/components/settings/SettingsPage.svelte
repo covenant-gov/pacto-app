@@ -10,6 +10,7 @@
     { id: 'settings-nostr', label: 'Nostr' },
     { id: 'settings-evm', label: 'EVM' },
     { id: 'settings-app', label: 'App' },
+    { id: 'settings-dangerzone', label: 'Dangerzone' },
   ] as const;
 
   const SCROLL_MARKER_OFFSET_PX = 48;

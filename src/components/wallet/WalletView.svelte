@@ -36,6 +36,8 @@
   import DefaultWalletConfig from '../settings/DefaultWalletConfig.svelte';
   import EvmAccountsSection from '../settings/EvmAccountsSection.svelte';
   import EvmWalletExtras from '../settings/EvmWalletExtras.svelte';
+  import { portal } from '../../lib/utils/portal';
+  import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 
   /** When true, omit the standalone page title (embedded under Settings → EVM). */
   export let embeddedInSettings = false;
@@ -107,6 +109,18 @@
   }
 
   $: accountNpub, $walletUiEnabledChainsTick, syncFromDisk();
+
+  $: if (
+    embeddedInSettings &&
+    ($settingsSectionCollapsed['settings-evm'] ?? true)
+  ) {
+    if (accountFormMode) closeAccountFormModal();
+    if (importKeyModalOpen && !importKeyBusy) {
+      importKeyModalOpen = false;
+      importKeyInput = '';
+    }
+    if (importModalOpen) importModalOpen = false;
+  }
 
   onMount(syncFromDisk);
 
@@ -278,7 +292,7 @@
 
     {#if accountNpub}
       {#if embeddedInSettings}
-        <section class="wallet-view-section" aria-labelledby="wallet-default-config-heading">
+        <section class="wallet-view-section" aria-labelledby="wallet-default-evm-heading">
           <DefaultWalletConfig
             accountNpub={accountNpub}
             squadAccounts={squadAccountList}
@@ -390,6 +404,7 @@
 {/if}
 
 {#if accountFormMode}
+  <div use:portal>
   <div
     class="wallet-view-modal-backdrop"
     role="presentation"
@@ -421,7 +436,7 @@
     {:else if accountFormIsAdvanced}
       <p class="wallet-view-hint">Update the display name. Advanced accounts cannot be squad signers or receiving addresses.</p>
     {:else if embeddedInSettings}
-      <p class="wallet-view-hint">Update the display name. Signer and receiver are set in Default wallet config above.</p>
+      <p class="wallet-view-hint">Update the display name. Signer and receiver are set in Default EVM account above.</p>
     {:else}
       <p class="wallet-view-hint">
         Update the display name and whether this account is the signer or published receiving address. Name is only stored on this device.
@@ -433,7 +448,7 @@
       type="text"
       class="wallet-view-add-account-input"
       maxlength="64"
-      placeholder="e.g. Savings"
+      placeholder="e.g. Squad Name"
       bind:value={accountFormLabel}
       disabled={accountFormBusy}
     />
@@ -467,9 +482,11 @@
       </button>
     </div>
   </div>
+  </div>
 {/if}
 
 {#if importKeyModalOpen}
+  <div use:portal>
   <div
     class="wallet-view-modal-backdrop"
     role="presentation"
@@ -508,6 +525,7 @@
         {importKeyBusy ? 'Importing…' : 'Import'}
       </button>
     </div>
+  </div>
   </div>
 {/if}
 
@@ -869,23 +887,24 @@
   }
 
   .wallet-view-account-more {
-    min-width: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
     height: 2rem;
-    padding: 0 0.35rem;
+    padding: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-hover);
     color: var(--text-primary);
-    font-size: 1rem;
-    line-height: 1;
-    letter-spacing: 0.02em;
     cursor: pointer;
     flex-shrink: 0;
+    transition: border-color 0.2s;
   }
 
   .wallet-view-account-more:hover:not(:disabled) {
-    border-color: var(--text-muted);
-    background: var(--bg-elevated);
+    border-color: var(--accent);
+    background: var(--bg-hover);
   }
 
   .wallet-view-account-more:disabled {
@@ -934,7 +953,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.45);
-    z-index: 1200;
+    z-index: 10000;
   }
 
   .wallet-view-modal {
@@ -942,7 +961,7 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    z-index: 1201;
+    z-index: 10001;
     width: min(420px, calc(100vw - 32px));
     max-height: min(480px, calc(100vh - 48px));
     overflow: auto;

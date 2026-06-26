@@ -1,76 +1,104 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import ParentSidebar from './ParentSidebar.svelte';
   import CreateChannelModal from '../channel/CreateChannelModal.svelte';
   import InviteToParentModal from '../channel/InviteToParentModal.svelte';
   import ExitParentModal from '../channel/ExitParentModal.svelte';
+  import PairWithSquadModal from '../squad/PairWithSquadModal.svelte';
+  import BroadcastSquadModal from '../commons/BroadcastSquadModal.svelte';
+  import { isPublicSquadForCommonsBroadcast } from '../../lib/commons/squad-create-broadcast';
+  import {
+    canBroadcastSquad,
+    broadcastSquadRoleDeniedReason,
+    COMMONS_BROADCAST_ROLE_DENIED_REASON,
+  } from '../../lib/commons/permissions';
   import {
     squads,
-    networks,
+    parentsCreatingAnnouncements,
+    parentCreateErrorById,
+    parentPendingCreateMembers,
+    DASHBOARD_CHANNEL_ID,
+    DASHBOARD_CHANNEL_NAME,
+    type Squad,
+  } from '../../stores/squads';
+  import {
     activeSquadId,
-    activeNetworkId,
     activeChannelId,
     activeHubChannelName,
     activeView,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
-    lastOpenedNetworkId,
-    lastOpenedNetworkChannelId,
-    lastChannelByNetworkId,
-    lastHubChannelNameByNetworkId,
-    dmList,
-    requestsList,
-    pendingList,
-    parentsCreatingAnnouncements,
-    parentCreateErrorById,
-    parentPendingCreateMembers,
-    removeParentCreatingAnnouncements,
-    DASHBOARD_CHANNEL_ID,
-    DASHBOARD_CHANNEL_NAME,
-    ANNOUNCEMENTS_CHANNEL_NAME,
-    type Channel as ChannelType,
-    type Squad,
-    type Network,
-  } from '../../stores/app';
-  import {
-    getAnnouncementsChannel,
-    createDefaultParentChannels,
-    uniqueChannelsByGroupIdPreservingOrder,
-    loadMembersForParent,
-    defaultParentInvitePhysicalGroupTargets,
-  } from '../../lib/parent-navbar';
-  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
-  import {
-    createGroupChat,
-    getMlsGroupMembers,
-    inviteMemberToGroup,
-    sendDmMessage,
-    formatSquadInviteMessage,
-    formatChannelInSquadMessage,
-    formatChannelInNetworkMessage,
-    formatNetworkInviteMessage,
-    leaveMlsGroup,
-  } from '../../lib/api/nostr';
+  } from '../../stores/navigation';
+  import { dmList, requestsList, pendingList } from '../../stores/dm';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
-  import { pendingReadyToast, showToast } from '../../stores/toast';
+  import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { partnerSquadsForHubParent } from '../../lib/squad-pair';
+  import { activateSquadHub } from '../../lib/squad-hub-nav';
+  import {
+    collectInviteNpubsForSquads,
+    pairPartnerExcludeSquadIds,
+    resolvePairAnchorFromHub,
+    partnerSquadCandidates,
+    runSquadPairCreateFlow,
+    retryParentAnnouncementsCreate,
+  } from '../../lib/squad-pair-create';
+  import { resolveSquadCommonsOnCreate, validatePublicSquadTags } from '../../lib/squad/squad-commons-fields';
+  import type { SquadVisibility } from '../../stores/squads';
+  import { getMlsGroupMembers } from '../../lib/api/nostr';
+  import {
+    loadCreateChannelMemberList,
+    runCreateChannelInParent,
+  } from '../../lib/parent/create-channel-flow';
+  import {
+    loadInviteCandidateNpubs,
+    runInviteMembersToParent,
+  } from '../../lib/parent/invite-members-flow';
+  import { runExitParent } from '../../lib/parent/exit-parent-flow';
 
-  export let type: 'squad' | 'network' = 'squad';
+  $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
 
-  // --- Derived state (branch on type) ---
-  $: activeParent =
-    type === 'squad'
-      ? ($squads.find((s) => s.id === $activeSquadId) as Squad | undefined)
-      : ($networks.find((n) => n.id === $activeNetworkId) as Network | undefined);
+  $: liveActiveParent = $activeSquadId
+    ? ($squads.find((s) => s.id === $activeSquadId) as Squad | undefined)
+    : undefined;
+
+  $: squadBroadcastTarget =
+    liveActiveParent &&
+    isPublicSquadForCommonsBroadcast({
+      id: liveActiveParent.id,
+      name: liveActiveParent.name,
+      kind: liveActiveParent.kind,
+      iconUrl: liveActiveParent.iconUrl,
+      visibility: liveActiveParent.visibility,
+      commonsTags: liveActiveParent.commonsTags,
+    })
+      ? {
+          id: liveActiveParent.id,
+          name: liveActiveParent.name,
+          kind: liveActiveParent.kind,
+          iconUrl: liveActiveParent.iconUrl,
+          visibility: liveActiveParent.visibility,
+          commonsTags: liveActiveParent.commonsTags,
+        }
+      : null;
+
+  $: broadcastPermissionInput = squadBroadcastTarget
+    ? { userNpub: $currentUser?.npub, squad: squadBroadcastTarget }
+    : null;
+
+  $: showBroadcastSquadMenu = !!squadBroadcastTarget && !!canShowParentMenuActions;
+  $: squadBroadcastRoleOk =
+    !!broadcastPermissionInput && canBroadcastSquad(broadcastPermissionInput);
+  $: broadcastSquadDisabled = showBroadcastSquadMenu && !squadBroadcastRoleOk;
+  $: broadcastSquadDisabledTitle =
+    broadcastSquadDisabled && broadcastPermissionInput
+      ? broadcastSquadRoleDeniedReason(broadcastPermissionInput) ?? COMMONS_BROADCAST_ROLE_DENIED_REASON
+      : COMMONS_BROADCAST_ROLE_DENIED_REASON;
 
   $: rawChannels = activeParent
-    ? [...(type === 'squad' ? (activeParent as Squad).channels : (activeParent as Network).channels)].sort(
-        (a, b) => a.order - b.order
-      )
+    ? [...activeParent.channels].sort((a, b) => a.order - b.order)
     : [];
-  // Prepend # dashboard above # announcements (dashboard is not an MLS channel)
   $: channels = activeParent
     ? [{ name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 }, ...rawChannels]
     : [];
@@ -88,16 +116,108 @@
     ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0;
 
   $: subheading =
-    type === 'network' && activeParent
-      ? (activeParent as Network).memberSquads?.map((s) => s.name).join(', ') ?? ''
+    activeParent &&
+    activeParent.kind === 'squad-pair' &&
+    activeParent.pairedSquads
+      ? activeParent.pairedSquads.map((s) => s.name).join(', ')
       : undefined;
 
-  $: emptyMessage =
-    type === 'squad'
-      ? 'Select a squad'
-      : $networks.length > 0
-        ? 'Select a network'
-        : 'No networks';
+  $: showPartnerSquadsSection = !!activeParent && !!$activeSquadId;
+
+  $: partnerSquads =
+    showPartnerSquadsSection && $activeSquadId
+      ? partnerSquadsForHubParent($squads, $activeSquadId).map((s) => ({ id: s.id, name: s.name }))
+      : [];
+
+  $: pairAnchorSquad =
+    activeParent && showPartnerSquadsSection ? resolvePairAnchorFromHub(activeParent, $squads) : undefined;
+
+  $: canPairFromHub = !!pairAnchorSquad;
+
+  $: activePartnerSquadId =
+    activeParent && activeParent.kind === 'squad-pair' ? activeParent.id : null;
+
+  function selectPartnerSquad(squadPairId: string) {
+    activateSquadHub(squadPairId);
+  }
+
+  let showPairWithSquadModal = false;
+  let pairCreateError = '';
+  let pairCreating = false;
+  let pairModal: PairWithSquadModal;
+
+  $: pairPartnerCandidates =
+    pairAnchorSquad && activeParent
+      ? partnerSquadCandidates(
+          $squads,
+          pairAnchorSquad.id,
+          pairPartnerExcludeSquadIds(activeParent, pairAnchorSquad)
+        )
+      : [];
+
+  function openPairWithSquadModal() {
+    if (!canPairFromHub || !showPartnerSquadsSection || !canShowParentMenuActions) return;
+    pairCreateError = '';
+    showPairWithSquadModal = true;
+    pairModal?.resetForm();
+  }
+
+  function closePairWithSquadModal() {
+    if (pairCreating) return;
+    showPairWithSquadModal = false;
+    pairCreateError = '';
+  }
+
+  async function handleCreateSquadPair(params: {
+    name: string;
+    partnerSquadId: string;
+    iconUrl?: string;
+    visibility: SquadVisibility;
+    commonsTags?: string[];
+  }) {
+    const anchor = pairAnchorSquad;
+    if (!anchor || pairCreating) return;
+    const partner = $squads.find((s) => s.id === params.partnerSquadId);
+    if (!partner) {
+      pairCreateError = 'Could not find the selected squads.';
+      return;
+    }
+    if (params.visibility === 'public') {
+      const tagErr = validatePublicSquadTags(params.commonsTags ?? []);
+      if (tagErr) {
+        pairCreateError = tagErr;
+        return;
+      }
+    }
+    let commons: { visibility: SquadVisibility; commonsTags?: string[] };
+    try {
+      commons = resolveSquadCommonsOnCreate(params.visibility, params.commonsTags ?? []);
+    } catch (e) {
+      pairCreateError = e instanceof Error ? e.message : 'Invalid tags.';
+      return;
+    }
+    pairCreating = true;
+    pairCreateError = '';
+    try {
+      const memberNpubs = await collectInviteNpubsForSquads(
+        [anchor, partner],
+        $currentUser?.npub,
+        (gid) => getMlsGroupMembers(gid)
+      );
+      if (memberNpubs.length === 0) {
+        pairCreateError = 'No other members to invite in these squads.';
+        return;
+      }
+      showPairWithSquadModal = false;
+      runSquadPairCreateFlow(params.name, memberNpubs, anchor, partner, params.iconUrl, commons);
+    } catch (e) {
+      pairCreateError = friendlyMessage(getInvokeErrorMessage(e));
+    } finally {
+      pairCreating = false;
+    }
+  }
+
+  $: emptyMessage = 'Select a squad';
 
   $: canShowParentMenuActions =
     !!activeParent && !creating && activeParent.channels.length > 0;
@@ -116,12 +236,11 @@
     if (id === 'createChannel') createChannelErrorBanner = '';
   }
 
-  // --- selectChannel ---
   function selectChannel(channel: { groupId: string; name: string }) {
     activeChannelId.set(channel.groupId);
     activeHubChannelName.set(channel.groupId === DASHBOARD_CHANNEL_ID ? null : channel.name);
     activeView.set('hub');
-    if (type === 'squad' && $activeSquadId) {
+    if ($activeSquadId) {
       const sid = $activeSquadId;
       lastChannelBySquadId.update((m) => ({ ...m, [sid]: channel.groupId }));
       lastHubChannelNameBySquadId.update((m) => {
@@ -130,151 +249,16 @@
         else next[sid] = channel.name;
         return next;
       });
-    } else if (type === 'network' && $activeNetworkId) {
-      const nid = $activeNetworkId;
-      lastOpenedNetworkId.set(nid);
-      lastOpenedNetworkChannelId.set(channel.groupId);
-      lastChannelByNetworkId.update((m) => ({ ...m, [nid]: channel.groupId }));
-      lastHubChannelNameByNetworkId.update((m) => {
-        const next = { ...m };
-        if (channel.groupId === DASHBOARD_CHANNEL_ID) delete next[nid];
-        else next[nid] = channel.name;
-        return next;
-      });
     }
   }
 
-  // --- Retry create (announcements) ---
   async function handleRetryCreate() {
     const parent = activeParent;
     if (!parent || !createError || retryingCreate) return;
-    const memberIds = $parentPendingCreateMembers[parent.id];
-    if (!memberIds?.length) return;
+    if (!$parentPendingCreateMembers[parent.id]?.length) return;
     retryingCreate = true;
     try {
-      const { parentId: gid, channels } = await createDefaultParentChannels(memberIds);
-      if (type === 'squad') {
-        squads.update((list) =>
-          list.map((s) =>
-            s.id !== parent.id ? s : { ...s, id: gid, channels, updatedAt: Date.now() }
-          )
-        );
-        if (get(activeSquadId) === parent.id) {
-          activeSquadId.set(gid);
-          activeChannelId.set(gid);
-          const hub =
-            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
-          activeHubChannelName.set(hub);
-        }
-        lastChannelBySquadId.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return { ...next, [gid]: gid };
-        });
-        lastHubChannelNameBySquadId.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          const hubName =
-            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
-          return hubName ? { ...next, [gid]: hubName } : next;
-        });
-        pendingReadyToast.set({
-          text: `${(parent as Squad).name} is ready!`,
-          goTo: {
-            type: 'squad',
-            name: (parent as Squad).name,
-            id: gid,
-            channelId: gid,
-            hubChannelName:
-              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
-          },
-        });
-        removeParentCreatingAnnouncements(parent.id);
-        parentCreateErrorById.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return next;
-        });
-        parentPendingCreateMembers.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return next;
-        });
-        const payload = formatSquadInviteMessage({
-          type: 'squad_invite',
-          squadName: (parent as Squad).name,
-          groupId: gid,
-        });
-        for (const npub of memberIds) {
-          try {
-            await sendDmMessage(npub, payload);
-          } catch (e) {
-            console.warn('[ParentNavbar] retry send squad invite DM failed for', npub.slice(0, 20) + '…', e);
-          }
-        }
-      } else {
-        networks.update((list) =>
-          list.map((n) =>
-            n.id !== parent.id ? n : { ...n, id: gid, channels, updatedAt: Date.now() }
-          )
-        );
-        if (get(activeNetworkId) === parent.id) {
-          activeNetworkId.set(gid);
-          activeChannelId.set(gid);
-          lastOpenedNetworkChannelId.set(gid);
-          const hub =
-            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? null;
-          activeHubChannelName.set(hub);
-        }
-        lastOpenedNetworkId.set(gid);
-        lastChannelByNetworkId.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return { ...next, [gid]: gid };
-        });
-        lastHubChannelNameByNetworkId.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          const hubName =
-            channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
-          return hubName ? { ...next, [gid]: hubName } : next;
-        });
-        pendingReadyToast.set({
-          text: `${(parent as Network).name} is ready!`,
-          goTo: {
-            type: 'network',
-            name: (parent as Network).name,
-            id: gid,
-            channelId: gid,
-            hubChannelName:
-              channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
-          },
-        });
-        removeParentCreatingAnnouncements(parent.id);
-        parentCreateErrorById.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return next;
-        });
-        parentPendingCreateMembers.update((m) => {
-          const next = { ...m };
-          delete next[parent.id];
-          return next;
-        });
-        const payload = formatNetworkInviteMessage({
-          type: 'network_invite',
-          networkName: (parent as Network).name,
-          groupId: gid,
-          memberSquads: (parent as Network).memberSquads ?? [],
-        });
-        for (const npub of memberIds) {
-          try {
-            await sendDmMessage(npub, payload);
-          } catch (e) {
-            console.warn('[ParentNavbar] retry send network invite DM failed for', npub.slice(0, 20) + '…', e);
-          }
-        }
-      }
+      await retryParentAnnouncementsCreate(parent);
     } catch (e) {
       parentCreateErrorById.update((m) => ({
         ...m,
@@ -285,7 +269,6 @@
     }
   }
 
-  // --- Create channel modal ---
   let showCreateChannelModal = false;
   let createChannelName = '';
   let selectedNpubs: string[] = [];
@@ -299,47 +282,19 @@
     selectedNpubs = [];
     createChannelError = '';
     createChannelMemberList = [];
-    loadCreateChannelMembers();
+    void loadCreateChannelMembers();
   }
 
   async function loadCreateChannelMembers() {
-    if (type === 'squad') {
-      const parent = $squads.find((s) => s.id === $activeSquadId);
-      if (!parent) return;
-      loadingCreateChannelMembers = true;
-      try {
-        createChannelMemberList = await loadMembersForParent(parent, $currentUser?.npub);
-      } catch {
-        createChannelMemberList = [];
-      } finally {
-        loadingCreateChannelMembers = false;
-      }
-    } else {
-      const net = $networks.find((n) => n.id === $activeNetworkId);
-      if (!net?.channels?.length) {
-        createChannelMemberList = [];
-        return;
-      }
-      loadingCreateChannelMembers = true;
-      try {
-        const allNpubs = new Set<string>();
-        const myNpub = $currentUser?.npub;
-        for (const ch of uniqueChannelsByGroupIdPreservingOrder(net.channels)) {
-          try {
-            const result = await getMlsGroupMembers(ch.groupId);
-            for (const n of result.members ?? []) {
-              if (n !== myNpub) allNpubs.add(n);
-            }
-          } catch {
-            // skip
-          }
-        }
-        createChannelMemberList = [...allNpubs];
-      } catch {
-        createChannelMemberList = [];
-      } finally {
-        loadingCreateChannelMembers = false;
-      }
+    const parent = $squads.find((s) => s.id === $activeSquadId);
+    if (!parent) return;
+    loadingCreateChannelMembers = true;
+    try {
+      createChannelMemberList = await loadCreateChannelMemberList(parent, $currentUser?.npub);
+    } catch {
+      createChannelMemberList = [];
+    } finally {
+      loadingCreateChannelMembers = false;
     }
   }
 
@@ -361,14 +316,10 @@
     createChannelMemberList.every((n) => selectedNpubs.includes(n));
 
   function toggleCreateChannelSelectEveryone() {
-    if (createChannelAllSelected) {
-      selectedNpubs = [];
-    } else {
-      selectedNpubs = [...createChannelMemberList];
-    }
+    selectedNpubs = createChannelAllSelected ? [] : [...createChannelMemberList];
   }
 
-  async function handleCreateChannel() {
+  function handleCreateChannel() {
     const name = createChannelName.trim();
     if (!name) return;
     if (selectedNpubs.length === 0) {
@@ -376,164 +327,32 @@
       return;
     }
     const parent = activeParent;
-    if (!parent) {
-      createChannelError = type === 'squad' ? 'Squad not found' : 'Network not found';
+    const squadId = $activeSquadId;
+    if (!parent || !squadId) {
+      createChannelError = 'Squad not found';
       return;
     }
     createChannelError = '';
     createChannelErrorBanner = '';
-    const placeholderId = `creating-${Date.now()}`;
-    const placeholderChannel: ChannelType = { name, groupId: placeholderId, order: parent.channels.length };
-
-    if (type === 'squad') {
-      squads.update((list) =>
-        list.map((s) =>
-          s.id !== $activeSquadId ? s : { ...s, channels: [...s.channels, placeholderChannel] }
-        )
-      );
-      activeChannelId.set(placeholderId);
-      activeHubChannelName.set(name);
-      activeView.set('hub');
-      lastChannelBySquadId.update((m) => ({ ...m, [$activeSquadId!]: placeholderId }));
-      lastHubChannelNameBySquadId.update((m) => ({ ...m, [$activeSquadId!]: name }));
-    } else {
-      networks.update((list) =>
-        list.map((n) =>
-          n.id !== $activeNetworkId ? n : { ...n, channels: [...n.channels, placeholderChannel] }
-        )
-      );
-      activeChannelId.set(placeholderId);
-      activeHubChannelName.set(name);
-      activeView.set('hub');
-      lastOpenedNetworkId.set($activeNetworkId!);
-      lastOpenedNetworkChannelId.set(placeholderId);
-      lastChannelByNetworkId.update((m) => ({ ...m, [$activeNetworkId!]: placeholderId }));
-      lastHubChannelNameByNetworkId.update((m) => ({ ...m, [$activeNetworkId!]: name }));
-    }
-
     closeCreateChannelModal();
-
-    ;(async () => {
-      try {
-        const groupId = await createGroupChat(name, selectedNpubs);
-        if (type === 'squad') {
-          const squad = parent as Squad;
-          const squadId = get(activeSquadId);
-          squads.update((list) =>
-            list.map((s) => {
-              if (s.id !== squadId) return s;
-              const chs = s.channels.map((ch) =>
-                ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch
-              );
-              return { ...s, channels: chs };
-            })
-          );
-          if (get(activeChannelId) === placeholderId) {
-            activeChannelId.set(groupId);
-            activeHubChannelName.set(name);
-          }
-          const announcementsChannel = getAnnouncementsChannel(squad);
-          const payload = formatChannelInSquadMessage({
-            type: 'channel_in_squad',
-            squadName: squad.name,
-            announcementsGroupId: announcementsChannel.groupId,
-            channelGroupId: groupId,
-            channelName: name,
-          });
-          for (const npub of selectedNpubs) {
-            try {
-              await sendDmMessage(npub, payload);
-            } catch (e) {
-              console.warn('[ParentNavbar] send channel_in_squad DM failed for', npub.slice(0, 20) + '…', e);
-            }
-          }
-        } else {
-          const network = parent as Network;
-          const networkId = get(activeNetworkId);
-          networks.update((list) =>
-            list.map((n) => {
-              if (n.id !== networkId) return n;
-              const chs = n.channels.map((ch) =>
-                ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch
-              );
-              return { ...n, channels: chs };
-            })
-          );
-          if (get(activeChannelId) === placeholderId) {
-            activeChannelId.set(groupId);
-            activeHubChannelName.set(name);
-          }
-          if (get(lastOpenedNetworkChannelId) === placeholderId) lastOpenedNetworkChannelId.set(groupId);
-          const existingChannelGroupIds = network.channels
-            .map((ch) => ch.groupId)
-            .filter((gid) => gid !== groupId);
-          const payload = formatChannelInNetworkMessage({
-            type: 'channel_in_network',
-            networkId: network.id,
-            networkName: network.name,
-            channelGroupId: groupId,
-            channelName: name,
-            memberSquads: network.memberSquads,
-            existingChannelGroupIds,
-          });
-          for (const npub of selectedNpubs) {
-            try {
-              await sendDmMessage(npub, payload);
-            } catch (e) {
-              console.warn('[ParentNavbar] send channel_in_network DM failed for', npub.slice(0, 20) + '…', e);
-            }
-          }
-        }
-      } catch (e) {
-        createChannelErrorBanner = friendlyMessage(getInvokeErrorMessage(e));
+    runCreateChannelInParent({
+      parent,
+      squadId,
+      name,
+      selectedNpubs,
+      onErrorBanner: (message) => {
+        createChannelErrorBanner = message;
         setTimeout(() => {
           createChannelErrorBanner = '';
         }, 8000);
-        if (type === 'squad') {
-          const squadId = get(activeSquadId);
-          squads.update((list) =>
-            list.map((s) => {
-              if (s.id !== squadId) return s;
-              const chs = s.channels.filter((ch) => ch.groupId !== placeholderId);
-              return { ...s, channels: chs };
-            })
-          );
-          if (get(activeChannelId) === placeholderId) {
-            const list = get(squads);
-            const still = list.find((s) => s.id === squadId);
-            const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
-            const gid = sorted[0]?.groupId ?? null;
-            activeChannelId.set(gid);
-            activeHubChannelName.set(gid ? resolveHubChannelNameForGroupSelection(sorted, gid, null) : null);
-          }
-        } else {
-          const networkId = get(activeNetworkId);
-          networks.update((list) =>
-            list.map((n) => {
-              if (n.id !== networkId) return n;
-              const chs = n.channels.filter((ch) => ch.groupId !== placeholderId);
-              return { ...n, channels: chs };
-            })
-          );
-          if (get(activeChannelId) === placeholderId) {
-            const list = get(networks);
-            const still = list.find((n) => n.id === networkId);
-            const firstCh = still?.channels.slice().sort((a, b) => a.order - b.order)[0];
-            const gid = firstCh?.groupId ?? null;
-            activeChannelId.set(gid);
-            activeHubChannelName.set(gid ? resolveHubChannelNameForGroupSelection(still?.channels ?? [], gid, null) : null);
-            lastOpenedNetworkChannelId.set(firstCh?.groupId ?? null);
-          }
-        }
-      }
-    })();
+      },
+    });
   }
 
   function getMemberDisplayName(npub: string) {
     return getProfileDisplayName($profiles[npub] ?? null) || npub.slice(0, 16) + '…';
   }
 
-  // --- Invite modal ---
   let showInviteModal = false;
   let inviteCandidates: string[] = [];
   let selectedInviteNpubs: string[] = [];
@@ -547,7 +366,7 @@
     selectedInviteNpubs = [];
     inviteByNpub = '';
     inviteError = '';
-    loadInviteCandidates();
+    void loadInviteCandidates();
   }
 
   function toggleInviteCandidate(npub: string) {
@@ -561,13 +380,8 @@
     if (!parent) return;
     loadingInvite = true;
     try {
-      const inParent = new Set(await loadMembersForParent(parent, undefined));
-      const dmListSnap = $dmList;
-      const requestsSnap = $requestsList;
-      const pendingSnap = $pendingList;
-      const allDmNpubs = [...dmListSnap, ...requestsSnap, ...pendingSnap].map((e) => e.npub);
-      const uniqueNpubs = [...new Set(allDmNpubs)];
-      inviteCandidates = uniqueNpubs.filter((npub) => !inParent.has(npub));
+      const dmNpubs = [...$dmList, ...$requestsList, ...$pendingList].map((e) => e.npub);
+      inviteCandidates = await loadInviteCandidateNpubs(parent, dmNpubs, $currentUser?.npub);
     } catch {
       inviteCandidates = [];
     } finally {
@@ -579,7 +393,7 @@
     if (!inviting) showInviteModal = false;
   }
 
-  async function handleInvite() {
+  function handleInvite() {
     const parent = activeParent;
     if (!parent) return;
     const extraNpub = inviteByNpub.trim();
@@ -602,77 +416,32 @@
     inviteErrorBanner = '';
     showInviteModal = false;
     inviting = true;
-    const announcementsChannel = getAnnouncementsChannel(parent);
-    const inviteTargets = defaultParentInvitePhysicalGroupTargets(parent);
-    const groupId = announcementsChannel.groupId;
-
-    ;(async () => {
-      let lastErr = '';
-      if (type === 'squad') {
-        const squad = parent as Squad;
-        const payload = formatSquadInviteMessage({
-          type: 'squad_invite',
-          squadName: squad.name,
-          groupId,
-        });
-        for (const npub of npubsToInvite) {
-          for (const ch of inviteTargets) {
-            try {
-              await inviteMemberToGroup(ch.groupId, npub);
-            } catch (e) {
-              console.warn('[ParentNavbar] invite to squad MLS channel failed for', npub.slice(0, 20) + '…', e);
-              lastErr = friendlyMessage(getInvokeErrorMessage(e));
-            }
-          }
-          try {
-            await sendDmMessage(npub, payload);
-          } catch (e) {
-            console.warn('[ParentNavbar] invite to squad failed for', npub.slice(0, 20) + '…', e);
-            lastErr = friendlyMessage(getInvokeErrorMessage(e));
-          }
-        }
-      } else {
-        const network = parent as Network;
-        const payload = formatNetworkInviteMessage({
-          type: 'network_invite',
-          networkName: network.name,
-          groupId,
-          memberSquads: network.memberSquads ?? [],
-        });
-        for (const npub of npubsToInvite) {
-          for (const ch of inviteTargets) {
-            try {
-              await inviteMemberToGroup(ch.groupId, npub);
-            } catch (e) {
-              lastErr = friendlyMessage(getInvokeErrorMessage(e));
-            }
-          }
-          try {
-            await sendDmMessage(npub, payload);
-          } catch (e) {
-            lastErr = friendlyMessage(getInvokeErrorMessage(e));
-          }
-        }
-      }
-      if (lastErr) {
-        inviteErrorBanner = lastErr;
+    runInviteMembersToParent({
+      parent,
+      npubsToInvite,
+      onErrorBanner: (message) => {
+        inviteErrorBanner = message;
         setTimeout(() => {
           inviteErrorBanner = '';
         }, 8000);
-      }
-      inviting = false;
-    })();
+      },
+      onComplete: () => {
+        inviting = false;
+      },
+    });
   }
 
-  // --- Exit parent modal (squad or network) ---
   let showExitModal = false;
   let exitError = '';
+  let showBroadcastSquadModal = false;
 
-  function showChangeEvmSignerPlaceholder() {
-    if (!canShowParentMenuActions || !activeParent) return;
-    showToast(
-      'Set your squad signer under Settings → Default wallet config (Edit).'
-    );
+  function openBroadcastSquadModal() {
+    if (!squadBroadcastRoleOk || !canShowParentMenuActions || !liveActiveParent) return;
+    showBroadcastSquadModal = true;
+  }
+
+  function closeBroadcastSquadModal() {
+    showBroadcastSquadModal = false;
   }
 
   function openExitModal() {
@@ -684,107 +453,21 @@
     showExitModal = false;
   }
 
-  /** Optimistic exit: update UI immediately, leave MLS groups in background; revert + toast on failure. */
   function handleExitParent() {
-    if (type === 'squad') {
-      const squad = $squads.find((s) => s.id === $activeSquadId);
-      if (!squad) return;
-      const wasActive = $activeSquadId === squad.id;
-      const previousChannelId = $activeChannelId;
-
-      squads.update((list) => list.filter((s) => s.id !== squad.id));
-      if (wasActive) {
-        activeSquadId.set(null);
-        activeChannelId.set(null);
-        activeHubChannelName.set(null);
-      }
-      showExitModal = false;
-      exitError = '';
-
-      (async () => {
-        try {
-          for (const ch of uniqueChannelsByGroupIdPreservingOrder(squad.channels)) {
-            await leaveMlsGroup(ch.groupId);
-          }
-        } catch (e) {
-          const msg = friendlyMessage(getInvokeErrorMessage(e));
-          squads.update((list) => [...list, squad]);
-          if (wasActive) {
-            activeSquadId.set(squad.id);
-            const gid = previousChannelId ?? squad.channels[0]?.groupId ?? null;
-            activeChannelId.set(gid);
-            activeHubChannelName.set(
-              gid
-                ? resolveHubChannelNameForGroupSelection(
-                    squad.channels,
-                    gid,
-                    get(lastHubChannelNameBySquadId)[squad.id] || null
-                  )
-                : null
-            );
-          }
-          showToast(`Could not exit squad "${squad.name}": ${msg}`);
-        }
-      })();
-    } else {
-      const network = $networks.find((n) => n.id === $activeNetworkId);
-      if (!network) return;
-      const wasActive = $activeNetworkId === network.id;
-      const previousChannelId = $activeChannelId;
-
-      networks.update((list) => list.filter((n) => n.id !== network.id));
-      if (wasActive) {
-        activeNetworkId.set(null);
-        activeChannelId.set(null);
-        activeHubChannelName.set(null);
-        lastOpenedNetworkId.set(null);
-        lastOpenedNetworkChannelId.set(null);
-        lastChannelByNetworkId.update((m) => {
-          const next = { ...m };
-          delete next[network.id];
-          return next;
-        });
-      }
-      showExitModal = false;
-      exitError = '';
-
-      (async () => {
-        try {
-          for (const ch of uniqueChannelsByGroupIdPreservingOrder(network.channels)) {
-            await leaveMlsGroup(ch.groupId);
-          }
-        } catch (e) {
-          const msg = friendlyMessage(getInvokeErrorMessage(e));
-          networks.update((list) => [...list, network]);
-          if (wasActive) {
-            activeNetworkId.set(network.id);
-            const gid = previousChannelId ?? network.channels[0]?.groupId ?? null;
-            activeChannelId.set(gid);
-            activeHubChannelName.set(
-              gid
-                ? resolveHubChannelNameForGroupSelection(
-                    network.channels,
-                    gid,
-                    get(lastHubChannelNameByNetworkId)[network.id] || null
-                  )
-                : null
-            );
-            lastOpenedNetworkId.set(network.id);
-            lastOpenedNetworkChannelId.set(previousChannelId ?? network.channels[0]?.groupId ?? null);
-            lastChannelByNetworkId.update((m) => ({
-              ...m,
-              [network.id]: previousChannelId ?? network.channels[0]?.groupId ?? '',
-            }));
-          }
-          showToast(`Could not exit network "${network.name}": ${msg}`);
-        }
-      })();
-    }
+    const squad = $squads.find((s) => s.id === $activeSquadId);
+    if (!squad) return;
+    showExitModal = false;
+    exitError = '';
+    runExitParent({
+      squad,
+      wasActive: $activeSquadId === squad.id,
+      previousChannelId: $activeChannelId,
+      onFailure: (msg) => showToast(`Could not exit squad "${squad.name}": ${msg}`),
+    });
   }
 </script>
 
 <ParentSidebar
-  type={type}
   parentName={activeParent?.name ?? ''}
   subheading={subheading}
   channels={channels}
@@ -803,23 +486,29 @@
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
   onInvite={openInviteModal}
-  onChangeEvmSigner={canShowParentMenuActions ? showChangeEvmSignerPlaceholder : undefined}
-  onExitSquad={type === 'squad' ? openExitModal : undefined}
-  onExitNetwork={type === 'network' ? openExitModal : undefined}
+  showBroadcastSquad={showBroadcastSquadMenu}
+  {broadcastSquadDisabled}
+  broadcastSquadDisabledTitle={broadcastSquadDisabledTitle}
+  onBroadcastSquad={squadBroadcastRoleOk ? openBroadcastSquadModal : undefined}
+  onExitSquad={openExitModal}
+  partnerSquads={partnerSquads}
+  activePartnerSquadId={activePartnerSquadId}
+  onSelectPartnerSquad={selectPartnerSquad}
+  showPairWithSquadAction={canPairFromHub && showPartnerSquadsSection && !!canShowParentMenuActions}
+  onPairWithSquad={openPairWithSquadModal}
 />
 
 <CreateChannelModal
   open={showCreateChannelModal}
-  parentType={type}
   parentName={activeParent?.name ?? ''}
-  subtitle={"Add a channel to " + (activeParent?.name ?? (type === 'squad' ? 'this squad' : 'this network')) + ". Choose a name and at least one member."}
-  membersLabel={type === 'squad' ? 'Members (squad announcements only, select at least one)' : 'Members (from network squads, select at least one)'}
+  subtitle={"Add a channel to " + (activeParent?.name ?? 'this squad') + ". Choose a name and at least one member."}
+  membersLabel="Members (squad announcements only, select at least one)"
   bind:channelName={createChannelName}
   memberList={createChannelMemberList}
   loading={loadingCreateChannelMembers}
   bind:selectedNpubs={selectedNpubs}
-  selectAllLabel={type === 'squad' ? 'Add everyone in squad' : 'Add everyone in network'}
-  emptyMessage={type === 'squad' ? 'Invite people to the squad (announcements) first to add them to new channels.' : "No members in this network's channels yet."}
+  selectAllLabel="Add everyone in squad"
+  emptyMessage="Invite people to the squad (announcements) first to add them to new channels."
   error={createChannelError}
   creating={false}
   canCreate={canCreateChannel}
@@ -832,15 +521,14 @@
 
 <InviteToParentModal
   open={showInviteModal}
-  parentType={type}
   parentName={activeParent?.name ?? ''}
-  title={type === 'squad' ? 'Invite to Squad' : 'Invite to Network'}
-  subtitle={"Invite friends to " + (activeParent?.name ?? (type === 'squad' ? 'this Squad' : 'this Network')) + "."}
+  title="Invite to Squad"
+  subtitle={"Invite friends to " + (activeParent?.name ?? 'this Squad') + "."}
   candidates={inviteCandidates}
   bind:selectedNpubs={selectedInviteNpubs}
   bind:inviteByNpub={inviteByNpub}
   loading={loadingInvite}
-  emptyMessage={"No one to invite right now. Start a DM with someone first, or they may already be in this " + (type === 'squad' ? 'Squad' : 'Network') + "."}
+  emptyMessage="No one to invite right now. Start a DM with someone first, or they may already be in this Squad."
   error={inviteError}
   inviting={inviting}
   onClose={closeInviteModal}
@@ -851,10 +539,29 @@
 
 <ExitParentModal
   open={showExitModal}
-  type={type}
   parentName={activeParent?.name ?? ''}
   error={exitError}
   exiting={false}
   onClose={closeExitModal}
   onConfirm={handleExitParent}
 />
+
+<PairWithSquadModal
+  bind:this={pairModal}
+  open={showPairWithSquadModal}
+  anchorSquadName={activeParent?.name ?? pairAnchorSquad?.name ?? ''}
+  candidates={pairPartnerCandidates}
+  error={pairCreateError}
+  creating={pairCreating}
+  onClose={closePairWithSquadModal}
+  onCreate={handleCreateSquadPair}
+/>
+
+{#if showBroadcastSquadModal && liveActiveParent && squadBroadcastTarget}
+  <BroadcastSquadModal
+    squad={squadBroadcastTarget}
+    broadcastAllowed={squadBroadcastRoleOk}
+    broadcastDeniedReason={broadcastSquadDisabledTitle}
+    onClose={closeBroadcastSquadModal}
+  />
+{/if}

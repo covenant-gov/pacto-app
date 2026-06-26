@@ -1,8 +1,11 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { Address } from 'viem';
 import type { TreasurySafeEntry } from '$lib/treasury/treasury-safes';
 import { parseSupportedChainId, type SupportedChainId } from '$lib/wallet/chains';
 import { getSafeState, type SafeState } from '$lib/wallet/safe';
+import { withReadPlaneLimit } from '$lib/evm/read-plane-limiter';
+import { persistSafeStateCacheEntry } from '$lib/dashboard/safe-state-disk-cache';
+import { currentNpubForPersistence } from './persistence-context';
 
 export interface SafeStateEntry {
   treasuryEntryId: string;
@@ -69,22 +72,25 @@ export async function refreshSafeStateForTreasuryEntry(
 
   const p = (async () => {
     try {
-      const state = await getSafeState(entry.safeAddress as Address, chainId);
+      const state = await withReadPlaneLimit(() =>
+        getSafeState(entry.safeAddress as Address, chainId),
+      );
+      const lastFetchedAt = Date.now();
       safeStateByTreasuryId.update((map) => {
         const cur = map[key];
         if (!cur || cur.safeAddress !== entry.safeAddress || cur.chainId !== chainId) {
           return map;
         }
-        return {
-          ...map,
-          [key]: {
-            ...cur,
-            state,
-            error: null,
-            loading: false,
-            lastFetchedAt: Date.now(),
-          },
+        const nextEntry: SafeStateEntry = {
+          ...cur,
+          state,
+          error: null,
+          loading: false,
+          lastFetchedAt,
         };
+        const npub = get(currentNpubForPersistence);
+        if (npub) persistSafeStateCacheEntry(npub, nextEntry);
+        return { ...map, [key]: nextEntry };
       });
     } catch (e) {
       const msg = (e as Error)?.message ?? 'Failed to read Safe';
@@ -109,3 +115,5 @@ export async function refreshSafeStateForTreasuryEntry(
   inflightByTreasuryId.set(key, p);
   return p;
 }
+
+export { refreshAllSafeStates } from '$lib/dashboard/batch-safe-state-refresh';
