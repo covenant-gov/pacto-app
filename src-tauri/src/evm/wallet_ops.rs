@@ -69,16 +69,8 @@ pub struct Erc20TransferSpec {
     pub decimals: u8,
 }
 
-pub(crate) use super::rpc::{parse_address, wallet_err_json};
+use super::rpc::{call::eth_call_u256, parse_address, wallet_err_json};
 use super::rpc::{connect_signing_provider, send_and_confirm};
-
-fn decode_balance_of_return(data: &[u8]) -> Result<U256, String> {
-    if data.len() < 32 {
-        return Err("balanceOf return too short".into());
-    }
-    let w = &data[data.len() - 32..];
-    Ok(U256::from_be_slice(w))
-}
 
 fn format_decimal(raw: U256, decimals: u8) -> String {
     use alloy::primitives::utils::format_units;
@@ -91,17 +83,7 @@ async fn erc20_balance(
     owner: Address,
 ) -> Result<U256, String> {
     let call = IERC20::balanceOfCall { account: owner };
-    let input = call.abi_encode();
-    let tx = TransactionRequest::default()
-        .to(token)
-        .input(Bytes::from(input).into());
-    let out = provider
-        .call(tx.into())
-        .await
-        .map_err(|e| {
-            wallet_security::redact_urls_in_text(&format!("eth_call balanceOf: {}", e))
-        })?;
-    decode_balance_of_return(out.as_ref())
+    eth_call_u256(provider, token, call.abi_encode()).await
 }
 
 /// Public RPCs often return HTTP 522 / gateway errors or time out; caller should try the next URL.

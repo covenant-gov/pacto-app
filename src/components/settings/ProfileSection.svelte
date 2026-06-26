@@ -9,6 +9,8 @@
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
   import { showToast } from '../../stores/toast';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
+  import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
+  import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   $: userNpub = $currentUser?.npub || '';
   $: profile = userNpub ? $profiles[userNpub] : null;
   $: loading = userNpub ? ($profileLoadingStates[userNpub] || false) : false;
@@ -29,6 +31,8 @@
   let uploadingAvatar = false;
 
   let copiedNpub = false;
+  let exportSeedModalOpen = false;
+  let exportAllModalOpen = false;
 
   // Watch for changes to userNpub and load profile
   $: if (userNpub) {
@@ -249,6 +253,8 @@
                 <button
                   type="button"
                   class="btn-copy-account-id"
+                  aria-label={copiedNpub ? 'Copied' : 'Copy account ID'}
+                  title={copiedNpub ? 'Copied' : 'Copy'}
                   on:click={async () => {
                     try {
                       await navigator.clipboard.writeText(profile?.id ?? '');
@@ -257,7 +263,21 @@
                     } catch (_) {}
                   }}
                 >
-                  {copiedNpub ? 'Copied' : 'Copy'}
+                  <svg
+                    class="btn-copy-account-id-icon"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
                 </button>
               </div>
             </div>
@@ -266,10 +286,42 @@
             <div class="profile-actions">
               <button 
                 class="btn-edit-profile" 
+                type="button"
                 on:click={startEditing}
               >
-                Edit profile
+                <svg
+                  class="btn-edit-profile-icon"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+                </svg>
+                Profile
               </button>
+              <div class="profile-actions-exports">
+                <button
+                  type="button"
+                  class="btn-export-seed"
+                  on:click={() => (exportSeedModalOpen = true)}
+                >
+                  Export seed phrase
+                </button>
+                <button
+                  type="button"
+                  class="btn-export-all"
+                  on:click={() => (exportAllModalOpen = true)}
+                >
+                  Export all
+                </button>
+              </div>
             </div>
           {/if}
         </div>
@@ -280,6 +332,19 @@
         </div>
       {/if}
 </SettingsCollapsibleSection>
+
+<EvmAccountKeyExportModal
+  variant="seed"
+  open={exportSeedModalOpen}
+  npub={userNpub}
+  onClose={() => (exportSeedModalOpen = false)}
+/>
+
+<ExportAllSecretsModal
+  open={exportAllModalOpen}
+  npub={userNpub}
+  onClose={() => (exportAllModalOpen = false)}
+/>
 
 <style>
   .loading-state, .error-state, .empty-state {
@@ -453,18 +518,22 @@
 
   .btn-copy-account-id {
     flex-shrink: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
     border-radius: 8px;
     border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     color: var(--text-secondary);
     cursor: pointer;
+    transition: border-color 0.2s;
   }
 
   .btn-copy-account-id:hover {
-    border-color: var(--border);
+    border-color: var(--accent);
     color: var(--text-primary);
   }
 
@@ -475,6 +544,18 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .profile-actions-exports {
+    display: flex;
+    gap: 12px;
+  }
+
+  .profile-actions-exports .btn-export-seed,
+  .profile-actions-exports .btn-export-all {
+    flex: 1;
+    width: auto;
+    min-width: 0;
   }
 
   .edit-error {
@@ -592,22 +673,36 @@
     cursor: wait;
   }
 
-  .btn-edit-profile {
+  .btn-edit-profile,
+  .btn-export-seed,
+  .btn-export-all {
     width: 100%;
-    height: 48px;
-    background: transparent;
-    color: var(--accent);
-    border: 2px solid var(--accent);
+    min-height: 48px;
+    padding: 0 16px;
+    border: 1px solid var(--border);
     border-radius: 8px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
     font-size: 1rem;
     font-weight: 600;
+    font-family: inherit;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: border-color 0.2s;
     outline: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
 
-  .btn-edit-profile:hover {
-    background: rgba(88, 101, 242, 0.1);
+  .btn-edit-profile-icon {
+    flex-shrink: 0;
+  }
+
+  .btn-edit-profile:hover,
+  .btn-export-seed:hover,
+  .btn-export-all:hover {
+    border-color: var(--accent);
   }
 </style>
 

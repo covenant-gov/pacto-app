@@ -77,6 +77,7 @@ import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapsh
 import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache';
 import { resetInviteAcceptState } from '../invites/accept-invite';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
+import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { recentEmojisStore } from '../../stores/emojis';
 import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';

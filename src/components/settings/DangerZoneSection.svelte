@@ -1,5 +1,8 @@
 <script lang="ts">
   import { logout } from '../../stores/auth';
+  import { showToast } from '../../stores/toast';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
+  import { portal } from '../../lib/utils/portal';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
 
   let isLoggingOut = false;
@@ -14,12 +17,15 @@
   }
 
   async function handleLogout() {
-    showLogoutConfirm = false;
     isLoggingOut = true;
     try {
       await logout();
+      showLogoutConfirm = false;
     } catch (e) {
       console.error('Logout failed:', e);
+      showToast(getInvokeErrorMessage(e, 'Could not log out.'));
+    } finally {
+      isLoggingOut = false;
     }
   }
 </script>
@@ -39,31 +45,35 @@
 </SettingsCollapsibleSection>
 
 {#if showLogoutConfirm}
-  <div
-    class="modal-overlay"
-    on:click={closeLogoutConfirm}
-    on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
-    role="button"
-    tabindex="-1"
-  >
+  <div use:portal>
     <div
-      class="modal-content"
-      on:click|stopPropagation
+      class="modal-overlay"
+      on:click={closeLogoutConfirm}
       on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
-      role="dialog"
-      aria-modal="true"
-      tabindex="0"
+      role="presentation"
     >
-      <h2>Logout</h2>
-      <p class="modal-subtitle">
-        Logout will remove this account's data from this device (chats, keys, and MLS data). The app will restart.
-        You can create a new account or log in with a different key after that.
-      </p>
-      <div class="modal-actions">
-        <button class="btn-cancel" on:click={closeLogoutConfirm} disabled={isLoggingOut}>Cancel</button>
-        <button class="btn-confirm btn-logout-confirm" on:click={handleLogout} disabled={isLoggingOut}>
-          {isLoggingOut ? 'Logging out…' : 'Logout'}
-        </button>
+      <div
+        class="modal-content"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logout-modal-title"
+        tabindex="-1"
+        on:click|stopPropagation
+        on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
+      >
+        <h2 id="logout-modal-title">Logout</h2>
+        <p class="modal-subtitle">
+          Logout will remove this account's data from this device (chats, keys, and MLS data). The app will restart.
+          You can create a new account or log in with a different key after that.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" on:click={closeLogoutConfirm} disabled={isLoggingOut}>
+            Cancel
+          </button>
+          <button type="button" class="btn-confirm btn-logout-confirm" on:click={handleLogout} disabled={isLoggingOut}>
+            {isLoggingOut ? 'Logging out…' : 'Logout'}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -87,6 +97,7 @@
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
+    font-family: inherit;
     cursor: pointer;
     transition: background 0.2s;
     outline: none;
@@ -108,7 +119,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 10000;
     backdrop-filter: blur(4px);
   }
 
@@ -121,6 +132,7 @@
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    outline: none;
   }
 
   .modal-content h2 {
@@ -151,6 +163,7 @@
     border-radius: 8px;
     font-size: 1rem;
     font-weight: 600;
+    font-family: inherit;
     cursor: pointer;
     outline: none;
   }

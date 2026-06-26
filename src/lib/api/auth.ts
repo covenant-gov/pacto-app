@@ -92,6 +92,19 @@ export async function listAllAccounts(): Promise<string[]> {
 }
 
 /**
+ * Export the stored BIP-39 recovery phrase (requires PIN unlock / encryption key in memory).
+ */
+export async function exportRecoveryPhrase(): Promise<string> {
+  const seed = await invoke<string | null>('get_seed');
+  if (!seed?.trim()) {
+    throw new Error(
+      'No recovery phrase is stored for this account. If you unlocked with nsec only, export nsec from Nostr settings instead.'
+    );
+  }
+  return seed.trim();
+}
+
+/**
  * Export one EVM account private key (requires PIN unlock / encryption key in memory).
  */
 export async function exportEvmAccountKeyPlaintext(accountId: string): Promise<string> {

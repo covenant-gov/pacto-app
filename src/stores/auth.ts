@@ -195,19 +195,19 @@ export async function logout(): Promise<void> {
   authLoading.set(true);
   authError.set(null);
 
+  const npub = get(currentUser)?.npub;
+
   try {
-    const npub = get(currentUser)?.npub;
-    clearAccountState(npub);
     isAuthenticated.set(false);
     currentUser.set(null);
-
+    clearAccountState(npub);
     await invoke('logout');
-    // Backend clears current account and returns (no restart)
   } catch (error: any) {
     console.error('Logout failed:', error);
     authError.set(error.message || 'Failed to logout');
     isAuthenticated.set(false);
     currentUser.set(null);
+    throw error;
   } finally {
     authLoading.set(false);
   }
