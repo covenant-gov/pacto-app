@@ -16,6 +16,14 @@ describe('buildAnnounceContent', () => {
     expect(o.pacto_virtual_bucket).toBe('inbox');
   });
 
+  it('sets pacto_virtual_bucket announcements for squad sponsor deploy', () => {
+    const s = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+      payload: { parent_id: 'p', provider: 'sponsor', canonical_ref: '0x1' },
+    });
+    expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
+  });
+
   it('sets pacto_virtual_bucket polls for dashboard_poll_created', () => {
     const s = buildAnnounceContent({
       type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,

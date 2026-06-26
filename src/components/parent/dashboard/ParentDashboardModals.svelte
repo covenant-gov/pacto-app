@@ -227,26 +227,6 @@
 />
 
 <style>
-  .btn-primary,
-  .btn-secondary {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    border: none;
-  }
-
-  .btn-secondary {
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
-  }
-
   .modal-overlay {
     position: fixed;
     inset: 0;

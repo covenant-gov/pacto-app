@@ -50,6 +50,7 @@
     syncCommonsUserActiveBroadcast,
   } from '../../stores/commons-ui';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
+  import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
 
@@ -205,9 +206,18 @@
       try {
         const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
         const groupId = parentId;
-        squads.update((list) =>
-          list.map((s) => (s.id !== tempId ? s : { ...s, id: groupId, channels, updatedAt: Date.now() }))
-        );
+        const finalized: Squad = {
+          id: groupId,
+          name,
+          iconUrl: options.iconUrl,
+          channels,
+          kind: 'squad',
+          visibility,
+          commonsTags: visibility === 'public' ? options.commonsTags : undefined,
+          createdAt: squad.createdAt,
+          updatedAt: Date.now(),
+        };
+        await persistCreatedSquad(tempId, finalized);
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {
           const next = { ...m };

@@ -5,9 +5,10 @@ import {
   PARENT_MAP_DISK_CACHE_VERSION,
   readParentMapDiskBlob,
   readParentMapFetchedAtMs,
+  removeParentMapDiskEntry,
   writeParentMapDiskEntry,
 } from './parent-map-disk-cache';
-import { setSquadInfraFetchMeta } from './dashboard-fetch-meta';
+import { setSquadInfraFetchMeta, squadInfraFetchMetaByParentId } from './dashboard-fetch-meta';
 
 export { PARENT_MAP_DISK_CACHE_VERSION as SQUAD_INFRA_CACHE_VERSION };
 export const SQUAD_INFRA_CACHE_PREFIX = 'pacto_squad_infra_cache_v1';
@@ -67,4 +68,21 @@ export function persistSquadInfraForParent(
 
 export function squadInfraFetchedAtMs(npub: string, parentId: string): number | null {
   return readParentMapFetchedAtMs(storageKey(npub), parentId, isSquadInfraDtoArray);
+}
+
+export function removeSquadInfraCacheForParent(npub: string, parentId: string): void {
+  if (!npub || !parentId) return;
+  removeParentMapDiskEntry(storageKey(npub), parentId, isSquadInfraDtoArray);
+  squadInfraByParentId.update((cur) => {
+    if (!(parentId in cur)) return cur;
+    const next = { ...cur };
+    delete next[parentId];
+    return next;
+  });
+  squadInfraFetchMetaByParentId.update((m) => {
+    if (!(parentId in m)) return m;
+    const next = { ...m };
+    delete next[parentId];
+    return next;
+  });
 }

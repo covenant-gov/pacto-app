@@ -139,11 +139,13 @@
   />
 {:else if presentation.kind === 'wallet-tx-request'}
   {@const walletFulfilled = fulfilledWalletRequestIds.has(presentation.payload.request_id)}
-  {@const walletReqStatus = walletFulfilled
-    ? 'fulfilled'
-    : $declinedWalletTxRequestMessageIds.includes(msg.id)
-      ? 'declined'
-      : 'pending'}
+  {@const walletReqStatus = msg.pending && msg.mine
+    ? 'sending'
+    : walletFulfilled
+      ? 'fulfilled'
+      : $declinedWalletTxRequestMessageIds.includes(msg.id)
+        ? 'declined'
+        : 'pending'}
   <WalletTxRequestCard
     payload={presentation.payload}
     isMine={msg.mine}

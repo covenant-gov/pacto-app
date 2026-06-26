@@ -5,9 +5,10 @@ import {
   PARENT_MAP_DISK_CACHE_VERSION,
   readParentMapDiskBlob,
   readParentMapFetchedAtMs,
+  removeParentMapDiskEntry,
   writeParentMapDiskEntry,
 } from './parent-map-disk-cache';
-import { setTreasurySafesFetchMeta } from './dashboard-fetch-meta';
+import { setTreasurySafesFetchMeta, treasurySafesFetchMetaByParentId } from './dashboard-fetch-meta';
 
 export { PARENT_MAP_DISK_CACHE_VERSION as TREASURY_SAFES_CACHE_VERSION };
 export const TREASURY_SAFES_CACHE_PREFIX = 'pacto_treasury_safes_cache_v1';
@@ -66,4 +67,21 @@ export function persistTreasurySafesForParent(
 
 export function treasurySafesFetchedAtMs(npub: string, parentId: string): number | null {
   return readParentMapFetchedAtMs(storageKey(npub), parentId, isTreasurySafeEntryArray);
+}
+
+export function removeTreasurySafesCacheForParent(npub: string, parentId: string): void {
+  if (!npub || !parentId) return;
+  removeParentMapDiskEntry(storageKey(npub), parentId, isTreasurySafeEntryArray);
+  treasurySafesByParentId.update((cur) => {
+    if (!(parentId in cur)) return cur;
+    const next = { ...cur };
+    delete next[parentId];
+    return next;
+  });
+  treasurySafesFetchMetaByParentId.update((m) => {
+    if (!(parentId in m)) return m;
+    const next = { ...m };
+    delete next[parentId];
+    return next;
+  });
 }

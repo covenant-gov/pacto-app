@@ -42,6 +42,7 @@
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getActiveEvmSignerAddress } from '../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
+  import { parseWalletTxRequest } from '../lib/wallet/dm-messages';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
   import {
     isPactoAppThreadId,
@@ -62,6 +63,8 @@
     walletSidebarOpen,
     backendDmMessages,
     dmThreadAnnouncementsByNpub,
+    appendPendingOutboundDmMessage,
+    removeOutboundDmMessage,
     pactoAppInboxMessages,
     reconcilePeerThreadInvites,
     backendGroupMessages,
@@ -391,7 +394,7 @@
           }),
         }),
         '',
-        { virtualBucket: 'inbox' },
+        { virtualBucket: 'announcements' },
       );
     }
     await mergeSquadInfraForParent(params.parentId);
@@ -786,6 +789,9 @@
   async function handleDmSend(content: string): Promise<boolean> {
     const id = $activeDmId;
     if (!id || isPactoAppThreadId(id)) return false;
+    if (parseWalletTxRequest(content)) {
+      return sendWalletPaymentRequestDm(id, content);
+    }
     dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
     $dmSendError = null;
     try {
@@ -804,6 +810,33 @@
       dmError('handleDmSend error', e);
       return false;
     }
+  }
+
+  /** Payment requests: optimistic card in chat; modal closes without blocking on relay delivery. */
+  function sendWalletPaymentRequestDm(npub: string, content: string): boolean {
+    dmLog('sendWalletPaymentRequestDm', { receiver: npub.slice(0, 20) + '…', contentLen: content.length });
+    $dmSendError = null;
+    const optimisticId = appendPendingOutboundDmMessage(npub, content);
+    void (async () => {
+      try {
+        const ok = await sendDmMessage(npub, content);
+        dmLog('sendWalletPaymentRequestDm result', { ok });
+        if (!ok) {
+          removeOutboundDmMessage(npub, optimisticId);
+          const msg = 'Could not deliver the payment request. Check your connection and try again.';
+          $dmSendError = friendlyMessage(msg, 'dm_send');
+          showToast(msg);
+        }
+      } catch (e: unknown) {
+        removeOutboundDmMessage(npub, optimisticId);
+        const raw = getInvokeErrorMessage(e, 'Failed to send payment request');
+        const msg = friendlyMessage(raw, 'dm_send');
+        $dmSendError = msg;
+        showToast(msg);
+        dmError('sendWalletPaymentRequestDm error', e);
+      }
+    })();
+    return true;
   }
 
   function openInviterDm(inviterNpub: string) {

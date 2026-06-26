@@ -1,6 +1,6 @@
 # Communities — squads & squad-pairs
 
-Squads and **squad-pairs** (partner coordination between two anchor squads) share the same **MLS + channels** stack. All parent rows live in `pacto_squads_<npub>` with optional `kind: 'squad-pair'` and `pairedSquads`.
+Squads and **squad-pairs** (partner coordination between two anchor squads) share the same **MLS + channels** stack. The squad catalog is stored in SQLite (`squads` table); the frontend `squads` store hydrates from it on login. See [`SQUAD_CATALOG.md`](./SQUAD_CATALOG.md).
 
 | Concept | What it is |
 |---------|------------|
@@ -65,13 +65,15 @@ export interface Squad {
 
 ---
 
-## 5. Persistence (local)
+## 5. Persistence
 
-| Key / state | Purpose |
-|-------------|---------|
-| **`pacto_squads_<npub>`** | Serialized `Squad[]` (includes squad-pairs) |
-| **`pacto_last_squad_id_<npub>`** | Last opened squad / squad-pair |
-| **`pacto_last_channel_by_squad_<npub>`** | Per-parent last channel |
+| Location | Purpose |
+|----------|---------|
+| **`squads` (SQLite)** | Squad catalog: name, channels, kind, visibility, commons tags, squad-pair metadata — [`SQUAD_CATALOG.md`](./SQUAD_CATALOG.md) |
+| **`pacto_last_squad_id_<npub>`** | Last opened squad / squad-pair (`localStorage`) |
+| **`pacto_last_channel_by_squad_<npub>`** | Per-parent last channel (`localStorage`) |
+
+Roster bindings (`squad_member_evm_account`, `squad_member_evm`) and on-chain infra (`squad_infra`, `parent_treasury_safe`) are also SQLite; keyed by the same `parent_id`.
 
 ---
 

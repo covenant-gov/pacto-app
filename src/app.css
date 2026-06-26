@@ -3,6 +3,7 @@
 @import './styles/themes/midnight.css';
 @import './styles/themes/techno.css';
 @import './styles/themes/union.css';
+@import './styles/modal-buttons.css';
 
 /* Typography shared by every theme (sans body, monospace headings). Colors stay per-[data-theme]. */
 :root {

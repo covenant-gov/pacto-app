@@ -146,7 +146,7 @@ Optional later: slow-changing **`d: pacto_commons_squad`** profile event for tag
 
 | Key / table | Purpose |
 |-------------|---------|
-| `pacto_squads_<npub>` | `visibility`, `commonsTags` on each squad |
+| SQLite **`squads`** | Squad catalog (`visibility`, `commonsTags`, channels, kind) — [`SQUAD_CATALOG.md`](./SQUAD_CATALOG.md) |
 | `pacto_commons_broadcasted_<npub>` | Set after the first user broadcast; flags later broadcasts as active (persists across logout) |
 | `pacto_commons_broadcasts_<npub>` | Own active broadcasts (cooldown UX) |
 | `pacto_commons_join_requests_<npub>` | Join-request rate limit |

@@ -34,6 +34,45 @@ export type WalletSummaryResult =
   | { ok: true; summary: WalletSummary }
   | { ok: false; message: string };
 
+export interface EvmNativeBalance {
+  balanceRaw: string;
+  balanceDecimal: string;
+  symbol: string;
+}
+
+export type EvmNativeBalanceResult =
+  | { ok: true; balance: EvmNativeBalance }
+  | { ok: false; message: string };
+
+/** Native ETH balance for one address on a wallet network key. */
+export async function getEvmNativeBalance(
+  network: SupportedChainId,
+  address: string
+): Promise<EvmNativeBalanceResult> {
+  if (!isTauri()) {
+    return { ok: false, message: 'Balances are only available in the desktop app.' };
+  }
+  const addr = address.trim();
+  if (!addr) {
+    return { ok: false, message: 'Address is required.' };
+  }
+  try {
+    const balance = await invoke<EvmNativeBalance>('get_evm_native_balance', {
+      network,
+      address: addr,
+    });
+    return { ok: true, balance };
+  } catch (e) {
+    const msg =
+      typeof e === 'string'
+        ? e
+        : e != null && typeof (e as Error).message === 'string'
+          ? (e as Error).message
+          : 'Could not load balance.';
+    return { ok: false, message: msg };
+  }
+}
+
 /** Per-network + per-asset balances with USD lines (Chainlink-backed prices from backend). */
 export async function getWalletSummary(watchedErc20s: WatchedErc20Wire[]): Promise<WalletSummaryResult> {
   if (!isTauri()) {

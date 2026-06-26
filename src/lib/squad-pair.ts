@@ -46,7 +46,7 @@ function normalizePairedSquads(raw: PairedSquadRef[] | undefined): PairedSquads 
   return [{ id: a.id, name: a.name }, { id: b.id, name: b.name }];
 }
 
-/** Normalize a squad row from localStorage; default kind is `squad`, visibility is `private`. */
+/** Normalize a stored squad row; default kind is `squad`, visibility is `private`. */
 export function normalizeStoredSquad(raw: StoredSquadRow): StoredSquadRow {
   const kind: SquadKind = raw.kind === 'squad-pair' ? 'squad-pair' : 'squad';
   const pairedSquads =

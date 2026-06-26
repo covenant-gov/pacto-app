@@ -258,6 +258,80 @@ pub async fn get_wallet_summary<R: Runtime>(
     })
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EvmNativeBalance {
+    pub balance_raw: String,
+    pub balance_decimal: String,
+    pub symbol: String,
+}
+
+/// Native ETH balance for an arbitrary `0x` address on one wallet network key.
+#[tauri::command]
+pub async fn get_evm_native_balance(network: String, address: String) -> Result<EvmNativeBalance, String> {
+    let owner = parse_address(address.trim())?;
+    let net_key = network.to_lowercase();
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(format!("Unknown network: {}", network));
+    };
+
+    let urls = wallet_chain_config::rpc_urls_for(net);
+    if urls.is_empty() {
+        return Err(format!("{}: no RPC URL configured", net.key));
+    }
+
+    let mut last_err = String::new();
+    let mut eth_raw: Option<U256> = None;
+
+    'next_url: for url_s in &urls {
+        if url_s.parse::<url::Url>().is_err() {
+            last_err = "invalid RPC URL".to_string();
+            continue;
+        }
+
+        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                if !is_retryable_wallet_rpc_error(&last_err) {
+                    return Err(format!("{}: RPC connect: {}", net.key, last_err));
+                }
+                continue;
+            }
+        };
+
+        match provider.get_balance(owner).await {
+            Ok(v) => {
+                eth_raw = Some(v);
+                break 'next_url;
+            }
+            Err(e) => {
+                let msg = wallet_security::redact_urls_in_text(&format!("{}", e));
+                if is_retryable_wallet_rpc_error(&msg) {
+                    last_err = format!("{} getBalance: {}", net.key, msg);
+                    continue 'next_url;
+                }
+                return Err(format!("{} getBalance: {}", net.key, msg));
+            }
+        }
+    }
+
+    let eth_raw = eth_raw.ok_or_else(|| {
+        format!(
+            "{}: all {} RPC endpoint(s) failed (last: {})",
+            net.key,
+            urls.len(),
+            last_err
+        )
+    })?;
+
+    Ok(EvmNativeBalance {
+        balance_raw: eth_raw.to_string(),
+        balance_decimal: format_decimal(eth_raw, net.native_decimals),
+        symbol: net.native_symbol.clone(),
+    })
+}
+
 fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> Result<Address, String> {
     if to_npub.trim().is_empty() {
         return Err(wallet_err_json(

@@ -1991,20 +1991,38 @@ pub fn resolve_squad_roster_evm_address<R: Runtime>(
 }
 
 /// Applies treasury (`squad_safe_updated`), governance (`governance_updated`), and roster EVM (`squad_member_evm_share`)
-/// side effects only when the MLS chat row is classified into the **inbox** virtual bucket (routing ADR).
+/// side effects when the MLS chat row is classified into the **inbox** virtual bucket (routing ADR).
+/// Squad sponsor `governance_updated` announces also ingest from **announcements** so all members sync infra.
 pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
     handle: &AppHandle<R>,
     virtual_bucket: Option<&str>,
     content: &str,
     author_npub: Option<&str>,
 ) {
-    if virtual_bucket != Some("inbox") {
+    if virtual_bucket == Some("inbox") {
+        try_apply_squad_member_evm_share(handle, content, author_npub);
+        apply_parent_safe_announce(handle, content);
+        maybe_upsert_governance_from_announce(handle, content);
+        try_apply_squad_contract_allowlist_announce(handle, content);
         return;
     }
-    try_apply_squad_member_evm_share(handle, content, author_npub);
-    apply_parent_safe_announce(handle, content);
-    maybe_upsert_governance_from_announce(handle, content);
-    try_apply_squad_contract_allowlist_announce(handle, content);
+    if virtual_bucket == Some("announcements") && is_sponsor_governance_announce_content(content) {
+        maybe_upsert_governance_from_announce(handle, content);
+    }
+}
+
+fn is_sponsor_governance_announce_content(content: &str) -> bool {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(content.trim()) else {
+        return false;
+    };
+    if val.get("type").and_then(|x| x.as_str()) != Some("governance_updated") {
+        return false;
+    }
+    val.get("payload")
+        .and_then(|p| p.get("provider"))
+        .and_then(|x| x.as_str())
+        .map(|s| s.trim().eq_ignore_ascii_case("sponsor"))
+        .unwrap_or(false)
 }
 
 /// If `content` is a `squad_member_evm_share` JSON from MLS, store a normalized address for `author_npub` only.

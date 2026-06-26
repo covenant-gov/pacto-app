@@ -444,6 +444,8 @@
 
   .dashboard-polls-create-btn {
     width: 100%;
+    padding: 10px 16px;
+    font-size: 0.9375rem;
   }
 
   .dashboard-placeholder-text {

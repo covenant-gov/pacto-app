@@ -11,6 +11,7 @@ import {
   ANNOUNCE_TYPE_SAFE_PROPOSAL,
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
   ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
+  isSponsorGovernanceAnnounce,
   type AnnounceMessage,
 } from '../announcements';
 
@@ -100,19 +101,19 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   const ann = parseAnnouncement(trimmed);
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'polls';
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'inbox';
-  if (
-    ann?.type === ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED ||
-    ann?.type === ANNOUNCE_TYPE_SAFE_PROPOSAL ||
-    ann?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED
-  ) {
+  if (ann?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
+    return isSponsorGovernanceAnnounce(ann) ? 'announcements' : 'inbox';
+  }
+  if (ann?.type === ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED || ann?.type === ANNOUNCE_TYPE_SAFE_PROPOSAL) {
     return 'inbox';
   }
 
   return 'announcements';
 }
 
-/** Automation-shaped announces belong in **inbox** for MLS timeline partitioning (ADR). */
+/** Automation-shaped announces belong in **inbox** for MLS timeline partitioning (ADR), except squad sponsor deploys. */
 export function isInboxOnlyStructuredAnnounce(parsed: AnnounceMessage): boolean {
+  if (isSponsorGovernanceAnnounce(parsed)) return false;
   switch (parsed.type) {
     case ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED:
     case ANNOUNCE_TYPE_SAFE_PROPOSAL:

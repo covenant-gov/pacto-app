@@ -184,6 +184,8 @@
 
   $: amountValid = parsePositiveAmount(amountStr) !== null;
   let sending = false;
+  /** Request mode: brief resolve of signer address before optimistic post. */
+  let requestPosting = false;
   let sendError: { message: string; txHash?: string; code?: string } | null = null;
 
   $: insufficientFunds =
@@ -194,7 +196,11 @@
     amountExceedsBalance(amountStr.trim(), selectedBalanceRow.balanceRaw, selectedOpt.decimals);
 
   $: canConfirm =
-    amountValid && !sending && selectedOpt != null && (mode === 'request' || !insufficientFunds);
+    amountValid &&
+    !sending &&
+    !requestPosting &&
+    selectedOpt != null &&
+    (mode === 'request' || !insufficientFunds);
   $: explorerLinkForError =
     sendError?.txHash != null && sendError.txHash.length > 0
       ? getExplorerTxUrl(chainId, sendError.txHash)
@@ -212,6 +218,7 @@
   $: canRetryAfterError =
     sendError != null &&
     !sending &&
+    !requestPosting &&
     (mode === 'request' || sendError.code !== 'RECEIPT_TIMEOUT');
 
   async function retryFailedSend() {
@@ -258,7 +265,7 @@
         return;
       }
       sendError = null;
-      sending = true;
+      requestPosting = true;
       try {
         const fromEvm = await getActiveEvmSignerAddress();
         if (!fromEvm) {
@@ -277,7 +284,6 @@
         });
         const ok = await postDm(content);
         if (ok) {
-          showToast('Payment request sent in this chat.');
           onClose();
         } else {
           const msg = 'Could not deliver the request. Check your connection and try again.';
@@ -289,7 +295,7 @@
         sendError = { message: msg };
         showToast(msg);
       } finally {
-        sending = false;
+        requestPosting = false;
       }
       return;
     }
@@ -331,7 +337,12 @@
   }
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible={!sending}>
+<Modal
+  {titleId}
+  descriptionId={descId}
+  {onClose}
+  dismissible={mode === 'request' ? !requestPosting : !sending}
+>
   <h2 id={titleId}>{mode === 'send' ? 'Send' : 'Request payment'}</h2>
   <p id={descId} class="wallet-stub-desc">
     {mode === 'send'
@@ -347,7 +358,7 @@
         class="wallet-stub-select"
         bind:value={chainId}
         aria-label="Network"
-        disabled={sending}
+        disabled={sending || requestPosting}
       >
         {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
           <option value={cid as SupportedChainId}>{getWalletNetworkDisplayName(cid as SupportedChainId)}</option>
@@ -357,7 +368,7 @@
 
     <label class="wallet-stub-label">
       <span class="wallet-stub-label-text">Asset</span>
-      <select class="wallet-stub-select" bind:value={assetCode} aria-label="Asset" disabled={sending}>
+      <select class="wallet-stub-select" bind:value={assetCode} aria-label="Asset" disabled={sending || requestPosting}>
         {#each assetOptions as o (o.code)}
           <option value={o.code}>{o.code}</option>
         {/each}
@@ -374,7 +385,7 @@
         placeholder="0.0"
         value={amountStr}
         on:input={onAmountInput}
-        disabled={sending}
+        disabled={sending || requestPosting}
         aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
         aria-label="Amount"
       />
@@ -397,7 +408,7 @@
 
     <p class="wallet-stub-usd" role="status">{usdLine}</p>
 
-    {#if sending}
+    {#if mode === 'send' && sending}
       <p class="wallet-stub-wait" role="status" aria-live="polite">
         Waiting for on-chain confirmation. This can take up to a few minutes on busy networks.
       </p>
@@ -447,14 +458,14 @@
     <button
       type="button"
       class="wallet-stub-btn wallet-stub-btn-secondary"
-      disabled={sending}
+      disabled={mode === 'send' ? sending : requestPosting}
       on:click={onClose}>Cancel</button>
     <button type="button" class="wallet-stub-btn wallet-stub-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
-      {sending
-        ? mode === 'send'
+      {requestPosting
+        ? 'Sending…'
+        : sending
           ? 'Waiting for confirmation…'
-          : 'Sending…'
-        : 'Confirm'}
+          : 'Confirm'}
     </button>
   </div>
 </Modal>

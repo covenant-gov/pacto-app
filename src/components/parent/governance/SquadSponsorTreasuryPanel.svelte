@@ -103,14 +103,13 @@
       <button type="button" class="btn-secondary sponsor-refresh-btn" on:click={refreshSummary} disabled={loading}>
         {loading ? 'Refreshing…' : 'Refresh'}
       </button>
+    {:else if onOpenDeploy}
+      <button type="button" class="btn-primary sponsor-deploy-btn" on:click={onOpenDeploy}>Deploy Sponsor</button>
     {/if}
   </div>
 
   {#if !sponsorRow}
     <p class="sponsor-empty-lead">No squad sponsor deployed yet. Gas sponsorship requires a sponsor clone first.</p>
-    {#if onOpenDeploy}
-      <button type="button" class="btn-primary" on:click={onOpenDeploy}>Deploy squad sponsor</button>
-    {/if}
   {:else if loading && !summary}
     <p class="muted">Loading sponsor balance…</p>
   {:else if loadError}
@@ -169,14 +168,72 @@
 </section>
 
 <style>
+  .dashboard-section {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
   .sponsor-treasury-section {
-    margin-bottom: 8px;
+    margin-bottom: 16px;
+  }
+
+  .section-heading {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  .treasury-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .treasury-section-head .section-heading {
+    margin: 0;
+  }
+
+  .sponsor-deploy-btn,
+  .sponsor-refresh-btn {
+    flex-shrink: 0;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    border: none;
+  }
+
+  .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .sponsor-empty-lead {
-    margin: 0 0 12px;
+    margin: 0;
     max-width: 52ch;
-    color: var(--text-secondary);
+    color: var(--text-muted);
+    font-size: 0.875rem;
   }
 
   .sponsor-lead {
@@ -222,6 +279,20 @@
 
   .sponsor-refresh-btn {
     font-size: 0.8125rem;
+  }
+
+  .muted {
+    color: var(--text-muted);
+  }
+
+  .btn-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.8125rem;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
 
   .sponsor-explorer-link {

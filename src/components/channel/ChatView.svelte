@@ -43,6 +43,7 @@
   } from '../../stores/app';
   import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, inviteMemberToGroup } from '../../lib/api/nostr';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
+  import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -278,13 +279,10 @@
       if (groupId.startsWith('creating-')) {
         const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
         if (inSquad && activeSquad) {
-          squads.update((list) =>
-            list.map((s) =>
-              s.id !== activeSquad.id
-                ? s
-                : { ...s, channels: s.channels.filter((ch) => ch.groupId !== groupId) }
-            )
-          );
+          await persistSquadPatch(activeSquad.id, (s) => ({
+            ...s,
+            channels: s.channels.filter((ch) => ch.groupId !== groupId),
+          }));
           const still = $squads.find((s) => s.id === activeSquad.id);
           const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
           activeChannelId.set(sorted[0]?.groupId ?? null);
@@ -300,13 +298,10 @@
       await leaveMlsGroup(groupId);
       const inSquad = activeSquad?.channels.some((ch) => ch.groupId === groupId);
       if (inSquad && activeSquad) {
-        squads.update((list) =>
-          list.map((s) =>
-            s.id !== activeSquad.id
-              ? s
-              : { ...s, channels: s.channels.filter((ch) => ch.groupId !== groupId) }
-          )
-        );
+        await persistSquadPatch(activeSquad.id, (s) => ({
+          ...s,
+          channels: s.channels.filter((ch) => ch.groupId !== groupId),
+        }));
         const still = $squads.find((s) => s.id === activeSquad.id);
         const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
         activeChannelId.set(sorted[0]?.groupId ?? null);

@@ -11,6 +11,8 @@ use rand::distributions::Alphanumeric;
 
 mod crypto;
 
+mod squad_catalog;
+
 mod db;
 use db::SlimProfile;
 
@@ -6214,6 +6216,10 @@ pub fn run() {
             db::list_evm_account_squad_bindings,
             db::resolve_squad_roster_evm_address,
             db::backfill_squad_member_evm_missing_from_profiles,
+            squad_catalog::list_squads,
+            squad_catalog::get_squad,
+            squad_catalog::upsert_squad,
+            squad_catalog::delete_squad,
             db::get_seed,
             db::set_seed,
             db::get_sql_setting,
@@ -6308,6 +6314,7 @@ pub fn run() {
             sign_evm_hash,
             evm::wallet_prices::wallet_get_usd_spot_prices,
             evm::wallet_ops::get_wallet_summary,
+            evm::wallet_ops::get_evm_native_balance,
             evm::wallet_ops::wallet_build_and_send_transaction,
             evm::evm_accounts::list_evm_accounts,
             evm::evm_accounts::export_evm_account_key_plaintext,

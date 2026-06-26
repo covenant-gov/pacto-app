@@ -29,7 +29,6 @@
       Hat tree and role structure show here once this squad has a <strong>Pacto Gov</strong> deployment
       (Deploy). Safe-only setups do not publish a Hats tree id yet.
     </p>
-    <button type="button" class="btn-secondary roles-tree-deploy-cta" on:click={onOpenLaunchpad}>Open Deploy</button>
   {:else}
     <p class="structure-summary-lead dashboard-placeholder-text">
       Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id{' '}
@@ -118,10 +117,6 @@
   .dashboard-placeholder-text.muted,
   .muted {
     color: var(--text-muted);
-  }
-
-  .roles-tree-deploy-cta {
-    margin-top: 8px;
   }
 
   .structure-summary-lead {

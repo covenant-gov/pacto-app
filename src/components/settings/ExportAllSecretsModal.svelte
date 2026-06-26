@@ -623,28 +623,4 @@
     gap: 10px;
     margin-top: 24px;
   }
-
-  .btn-cancel,
-  .btn-confirm,
-  .btn-close {
-    padding: 10px 18px;
-    border-radius: 8px;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    border: none;
-  }
-
-  .btn-cancel {
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-  }
-
-  .btn-confirm,
-  .btn-close {
-    background: var(--accent);
-    color: #fff;
-  }
 </style>

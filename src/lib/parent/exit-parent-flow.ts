@@ -3,6 +3,9 @@ import { leaveMlsGroup } from '../api/nostr';
 import { uniqueChannelsByGroupIdPreservingOrder } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
+import { deleteSquad, persistSquad } from '../squad/squad-catalog';
+import { clearParentDashboardCaches } from './clear-parent-dashboard-caches';
+import { currentNpubForPersistence } from '../../stores/persistence-context';
 import { squads, type Squad } from '../../stores/squads';
 import {
   activeSquadId,
@@ -11,7 +14,7 @@ import {
   lastHubChannelNameBySquadId,
 } from '../../stores/navigation';
 
-/** Remove parent locally, then leave MLS groups; revert local state on failure. */
+/** Remove parent locally, delete catalog row, then leave MLS groups; revert on failure. */
 export function runExitParent(opts: {
   squad: Squad;
   wasActive: boolean;
@@ -29,12 +32,19 @@ export function runExitParent(opts: {
 
   void (async () => {
     try {
+      await deleteSquad(squad.id);
+      clearParentDashboardCaches(get(currentNpubForPersistence), squad.id);
       for (const ch of uniqueChannelsByGroupIdPreservingOrder(squad.channels)) {
         await leaveMlsGroup(ch.groupId);
       }
     } catch (e) {
       const msg = friendlyMessage(getInvokeErrorMessage(e));
-      squads.update((list) => [...list, squad]);
+      try {
+        await persistSquad(squad);
+      } catch {
+        // store-only revert if catalog write fails
+      }
+      squads.update((list) => (list.some((s) => s.id === squad.id) ? list : [...list, squad]));
       if (wasActive) {
         activeSquadId.set(squad.id);
         const gid = previousChannelId ?? squad.channels[0]?.groupId ?? null;
@@ -44,9 +54,9 @@ export function runExitParent(opts: {
             ? resolveHubChannelNameForGroupSelection(
                 squad.channels,
                 gid,
-                get(lastHubChannelNameBySquadId)[squad.id] || null
+                get(lastHubChannelNameBySquadId)[squad.id] || null,
               )
-            : null
+            : null,
         );
       }
       onFailure(msg);

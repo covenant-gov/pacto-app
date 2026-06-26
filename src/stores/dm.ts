@@ -289,6 +289,36 @@ export function reconcilePeerThreadInvites(): void {
   }
 }
 
+/** Optimistic outbound DM row (replaced on `message_new` when content matches). */
+export function appendPendingOutboundDmMessage(npub: string, content: string): string {
+  const trimmedNpub = npub.trim();
+  const id = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (!trimmedNpub) return id;
+  backendDmMessages.update((byNpub) => {
+    const list = byNpub[trimmedNpub] ?? [];
+    return {
+      ...byNpub,
+      [trimmedNpub]: [
+        ...list,
+        { id, content, at: Date.now(), mine: true, pending: true },
+      ],
+    };
+  });
+  return id;
+}
+
+export function removeOutboundDmMessage(npub: string, messageId: string): void {
+  const trimmedNpub = npub.trim();
+  if (!trimmedNpub || !messageId) return;
+  backendDmMessages.update((byNpub) => {
+    const list = byNpub[trimmedNpub];
+    if (!list?.length) return byNpub;
+    const next = list.filter((m) => m.id !== messageId);
+    if (next.length === list.length) return byNpub;
+    return { ...byNpub, [trimmedNpub]: next };
+  });
+}
+
 export function appendDmThreadAnnouncement(npub: string, content: string): void {
   const trimmedNpub = npub.trim();
   if (!trimmedNpub) return;
