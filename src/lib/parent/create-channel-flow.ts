@@ -7,6 +7,7 @@ import {
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
+import { persistSquadPatch } from '../squad/squad-catalog';
 import {
   squads,
   type Channel,
@@ -23,7 +24,7 @@ import {
 
 export async function loadCreateChannelMemberList(
   parent: Squad,
-  currentUserNpub: string | undefined
+  currentUserNpub: string | undefined,
 ): Promise<string[]> {
   return loadMembersForParent(parent, currentUserNpub);
 }
@@ -41,7 +42,7 @@ export function runCreateChannelInParent(opts: {
   const placeholderChannel: Channel = { name, groupId: placeholderId, order: parent.channels.length };
 
   squads.update((list) =>
-    list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, placeholderChannel] }))
+    list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, placeholderChannel] })),
   );
   activeChannelId.set(placeholderId);
   activeHubChannelName.set(name);
@@ -52,15 +53,12 @@ export function runCreateChannelInParent(opts: {
   void (async () => {
     try {
       const groupId = await createGroupChat(name, selectedNpubs);
-      squads.update((list) =>
-        list.map((s) => {
-          if (s.id !== squadId) return s;
-          const chs = s.channels.map((ch) =>
-            ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch
-          );
-          return { ...s, channels: chs };
-        })
-      );
+      await persistSquadPatch(squadId, (s) => ({
+        ...s,
+        channels: s.channels.map((ch) =>
+          ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch,
+        ),
+      }));
       if (get(activeChannelId) === placeholderId) {
         activeChannelId.set(groupId);
         activeHubChannelName.set(name);
@@ -82,19 +80,17 @@ export function runCreateChannelInParent(opts: {
       }
     } catch (e) {
       onErrorBanner(friendlyMessage(getInvokeErrorMessage(e)));
-      squads.update((list) =>
-        list.map((s) => {
-          if (s.id !== squadId) return s;
-          return { ...s, channels: s.channels.filter((ch) => ch.groupId !== placeholderId) };
-        })
-      );
+      await persistSquadPatch(squadId, (s) => ({
+        ...s,
+        channels: s.channels.filter((ch) => ch.groupId !== placeholderId),
+      }));
       if (get(activeChannelId) === placeholderId) {
         const still = get(squads).find((s) => s.id === squadId);
         const sorted = still?.channels.slice().sort((a, b) => a.order - b.order) ?? [];
         const gid = sorted[0]?.groupId ?? null;
         activeChannelId.set(gid);
         activeHubChannelName.set(
-          gid ? resolveHubChannelNameForGroupSelection(sorted, gid, null) : null
+          gid ? resolveHubChannelNameForGroupSelection(sorted, gid, null) : null,
         );
       }
     }

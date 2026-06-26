@@ -190,6 +190,21 @@ CREATE TABLE IF NOT EXISTS squad_member_evm_account (
 );
 CREATE INDEX IF NOT EXISTS idx_squad_member_evm_account_parent ON squad_member_evm_account(parent_id);
 
+-- Squad / squad-pair catalog (announcements MLS group id = primary key). See docs/communities/SQUAD_CATALOG.md
+CREATE TABLE IF NOT EXISTS squads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    icon_url TEXT,
+    kind TEXT NOT NULL DEFAULT 'squad',
+    visibility TEXT NOT NULL DEFAULT 'private',
+    commons_tags TEXT,
+    paired_squads TEXT,
+    channels TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_squads_updated ON squads(updated_at_ms DESC);
+
 -- EVM accounts (phrase-derived + imported); see `evm_accounts` module and docs/wallet/HD_DERIVATION_V1.md
 CREATE TABLE IF NOT EXISTS evm_accounts (
     id TEXT PRIMARY KEY NOT NULL,
@@ -1108,6 +1123,34 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
 
     crate::commons::ensure_commons_broadcasts_table(&conn)
         .map_err(|e| format!("Failed to create commons_broadcasts table: {e}"))?;
+
+    let has_squads_catalog: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squads'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+    if !has_squads_catalog {
+        println!("[Migration] Creating squads catalog table…");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squads (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                icon_url TEXT,
+                kind TEXT NOT NULL DEFAULT 'squad',
+                visibility TEXT NOT NULL DEFAULT 'private',
+                commons_tags TEXT,
+                paired_squads TEXT,
+                channels TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_squads_updated ON squads(updated_at_ms DESC);"#,
+        )
+        .map_err(|e| format!("Failed to create squads table: {}", e))?;
+    }
 
     Ok(())
 }

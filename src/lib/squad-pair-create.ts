@@ -26,6 +26,7 @@ import {
 } from '../stores/navigation';
 import { pendingReadyToast } from '../stores/toast';
 import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broadcast';
+import { persistCreatedSquad } from './squad/squad-catalog';
 import type { PairedSquads } from './squad-pair';
 
 function resolvePublicSquadBroadcastTarget(squadId: string) {
@@ -154,22 +155,19 @@ export function runSquadPairCreateFlow(
       const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
       const groupId = parentId;
       const paired = buildPairedSquads(anchor, partner);
-      squads.update((list) =>
-        list.map((s) =>
-          s.id !== tempId
-            ? s
-            : {
-                ...s,
-                id: groupId,
-                channels,
-                kind: 'squad-pair' as const,
-                pairedSquads: paired,
-                visibility,
-                commonsTags: visibility === 'public' ? commons.commonsTags : undefined,
-                updatedAt: Date.now(),
-              }
-        )
-      );
+      const finalized: Squad = {
+        id: groupId,
+        name,
+        iconUrl,
+        channels,
+        kind: 'squad-pair',
+        pairedSquads: paired,
+        visibility,
+        commonsTags: visibility === 'public' ? commons.commonsTags : undefined,
+        createdAt: squadPair.createdAt,
+        updatedAt: Date.now(),
+      };
+      await persistCreatedSquad(tempId, finalized);
       removeParentCreatingAnnouncements(tempId);
       parentCreateErrorById.update((m) => {
         const next = { ...m };
@@ -230,9 +228,13 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
   if (!memberIds?.length) return;
 
   const { parentId: gid, channels } = await createDefaultParentChannels(memberIds);
-  squads.update((list) =>
-    list.map((s) => (s.id !== parent.id ? s : { ...s, id: gid, channels, updatedAt: Date.now() }))
-  );
+  const finalized: Squad = {
+    ...parent,
+    id: gid,
+    channels,
+    updatedAt: Date.now(),
+  };
+  await persistCreatedSquad(parent.id, finalized);
   if (get(activeSquadId) === parent.id) {
     activeSquadId.set(gid);
     activeChannelId.set(gid);

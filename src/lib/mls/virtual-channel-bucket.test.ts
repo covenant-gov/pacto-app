@@ -233,6 +233,23 @@ describe('announceCardAllowedForTimelineBucket', () => {
     ).toBe(false);
   });
 
+  it('allows squad sponsor governance in announcements', () => {
+    const sponsorContent = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+      payload: { parent_id: 'p', provider: 'sponsor', canonical_ref: '0x1' },
+    });
+    const sponsorParsed = parseAnnouncement(sponsorContent);
+    expect(sponsorParsed).not.toBeNull();
+    if (!sponsorParsed) return;
+    expect(
+      announceCardAllowedForTimelineBucket(sponsorParsed, {
+        content: sponsorContent,
+        virtual_bucket: 'announcements',
+      })
+    ).toBe(true);
+    expect(deriveVirtualBucketFromMessageContent(sponsorContent)).toBe('announcements');
+  });
+
   it('does not gate dashboard poll created cards', () => {
     expect(pollCreated).not.toBeNull();
     if (!pollCreated) return;

@@ -253,30 +253,4 @@
     gap: 10px;
     margin-top: 20px;
   }
-
-  .btn-primary,
-  .btn-secondary {
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    border: none;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
-  }
 </style>

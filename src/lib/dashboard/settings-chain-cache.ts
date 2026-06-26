@@ -131,3 +131,11 @@ export function persistSettingsChainSnapshot(
 export function clearSettingsChainCacheStore(): void {
   settingsChainHydrated.set(null);
 }
+
+export function removeSettingsChainCacheForParent(npub: string, parentId: string): void {
+  if (!npub || !parentId) return;
+  const blob = readBlob(npub);
+  if (!blob?.byParentId[parentId]) return;
+  delete blob.byParentId[parentId];
+  writeBlob(npub, blob);
+}

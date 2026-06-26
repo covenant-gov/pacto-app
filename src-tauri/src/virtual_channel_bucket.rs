@@ -39,15 +39,20 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
             if ty == Some("dashboard_poll_created") {
                 return Some("polls".to_string());
             }
-            if matches!(
-                ty,
-                Some(
-                    "squad_safe_updated"
-                        | "safe_proposal"
-                        | "squad_member_evm_share"
-                        | "governance_updated"
-                )
-            ) {
+            if ty == Some("governance_updated") {
+                let sponsor = val
+                    .get("payload")
+                    .and_then(|p| p.get("provider"))
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.trim().eq_ignore_ascii_case("sponsor"))
+                    .unwrap_or(false);
+                return Some(if sponsor {
+                    "announcements".to_string()
+                } else {
+                    "inbox".to_string()
+                });
+            }
+            if matches!(ty, Some("squad_safe_updated" | "safe_proposal" | "squad_member_evm_share")) {
                 return Some("inbox".to_string());
             }
         }
@@ -70,13 +75,24 @@ mod tests {
 
     #[test]
     fn governance_announce_derives_inbox_bucket() {
-        let content = r#"{"type":"governance_updated","payload":{"parent_id":"p"}}"#;
+        let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"pacto_gov","canonical_ref":"1"}}"#;
         let bucket = normalize_virtual_bucket_for_message(
             event_kind::PRIVATE_DIRECT_MESSAGE,
             content,
             &[],
         );
         assert_eq!(bucket.as_deref(), Some("inbox"));
+    }
+
+    #[test]
+    fn sponsor_governance_announce_derives_announcements_bucket() {
+        let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"sponsor","canonical_ref":"0x1"}}"#;
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            content,
+            &[],
+        );
+        assert_eq!(bucket.as_deref(), Some("announcements"));
     }
 
     #[test]

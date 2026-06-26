@@ -15,18 +15,38 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::rpc::signer::{load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed};
+use super::rpc::signer::{
+    load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
+    require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
+};
+
+fn parse_signer_wallet(raw: &str) -> Result<&'static str, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "squad" => Ok("squad"),
+        "default" => Ok("default"),
+        other => Err(wallet_err_json(
+            "INVALID_SIGNER",
+            format!("Unknown signer wallet: {}", other.trim()),
+            None,
+        )),
+    }
+}
 use super::squad_sponsor_common::{
     parse_deposit_wei, read_squad_record, squad_id_from_parent_id, squad_variant_label,
 };
 use super::wallet_chain_config;
 use crate::db;
 
-fn parse_optional_deposit_wei(raw: Option<&str>) -> Result<alloy::primitives::U256, String> {
-    match raw.map(str::trim).filter(|s| !s.is_empty()) {
-        None => Ok(alloy::primitives::U256::ZERO),
-        Some(s) => parse_deposit_wei(Some(s)),
+fn parse_required_deposit_wei(raw: Option<&str>) -> Result<alloy::primitives::U256, String> {
+    let deposit = parse_deposit_wei(raw).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
+    if deposit.is_zero() {
+        return Err(wallet_err_json(
+            "INVALID_DEPOSIT",
+            "initial deposit must be greater than zero",
+            None,
+        ));
     }
+    Ok(deposit)
 }
 
 #[derive(Serialize)]
@@ -51,6 +71,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     network: String,
     parent_id: String,
     initial_deposit_wei: Option<String>,
+    signer_wallet: Option<String>,
 ) -> Result<SquadSponsorDeployResult, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -74,8 +95,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         wallet_err_json("SPONSOR_CONFIG", e, None)
     })?;
 
-    let deposit = parse_optional_deposit_wei(initial_deposit_wei.as_deref())
-        .map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
+    let deposit = parse_required_deposit_wei(initial_deposit_wei.as_deref())?;
 
     let squad_id = squad_id_from_parent_id(pid);
     let calldata = createSquadSponsorExtCall {
@@ -93,14 +113,17 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         ));
     }
 
-    require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
+    let (_signer, wallet) = if signer_mode == "default" {
+        require_treasury_signing_allowed(app.clone()).await?;
+        load_active_squad_embedded_signer(app.clone()).await?
+    } else {
+        require_roster_treasury_signing_allowed(app.clone(), pid).await?;
+        load_squad_roster_embedded_signer(app.clone(), pid).await?
+    };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
-    let mut tx = contract_call_request(factory, calldata);
-    if !deposit.is_zero() {
-        tx = tx.with_value(deposit);
-    }
+    let mut tx = contract_call_request(factory, calldata).with_value(deposit);
 
     let receipt = send_and_confirm(
         &provider,

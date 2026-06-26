@@ -4,17 +4,19 @@
     ANNOUNCE_TYPE_SAFE_PROPOSAL,
     ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
     ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
+    ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
     type AnnounceMessage,
   } from '../../lib/announcements';
   import SafeAnnounceBody from './Safe/SafeAnnounceBody.svelte';
   import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
   import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
+  import GovernanceUpdatedAnnounceBody from './GovernanceUpdatedAnnounceBody.svelte';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let id: string = '';
   export let announce: AnnounceMessage;
   export let authorName: string = '';
-  /** Sender npub (MLS group messages); used by signer-share card to highlight which member posted this update. */
+  /** Sender npub (MLS group messages); used for first-person vs third-person copy on signer-share cards. */
   export let authorNpub: string | undefined = undefined;
   export let timestamp: string = '';
 
@@ -34,6 +36,9 @@
 
   $: dashboardPollPayload =
     announce.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? announce.payload : null;
+
+  $: governanceUpdatedPayload =
+    announce.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED ? announce.payload : null;
 </script>
 
 <div class="announce-card" id={id ? `msg-${id}` : undefined} data-announce-type={announce.type}>
@@ -52,6 +57,13 @@
     />
   {:else if safeAnnounceOnly}
     <SafeAnnounceBody announce={safeAnnounceOnly} {authorName} {timestamp} />
+  {:else if governanceUpdatedPayload}
+    <GovernanceUpdatedAnnounceBody
+      payload={governanceUpdatedPayload}
+      {authorName}
+      {authorNpub}
+      {timestamp}
+    />
   {:else}
     <div class="announce-body">
       <p class="announce-title">Announcement</p>

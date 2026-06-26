@@ -622,8 +622,6 @@
         {:else if dashboardView === 'settings'}
           {#await loadDashboardSettingsTab() then SettingsTab}
             <SettingsTab
-              {squadInfraRows}
-              {hasSponsor}
               {permissionsCtx}
               {squadAdminCtx}
             {settingsChainError}
@@ -636,9 +634,7 @@
               {squadMemberEvmByNpub}
               {memberHatByAddress}
               {memberRolesByAddress}
-              onOpenLaunchpad={openLaunchpad}
               onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
-              onRosterBindingChanged={() => void loadSquadMemberEvm()}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Settings tab.</p>

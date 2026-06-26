@@ -1,0 +1,111 @@
+/* Shared action buttons: modals, dashboard panels, polls channel, etc. */
+
+.modal-content :is(.modal-actions, .rotate-modal-actions, .squad-roles-modal-actions, .nave-wizard-actions),
+.modal-overlay .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.modal-content :is(.btn-primary, .btn-secondary),
+.modal-overlay :is(.btn-primary, .btn-secondary),
+.btn-primary,
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.modal-content .btn-primary,
+.modal-overlay .btn-primary,
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  border: 1px solid transparent;
+}
+
+.modal-content .btn-primary:hover:not(:disabled),
+.modal-overlay .btn-primary:hover:not(:disabled),
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+}
+
+.modal-content .btn-primary:disabled,
+.modal-overlay .btn-primary:disabled,
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modal-content .btn-secondary,
+.modal-overlay .btn-secondary,
+.btn-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.modal-content .btn-secondary:hover:not(:disabled),
+.modal-overlay .btn-secondary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.modal-content .btn-secondary:disabled,
+.modal-overlay .btn-secondary:disabled,
+.btn-secondary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modal-overlay :is(.btn-cancel, .btn-confirm, .btn-close) {
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.25;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.modal-overlay .btn-cancel {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.modal-overlay .btn-cancel:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.modal-overlay :is(.btn-confirm, .btn-close) {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  border: 1px solid transparent;
+}
+
+.modal-overlay :is(.btn-confirm, .btn-close):hover:not(:disabled) {
+  background: var(--accent-hover, var(--accent));
+}
+
+.modal-overlay :is(.btn-cancel, .btn-confirm, .btn-close):disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

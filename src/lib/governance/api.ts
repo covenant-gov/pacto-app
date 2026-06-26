@@ -141,15 +141,19 @@ export interface SquadSponsorDeployResultDto {
 }
 
 /** Backend: `deploy_squad_sponsor_for_parent`. */
+export type SquadSponsorDeploySignerWallet = 'default' | 'squad';
+
 export async function deploySquadSponsorForParent(params: {
   network: string;
   parentId: string;
   initialDepositWei?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<SquadSponsorDeployResultDto> {
   return (await invoke('deploy_squad_sponsor_for_parent', {
     network: params.network,
     parentId: params.parentId,
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
+    signerWallet: params.signerWallet ?? 'squad',
   })) as SquadSponsorDeployResultDto;
 }
 

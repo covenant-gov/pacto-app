@@ -106,6 +106,17 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload }
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload };
 
+export function isSponsorGovernanceProvider(provider: string): boolean {
+  return provider.trim().toLowerCase() === 'sponsor';
+}
+
+export function isSponsorGovernanceAnnounce(msg: AnnounceMessage): boolean {
+  return (
+    msg.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED &&
+    isSponsorGovernanceProvider(msg.payload.provider)
+  );
+}
+
 function isSquadSafeUpdatedPayload(p: unknown): p is SquadSafeUpdatedPayload {
   return (
     p != null &&
@@ -211,10 +222,19 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
 
 /**
  * Build content string for posting an announcement (e.g. from Set Safe flow or Create proposal).
- * Includes `pacto_virtual_bucket` per routing ADR (`inbox` for governance automation; `polls` for poll-created wire).
+ * Squad sponsor deploys use `announcements`; other governance automation uses `inbox`.
  */
-export function buildAnnounceContent<T extends AnnounceMessage>(msg: T): string {
-  const pacto_virtual_bucket = msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ? 'polls' : 'inbox';
+export function buildAnnounceContent<T extends AnnounceMessage>(
+  msg: T,
+  options?: { virtualBucket?: 'announcements' | 'inbox' | 'polls' }
+): string {
+  const pacto_virtual_bucket =
+    options?.virtualBucket ??
+    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED
+      ? 'polls'
+      : isSponsorGovernanceAnnounce(msg)
+        ? 'announcements'
+        : 'inbox');
   return JSON.stringify({ pacto_virtual_bucket, type: msg.type, payload: msg.payload });
 }
 

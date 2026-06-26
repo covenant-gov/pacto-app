@@ -31,8 +31,7 @@ import {
   PACTO_APP_INBOX_PREFIX,
   LAST_DM_NPUB_PREFIX,
 } from './dm';
-import { hydrateSquadsFromDisk } from './squads';
-import { restoreSquadsHubSelection } from '../lib/squad-hub-nav';
+import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 
 export {
   currentNpubForPersistence,
@@ -43,8 +42,8 @@ export {
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
+  void hydrateSquadsFromDb();
   if (typeof localStorage === 'undefined') return;
-  hydrateSquadsFromDisk(npub);
   try {
     const pinnedKey = `${PINNED_DM_NPUBS_PREFIX}_${npub}`;
     const rawPinned = localStorage.getItem(pinnedKey);
@@ -116,5 +115,4 @@ export function loadAccountState(npub: string): void {
   hydrateSafeStateCacheFromDisk(npub, (rows) => {
     safeStateByTreasuryId.update((cur) => ({ ...cur, ...rows }));
   });
-  restoreSquadsHubSelection();
 }

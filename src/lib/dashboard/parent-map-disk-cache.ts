@@ -63,6 +63,24 @@ export function writeParentMapDiskEntry<T>(
   return fetchedAtMs;
 }
 
+export function removeParentMapDiskEntry<T>(
+  storageKey: string,
+  parentId: string,
+  validateArray: (x: unknown) => x is T[],
+): void {
+  if (typeof localStorage === 'undefined' || !parentId) return;
+  const blob = readParentMapDiskBlob(storageKey, validateArray);
+  if (!blob) return;
+  if (!(parentId in blob.byParentId)) return;
+  delete blob.byParentId[parentId];
+  delete blob.fetchedAtMsByParentId[parentId];
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(blob));
+  } catch {
+    // ignore quota
+  }
+}
+
 export function readParentMapFetchedAtMs(
   storageKey: string,
   parentId: string,

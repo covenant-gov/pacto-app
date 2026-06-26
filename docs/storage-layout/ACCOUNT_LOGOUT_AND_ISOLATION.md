@@ -65,11 +65,12 @@ Order (simplified):
 
 ## 6. Frontend isolation (checklist)
 
-Squads, networks, last-opened chat ids, and similar state must be **scoped to npub** or **cleared on logout / new account**. If any of this lives in **unscoped `localStorage`**, a new identity can still “see” the previous account’s navigation or squad list until cleared.
+Squads live in **SQLite** (`squads` table); navigation prefs (last-opened squad/channel) use **npub-scoped `localStorage`**. Both must be **cleared on logout / new account** via `clearAccountState`. Unscoped keys can leak the previous account’s navigation until cleared.
 
 When adding persistence:
 
-- Prefer keys like **`pacto_*_<npub>`** (see **[`docs/communities/DESIGN.md`](../communities/DESIGN.md)** — squads + in-app networks persistence pattern).
+- Squad catalog → SQLite (`upsert_squad` / `list_squads`); see **[`docs/communities/SQUAD_CATALOG.md`](../communities/SQUAD_CATALOG.md)**.
+- Nav / cache prefs → keys like **`pacto_*_<npub>`** (see **[`docs/communities/DESIGN.md`](../communities/DESIGN.md)** §5).
 - On logout, call shared **`clearAccountState`** (or equivalent) **before** or **with** `invoke('logout')`.
 
 ---

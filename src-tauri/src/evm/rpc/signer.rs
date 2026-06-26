@@ -62,6 +62,18 @@ async fn private_key_signer_from_account_id<R: Runtime>(
     Ok((signer, wallet))
 }
 
+/// Default DM / settings signer (`active_evm_account_id`).
+pub async fn load_active_squad_embedded_signer<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<(PrivateKeySigner, EthereumWallet), String> {
+    evm_accounts::require_squad_purpose_signer(app.clone())
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
+    let account_id = evm_accounts::active_squad_signing_account_id(&app)
+        .map_err(|e| wallet_err_json("ROSTER_SIGNER", e, None))?;
+    private_key_signer_from_account_id(&app, account_id.as_str()).await
+}
+
 /// Squad roster-bound signer for a parent; falls back to active squad signer when parent id is empty.
 pub async fn load_squad_roster_embedded_signer<R: Runtime>(
     app: AppHandle<R>,

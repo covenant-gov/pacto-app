@@ -6,7 +6,7 @@
   export let isMine: boolean;
   /** Display name of the counterparty (the other person in the DM). */
   export let peerDisplayName: string;
-  export let status: 'pending' | 'declined' | 'fulfilled';
+  export let status: 'pending' | 'declined' | 'fulfilled' | 'sending';
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
@@ -29,56 +29,63 @@
   class:collapsed
   class:wallet-tx-request-card-fulfilled={status === 'fulfilled'}
   class:wallet-tx-request-card-declined={status === 'declined'}
+  class:wallet-tx-request-card-sending={status === 'sending'}
   role="article"
 >
   <div class="wallet-tx-request-icon" aria-hidden="true">
     <span class="wallet-tx-request-icon-inner">◈</span>
   </div>
   <div class="wallet-tx-request-body">
-    <p class="wallet-tx-request-badge">Payment request</p>
+    <p class="wallet-tx-request-badge">
+      {status === 'sending' ? 'Sending' : 'Payment request'}
+    </p>
     <p class="wallet-tx-request-title">{title}</p>
     <p class="wallet-tx-request-subtitle">{subtitle}</p>
-    <p class="wallet-tx-request-text">{bodyText}</p>
-    {#if status === 'fulfilled'}
-      <p class="wallet-tx-request-status wallet-tx-request-status-fulfilled" aria-live="polite">
-        Paid
-      </p>
-      {#if isMine}
-        <p class="wallet-tx-request-hint">A matching transfer was posted in this chat.</p>
-      {/if}
-    {:else if isMine}
-      <p class="wallet-tx-request-hint">Waiting for the other person to respond.</p>
-    {:else if status === 'declined'}
-      <p class="wallet-tx-request-status wallet-tx-request-status-declined" aria-live="polite">Declined</p>
-      {#if isMine}
-        <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
-          {peerDisplayName} declined this payment request. You can follow up in chat or send another request later.
-        </p>
-      {:else}
-        <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
-          You declined. No automatic message was sent to {peerDisplayName}.
-        </p>
-      {/if}
-    {:else}
-      <div class="wallet-tx-request-actions">
-        <button
-          type="button"
-          class="wallet-tx-request-btn wallet-tx-request-btn-accept"
-          disabled={accepting}
-          on:click={onAccept}
-        >
-          {accepting ? 'Accepting…' : 'Accept'}
-        </button>
-        <button
-          type="button"
-          class="wallet-tx-request-btn wallet-tx-request-btn-decline"
-          disabled={accepting}
-          on:click={onDecline}
-        >
-          Decline
-        </button>
-      </div>
+    {#if status !== 'sending'}
+      <p class="wallet-tx-request-text">{bodyText}</p>
     {/if}
+    {#if status === 'sending'}
+      <p class="wallet-tx-request-hint">Posting to this chat…</p>
+    {:else if status === 'fulfilled'}
+        <p class="wallet-tx-request-status wallet-tx-request-status-fulfilled" aria-live="polite">
+          Paid
+        </p>
+        {#if isMine}
+          <p class="wallet-tx-request-hint">A matching transfer was posted in this chat.</p>
+        {/if}
+      {:else if isMine}
+        <p class="wallet-tx-request-hint">Waiting for the other person to respond.</p>
+      {:else if status === 'declined'}
+        <p class="wallet-tx-request-status wallet-tx-request-status-declined" aria-live="polite">Declined</p>
+        {#if isMine}
+          <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
+            {peerDisplayName} declined this payment request. You can follow up in chat or send another request later.
+          </p>
+        {:else}
+          <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
+            You declined. No automatic message was sent to {peerDisplayName}.
+          </p>
+        {/if}
+      {:else}
+        <div class="wallet-tx-request-actions">
+          <button
+            type="button"
+            class="wallet-tx-request-btn wallet-tx-request-btn-accept"
+            disabled={accepting}
+            on:click={onAccept}
+          >
+            {accepting ? 'Accepting…' : 'Accept'}
+          </button>
+          <button
+            type="button"
+            class="wallet-tx-request-btn wallet-tx-request-btn-decline"
+            disabled={accepting}
+            on:click={onDecline}
+          >
+            Decline
+          </button>
+        </div>
+      {/if}
   </div>
 </div>
 
@@ -117,6 +124,16 @@
   }
 
   .wallet-tx-request-card-declined .wallet-tx-request-icon-inner {
+    color: var(--text-muted);
+  }
+
+  .wallet-tx-request-card-sending {
+    border-left-color: var(--text-muted);
+    opacity: 0.92;
+  }
+
+  .wallet-tx-request-card-sending .wallet-tx-request-badge,
+  .wallet-tx-request-card-sending .wallet-tx-request-icon-inner {
     color: var(--text-muted);
   }
 

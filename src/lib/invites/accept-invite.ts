@@ -9,6 +9,7 @@ import {
 } from '../api/nostr';
 import { defaultChannelRowsForGroupId } from '../parent-navbar';
 import { normalizeStoredSquad } from '../squad-pair';
+import { persistSquad, persistSquadPatch } from '../squad/squad-catalog';
 import { dmError } from '../utils/dm-debug';
 import {
   squads,
@@ -23,7 +24,6 @@ import {
   ANNOUNCEMENTS_CHANNEL_NAME,
   type DmMessage,
   type Squad,
-  type Channel,
 } from '../../stores/app';
 import { pendingReadyToast } from '../../stores/toast';
 
@@ -44,19 +44,16 @@ export function resetInviteAcceptState(): void {
 }
 
 function addChannelToParent(parentId: string, channelGroupId: string, channelName: string): void {
-  const newChannel: Channel = {
-    name: channelName,
-    groupId: channelGroupId,
-    order: 0,
-  };
-  const list = get(squads);
-  const squad = list.find((s: Squad) => s.id === parentId);
-  if (squad) {
-    newChannel.order = squad.channels.length;
-    squads.update((l: Squad[]) =>
-      l.map((s: Squad) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
-    );
-  }
+  void persistSquadPatch(parentId, (squad) => {
+    if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
+    return {
+      ...squad,
+      channels: [
+        ...squad.channels,
+        { name: channelName, groupId: channelGroupId, order: squad.channels.length },
+      ],
+    };
+  });
 }
 
 export interface AnnouncementsInvitePayload {
@@ -104,6 +101,13 @@ export async function acceptAnnouncementsInvite(
       ? [...list.filter((s) => s.id !== newSquad.id), newSquad]
       : [...list, newSquad]
   );
+  try {
+    await persistSquad(newSquad);
+  } catch (e) {
+    dmError('persistSquad after accept invite', e);
+    squads.update((list: Squad[]) => list.filter((s) => s.id !== newSquad.id));
+    throw e;
+  }
   activeSquadId.set(newSquad.id);
   activeChannelId.set(payload.groupId);
   activeHubChannelName.set(ANNOUNCEMENTS_CHANNEL_NAME);
@@ -215,10 +219,13 @@ export function handleMlsWelcomeAccepted(group_id: string): void {
   if (singleChannelSquads.length === 1) {
     const squad = singleChannelSquads[0];
     const name = group_id.slice(0, 12) + '…';
-    const newChannel: Channel = { name, groupId: group_id, order: squad.channels.length };
-    squads.update((l: Squad[]) =>
-      l.map((s: Squad) => (s.id !== squad.id ? s : { ...s, channels: [...s.channels, newChannel] }))
-    );
+    void persistSquadPatch(squad.id, (s) => {
+      if (s.channels.some((ch) => ch.groupId === group_id)) return s;
+      return {
+        ...s,
+        channels: [...s.channels, { name, groupId: group_id, order: s.channels.length }],
+      };
+    });
   }
 }
 

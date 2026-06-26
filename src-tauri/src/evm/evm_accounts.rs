@@ -129,6 +129,16 @@ pub fn resolve_roster_signing_account_id<R: Runtime>(
     Ok(id)
 }
 
+/// Active squad-purpose signer (`active_evm_account_id`), ignoring per-squad roster bindings.
+pub fn active_squad_signing_account_id<R: Runtime>(handle: &AppHandle<R>) -> Result<String, String> {
+    let conn = account_manager::get_db_connection(handle)?;
+    let active_id = sql_get_setting(&conn, SETTING_ACTIVE)?
+        .ok_or_else(|| "No active EVM account.".to_string())?;
+    require_squad_purpose_account_id(&conn, &active_id)?;
+    account_manager::return_db_connection(conn);
+    Ok(active_id)
+}
+
 /// Treasury / phrase-derived deploy paths: validate the roster-resolved account can sign.
 pub async fn require_roster_treasury_signing_allowed<R: Runtime>(
     handle: AppHandle<R>,

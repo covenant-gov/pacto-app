@@ -3,6 +3,7 @@ import { squadMemberEvmByParentId } from '../../stores/squads';
 import {
   PARENT_MAP_DISK_CACHE_VERSION,
   readParentMapDiskBlob,
+  removeParentMapDiskEntry,
   writeParentMapDiskEntry,
 } from './parent-map-disk-cache';
 
@@ -64,4 +65,15 @@ export function getCachedSquadMemberEvmForParent(
   const blob = readParentMapDiskBlob(storageKey(npub), isMemberEvmMapArray);
   if (!blob?.byParentId[parentId]) return null;
   return unwrapMap(blob.byParentId[parentId]);
+}
+
+export function removeSquadMemberEvmCacheForParent(npub: string, parentId: string): void {
+  if (!npub || !parentId) return;
+  removeParentMapDiskEntry(storageKey(npub), parentId, isMemberEvmMapArray);
+  squadMemberEvmByParentId.update((cur) => {
+    if (!(parentId in cur)) return cur;
+    const next = { ...cur };
+    delete next[parentId];
+    return next;
+  });
 }

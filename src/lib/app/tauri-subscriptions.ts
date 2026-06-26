@@ -6,6 +6,7 @@ import {
   resolveInviteInviterNpub,
 } from '../pacto-app-inbox';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/accept-invite';
+import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import {
   backendDmMessages,
@@ -18,7 +19,6 @@ import {
   pendingMlsWelcomes,
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
-  updateChannelNameIfPlaceholder,
   type DmMessage,
   type DmChatState,
   type SyncStatus,

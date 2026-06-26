@@ -9,8 +9,6 @@ import {
   type SquadKind,
   type SquadVisibility,
 } from '../lib/squad-pair';
-import { persistenceKey } from './persistence-context';
-
 export type { SquadKind, PairedSquadRef, PairedSquads, SquadVisibility };
 export { partnerSquadsForAnchor, partnerSquadsForHubParent } from '../lib/squad-pair';
 
@@ -62,101 +60,12 @@ export interface Squad {
   updatedAt: number;
 }
 
-export const PACTO_SQUADS_PREFIX = 'pacto_squads';
-
-function isEmptySquadsJson(raw: string): boolean {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) && parsed.length === 0;
-  } catch {
-    return false;
-  }
-}
-
 export const squads = writable<Squad[]>([]);
-
-/** Read squads from npub-scoped localStorage; migrate legacy `pacto_squads` when scoped is missing or empty. */
-export function hydrateSquadsFromDisk(npub: string): void {
-  if (typeof localStorage === 'undefined') {
-    squads.set([]);
-    return;
-  }
-  const scopedKey = `${PACTO_SQUADS_PREFIX}_${npub}`;
-  let raw = localStorage.getItem(scopedKey);
-  if (!raw || isEmptySquadsJson(raw)) {
-    const legacy = localStorage.getItem(PACTO_SQUADS_PREFIX);
-    if (legacy && !isEmptySquadsJson(legacy)) {
-      raw = legacy;
-      try {
-        localStorage.setItem(scopedKey, legacy);
-        localStorage.removeItem(PACTO_SQUADS_PREFIX);
-      } catch {
-        // ignore quota
-      }
-    }
-  }
-  if (!raw) {
-    squads.set([]);
-    return;
-  }
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    const list = Array.isArray(parsed) ? (parsed as Squad[]) : [];
-    const loaded: Squad[] = [];
-    for (const item of list) {
-      try {
-        if (item && typeof item === 'object' && typeof item.id === 'string') {
-          loaded.push(normalizeSquadFromStorage(item));
-        }
-      } catch {
-        // skip malformed row
-      }
-    }
-    squads.set(loaded);
-  } catch {
-    squads.set([]);
-  }
-}
-
-squads.subscribe((value) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(PACTO_SQUADS_PREFIX);
-  if (!key) return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore quota or serialization errors
-  }
-});
 
 export function isPlaceholderChannelName(groupId: string, name: string): boolean {
   if (!name || name.length < 10) return false;
   const placeholder = groupId.slice(0, 12) + '…';
   return name === placeholder || name === groupId.slice(0, 12);
-}
-
-export function updateChannelNameIfPlaceholder(groupId: string, newName: string): void {
-  if (!newName || typeof newName !== 'string') return;
-  const name = newName.trim();
-  if (!name) return;
-
-  squads.update((list) =>
-    list.map((s) => ({
-      ...s,
-      channels: s.channels.map((ch) =>
-        ch.groupId === groupId && isPlaceholderChannelName(groupId, ch.name)
-          ? { ...ch, name }
-          : ch
-      ),
-    }))
-  );
-  ungroupedChannels.update((list) =>
-    list.map((ch) =>
-      ch.groupId === groupId && isPlaceholderChannelName(groupId, ch.name)
-        ? { ...ch, name }
-        : ch
-    )
-  );
 }
 
 export const parentsCreatingAnnouncements = writable<Set<string>>(new Set());

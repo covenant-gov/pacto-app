@@ -1,14 +1,15 @@
 <script lang="ts">
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
-  import SquadRosterKeyInboxCard from '../../inbox/SquadRosterKeyInboxCard.svelte';
+  import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth';
   import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
 
-  export let squadInfraRows: unknown[] | undefined = undefined;
-  export let hasSponsor = false;
+  /** Enable when squad key rotation backend is wired. */
+  const ROTATE_SQUAD_KEY_ENABLED = false;
+
   export let permissionsCtx: DashboardPermissionsContext;
   export let squadAdminCtx: ResolvedSquadAdminContext | null = null;
   export let settingsChainError = '';
@@ -21,9 +22,9 @@
   export let squadMemberEvmByNpub: Record<string, string> = {};
   export let memberHatByAddress: Record<string, string> = {};
   export let memberRolesByAddress: Record<string, string> = {};
-  export let onOpenLaunchpad: () => void = () => {};
   export let onOpenSquadRolesModal: () => void = () => {};
-  export let onRosterBindingChanged: () => void = () => {};
+
+  let rotateModalOpen = false;
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -34,38 +35,35 @@
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
 </script>
 
-{#if squadInfraRows !== undefined && !hasSponsor}
-  <div class="sponsor-empty-banner" role="status">
-    <p class="sponsor-empty-banner-text">Deploy squad sponsor first using the Deploy button below.</p>
-    <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
-  </div>
-{/if}
-
 <section
   id="settings-user-squad"
   class="dashboard-section dashboard-user-squad-section"
   aria-labelledby="settings-user-squad-heading"
 >
-  <h3 id="settings-user-squad-heading" class="section-heading">User-per-squad settings</h3>
-  <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-    Roster address for this squad. Account-wide DM signer lives in Profile → Settings.
-  </p>
+  <h3 id="settings-user-squad-heading" class="section-heading">User-per-Squad EVM address</h3>
+
   {#if announcementsGroupId && parentId}
-    <p class="user-roster-current">
-      Your roster EVM:
-      <code class="user-roster-addr">{myRosterEvm ? shortAddress(myRosterEvm) : 'Not shared'}</code>
-    </p>
-    <div class="user-roster-actions">
-      <SquadRosterKeyInboxCard
-        {parentId}
-        announcementsGroupId={announcementsGroupId}
-        onComplete={onRosterBindingChanged}
-      />
+    <div class="user-roster-key-box">
+      {#if myRosterEvm}
+        <code class="user-roster-addr-full">{myRosterEvm}</code>
+      {:else}
+        <span class="user-roster-empty muted">Not shared yet</span>
+      {/if}
     </div>
+    <button
+      type="button"
+      class="btn-secondary user-roster-rotate-btn"
+      disabled={!ROTATE_SQUAD_KEY_ENABLED}
+      on:click={() => (rotateModalOpen = true)}
+    >
+      Rotate key
+    </button>
   {:else}
     <p class="dashboard-placeholder-text muted">No announcements channel for this squad.</p>
   {/if}
 </section>
+
+<RotateSquadKeyModal open={rotateModalOpen} onClose={() => (rotateModalOpen = false)} />
 
 <section
   id="settings-squad"
@@ -174,26 +172,6 @@
 </section>
 
 <style>
-  .sponsor-empty-banner {
-    margin: 0 16px 16px;
-    padding: 14px 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-elevated);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px 16px;
-  }
-
-  .sponsor-empty-banner-text {
-    margin: 0;
-    flex: 1;
-    min-width: 200px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
   .dashboard-section {
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -204,21 +182,35 @@
     margin-bottom: 16px;
   }
 
-  .user-roster-current {
+  .user-roster-key-box {
     margin: 0 0 12px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
   }
 
-  .user-roster-addr {
+  .user-roster-addr-full {
+    display: block;
     font-family: ui-monospace, monospace;
     font-size: 0.8125rem;
+    line-height: 1.45;
+    word-break: break-all;
     color: var(--text-primary);
   }
 
-  .user-roster-actions :global(.roster-key-card) {
-    margin: 0;
-    max-width: none;
+  .user-roster-empty {
+    font-size: 0.875rem;
+  }
+
+  .user-roster-rotate-btn {
+    font-size: 0.875rem;
+    padding: 8px 14px;
+  }
+
+  .user-roster-rotate-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .dashboard-placeholder-section .section-heading {
@@ -412,5 +404,12 @@
     background: var(--bg-secondary);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 </style>
