@@ -41,6 +41,12 @@ import {
   dmSendError,
 } from '../../stores/dm';
 import {
+  dmLastReadByNpub,
+  dmUnreadByNpub,
+  pactoAppInboxLastReadId,
+  dmThreadScrolledToBottom,
+} from '../../stores/dm-unread';
+import {
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
   acceptedChannelInviteMessageIds,
@@ -188,6 +194,10 @@ export function clearAccountState(npub?: string): void {
   backendDmMessages.set({});
   dmThreadAnnouncementsByNpub.set({});
   pactoAppInboxMessages.set([]);
+  dmLastReadByNpub.set({});
+  dmUnreadByNpub.set({});
+  pactoAppInboxLastReadId.set('');
+  dmThreadScrolledToBottom.set(false);
   messageCountByChat.set({});
   loadedOffsetByChat.set({});
   dmSyncStatus.set('idle');

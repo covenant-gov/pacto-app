@@ -11,7 +11,7 @@ import {
 import type { DmMessage } from '../stores/app';
 
 export const PACTO_APP_DM_THREAD_ID = '__pacto_app__';
-export const PACTO_APP_DISPLAY_NAME = 'Pacto App';
+export const PACTO_APP_DISPLAY_NAME = 'Inbox';
 
 export interface PactoAppInboxEntry extends DmMessage {
   /** Npub of the user who sent the invite (for display + DM deep link). */

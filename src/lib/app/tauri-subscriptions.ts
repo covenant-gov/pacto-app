@@ -9,6 +9,7 @@ import {
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/accept-invite';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
+import { get } from 'svelte/store';
 import {
   backendDmMessages,
   backendGroupMessages,
@@ -20,10 +21,12 @@ import {
   pendingMlsWelcomes,
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
+  activeDmId,
   type DmMessage,
   type DmChatState,
   type SyncStatus,
 } from '../../stores/app';
+import { incrementDmUnread, dmThreadScrolledToBottom } from '../../stores/dm-unread';
 
 const TYPING_EXPIRY_SEC = 15;
 
@@ -107,6 +110,13 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         );
         return { ...byNpub, [chat_id]: [...withoutOpt, m] };
       });
+      if (!m.mine) {
+        const active = get(activeDmId);
+        const atBottom = get(dmThreadScrolledToBottom);
+        if (active !== chat_id || !atBottom) {
+          incrementDmUnread(chat_id);
+        }
+      }
       dmChatsByNpub.update((map: Record<string, DmChatState>) => {
         const cur = map[chat_id];
         const next = {
