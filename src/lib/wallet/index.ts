@@ -16,6 +16,7 @@ export { getPublicClient } from './client';
 export {
   getWalletSummary,
   walletBuildAndSendTransaction,
+  walletWaitForTransaction,
   parseWalletOpError,
   safeDeployProxy,
   userFacingDeploySafeMessage,

@@ -5,8 +5,12 @@
   import { profiles } from '../../../stores/profiles';
   import { getProfileDisplayName } from '../../../lib/utils/profile';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
-  import { getExplorerTxUrl } from '../../../lib/wallet/assets';
+  import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName, getExplorerTxUrl } from '../../../lib/wallet/assets';
+  import {
+    runOnChainInBackground,
+    toastOnChainSubmitted,
+    waitForOnChainConfirmationInBackground,
+  } from '../../../lib/evm/on-chain-background';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../../lib/wallet/chains';
@@ -189,29 +193,36 @@
     }
   }
 
-  async function onSendCall() {
+  function onSendCall() {
     if (callSimOk !== true || callSending) return;
-    callSending = true;
-    try {
-      const outcome = await evmSendSquadAllowlistedContractCall({
-        parentId,
-        network: callChain,
-        to: callTo.trim(),
-        valueWei: ethAmountToWeiString(callValueEth),
-        dataHex: builtCallCalldata(),
-      });
-      if (!outcome.ok) {
-        showToast(outcome.message);
-        return;
-      }
-      showToast('Squad transaction confirmed.');
-      const url = getExplorerTxUrl(callChain, outcome.result.txHash);
-      if (url) openExternalUrl(url);
-    } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Send failed.'));
-    } finally {
-      callSending = false;
-    }
+    const params = {
+      parentId,
+      network: callChain,
+      to: callTo.trim(),
+      valueWei: ethAmountToWeiString(callValueEth),
+      dataHex: builtCallCalldata(),
+      waitForConfirmation: false as const,
+    };
+    runOnChainInBackground({
+      startedToast: 'Squad transaction submitted. Confirmation continues in the background.',
+      subject: 'Squad transaction',
+      job: async () => {
+        const outcome = await evmSendSquadAllowlistedContractCall(params);
+        if (!outcome.ok) throw new Error(outcome.message);
+        return outcome.result;
+      },
+      onSuccess: (result) => {
+        toastOnChainSubmitted(callChain, result.txHash, 'Squad transaction');
+        waitForOnChainConfirmationInBackground(callChain, result.txHash, {
+          subject: 'Squad transaction',
+          confirmedToast: true,
+          onConfirmed: () => {
+            const url = getExplorerTxUrl(callChain, result.txHash);
+            if (url) openExternalUrl(url);
+          },
+        });
+      },
+    });
   }
 
   $: callTargetLabel = findAllowlistLabel(rows, callChain, callTo);

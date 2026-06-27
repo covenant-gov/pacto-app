@@ -19,13 +19,11 @@
     type WalletSummaryNetwork,
     type WalletSummaryAsset,
     type SupportedChainId,
-    type WalletTransferSuccessDetail,
     type WatchedErc20Row,
     getMatchingCachedSummary,
     persistWalletSummaryCache,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
-  import { formatWalletTxAnnouncement } from '../../lib/wallet/dm-messages';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import {
@@ -40,7 +38,7 @@
   /** Active DM counterparty npub */
   export let npub: string;
 
-  /** Send structured DM text to the active thread (same path as the composer). Used for `wallet_tx_announcement` after a confirmed send. */
+  /** Send structured DM text to the active thread (same path as the composer). */
   export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
 
   let sendModalOpen = false;
@@ -254,50 +252,6 @@
     summaryLoading = false;
   }
 
-  async function handleWalletTransferSuccess(detail: WalletTransferSuccessDetail) {
-    await refreshSummary();
-    const me = get(currentUser)?.npub;
-    const sendPlain = postDmPlaintext;
-    if (!sendPlain) return;
-    if (!me) {
-      showToast('Transfer confirmed. Sign in to post the payment note to this chat.');
-      return;
-    }
-    const { result, network, asset, amount } = detail;
-    const fromEvm = await getActiveEvmSignerAddress();
-    if (!fromEvm) {
-      showToast(
-        'Transfer confirmed, but the payment note was skipped (active EVM address unavailable).'
-      );
-      return;
-    }
-    const content = formatWalletTxAnnouncement({
-      network,
-      asset,
-      amount,
-      tx_hash: result.txHash,
-      from_npub: me,
-      to_npub: npub,
-      from_evm_address: fromEvm,
-      ...(detail.requestId != null && detail.requestId !== ''
-        ? { request_id: detail.requestId }
-        : {}),
-      ...(result.blockNumber != null && result.blockNumber !== ''
-        ? { block_number: result.blockNumber }
-        : {}),
-    });
-    try {
-      const ok = await sendPlain(content);
-      if (!ok) {
-        showToast(
-          'Transfer confirmed, but the payment note could not be sent. You can mention it manually in chat.'
-        );
-      }
-    } catch {
-      showToast('Transfer confirmed, but the payment note could not be sent.');
-    }
-  }
-
   onMount(() => {
     loadWalletBarPrefs();
     refreshSummary();
@@ -472,7 +426,8 @@
     watchedAssetRows={watchedErc20Rows}
     formPrefill={sendModalPrefill}
     onClose={closeSendModal}
-    onTransferSuccess={handleWalletTransferSuccess}
+    {postDmPlaintext}
+    onBalanceRefresh={refreshSummary}
   />
 {/if}
 {#if requestModalOpen}

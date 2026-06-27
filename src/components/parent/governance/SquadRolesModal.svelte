@@ -6,8 +6,7 @@
     squadAdminEnableExecutor,
     squadAdminEnableFullPermission,
   } from '../../../lib/governance/api';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
 
   export let open = false;
@@ -24,7 +23,6 @@
   let executorAddress = '';
   let grantFullPermission = false;
   let actionError = '';
-  let busy = false;
 
   $: if (open && !executorAddress && memberEvmOptions.length > 0) {
     executorAddress = memberEvmOptions[0].address;
@@ -36,21 +34,19 @@
     grantFullPermission = false;
   }
 
-  async function runAction(fn: () => Promise<unknown>, successMessage: string) {
+  function runAction(fn: () => Promise<unknown>, successMessage: string) {
     actionError = '';
-    busy = true;
-    try {
-      await fn();
-      showToast(successMessage);
-      resetForm();
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Squad Admin transaction failed.');
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      actionError = raw;
-    } finally {
-      busy = false;
-    }
+    runOnChainInBackground({
+      startedToast: 'Transaction submitted. Confirmation continues in the background.',
+      job: fn,
+      onSuccess: async () => {
+        showToast(successMessage);
+        resetForm();
+      },
+      onError: (message) => {
+        actionError = message;
+      },
+    });
   }
 
   async function createRole() {
@@ -113,7 +109,7 @@
 </script>
 
 {#if open}
-  <Modal {titleId} descriptionId={descId} {onClose} dismissible={!busy} contentClass="squad-roles-modal-panel">
+  <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="squad-roles-modal-panel">
     <h2 id={titleId}>Squad Admin roles</h2>
     <p id={descId} class="squad-roles-modal-desc">
       Register app roles and assign executors on <code>{squadAdminProxy}</code>. Role labels are left-padded bytes32
@@ -129,7 +125,6 @@
         placeholder="e.g. TREASURY"
         bind:value={roleLabel}
         maxlength="32"
-        disabled={busy}
         autocomplete="off"
       />
     </div>
@@ -141,7 +136,6 @@
           id="squad-role-executor"
           class="squad-roles-input"
           bind:value={executorAddress}
-          disabled={busy}
         >
           {#each memberEvmOptions as opt (opt.address)}
             <option value={opt.address}>{opt.label} — {opt.address}</option>
@@ -154,7 +148,6 @@
           class="squad-roles-input"
           placeholder="0x…"
           bind:value={executorAddress}
-          disabled={busy}
           autocomplete="off"
         />
       {/if}
@@ -165,26 +158,26 @@
     {/if}
 
     <div class="squad-roles-actions">
-      <button type="button" class="btn-secondary" disabled={busy} on:click={createRole}>
-        {busy ? 'Working…' : 'Create role'}
+      <button type="button" class="btn-secondary" on:click={createRole}>
+        Create role
       </button>
-      <button type="button" class="btn-secondary" disabled={busy} on:click={enableExecutor}>
+      <button type="button" class="btn-secondary" on:click={enableExecutor}>
         Enable executor
       </button>
     </div>
 
     <div class="squad-roles-full-row">
       <label class="squad-roles-check">
-        <input type="checkbox" bind:checked={grantFullPermission} disabled={busy} />
+        <input type="checkbox" bind:checked={grantFullPermission} />
         Grant FULL sentinel (all roles)
       </label>
-      <button type="button" class="btn-secondary" disabled={busy} on:click={enableFull}>
+      <button type="button" class="btn-secondary" on:click={enableFull}>
         Apply FULL
       </button>
     </div>
 
     <div class="squad-roles-modal-actions">
-      <button type="button" class="btn-primary" on:click={onClose} disabled={busy}>Close</button>
+      <button type="button" class="btn-primary" on:click={onClose}>Close</button>
     </div>
   </Modal>
 {/if}

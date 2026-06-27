@@ -1,5 +1,7 @@
-use alloy::network::{EthereumWallet, ReceiptResponse, TransactionBuilder};
-use alloy::primitives::{Address, Bytes};
+use std::time::{Duration, Instant};
+
+use alloy::network::{EthereumWallet, TransactionBuilder};
+use alloy::primitives::{Address, Bytes, TxHash};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 
@@ -54,6 +56,23 @@ pub async fn connect_signing_provider(
     ))
 }
 
+pub async fn send_transaction_only<P: Provider>(
+    provider: &P,
+    tx: TransactionRequest,
+) -> Result<String, String> {
+    let pending = provider
+        .send_transaction(tx)
+        .await
+        .map_err(|e| {
+            wallet_err_json(
+                "SEND_FAILED",
+                wallet_security::redact_urls_in_text(&e.to_string()),
+                None,
+            )
+        })?;
+    Ok(format!("0x{:x}", *pending.tx_hash()))
+}
+
 pub async fn send_and_confirm<P: Provider>(
     provider: &P,
     tx: TransactionRequest,
@@ -93,6 +112,43 @@ pub async fn send_and_confirm<P: Provider>(
     }
 
     Ok(receipt)
+}
+
+pub async fn wait_for_transaction_receipt<P: Provider>(
+    provider: &P,
+    tx_hash: TxHash,
+    receipt_timeout_message: &str,
+) -> Result<TransactionReceipt, String> {
+    let submitted = format!("0x{:x}", tx_hash);
+    let deadline = Instant::now() + RECEIPT_WAIT_TIMEOUT;
+    loop {
+        let receipt = provider.get_transaction_receipt(tx_hash).await.map_err(|e| {
+            wallet_err_json(
+                "RECEIPT_POLL_FAILED",
+                wallet_security::redact_urls_in_text(&e.to_string()),
+                None,
+            )
+        })?;
+        if let Some(receipt) = receipt {
+            if !receipt.status() {
+                return Err(wallet_err_json(
+                    "TX_REVERTED",
+                    "Transaction was mined but reverted",
+                    None,
+                ));
+            }
+            return Ok(receipt);
+        }
+        if Instant::now() >= deadline {
+            return Err(wallet_err_json_with_tx_hash(
+                "RECEIPT_TIMEOUT",
+                receipt_timeout_message,
+                None,
+                submitted,
+            ));
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
 }
 
 pub fn contract_call_request(to: Address, calldata: Vec<u8>) -> TransactionRequest {

@@ -1,76 +1,73 @@
-# Wallet transaction lifecycle (DM announcements)
+# On-chain transaction UX (app-wide)
 
-This document defines **when a transfer counts as “done”** and when the **DM transaction announcement** is posted. It applies to WalletBar send flows and to request flows that end in an on-chain transfer.
-
-DM messages are **immutable**, so we cannot reliably “upgrade” a single message from pending to confirmed. Pacto should not claim a successful transfer in chat until the chain reports a **successful receipt**.
+Pacto must **never freeze navigation or modals** while waiting for Ethereum receipt confirmation. Signing and broadcast may take a few seconds; receipt polling may take minutes on congested networks — that work always continues **in the background**.
 
 ---
 
-## Decision
+## Rules
 
-### Success = receipt with success status, then announce
-
-1. **Broadcast** the signed transaction and obtain `tx_hash`.
-2. **Wait** for the transaction receipt on the same chain (JSON-RPC `eth_getTransactionReceipt` polling with backoff, or equivalent in Rust).
-3. Treat the operation as **successful for product purposes** only when:
-   - A receipt exists, and  
-   - `status` indicates **success** (EIP-155: `0x1` success; failed/`0x0` is an error).
-4. **Only then:**
-   - Close the send modal (or show final success state).
-   - Post the **`wallet_tx_announcement`** DM with amount, asset, network, `tx_hash`, **`from_evm_address`** (active signer), and a **confirmed** status label (field-level shape: [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md)).
-5. If receipt wait **times out**, return a **structured error** that includes `tx_hash` (when known) and copy that tells the user to check a block explorer — **do not** post a DM that claims the transfer succeeded.
-
-### What we do *not* do for MVP
-
-- **Announce on submit only:** A transaction can still **revert** after being included. Posting a permanent DM as if the transfer succeeded would be **misleading** in that case.
-- **Single DM with later “edit” to confirmed:** Nostr/DM payloads are not edited in place for this use case; avoid relying on a follow-up correction message as the primary truth.
+1. **Broadcast, then release the UI.** After the signed transaction is submitted to the mempool, close modals / re-enable panels and let the user keep using the app.
+2. **Show honest pending state.** Use toasts (“submitted — confirmation continues in the background”), pending badges on DM wallet cards, or dashboard placeholders — never claim final success before a successful receipt.
+3. **Poll receipts off the critical path.** Use `wallet_wait_for_transaction` (or domain-specific finalize logic) from a background task; surface confirmation or failure via toast and in-place UI updates.
+4. **Permanent DM announcements** follow the optimistic two-phase pattern documented in [DM wallet lifecycle](#dm-wallet-transfers) below.
 
 ---
 
-## UX consequences
+## Backend contract
+
+| Command | Default | Notes |
+|---------|---------|--------|
+| `wallet_build_and_send_transaction` | `waitForConfirmation: false` | Returns `txHash` after broadcast; optional `blockNumber` when `waitForConfirmation: true`. |
+| `wallet_wait_for_transaction` | — | Poll receipt; same result shape as confirmed send. |
+| `evm_send_advanced_contract_call` | `waitForConfirmation: false` | Advanced Settings panel. |
+| `evm_send_squad_allowlisted_contract_call` | `waitForConfirmation: false` | Dashboard allowlist sends. |
+| Deploy / governance commands | still wait for receipt internally | UI closes immediately and runs the invoke in a background job (`runOnChainInBackground`). |
+
+Receipt polling uses **180s** (`RECEIPT_WAIT_TIMEOUT` in `wallet_ops.rs`). On timeout, return `RECEIPT_TIMEOUT` with `txHash` when known.
+
+---
+
+## Frontend helpers
+
+`src/lib/evm/on-chain-background.ts`:
+
+- `runOnChainInBackground` — queue long Tauri invokes (deploy wizards, squad admin writes).
+- `waitForOnChainConfirmationInBackground` — poll after broadcast-only send.
+- `toastOnChainSubmitted` / `toastOnChainConfirmed` / `toastOnChainFailed`.
+
+DM wallet sends additionally use `finalizeWalletDmTransferAfterBroadcast` (`src/lib/wallet/wallet-dm-transfer.ts`).
+
+---
+
+## DM wallet transfers
+
+### Optimistic chat card + background confirmation
+
+1. **Broadcast** via `wallet_build_and_send_transaction` (`waitForConfirmation: false`).
+2. **Immediately** append a local outbound DM row with `pending: true` and a `wallet_tx_announcement` payload (badge: “Transfer pending”).
+3. Close the send modal; toast with explorer link.
+4. **Background:** `wallet_wait_for_transaction`.
+5. On **success:** patch the local row to confirmed content; relay the same JSON to the peer via Nostr; refresh balances; toast confirmation.
+6. On **revert:** patch row to `failed: true`.
+7. On **timeout:** leave pending; toast to check explorer (do not claim success).
+
+Inbound announcements from peers remain post-receipt only (no optimistic upgrade of relayed messages).
+
+---
+
+## UX table
 
 | Stage | User sees |
 |--------|-----------|
-| Confirm clicked | Loading state; modal stays open (or explicit “Submitting…” step). |
-| Tx in mempool / waiting receipt | Same; optional subtext: “Waiting for confirmation…” (no success claim). |
-| Receipt success | Modal closes; toast optional; **DM announcement posted** as confirmed. |
-| Receipt failure (revert) | Error with short explanation; **no** success announcement. |
-| Timeout waiting receipt | Error: confirmation timed out; include hash + explorer hint; **no** success announcement. |
-
----
-
-## Backend contract (for `wallet_build_and_send_transaction`)
-
-Suggested return shape on full success:
-
-- `tx_hash`
-- `network_id`
-- `asset`, `amount` (echo / canonical)
-- `block_number` (optional, for support)
-- `status`: `"confirmed"` (only returned on success path)
-
-**Desktop (current):** The Tauri command returns `txHash`, `network`, `chainId`, and optional camelCase `blockNumber` (decimal string). The Svelte client fills `asset` / `amount` from the send form and posts the announcement JSON to the DM.
-
-On failure: `Err` or structured error with `code`, `message`, and optional `tx_hash` if the tx was broadcast but reverted or timed out.
-
-The implementation may use the same JSON-RPC endpoint as broadcast for `eth_getTransactionReceipt` polling.
-
----
-
-## Timeouts and tuning
-
-- Define a **maximum wait** (order of **1–3 minutes** depending on network; shorter on L2s). Document in backend config.
-- **Desktop (current):** `wallet_build_and_send_transaction` uses **180s** for the receipt wait after broadcast (`RECEIPT_WAIT_TIMEOUT` in `wallet_ops.rs`). On timeout it returns `RECEIPT_TIMEOUT` with `txHash` in the structured error JSON so the UI can link to an explorer.
-- Poll interval: start ~1s, cap backoff (e.g. 4s) to avoid hammering RPC (handled inside Alloy’s pending-tx watcher).
-
----
-
-## Optional later
-
-Non-DM **optimistic UI** (e.g. toast “Submitted: view on explorer” with hash) **before** receipt is allowed as long as it does **not** claim final settlement. Permanent **DM** announcements remain **post-receipt only** unless product later adopts a two-message protocol (pending + confirmed) explicitly.
+| Confirm clicked | Brief signing/submit state (seconds). |
+| Tx broadcast | Modal closes (or panel unlocks); toast with hash / explorer; DM card shows **pending** when applicable. |
+| Receipt success | Toast; pending UI updates to **confirmed**; relay DM when applicable. |
+| Receipt failure (revert) | Toast; failed badge on optimistic card. |
+| Timeout | Toast with explorer hint; pending card stays pending. |
 
 ---
 
 ## See also
 
-- [README.md](./README.md) — index of wallet docs.
+- [README.md](./README.md) — wallet doc index.
+- [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md) — announcement JSON shape.

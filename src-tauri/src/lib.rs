@@ -6316,6 +6316,7 @@ pub fn run() {
             evm::wallet_ops::get_wallet_summary,
             evm::wallet_ops::get_evm_native_balance,
             evm::wallet_ops::wallet_build_and_send_transaction,
+            evm::wallet_ops::wallet_wait_for_transaction,
             evm::evm_accounts::list_evm_accounts,
             evm::evm_accounts::export_evm_account_key_plaintext,
             evm::evm_accounts::add_evm_account,

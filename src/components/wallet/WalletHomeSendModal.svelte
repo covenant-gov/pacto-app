@@ -25,10 +25,12 @@
   import {
     getWalletSummary,
     walletBuildAndSendTransaction,
+    walletWaitForTransaction,
     watchedRowsToWire,
     watchedWireFingerprint,
     type WalletSummary,
   } from '../../lib/wallet';
+  import { toastWalletBroadcastSubmitted } from '../../lib/wallet/wallet-dm-transfer';
   import { showToast } from '../../stores/toast';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
 
@@ -234,13 +236,21 @@
         assetCode,
         amountHuman,
         erc20Transfer,
-        normalizedTo
+        normalizedTo,
+        false,
       );
       if (out.ok) {
-        const h = out.result.txHash;
-        const short = h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-4)}` : h;
-        showToast(`Sent on ${out.result.network}. Tx ${short}`);
+        toastWalletBroadcastSubmitted(out.result);
         onClose();
+        void walletWaitForTransaction(chainId, out.result.txHash).then((wait) => {
+          if (wait.ok) {
+            const h = wait.result.txHash;
+            const short = h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-4)}` : h;
+            showToast(`Confirmed on ${wait.result.network}. Tx ${short}`);
+          } else if (wait.parsed?.code !== 'RECEIPT_TIMEOUT') {
+            showToast(wait.message);
+          }
+        });
       } else {
         sendError = {
           message: out.message,
@@ -272,7 +282,7 @@
     <h2 id={titleId}>Send</h2>
     <p id={descId} class="home-send-desc">
       Send from your embedded wallet to any <strong>0x</strong> address on the selected network. Confirm signs and
-      broadcasts in the desktop app, then waits for on-chain confirmation.
+      broadcasts in the desktop app; confirmation continues in the background after the modal closes.
     </p>
 
     <div class="home-send-fields">
@@ -344,12 +354,6 @@
 
       <p class="home-send-usd" role="status">{usdLine}</p>
 
-      {#if sending}
-        <p class="home-send-wait" role="status" aria-live="polite">
-          Waiting for on-chain confirmation. This can take up to a few minutes on busy networks.
-        </p>
-      {/if}
-
       {#if sendError}
         <div class="home-send-error" role="alert">
           <p class="home-send-error-msg">{sendError.message}</p>
@@ -380,7 +384,7 @@
         Cancel
       </button>
       <button type="button" class="home-send-btn home-send-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
-        {sending ? 'Waiting for confirmation…' : 'Confirm'}
+        {sending ? 'Submitting…' : 'Confirm'}
       </button>
     </div>
   </Modal>

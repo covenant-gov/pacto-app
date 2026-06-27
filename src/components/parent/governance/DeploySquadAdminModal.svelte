@@ -2,8 +2,7 @@
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { deploySquadAdminForParent } from '../../../lib/governance/api';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
 
   export let parentId: string;
   /** When set, deploy uses captain_hat variant with this hat id. */
@@ -22,40 +21,36 @@
 
   let deployNetwork: SupportedChainId = 'sepolia';
   let deployError = '';
-  let deploying = false;
 
   $: variant = captainHatId?.trim() ? ('captain_hat' as const) : ('ext_standalone' as const);
 
   async function confirmDeploy() {
     deployError = '';
-    deploying = true;
-    try {
-      const result = await deploySquadAdminForParent({
-        network: deployNetwork,
-        parentId: parentId.trim(),
-        variant,
-        captainHatId: captainHatId?.trim() || null,
-      });
-      await onComplete({
-        txHash: result.txHash,
-        chain: result.chain,
-        squadAdminProxy: result.squadAdminProxy,
-        providerPayload: result.providerPayload,
-        infraRowId: result.infraRowId,
-      });
-      onClose();
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Squad Admin deploy failed.');
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      deployError = raw;
-    } finally {
-      deploying = false;
-    }
+    const jobParams = {
+      network: deployNetwork,
+      parentId: parentId.trim(),
+      variant,
+      captainHatId: captainHatId?.trim() || null,
+    };
+    onClose();
+    runOnChainInBackground({
+      startedToast: 'Squad Admin deploy submitted. Confirmation continues in the background.',
+      subject: 'Squad Admin deploy',
+      job: () => deploySquadAdminForParent(jobParams),
+      onSuccess: async (result) => {
+        await onComplete({
+          txHash: result.txHash,
+          chain: result.chain,
+          squadAdminProxy: result.squadAdminProxy,
+          providerPayload: result.providerPayload,
+          infraRowId: result.infraRowId,
+        });
+      },
+    });
   }
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-squad-admin-panel">
+<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-squad-admin-panel">
   <h2 id={titleId}>Deploy Squad Admin</h2>
   <p id={descId} class="squad-admin-deploy-desc">
     {#if variant === 'captain_hat'}
@@ -73,7 +68,6 @@
       id="squad-admin-deploy-network"
       class="squad-admin-deploy-input squad-admin-deploy-select"
       bind:value={deployNetwork}
-      disabled={deploying}
     >
       <option value="sepolia">Sepolia</option>
       <option value="mainnet">Ethereum</option>
@@ -86,9 +80,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
-    <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={deploying}>
-      {deploying ? 'Deploying…' : 'Deploy on-chain'}
+    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+    <button type="button" class="btn-primary" on:click={confirmDeploy}>
+      Deploy on-chain
     </button>
   </div>
 </Modal>

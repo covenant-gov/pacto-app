@@ -4,8 +4,7 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getEvmAddress } from '../../../lib/api/auth';
   import { deployNavePirataForParent } from '../../../lib/governance/api';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { getAddress, isAddress } from 'viem';
 
   export let parentId: string;
@@ -27,7 +26,6 @@
   let metadataUriInput = '';
   let saltNonceInput = '';
   let deployError = '';
-  let deploying = false;
 
   onMount(async () => {
     try {
@@ -86,31 +84,28 @@
       deployError = 'Captain and metadata URI are required.';
       return;
     }
-    deploying = true;
-    try {
-      const result = await deployNavePirataForParent({
-        network: deployNetwork,
-        parentId: parentId.trim(),
-        captain: cap,
-        metadataUri: metadataUriInput.trim(),
-        saltNonce: saltNonceInput.trim() ? saltNonceInput.trim() : null,
-      });
-      await onComplete({
-        txHash: result.txHash,
-        chain: result.chain,
-        topHatId: result.topHatId,
-        safeAddress: result.safeAddress,
-        providerPayload: result.providerPayload,
-      });
-      onClose();
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Deploy failed.');
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      deployError = raw;
-    } finally {
-      deploying = false;
-    }
+    const jobParams = {
+      network: deployNetwork,
+      parentId: parentId.trim(),
+      captain: cap,
+      metadataUri: metadataUriInput.trim(),
+      saltNonce: saltNonceInput.trim() ? saltNonceInput.trim() : null,
+    };
+    onClose();
+    runOnChainInBackground({
+      startedToast: 'Pacto Gov deploy submitted. Confirmation continues in the background.',
+      subject: 'Pacto Gov deploy',
+      job: () => deployNavePirataForParent(jobParams),
+      onSuccess: async (result) => {
+        await onComplete({
+          txHash: result.txHash,
+          chain: result.chain,
+          topHatId: result.topHatId,
+          safeAddress: result.safeAddress,
+          providerPayload: result.providerPayload,
+        });
+      },
+    });
   }
 </script>
 
@@ -118,7 +113,7 @@
   {titleId}
   descriptionId={descId}
   {onClose}
-  dismissible={!deploying}
+  dismissible
   contentClass="deploy-nave-pirata-modal-panel"
 >
   <h2 id={titleId}>Deploy Pacto Gov</h2>
@@ -137,7 +132,7 @@
   {#if wizardStep === 1}
     <div class="nave-wizard-field">
       <label class="nave-wizard-field-label" for="nave-deploy-network">Network</label>
-      <select id="nave-deploy-network" class="nave-wizard-field-input nave-wizard-field-select" bind:value={deployNetwork} disabled={deploying}>
+      <select id="nave-deploy-network" class="nave-wizard-field-input nave-wizard-field-select" bind:value={deployNetwork}>
         <option value="sepolia">Sepolia</option>
         <option value="mainnet">Ethereum</option>
         <option value="optimism">Optimism</option>
@@ -147,8 +142,8 @@
       Uses the same RPC configuration as the embedded wallet for this chain.
     </p>
     <div class="modal-actions nave-wizard-actions">
-      <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
-      <button type="button" class="btn-primary" on:click={nextFromStep1} disabled={deploying}>Continue</button>
+      <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+      <button type="button" class="btn-primary" on:click={nextFromStep1}>Continue</button>
     </div>
   {:else if wizardStep === 2}
     <div class="nave-wizard-field">
@@ -159,7 +154,6 @@
         class="nave-wizard-field-input"
         placeholder="0x…"
         bind:value={captainInput}
-        disabled={deploying}
         autocomplete="off"
       />
     </div>
@@ -171,7 +165,6 @@
         class="nave-wizard-field-input"
         placeholder="https://… or ipfs://…"
         bind:value={metadataUriInput}
-        disabled={deploying}
         autocomplete="off"
       />
     </div>
@@ -183,7 +176,6 @@
         class="nave-wizard-field-input"
         placeholder="Decimal or 0x hex — empty uses an automatic nonce"
         bind:value={saltNonceInput}
-        disabled={deploying}
         autocomplete="off"
       />
     </div>
@@ -191,8 +183,8 @@
       <p class="input-error" role="alert">{deployError}</p>
     {/if}
     <div class="modal-actions nave-wizard-actions">
-      <button type="button" class="btn-secondary" on:click={backToStep1} disabled={deploying}>Back</button>
-      <button type="button" class="btn-primary" on:click={nextFromStep2} disabled={deploying}>Continue</button>
+      <button type="button" class="btn-secondary" on:click={backToStep1}>Back</button>
+      <button type="button" class="btn-primary" on:click={nextFromStep2}>Continue</button>
     </div>
   {:else}
     <dl class="nave-wizard-review">
@@ -214,9 +206,9 @@
       <p class="input-error" role="alert">{deployError}</p>
     {/if}
     <div class="modal-actions nave-wizard-actions">
-      <button type="button" class="btn-secondary" on:click={backToStep2} disabled={deploying}>Back</button>
-      <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={deploying}>
-        {deploying ? 'Deploying…' : 'Deploy on-chain'}
+      <button type="button" class="btn-secondary" on:click={backToStep2}>Back</button>
+      <button type="button" class="btn-primary" on:click={confirmDeploy}>
+        Deploy on-chain
       </button>
     </div>
   {/if}

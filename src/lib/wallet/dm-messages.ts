@@ -201,6 +201,16 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
   return out;
 }
 
+/** On-chain confirmation pending — not Nostr relay `message.pending`. */
+export function isWalletTxAnnouncementOnChainPending(
+  payload: WalletTxAnnouncementPayload,
+  msg: { id?: string; failed?: boolean },
+): boolean {
+  if (msg.failed) return false;
+  if (payload.block_number) return false;
+  return !!msg.id?.startsWith('opt-');
+}
+
 /**
  * Collects `request_id` values from any `wallet_tx_announcement` in the thread that includes one.
  * Used to mark matching `wallet_tx_request` cards as paid without extra server metadata.

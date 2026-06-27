@@ -8,7 +8,10 @@ use tauri::{AppHandle, Runtime};
 
 use super::contract_call_params::{parse_data_hex, parse_value_wei};
 use super::evm_accounts;
-use super::rpc::{connect_signing_provider, parse_address, send_and_confirm, wallet_err_json};
+use super::rpc::{
+    connect_signing_provider, parse_address, send_and_confirm, send_transaction_only,
+    wallet_err_json,
+};
 use super::rpc::signer::load_advanced_embedded_signer;
 use super::wallet_chain_config;
 
@@ -29,7 +32,9 @@ pub async fn evm_send_advanced_contract_call<R: Runtime>(
     to: String,
     value_wei: String,
     data_hex: String,
+    wait_for_confirmation: Option<bool>,
 ) -> Result<AdvancedContractCallResult, String> {
+    let wait_for_confirmation = wait_for_confirmation.unwrap_or(false);
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
@@ -61,17 +66,24 @@ pub async fn evm_send_advanced_contract_call<R: Runtime>(
         .with_value(value)
         .with_input(Bytes::from(data));
 
-    let receipt = send_and_confirm(
-        &provider,
-        tx,
-        "Timed out waiting for confirmation. The transaction may still complete; check a block explorer using the hash below.",
-    )
-    .await?;
+    let receipt_timeout_message =
+        "Timed out waiting for confirmation. The transaction may still complete; check a block explorer using the hash below.";
 
+    if wait_for_confirmation {
+        let receipt = send_and_confirm(&provider, tx, receipt_timeout_message).await?;
+        return Ok(AdvancedContractCallResult {
+            tx_hash: format!("0x{:x}", receipt.transaction_hash),
+            network: net.key.clone(),
+            chain_id: net.chain_id,
+            block_number: receipt.block_number().map(|n| n.to_string()),
+        });
+    }
+
+    let tx_hash = send_transaction_only(&provider, tx).await?;
     Ok(AdvancedContractCallResult {
-        tx_hash: format!("0x{:x}", receipt.transaction_hash),
+        tx_hash,
         network: net.key.clone(),
         chain_id: net.chain_id,
-        block_number: receipt.block_number().map(|n| n.to_string()),
+        block_number: None,
     })
 }

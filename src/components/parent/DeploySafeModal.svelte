@@ -17,6 +17,7 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { DEPLOY_SAFE_MAX_SIGNERS, TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
+  import { runOnChainInBackground } from '../../lib/evm/on-chain-background';
 
   export let parentId: string;
   export let announcementsGroupId: string | null;
@@ -45,7 +46,6 @@
   let deployLabel = '';
   let thresholdInput = '1';
   let deployError = '';
-  let deploySaving = false;
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -210,37 +210,39 @@
       return;
     }
 
-    deploySaving = true;
     deployError = '';
-    try {
-      const out = await safeDeployProxy(deployNetwork, owners, th, null, parentId);
-      if (!out.ok) {
-        const parsed = out.parsed ?? parseWalletOpError(out.message);
-        let msg = parsed ? userFacingDeploySafeMessage(parsed) : out.message;
-        if (parsed?.txHash) {
-          msg = `${msg} Hash: ${parsed.txHash}`;
+    const label = deployLabel.trim();
+    const entryId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `de-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const network = deployNetwork;
+    onClose();
+    runOnChainInBackground({
+      startedToast: 'Safe deploy submitted. Confirmation continues in the background.',
+      subject: 'Safe deploy',
+      job: async () => {
+        const out = await safeDeployProxy(network, owners, th, null, parentId);
+        if (!out.ok) {
+          const parsed = out.parsed ?? parseWalletOpError(out.message);
+          let msg = parsed ? userFacingDeploySafeMessage(parsed) : out.message;
+          if (parsed?.txHash) {
+            msg = `${msg} Hash: ${parsed.txHash}`;
+          }
+          throw new Error(msg);
         }
-        deployError = msg;
-        return;
-      }
-      const entryId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `de-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      await onSuccess({
-        safeAddress: out.result.safeAddress,
-        chain: out.result.chain,
-        label: deployLabel.trim(),
-        entryId,
-        txHash: out.result.txHash,
-      });
-      onClose();
-    } catch (e) {
-      deployError =
-        typeof e === 'string' ? e : e instanceof Error ? e.message : 'Deploy failed.';
-    } finally {
-      deploySaving = false;
-    }
+        return { out, label, entryId };
+      },
+      onSuccess: async ({ out, label, entryId }) => {
+        await onSuccess({
+          safeAddress: out.result!.safeAddress,
+          chain: out.result!.chain,
+          label,
+          entryId,
+          txHash: out.result!.txHash,
+        });
+      },
+    });
   }
 </script>
 
@@ -248,7 +250,7 @@
   {titleId}
   descriptionId={descId}
   {onClose}
-  dismissible={!deploySaving}
+  dismissible
   contentClass="deploy-safe-modal-panel"
 >
   <h2 id={titleId}>Deploy Safe</h2>
@@ -261,7 +263,7 @@
     <p class="deploy-safe-loading">Loading members…</p>
   {:else}
     <label class="modal-field-label" for="deploy-safe-network">Network</label>
-    <ChainIdSelect id="deploy-safe-network" bind:value={deployNetwork} disabled={deploySaving} />
+    <ChainIdSelect id="deploy-safe-network" bind:value={deployNetwork} />
 
     <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
     <p class="deploy-safe-signers-hint muted">
@@ -277,7 +279,7 @@
             id={`deploy-m-${npub.slice(0, 12)}`}
             type="checkbox"
             checked={selectedMemberNpubs.includes(npub)}
-            disabled={deploySaving || !addr}
+            disabled={!addr}
             aria-label={`Signer ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
             on:change={() => toggleMember(npub)}
           />
@@ -310,7 +312,6 @@
       <input
         type="checkbox"
         checked={includeMeAsOwner}
-        disabled={deploySaving}
         on:change={(e) => {
           includeMeAsOwner = (e.currentTarget as HTMLInputElement).checked;
           if (includeMeAsOwner && !myEvm) void loadMyWalletAddress();
@@ -330,7 +331,7 @@
       min="1"
       max={Math.max(1, ownerCount)}
       bind:value={thresholdInput}
-      disabled={deploySaving || ownerCount === 0}
+      disabled={ownerCount === 0}
       aria-invalid={ownerCount > 0 && !thresholdValid ? 'true' : undefined}
     />
     <p class="deploy-safe-owner-count muted">{ownerCount} owner(s) — threshold must be ≤ that.</p>
@@ -347,7 +348,6 @@
       class="input-address"
       placeholder="e.g. Treasury"
       bind:value={deployLabel}
-      disabled={deploySaving}
     />
 
     {#if deployError}
@@ -355,13 +355,13 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" on:click={onClose} disabled={deploySaving}>Cancel</button>
+      <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
       <button
         type="button"
         class="btn-primary"
         on:click={confirmDeploy}
-        disabled={deploySaving || ownerCount === 0 || !thresholdValid || ownerOverMax}
-        >{deploySaving ? 'Deploying…' : 'Deploy Safe'}</button
+        disabled={ownerCount === 0 || !thresholdValid || ownerOverMax}
+        >Deploy Safe</button
       >
     </div>
   {/if}

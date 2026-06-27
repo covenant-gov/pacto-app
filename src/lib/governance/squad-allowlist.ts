@@ -138,6 +138,7 @@ export async function evmSendSquadAllowlistedContractCall(params: {
   to: string;
   valueWei: string;
   dataHex: string;
+  waitForConfirmation?: boolean;
 }): Promise<SquadAllowlistedSendOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Squad allowlisted sends are only available in the desktop app.' };
@@ -149,6 +150,7 @@ export async function evmSendSquadAllowlistedContractCall(params: {
       to: params.to.trim(),
       valueWei: params.valueWei.trim() || '0',
       dataHex: params.dataHex.trim() || '0x',
+      waitForConfirmation: params.waitForConfirmation ?? false,
     });
     return { ok: true, result };
   } catch (e) {

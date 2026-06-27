@@ -26,6 +26,7 @@ export async function evmSendAdvancedContractCall(params: {
   to: string;
   valueWei: string;
   dataHex: string;
+  waitForConfirmation?: boolean;
 }): Promise<AdvancedSendOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Advanced sends are only available in the desktop app.' };
@@ -36,6 +37,7 @@ export async function evmSendAdvancedContractCall(params: {
       to: params.to.trim(),
       valueWei: params.valueWei.trim() || '0',
       dataHex: params.dataHex.trim() || '0x',
+      waitForConfirmation: params.waitForConfirmation ?? false,
     });
     return { ok: true, result };
   } catch (e) {
