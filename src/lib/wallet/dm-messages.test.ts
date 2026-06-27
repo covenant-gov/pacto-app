@@ -9,6 +9,7 @@ import {
   parseWalletPeerInfoGrant,
   parseWalletPeerInfoDecline,
   formatWalletPeerInfoRequest,
+  isWalletTxAnnouncementOnChainPending,
 } from './dm-messages';
 
 const SAMPLE_FROM_EVM = '0x1111111111111111111111111111111111111111';
@@ -252,6 +253,39 @@ describe('wallet peer info exchange', () => {
     );
     expect(d).not.toBeNull();
     expect(d!.request_id).toBe('rid-1');
+  });
+});
+
+describe('isWalletTxAnnouncementOnChainPending', () => {
+  const ann = parseWalletTxAnnouncement(VALID_ANNOUNCE_JSON)!;
+  const pendingAnn = parseWalletTxAnnouncement(
+    formatWalletTxAnnouncement({
+      network: 'sepolia',
+      asset: 'USDC',
+      amount: '10.00',
+      tx_hash: '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+      from_npub: 'npub1senderaaaaaaaaaaaaaaaa',
+      to_npub: 'npub1recipientbbbbbbbbbbbbbb',
+      from_evm_address: SAMPLE_FROM_EVM,
+    }),
+  )!;
+
+  it('is false when block_number is present', () => {
+    expect(isWalletTxAnnouncementOnChainPending(ann, { id: 'opt-1' })).toBe(false);
+  });
+
+  it('is true for optimistic opt- rows without block_number', () => {
+    expect(isWalletTxAnnouncementOnChainPending(pendingAnn, { id: 'opt-123' })).toBe(true);
+  });
+
+  it('is false when Nostr relay pending but on-chain confirmed metadata exists', () => {
+    expect(isWalletTxAnnouncementOnChainPending(ann, { id: 'pending-999', pending: true })).toBe(
+      false,
+    );
+  });
+
+  it('is false for relayed rows without block_number (not opt-)', () => {
+    expect(isWalletTxAnnouncementOnChainPending(pendingAnn, { id: 'pending-999' })).toBe(false);
   });
 });
 

@@ -158,7 +158,8 @@ export async function walletBuildAndSendTransaction(
   amount: string,
   erc20Transfer?: { address: string; decimals: number } | null,
   /** When set, send to this `0x` address from Settings. `toNpub` is then ignored by the backend. */
-  toAddressEvm?: string | null
+  toAddressEvm?: string | null,
+  waitForConfirmation = false,
 ): Promise<WalletSendResultOutcome> {
   if (!isTauri()) {
     return { ok: false, message: 'Sending is only available in the desktop app.' };
@@ -171,6 +172,7 @@ export async function walletBuildAndSendTransaction(
       amount: amount.trim(),
       erc20Transfer: erc20Transfer ?? null,
       toAddressEvm: toAddressEvm?.trim() ? toAddressEvm.trim() : null,
+      waitForConfirmation,
     });
     return { ok: true, result };
   } catch (e) {
@@ -180,6 +182,31 @@ export async function walletBuildAndSendTransaction(
         : e != null && typeof (e as Error).message === 'string'
           ? (e as Error).message
           : 'Send failed.';
+    const parsed = parseWalletOpError(raw);
+    return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
+  }
+}
+
+export async function walletWaitForTransaction(
+  network: SupportedChainId,
+  txHash: string,
+): Promise<WalletSendResultOutcome> {
+  if (!isTauri()) {
+    return { ok: false, message: 'Confirmation polling is only available in the desktop app.' };
+  }
+  try {
+    const result = await invoke<WalletSendResult>('wallet_wait_for_transaction', {
+      network,
+      txHash: txHash.trim(),
+    });
+    return { ok: true, result };
+  } catch (e) {
+    const raw =
+      typeof e === 'string'
+        ? e
+        : e != null && typeof (e as Error).message === 'string'
+          ? (e as Error).message
+          : 'Confirmation failed.';
     const parsed = parseWalletOpError(raw);
     return { ok: false, message: parsed?.message ?? raw, parsed: parsed ?? undefined };
   }

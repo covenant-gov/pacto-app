@@ -27,6 +27,10 @@
     simulateAdvancedTransaction,
   } from '../../lib/evm/calldata-builder';
   import { evmSendAdvancedContractCall, listSquadInfraCanonicalRefs } from '../../lib/evm/advanced-write';
+  import {
+    toastOnChainSubmitted,
+    waitForOnChainConfirmationInBackground,
+  } from '../../lib/evm/on-chain-background';
 
   export let enabledChainIds: SupportedChainId[] = [...WALLET_ASSETS_CHAIN_IDS];
   /** When true, show Settings cross-links (external wallet disclaimer). */
@@ -177,15 +181,22 @@
         to: toAddress.trim(),
         valueWei,
         dataHex: data,
+        waitForConfirmation: false,
       });
       if (!outcome.ok) {
         showToast(outcome.message);
         return;
       }
       confirmOpen = false;
-      showToast('Advanced transaction confirmed.');
-      const url = getExplorerTxUrl(network, outcome.result.txHash);
-      if (url) openExternalUrl(url);
+      toastOnChainSubmitted(network, outcome.result.txHash, 'Advanced transaction');
+      waitForOnChainConfirmationInBackground(network, outcome.result.txHash, {
+        subject: 'Advanced transaction',
+        onConfirmed: () => {
+          const url = getExplorerTxUrl(network, outcome.result.txHash);
+          if (url) openExternalUrl(url);
+        },
+        confirmedToast: true,
+      });
     } catch (e) {
       showToast(getInvokeErrorMessage(e, 'Advanced send failed.'));
     } finally {

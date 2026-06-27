@@ -2,7 +2,7 @@
 //! Chain/asset table: `wallet_chain_config` (compile-time `wallet-assets.json` + chain IDs + default RPC).
 
 use alloy::network::{ReceiptResponse, TransactionBuilder};
-use alloy::primitives::{utils::parse_units, Address, Bytes, U256};
+use alloy::primitives::{utils::parse_units, Address, Bytes, TxHash, U256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol_types::SolCall;
@@ -70,7 +70,7 @@ pub struct Erc20TransferSpec {
 }
 
 use super::rpc::{call::eth_call_u256, parse_address, wallet_err_json};
-use super::rpc::{connect_signing_provider, send_and_confirm};
+use super::rpc::{connect_read_provider, connect_signing_provider, send_and_confirm, send_transaction_only, wait_for_transaction_receipt};
 
 fn format_decimal(raw: U256, decimals: u8) -> String {
     use alloy::primitives::utils::format_units;
@@ -379,7 +379,9 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     amount: String,
     erc20_transfer: Option<Erc20TransferSpec>,
     to_address_evm: Option<String>,
+    wait_for_confirmation: Option<bool>,
 ) -> Result<WalletSendResult, String> {
+    let wait_for_confirmation = wait_for_confirmation.unwrap_or(false);
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
@@ -469,13 +471,63 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
             .with_input(Bytes::from(input))
     };
 
-    let receipt = send_and_confirm(
+    let receipt_timeout_message =
+        "Timed out waiting for confirmation. The transaction may still complete; check a block explorer using the hash below.";
+
+    if wait_for_confirmation {
+        let receipt = send_and_confirm(&provider, tx, receipt_timeout_message).await?;
+        return Ok(WalletSendResult {
+            tx_hash: format!("0x{:x}", receipt.transaction_hash),
+            network: net.key.clone(),
+            chain_id: net.chain_id,
+            block_number: receipt.block_number().map(|n| n.to_string()),
+        });
+    }
+
+    let tx_hash = send_transaction_only(&provider, tx).await?;
+    Ok(WalletSendResult {
+        tx_hash,
+        network: net.key.clone(),
+        chain_id: net.chain_id,
+        block_number: None,
+    })
+}
+
+#[tauri::command]
+pub async fn wallet_wait_for_transaction(
+    network: String,
+    tx_hash: String,
+) -> Result<WalletSendResult, String> {
+    let net_key = network.to_lowercase();
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(wallet_err_json(
+            "UNSUPPORTED_NETWORK",
+            format!("Unknown network: {}", network),
+            None,
+        ));
+    };
+    let hash = tx_hash.trim();
+    if !hash.starts_with("0x") || hash.len() != 66 {
+        return Err(wallet_err_json(
+            "INVALID_TX_HASH",
+            "Transaction hash must be 0x-prefixed 32-byte hex.",
+            None,
+        ));
+    }
+    let tx_hash: TxHash = hash.parse().map_err(|_| {
+        wallet_err_json("INVALID_TX_HASH", "Invalid transaction hash.", None)
+    })?;
+    let urls = wallet_chain_config::rpc_urls_for(net);
+    if urls.is_empty() {
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
+    }
+    let provider = connect_read_provider(&urls).await?;
+    let receipt = wait_for_transaction_receipt(
         &provider,
-        tx,
+        tx_hash,
         "Timed out waiting for confirmation. The transaction may still complete; check a block explorer using the hash below.",
     )
     .await?;
-
     Ok(WalletSendResult {
         tx_hash: format!("0x{:x}", receipt.transaction_hash),
         network: net.key.clone(),

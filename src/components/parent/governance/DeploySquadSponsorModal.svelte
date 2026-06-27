@@ -5,8 +5,8 @@
     deploySquadSponsorForParent,
     type SquadSponsorDeploySignerWallet,
   } from '../../../lib/governance/api';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { getEvmNativeBalance, parseWalletOpError } from '../../../lib/wallet/backend-wallet';
+  import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { parseEther } from 'viem';
@@ -36,7 +36,6 @@
   let signerWallet: SquadSponsorDeploySignerWallet = 'squad';
   let initialDepositEth = '';
   let deployError = '';
-  let deploying = false;
 
   let defaultSignerAddress: string | null = null;
   let squadSignerAddress: string | null = null;
@@ -151,7 +150,6 @@
     signerWallet === 'default' ? !defaultSignerAddress : !squadSignerAddress;
 
   $: canDeploy =
-    !deploying &&
     !addressesLoading &&
     !signerUnavailable &&
     depositWei !== null &&
@@ -168,43 +166,40 @@
           : 'No squad-assigned signer for this squad. Bind one from Settings or Inbox.';
       return;
     }
-    deploying = true;
-    try {
-      const initialDepositWei = depositWei?.toString();
-      if (!initialDepositWei) {
-        deployError = 'Enter an initial deposit greater than zero (e.g. 0.01).';
-        return;
-      }
-      if (depositExceedsBalance) {
-        deployError = `Deposit must stay below your ${selectedBalance.symbol} balance (${selectedBalance.balanceDecimal}) so this wallet can pay gas.`;
-        return;
-      }
-      const result = await deploySquadSponsorForParent({
-        network: deployNetwork,
-        parentId: parentId.trim(),
-        initialDepositWei,
-        signerWallet,
-      });
-      await onComplete({
-        txHash: result.txHash,
-        chain: result.chain,
-        sponsorAddress: result.sponsorAddress,
-        providerPayload: result.providerPayload,
-        infraRowId: result.infraRowId,
-      });
-      onClose();
-    } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Sponsor deploy failed.');
-      const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
-      deployError = raw;
-    } finally {
-      deploying = false;
+    const initialDepositWei = depositWei?.toString();
+    if (!initialDepositWei) {
+      deployError = 'Enter an initial deposit greater than zero (e.g. 0.01).';
+      return;
     }
+    if (depositExceedsBalance) {
+      deployError = `Deposit must stay below your ${selectedBalance.symbol} balance (${selectedBalance.balanceDecimal}) so this wallet can pay gas.`;
+      return;
+    }
+    const jobParams = {
+      network: deployNetwork,
+      parentId: parentId.trim(),
+      initialDepositWei,
+      signerWallet,
+    };
+    onClose();
+    runOnChainInBackground({
+      startedToast: 'Squad sponsor deploy submitted. Confirmation continues in the background.',
+      subject: 'Squad sponsor deploy',
+      job: () => deploySquadSponsorForParent(jobParams),
+      onSuccess: async (result) => {
+        await onComplete({
+          txHash: result.txHash,
+          chain: result.chain,
+          sponsorAddress: result.sponsorAddress,
+          providerPayload: result.providerPayload,
+          infraRowId: result.infraRowId,
+        });
+      },
+    });
   }
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-sponsor-modal-panel">
+<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-sponsor-modal-panel">
   <h2 id={titleId}>Deploy squad sponsor</h2>
   <p id={descId} class="sponsor-deploy-desc">
     Creates a per-squad sponsor clone from the factory. Gas is paid from the signer you choose below. An
@@ -217,7 +212,6 @@
       id="sponsor-deploy-network"
       class="sponsor-deploy-input sponsor-deploy-select"
       bind:value={deployNetwork}
-      disabled={deploying}
     >
       <option value="sepolia">Sepolia</option>
       <option value="mainnet">Ethereum</option>
@@ -225,7 +219,7 @@
     </select>
   </div>
 
-  <fieldset class="sponsor-signer-fieldset" disabled={deploying || addressesLoading}>
+  <fieldset class="sponsor-signer-fieldset" disabled={addressesLoading}>
     <legend class="sponsor-deploy-label">Pay gas and deposit from</legend>
     <div class="sponsor-signer-options">
       <label class="sponsor-signer-option" class:selected={signerWallet === 'default'}>
@@ -291,7 +285,7 @@
       class:input-invalid={depositInvalidFormat || depositExceedsBalance}
       placeholder="e.g. 0.01"
       bind:value={initialDepositEth}
-      disabled={deploying || signerUnavailable}
+      disabled={signerUnavailable}
       autocomplete="off"
       required
       aria-invalid={depositInvalidFormat || depositExceedsBalance ? 'true' : undefined}
@@ -315,9 +309,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
     <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={!canDeploy}>
-      {deploying ? 'Deploying…' : 'Deploy on-chain'}
+      Deploy on-chain
     </button>
   </div>
 </Modal>

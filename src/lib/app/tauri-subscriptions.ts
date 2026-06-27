@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { listPendingMlsWelcomes, fetchMessages } from '../api/nostr';
 import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../announcements';
+import { parseWalletTxAnnouncement } from '../wallet/dm-messages';
 import {
   isPactoAppRoutableInviteContent,
   resolveInviteInviterNpub,
@@ -32,7 +33,7 @@ export interface AppEventHandlers {
 }
 
 function normalizeDmPayload(message: DmMessage): DmMessage {
-  return {
+  const base = {
     id: message.id,
     content: message.content,
     at: message.at,
@@ -47,6 +48,11 @@ function normalizeDmPayload(message: DmMessage): DmMessage {
     replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null })
       .replied_to_has_attachment,
   };
+  const ann = parseWalletTxAnnouncement(message.content ?? '');
+  if (ann?.block_number) {
+    return { ...base, pending: false };
+  }
+  return base;
 }
 
 async function refreshPendingWelcomes(): Promise<void> {

@@ -13,8 +13,14 @@
   export let peerDisplayName: string;
   /** True when the signed-in user posted this announcement (`from_npub`). */
   export let viewerIsSender: boolean;
+  /** Pending on-chain confirmation (optimistic outbound). */
+  export let pending = false;
+  /** Send or confirmation failed. */
+  export let failed = false;
 
   $: networkLabel = getWalletNetworkDisplayName(payload.network);
+  $: badgeLabel = failed ? 'Transfer failed' : pending ? 'Transfer pending' : 'Transfer confirmed';
+  $: iconGlyph = failed ? '!' : pending ? '…' : '✓';
   $: fromAddr = payload.from_evm_address.trim();
   $: fromAddrShort =
     fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
@@ -27,10 +33,15 @@
   }
 </script>
 
-<div class="wallet-tx-announce-card" role="article">
-  <div class="wallet-tx-announce-icon" aria-hidden="true">✓</div>
+<div
+  class="wallet-tx-announce-card"
+  class:wallet-tx-announce-pending={pending}
+  class:wallet-tx-announce-failed={failed}
+  role="article"
+>
+  <div class="wallet-tx-announce-icon" aria-hidden="true">{iconGlyph}</div>
   <div class="wallet-tx-announce-body">
-    <p class="wallet-tx-announce-badge">Transfer confirmed</p>
+    <p class="wallet-tx-announce-badge">{badgeLabel}</p>
     <div class="wallet-tx-announce-role">
       <span class="wallet-tx-announce-role-line">
         {viewerIsSender ? 'You transferred' : `${peerDisplayName} transferred`}
@@ -80,6 +91,32 @@
     border-radius: 8px;
     max-width: 380px;
     border-left: 3px solid var(--success);
+  }
+
+  .wallet-tx-announce-pending {
+    border-left-color: var(--accent);
+  }
+
+  .wallet-tx-announce-pending .wallet-tx-announce-badge {
+    color: var(--accent);
+  }
+
+  .wallet-tx-announce-pending .wallet-tx-announce-icon {
+    background: rgba(0, 136, 204, 0.15);
+    color: var(--accent);
+  }
+
+  .wallet-tx-announce-failed {
+    border-left-color: #dc3545;
+  }
+
+  .wallet-tx-announce-failed .wallet-tx-announce-badge {
+    color: #dc3545;
+  }
+
+  .wallet-tx-announce-failed .wallet-tx-announce-icon {
+    background: rgba(220, 53, 69, 0.12);
+    color: #dc3545;
   }
 
   .wallet-tx-announce-icon {

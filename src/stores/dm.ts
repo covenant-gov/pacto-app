@@ -319,6 +319,54 @@ export function removeOutboundDmMessage(npub: string, messageId: string): void {
   });
 }
 
+export function patchOutboundDmMessage(
+  npub: string,
+  messageId: string,
+  patch: Partial<Pick<DmMessage, 'content' | 'pending' | 'failed'>>,
+): void {
+  const trimmedNpub = npub.trim();
+  if (!trimmedNpub || !messageId) return;
+  backendDmMessages.update((byNpub) => {
+    const list = byNpub[trimmedNpub];
+    if (!list?.length) return byNpub;
+    const idx = list.findIndex((m) => m.id === messageId);
+    if (idx === -1) return byNpub;
+    const next = [...list];
+    next[idx] = { ...next[idx]!, ...patch };
+    return { ...byNpub, [trimmedNpub]: next };
+  });
+}
+
+/** Patch every outbound wallet announcement row matching `tx_hash` (survives id replacement on relay). */
+export function patchOutboundWalletTxByHash(
+  npub: string,
+  txHash: string,
+  patch: Partial<Pick<DmMessage, 'content' | 'pending' | 'failed'>>,
+): void {
+  const trimmedNpub = npub.trim();
+  const needle = txHash.trim().toLowerCase();
+  if (!trimmedNpub || !needle.startsWith('0x')) return;
+  backendDmMessages.update((byNpub) => {
+    const list = byNpub[trimmedNpub];
+    if (!list?.length) return byNpub;
+    let changed = false;
+    const next = list.map((m) => {
+      if (!m.mine) return m;
+      try {
+        const parsed = JSON.parse(m.content ?? '') as { tx_hash?: string };
+        if (typeof parsed.tx_hash !== 'string' || parsed.tx_hash.toLowerCase() !== needle) {
+          return m;
+        }
+      } catch {
+        return m;
+      }
+      changed = true;
+      return { ...m, ...patch };
+    });
+    return changed ? { ...byNpub, [trimmedNpub]: next } : byNpub;
+  });
+}
+
 export function appendDmThreadAnnouncement(npub: string, content: string): void {
   const trimmedNpub = npub.trim();
   if (!trimmedNpub) return;

@@ -1,49 +1,16 @@
 <script lang="ts">
-  import { normalizeCommonsTag } from '../../lib/commons/tags';
+  import CommonsTagPicker from '../commons/CommonsTagPicker.svelte';
   import type { SquadVisibility } from '../../stores/squads';
 
   export let visibility: SquadVisibility = 'private';
   export let tags: string[] = [];
   export let tagError = '';
   export let fieldsetName = 'squad-visibility';
-
-  let tagInput = '';
-
-  function addTag() {
-    tagError = '';
-    const t = normalizeCommonsTag(tagInput);
-    if (!t) {
-      tagError = 'Use lowercase letters, numbers, or underscores (max 32).';
-      return;
-    }
-    if (tags.includes(t)) {
-      tagInput = '';
-      return;
-    }
-    if (tags.length >= 3) {
-      tagError = 'At most three tags.';
-      return;
-    }
-    tags = [...tags, t];
-    tagInput = '';
-  }
-
-  function removeTag(tag: string) {
-    tags = tags.filter((t) => t !== tag);
-    tagError = '';
-  }
-
-  function handleTagKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addTag();
-    }
-  }
+  export let disabled = false;
 
   export function resetCommonsFields() {
     visibility = 'private';
     tags = [];
-    tagInput = '';
     tagError = '';
   }
 </script>
@@ -51,11 +18,11 @@
 <fieldset class="commons-visibility-fieldset">
   <legend class="commons-visibility-legend">Visibility</legend>
   <label class="commons-visibility-option">
-    <input type="radio" name={fieldsetName} value="private" bind:group={visibility} />
+    <input type="radio" name={fieldsetName} value="private" bind:group={visibility} {disabled} />
     <span>Private</span>
   </label>
   <label class="commons-visibility-option">
-    <input type="radio" name={fieldsetName} value="public" bind:group={visibility} />
+    <input type="radio" name={fieldsetName} value="public" bind:group={visibility} {disabled} />
     <span>Public</span>
   </label>
   <p class="commons-visibility-hint muted">
@@ -65,29 +32,7 @@
 
 {#if visibility === 'public'}
   <span class="commons-tags-label">Tags (1–3)</span>
-  <div class="commons-tags-row">
-    <input
-      type="text"
-      class="commons-tags-input"
-      placeholder="#neo"
-      bind:value={tagInput}
-      on:keydown={handleTagKeydown}
-      disabled={tags.length >= 3}
-    />
-    <button type="button" class="commons-tags-add" on:click={addTag} disabled={tags.length >= 3}>Add</button>
-  </div>
-  {#if tags.length > 0}
-    <ul class="commons-tags-list" role="list">
-      {#each tags as tag (tag)}
-        <li>
-          <span class="commons-tag-chip">#{tag}</span>
-          <button type="button" class="commons-tag-remove" aria-label="Remove tag {tag}" on:click={() => removeTag(tag)}>
-            ×
-          </button>
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  <CommonsTagPicker bind:selected={tags} maxTags={3} {disabled} placeholder="Search tags…" />
   {#if tagError}
     <p class="commons-tags-error" role="alert">{tagError}</p>
   {/if}
@@ -126,75 +71,10 @@
 
   .commons-tags-label {
     display: block;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 6px;
-  }
-
-  .commons-tags-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-
-  .commons-tags-input {
-    flex: 1;
-    box-sizing: border-box;
-    padding: 10px 12px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
-  .commons-tags-add {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .commons-tags-add:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .commons-tags-list {
-    list-style: none;
-    margin: 0 0 12px;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .commons-tags-list li {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .commons-tag-chip {
     font-size: 0.8125rem;
-    padding: 4px 8px;
-    border-radius: 999px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
+    font-weight: 500;
     color: var(--text-secondary);
-  }
-
-  .commons-tag-remove {
-    border: none;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
+    margin-bottom: 6px;
   }
 
   .commons-tags-error {

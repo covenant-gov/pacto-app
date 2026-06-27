@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import Modal from '../ui/Modal.svelte';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../lib/wallet/chains';
@@ -27,12 +28,16 @@
     watchedRowsToWire,
     watchedWireFingerprint,
     type WalletSummary,
-    type WalletTransferSuccessDetail,
   } from '../../lib/wallet';
   import { parseUnits } from 'viem';
   import { showToast } from '../../stores/toast';
   import type { WalletSendPrefillPayload } from '../../stores/app';
+  import { currentUser } from '../../stores/auth';
   import { formatWalletTxRequest } from '../../lib/wallet/dm-messages';
+  import {
+    finalizeWalletDmTransferAfterBroadcast,
+    toastWalletBroadcastSubmitted,
+  } from '../../lib/wallet/wallet-dm-transfer';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
 
@@ -44,9 +49,8 @@
   export let postDmPlaintext: ((content: string) => Promise<boolean>) | undefined = undefined;
   /** Send mode: from Accept on a `wallet_tx_request` (applied once per open). */
   export let formPrefill: WalletSendPrefillPayload | null = null;
-  /** Send mode: invoked after on-chain success, before success toast and close. */
-  export let onTransferSuccess: ((detail: WalletTransferSuccessDetail) => void | Promise<void>) | undefined =
-    undefined;
+  /** Send mode: refresh balances after confirmation (chat note is handled in background). */
+  export let onBalanceRefresh: (() => void | Promise<void>) | undefined = undefined;
 
   /** ERC-20 rows the user watches (from Import tokens); native ETH is always offered. */
   export let watchedAssetRows: WatchedErc20Row[] = [];
@@ -307,22 +311,28 @@
         chainId,
         assetCode,
         amountHuman,
-        erc20Transfer
+        erc20Transfer,
+        null,
+        false,
       );
       if (out.ok) {
-        if (onTransferSuccess) {
-          await onTransferSuccess({
-            result: out.result,
+        toastWalletBroadcastSubmitted(out.result);
+        onClose();
+        const me = get(currentUser)?.npub;
+        const sendPlain = postDmPlaintext;
+        if (me && sendPlain) {
+          void finalizeWalletDmTransferAfterBroadcast({
+            peerNpub: npub,
             network: chainId,
             asset: assetCode,
             amount: amountHuman,
-            ...(linkedRequestId !== '' ? { requestId: linkedRequestId } : {}),
+            txHash: out.result.txHash,
+            fromNpub: me,
+            requestId: linkedRequestId !== '' ? linkedRequestId : undefined,
+            sendDm: sendPlain,
+            onBalanceRefresh,
           });
         }
-        const h = out.result.txHash;
-        const short = h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-4)}` : h;
-        showToast(`Confirmed on ${out.result.network}. Tx ${short}`);
-        onClose();
       } else {
         sendError = {
           message: out.message,
@@ -346,7 +356,7 @@
   <h2 id={titleId}>{mode === 'send' ? 'Send' : 'Request payment'}</h2>
   <p id={descId} class="wallet-stub-desc">
     {mode === 'send'
-      ? `Send assets to ${peerDisplayName} from your embedded wallet (desktop app). Confirm signs and broadcasts the transaction, then waits for on-chain confirmation before closing. Your contact must have an EVM address on their profile.`
+      ? `Send assets to ${peerDisplayName} from your embedded wallet (desktop app). Confirm signs and broadcasts the transaction; the payment card appears in chat while confirmation finishes in the background. Your contact must have an EVM address on their profile.`
       : `Request a payment from ${peerDisplayName}. Confirm posts a payment request card in this chat (desktop app). They can accept to open Send with your amount pre-filled.`}
     <span class="wallet-stub-npub-ref">{truncateNpub(npub)}</span>
   </p>
@@ -408,12 +418,6 @@
 
     <p class="wallet-stub-usd" role="status">{usdLine}</p>
 
-    {#if mode === 'send' && sending}
-      <p class="wallet-stub-wait" role="status" aria-live="polite">
-        Waiting for on-chain confirmation. This can take up to a few minutes on busy networks.
-      </p>
-    {/if}
-
     {#if sendError}
       <div class="wallet-stub-error" role="alert">
         <p class="wallet-stub-error-msg">{sendError.message}</p>
@@ -464,7 +468,7 @@
       {requestPosting
         ? 'Sending…'
         : sending
-          ? 'Waiting for confirmation…'
+          ? 'Submitting…'
           : 'Confirm'}
     </button>
   </div>

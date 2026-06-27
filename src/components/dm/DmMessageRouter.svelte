@@ -29,6 +29,7 @@
     isInvitePresentation,
     buildPlainMessageProps,
   } from '../../lib/dm/resolve-dm-message-presentation';
+  import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
 
   export let msg: DmMessage;
   export let npub: string;
@@ -178,6 +179,8 @@
     payload={presentation.payload}
     peerDisplayName={contactDisplayName}
     viewerIsSender={$currentUser?.npub === presentation.payload.from_npub}
+    pending={isWalletTxAnnouncementOnChainPending(presentation.payload, msg)}
+    failed={!!msg.failed}
   />
 {:else if presentation.kind === 'commons-join-request'}
   {@const requesterName = getInviterDisplay(msg, npub, $profiles).inviterName}
