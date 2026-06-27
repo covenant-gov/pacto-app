@@ -31,6 +31,7 @@ import {
   PACTO_APP_INBOX_PREFIX,
   LAST_DM_NPUB_PREFIX,
 } from './dm';
+import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 
 export {
@@ -64,7 +65,8 @@ export function loadAccountState(npub: string): void {
     } else {
       pactoAppInboxMessages.set([]);
     }
-    const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`)?.trim();
+    const rawInboxLastRead = localStorage.getItem(`${PACTO_APP_INBOX_LAST_READ_PREFIX}_${npub}`);
+    pactoAppInboxLastReadId.set(typeof rawInboxLastRead === 'string' ? rawInboxLastRead : '');
     if (lastDm) activeDmId.set(lastDm);
     const lastSquad = localStorage.getItem(`${LAST_SQUAD_ID_PREFIX}_${npub}`);
     if (lastSquad) lastOpenedSquadId.set(lastSquad);

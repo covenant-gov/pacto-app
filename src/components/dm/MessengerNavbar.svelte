@@ -12,10 +12,13 @@
     dmSidebarCategoryForNpub,
     PACTO_APP_DM_THREAD_ID,
     PACTO_APP_DISPLAY_NAME,
+    pactoAppInboxUnreadCount,
+    dmUnreadByNpub,
     type DmEntry,
     type DmTab,
     type DmSidebarCategory,
   } from '../../stores/app';
+  import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import userPlaceholder from '../../icons/user-placeholder.svg';
@@ -144,11 +147,16 @@
             on:keydown={(ev) => ev.key === 'Enter' && selectDm(PACTO_APP_DM_THREAD_ID)}
           >
             <span class="dm-avatar dm-avatar-pacto-app">
-              <span class="dm-avatar-pacto-app-letter" aria-hidden="true">P</span>
+              <span class="dm-avatar-pacto-app-letter" aria-hidden="true">I</span>
             </span>
             <span class="dm-name-block">
               <span class="dm-name">{PACTO_APP_DISPLAY_NAME}</span>
             </span>
+            {#if $pactoAppInboxUnreadCount > 0}
+              <span class="dm-unread-badge" aria-label="{$pactoAppInboxUnreadCount} unread">
+                {formatUnreadBadgeCount($pactoAppInboxUnreadCount)}
+              </span>
+            {/if}
           </button>
         </li>
       </ul>
@@ -162,6 +170,7 @@
             $activeDmTab === 'search'
               ? dmSidebarCategoryForNpub(row.npub, $dmChatsByNpub, $pinnedDmNpubs)
               : null}
+          {@const unread = $dmUnreadByNpub[row.npub] ?? 0}
           <li>
             <button
               type="button"
@@ -183,6 +192,11 @@
                   <span class="dm-category">{categoryLabel(cat)}</span>
                 {/if}
               </span>
+              {#if unread > 0}
+                <span class="dm-unread-badge" aria-label="{unread} unread">
+                  {formatUnreadBadgeCount(unread)}
+                </span>
+              {/if}
             </button>
           </li>
         {/each}
@@ -364,6 +378,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .dm-unread-badge {
+    flex-shrink: 0;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
   }
 
   .dm-category {

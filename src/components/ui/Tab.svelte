@@ -5,6 +5,8 @@
   export let label: string = "";
   export let image: string = "";
   export let icon: string = "";
+  /** Unread indicator (no count) on the server button. */
+  export let hasUnreadDot = false;
 
   $: firstLetter = label.charAt(0).toUpperCase();
 
@@ -33,6 +35,9 @@
   on:mouseenter={handleTooltipEnter}
   on:mouseleave={handleTooltipLeave}
 >
+  {#if hasUnreadDot}
+    <span class="tab-unread-dot" aria-hidden="true"></span>
+  {/if}
   {#if image}
     <img src={image} alt={label} class="tab-image" />
   {:else if icon}
@@ -72,6 +77,18 @@
     box-shadow: none;
     position: relative;
     user-select: none;
+  }
+
+  .tab-unread-dot {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-panel);
+    pointer-events: none;
   }
 
   .server-button.active,

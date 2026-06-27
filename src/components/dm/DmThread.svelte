@@ -10,6 +10,8 @@
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
   import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
+  import { isScrollAtBottom } from '../../lib/dm/dm-unread';
+  import { dmThreadScrolledToBottom } from '../../stores/app';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
   import {
@@ -57,6 +59,44 @@
   ) => void | Promise<void>) = () => {};
   export let acceptingWalletPeerInfoRequestId: string | null = null;
   export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
+  /** Called when the user scrolls to the bottom — marks messages read up to `messageId`. */
+  export let onMarkReadUpTo: (messageId: string) => void = () => {};
+
+  function lastReadableMessageId(): string | null {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]!;
+      if (m.is_local_announcement) continue;
+      return m.id;
+    }
+    return null;
+  }
+
+  let dmMessagesContainer: HTMLDivElement | null = null;
+  let scrollPrevNpub: string | null = null;
+  let lastScrolledToBottomNpub: string | null = null;
+  let lastReportedReadId = '';
+
+  $: if (npub !== scrollPrevNpub) {
+    lastReportedReadId = '';
+  }
+
+  function notifyIfAtBottom() {
+    if (!dmMessagesContainer) {
+      dmThreadScrolledToBottom.set(false);
+      return;
+    }
+    const atBottom = isScrollAtBottom(dmMessagesContainer);
+    dmThreadScrolledToBottom.set(atBottom);
+    if (!atBottom) return;
+    const lastId = lastReadableMessageId();
+    if (lastId && lastId !== lastReportedReadId) {
+      lastReportedReadId = lastId;
+      onMarkReadUpTo(lastId);
+    }
+  }
+  function handleMessagesScroll() {
+    notifyIfAtBottom();
+  }
 
   $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
@@ -92,14 +132,14 @@
     return n.slice(0, 8) + '…' + n.slice(-4);
   }
 
-  let dmMessagesContainer: HTMLDivElement | null = null;
-  let scrollPrevNpub: string | null = null;
-  let lastScrolledToBottomNpub: string | null = null;
   $: if (dmMessagesContainer && messages.length) {
     const container = dmMessagesContainer;
     const conversationJustChanged = npub !== scrollPrevNpub;
     const firstTimeWithMessages = npub !== lastScrolledToBottomNpub;
-    if (conversationJustChanged) scrollPrevNpub = npub;
+    if (conversationJustChanged) {
+      scrollPrevNpub = npub;
+      dmThreadScrolledToBottom.set(false);
+    }
     setTimeout(() => {
       if (!container || !document.contains(container)) return;
       const isNearBottom =
@@ -107,10 +147,14 @@
       if (conversationJustChanged || firstTimeWithMessages || isNearBottom) {
         container.scrollTop = container.scrollHeight;
         lastScrolledToBottomNpub = npub;
+        notifyIfAtBottom();
       }
     }, 0);
   }
-  $: if (npub !== scrollPrevNpub && messages.length === 0) scrollPrevNpub = npub;
+  $: if (npub !== scrollPrevNpub && messages.length === 0) {
+    scrollPrevNpub = npub;
+    dmThreadScrolledToBottom.set(false);
+  }
 
   $: contactProfile = isPactoAppThread ? null : npub ? $profiles[npub] : null;
   $: peerBlockedByMe = contactProfile?.blocked === true;
@@ -216,7 +260,7 @@
       {#if contactAvatarSrc}
         <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
       {:else}
-        <span class="dm-thread-header-avatar-placeholder">{isPactoAppThread ? 'P' : contactDisplayName.charAt(0).toUpperCase()}</span>
+        <span class="dm-thread-header-avatar-placeholder">{isPactoAppThread ? 'I' : contactDisplayName.charAt(0).toUpperCase()}</span>
       {/if}
     </div>
     <div class="dm-thread-header-info">
@@ -345,7 +389,7 @@
       {/if}
     </div>
   </div>
-  <div class="dm-thread-messages" bind:this={dmMessagesContainer}>
+  <div class="dm-thread-messages" bind:this={dmMessagesContainer} on:scroll={handleMessagesScroll}>
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>

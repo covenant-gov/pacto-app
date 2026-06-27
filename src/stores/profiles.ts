@@ -4,6 +4,7 @@ import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles, type
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
 import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
+import { hydrateDmUnreadFromInitChats } from './dm-unread';
 import { currentUser } from './auth';
 import { showToast } from './toast';
 
@@ -88,6 +89,13 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
           };
         }
         dmChatsByNpub.set(map);
+        hydrateDmUnreadFromInitChats(
+          dmChats as Array<{
+            id: string;
+            last_read?: string;
+            messages?: Array<{ id: string; mine?: boolean }>;
+          }>,
+        );
         dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
         console.log('[Squad/Invite] init_finished: dmChatsByNpub keys=', Object.keys(map).map((k) => k.slice(0, 20) + '…'));
 
