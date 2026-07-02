@@ -1206,6 +1206,15 @@ async fn get_message_views<R: Runtime>(
     Ok(messages)
 }
 
+/// Re-apply governance/treasury/roster automation side effects from persisted MLS chat rows.
+#[tauri::command]
+async fn replay_mls_automation_side_effects<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_id: String,
+) -> Result<u32, String> {
+    db::replay_automation_side_effects_for_chat(&handle, chat_id.trim()).await
+}
+
 /// Get messages around a specific message ID (for scrolling to replied-to messages)
 /// Loads messages from (target - context_before) to the most recent
 #[tauri::command]
@@ -1542,6 +1551,32 @@ fn dm_peer_display_name(state: &ChatState, npub: &str) -> String {
 }
 
 /// If `content` is a `wallet_tx_announcement` JSON DM, return a role-specific OS notification body; otherwise `None`.
+fn wallet_tx_hash_from_announcement_content(content: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(content).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("wallet_tx_announcement") {
+        return None;
+    }
+    let h = v.get("tx_hash").and_then(|t| t.as_str())?;
+    Some(h.to_lowercase())
+}
+
+fn dm_chat_has_wallet_tx_hash(state: &ChatState, peer_npub: &str, tx_hash_lower: &str) -> bool {
+    for chat in &state.chats {
+        if chat.chat_type != ChatType::DirectMessage || chat.id != peer_npub {
+            continue;
+        }
+        for m in &chat.messages {
+            if let Some(h) = wallet_tx_hash_from_announcement_content(&m.content) {
+                if h == tx_hash_lower {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    false
+}
+
 fn try_wallet_tx_announcement_notify_body(
     content: &str,
     is_mine: bool,
@@ -1618,6 +1653,13 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
     if !msg.replied_to.is_empty() {
         if let Some(handle) = TAURI_APP.get() {
             let _ = db::populate_reply_context(&handle, &mut msg).await;
+        }
+    }
+
+    if let Some(tx_hash) = wallet_tx_hash_from_announcement_content(&msg.content) {
+        let state = STATE.lock().await;
+        if dm_chat_has_wallet_tx_hash(&state, contact, &tx_hash) {
+            return false;
         }
     }
 
@@ -6265,6 +6307,7 @@ pub fn run() {
             is_scanning,
             get_chat_messages_paginated,
             get_message_views,
+            replay_mls_automation_side_effects,
             get_messages_around_id,
             get_chat_message_count,
             delete_dm_chat,

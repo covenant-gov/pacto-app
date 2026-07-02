@@ -153,6 +153,13 @@ export async function getDmMessages(
   return msgs;
 }
 
+/** Re-apply governance/treasury automation side effects from persisted MLS rows (e.g. sponsor deploy). */
+export async function replayMlsAutomationSideEffects(chatId: string): Promise<void> {
+  const id = chatId.trim();
+  if (!id) return;
+  await invoke('replay_mls_automation_side_effects', { chatId: id });
+}
+
 /**
  * Queue all profiles in backend state for sync from Nostr.
  * Call after init_finished so contacts' names and PFPs fill in over time.

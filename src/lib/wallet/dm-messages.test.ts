@@ -5,6 +5,7 @@ import {
   formatWalletTxRequest,
   formatWalletTxAnnouncement,
   getFulfilledWalletRequestIdsFromMessages,
+  dedupeWalletTxAnnouncements,
   parseWalletPeerInfoRequest,
   parseWalletPeerInfoGrant,
   parseWalletPeerInfoDecline,
@@ -301,5 +302,21 @@ describe('getFulfilledWalletRequestIdsFromMessages', () => {
     ]);
     expect(set.has('req-uuid-1')).toBe(true);
     expect(set.size).toBe(1);
+  });
+});
+
+describe('dedupeWalletTxAnnouncements', () => {
+  const TX = '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+  const pending = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"0.000001","tx_hash":"${TX}","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+  const confirmed = `${pending.slice(0, -1)},"block_number":"12345678"}`;
+
+  it('keeps one announcement per tx_hash, preferring confirmed relayed rows', () => {
+    const out = dedupeWalletTxAnnouncements([
+      { id: 'opt-1', content: pending, pending: true, at: 1 },
+      { id: 'nostr-abc', content: confirmed, at: 2 },
+      { id: 'nostr-dup', content: confirmed, at: 3 },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.id).toBe('nostr-dup');
   });
 });

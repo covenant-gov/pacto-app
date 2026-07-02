@@ -144,6 +144,7 @@
   import {
     scheduleAllSquadsHubWarmup,
     scheduleHubParentPrefetch,
+    ensureMlsAutomationReplayed,
   } from '../lib/app/hub-prefetch';
   import { scheduleDashboardPrefetch } from '../lib/app/dashboard-prefetch';
   import {
@@ -664,6 +665,8 @@
           ...byGroup,
           [groupId]: msgs as DmMessage[],
         }));
+        const parentId = get(squads).find((s: Squad) => s.id === get(activeSquadId))?.id ?? null;
+        ensureMlsAutomationReplayed(groupId, parentId);
         loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: PAGE_SIZE }));
       })
       .catch((err) => dmError('open channel: getDmMessages failed', err));

@@ -5,9 +5,15 @@ import {
   resetDashboardPrefetchSession,
   scheduleAllSquadsHubWarmup,
   scheduleHubParentPrefetch,
+  ensureMlsAutomationReplayed,
 } from './dashboard-parent-prefetch';
 
-export { resetDashboardPrefetchSession, scheduleAllSquadsHubWarmup, scheduleHubParentPrefetch };
+export {
+  resetDashboardPrefetchSession,
+  scheduleAllSquadsHubWarmup,
+  scheduleHubParentPrefetch,
+  ensureMlsAutomationReplayed,
+};
 
 export function scheduleHubPrefetch(parent: Squad | null | undefined): void {
   scheduleHubParentPrefetch(parent);

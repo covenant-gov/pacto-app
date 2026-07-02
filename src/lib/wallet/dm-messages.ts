@@ -226,6 +226,55 @@ export function getFulfilledWalletRequestIdsFromMessages(
   return s;
 }
 
+export function walletTxAnnouncementHash(content: string): string | null {
+  return parseWalletTxAnnouncement(content)?.tx_hash.toLowerCase() ?? null;
+}
+
+function walletTxAnnouncementRank(msg: {
+  id?: string;
+  content?: string | null;
+  pending?: boolean;
+  failed?: boolean;
+}): number {
+  const ann = parseWalletTxAnnouncement(msg.content ?? '');
+  if (!ann) return -1;
+  let score = 0;
+  if (ann.block_number) score += 100;
+  if (!msg.id?.startsWith('opt-')) score += 50;
+  if (!msg.pending) score += 10;
+  if (!msg.failed) score += 5;
+  return score;
+}
+
+/** One confirmed card per `tx_hash` in a DM thread (sender and recipient each see one). */
+export function dedupeWalletTxAnnouncements<
+  T extends { id?: string; content?: string | null; pending?: boolean; failed?: boolean; at?: number },
+>(messages: readonly T[]): T[] {
+  const bestByHash = new Map<string, { idx: number; score: number; at: number }>();
+  const dropIndices = new Set<number>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]!;
+    const hash = walletTxAnnouncementHash(msg.content ?? '');
+    if (!hash) continue;
+    const score = walletTxAnnouncementRank(msg);
+    const at = msg.at ?? 0;
+    const prev = bestByHash.get(hash);
+    if (!prev) {
+      bestByHash.set(hash, { idx: i, score, at });
+      continue;
+    }
+    if (score > prev.score || (score === prev.score && at >= prev.at)) {
+      dropIndices.add(prev.idx);
+      bestByHash.set(hash, { idx: i, score, at });
+    } else {
+      dropIndices.add(i);
+    }
+  }
+
+  return messages.filter((_, i) => !dropIndices.has(i));
+}
+
 /** DM-only pairwise wallet exchange (not published on Kind 0). */
 export const WALLET_PEER_INFO_REQUEST_WIRE_TYPE = 'wallet_peer_info_request';
 export const WALLET_PEER_INFO_GRANT_WIRE_TYPE = 'wallet_peer_info_grant';
