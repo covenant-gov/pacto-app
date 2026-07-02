@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { listPendingMlsWelcomes, fetchMessages } from '../api/nostr';
 import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../announcements';
-import { parseWalletTxAnnouncement } from '../wallet/dm-messages';
+import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import {
   isPactoAppRoutableInviteContent,
   resolveInviteInviterNpub,
@@ -105,10 +105,15 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[chat_id] ?? [];
         if (list.some((x) => x.id === m.id)) return byNpub;
-        const withoutOpt = list.filter(
-          (x) => !(x.id.startsWith('opt-') && x.mine && x.content === m.content)
-        );
-        return { ...byNpub, [chat_id]: [...withoutOpt, m] };
+        const incomingHash = walletTxAnnouncementHash(m.content ?? '');
+        const withoutDupes = list.filter((x) => {
+          if (x.id === m.id) return false;
+          if (incomingHash) {
+            return walletTxAnnouncementHash(x.content ?? '') !== incomingHash;
+          }
+          return !(x.id.startsWith('opt-') && x.mine && x.content === m.content);
+        });
+        return { ...byNpub, [chat_id]: [...withoutDupes, m] };
       });
       if (!m.mine) {
         const active = get(activeDmId);

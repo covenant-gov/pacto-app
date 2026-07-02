@@ -9,6 +9,7 @@ import {
   type SquadInvitePayload,
 } from './api/nostr';
 import type { DmMessage } from '../stores/app';
+import { dedupeWalletTxAnnouncements } from './wallet/dm-messages';
 
 export const PACTO_APP_DM_THREAD_ID = '__pacto_app__';
 export const PACTO_APP_DISPLAY_NAME = 'Inbox';
@@ -52,7 +53,8 @@ export function mergePactoAppInboxEntry(
 
 /** Drop squad invite rows from a peer DM thread (shown in Pacto App instead). */
 export function filterPeerThreadMessages(messages: DmMessage[]): DmMessage[] {
-  return messages.filter((m) => !isPactoAppRoutableInviteContent(m.content ?? ''));
+  const filtered = messages.filter((m) => !isPactoAppRoutableInviteContent(m.content ?? ''));
+  return dedupeWalletTxAnnouncements(filtered);
 }
 
 /** Send squad / squad-pair invite over Nostr; recipient ingests into Pacto App inbox locally. */

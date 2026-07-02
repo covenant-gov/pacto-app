@@ -14,9 +14,11 @@ import {
   toastOnChainSubmitted,
   toastOnChainConfirmed,
 } from '../evm/on-chain-background';
+import { get } from 'svelte/store';
 import {
   appendPendingOutboundDmMessage,
   patchOutboundWalletTxByHash,
+  backendDmMessages,
   type DmMessage,
 } from '../../stores/dm';
 import { showToast } from '../../stores/toast';
@@ -35,6 +37,21 @@ export interface WalletDmTransferAfterBroadcastParams {
 
 const RECEIPT_RETRY_DELAY_MS = 15_000;
 const RECEIPT_RETRY_ATTEMPTS = 24;
+const relayedWalletTxKeys = new Set<string>();
+
+function relayKey(peerNpub: string, txHash: string): string {
+  return `${peerNpub.trim()}:${txHash.trim().toLowerCase()}`;
+}
+
+function peerThreadAlreadyHasRelayedWalletTx(peerNpub: string, txHash: string): boolean {
+  const needle = txHash.trim().toLowerCase();
+  const list = get(backendDmMessages)[peerNpub.trim()] ?? [];
+  return list.some((m) => {
+    if (m.id?.startsWith('opt-')) return false;
+    const ann = parseWalletTxAnnouncement(m.content ?? '');
+    return ann?.tx_hash.toLowerCase() === needle;
+  });
+}
 
 function announcementContent(params: {
   network: SupportedChainId;
@@ -106,12 +123,19 @@ async function relayConfirmedWalletTx(
   params: WalletDmTransferAfterBroadcastParams,
   confirmedContent: string,
 ): Promise<void> {
+  const key = relayKey(params.peerNpub, params.txHash);
+  if (relayedWalletTxKeys.has(key) || peerThreadAlreadyHasRelayedWalletTx(params.peerNpub, params.txHash)) {
+    return;
+  }
+  relayedWalletTxKeys.add(key);
   try {
     const ok = await params.sendDm(confirmedContent);
     if (!ok) {
+      relayedWalletTxKeys.delete(key);
       showToast('Transfer confirmed, but the payment note could not be relayed.');
     }
   } catch {
+    relayedWalletTxKeys.delete(key);
     showToast('Transfer confirmed, but the payment note could not be relayed.');
   }
 }

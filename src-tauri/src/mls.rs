@@ -1207,12 +1207,10 @@ impl MlsService {
                         match result {
                             RumorProcessingResult::TextMessage(msg) | RumorProcessingResult::FileAttachment(msg) => {
                                 // Check if message already exists in database (important for sync with partial message loading)
+                                let mut already_in_db = false;
                                 if let Some(handle) = TAURI_APP.get() {
                                     if let Ok(exists) = crate::db::message_exists_in_db(&handle, &msg.id).await {
-                                        if exists {
-                                            // Message already in DB, skip processing
-                                            continue;
-                                        }
+                                        already_in_db = exists;
                                     }
                                 }
 
@@ -1222,35 +1220,35 @@ impl MlsService {
                                     state.add_message_to_chat(&chat_id, msg.clone())
                                 };
 
-                                if was_added {
-                                    // Emit UI event for new message (include group_name so non-creators can update channel name from hash)
-                                    if let Some(handle) = TAURI_APP.get() {
-                                        let group_name = crate::db::load_mls_groups(handle).await
-                                            .ok()
-                                            .and_then(|groups| {
-                                                groups.into_iter()
-                                                    .find(|g| g.group_id == gid_for_fetch || g.engine_group_id == gid_for_fetch)
-                                                    .map(|g| g.name)
-                                            });
-                                        handle.emit("mls_message_new", serde_json::json!({
-                                            "group_id": gid_for_fetch,
-                                            "message": msg,
-                                            "group_name": group_name
-                                        })).unwrap_or_else(|e| {
-                                            eprintln!("[MLS] Failed to emit mls_message_new event: {}", e);
+                                if let Some(handle) = TAURI_APP.get() {
+                                    crate::db::apply_inbox_virtual_bucket_side_effects(
+                                        handle,
+                                        msg.virtual_bucket.as_deref(),
+                                        &msg.content,
+                                        msg.npub.as_deref(),
+                                    );
+                                }
+
+                                if already_in_db || !was_added {
+                                    continue;
+                                }
+
+                                if let Some(handle) = TAURI_APP.get() {
+                                    let group_name = crate::db::load_mls_groups(handle).await
+                                        .ok()
+                                        .and_then(|groups| {
+                                            groups.into_iter()
+                                                .find(|g| g.group_id == gid_for_fetch || g.engine_group_id == gid_for_fetch)
+                                                .map(|g| g.name)
                                         });
-                                        crate::db::apply_inbox_virtual_bucket_side_effects(
-                                            handle,
-                                            msg.virtual_bucket.as_deref(),
-                                            &msg.content,
-                                            msg.npub.as_deref(),
-                                        );
-                                    }
-                                    
-                                    // Save the new message to database immediately
-                                    if let Some(handle) = TAURI_APP.get() {
-                                        let _ = crate::db::save_message(handle.clone(), &chat_id, &msg).await;
-                                    }
+                                    handle.emit("mls_message_new", serde_json::json!({
+                                        "group_id": gid_for_fetch,
+                                        "message": msg,
+                                        "group_name": group_name
+                                    })).unwrap_or_else(|e| {
+                                        eprintln!("[MLS] Failed to emit mls_message_new event: {}", e);
+                                    });
+                                    let _ = crate::db::save_message(handle.clone(), &chat_id, &msg).await;
                                 }
                             }
                             RumorProcessingResult::Reaction(reaction) => {

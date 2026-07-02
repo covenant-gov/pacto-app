@@ -5,7 +5,7 @@
   import MessageInput from '../dm/MessageInput.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
-  import { resolvePollsMlsGroupId } from '../../lib/parent-navbar';
+  import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
     defaultTrioSharesSingleMlsGroup,
@@ -41,7 +41,9 @@
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, inviteMemberToGroup } from '../../lib/api/nostr';
+  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers } from '../../lib/api/nostr';
+  import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
+  import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
@@ -90,7 +92,7 @@
   $: isInboxChannel = (activeParent && activeChannel?.name === INBOX_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
   $: hideChannelOverflowMenu = isAnnouncementsChannel || isInboxChannel;
-  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isInboxChannel;
+  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isInboxChannel || isPollsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
@@ -103,8 +105,6 @@
   let inviteToChannelCandidates: string[] = [];
   let loadingInviteCandidates = false;
   let selectedInviteNpub: string | null = null;
-  let invitingToChannel = false;
-  let inviteToChannelError = '';
   let leavingChannel = false;
   let leaveChannelError = '';
 
@@ -351,7 +351,6 @@
   function openInviteToChannelModal() {
     showInviteToChannelModal = true;
     selectedInviteNpub = null;
-    inviteToChannelError = '';
     closeChannelMenu();
     loadInviteToChannelCandidates();
   }
@@ -383,19 +382,56 @@
       loadingInviteCandidates = false;
     }
   }
-  async function handleInviteToChannel() {
+  function squadChannelInviteContext(): {
+    squadName: string;
+    announcementsGroupId: string;
+    channelName: string;
+  } | null {
+    if (!activeSquad || !activeChannel) return null;
+    if (activeChannel.groupId.startsWith('creating-')) return null;
+    const announcements = getAnnouncementsChannel(activeSquad);
+    if (!announcements?.groupId) return null;
+    return {
+      squadName: activeSquad.name,
+      announcementsGroupId: announcements.groupId,
+      channelName: activeChannel.name,
+    };
+  }
+
+  function handleInviteToChannel() {
     const groupId = $activeChannelId;
-    if (!groupId || !selectedInviteNpub || invitingToChannel) return;
-    invitingToChannel = true;
-    inviteToChannelError = '';
-    try {
-      await inviteMemberToGroup(groupId, selectedInviteNpub);
-      showInviteToChannelModal = false;
-    } catch (e: unknown) {
-      inviteToChannelError = friendlyMessage(getInvokeErrorMessage(e, 'Failed to invite'));
-    } finally {
-      invitingToChannel = false;
-    }
+    if (!groupId || !selectedInviteNpub) return;
+    const memberNpub = selectedInviteNpub;
+    const squad = squadChannelInviteContext();
+    const displayName =
+      getProfileDisplayName($profiles[memberNpub]) || memberNpub.slice(0, 16) + '…';
+
+    showInviteToChannelModal = false;
+    selectedInviteNpub = null;
+    inviteToChannelCandidates = inviteToChannelCandidates.filter((n) => n !== memberNpub);
+
+    const notifyInviteFailure = (message: string) => {
+      if (!inviteToChannelCandidates.includes(memberNpub)) {
+        inviteToChannelCandidates = [...inviteToChannelCandidates, memberNpub];
+      }
+      showToast(`Could not add ${displayName} to this channel: ${message}`, undefined, {
+        label: 'Retry',
+        action: () =>
+          runInviteMemberToChannel({
+            groupId,
+            memberNpub,
+            squad,
+            onError: notifyInviteFailure,
+          }),
+      });
+    };
+
+    runInviteMemberToChannel({
+      groupId,
+      memberNpub,
+      squad,
+      onError: notifyInviteFailure,
+    });
   }
 
   let messagesContainer: HTMLDivElement | null = null;
@@ -586,20 +622,17 @@
             {/each}
           </div>
         {/if}
-        {#if inviteToChannelError}
-          <p class="channel-modal-error" role="alert">{inviteToChannelError}</p>
-        {/if}
         <div class="channel-modal-actions">
-          <button type="button" class="channel-modal-close" on:click={() => (showInviteToChannelModal = false)} disabled={invitingToChannel}>
+          <button type="button" class="channel-modal-close" on:click={() => (showInviteToChannelModal = false)}>
             Cancel
           </button>
           <button
             type="button"
             class="channel-modal-primary"
-            disabled={!selectedInviteNpub || invitingToChannel}
+            disabled={!selectedInviteNpub}
             on:click={handleInviteToChannel}
           >
-            {invitingToChannel ? 'Inviting…' : 'Invite'}
+            Invite
           </button>
         </div>
       </Modal>
