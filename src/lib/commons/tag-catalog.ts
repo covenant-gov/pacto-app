@@ -251,6 +251,19 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
     ],
   },
   {
+    id: 'spirituality',
+    title: 'SPIRITUALITY',
+    description: 'Faith, practice, and the sacred — without denomination labels.',
+    children: [
+      { tag: 'faith', title: 'Faith' },
+      { tag: 'monotheism', title: 'Monotheism' },
+      { tag: 'mysticism', title: 'Mysticism' },
+      { tag: 'pantheism', title: 'Pantheism' },
+      { tag: 'polytheism', title: 'Polytheism' },
+      { tag: 'spiritual', title: 'Spiritual' },
+    ],
+  },
+  {
     id: 'technology',
     title: 'TECHNOLOGY',
     description: 'Hardware, software, networks, and systems.',
@@ -276,6 +289,18 @@ export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
       { tag: 'students', title: 'Students' },
       { tag: 'undergrad', title: 'Undergrad' },
       { tag: 'university', title: 'University' },
+    ],
+  },
+  {
+    id: 'unions',
+    title: 'UNIONS',
+    description: 'Strikes, bargaining, and labor union organizing.',
+    children: [
+      { tag: 'collective_bargaining', title: 'Collective Bargaining' },
+      { tag: 'labor_union', title: 'Labor Union' },
+      { tag: 'strike', title: 'Strike' },
+      { tag: 'trade_union', title: 'Trade Union' },
+      { tag: 'union', title: 'Union' },
     ],
   },
 ];

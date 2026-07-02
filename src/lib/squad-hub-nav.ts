@@ -48,7 +48,7 @@ export function resolveHubChannelForSquad(
   } else if (sorted.length > 0) {
     channelId = DASHBOARD_CHANNEL_ID;
   } else {
-    channelId = null;
+    channelId = DASHBOARD_CHANNEL_ID;
   }
 
   const hubChannelName =
@@ -63,6 +63,38 @@ export function resolveHubChannelForSquad(
   return { channelId, hubChannelName };
 }
 
+function isActiveChannelValidForSquad(squad: Squad, channelId: string | null): boolean {
+  if (!channelId || channelId.startsWith('creating-')) return false;
+  if (channelId === DASHBOARD_CHANNEL_ID) return true;
+  return squad.channels.some((c) => c.groupId === channelId);
+}
+
+/** Resolved channel for the open squad — used for hub routing before store sync catches up. */
+export function resolveEffectiveHubChannel(
+  squad: Squad | null | undefined,
+  activeChannelId: string | null,
+  lastChannelBySquad: Record<string, string>,
+  lastHubChannelNameBySquad: Record<string, string>,
+): { channelId: string | null; hubChannelName: string | null } {
+  if (!squad) return { channelId: activeChannelId, hubChannelName: null };
+  if (isActiveChannelValidForSquad(squad, activeChannelId)) {
+    const hub =
+      activeChannelId && activeChannelId !== DASHBOARD_CHANNEL_ID
+        ? resolveHubChannelNameForGroupSelection(
+            squad.channels,
+            activeChannelId,
+            lastHubChannelNameBySquad[squad.id] ?? null,
+          )
+        : null;
+    return { channelId: activeChannelId, hubChannelName: hub };
+  }
+  const resolved = resolveHubChannelForSquad(squad, lastChannelBySquad, lastHubChannelNameBySquad);
+  if (!resolved.channelId) {
+    return { channelId: DASHBOARD_CHANNEL_ID, hubChannelName: null };
+  }
+  return resolved;
+}
+
 function applyHubChannelSelection(squad: Squad): void {
   const { channelId, hubChannelName } = resolveHubChannelForSquad(
     squad,
@@ -73,21 +105,38 @@ function applyHubChannelSelection(squad: Squad): void {
   activeHubChannelName.set(hubChannelName);
 }
 
-/** Pick last-opened squad (or first) when Squads tab has rows but no active parent. */
-export function restoreSquadsHubSelection(): void {
+/**
+ * Ensure Squads hub has a valid `(activeSquadId, activeChannelId)` pair after hydrate or tab restore.
+ * Re-applies channel selection when the squad is set but the channel is missing or stale.
+ */
+export function syncSquadsHubSelection(): void {
   if (get(activeTopNavTab) !== 'squads') return;
-  if (get(activeSquadId)) return;
-
   const list = get(squads);
   if (list.length === 0) return;
 
+  const existingId = get(activeSquadId);
+  if (existingId) {
+    const squad = list.find((s) => s.id === existingId);
+    if (squad) {
+      if (isActiveChannelValidForSquad(squad, get(activeChannelId))) return;
+      applyHubChannelSelection(squad);
+      return;
+    }
+  }
+
   const lastSquadId = get(lastOpenedSquadId);
   const squad = (lastSquadId ? list.find((s) => s.id === lastSquadId) : null) ?? list[0];
+  if (!squad) return;
 
   activeSquadId.set(squad.id);
   lastOpenedSquadId.set(squad.id);
   activeView.set('hub');
   applyHubChannelSelection(squad);
+}
+
+/** Pick last-opened squad (or first) when Squads tab has rows but no active parent. */
+export function restoreSquadsHubSelection(): void {
+  syncSquadsHubSelection();
 }
 
 /** Open any squad or squad-pair in the standard Squads hub. */

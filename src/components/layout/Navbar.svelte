@@ -43,6 +43,7 @@
   import { sendSquadInviteDm } from '../../lib/pacto-app-inbox';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
+  import { activateSquadHub } from '../../lib/squad-hub-nav';
   import { pendingReadyToast } from '../../stores/toast';
   import { schedulePublicSquadCreateBroadcast } from '../../lib/commons/squad-create-broadcast';
   import {
@@ -56,33 +57,7 @@
   import { profiles } from '../../stores/profiles';
 
   function selectSquad(squadId: string) {
-    const squad = $squads.find((s) => s.id === squadId);
-    if (!squad) return;
-    const sortedChannels = [...squad.channels].sort((a, b) => a.order - b.order);
-    const firstChannel = sortedChannels[0];
-    const lastChannelId = $lastChannelBySquadId[squadId];
-    let nextChannelGroupId: string | null = null;
-    if (lastChannelId === DASHBOARD_CHANNEL_ID) {
-      nextChannelGroupId = DASHBOARD_CHANNEL_ID;
-    } else if (lastChannelId && sortedChannels.some((c) => c.groupId === lastChannelId)) {
-      nextChannelGroupId = lastChannelId;
-    } else {
-      nextChannelGroupId = firstChannel?.groupId ?? null;
-    }
-    $activeSquadId = squadId;
-    $activeChannelId = nextChannelGroupId;
-    if (nextChannelGroupId === DASHBOARD_CHANNEL_ID || nextChannelGroupId === null) {
-      activeHubChannelName.set(null);
-    } else {
-      activeHubChannelName.set(
-        resolveHubChannelNameForGroupSelection(
-          sortedChannels,
-          nextChannelGroupId,
-          get(lastHubChannelNameBySquadId)[squadId] || null
-        )
-      );
-    }
-    $activeView = 'hub';
+    activateSquadHub(squadId);
   }
 
   function selectDmTab(tab: DmTab) {
