@@ -16,6 +16,7 @@
   import { currentUser } from '../../stores/auth';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
+  import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
   $: userNpub = $currentUser?.npub ?? '';
 
@@ -213,9 +214,12 @@
   <div class="nostr-relay-list-wrap" aria-labelledby="nostr-relay-list-heading">
     <div class="nostr-relay-list-head">
       <h3 id="nostr-relay-list-heading" class="nostr-settings-subheading">Connected relays</h3>
-      <button type="button" class="nostr-refresh-btn" disabled={loading} on:click={refreshRelays}>
-        {loading ? 'Loading…' : 'Refresh'}
-      </button>
+      <RefreshIconButton
+        disabled={loading}
+        spinning={loading}
+        ariaLabel={loading ? 'Refreshing relays' : 'Refresh relays'}
+        on:click={refreshRelays}
+      />
     </div>
 
     {#if loading && relays.length === 0}
@@ -471,28 +475,6 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 12px;
-  }
-
-  .nostr-refresh-btn {
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    font-family: inherit;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .nostr-refresh-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .nostr-refresh-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .nostr-relay-list {

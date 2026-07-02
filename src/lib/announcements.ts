@@ -231,7 +231,7 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
   const pacto_virtual_bucket =
     options?.virtualBucket ??
     (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED
-      ? 'polls'
+      ? 'announcements'
       : isSponsorGovernanceAnnounce(msg)
         ? 'announcements'
         : 'inbox');

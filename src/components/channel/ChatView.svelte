@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
+  import { onMount } from 'svelte';
   import Message from '../dm/Message.svelte';
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
@@ -34,7 +35,7 @@
     parentsCreatingAnnouncements,
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
-    INBOX_CHANNEL_NAME,
+    PERSONAL_ALERTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
     DASHBOARD_CHANNEL_ID,
     membershipVersionByGroupId,
@@ -89,10 +90,12 @@
   $: channelName = activeChannel?.name || 'channel';
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
-  $: isInboxChannel = (activeParent && activeChannel?.name === INBOX_CHANNEL_NAME) ?? false;
+  $: isPersonalAlertsChannel =
+    (activeParent && activeChannel?.name === PERSONAL_ALERTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu = isAnnouncementsChannel || isInboxChannel;
-  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isInboxChannel || isPollsChannel;
+  $: hideChannelOverflowMenu =
+    isAnnouncementsChannel || isPersonalAlertsChannel || isPollsChannel;
+  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isPersonalAlertsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
@@ -108,17 +111,95 @@
   let leavingChannel = false;
   let leaveChannelError = '';
 
+  const POLLS_CHANNEL_LAYOUT_KEY = 'pacto_polls_channel_layout';
+  const POLLS_SPLIT_MIN = 28;
+  const POLLS_SPLIT_MAX = 82;
+  const POLLS_SPLIT_DEFAULT = 52;
+
+  let pollsChatCollapsed = false;
+  let pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
+  let pollsChannelBodyEl: HTMLDivElement | null = null;
+  let pollsSplitResizing = false;
+  let pollsSplitResizeStartY = 0;
+  let pollsSplitResizeStartPercent = POLLS_SPLIT_DEFAULT;
+
+  function clampPollsSplitPercent(n: number): number {
+    return Math.max(POLLS_SPLIT_MIN, Math.min(POLLS_SPLIT_MAX, n));
+  }
+
+  function loadPollsChannelLayout(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem(POLLS_CHANNEL_LAYOUT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { collapsed?: unknown; splitPercent?: unknown };
+      pollsChatCollapsed = Boolean(parsed.collapsed);
+      const pct = Number(parsed.splitPercent);
+      if (!Number.isNaN(pct)) pollsChatSplitPercent = clampPollsSplitPercent(pct);
+    } catch {
+      // ignore
+    }
+  }
+
+  function savePollsChannelLayout(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        POLLS_CHANNEL_LAYOUT_KEY,
+        JSON.stringify({ collapsed: pollsChatCollapsed, splitPercent: pollsChatSplitPercent })
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function togglePollsChatCollapsed(): void {
+    pollsChatCollapsed = !pollsChatCollapsed;
+    savePollsChannelLayout();
+  }
+
+  function expandPollsChat(): void {
+    pollsChatCollapsed = false;
+    savePollsChannelLayout();
+  }
+
+  function startPollsSplitResize(e: MouseEvent): void {
+    e.preventDefault();
+    pollsSplitResizing = true;
+    pollsSplitResizeStartY = e.clientY;
+    pollsSplitResizeStartPercent = pollsChatSplitPercent;
+  }
+
+  function onPollsSplitMouseMove(e: MouseEvent): void {
+    if (!pollsSplitResizing || !pollsChannelBodyEl) return;
+    const rect = pollsChannelBodyEl.getBoundingClientRect();
+    const bodyHeight = rect.height;
+    if (bodyHeight <= 0) return;
+    const y = e.clientY - rect.top;
+    pollsChatSplitPercent = clampPollsSplitPercent((y / bodyHeight) * 100);
+  }
+
+  function stopPollsSplitResize(): void {
+    if (!pollsSplitResizing) return;
+    pollsSplitResizing = false;
+    savePollsChannelLayout();
+  }
+
+  onMount(() => {
+    loadPollsChannelLayout();
+  });
+
   let showRosterKeyCard = false;
 
   async function refreshRosterKeyCard(): Promise<void> {
-    if (!isInboxChannel || !activeParent) {
+    if (!isPersonalAlertsChannel || !activeParent) {
       showRosterKeyCard = false;
       return;
     }
     showRosterKeyCard = await needsSquadRosterKeyChoice(activeParent.id, announcementsGroupIdForMembers);
   }
 
-  $: if (isInboxChannel && activeParent && announcementsGroupIdForMembers) {
+  $: if (isPersonalAlertsChannel && activeParent && announcementsGroupIdForMembers) {
     void refreshRosterKeyCard();
   }
 
@@ -135,7 +216,7 @@
 
   function channelNameToVirtualBucket(name: string): VirtualBucket | null {
     if (name === ANNOUNCEMENTS_CHANNEL_NAME) return 'announcements';
-    if (name === INBOX_CHANNEL_NAME) return 'inbox';
+    if (name === PERSONAL_ALERTS_CHANNEL_NAME) return 'inbox';
     if (name === POLLS_CHANNEL_NAME) return 'polls';
     return null;
   }
@@ -225,10 +306,12 @@
 
   async function handleSendMessage(content: string) {
     const groupId = $activeChannelId;
-    if (!groupId || isInboxChannel) return;
+    if (!groupId || isPersonalAlertsChannel) return;
     groupSendError.set(null);
+    const virtualBucket =
+      virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
     try {
-      await sendDmMessage(groupId, content, '', { virtualBucket: 'announcements' });
+      await sendDmMessage(groupId, content, '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
     } catch (e: unknown) {
@@ -462,6 +545,8 @@
     const t = e.target as HTMLElement | null;
     if (channelMenuOpen && t && !t.closest('.channel-header-actions')) closeChannelMenu();
   }}
+  on:mousemove={onPollsSplitMouseMove}
+  on:mouseup={stopPollsSplitResize}
 />
 <div class="chat-view">
   {#if parentSettingUp}
@@ -491,6 +576,17 @@
               aria-haspopup="menu"
             >
               <img src={chevronDownIcon} alt="" class="channel-menu-btn-icon" />
+            </button>
+          {/if}
+          {#if isPollsChannel}
+            <button
+              type="button"
+              class="polls-chat-layout-btn"
+              on:click={togglePollsChatCollapsed}
+              aria-pressed={pollsChatCollapsed}
+              title={pollsChatCollapsed ? 'Show chat below polls' : 'Hide chat and show polls only'}
+            >
+              {pollsChatCollapsed ? 'Show chat' : 'Polls only'}
             </button>
           {/if}
           <button
@@ -529,14 +625,74 @@
     {/if}
 
     {#if isPollsChannel && activeParent}
-      <DashboardPollsPanel
-        parentId={activeParent.id}
-        pollsMlsGroupId={resolvePollsMlsGroupId(activeParent)}
-        variant="channel"
-      />
-    {/if}
+      <div
+        class="polls-channel-body"
+        class:polls-channel-body--polls-only={pollsChatCollapsed}
+        class:polls-channel-body--resizing={pollsSplitResizing}
+        bind:this={pollsChannelBodyEl}
+      >
+        <div
+          class="polls-channel-polls-pane"
+          style={pollsChatCollapsed ? undefined : `flex: 0 0 ${pollsChatSplitPercent}%`}
+        >
+          <DashboardPollsPanel
+            parentId={activeParent.id}
+            pollsMlsGroupId={resolvePollsMlsGroupId(activeParent)}
+            variant="channel"
+            fillParent
+          />
+        </div>
 
-    <div class="messages-container" bind:this={messagesContainer}>
+        {#if !pollsChatCollapsed}
+          <button
+            type="button"
+            class="polls-channel-split-handle"
+            aria-label="Resize polls and chat panes"
+            on:mousedown={startPollsSplitResize}
+            on:dblclick={() => {
+              pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
+              savePollsChannelLayout();
+            }}
+          ></button>
+          <div class="polls-channel-chat-pane">
+            <div class="messages-container" bind:this={messagesContainer}>
+              <div class="messages-list">
+                {#if isChannelCreating}
+                  <p class="channel-creating-message">Private group channel is being created.</p>
+                {:else}
+                  {#if canLoadOlder}
+                    <div class="load-older-wrap">
+                      <button
+                        type="button"
+                        class="load-older-btn"
+                        on:click={loadOlder}
+                        disabled={loadingOlder}
+                      >
+                        {loadingOlder ? 'Loading…' : 'Load older messages'}
+                      </button>
+                    </div>
+                  {/if}
+                  {#each virtualTimelineMessages as message (message.id)}
+                    {@const props = toMessageProps(message)}
+                    <Message {...props} />
+                  {/each}
+                {/if}
+              </div>
+            </div>
+            {#if $groupSendError}
+              <p class="channel-send-error" role="alert">{$groupSendError}</p>
+            {/if}
+            <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+          </div>
+        {:else}
+          <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
+            <span class="polls-channel-chat-collapsed-label">Chat hidden</span>
+            <span class="polls-channel-chat-collapsed-action">Show chat</span>
+          </button>
+        {/if}
+      </div>
+    {:else}
+      <div class="messages-container" bind:this={messagesContainer}>
       <div class="messages-list">
         {#if isChannelCreating}
           <p class="channel-creating-message">Private group channel is being created.</p>
@@ -553,7 +709,7 @@
               </button>
             </div>
           {/if}
-          {#if isInboxChannel && showRosterKeyCard && activeParent && announcementsGroupIdForMembers}
+          {#if isPersonalAlertsChannel && showRosterKeyCard && activeParent && announcementsGroupIdForMembers}
             <SquadRosterKeyInboxCard
               parentId={activeParent.id}
               announcementsGroupId={announcementsGroupIdForMembers}
@@ -583,7 +739,8 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating || isInboxChannel} />
+    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating || isPersonalAlertsChannel} />
+    {/if}
 
     <!-- Leave channel confirm -->
     {#if showLeaveChannelConfirm}
@@ -755,6 +912,122 @@
     height: 20px;
     display: block;
     filter: var(--icon-dropdown-filter);
+  }
+
+  .polls-chat-layout-btn {
+    padding: 6px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .polls-chat-layout-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--accent);
+  }
+
+  .polls-chat-layout-btn[aria-pressed='true'] {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .polls-channel-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .polls-channel-body--resizing {
+    user-select: none;
+    cursor: ns-resize;
+  }
+
+  .polls-channel-polls-pane {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .polls-channel-body--polls-only .polls-channel-polls-pane {
+    flex: 1;
+  }
+
+  .polls-channel-split-handle {
+    flex: 0 0 6px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    cursor: ns-resize;
+    position: relative;
+  }
+
+  .polls-channel-split-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+
+  .polls-channel-split-handle:hover,
+  .polls-channel-split-handle:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+  }
+
+  .polls-channel-split-handle:hover::after,
+  .polls-channel-split-handle:focus-visible::after {
+    background: var(--accent);
+  }
+
+  .polls-channel-chat-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .polls-channel-chat-collapsed-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 16px;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.8125rem;
+  }
+
+  .polls-channel-chat-collapsed-bar:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .polls-channel-chat-collapsed-action {
+    color: var(--accent);
+    font-weight: 600;
   }
 
   .channel-menu-dropdown {

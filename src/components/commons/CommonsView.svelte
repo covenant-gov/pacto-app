@@ -5,6 +5,7 @@
   import CommonsTagBrowser from './CommonsTagBrowser.svelte';
   import CommonsTagMenu from './CommonsTagMenu.svelte';
   import CommonsPersonalPanel from './CommonsPersonalPanel.svelte';
+  import RefreshIconButton from '../ui/RefreshIconButton.svelte';
   import CommonsBroadcastCard from './CommonsBroadcastCard.svelte';
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
   import {
@@ -199,52 +200,12 @@
     <header class="commons-header">
       <div class="commons-header-row">
         <h1 id="commons-feed-heading" class="commons-title">Commons</h1>
-        <button
-          type="button"
-          class="commons-refresh"
+        <RefreshIconButton
           disabled={$commonsFeedSyncing}
-          aria-label={$commonsFeedSyncing ? 'Refreshing feed' : 'Refresh feed'}
+          spinning={$commonsFeedSyncing}
+          ariaLabel={$commonsFeedSyncing ? 'Refreshing feed' : 'Refresh feed'}
           on:click={() => loadFeed()}
-        >
-          <svg
-            class="commons-refresh-icon"
-            class:is-spinning={$commonsFeedSyncing}
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M21 12a9 9 0 1 1-2.64-6.36"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M21 3v6h-6"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M3 12a9 9 0 1 1 2.64 6.36"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <path
-              d="M3 21v-6h6"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
+        />
       </div>
     </header>
 
@@ -380,45 +341,6 @@
     letter-spacing: 0.02em;
     text-transform: uppercase;
     color: var(--text-primary);
-  }
-
-  .commons-refresh {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-
-  .commons-refresh:hover:not(:disabled) {
-    color: var(--text-primary);
-    border-color: var(--text-muted);
-  }
-
-  .commons-refresh:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .commons-refresh-icon {
-    display: block;
-  }
-
-  .commons-refresh-icon.is-spinning {
-    animation: commons-refresh-spin 0.8s linear infinite;
-  }
-
-  @keyframes commons-refresh-spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   .commons-results {

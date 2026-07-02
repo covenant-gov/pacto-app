@@ -22,6 +22,10 @@
     type DmMessage,
   } from '../../stores/app';
   import {
+    squadInviteResolvedByMembership,
+    channelInSquadInviteResolvedByMembership,
+  } from '../../lib/invites/accept-invite';
+  import {
     resolveDmMessagePresentation,
     inviteInviterNpub,
     getInviterDisplayFromNpub,
@@ -74,7 +78,12 @@
     ? 'accepted'
     : $declinedChannelInviteMessageIds.includes(msg.id)
       ? 'declined'
-      : 'pending'}
+      : channelInSquadInviteResolvedByMembership(
+          presentation.payload.announcementsGroupId,
+          presentation.payload.channelGroupId
+        )
+        ? 'accepted'
+        : 'pending'}
   <InviteCard
     variant="channel-in-squad"
     squadName={presentation.payload.squadName}
@@ -97,7 +106,9 @@
     ? 'accepted'
     : $declinedSquadInviteIds.includes(msg.id)
       ? 'declined'
-      : 'pending'}
+      : squadInviteResolvedByMembership(presentation.payload.groupId)
+        ? 'accepted'
+        : 'pending'}
   <InviteCard
     variant={presentation.kind === 'squad-pair-invite' ? 'squad-pair' : 'squad'}
     squadName={presentation.payload.squadName}

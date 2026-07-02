@@ -24,7 +24,7 @@ describe('buildAnnounceContent', () => {
     expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
   });
 
-  it('sets pacto_virtual_bucket polls for dashboard_poll_created', () => {
+  it('sets pacto_virtual_bucket announcements for dashboard_poll_created', () => {
     const s = buildAnnounceContent({
       type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
       payload: {
@@ -37,7 +37,7 @@ describe('buildAnnounceContent', () => {
         ],
       },
     });
-    expect(JSON.parse(s).pacto_virtual_bucket).toBe('polls');
+    expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
   });
 
   it('preserves type and payload', () => {

@@ -8,8 +8,10 @@ vi.mock('../squad/squad-catalog', () => ({
   persistSquad: vi.fn(),
 }));
 
-import { handleChannelAddedToSquad } from './accept-invite';
+import { handleChannelAddedToSquad, reconcileStaleInviteDecisions, squadInviteResolvedByMembership } from './accept-invite';
 import { squads, type Squad } from '../../stores/squads';
+import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
+import { pactoAppInboxMessages } from '../../stores/dm';
 
 const parent: Squad = {
   id: 'parent-1',
@@ -53,5 +55,29 @@ describe('accept-invite channel persistence', () => {
     const patch = persistSquadPatchMock.mock.calls[0]![1] as (s: Squad) => Squad;
     const patched = patch(get(squads)[0]!);
     expect(patched.channels).toHaveLength(2);
+  });
+
+  it('detects squad invite resolved when squad is already local', () => {
+    expect(squadInviteResolvedByMembership('parent-1')).toBe(true);
+    expect(squadInviteResolvedByMembership('missing')).toBe(false);
+  });
+
+  it('reconcileStaleInviteDecisions marks inbox invites for joined squads', () => {
+    acceptedSquadInviteIds.set([]);
+    pactoAppInboxMessages.set([
+      {
+        id: 'invite-msg-1',
+        content: JSON.stringify({
+          type: 'squad_invite',
+          squadName: 'Alpha',
+          groupId: 'parent-1',
+        }),
+        at: 1,
+        mine: false,
+        inviterNpub: 'npub1inviter',
+      },
+    ]);
+    reconcileStaleInviteDecisions();
+    expect(get(acceptedSquadInviteIds)).toEqual(['invite-msg-1']);
   });
 });

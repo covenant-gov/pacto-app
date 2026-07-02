@@ -8,6 +8,32 @@ import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 
+const SESSION_UNLOCKED_KEY = 'pacto_session_unlocked';
+
+function markSessionUnlocked(): void {
+  try {
+    sessionStorage.setItem(SESSION_UNLOCKED_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+function clearSessionUnlocked(): void {
+  try {
+    sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function hasSessionUnlockedFlag(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
 export const authLoading = writable<boolean>(false);
@@ -20,6 +46,14 @@ export interface CurrentUser {
 }
 
 export const currentUser = writable<CurrentUser | null>(null);
+
+/** Drop frontend auth when the tab lost its unlock marker (e.g. partial unlock or HMR). */
+export function clearStaleAuthSession(): void {
+  if (get(isAuthenticated) && !hasSessionUnlockedFlag()) {
+    isAuthenticated.set(false);
+    currentUser.set(null);
+  }
+}
 
 // Derived: Is user logged in with valid data
 export const isLoggedIn = derived(
@@ -36,30 +70,25 @@ export async function checkAuthStatus(): Promise<'needs-auth' | 'needs-pin' | 'a
   authError.set(null);
 
   try {
-    // Check if any account exists
     const accountExists = await checkAnyAccountExists();
-    
+
     if (!accountExists) {
-      authLoading.set(false);
-      return 'needs-auth'; // New user, show welcome screen
+      return 'needs-auth';
     }
 
-    // Check if we have a stored key
     const keyStored = await hasStoredKey();
-    
+
     if (!keyStored) {
-      authLoading.set(false);
-      return 'needs-auth'; // Account exists but no key, needs re-login
+      return 'needs-auth';
     }
 
-    // Key exists but not authenticated yet
-    authLoading.set(false);
-    return 'needs-pin'; // Returning user, show PIN unlock
+    return 'needs-pin';
   } catch (error: any) {
     console.error('Auth check failed:', error);
     authError.set(error.message || 'Failed to check auth status');
-    authLoading.set(false);
     return 'needs-auth';
+  } finally {
+    authLoading.set(false);
   }
 }
 
@@ -88,14 +117,15 @@ export async function createAccount(pin: string): Promise<void> {
 
     // Set frontend state and load npub-scoped persistence (squads, last open, etc.)
     const npub = await getCurrentAccount();
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
+    loadAccountState(npub);
+
+    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
-
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
     authLoading.set(false);
   } catch (error: any) {
@@ -135,14 +165,15 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
     // Get current account npub from backend
     const npub = await getCurrentAccount();
 
-    // Set auth state and load npub-scoped persistence (squads, last open, etc.)
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
+    loadAccountState(npub);
+
+    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
 
@@ -168,14 +199,16 @@ export async function unlockWithPin(pin: string): Promise<void> {
     const keys = await apiLogin(privateKey);
     const npub = await getCurrentAccount();
 
+    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
+    loadAccountState(npub);
+    runPostLoginNetworkSync(npub);
+
+    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
-    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
-    runPostLoginNetworkSync(npub);
 
     dmLog('unlockWithPin: done');
   } catch (error: any) {
@@ -200,6 +233,7 @@ export async function logout(): Promise<void> {
   try {
     isAuthenticated.set(false);
     currentUser.set(null);
+    clearSessionUnlocked();
     clearAccountState(npub);
     await invoke('logout');
   } catch (error: any) {

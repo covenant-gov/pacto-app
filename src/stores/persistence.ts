@@ -33,6 +33,7 @@ import {
 } from './dm';
 import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
+import { normalizeHubChannelName } from './squads';
 
 export {
   currentNpubForPersistence,
@@ -43,7 +44,10 @@ export {
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
-  void hydrateSquadsFromDb();
+  void hydrateSquadsFromDb().then(async () => {
+    const { reconcileStaleInviteDecisions } = await import('../lib/invites/accept-invite');
+    reconcileStaleInviteDecisions();
+  });
   if (typeof localStorage === 'undefined') return;
   try {
     const pinnedKey = `${PINNED_DM_NPUBS_PREFIX}_${npub}`;
@@ -67,6 +71,7 @@ export function loadAccountState(npub: string): void {
     }
     const rawInboxLastRead = localStorage.getItem(`${PACTO_APP_INBOX_LAST_READ_PREFIX}_${npub}`);
     pactoAppInboxLastReadId.set(typeof rawInboxLastRead === 'string' ? rawInboxLastRead : '');
+    const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`);
     if (lastDm) activeDmId.set(lastDm);
     const lastSquad = localStorage.getItem(`${LAST_SQUAD_ID_PREFIX}_${npub}`);
     if (lastSquad) lastOpenedSquadId.set(lastSquad);
@@ -85,9 +90,17 @@ export function loadAccountState(npub: string): void {
     if (rawHubBySquad) {
       try {
         const parsed = JSON.parse(rawHubBySquad) as unknown;
-        lastHubChannelNameBySquadId.set(
-          typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, string>) : {}
-        );
+        if (typeof parsed === 'object' && parsed !== null) {
+          const normalized: Record<string, string> = {};
+          for (const [sid, name] of Object.entries(parsed as Record<string, string>)) {
+            if (typeof name !== 'string') continue;
+            const hub = normalizeHubChannelName(name);
+            if (hub) normalized[sid] = hub;
+          }
+          lastHubChannelNameBySquadId.set(normalized);
+        } else {
+          lastHubChannelNameBySquadId.set({});
+        }
       } catch {
         lastHubChannelNameBySquadId.set({});
       }
@@ -102,6 +115,9 @@ export function loadAccountState(npub: string): void {
         setStore([]);
       }
     }
+    void import('../lib/invites/accept-invite').then(({ reconcileStaleInviteDecisions }) => {
+      reconcileStaleInviteDecisions();
+    });
     const rawDashboardMode = localStorage.getItem(`${PARENT_DASHBOARD_MODE_PREFIX}_${npub}`);
     parentDashboardChannelMode.set(parseParentDashboardChannelMode(rawDashboardMode));
   } catch {

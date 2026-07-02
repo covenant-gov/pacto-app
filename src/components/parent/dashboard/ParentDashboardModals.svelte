@@ -183,7 +183,7 @@
     <div class="modal-content">
       <h3 id="set-safe-title">Import Safe</h3>
       <p class="modal-desc">
-        Add a Safe to this squad treasury. Members see automated treasury notices in #inbox.
+        Add a Safe to this squad treasury. Members see automated treasury notices in #personal-alerts.
       </p>
       <label class="modal-field-label" for="import-safe-addr">Contract address</label>
       <input

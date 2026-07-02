@@ -2,29 +2,21 @@
   import { onMount } from 'svelte';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
-  import { isAuthenticated, checkAuthStatus } from '../stores/auth';
+  import { isAuthenticated, currentUser, clearStaleAuthSession } from '../stores/auth';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
   import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
 
-  let loading = true;
+  // Before first paint: drop auth state left over from a partial unlock or HMR.
+  clearStaleAuthSession();
 
-  onMount(async () => {
+  onMount(() => {
     scheduleCommonsStartupPrefetch();
-
-    // Sync theme from localStorage so store matches (inline script already set data-theme to avoid flash)
     const stored = getStoredTheme();
     setTheme(stored ?? DEFAULT_THEME);
-
-    await checkAuthStatus();
-    loading = false;
   });
 </script>
 
-{#if loading}
-  <div class="loading-screen">
-    <div class="spinner"></div>
-  </div>
-{:else if $isAuthenticated}
+{#if $isAuthenticated && $currentUser}
   <div class="layout-root">
     <slot />
   </div>
@@ -39,5 +31,4 @@
     flex-direction: column;
     min-height: 0;
   }
-
 </style>

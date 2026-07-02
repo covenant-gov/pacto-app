@@ -388,7 +388,7 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
             TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
             [&poll_id],
         ))
-        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["polls"]))
+        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["announcements"]))
         .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
 
     let built = rumor.build(pk);
@@ -429,7 +429,7 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
             edited: false,
             edit_history: None,
             rumor_kind: Some(event_kind::APPLICATION_SPECIFIC),
-            virtual_bucket: Some("polls".to_string()),
+            virtual_bucket: Some("announcements".to_string()),
         };
         let was_added = {
             let mut state = crate::STATE.lock().await;

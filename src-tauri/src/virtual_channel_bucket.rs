@@ -37,7 +37,7 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
             }
             let ty = val.get("type").and_then(|x| x.as_str());
             if ty == Some("dashboard_poll_created") {
-                return Some("polls".to_string());
+                return Some("announcements".to_string());
             }
             if ty == Some("governance_updated") {
                 let sponsor = val
@@ -62,6 +62,18 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
         t.first().map(|s| s.as_str()) == Some("d")
             && t.get(1).map(|s| s.as_str()) == Some(crate::dashboard_poll::DASHBOARD_POLL_D_TAG)
     }) {
+        if trimmed.starts_with('{') {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if val.get("schema").and_then(|x| x.as_str()) == Some("pacto.dashboard_poll.v1")
+                    && val.get("action").and_then(|x| x.as_str()) == Some("vote")
+                {
+                    return Some("polls".to_string());
+                }
+                if val.get("type").and_then(|x| x.as_str()) == Some("dashboard_poll_created") {
+                    return Some("announcements".to_string());
+                }
+            }
+        }
         return Some("polls".to_string());
     }
 
@@ -104,5 +116,16 @@ mod tests {
             &[],
         );
         assert_eq!(bucket.as_deref(), Some("inbox"));
+    }
+
+    #[test]
+    fn dashboard_poll_created_derives_announcements_bucket() {
+        let content = r#"{"type":"dashboard_poll_created","payload":{"parent_id":"p","poll_id":"poll","title":"T","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}"#;
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::APPLICATION_SPECIFIC,
+            content,
+            &[],
+        );
+        assert_eq!(bucket.as_deref(), Some("announcements"));
     }
 }

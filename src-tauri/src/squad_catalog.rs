@@ -440,7 +440,7 @@ mod tests {
                 order: 0,
             },
             SquadChannelRow {
-                name: "inbox".to_string(),
+                name: "personal-alerts".to_string(),
                 group_id: "grp-announce".to_string(),
                 order: 1,
             },

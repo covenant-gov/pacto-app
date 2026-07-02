@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte';
+  import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import {
     SPONSOR_LOW_BALANCE_WEI,
@@ -6,6 +8,13 @@
     getSquadSponsorSummary,
     type SquadSponsorSummaryDto,
   } from '../../../lib/governance/api';
+  import {
+    SPONSOR_SUMMARY_TTL_MS,
+    fetchSponsorSummaryCached,
+    getCachedSponsorSummary,
+    isSponsorSummaryCacheStale,
+    sponsorSummaryCacheKey,
+  } from '../../../lib/governance/squad-sponsor-summary-cache';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
@@ -25,6 +34,8 @@
   let depositing = false;
   let depositError = '';
   let showDepositForm = false;
+  let periodicRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  let hydratedSponsorKey = '';
 
   $: network = (sponsorRow?.chain?.trim() || 'sepolia') as SupportedChainId;
   $: poolBalanceWei = summary ? BigInt(summary.poolBalanceWei) : null;
@@ -33,32 +44,84 @@
   $: explorerUrl =
     summary?.sponsorAddress &&
     explorerAddressUrl(parseSupportedChainId(summary.chain), summary.sponsorAddress);
+  $: sponsorKey = sponsorRow?.id ?? '';
 
-  async function refreshSummary() {
-    if (!parentId?.trim() || !sponsorRow) {
+  function currentCacheKey(): string | null {
+    if (!parentId?.trim() || !sponsorRow) return null;
+    return sponsorSummaryCacheKey(parentId.trim(), sponsorRow.canonicalRef, network);
+  }
+
+  async function refreshSummary(force = false) {
+    const key = currentCacheKey();
+    if (!key) {
       summary = null;
       return;
     }
+
+    if (!force) {
+      const cached = getCachedSponsorSummary(key);
+      if (cached) {
+        summary = cached;
+        return;
+      }
+    }
+
     loading = true;
     loadError = '';
     try {
-      summary = await getSquadSponsorSummary({
-        network,
-        parentId: parentId.trim(),
-        sponsorAddress: sponsorRow.canonicalRef,
-      });
+      summary = await fetchSponsorSummaryCached(
+        key,
+        () =>
+          getSquadSponsorSummary({
+            network,
+            parentId: parentId.trim(),
+            sponsorAddress: sponsorRow!.canonicalRef,
+          }),
+        { force }
+      );
     } catch (e) {
       loadError = getInvokeErrorMessage(e, 'Could not load sponsor balance.');
-      summary = null;
+      if (force) summary = null;
     } finally {
       loading = false;
     }
   }
 
-  $: sponsorKey = sponsorRow?.id ?? '';
-  $: if (sponsorKey && parentId?.trim()) {
-    void refreshSummary();
+  function hydrateFromSessionCache() {
+    const key = currentCacheKey();
+    if (!key) {
+      summary = null;
+      return;
+    }
+    const cached = getCachedSponsorSummary(key);
+    if (cached) {
+      summary = cached;
+      return;
+    }
+    void refreshSummary(false);
   }
+
+  $: if (sponsorKey && parentId?.trim()) {
+    const nextKey = `${parentId}:${sponsorKey}:${network}`;
+    if (nextKey !== hydratedSponsorKey) {
+      hydratedSponsorKey = nextKey;
+      hydrateFromSessionCache();
+    }
+  }
+
+  onMount(() => {
+    periodicRefreshTimer = setInterval(() => {
+      const key = currentCacheKey();
+      if (!key || !sponsorRow) return;
+      if (isSponsorSummaryCacheStale(key)) {
+        void refreshSummary(false);
+      }
+    }, SPONSOR_SUMMARY_TTL_MS);
+  });
+
+  onDestroy(() => {
+    if (periodicRefreshTimer) clearInterval(periodicRefreshTimer);
+  });
 
   async function submitDeposit() {
     depositError = '';
@@ -84,7 +147,7 @@
       });
       showToast('Sponsor pool deposit confirmed.');
       showDepositForm = false;
-      await refreshSummary();
+      await refreshSummary(true);
     } catch (e) {
       let raw = getInvokeErrorMessage(e, 'Deposit failed.');
       const parsed = parseWalletOpError(raw);
@@ -100,9 +163,13 @@
   <div class="treasury-section-head">
     <h3 id="sponsor-heading" class="section-heading">Squad sponsor</h3>
     {#if sponsorRow}
-      <button type="button" class="btn-secondary sponsor-refresh-btn" on:click={refreshSummary} disabled={loading}>
-        {loading ? 'Refreshing…' : 'Refresh'}
-      </button>
+      <RefreshIconButton
+        className="sponsor-refresh-btn"
+        disabled={loading}
+        spinning={loading}
+        ariaLabel={loading ? 'Refreshing sponsor balance' : 'Refresh sponsor balance'}
+        on:click={() => refreshSummary(true)}
+      />
     {:else if onOpenDeploy}
       <button type="button" class="btn-primary sponsor-deploy-btn" on:click={onOpenDeploy}>Deploy Sponsor</button>
     {/if}
@@ -114,7 +181,7 @@
     <p class="muted">Loading sponsor balance…</p>
   {:else if loadError}
     <p class="sponsor-error" role="alert">{loadError}</p>
-    <button type="button" class="btn-secondary" on:click={refreshSummary}>Retry</button>
+    <button type="button" class="btn-secondary" on:click={() => refreshSummary(true)}>Retry</button>
   {:else if summary}
     <p class="sponsor-lead muted">Gas sponsorship pool for this squad on <strong>{summary.chain}</strong>.</p>
     <dl class="sponsor-dl">
@@ -199,7 +266,7 @@
   }
 
   .sponsor-deploy-btn,
-  .sponsor-refresh-btn {
+  :global(.sponsor-refresh-btn) {
     flex-shrink: 0;
   }
 
@@ -275,10 +342,6 @@
   .sponsor-error {
     color: var(--error-text, #b91c1c);
     margin: 0 0 8px;
-  }
-
-  .sponsor-refresh-btn {
-    font-size: 0.8125rem;
   }
 
   .muted {
