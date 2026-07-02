@@ -54,7 +54,7 @@ describe('squad-catalog', () => {
     vi.mocked(invoke).mockResolvedValue([sampleRow]);
     await hydrateSquadsFromDb();
     const names = get(squads)[0]?.channels.map((c) => c.name);
-    expect(names).toContain('inbox');
+    expect(names).toContain('personal-alerts');
     expect(names).toContain('polls');
   });
 
@@ -89,7 +89,7 @@ describe('squad-catalog', () => {
       ...sampleRow,
       channels: [
         { name: 'announcements', groupId: 'g1', order: 0 },
-        { name: 'inbox', groupId: 'g1', order: 1 },
+        { name: 'personal-alerts', groupId: 'g1', order: 1 },
         { name: 'polls', groupId: 'g1', order: 2 },
         { name: 'dashboard', groupId: DASHBOARD_CHANNEL_ID, order: 3 },
       ],

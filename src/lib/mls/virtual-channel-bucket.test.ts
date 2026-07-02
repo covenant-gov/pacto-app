@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   defaultTrioSharesSingleMlsGroup,
   deriveVirtualBucketFromMessageContent,
+  resolveVirtualBucketForTimelineMessage,
   resolveHubChannelNameForGroupSelection,
   groupTimelineKey,
   parseGroupTimelineKey,
@@ -81,7 +82,7 @@ describe('deriveVirtualBucketFromMessageContent', () => {
         ],
       },
     });
-    expect(deriveVirtualBucketFromMessageContent(pollCreated)).toBe('polls');
+    expect(deriveVirtualBucketFromMessageContent(pollCreated)).toBe('announcements');
 
     const evmShare = buildAnnounceContent({
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
@@ -95,12 +96,32 @@ describe('deriveVirtualBucketFromMessageContent', () => {
   });
 });
 
+describe('resolveVirtualBucketForTimelineMessage', () => {
+  it('routes poll created to announcements even when persisted bucket is polls', () => {
+    const content = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
+      payload: {
+        parent_id: 'p',
+        poll_id: 'poll',
+        title: 'T',
+        options: [
+          { id: 'a', label: 'A' },
+          { id: 'b', label: 'B' },
+        ],
+      },
+    });
+    expect(
+      resolveVirtualBucketForTimelineMessage({ content, virtual_bucket: 'polls' })
+    ).toBe('announcements');
+  });
+});
+
 describe('defaultTrioSharesSingleMlsGroup', () => {
   it('is false when groups differ', () => {
     expect(
       defaultTrioSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'a', order: 0 },
-        { name: 'inbox', groupId: 'b', order: 1 },
+        { name: 'personal-alerts', groupId: 'b', order: 1 },
         { name: 'polls', groupId: 'c', order: 2 },
       ])
     ).toBe(false);
@@ -110,7 +131,7 @@ describe('defaultTrioSharesSingleMlsGroup', () => {
     expect(
       defaultTrioSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'g', order: 0 },
-        { name: 'inbox', groupId: 'g', order: 1 },
+        { name: 'personal-alerts', groupId: 'g', order: 1 },
         { name: 'polls', groupId: 'g', order: 2 },
       ])
     ).toBe(true);
@@ -120,7 +141,7 @@ describe('defaultTrioSharesSingleMlsGroup', () => {
 describe('resolveHubChannelNameForGroupSelection', () => {
   const channels = [
     { name: 'announcements', groupId: 'g', order: 0 },
-    { name: 'inbox', groupId: 'g', order: 1 },
+    { name: 'personal-alerts', groupId: 'g', order: 1 },
     { name: 'polls', groupId: 'g', order: 2 },
   ];
 

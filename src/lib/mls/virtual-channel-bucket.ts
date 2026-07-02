@@ -14,6 +14,12 @@ import {
   isSponsorGovernanceAnnounce,
   type AnnounceMessage,
 } from '../announcements';
+import {
+  ANNOUNCEMENTS_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
+  POLLS_CHANNEL_NAME,
+  normalizeHubChannelName,
+} from '../squad/hub-channel-names';
 
 export type VirtualBucket = 'announcements' | 'inbox' | 'polls';
 
@@ -39,17 +45,21 @@ export interface ChannelLike {
   order: number;
 }
 
-const DEFAULT_TRIO = ['announcements', 'inbox', 'polls'] as const;
+const DEFAULT_TRIO_CHANNEL_NAMES = [
+  ANNOUNCEMENTS_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
+  POLLS_CHANNEL_NAME,
+] as const;
 
-/** True when #announcements, #inbox, and #polls exist and share one MLS group id. */
+/** True when #announcements, #personal-alerts, and #polls exist and share one MLS group id. */
 export function defaultTrioSharesSingleMlsGroup(channels: ChannelLike[]): boolean {
   const byName = new Map(channels.map((c) => [c.name, c]));
-  const ann = byName.get(DEFAULT_TRIO[0]);
-  const inbox = byName.get(DEFAULT_TRIO[1]);
-  const pol = byName.get(DEFAULT_TRIO[2]);
-  if (!ann || !inbox || !pol) return false;
+  const ann = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[0]);
+  const personalAlerts = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[1]);
+  const pol = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[2]);
+  if (!ann || !personalAlerts || !pol) return false;
   const gid = ann.groupId.trim();
-  return gid.length > 0 && gid === inbox.groupId.trim() && gid === pol.groupId.trim();
+  return gid.length > 0 && gid === personalAlerts.groupId.trim() && gid === pol.groupId.trim();
 }
 
 /**
@@ -66,7 +76,7 @@ export function resolveHubChannelNameForGroupSelection(
   const matches = sorted.filter((c) => c.groupId === gid);
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0].name;
-  const pref = preferredName?.trim();
+  const pref = normalizeHubChannelName(preferredName);
   if (pref && matches.some((c) => c.name === pref)) return pref;
   return [...matches].sort((a, b) => a.order - b.order)[0]?.name ?? null;
 }
@@ -99,7 +109,7 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   }
 
   const ann = parseAnnouncement(trimmed);
-  if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'polls';
+  if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'inbox';
   if (ann?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
     return isSponsorGovernanceAnnounce(ann) ? 'announcements' : 'inbox';
@@ -149,6 +159,10 @@ export function resolveVirtualBucketForTimelineMessage(m: {
   content?: string | null;
   virtual_bucket?: string | null;
 }): VirtualBucket {
+  const ann =
+    m.content?.trim().startsWith('{') === true ? parseAnnouncement(m.content) : null;
+  if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
+
   const pb = m.virtual_bucket?.trim();
   if (pb === 'announcements' || pb === 'inbox' || pb === 'polls') return pb;
   return deriveVirtualBucketFromMessageContent(m.content);

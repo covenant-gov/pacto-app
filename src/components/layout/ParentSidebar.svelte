@@ -2,6 +2,7 @@
   import Channel from '../channel/Channel.svelte';
   import ResizableSidebar from '../ui/ResizableSidebar.svelte';
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
+  import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import chevronDownIcon from '../../icons/chevron-down.svg';
 
   /** Channel shape for list items (name, groupId, order). Re-exported via type. */
@@ -67,6 +68,8 @@
   })();
 
   $: showPartnerSquads = partnerSquads.length > 0 || showPairWithSquadAction;
+  $: ({ defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels));
+  $: showCustomChannelDivider = defaultHubChannels.length > 0 && customChannels.length > 0;
   $: inviteLabel = 'Invite to Squad';
   $: showBroadcastSquadItem = showBroadcastSquad || broadcastSquadDisabled;
   $: showExit = typeof onExitSquad === 'function';
@@ -173,7 +176,29 @@
         />
       {:else}
         <div class="parent-channel-list">
-          {#each channels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
+          {#each defaultHubChannels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
+            <div
+              on:click={() => onSelectChannel(channel)}
+              on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
+              role="button"
+              tabindex="0"
+            >
+              <Channel
+                name={channel.name}
+                type="text"
+                active={activeView === 'hub' &&
+                  activeChannelId === channel.groupId &&
+                  (groupIdDupCount[channel.groupId] <= 1 ||
+                    activeHubChannelName === channel.name ||
+                    (activeHubChannelName == null &&
+                      firstNameByGroupId[channel.groupId] === channel.name))}
+              />
+            </div>
+          {/each}
+          {#if showCustomChannelDivider}
+            <hr class="parent-channel-divider" aria-hidden="true" />
+          {/if}
+          {#each customChannels as channel (`${channel.groupId}:${channel.name}:${channel.order}`)}
             <div
               on:click={() => onSelectChannel(channel)}
               on:keydown={(e) => e.key === 'Enter' && onSelectChannel(channel)}
@@ -396,6 +421,12 @@
   .parent-channel-list > div {
     cursor: pointer;
     border-radius: 4px;
+  }
+
+  .parent-channel-divider {
+    margin: 6px 4px 8px;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
   }
 
   .parent-create-channel-btn {

@@ -1,17 +1,46 @@
 /**
  * Shared channel helpers for squad parent sidebars (ParentNavbar).
  */
+import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  INBOX_CHANNEL_NAME,
+  DASHBOARD_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
-  type Channel,
-} from '../stores/app';
+} from './squad/hub-channel-names';
+import {
+  defaultChannelRowsForGroupId,
+  ensureDefaultHubChannelRows,
+} from './squad/hub-channel-rows';
 import { createGroupChat, getMlsGroupMembers } from './api/nostr';
+
+export { defaultChannelRowsForGroupId, ensureDefaultHubChannelRows };
 
 /** Parent-like shape: has an ordered list of channels (squad or network). */
 export interface ParentWithChannels {
   channels: Channel[];
+}
+
+/** Built-in hub rows (dashboard + default MLS trio), not user-created chat channels. */
+export function isDefaultHubSidebarChannel(name: string): boolean {
+  return (
+    name === DASHBOARD_CHANNEL_NAME ||
+    name === ANNOUNCEMENTS_CHANNEL_NAME ||
+    name === PERSONAL_ALERTS_CHANNEL_NAME ||
+    name === POLLS_CHANNEL_NAME
+  );
+}
+
+export function partitionHubSidebarChannels<T extends { name: string }>(
+  channels: T[]
+): { defaultHubChannels: T[]; customChannels: T[] } {
+  const defaultHubChannels: T[] = [];
+  const customChannels: T[] = [];
+  for (const ch of channels) {
+    if (isDefaultHubSidebarChannel(ch.name)) defaultHubChannels.push(ch);
+    else customChannels.push(ch);
+  }
+  return { defaultHubChannels, customChannels };
 }
 
 /**
@@ -24,17 +53,17 @@ export function getAnnouncementsChannel(parent: ParentWithChannels): Channel {
   );
 }
 
-/** `#inbox` MLS channel when present. */
-export function getInboxChannel(parent: ParentWithChannels): Channel | undefined {
-  return parent.channels.find((c) => c.name === INBOX_CHANNEL_NAME);
+/** `#personal-alerts` MLS channel when present. */
+export function getPersonalAlertsChannel(parent: ParentWithChannels): Channel | undefined {
+  return parent.channels.find((c) => c.name === PERSONAL_ALERTS_CHANNEL_NAME);
 }
 
 /**
- * MLS group id for automated governance/treasury announce rows — prefers `#inbox`, falls back to `#announcements`.
+ * MLS group id for automated governance/treasury announce rows — prefers `#personal-alerts`, falls back to `#announcements`.
  */
 export function resolveAutomatedAnnounceGroupId(parent: ParentWithChannels): string | null {
-  const inbox = getInboxChannel(parent)?.groupId?.trim();
-  if (inbox) return inbox;
+  const personalAlerts = getPersonalAlertsChannel(parent)?.groupId?.trim();
+  if (personalAlerts) return personalAlerts;
   const ann = getAnnouncementsChannel(parent)?.groupId?.trim();
   return ann || null;
 }
@@ -50,7 +79,7 @@ export function resolvePollsMlsGroupId(parent: ParentWithChannels): string | nul
 
 /** Default squad/network MLS rooms to invite people into (announce → inbox → polls). May share one physical group id. */
 export function orderedDefaultInviteChannels(parent: ParentWithChannels): Channel[] {
-  const order = [ANNOUNCEMENTS_CHANNEL_NAME, INBOX_CHANNEL_NAME, POLLS_CHANNEL_NAME];
+  const order = [ANNOUNCEMENTS_CHANNEL_NAME, PERSONAL_ALERTS_CHANNEL_NAME, POLLS_CHANNEL_NAME];
   return order
     .map((name) => parent.channels.find((c) => c.name === name))
     .filter((c): c is Channel => !!c);
@@ -80,49 +109,6 @@ export function uniqueChannelsByGroupIdPreservingOrder(channels: Channel[]): Cha
     out.push(ch);
   }
   return out;
-}
-
-/** Default hub sidebar rows for an existing announcements MLS `groupId` (single-group default). */
-export function defaultChannelRowsForGroupId(groupId: string): Channel[] {
-  return [
-    { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 },
-    { name: INBOX_CHANNEL_NAME, groupId, order: 1 },
-    { name: POLLS_CHANNEL_NAME, groupId, order: 2 },
-  ];
-}
-
-/**
- * Backfill missing `#inbox` / `#polls` rows when a parent only persisted `#announcements`
- * (invite accept) but uses the single-group default MLS scope.
- */
-export function ensureDefaultHubChannelRows(channels: Channel[]): Channel[] {
-  const ann = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
-  const gid = ann?.groupId?.trim();
-  if (!gid || gid.startsWith('creating-')) return channels;
-
-  const hasInbox = channels.some((c) => c.name === INBOX_CHANNEL_NAME);
-  const hasPolls = channels.some((c) => c.name === POLLS_CHANNEL_NAME);
-  if (hasInbox && hasPolls) return channels;
-
-  const defaultRows = channels.filter(
-    (c) =>
-      c.name === ANNOUNCEMENTS_CHANNEL_NAME ||
-      c.name === INBOX_CHANNEL_NAME ||
-      c.name === POLLS_CHANNEL_NAME
-  );
-  const singleGroupDefault =
-    defaultRows.length <= 1 || defaultRows.every((c) => c.groupId === ann!.groupId);
-  if (!singleGroupDefault) return channels;
-
-  const extras = channels.filter(
-    (c) =>
-      c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
-      c.name !== INBOX_CHANNEL_NAME &&
-      c.name !== POLLS_CHANNEL_NAME
-  );
-  const merged = defaultChannelRowsForGroupId(gid);
-  const custom = extras.map((c, i) => ({ ...c, order: 3 + i }));
-  return [...merged, ...custom];
 }
 
 /**

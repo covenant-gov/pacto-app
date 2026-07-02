@@ -13,21 +13,42 @@ import {
   uniqueChannelsByGroupIdPreservingOrder,
   resolvePollsMlsGroupId,
   defaultParentInvitePhysicalGroupTargets,
+  partitionHubSidebarChannels,
 } from './parent-navbar';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  INBOX_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from '../stores/app';
 
+describe('partitionHubSidebarChannels', () => {
+  it('splits built-in hub rows from user-created channels', () => {
+    const channels = [
+      { name: 'dashboard', groupId: '__dashboard__', order: -1 },
+      { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+      { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g', order: 1 },
+      { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 2 },
+      { name: 'c1', groupId: 'c1g', order: 3 },
+    ];
+    const { defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels);
+    expect(defaultHubChannels.map((c) => c.name)).toEqual([
+      'dashboard',
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+    ]);
+    expect(customChannels.map((c) => c.name)).toEqual(['c1']);
+  });
+});
+
 describe('defaultChannelRowsForGroupId', () => {
-  it('returns announcements, inbox, and polls sharing one groupId', () => {
+  it('returns announcements, personal-alerts, and polls sharing one groupId', () => {
     const rows = defaultChannelRowsForGroupId('g-shared');
     expect(rows).toHaveLength(3);
     expect(rows.map((c) => c.groupId)).toEqual(['g-shared', 'g-shared', 'g-shared']);
     expect(rows.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      INBOX_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
     ]);
   });
@@ -39,7 +60,7 @@ describe('ensureDefaultHubChannelRows', () => {
     const fixed = ensureDefaultHubChannelRows(onlyAnn);
     expect(fixed.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      INBOX_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
     ]);
     expect(new Set(fixed.map((c) => c.groupId))).toEqual(new Set(['g']));
@@ -53,7 +74,7 @@ describe('ensureDefaultHubChannelRows', () => {
   it('does not backfill when default rows use distinct MLS group ids', () => {
     const split = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
-      { name: INBOX_CHANNEL_NAME, groupId: 'b', order: 1 },
+      { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'b', order: 1 },
     ];
     expect(ensureDefaultHubChannelRows(split)).toEqual(split);
   });
@@ -66,7 +87,7 @@ describe('ensureDefaultHubChannelRows', () => {
     const fixed = ensureDefaultHubChannelRows(partial);
     expect(fixed.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      INBOX_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
       'general',
     ]);
@@ -84,7 +105,7 @@ describe('createDefaultParentChannels', () => {
     expect(new Set(res.channels.map((c) => c.groupId))).toEqual(new Set(['mls-single']));
     expect(res.channels.map((c) => c.name)).toEqual([
       ANNOUNCEMENTS_CHANNEL_NAME,
-      INBOX_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
     ]);
     expect(res.channels.map((c) => c.order)).toEqual([0, 1, 2]);
@@ -96,7 +117,7 @@ describe('resolvePollsMlsGroupId', () => {
     const parent = {
       channels: [
         { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
-        { name: INBOX_CHANNEL_NAME, groupId: 'g', order: 1 },
+        { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g', order: 1 },
         { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 2 },
       ],
     };
@@ -107,7 +128,7 @@ describe('resolvePollsMlsGroupId', () => {
     const parent = {
       channels: [
         { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'ann', order: 0 },
-        { name: INBOX_CHANNEL_NAME, groupId: 'mon', order: 1 },
+        { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'mon', order: 1 },
         { name: POLLS_CHANNEL_NAME, groupId: 'poll', order: 2 },
       ],
     };
@@ -125,7 +146,7 @@ describe('resolvePollsMlsGroupId', () => {
 describe('uniqueChannelsByGroupIdPreservingOrder', () => {
   it('dedupes by groupId and skips creating placeholders', () => {
     const a = { name: 'announcements', groupId: 'g', order: 0 };
-    const b = { name: 'inbox', groupId: 'g', order: 1 };
+    const b = { name: 'personal-alerts', groupId: 'g', order: 1 };
     expect(uniqueChannelsByGroupIdPreservingOrder([a, b])).toEqual([a]);
     expect(uniqueChannelsByGroupIdPreservingOrder([{ ...a, groupId: 'creating-x' }])).toEqual([]);
   });
@@ -134,7 +155,7 @@ describe('uniqueChannelsByGroupIdPreservingOrder', () => {
 describe('defaultParentInvitePhysicalGroupTargets', () => {
   it('returns one MLS target when the default trio shares groupId', () => {
     const ann = { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 };
-    const inbox = { name: INBOX_CHANNEL_NAME, groupId: 'g', order: 1 };
+    const inbox = { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g', order: 1 };
     const pol = { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 2 };
     expect(defaultParentInvitePhysicalGroupTargets({ channels: [ann, inbox, pol] })).toEqual([ann]);
   });
@@ -142,7 +163,7 @@ describe('defaultParentInvitePhysicalGroupTargets', () => {
   it('returns one MLS target per distinct default groupId when rows diverge', () => {
     const channels = [
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'a', order: 0 },
-      { name: INBOX_CHANNEL_NAME, groupId: 'm', order: 1 },
+      { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'm', order: 1 },
       { name: POLLS_CHANNEL_NAME, groupId: 'p', order: 2 },
     ];
     expect(defaultParentInvitePhysicalGroupTargets({ channels }).map((c) => c.groupId)).toEqual(['a', 'm', 'p']);

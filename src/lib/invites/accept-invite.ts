@@ -8,6 +8,7 @@ import {
   backfillSquadMemberEvmFromProfiles,
 } from '../api/nostr';
 import { defaultChannelRowsForGroupId } from '../parent-navbar';
+import { pactoAppInboxMessages } from '../../stores/dm';
 import { normalizeStoredSquad } from '../squad-pair';
 import { persistSquad, persistSquadPatch } from '../squad/squad-catalog';
 import { dmError } from '../utils/dm-debug';
@@ -43,6 +44,35 @@ export function resetInviteAcceptState(): void {
   acceptingChannelInSquadId.set(null);
 }
 
+export function squadInviteResolvedByMembership(groupId: string): boolean {
+  return get(squads).some((s) => s.id === groupId);
+}
+
+export function channelInSquadInviteResolvedByMembership(
+  announcementsGroupId: string,
+  channelGroupId: string
+): boolean {
+  const squad = get(squads).find((s) => s.id === announcementsGroupId);
+  return squad?.channels.some((ch) => ch.groupId === channelGroupId) ?? false;
+}
+
+/** Persist accepted state for inbox invites whose squad/channel is already local. */
+export function reconcileStaleInviteDecisions(): void {
+  const squadMessageIds: string[] = [];
+  for (const msg of get(pactoAppInboxMessages)) {
+    const payload = parseSquadInviteMessage(msg.content ?? '');
+    if (payload && squadInviteResolvedByMembership(payload.groupId)) {
+      squadMessageIds.push(msg.id);
+    }
+  }
+  if (squadMessageIds.length === 0) return;
+  acceptedSquadInviteIds.update((ids) => {
+    const next = new Set(ids);
+    for (const id of squadMessageIds) next.add(id);
+    return [...next];
+  });
+}
+
 function addChannelToParent(parentId: string, channelGroupId: string, channelName: string): void {
   void persistSquadPatch(parentId, (squad) => {
     if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
@@ -66,6 +96,12 @@ export async function acceptAnnouncementsInvite(
   payload: AnnouncementsInvitePayload,
   messageId: string
 ): Promise<void> {
+  if (squadInviteResolvedByMembership(payload.groupId)) {
+    acceptedSquadInviteIds.update((ids: string[]) =>
+      ids.includes(messageId) ? ids : [...ids, messageId]
+    );
+    return;
+  }
   const welcomes = await listPendingMlsWelcomes();
   const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
   if (!welcome) {
@@ -158,6 +194,17 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
       msg.id
     );
   } catch (e) {
+    const payload = parseSquadInviteMessage(msg.content);
+    if (
+      payload &&
+      squadInviteResolvedByMembership(payload.groupId) &&
+      (e as Error & { noWelcome?: boolean }).noWelcome
+    ) {
+      acceptedSquadInviteIds.update((ids: string[]) =>
+        ids.includes(msg.id) ? ids : [...ids, msg.id]
+      );
+      return;
+    }
     dmError('Accept squad invite failed', e);
   } finally {
     acceptingSquadInviteId.set(null);
@@ -175,6 +222,17 @@ export async function acceptChannelInSquadInvite(
   payload: ChannelInSquadInvitePayload
 ): Promise<void> {
   if (get(acceptingChannelInSquadId)) return;
+  if (
+    channelInSquadInviteResolvedByMembership(
+      payload.announcementsGroupId,
+      payload.channelGroupId
+    )
+  ) {
+    acceptedChannelInviteMessageIds.update((ids: string[]) =>
+      ids.includes(msg.id) ? ids : [...ids, msg.id]
+    );
+    return;
+  }
   acceptingChannelInSquadId.set(msg.id);
   try {
     const welcomes = await listPendingMlsWelcomes();

@@ -6,9 +6,9 @@
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError } from '../../stores/auth';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
 
-  type AuthStep = 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
+  type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
 
-  let currentStep: AuthStep = 'welcome';
+  let currentStep: AuthStep = 'checking';
   let privateKey: string = '';
   let firstPin: string = '';
   let error: string | null = null;
@@ -16,11 +16,10 @@
 
   // Check if user has stored encrypted key on mount
   onMount(async () => {
-    const status = await checkAuthStatus();
-    
-    if (status === 'needs-pin') {
-      currentStep = 'pin-unlock';
-    } else {
+    try {
+      const status = await checkAuthStatus();
+      currentStep = status === 'needs-pin' ? 'pin-unlock' : 'welcome';
+    } catch {
       currentStep = 'welcome';
     }
   });
@@ -108,16 +107,6 @@
     }
   }
 
-  // Get PIN title based on step
-  $: pinTitle = currentStep === 'pin-create' ? 'Create your PIN' :
-                currentStep === 'pin-confirm' ? 'Confirm your PIN' :
-                'Enter your PIN';
-
-  // Get PIN handler based on step
-  $: pinHandler = currentStep === 'pin-create' ? handlePinCreate :
-                  currentStep === 'pin-confirm' ? handlePinConfirm :
-                  handlePinUnlock;
-
   // Back handlers for PIN screens
   function handlePinCreateBack() {
     if (privateKey) {
@@ -140,10 +129,6 @@
     clearAuthError();
   }
 
-  // Get back handler based on step
-  $: pinBackHandler = currentStep === 'pin-create' ? handlePinCreateBack :
-                      currentStep === 'pin-confirm' ? handlePinConfirmBack :
-                      undefined; // No back button for unlock screen
 </script>
 
 <div class="login-container">
@@ -164,18 +149,37 @@
       isValidating={$authLoading}
       {error}
     />
-  {:else if currentStep === 'pin-create' || currentStep === 'pin-confirm' || currentStep === 'pin-unlock'}
+  {:else if currentStep === 'pin-create'}
     <div class="pin-screen">
-      {#key currentStep}
-        <PinInput
-          title={pinTitle}
-          onComplete={pinHandler}
-          onErrorClear={() => { error = null; clearAuthError(); }}
-          onBack={pinBackHandler}
-          isProcessing={$authLoading}
-          {error}
-        />
-      {/key}
+      <PinInput
+        title="Create your PIN"
+        onComplete={handlePinCreate}
+        onErrorClear={() => { error = null; clearAuthError(); }}
+        onBack={handlePinCreateBack}
+        isProcessing={$authLoading}
+        {error}
+      />
+    </div>
+  {:else if currentStep === 'pin-confirm'}
+    <div class="pin-screen">
+      <PinInput
+        title="Confirm your PIN"
+        onComplete={handlePinConfirm}
+        onErrorClear={() => { error = null; clearAuthError(); }}
+        onBack={handlePinConfirmBack}
+        isProcessing={$authLoading}
+        {error}
+      />
+    </div>
+  {:else if currentStep === 'pin-unlock'}
+    <div class="pin-screen">
+      <PinInput
+        title="Enter your PIN"
+        onComplete={handlePinUnlock}
+        onErrorClear={() => { error = null; clearAuthError(); }}
+        isProcessing={$authLoading}
+        {error}
+      />
     </div>
   {/if}
 </div>

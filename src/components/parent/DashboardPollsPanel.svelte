@@ -23,6 +23,8 @@
   export let pollsMlsGroupId: string | null;
   /** Dashboard tab vs `#polls` channel chrome. */
   export let variant: 'dashboard' | 'channel' = 'dashboard';
+  /** When true in channel variant, fill the parent split pane instead of a fixed max height. */
+  export let fillParent = false;
 
   let showCreatePollModal = false;
   let parentPollsList: ParentPoll[] = [];
@@ -189,6 +191,7 @@
 <div
   class="dashboard-polls-shell"
   class:dashboard-polls-shell--channel={variant === 'channel'}
+  class:dashboard-polls-shell--channel-fill={variant === 'channel' && fillParent}
 >
   <div class="dashboard-polls-scroll" bind:this={pollsScrollEl} role="feed" aria-label="Polls">
     <div class="dashboard-polls-scroll-inner">
@@ -300,6 +303,14 @@
     max-height: min(42vh, 360px);
     padding: 8px 12px 12px;
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .dashboard-polls-shell--channel-fill {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    border-bottom: none;
+    padding: 8px 12px 0;
   }
 
   .dashboard-polls-scroll {

@@ -34,6 +34,7 @@
   import WalletSendModal from './WalletSendModal.svelte';
   import WalletRequestModal from './WalletRequestModal.svelte';
   import WalletImportTokensModal from './WalletImportTokensModal.svelte';
+  import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
   /** Active DM counterparty npub */
   export let npub: string;
@@ -309,15 +310,12 @@
   <section class="wallet-bar-section" aria-labelledby="wallet-balance-heading">
     <div class="wallet-bar-section-head">
       <h3 id="wallet-balance-heading" class="wallet-bar-section-title">Balance</h3>
-      <button
-        type="button"
-        class="wallet-bar-refresh"
+      <RefreshIconButton
         disabled={summaryLoading}
+        spinning={summaryLoading}
+        ariaLabel={summaryLoading ? 'Refreshing balances' : 'Refresh balances'}
         on:click={refreshSummary}
-        aria-label="Refresh balances"
-      >
-        {summaryLoading ? '…' : 'Refresh'}
-      </button>
+      />
     </div>
     {#if summaryLoading && !summary}
       <p class="wallet-bar-placeholder">Loading balances…</p>
@@ -626,23 +624,6 @@
     font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-secondary);
-  }
-
-  .wallet-bar-refresh {
-    flex-shrink: 0;
-    padding: 4px 8px;
-    font-size: 0.6875rem;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--bg-hover);
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-family: inherit;
-  }
-
-  .wallet-bar-refresh:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .wallet-bar-total {

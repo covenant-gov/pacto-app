@@ -1,7 +1,15 @@
 import { writable } from 'svelte/store';
 import type { TreasurySafeEntry } from '../lib/treasury/treasury-safes';
 import type { SquadInfraDto } from '../lib/governance/api';
-import { ensureDefaultHubChannelRows } from '../lib/parent-navbar';
+import { ensureDefaultHubChannelRows } from '../lib/squad/hub-channel-rows';
+import {
+  ANNOUNCEMENTS_CHANNEL_NAME,
+  DASHBOARD_CHANNEL_ID,
+  DASHBOARD_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
+  POLLS_CHANNEL_NAME,
+  normalizeHubChannelName,
+} from '../lib/squad/hub-channel-names';
 import {
   normalizeStoredSquad,
   type PairedSquads,
@@ -11,18 +19,20 @@ import {
 } from '../lib/squad-pair';
 export type { SquadKind, PairedSquadRef, PairedSquads, SquadVisibility };
 export { partnerSquadsForAnchor, partnerSquadsForHubParent } from '../lib/squad-pair';
+export {
+  ANNOUNCEMENTS_CHANNEL_NAME,
+  DASHBOARD_CHANNEL_ID,
+  DASHBOARD_CHANNEL_NAME,
+  PERSONAL_ALERTS_CHANNEL_NAME,
+  POLLS_CHANNEL_NAME,
+  normalizeHubChannelName,
+};
 
 export interface Channel {
   name: string;
   groupId: string;
   order: number;
 }
-
-export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
-export const INBOX_CHANNEL_NAME = 'inbox';
-export const POLLS_CHANNEL_NAME = 'polls';
-export const DASHBOARD_CHANNEL_ID = '__dashboard__';
-export const DASHBOARD_CHANNEL_NAME = 'dashboard';
 
 export const squadInfraByParentId = writable<Record<string, SquadInfraDto[]>>({});
 export const treasurySafesByParentId = writable<Record<string, TreasurySafeEntry[]>>({});
@@ -32,7 +42,7 @@ export type { TreasurySafeEntry };
 export type { SquadInfraDto };
 
 export function normalizeStoredChannel(ch: { name: string; groupId: string; order: number }): Channel {
-  const name = ch.name === 'monitor' ? INBOX_CHANNEL_NAME : ch.name;
+  const name = normalizeHubChannelName(ch.name) ?? ch.name;
   return { name, groupId: ch.groupId, order: ch.order };
 }
 

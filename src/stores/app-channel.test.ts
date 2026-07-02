@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { INBOX_CHANNEL_NAME, normalizeStoredChannel } from './squads';
+import { PERSONAL_ALERTS_CHANNEL_NAME, normalizeStoredChannel } from './squads';
 
 describe('normalizeStoredChannel', () => {
-  it('renames legacy monitor channel rows to inbox', () => {
+  it('renames legacy monitor and inbox channel rows to personal-alerts', () => {
     expect(
       normalizeStoredChannel({ name: 'monitor', groupId: 'g1', order: 1 })
-    ).toEqual({ name: INBOX_CHANNEL_NAME, groupId: 'g1', order: 1 });
+    ).toEqual({ name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g1', order: 1 });
+    expect(
+      normalizeStoredChannel({ name: 'inbox', groupId: 'g1', order: 1 })
+    ).toEqual({ name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g1', order: 1 });
   });
 
-  it('passes through inbox and other channel names', () => {
+  it('passes through personal-alerts and other channel names', () => {
     expect(
-      normalizeStoredChannel({ name: INBOX_CHANNEL_NAME, groupId: 'g1', order: 1 })
-    ).toEqual({ name: INBOX_CHANNEL_NAME, groupId: 'g1', order: 1 });
+      normalizeStoredChannel({ name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g1', order: 1 })
+    ).toEqual({ name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g1', order: 1 });
     expect(
       normalizeStoredChannel({ name: 'announcements', groupId: 'g1', order: 0 })
     ).toEqual({ name: 'announcements', groupId: 'g1', order: 0 });
