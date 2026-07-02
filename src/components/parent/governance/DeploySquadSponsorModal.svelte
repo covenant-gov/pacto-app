@@ -10,6 +10,7 @@
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { parseEther } from 'viem';
+  import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
 
   export let parentId: string;
   export let onClose: () => void;
@@ -157,6 +158,11 @@
     !depositExceedsBalance &&
     !selectedBalance.loading;
 
+  function onDepositInput(e: Event) {
+    const el = e.currentTarget as HTMLInputElement;
+    initialDepositEth = normalizeLeadingDotDecimalInput(el.value);
+  }
+
   async function confirmDeploy() {
     deployError = '';
     if (signerUnavailable) {
@@ -284,7 +290,8 @@
       class="sponsor-deploy-input"
       class:input-invalid={depositInvalidFormat || depositExceedsBalance}
       placeholder="e.g. 0.01"
-      bind:value={initialDepositEth}
+      value={initialDepositEth}
+      on:input={onDepositInput}
       disabled={signerUnavailable}
       autocomplete="off"
       required

@@ -4,7 +4,9 @@ import {
   resolveHubParentSquad,
   resolveOpenHubParent,
   restoreSquadsHubSelection,
+  syncSquadsHubSelection,
   resolveHubChannelForSquad,
+  resolveEffectiveHubChannel,
 } from './squad-hub-nav';
 import {
   activeSquadId,
@@ -98,5 +100,29 @@ describe('restoreSquadsHubSelection', () => {
     squads.set([regular, pair]);
     restoreSquadsHubSelection();
     expect(get(activeSquadId)).toBe('squad-a');
+  });
+
+  it('fills missing channel when squad is already active', () => {
+    squads.set([
+      { ...regular, channels: [{ name: 'announcements', groupId: 'g1', order: 0 }] },
+    ]);
+    activeSquadId.set('squad-a');
+    activeChannelId.set(null);
+    syncSquadsHubSelection();
+    expect(get(activeChannelId)).toBe(DASHBOARD_CHANNEL_ID);
+  });
+
+  it('resolveEffectiveHubChannel defaults to dashboard when channel is missing', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    const resolved = resolveEffectiveHubChannel(squad, null, {}, {});
+    expect(resolved.channelId).toBe(DASHBOARD_CHANNEL_ID);
+  });
+
+  it('resolveEffectiveHubChannel defaults to dashboard when squad has no MLS channels yet', () => {
+    const resolved = resolveEffectiveHubChannel(regular, null, {}, {});
+    expect(resolved.channelId).toBe(DASHBOARD_CHANNEL_ID);
   });
 });

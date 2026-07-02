@@ -7,6 +7,7 @@
   import CommonsView from '../components/commons/CommonsView.svelte';
   import PersonalBroadcastModal from '../components/commons/PersonalBroadcastModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
+  import ParentDashboard from '../components/parent/ParentDashboard.svelte';
   import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
@@ -137,7 +138,7 @@
   } from '../lib/governance/standalone-safe-payload';
   import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
-  import { resolveOpenHubParent, restoreSquadsHubSelection } from '../lib/squad-hub-nav';
+  import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
   import { subscribeAppEvents } from '../lib/app/tauri-subscriptions';
   import {
@@ -157,32 +158,45 @@
   } from '../lib/invites/accept-invite';
 
   const loadChatView = createLazyComponent(() => import('../components/channel/ChatView.svelte'));
-  const loadParentDashboard = createLazyComponent(
-    () => import('../components/parent/ParentDashboard.svelte'),
-  );
 
   let ChatViewComponent: Component | null = null;
-  let ParentDashboardComponent: Component | null = null;
   let chatViewLoadToken = 0;
-  let parentDashboardLoadToken = 0;
+
+  $: openHubParent = resolveOpenHubParent($squads, $activeSquadId);
+  $: effectiveHubChannel = resolveEffectiveHubChannel(
+    openHubParent,
+    $activeChannelId,
+    $lastChannelBySquadId,
+    $lastHubChannelNameBySquadId,
+  );
 
   $: showParentDashboard =
+    openHubParent != null &&
+    (!effectiveHubChannel.channelId || effectiveHubChannel.channelId === DASHBOARD_CHANNEL_ID);
+  $: showMlsChatView =
+    openHubParent != null &&
+    !!effectiveHubChannel.channelId &&
+    effectiveHubChannel.channelId !== DASHBOARD_CHANNEL_ID;
+
+  $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
+    syncSquadsHubSelection();
+  }
+
+  $: if (
     $activeTopNavTab === 'squads' &&
-    $activeChannelId === DASHBOARD_CHANNEL_ID &&
-    !!openHubParent;
-  $: showMlsChatView = $activeTopNavTab === 'squads' && !showParentDashboard;
+    openHubParent &&
+    effectiveHubChannel.channelId &&
+    ($activeChannelId !== effectiveHubChannel.channelId ||
+      $activeHubChannelName !== effectiveHubChannel.hubChannelName)
+  ) {
+    activeChannelId.set(effectiveHubChannel.channelId);
+    activeHubChannelName.set(effectiveHubChannel.hubChannelName);
+  }
 
   $: if (showMlsChatView) {
     const token = ++chatViewLoadToken;
     void loadChatView().then((component) => {
       if (token === chatViewLoadToken) ChatViewComponent = component;
-    });
-  }
-
-  $: if (showParentDashboard) {
-    const token = ++parentDashboardLoadToken;
-    void loadParentDashboard().then((component) => {
-      if (token === parentDashboardLoadToken) ParentDashboardComponent = component;
     });
   }
 
@@ -202,8 +216,6 @@
   ) {
     closeCommonsBroadcastModal();
   }
-
-  $: openHubParent = resolveOpenHubParent($squads, $activeSquadId);
 
   /** When true, the DM wallet panel is not shown (other top nav, DM tab, or new chat), but open state stays until the user closes it. */
   $: walletSidebarInvalidContext =
@@ -446,7 +458,7 @@
   }
 
   $: dashboardParentId =
-    $activeChannelId === DASHBOARD_CHANNEL_ID ? openHubParent?.id ?? null : null;
+    effectiveHubChannel.channelId === DASHBOARD_CHANNEL_ID ? openHubParent?.id ?? null : null;
   $: if ($activeTopNavTab === 'squads' && openHubParent) {
     scheduleHubParentPrefetch(openHubParent);
   }
@@ -455,10 +467,6 @@
   }
   $: if ($isAuthenticated && $currentUser && $squads.length > 0) {
     scheduleAllSquadsHubWarmup($squads);
-  }
-
-  $: if ($isAuthenticated && $activeTopNavTab === 'squads' && $squads.length > 0 && !$activeSquadId) {
-    restoreSquadsHubSelection();
   }
 
   /** After login, refresh embedded wallet balances in the background (cache only; no DM open). */
@@ -533,7 +541,9 @@
     const cid = $activeChannelId;
     if (cid && !cid.startsWith('creating-')) {
       const squad = $squads.find((s: Squad) => s.id === sid);
-      const cidBelongsToSquad = squad?.channels.some((c: Channel) => c.groupId === cid) ?? false;
+      const cidBelongsToSquad =
+        cid === DASHBOARD_CHANNEL_ID ||
+        (squad?.channels.some((c: Channel) => c.groupId === cid) ?? false);
       if (cidBelongsToSquad && squad) {
         lastOpenedChannelId.set(cid);
         lastChannelBySquadId.update((m: Record<string, string>) => {
@@ -550,36 +560,6 @@
           return next;
         });
       } else if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page on-squads skip persist (cid not in squad)', { sid: sid.slice(0, 12), cid: cid.slice(0, 20) });
-    }
-  }
-
-  // Never leave channel empty when a squad is selected: restore last channel for this squad or default to first (announcements). Dashboard (virtual channel) is valid.
-  $: if ($activeTopNavTab === 'squads' && $activeSquadId && $squads.length > 0) {
-    const sid = $activeSquadId;
-    const squad = $squads.find((s: Squad) => s.id === sid);
-    if (squad) {
-      const sorted = [...squad.channels].sort((a: Channel, b: Channel) => a.order - b.order);
-      const firstCh = sorted[0];
-      const lastForSquad = $lastChannelBySquadId[sid];
-      const activeInSquad =
-        $activeChannelId &&
-        (sorted.some((c: Channel) => c.groupId === $activeChannelId) || $activeChannelId === DASHBOARD_CHANNEL_ID);
-      const lastInSquad =
-        lastForSquad &&
-        (sorted.some((c: Channel) => c.groupId === lastForSquad) || lastForSquad === DASHBOARD_CHANNEL_ID);
-      const validChannel =
-        activeInSquad ? $activeChannelId
-          : lastInSquad ? lastForSquad
-            : firstCh ? DASHBOARD_CHANNEL_ID : null;
-      if (validChannel && $activeChannelId !== validChannel) {
-        if (SQUAD_CHANNEL_DEBUG) console.log('[SquadChannel] +page never-empty correct', { sid: sid.slice(0, 12), from: $activeChannelId?.slice(0, 20), to: validChannel?.slice(0, 20), reason: activeInSquad ? 'active' : lastInSquad ? 'lastForSquad' : 'firstCh', lastForSquad: lastForSquad?.slice(0, 20) });
-        activeChannelId.set(validChannel);
-        const hub =
-          validChannel !== DASHBOARD_CHANNEL_ID
-            ? resolveHubChannelNameForGroupSelection(sorted, validChannel, $lastHubChannelNameBySquadId[sid])
-            : null;
-        activeHubChannelName.set(hub);
-      }
     }
   }
 
@@ -882,7 +862,7 @@
     prevTopNavTab = 'squads';
     syncMlsGroupsNow(null).catch(() => {});
     clearUngroupedChannels();
-    restoreSquadsHubSelection();
+    syncSquadsHubSelection();
   } else if ($activeTopNavTab !== 'squads') {
     // Persist squad channel when leaving Squads tab so it restores correctly when returning
     if (prevTopNavTab === 'squads' && $activeSquadId) {
@@ -916,7 +896,7 @@
   }
 
   onMount(() => {
-    restoreSquadsHubSelection();
+    syncSquadsHubSelection();
 
     // Pull DMs from Nostr relays when app loads (if already authenticated)
     if ($isAuthenticated) {
@@ -1032,9 +1012,10 @@
       {:else}
         <div class="parent-area">
           <ParentNavbar />
+          <div class="parent-main">
           {#if showParentDashboard && openHubParent}
-            {#if ParentDashboardComponent}
-              <ParentDashboardComponent
+            {#key `${openHubParent.id}:${effectiveHubChannel.channelId ?? DASHBOARD_CHANNEL_ID}`}
+              <ParentDashboard
               parent={openHubParent}
               treasurySafes={$treasurySafesByParentId[openHubParent.id] ?? []}
               governanceConfig={(() => {
@@ -1105,16 +1086,19 @@
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
-            {:else}
-              <p class="surface-loading muted" role="status">Loading dashboard…</p>
-            {/if}
+            {/key}
           {:else if showMlsChatView}
             {#if ChatViewComponent}
-              <ChatViewComponent />
+              <svelte:component this={ChatViewComponent} />
             {:else}
               <p class="surface-loading muted" role="status">Loading channel…</p>
             {/if}
+          {:else if $activeSquadId && !openHubParent}
+            <p class="surface-loading muted" role="status">Loading squad…</p>
+          {:else}
+            <p class="surface-loading muted" role="status">Select a squad channel</p>
           {/if}
+          </div>
         </div>
       {/if}
     </div>
@@ -1162,6 +1146,14 @@
     min-height: 0;
     display: flex;
     flex-direction: row;
+  }
+
+  .parent-main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
 
   .surface-loading {
