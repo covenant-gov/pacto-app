@@ -157,6 +157,8 @@ function legacyModeToRows(): WatchedErc20Row[] | null {
   ) {
     return null;
   }
+  localStorage.removeItem(LEGACY_TOKEN_FILTER);
+  localStorage.removeItem(LEGACY_TOKEN_VISIBILITY);
   if (mode === 'all_tokens') return defaultWatchedErc20Rows();
   if (mode === 'native_only') return [];
   const only: 'USDC' | 'USDT' = mode === 'native_usdc' ? 'USDC' : 'USDT';

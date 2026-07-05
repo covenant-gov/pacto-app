@@ -19,7 +19,11 @@ import { deleteSquad, persistSquad } from '../squad/squad-catalog';
 import { clearParentDashboardCaches } from './clear-parent-dashboard-caches';
 import { runExitParent } from './exit-parent-flow';
 import { squads, type Squad } from '../../stores/squads';
-import { activeSquadId } from '../../stores/navigation';
+import {
+  activeSquadId,
+  activeChannelId,
+  activeHubChannelName,
+} from '../../stores/navigation';
 import { currentNpubForPersistence } from '../../stores/persistence-context';
 
 const squad: Squad = {
@@ -42,12 +46,16 @@ describe('runExitParent', () => {
     vi.mocked(clearParentDashboardCaches).mockReset();
     squads.set([squad]);
     activeSquadId.set(squad.id);
+    activeChannelId.set('parent-1');
+    activeHubChannelName.set('announcements');
     currentNpubForPersistence.set('npub1test');
   });
 
   afterEach(() => {
     squads.set([]);
     activeSquadId.set(null);
+    activeChannelId.set(null);
+    activeHubChannelName.set(null);
     currentNpubForPersistence.set(null);
   });
 
@@ -56,6 +64,8 @@ describe('runExitParent', () => {
     runExitParent({ squad, wasActive: true, previousChannelId: 'parent-1', onFailure });
     expect(get(squads)).toHaveLength(0);
     expect(get(activeSquadId)).toBeNull();
+    expect(get(activeChannelId)).toBeNull();
+    expect(get(activeHubChannelName)).toBeNull();
     await vi.waitFor(() => {
       expect(deleteSquad).toHaveBeenCalledWith('parent-1');
     });
@@ -72,6 +82,51 @@ describe('runExitParent', () => {
     runExitParent({ squad, wasActive: true, previousChannelId: 'parent-1', onFailure });
     await vi.waitFor(() => {
       expect(onFailure).toHaveBeenCalled();
+    });
+    expect(persistSquad).toHaveBeenCalledWith(squad);
+    expect(get(squads)).toHaveLength(1);
+    expect(get(squads)[0]?.id).toBe('parent-1');
+    expect(get(activeSquadId)).toBe('parent-1');
+  });
+
+  it('does not touch active navigation when wasActive is false', async () => {
+    activeSquadId.set('other-parent');
+    activeChannelId.set('other-channel');
+    activeHubChannelName.set('other');
+    const onFailure = vi.fn();
+
+    runExitParent({ squad, wasActive: false, previousChannelId: null, onFailure });
+
+    expect(get(squads)).toHaveLength(0);
+    expect(get(activeSquadId)).toBe('other-parent');
+    expect(get(activeChannelId)).toBe('other-channel');
+    expect(get(activeHubChannelName)).toBe('other');
+    await vi.waitFor(() => {
+      expect(deleteSquad).toHaveBeenCalledWith('parent-1');
+    });
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it('leaves no channels when the squad has none', async () => {
+    const emptySquad: Squad = { ...squad, channels: [] };
+    squads.set([emptySquad]);
+    const onFailure = vi.fn();
+    runExitParent({ squad: emptySquad, wasActive: true, previousChannelId: null, onFailure });
+    expect(get(squads)).toHaveLength(0);
+    await vi.waitFor(() => {
+      expect(deleteSquad).toHaveBeenCalledWith('parent-1');
+    });
+    expect(leaveMlsGroup).not.toHaveBeenCalled();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it('reverts store even when persistSquad revert fails', async () => {
+    vi.mocked(deleteSquad).mockRejectedValueOnce(new Error('db-locked'));
+    vi.mocked(persistSquad).mockRejectedValueOnce(new Error('persist-failed'));
+    const onFailure = vi.fn();
+    runExitParent({ squad, wasActive: true, previousChannelId: 'parent-1', onFailure });
+    await vi.waitFor(() => {
+      expect(onFailure).toHaveBeenCalledWith('db-locked');
     });
     expect(persistSquad).toHaveBeenCalledWith(squad);
     expect(get(squads)).toHaveLength(1);
