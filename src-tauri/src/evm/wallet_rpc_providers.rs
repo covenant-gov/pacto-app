@@ -38,18 +38,12 @@ mod tests {
 
     #[test]
     fn alchemy_url_uses_host_map() {
-        std::env::set_var(ALCHEMY_KEY_ENV, "test-key");
-        let url = provider_primary_rpc_url("sepolia").unwrap();
-        assert_eq!(
-            url,
-            "https://eth-sepolia.g.alchemy.com/v2/test-key"
-        );
-        std::env::remove_var(ALCHEMY_KEY_ENV);
+        let url = alchemy_url("sepolia", "test-key").unwrap();
+        assert_eq!(url, "https://eth-sepolia.g.alchemy.com/v2/test-key");
     }
 
     #[test]
     fn missing_key_returns_none() {
-        std::env::remove_var(ALCHEMY_KEY_ENV);
-        assert!(provider_primary_rpc_url("mainnet").is_none());
+        assert!(alchemy_url("mainnet", "").is_none());
     }
 }

@@ -428,4 +428,92 @@ mod tests {
         assert_eq!(event.reference_id, Some("msg456".to_string()));
         assert!(event.mine);
     }
+
+    #[test]
+    fn known_kinds_match_expected() {
+        assert!(StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1).is_known_kind());
+        assert!(StoredEvent::new("x".to_string(), event_kind::FILE_ATTACHMENT, 1, "".to_string(), 1).is_known_kind());
+        assert!(StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1).is_known_kind());
+        assert!(StoredEvent::new("x".to_string(), event_kind::APPLICATION_SPECIFIC, 1, "".to_string(), 1).is_known_kind());
+        assert!(!StoredEvent::new("x".to_string(), event_kind::MLS_WELCOME, 1, "".to_string(), 1).is_known_kind());
+    }
+
+    #[test]
+    fn is_message_covers_dm_and_file() {
+        assert!(StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1).is_message());
+        assert!(StoredEvent::new("x".to_string(), event_kind::FILE_ATTACHMENT, 1, "".to_string(), 1).is_message());
+        assert!(!StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1).is_message());
+    }
+
+    #[test]
+    fn get_tags_returns_all_values_for_key() {
+        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1);
+        event.tags = vec![
+            vec!["p".to_string(), "a".to_string()],
+            vec!["e".to_string(), "ref1".to_string()],
+            vec!["p".to_string(), "b".to_string()],
+        ];
+        assert_eq!(event.get_tags("p"), vec!["a", "b"]);
+        assert_eq!(event.get_tags("missing"), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn get_reply_reference_requires_marker() {
+        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1);
+        event.tags = vec![vec!["e".to_string(), "ref1".to_string()]];
+        assert_eq!(event.get_reply_reference(), None);
+        event.tags = vec![vec!["e".to_string(), "ref1".to_string(), "".to_string(), "reply".to_string()]];
+        assert_eq!(event.get_reply_reference(), Some("ref1"));
+    }
+
+    #[test]
+    fn timestamp_ms_edge_cases() {
+        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1234567890);
+        // No ms tag
+        assert_eq!(event.timestamp_ms(), 1234567890000);
+        // Valid ms tag 0
+        event.tags = vec![vec!["ms".to_string(), "0".to_string()]];
+        assert_eq!(event.timestamp_ms(), 1234567890000);
+        // ms tag beyond 999 ignored
+        event.tags = vec![vec!["ms".to_string(), "1000".to_string()]];
+        assert_eq!(event.timestamp_ms(), 1234567890000);
+        // Non-numeric ms tag ignored
+        event.tags = vec![vec!["ms".to_string(), "abc".to_string()]];
+        assert_eq!(event.timestamp_ms(), 1234567890000);
+    }
+
+    #[test]
+    fn builder_sets_all_optional_fields() {
+        let event = StoredEventBuilder::new()
+            .id("id1")
+            .kind(event_kind::FILE_ATTACHMENT)
+            .chat_id(7)
+            .user_id(Some(42))
+            .content("content")
+            .tags(vec![vec!["e".to_string(), "ref".to_string()]])
+            .reference_id(Some("ref".to_string()))
+            .created_at(1000)
+            .mine(true)
+            .pending(true)
+            .failed(true)
+            .wrapper_event_id(Some("wrap".to_string()))
+            .npub(Some("npub".to_string()))
+            .virtual_bucket(Some("inbox".to_string()))
+            .build();
+
+        assert_eq!(event.id, "id1");
+        assert_eq!(event.kind, event_kind::FILE_ATTACHMENT);
+        assert_eq!(event.chat_id, 7);
+        assert_eq!(event.user_id, Some(42));
+        assert_eq!(event.content, "content");
+        assert_eq!(event.tags, vec![vec!["e".to_string(), "ref".to_string()]]);
+        assert_eq!(event.reference_id, Some("ref".to_string()));
+        assert_eq!(event.created_at, 1000);
+        assert!(event.mine);
+        assert!(event.pending);
+        assert!(event.failed);
+        assert_eq!(event.wrapper_event_id, Some("wrap".to_string()));
+        assert_eq!(event.npub, Some("npub".to_string()));
+        assert_eq!(event.virtual_bucket, Some("inbox".to_string()));
+    }
 }

@@ -94,4 +94,30 @@ mod tests {
         word[31] = 42;
         assert_eq!(decode_abi_u256_return(&word), U256::from(42));
     }
+
+    #[test]
+    fn decode_abi_u256_takes_last_32_bytes() {
+        let mut data = vec![0u8; 40];
+        data[39] = 5;
+        assert_eq!(decode_abi_u256_return(&data), U256::from(5));
+    }
+
+    #[test]
+    fn decode_abi_u256_left_pads_short_data() {
+        let data = vec![0u8, 0u8, 0u8, 1u8];
+        assert_eq!(decode_abi_u256_return(&data), U256::from(1));
+    }
+
+    #[test]
+    fn decode_abi_u256_zero_bytes() {
+        assert_eq!(decode_abi_u256_return(&[0u8; 0]), U256::ZERO);
+    }
+
+    #[test]
+    fn decode_abi_u256_large_value() {
+        let mut word = [0u8; 32];
+        word[0] = 0xff;
+        word[31] = 0xff;
+        assert_eq!(decode_abi_u256_return(&word), U256::from_be_slice(&word));
+    }
 }

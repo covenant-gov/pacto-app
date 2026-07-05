@@ -65,3 +65,50 @@ pub async fn read_squad_record<P: Provider>(
     }
     Ok((sponsor, decoded.variant, decoded.topHatId))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn squad_id_from_parent_id_is_deterministic_and_trims() {
+        let a = squad_id_from_parent_id("parent-id");
+        let b = squad_id_from_parent_id("parent-id");
+        let c = squad_id_from_parent_id("  parent-id  ");
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn parse_deposit_wei_decimal() {
+        assert_eq!(parse_deposit_wei(Some("1000")).unwrap(), U256::from(1000u64));
+        assert_eq!(parse_deposit_wei(Some("  1000  ")).unwrap(), U256::from(1000u64));
+    }
+
+    #[test]
+    fn parse_deposit_wei_hex() {
+        assert_eq!(parse_deposit_wei(Some("0xff")).unwrap(), U256::from(255u64));
+        assert_eq!(parse_deposit_wei(Some("0XFF")).unwrap(), U256::from(255u64));
+    }
+
+    #[test]
+    fn parse_deposit_wei_rejects_empty() {
+        assert!(parse_deposit_wei(None).is_err());
+        assert!(parse_deposit_wei(Some("")).is_err());
+        assert!(parse_deposit_wei(Some("   ")).is_err());
+    }
+
+    #[test]
+    fn parse_deposit_wei_rejects_invalid() {
+        assert!(parse_deposit_wei(Some("not-a-number")).is_err());
+        assert!(parse_deposit_wei(Some("0xzz")).is_err());
+    }
+
+    #[test]
+    fn squad_variant_label_maps_variants() {
+        assert_eq!(squad_variant_label(SquadVariant::NONE), "none");
+        assert_eq!(squad_variant_label(SquadVariant::SPONSOR), "sponsor");
+        assert_eq!(squad_variant_label(SquadVariant::EXT), "ext");
+        assert_eq!(squad_variant_label(SquadVariant::__Invalid), "unknown");
+    }
+}

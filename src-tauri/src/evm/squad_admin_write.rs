@@ -159,4 +159,36 @@ mod tests {
         expected[..8].copy_from_slice(b"TREASURY");
         assert_eq!(role.as_slice(), expected);
     }
+
+    #[test]
+    fn role_tag_exactly_32_bytes() {
+        let label = "TREASURY";
+        let role = bytes32_role_tag(label).unwrap();
+        assert_eq!(role.len(), 32);
+    }
+
+    #[test]
+    fn role_tag_rejects_empty() {
+        assert!(bytes32_role_tag("").is_err());
+        assert!(bytes32_role_tag("   ").is_err());
+    }
+
+    #[test]
+    fn role_tag_rejects_too_long() {
+        let label = "a".repeat(33);
+        assert!(bytes32_role_tag(&label).is_err());
+    }
+
+    #[test]
+    fn role_tag_rejects_non_ascii() {
+        assert!(bytes32_role_tag("rôle").is_err());
+    }
+
+    #[test]
+    fn role_tag_left_pads_short_label() {
+        let role = bytes32_role_tag("A").unwrap();
+        let mut expected = [0u8; 32];
+        expected[0] = b'A';
+        assert_eq!(role.as_slice(), expected);
+    }
 }
