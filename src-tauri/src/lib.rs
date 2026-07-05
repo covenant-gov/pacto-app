@@ -4506,7 +4506,7 @@ async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Re
     use secp256k1::{ecdsa::RecoverableSignature, Message, Secp256k1, SecretKey};
 
     let sk = SecretKey::from_slice(&key_bytes).map_err(|_| "Invalid EVM secret key".to_string())?;
-    let msg = Message::from_slice(&hash_bytes).map_err(|_| "Hash must be a 32-byte message".to_string())?;
+    let msg = Message::from_digest_slice(&hash_bytes).map_err(|_| "Hash must be a 32-byte message".to_string())?;
     let secp = Secp256k1::new();
     let sig: RecoverableSignature = secp.sign_ecdsa_recoverable(&msg, &sk);
 

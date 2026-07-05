@@ -123,7 +123,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
-    let mut tx = contract_call_request(factory, calldata).with_value(deposit);
+    let tx = contract_call_request(factory, calldata).with_value(deposit);
 
     let receipt = send_and_confirm(
         &provider,
