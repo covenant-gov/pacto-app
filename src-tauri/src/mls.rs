@@ -21,7 +21,7 @@
 //! This allows protocol-agnostic message handling across DMs and MLS groups.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use mdk_core::prelude::*;
 use mdk_sqlite_storage::MdkSqliteStorage;
 use std::sync::Arc;
@@ -61,6 +61,25 @@ impl std::fmt::Display for MlsError {
 }
 
 impl std::error::Error for MlsError {}
+
+/// MDK records this when a member's voluntary leave proposal is not auto-committed.
+pub(crate) const MLS_LEAVE_PROPOSAL_FAILURE: &str = "not processing proposal from non-admin";
+
+/// Read MDK `processed_messages.failure_reason` for a wrapper event (Kind 445).
+pub(crate) fn mls_wrapper_failure_reason(event_id: &[u8; 32]) -> Option<String> {
+    let handle = TAURI_APP.get()?;
+    let npub = crate::account_manager::get_current_account().ok()?;
+    let mls_dir = crate::account_manager::get_mls_directory(&handle, &npub).ok()?;
+    let db_path = mls_dir.join("vector-mls.db");
+    let conn = rusqlite::Connection::open(&db_path).ok()?;
+    conn.query_row(
+        "SELECT failure_reason FROM processed_messages WHERE wrapper_event_id = ?1",
+        rusqlite::params![event_id.as_slice()],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .ok()
+    .flatten()
+}
 
 /// MLS group metadata stored encrypted in "mls_groups"
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -804,6 +823,99 @@ impl MlsService {
         Ok(())
     }
 
+    /// When a member publishes a voluntary leave proposal, MDK rejects it as non-admin and
+    /// leaves the group tree unchanged. Group admins finalize the leave with remove + commit.
+    pub async fn finalize_voluntary_leave_as_admin(
+        &self,
+        wire_group_id: &str,
+        leaver: nostr_sdk::PublicKey,
+    ) -> Result<bool, MlsError> {
+        use nostr_sdk::prelude::*;
+
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
+        let my_pk = client
+            .signer()
+            .await
+            .map_err(|e| MlsError::CryptoError(e.to_string()))?
+            .get_public_key()
+            .await
+            .map_err(|e| MlsError::CryptoError(e.to_string()))?;
+
+        let groups = self.read_groups().await?;
+        let group_meta = groups
+            .iter()
+            .find(|g| g.group_id == wire_group_id || g.engine_group_id == wire_group_id)
+            .ok_or(MlsError::GroupNotFound)?;
+
+        let mls_group_id = GroupId::from_slice(
+            &hex::decode(&group_meta.engine_group_id).map_err(|e| {
+                MlsError::CryptoError(format!("Invalid group ID hex: {}", e))
+            })?,
+        );
+
+        let evolution_event = {
+            let engine = self.engine()?;
+
+            let is_admin = engine
+                .get_groups()
+                .ok()
+                .and_then(|stored| {
+                    stored
+                        .into_iter()
+                        .find(|g| g.mls_group_id.as_slice() == mls_group_id.as_slice())
+                })
+                .map(|g| g.admin_pubkeys.contains(&my_pk))
+                .unwrap_or(false);
+            if !is_admin {
+                return Ok(false);
+            }
+
+            let current_members = engine.get_members(&mls_group_id).map_err(|e| {
+                MlsError::NostrMlsError(format!("Failed to get group members: {}", e))
+            })?;
+            if !current_members.contains(&leaver) {
+                return Ok(false);
+            }
+
+            engine
+                .remove_members(&mls_group_id, &[leaver])
+                .map_err(|e| {
+                    MlsError::NostrMlsError(format!("Failed to finalize voluntary leave: {}", e))
+                })?
+                .evolution_event
+        };
+
+        client
+            .send_event(&evolution_event)
+            .await
+            .map_err(|e| MlsError::NetworkError(format!("Failed to publish leave commit: {}", e)))?;
+
+        {
+            let engine = self.engine()?;
+            engine.merge_pending_commit(&mls_group_id).map_err(|e| {
+                MlsError::NostrMlsError(format!("Failed to merge leave commit: {}", e))
+            })?;
+        }
+
+        if let Some(handle) = TAURI_APP.get() {
+            handle
+                .emit(
+                    "mls_group_updated",
+                    serde_json::json!({ "group_id": wire_group_id }),
+                )
+                .ok();
+        }
+
+        if let Err(e) = crate::sync_mls_group_participants(wire_group_id.to_string()).await {
+            eprintln!(
+                "[MLS] Failed to sync participants after leave finalize ({}): {}",
+                wire_group_id, e
+            );
+        }
+
+        Ok(true)
+    }
+
     /// Sync group messages since last cursor position
     ///
     /// This will:
@@ -964,6 +1076,8 @@ impl MlsService {
         
         // Track if we were evicted from this group
         let mut was_evicted = false;
+        // Member leave proposals MDK could not commit (non-admin sender).
+        let mut leaves_to_finalize: Vec<nostr_sdk::PublicKey> = Vec::new();
         
         // Resolve my pubkey before entering engine scope (for mine flag)
         let my_pubkey_hex = if let Ok(signer) = client.signer().await {
@@ -1119,9 +1233,18 @@ impl MlsService {
                                 // No-op for local message persistence
                             }
                             MessageProcessingResult::Unprocessable { mls_group_id: _ } => {
-                                // Log unprocessable events for debugging
-                                eprintln!("[MLS] Unprocessable event: id={}, created_at={}",
-                                         ev.id.to_hex(), ev.created_at.as_u64());
+                                if let Some(reason) =
+                                    mls_wrapper_failure_reason(ev.id.as_ref())
+                                {
+                                    if reason.contains(MLS_LEAVE_PROPOSAL_FAILURE) {
+                                        leaves_to_finalize.push(ev.pubkey);
+                                    }
+                                }
+                                eprintln!(
+                                    "[MLS] Unprocessable event: id={}, created_at={}",
+                                    ev.id.to_hex(),
+                                    ev.created_at.as_u64()
+                                );
                             }
                         }
                 
@@ -1154,6 +1277,33 @@ impl MlsService {
                 }
             }
         } // engine dropped here before any await
+
+        if !was_evicted && !leaves_to_finalize.is_empty() {
+            let unique_leavers: HashSet<_> = leaves_to_finalize.into_iter().collect();
+            for leaver in unique_leavers {
+                match self
+                    .finalize_voluntary_leave_as_admin(&gid_for_fetch, leaver)
+                    .await
+                {
+                    Ok(true) => {
+                        eprintln!(
+                            "[MLS] Finalized voluntary leave for {} in group {}",
+                            leaver.to_hex(),
+                            gid_for_fetch
+                        );
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        eprintln!(
+                            "[MLS] Failed to finalize voluntary leave for {} in {}: {}",
+                            leaver.to_hex(),
+                            gid_for_fetch,
+                            e
+                        );
+                    }
+                }
+            }
+        }
 
         // Process buffered rumors and persist after engine scope ends using unified Chat storage
         // BUT: Skip if we were evicted from this group during sync

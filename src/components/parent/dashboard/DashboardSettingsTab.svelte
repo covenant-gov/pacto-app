@@ -6,6 +6,9 @@
   import { currentUser } from '../../../stores/auth';
   import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
+  import type { SupportedChainId } from '../../../lib/wallet/chains';
+  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
+  import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
 
   /** Enable when squad key rotation backend is wired. */
   const ROTATE_SQUAD_KEY_ENABLED = false;
@@ -22,9 +25,24 @@
   export let squadMemberEvmByNpub: Record<string, string> = {};
   export let memberHatByAddress: Record<string, string> = {};
   export let memberRolesByAddress: Record<string, string> = {};
+  /** Established squad network (override → deployed infra chain), or null until first deploy. */
+  export let squadNetwork: SupportedChainId | null = null;
+  /** True when the squad network is derived from already-deployed infra (chain-bound). */
+  export let squadNetworkFromInfra = false;
+  export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
   export let onOpenSquadRolesModal: () => void = () => {};
 
   let rotateModalOpen = false;
+
+  const squadNetworkOptions = listSquadDeployNetworkOptions();
+  let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
+  $: squadNetworkChoice = squadNetwork ?? squadNetworkChoice;
+
+  function applySquadNetwork() {
+    if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
+      onSetSquadNetwork(squadNetworkChoice);
+    }
+  }
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -64,6 +82,41 @@
 </section>
 
 <RotateSquadKeyModal open={rotateModalOpen} onClose={() => (rotateModalOpen = false)} />
+
+<section
+  id="settings-squad-network"
+  class="dashboard-section dashboard-squad-network-section"
+  aria-labelledby="settings-squad-network-heading"
+>
+  <h3 id="settings-squad-network-heading" class="section-heading">Squad network</h3>
+  <p class="dashboard-placeholder-text muted">
+    {#if squadNetwork}
+      Squad infrastructure targets <strong>{getWalletNetworkDisplayName(squadNetwork)}</strong>.
+      {#if squadNetworkFromInfra}
+        Existing on-chain infrastructure is chain-bound; changing this only retargets future deployments.
+      {/if}
+    {:else}
+      No network set yet. The first deployment picks and locks this squad's network.
+    {/if}
+  </p>
+  <div class="squad-network-edit">
+    <label class="squad-network-label" for="settings-squad-network-select">Network for new deployments</label>
+    <select id="settings-squad-network-select" class="squad-network-select" bind:value={squadNetworkChoice}>
+      <option value="" disabled>Select network…</option>
+      {#each squadNetworkOptions as opt (opt.id)}
+        <option value={opt.id}>{opt.label}</option>
+      {/each}
+    </select>
+    <button
+      type="button"
+      class="btn-secondary squad-network-apply"
+      disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
+      on:click={applySquadNetwork}
+    >
+      Save
+    </button>
+  </div>
+</section>
 
 <section
   id="settings-squad"
@@ -180,6 +233,45 @@
 
   .dashboard-user-squad-section {
     margin-bottom: 16px;
+  }
+
+  .dashboard-squad-network-section {
+    margin-bottom: 16px;
+  }
+
+  .squad-network-edit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  .squad-network-label {
+    display: block;
+    width: 100%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    margin: 0 0 4px;
+  }
+
+  .squad-network-select {
+    flex: 1;
+    min-width: 160px;
+    max-width: 240px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+  }
+
+  .squad-network-apply {
+    font-size: 0.875rem;
+    padding: 8px 14px;
   }
 
   .user-roster-key-box {

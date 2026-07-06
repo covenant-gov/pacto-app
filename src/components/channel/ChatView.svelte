@@ -42,7 +42,7 @@
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers } from '../../lib/api/nostr';
+  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -422,6 +422,7 @@
     if (!groupId) return;
     loadingMembers = true;
     try {
+      await syncMlsGroupsNow(groupId).catch(() => {});
       const result = await getMlsGroupMembers(groupId);
       channelMembers = result.members ?? [];
     } catch {
@@ -442,6 +443,7 @@
     if (!groupId) return;
     loadingInviteCandidates = true;
     try {
+      await syncMlsGroupsNow(groupId).catch(() => {});
       const result = await getMlsGroupMembers(groupId);
       const inChannel = new Set(result.members ?? []);
       const myNpub = $currentUser?.npub;

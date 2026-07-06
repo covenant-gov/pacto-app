@@ -67,8 +67,13 @@
     }
   }
 
+  // Prefer the user's preferred network, but never show a disabled chain in the
+  // filter: fall back to the first enabled chain when the preferred one is off.
+  $: rpcFilterFallback = enabledSet.has(preferredNetwork)
+    ? preferredNetwork
+    : enabledChainIdsOrdered[0] ?? preferredNetwork;
   $: if (!enabledSet.has(rpcNetworkFilter)) {
-    rpcNetworkFilter = preferredNetwork;
+    rpcNetworkFilter = rpcFilterFallback;
   }
   $: if (tokenNetworkFilter !== 'all' && !enabledSet.has(tokenNetworkFilter)) {
     tokenNetworkFilter = 'all';
@@ -144,7 +149,7 @@
                   disabled={enabledSet.has(chain) && enabledSet.size <= 1}
                   on:change={() => onToggleChain(chain)}
                 />
-                <span>{getWalletNetworkDisplayName(chain)}{chain === DEFAULT_PREFERRED_NETWORK ? ' (recommended)' : ''}</span>
+                <span>{getWalletNetworkDisplayName(chain)}</span>
               </label>
             </li>
           {/each}

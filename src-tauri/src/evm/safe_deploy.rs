@@ -25,12 +25,12 @@ use super::wallet_chain_config;
 pub struct SafeDeployProxyResult {
     pub tx_hash: String,
     pub safe_address: String,
-    /// Wallet network key: `mainnet`, `optimism`, or `sepolia`.
+    /// Wallet network key: `mainnet`, `arbitrum`, `sepolia`, or `local`.
     pub chain: String,
     pub chain_id: u64,
 }
 
-/// Deploy a new Safe proxy on **mainnet**, **optimism**, or **sepolia** using the embedded EVM key.
+/// Deploy a new Safe proxy on a supported chain (address availability gated by `safe_factory_addresses`) using the embedded EVM key.
 #[tauri::command]
 pub async fn safe_deploy_proxy<R: Runtime>(
     app: AppHandle<R>,

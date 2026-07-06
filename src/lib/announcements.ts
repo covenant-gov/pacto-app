@@ -33,7 +33,7 @@ export interface GovernanceUpdatedPayload {
   canonical_ref: string;
   /** Stable squad infra row id for multi-row merge (optional on wire until all clients emit it). */
   entry_id?: string;
-  /** `sepolia` | `mainnet` | `optimism` — defaults server-side when omitted. */
+  /** `sepolia` | `mainnet` | `arbitrum` | `local` — defaults server-side when omitted. */
   chain?: string;
   /** Upstream pacto-gov git commit at deploy time (optional). */
   pacto_gov_revision?: string;
@@ -44,7 +44,7 @@ export interface GovernanceUpdatedPayload {
 export interface SquadSafeUpdatedPayload {
   squad_id: string;
   safe_address: string;
-  /** `sepolia` | `mainnet` | `optimism` (normalized server-side). */
+  /** `sepolia` | `mainnet` | `arbitrum` | `local` (normalized server-side). */
   chain?: string;
   label?: string;
   /** Stable row id for first insert; optional. */

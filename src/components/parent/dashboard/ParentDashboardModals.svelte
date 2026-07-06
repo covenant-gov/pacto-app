@@ -21,6 +21,8 @@
   export let vaultSafeCount = 0;
   export let squadAdminProxy = '';
   export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
+  /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
+  export let squadNetwork: SupportedChainId | null = null;
   export let memberEvmOptions: { address: string; label: string }[] = [];
 
   export let showDeploySafeModal = false;
@@ -110,6 +112,7 @@
       {parentId}
       {announcementsGroupId}
       {treasurySafeCount}
+      {squadNetwork}
       onClose={onCloseDeploySafe}
       onSuccess={onDeploySafeSuccess}
     />
@@ -124,6 +127,7 @@
   {#if DeployNaveWizardComponent}
     <DeployNaveWizardComponent
       parentId={parentId.trim()}
+      {squadNetwork}
       onClose={onCloseNaveWizard}
       onComplete={onNaveComplete}
     />
@@ -154,6 +158,7 @@
   {#if DeploySquadAdminComponent}
     <DeploySquadAdminComponent
       parentId={parentId.trim()}
+      {squadNetwork}
       onClose={onCloseSquadAdminDeploy}
       onComplete={onSquadAdminComplete}
     />
@@ -168,6 +173,7 @@
   {#if DeploySquadSponsorComponent}
     <DeploySquadSponsorComponent
       parentId={parentId.trim()}
+      {squadNetwork}
       onClose={onCloseSponsorDeploy}
       onComplete={onSponsorComplete}
     />

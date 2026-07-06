@@ -4,7 +4,7 @@
 
 import type { Address } from 'viem';
 import type { SupportedChainId } from './chains';
-import { WALLET_ASSETS, WALLET_ASSETS_CHAIN_IDS } from './assets';
+import { WALLET_ASSETS, WALLET_ASSETS_CHAIN_IDS, ZERO_ADDRESS } from './assets';
 
 /** Native + watched ERC-20 options for Send / Request asset dropdown. */
 export interface WalletAssetOptionRow {
@@ -283,6 +283,7 @@ export function listWalletAssetOptionsForChainWithWatched(
   };
   const erc20 = watched
     .filter((r) => r.network === chainId)
+    .filter((r) => (r.address as string).toLowerCase() !== ZERO_ADDRESS)
     .map((r) => ({
       code: r.symbol,
       kind: 'erc20' as const,

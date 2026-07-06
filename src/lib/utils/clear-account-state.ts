@@ -88,6 +88,7 @@ import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { recentEmojisStore } from '../../stores/emojis';
 import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX } from '../commons/commons-join-request';
+import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -107,11 +108,13 @@ const SCOPED_KEY_PREFIXES = [
   SETTINGS_CHAIN_CACHE_PREFIX,
   SAFE_STATE_DISK_CACHE_PREFIX,
   'pacto_wallet_ui_enabled_chains_v1',
+  SQUAD_NETWORK_PREFIX,
   'pacto_wallet_preferred_network_v1',
   'pacto_wallet_rpc_prefs_v1',
   'pacto_wallet_tx_request_accepted',
   PACTO_COMMONS_BROADCASTS_PREFIX,
   PACTO_COMMONS_JOIN_REQUESTS_PREFIX,
+  'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
 

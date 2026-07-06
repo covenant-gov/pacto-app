@@ -2525,8 +2525,39 @@ async fn notifs() -> Result<bool, String> {
                                             None
                                         }
                                         mdk_core::prelude::MessageProcessingResult::Unprocessable { mls_group_id: _ } => {
-                                            // Unprocessable result - could be many reasons (out of order, can't decrypt, etc.)
-                                            // Don't try to detect eviction here - wait for next message to trigger error-based detection
+                                            if let Some(reason) =
+                                                crate::mls::mls_wrapper_failure_reason(ev.id.as_ref())
+                                            {
+                                                if reason.contains(crate::mls::MLS_LEAVE_PROPOSAL_FAILURE) {
+                                                    let gid = group_id_for_persist.clone();
+                                                    let leaver = ev.pubkey;
+                                                    rt.block_on(async move {
+                                                        if let Ok(svc) =
+                                                            MlsService::new_persistent(&app_handle)
+                                                        {
+                                                            match svc
+                                                                .finalize_voluntary_leave_as_admin(
+                                                                    &gid, leaver,
+                                                                )
+                                                                .await
+                                                            {
+                                                                Ok(true) => eprintln!(
+                                                                    "[MLS] Live: finalized voluntary leave for {} in {}",
+                                                                    leaver.to_hex(),
+                                                                    gid
+                                                                ),
+                                                                Ok(false) => {}
+                                                                Err(e) => eprintln!(
+                                                                    "[MLS] Live: failed to finalize voluntary leave for {} in {}: {}",
+                                                                    leaver.to_hex(),
+                                                                    gid,
+                                                                    e
+                                                                ),
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            }
                                             None
                                         }
                                         // Other message types (ExternalJoinProposal) are not persisted as chat messages
@@ -2825,25 +2856,101 @@ fn default_relay_mode() -> String {
     "both".to_string()
 }
 
-/// Validate a relay URL format (must be wss://)
+/// Validate a relay URL format. Secure WebSockets (`wss://`) are required for
+/// public relays; insecure `ws://` is allowed only for local development hosts
+/// so containers like the pacto dev-setup relay can be used without TLS.
 fn validate_relay_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
+    let parsed = url::Url::parse(trimmed).map_err(|_| {
+        "Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)".to_string()
+    })?;
 
-    // Must start with wss:// (secure WebSocket only)
-    if !trimmed.starts_with("wss://") {
-        return Err("Relay URL must start with wss://".to_string());
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "Relay URL must include a host".to_string())?;
+
+    match parsed.scheme() {
+        "wss" => {}
+        "ws" => {
+            let is_localhost = host == "localhost";
+            let is_loopback_with_port = host == "127.0.0.1" && parsed.port().is_some();
+            if !is_localhost && !is_loopback_with_port {
+                return Err("Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)".to_string());
+            }
+        }
+        _ => {
+            return Err("Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)".to_string());
+        }
     }
 
-    // Basic URL validation - must have host after protocol
-    let after_protocol = &trimmed[6..];
-    if after_protocol.is_empty() {
-        return Err("Relay URL must include a host".to_string());
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Relay URL must not contain userinfo".to_string());
     }
 
-    // Don't allow trailing slashes for consistency
     let normalized = trimmed.trim_end_matches('/');
-
     Ok(normalized.to_string())
+}
+
+#[cfg(test)]
+mod validate_relay_url_tests {
+    use super::validate_relay_url;
+
+    #[test]
+    fn accepts_wss_relay() {
+        assert_eq!(
+            validate_relay_url("wss://relay.example.com").unwrap(),
+            "wss://relay.example.com"
+        );
+    }
+
+    #[test]
+    fn accepts_ws_localhost_with_port() {
+        assert_eq!(
+            validate_relay_url("ws://localhost:7000").unwrap(),
+            "ws://localhost:7000"
+        );
+    }
+
+    #[test]
+    fn accepts_ws_127_0_0_1_with_port() {
+        assert_eq!(
+            validate_relay_url("ws://127.0.0.1:7000").unwrap(),
+            "ws://127.0.0.1:7000"
+        );
+    }
+
+    #[test]
+    fn rejects_public_ws() {
+        assert!(validate_relay_url("ws://relay.example.com").is_err());
+    }
+
+    #[test]
+    fn rejects_ws_localhost_with_userinfo_bypass() {
+        assert!(validate_relay_url("ws://localhost:7000@evil.com").is_err());
+    }
+
+    #[test]
+    fn rejects_ws_userinfo_at_localhost() {
+        assert!(validate_relay_url("ws://user@localhost:7000").is_err());
+    }
+
+    #[test]
+    fn rejects_ws_127_0_0_1() {
+        assert!(validate_relay_url("ws://127.0.0.1").is_err());
+    }
+
+    #[test]
+    fn rejects_wss_missing_host() {
+        assert!(validate_relay_url("wss://").is_err());
+    }
+
+    #[test]
+    fn normalizes_trailing_slash() {
+        assert_eq!(
+            validate_relay_url("wss://relay.example.com/").unwrap(),
+            "wss://relay.example.com"
+        );
+    }
 }
 
 /// Get the list of custom relays from settings
@@ -5863,7 +5970,7 @@ struct GroupMembers {
 
 /// Sync the participants array for an MLS group chat with the actual members from the engine
 /// This ensures chat.participants is always up-to-date
-async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
+pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
     // Get actual members from the engine
     let group_members = get_mls_group_members(group_id.clone()).await?;
     

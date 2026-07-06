@@ -23,6 +23,12 @@
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
+  import {
+    loadSquadNetworkOverride,
+    resolveSquadNetwork,
+    saveSquadNetworkOverride,
+    squadNetworkTick,
+  } from '../../lib/squad/squad-network';
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -142,6 +148,23 @@
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
   );
   $: squadAdminNetwork = parseSupportedChainId(squadAdminCtx?.chain?.trim() || DEFAULT_CHAIN_ID);
+
+  /** Chain of any already-deployed infra; seeds the squad network before an override is set. */
+  $: infraSquadChain =
+    pactoGovRow?.chain?.trim() || squadAdminCtx?.chain?.trim() || sponsorRow?.chain?.trim() || null;
+  let squadNetworkOverride: SupportedChainId | null = null;
+  $: {
+    void $squadNetworkTick;
+    squadNetworkOverride = loadSquadNetworkOverride($currentUser?.npub, parentId);
+  }
+  /** Established squad network (override → infra chain), or null until the first deploy picks one. */
+  $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+
+  function setSquadNetwork(chain: SupportedChainId): void {
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim()) return;
+    saveSquadNetworkOverride(npub, parentId.trim(), chain);
+  }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {
       const addr = squadMemberEvmByNpub[npub]?.trim();
@@ -435,7 +458,7 @@
     requireSponsorForInfra(() => {
       showSetSafeModal = true;
       setSafeInput = '';
-      setSafeChain = DEFAULT_CHAIN_ID;
+      setSafeChain = squadNetwork ?? DEFAULT_CHAIN_ID;
       setSafeLabel = '';
       setSafeError = '';
     });
@@ -634,6 +657,9 @@
               {squadMemberEvmByNpub}
               {memberHatByAddress}
               {memberRolesByAddress}
+              {squadNetwork}
+              squadNetworkFromInfra={infraSquadChain != null}
+              onSetSquadNetwork={setSquadNetwork}
               onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
             />
           {:catch}
@@ -663,6 +689,7 @@
   {vaultSafeCount}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   squadAdminNetwork={squadAdminNetwork}
+  {squadNetwork}
   memberEvmOptions={memberEvmOptionsForRoles}
   bind:showDeploySafeModal
   bind:showNaveWizard

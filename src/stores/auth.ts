@@ -34,6 +34,12 @@ function hasSessionUnlockedFlag(): boolean {
   }
 }
 
+async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
+  if (!import.meta.env.DEV) return;
+  const { applyLocalDevDefaults } = await import('../lib/dev/local-dev-setup');
+  await applyLocalDevDefaults(npub);
+}
+
 // Auth state
 export const isAuthenticated = writable<boolean>(false);
 export const authLoading = writable<boolean>(false);
@@ -126,6 +132,8 @@ export async function createAccount(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
+    await maybeApplyLocalDevDefaults(npub);
+
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
     authLoading.set(false);
   } catch (error: any) {
@@ -174,6 +182,7 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
       npub: npub,
       pubkey: keys.public
     });
+    await maybeApplyLocalDevDefaults(npub);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
 
@@ -209,6 +218,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
+    await maybeApplyLocalDevDefaults(npub);
 
     dmLog('unlockWithPin: done');
   } catch (error: any) {

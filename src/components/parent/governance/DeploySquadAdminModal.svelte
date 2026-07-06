@@ -3,10 +3,13 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { deploySquadAdminForParent } from '../../../lib/governance/api';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
+  import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
   export let parentId: string;
   /** When set, deploy uses captain_hat variant with this hat id. */
   export let captainHatId: string | null = null;
+  /** Established squad network; when set the picker is pinned to it. */
+  export let squadNetwork: SupportedChainId | null = null;
   export let onClose: () => void;
   export let onComplete: (result: {
     txHash: string;
@@ -19,13 +22,17 @@
   const titleId = 'deploy-squad-admin-title';
   const descId = 'deploy-squad-admin-desc';
 
-  let deployNetwork: SupportedChainId = 'sepolia';
+  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let deployError = '';
 
   $: variant = captainHatId?.trim() ? ('captain_hat' as const) : ('ext_standalone' as const);
 
   async function confirmDeploy() {
     deployError = '';
+    if (!deployNetwork) {
+      deployError = 'Select a network for this squad.';
+      return;
+    }
     const jobParams = {
       network: deployNetwork,
       parentId: parentId.trim(),
@@ -63,16 +70,13 @@
   </p>
 
   <div class="squad-admin-deploy-field">
-    <label class="squad-admin-deploy-label" for="squad-admin-deploy-network">Network</label>
-    <select
+    <SquadDeployNetworkField
       id="squad-admin-deploy-network"
-      class="squad-admin-deploy-input squad-admin-deploy-select"
+      {squadNetwork}
       bind:value={deployNetwork}
-    >
-      <option value="sepolia">Sepolia</option>
-      <option value="mainnet">Ethereum</option>
-      <option value="optimism">Optimism</option>
-    </select>
+      labelClass="squad-admin-deploy-label"
+      selectClass="squad-admin-deploy-input squad-admin-deploy-select"
+    />
   </div>
 
   {#if deployError}

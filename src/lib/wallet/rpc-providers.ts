@@ -23,8 +23,6 @@ const ALCHEMY_PROVIDER: RpcProviderDef = {
     mainnet: 'eth-mainnet',
     sepolia: 'eth-sepolia',
     arbitrum: 'arb-mainnet',
-    optimism: 'opt-mainnet',
-    gnosis: 'gnosis-mainnet',
   },
 };
 

@@ -38,7 +38,7 @@ export function listPreferredNetworkOptions(): { id: PreferredNetworkId; label: 
   });
   return ids.map((id) => ({
     id,
-    label: id === 'arbitrum' ? `${getWalletNetworkDisplayName(id)} (recommended)` : getWalletNetworkDisplayName(id),
+    label: getWalletNetworkDisplayName(id),
   }));
 }
 

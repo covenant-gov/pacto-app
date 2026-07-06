@@ -6,7 +6,7 @@
   import { getMlsGroupMembers } from '../../lib/api/nostr';
   import { resolveSquadRosterEvmAddress } from '../../lib/squad/squad-roster-binding';
   import type { SupportedChainId } from '../../lib/wallet/chains';
-  import ChainIdSelect from '../wallet/ChainIdSelect.svelte';
+  import SquadDeployNetworkField from './governance/SquadDeployNetworkField.svelte';
   import {
     safeDeployProxy,
     userFacingDeploySafeMessage,
@@ -22,6 +22,8 @@
   export let parentId: string;
   export let announcementsGroupId: string | null;
   export let treasurySafeCount: number;
+  /** Established squad network; when set the picker is pinned to it. */
+  export let squadNetwork: SupportedChainId | null = null;
   export let onClose: () => void;
   export let onSuccess: (params: {
     safeAddress: string;
@@ -40,7 +42,7 @@
   let roster: Record<string, string> = {};
   let myEvm: string | null = null;
 
-  let deployNetwork: SupportedChainId = 'sepolia';
+  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let selectedMemberNpubs: string[] = [];
   let includeMeAsOwner = true;
   let deployLabel = '';
@@ -209,6 +211,10 @@
       deployError = `Threshold must be between 1 and ${owners.length}.`;
       return;
     }
+    if (!deployNetwork) {
+      deployError = 'Select a network for this squad.';
+      return;
+    }
 
     deployError = '';
     const label = deployLabel.trim();
@@ -262,8 +268,13 @@
   {#if loading}
     <p class="deploy-safe-loading">Loading members…</p>
   {:else}
-    <label class="modal-field-label" for="deploy-safe-network">Network</label>
-    <ChainIdSelect id="deploy-safe-network" bind:value={deployNetwork} />
+    <SquadDeployNetworkField
+      id="deploy-safe-network"
+      {squadNetwork}
+      bind:value={deployNetwork}
+      labelClass="modal-field-label"
+      selectClass="input-select"
+    />
 
     <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
     <p class="deploy-safe-signers-hint muted">
@@ -360,7 +371,7 @@
         type="button"
         class="btn-primary"
         on:click={confirmDeploy}
-        disabled={ownerCount === 0 || !thresholdValid || ownerOverMax}
+        disabled={ownerCount === 0 || !thresholdValid || ownerOverMax || !deployNetwork}
         >Deploy Safe</button
       >
     </div>

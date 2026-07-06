@@ -204,6 +204,12 @@
   let networksForBalance: WalletSummaryNetwork[] = [];
   $: networksForBalance = networksForBalanceList(summary, networkFilter, enabledChainSet);
 
+  /** Friendly per-network read failure copy (raw RPC text stays off the primary line). */
+  function networkErrorMessage(net: WalletSummaryNetwork): string {
+    if (net.network === 'local') return 'Anvil not detected';
+    return `Couldn't reach ${getWalletNetworkDisplayName(net.network as SupportedChainId)}`;
+  }
+
   /**
    * Network dropdown matches Wallet settings toggles (enabled chains), not only chains that appear
    * in the latest summary (zero-balance or missing RPC rows would otherwise disappear from the list).
@@ -241,7 +247,8 @@
     const hadDisplay = summary != null;
     summaryLoading = true;
 
-    const r = await getWalletSummary(wire);
+    const enabledChains = loadWalletEnabledChains(accountNpub);
+    const r = await getWalletSummary(wire, enabledChains);
     if (r.ok) {
       summary = r.summary;
       summaryError = null;
@@ -363,15 +370,19 @@
                   >{getWalletNetworkDisplayName(n.network as SupportedChainId)}</span
                 >
               {/if}
-              <ul class="wallet-bar-assets">
-                {#each n.assets as a, i (`${n.network}-${(a as WalletSummaryAsset).symbol}-${i}`)}
-                  {@const asset = a as WalletSummaryAsset}
-                  <li>
-                    <span class="wallet-bar-asset-sym">{asset.symbol}</span>
-                    <span class="wallet-bar-asset-amt" title={asset.balanceRaw}>{asset.balanceDecimal}</span>
-                  </li>
-                {/each}
-              </ul>
+              {#if n.error}
+                <p class="wallet-bar-net-error" title={n.error}>{networkErrorMessage(n)}</p>
+              {:else}
+                <ul class="wallet-bar-assets">
+                  {#each n.assets as a, i (`${n.network}-${(a as WalletSummaryAsset).symbol}-${i}`)}
+                    {@const asset = a as WalletSummaryAsset}
+                    <li>
+                      <span class="wallet-bar-asset-sym">{asset.symbol}</span>
+                      <span class="wallet-bar-asset-amt" title={asset.balanceRaw}>{asset.balanceDecimal}</span>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -692,6 +703,13 @@
     letter-spacing: 0.03em;
     color: var(--text-muted);
     margin-bottom: 6px;
+  }
+
+  .wallet-bar-net-error {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.35;
   }
 
   .wallet-bar-assets {

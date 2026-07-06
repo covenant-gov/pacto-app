@@ -53,6 +53,11 @@
   } from '../../stores/commons-ui';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
+  import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
+  import {
+    listSquadDeployNetworkOptions,
+    saveSquadNetworkOverride,
+  } from '../../lib/squad/squad-network';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
 
@@ -112,7 +117,10 @@
   let organizeSquadVisibility: SquadVisibility = 'private';
   let organizeSquadTags: string[] = [];
   let organizeSquadTagError = '';
+  let organizeSquadNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
   let commonsFields: SquadCommonsVisibilityFields;
+
+  const squadNetworkOptions = listSquadDeployNetworkOptions();
 
   function openOrganizeSquadModal() {
     showOrganizeSquadModal = true;
@@ -123,6 +131,7 @@
     organizeSquadVisibility = 'private';
     organizeSquadTags = [];
     organizeSquadTagError = '';
+    organizeSquadNetwork = DEFAULT_CHAIN_ID;
     commonsFields?.resetCommonsFields();
   }
 
@@ -154,7 +163,12 @@
   function createSquadWithAnnouncements(
     name: string,
     memberNpubs: string[],
-    options: { iconUrl?: string; visibility?: SquadVisibility; commonsTags?: string[] } = {}
+    options: {
+      iconUrl?: string;
+      visibility?: SquadVisibility;
+      commonsTags?: string[];
+      network?: SupportedChainId;
+    } = {}
   ) {
     const now = Date.now();
     const tempId = 'creating-squad-' + now;
@@ -194,6 +208,10 @@
           updatedAt: Date.now(),
         };
         await persistCreatedSquad(tempId, finalized);
+        const creatorNpub = get(currentUser)?.npub;
+        if (creatorNpub && options.network) {
+          saveSquadNetworkOverride(creatorNpub, groupId, options.network);
+        }
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {
           const next = { ...m };
@@ -296,6 +314,7 @@
       iconUrl: organizeSquadIconUrl.trim() || undefined,
       visibility: commons.visibility,
       commonsTags: commons.commonsTags,
+      network: organizeSquadNetwork,
     });
   }
 
@@ -445,6 +464,15 @@
       {#if organizeMemberList.length === 0}
         <p class="organize-members-empty">Add friends in DMs first to create a squad with them.</p>
       {/if}
+      <label class="organize-label" for="squad-network">Network</label>
+      <select id="squad-network" class="organize-input organize-select" bind:value={organizeSquadNetwork}>
+        {#each squadNetworkOptions as opt (opt.id)}
+          <option value={opt.id}>{opt.label}</option>
+        {/each}
+      </select>
+      <p class="organize-network-hint">
+        Network for this squad's on-chain deployments. Defaults to {squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label}; change it later in the squad's Settings.
+      </p>
       <SquadCommonsVisibilityFields
         bind:this={commonsFields}
         bind:visibility={organizeSquadVisibility}
@@ -534,6 +562,18 @@
 
   .organize-input::placeholder {
     color: var(--text-muted);
+  }
+
+  .organize-select {
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+
+  .organize-network-hint {
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    margin: 0 0 16px 0;
   }
 
   .organize-members {

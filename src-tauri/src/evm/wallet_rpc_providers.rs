@@ -8,8 +8,6 @@ fn alchemy_host_for_network_key(network_key: &str) -> Option<&'static str> {
         "mainnet" => Some("eth-mainnet"),
         "sepolia" => Some("eth-sepolia"),
         "arbitrum" => Some("arb-mainnet"),
-        "optimism" => Some("opt-mainnet"),
-        "gnosis" => Some("gnosis-mainnet"),
         _ => None,
     }
 }

@@ -64,10 +64,10 @@ describe('preferred network prefs', () => {
 });
 
 describe('default wallet config (preferred network)', () => {
-  it('lists Arbitrum first with recommended label for the edit dropdown', () => {
+  it('lists Arbitrum first for the edit dropdown', () => {
     const options = listPreferredNetworkOptions();
     expect(options[0]?.id).toBe('arbitrum');
-    expect(options[0]?.label).toContain('recommended');
-    expect(options.some((o) => o.id === 'gnosis')).toBe(true);
+    expect(options[0]?.label).toBe('Arbitrum');
+    expect(options.some((o) => o.id === 'sepolia')).toBe(true);
   });
 });

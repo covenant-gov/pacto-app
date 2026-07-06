@@ -19,8 +19,8 @@ https://{host}.g.alchemy.com/v2/{ALCHEMY_RPC_KEY}
 | `mainnet` | `eth-mainnet` |
 | `sepolia` | `eth-sepolia` |
 | `arbitrum` | `arb-mainnet` |
-| `optimism` | `opt-mainnet` |
-| `gnosis` | `gnosis-mainnet` |
+
+`local` (Anvil, chain `31337`) has no provider host; it uses the curated `http://localhost:8545` fallback from `rpc-catalog.ts`.
 
 - **Variable:** `ALCHEMY_RPC_KEY` in `.env` (see `.env.example`).
 - **Frontend:** Vite exposes `ALCHEMY_*` via `envPrefix` in `vite.config.ts`; resolution in `src/lib/wallet/rpc-providers.ts`.

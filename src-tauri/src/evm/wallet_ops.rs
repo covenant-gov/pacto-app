@@ -33,6 +33,10 @@ pub struct WalletSummaryNetwork {
     pub network: String,
     pub chain_id: u64,
     pub assets: Vec<WalletSummaryAsset>,
+    /// Set when this network could not be read (RPC down / unreachable). Other
+    /// networks still populate so one failure never breaks the whole summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -126,11 +130,89 @@ fn watched_erc20_rows_for_network_key(
     Ok(out)
 }
 
+/// Native + watched ERC-20 balances for one network, trying each RPC URL in order.
+/// Any failure is returned as `Err(String)` so the caller can record a per-network
+/// error without aborting the whole summary.
+async fn fetch_network_snapshot(
+    net: &wallet_chain_config::WalletNetworkConfig,
+    owner: Address,
+    watched_erc20s: &[WatchedErc20Input],
+) -> Result<(U256, Vec<(String, U256, u8)>), String> {
+    let urls = wallet_chain_config::rpc_urls_for(net);
+    if urls.is_empty() {
+        return Err(format!("{}: no RPC URL configured", net.key));
+    }
+
+    let erc20_rows = watched_erc20_rows_for_network_key(&net.key, watched_erc20s)?;
+
+    let mut last_err = String::new();
+    let mut snapshot: Option<(U256, Vec<(String, U256, u8)>)> = None;
+
+    'next_url: for url_s in &urls {
+        if url_s.parse::<url::Url>().is_err() {
+            last_err = "invalid RPC URL".to_string();
+            continue;
+        }
+
+        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                if !is_retryable_wallet_rpc_error(&last_err) {
+                    return Err(format!("{}: RPC connect: {}", net.key, last_err));
+                }
+                continue;
+            }
+        };
+
+        let eth_raw = match provider.get_balance(owner).await {
+            Ok(v) => v,
+            Err(e) => {
+                let msg = wallet_security::redact_urls_in_text(&format!("{}", e));
+                if is_retryable_wallet_rpc_error(&msg) {
+                    last_err = format!("{} getBalance: {}", net.key, msg);
+                    continue 'next_url;
+                }
+                return Err(format!("{} getBalance: {}", net.key, msg));
+            }
+        };
+
+        let mut erc20_balances: Vec<(String, U256, u8)> = Vec::with_capacity(erc20_rows.len());
+        for (sym, token_addr, dec) in &erc20_rows {
+            let raw = match erc20_balance(&provider, *token_addr, owner).await {
+                Ok(v) => v,
+                Err(e) => {
+                    if is_retryable_wallet_rpc_error(&e) {
+                        last_err = e;
+                        continue 'next_url;
+                    }
+                    return Err(e);
+                }
+            };
+            erc20_balances.push((sym.clone(), raw, *dec));
+        }
+
+        snapshot = Some((eth_raw, erc20_balances));
+        break;
+    }
+
+    snapshot.ok_or_else(|| {
+        format!(
+            "{}: all {} RPC endpoint(s) failed (last: {})",
+            net.key,
+            urls.len(),
+            last_err
+        )
+    })
+}
+
 /// Tauri command: per-network native balance plus any watched ERC-20 rows; USD total uses Chainlink for ETH/USDC/USDT only.
+/// Only `enabled_chains` are queried; an unreachable network becomes a per-network `error` row instead of failing the summary.
 #[tauri::command]
 pub async fn get_wallet_summary<R: Runtime>(
     app: AppHandle<R>,
     watched_erc20s: Vec<WatchedErc20Input>,
+    enabled_chains: Vec<String>,
 ) -> Result<WalletSummary, String> {
     let _ = evm_accounts::ensure_ready(app.clone()).await;
     let _ = db::repair_evm_address_if_needed(&app).await;
@@ -144,76 +226,32 @@ pub async fn get_wallet_summary<R: Runtime>(
             wallet_security::redact_urls_in_text(&format!("USD prices unavailable: {}", e))
         })?;
 
+    let enabled: HashSet<String> = enabled_chains
+        .iter()
+        .map(|c| c.to_lowercase())
+        .collect();
+
     let mut networks_out = Vec::new();
     let mut total_usd = 0.0_f64;
 
     for net in wallet_chain_config::wallet_networks() {
-        let urls = wallet_chain_config::rpc_urls_for(net);
-        if urls.is_empty() {
-            return Err(format!("{}: no RPC URL configured", net.key));
+        if !enabled.contains(net.key.as_str()) {
+            continue;
         }
 
-        let erc20_rows = watched_erc20_rows_for_network_key(&net.key, &watched_erc20s)?;
-
-        let mut last_err = String::new();
-        let mut snapshot: Option<(U256, Vec<(String, U256, u8)>)> = None;
-
-        'next_url: for url_s in &urls {
-            if url_s.parse::<url::Url>().is_err() {
-                last_err = "invalid RPC URL".to_string();
-                continue;
-            }
-
-            let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
-                Ok(p) => p,
+        let (eth_raw, erc20_balances) =
+            match fetch_network_snapshot(net, owner, &watched_erc20s).await {
+                Ok(snapshot) => snapshot,
                 Err(e) => {
-                    last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
-                    if !is_retryable_wallet_rpc_error(&last_err) {
-                        return Err(format!("{}: RPC connect: {}", net.key, last_err));
-                    }
+                    networks_out.push(WalletSummaryNetwork {
+                        network: net.key.clone(),
+                        chain_id: net.chain_id,
+                        assets: Vec::new(),
+                        error: Some(e),
+                    });
                     continue;
                 }
             };
-
-            let eth_raw = match provider.get_balance(owner).await {
-                Ok(v) => v,
-                Err(e) => {
-                    let msg = wallet_security::redact_urls_in_text(&format!("{}", e));
-                    if is_retryable_wallet_rpc_error(&msg) {
-                        last_err = format!("{} getBalance: {}", net.key, msg);
-                        continue 'next_url;
-                    }
-                    return Err(format!("{} getBalance: {}", net.key, msg));
-                }
-            };
-
-            let mut erc20_balances: Vec<(String, U256, u8)> = Vec::with_capacity(erc20_rows.len());
-            for (sym, token_addr, dec) in &erc20_rows {
-                let raw = match erc20_balance(&provider, *token_addr, owner).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        if is_retryable_wallet_rpc_error(&e) {
-                            last_err = e;
-                            continue 'next_url;
-                        }
-                        return Err(e);
-                    }
-                };
-                erc20_balances.push((sym.clone(), raw, *dec));
-            }
-
-            snapshot = Some((eth_raw, erc20_balances));
-            break;
-        }
-
-        let (eth_raw, erc20_balances) = snapshot.ok_or_else(|| {
-            format!(
-                "{}: all {} RPC endpoint(s) failed (last: {})",
-                net.key,
-                urls.len(),
-                last_err
-            )
-        })?;
 
         let eth_dec = format_decimal(eth_raw, net.native_decimals);
         let eth_usd = (prices.eth_usd * eth_dec.parse::<f64>().unwrap_or(0.0)).max(0.0);
@@ -248,6 +286,7 @@ pub async fn get_wallet_summary<R: Runtime>(
             network: net.key.clone(),
             chain_id: net.chain_id,
             assets,
+            error: None,
         });
     }
 

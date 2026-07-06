@@ -14,7 +14,7 @@ There are **no static or guessed USD prices**. If RPC fails, the response is mal
 | USDC / USD | `0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6` |
 | USDT / USD | `0x3E7d1eAB13ad0104d2750B8863b489D65364e32D` |
 
-Addresses are **Ethereum mainnet** aggregator contracts. Display prices are **USD reference** values for ETH, USDC, and USDT regardless of which chain the user selects for sending (Sepolia, Optimism, etc.); on-chain sends still use the correct chain’s RPC and assets from `wallet-assets.json`.
+Addresses are **Ethereum mainnet** aggregator contracts. Display prices are **USD reference** values for ETH, USDC, and USDT regardless of which chain the user selects for sending (Arbitrum, Sepolia, Local Anvil, etc.); on-chain sends still use the correct chain’s RPC and assets from `wallet-assets.json`.
 
 ## RPC configuration (backend)
 

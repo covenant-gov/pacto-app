@@ -13,7 +13,7 @@ Use this to verify send, request, announcements, and RPC behavior on a **test ne
 ## A. Wallet bar & balances
 
 - [ ] Open the DM → open **Wallet** from the chat header → sidebar shows peer + **Balance**.
-- [ ] **Refresh** loads per-network rows (mainnet / Optimism / Sepolia) without a hard error.
+- [ ] **Refresh** loads per-network rows (Ethereum / Arbitrum / Sepolia / Local Anvil) without a hard error; if Anvil is not running its row shows "Anvil not detected" while other enabled chains still load.
 - [ ] If Sepolia RPC fails, error text should **not** include raw API secrets (see [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) § Logging and RPC URL safety).
 
 ## B. Send native ETH (Sepolia)

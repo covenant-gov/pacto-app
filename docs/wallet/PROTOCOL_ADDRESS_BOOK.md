@@ -35,7 +35,7 @@ JSON-RPC URLs are **not** in the address book. Set **`ALCHEMY_RPC_KEY`** in `.en
 
 ## Adding a network
 
-1. Add a `networks.<key>` block to `pacto-protocol-addresses.json` (match `wallet-assets.json` keys: `mainnet`, `optimism`, `sepolia`).
+1. Add a `networks.<key>` block to `pacto-protocol-addresses.json` (match `wallet-assets.json` keys: `mainnet`, `arbitrum`, `sepolia`, `local`).
 2. Run `cargo test pacto_chain_config` and `npm test -- pacto-protocol-addresses`.
 3. Document the upstream deploy revision in the JSON `$comment` or commit message.
 

@@ -71,7 +71,7 @@ export function loadAccountState(npub: string): void {
     }
     const rawInboxLastRead = localStorage.getItem(`${PACTO_APP_INBOX_LAST_READ_PREFIX}_${npub}`);
     pactoAppInboxLastReadId.set(typeof rawInboxLastRead === 'string' ? rawInboxLastRead : '');
-    const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`);
+    const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`)?.trim();
     if (lastDm) activeDmId.set(lastDm);
     const lastSquad = localStorage.getItem(`${LAST_SQUAD_ID_PREFIX}_${npub}`);
     if (lastSquad) lastOpenedSquadId.set(lastSquad);

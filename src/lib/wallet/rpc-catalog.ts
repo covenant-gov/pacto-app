@@ -7,9 +7,8 @@ type SupportedChainId = (typeof WALLET_ASSETS_CHAIN_IDS)[number];
  */
 export const CURATED_RPC_URLS: Record<SupportedChainId, string[]> = {
   arbitrum: ['https://arb1.arbitrum.io/rpc', 'https://arbitrum.publicnode.com'],
-  gnosis: ['https://rpc.gnosischain.com', 'https://gnosis.publicnode.com'],
+  local: ['http://localhost:8545'],
   mainnet: ['https://ethereum.publicnode.com', 'https://1rpc.io/eth'],
-  optimism: ['https://mainnet.optimism.io', 'https://optimism.publicnode.com'],
   sepolia: [
     'https://ethereum-sepolia-rpc.publicnode.com',
     'https://1rpc.io/sepolia',

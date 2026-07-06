@@ -30,8 +30,8 @@ describe('rpc providers', () => {
 
   it('resolves primary URL when ALCHEMY_RPC_KEY is set', () => {
     env.ALCHEMY_RPC_KEY = 'my-key';
-    expect(resolveProviderPrimaryRpcUrl('optimism')).toBe(
-      'https://opt-mainnet.g.alchemy.com/v2/my-key',
+    expect(resolveProviderPrimaryRpcUrl('arbitrum')).toBe(
+      'https://arb-mainnet.g.alchemy.com/v2/my-key',
     );
   });
 

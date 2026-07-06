@@ -115,7 +115,7 @@
       const gen = sendBalanceFetchGen;
       sendBalanceLoading = true;
       sendBalanceError = null;
-      getWalletSummary(watchedWireForBalances).then((r) => {
+      getWalletSummary(watchedWireForBalances, [chainId]).then((r) => {
         if (gen !== sendBalanceFetchGen) return;
         sendBalanceLoading = false;
         if (r.ok) {

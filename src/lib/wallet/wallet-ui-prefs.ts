@@ -13,8 +13,14 @@ export const WALLET_UI_ENABLED_CHAINS_PREFIX = 'pacto_wallet_ui_enabled_chains_v
 /** Bump so `WalletBar` reactively re-reads prefs when toggles change in Wallet view. */
 export const walletUiEnabledChainsTick = writable(0);
 
+/**
+ * Initial checkmarks in Settings → EVM → Enabled chains for a fresh account.
+ * Only the default set differs by build; every chain stays visible and toggleable.
+ * Dev: Sepolia + Local Anvil. Prod: Arbitrum.
+ */
 export function defaultWalletEnabledChains(): SupportedChainId[] {
-  return [...WALLET_ASSETS_CHAIN_IDS];
+  if (import.meta.env.DEV) return ['sepolia', 'local'];
+  return ['arbitrum'];
 }
 
 function storageKey(accountNpub: string): string {
@@ -42,8 +48,7 @@ export function loadWalletEnabledChains(accountNpub: string | null | undefined):
       chains?: unknown;
     };
     if (parsed?.v !== STORAGE_VERSION) return defaultWalletEnabledChains();
-    const n = normalizeChains(parsed.chains);
-    return n ?? defaultWalletEnabledChains();
+    return normalizeChains(parsed.chains) ?? defaultWalletEnabledChains();
   } catch {
     return defaultWalletEnabledChains();
   }

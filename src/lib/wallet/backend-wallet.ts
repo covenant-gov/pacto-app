@@ -22,6 +22,8 @@ export interface WalletSummaryNetwork {
   network: string;
   chainId: number;
   assets: WalletSummaryAsset[];
+  /** Set when this network's RPC could not be reached; other networks still populate. */
+  error?: string;
 }
 
 export interface WalletSummary {
@@ -73,13 +75,23 @@ export async function getEvmNativeBalance(
   }
 }
 
-/** Per-network + per-asset balances with USD lines (Chainlink-backed prices from backend). */
-export async function getWalletSummary(watchedErc20s: WatchedErc20Wire[]): Promise<WalletSummaryResult> {
+/**
+ * Per-network + per-asset balances with USD lines (Chainlink-backed prices from backend).
+ * Only `enabledChains` are queried; an unreachable network returns a per-network `error`
+ * on its summary row instead of failing the whole call.
+ */
+export async function getWalletSummary(
+  watchedErc20s: WatchedErc20Wire[],
+  enabledChains: SupportedChainId[]
+): Promise<WalletSummaryResult> {
   if (!isTauri()) {
     return { ok: false, message: 'Wallet summary is only available in the desktop app.' };
   }
   try {
-    const summary = await invoke<WalletSummary>('get_wallet_summary', { watchedErc20s });
+    const summary = await invoke<WalletSummary>('get_wallet_summary', {
+      watchedErc20s,
+      enabledChains,
+    });
     return { ok: true, summary };
   } catch (e) {
     const msg =

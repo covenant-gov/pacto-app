@@ -488,8 +488,7 @@ fn normalize_treasury_chain(raw: Option<&str>) -> String {
     {
         Some("mainnet") | Some("ethereum") | Some("eth") => "mainnet".to_string(),
         Some("arbitrum") | Some("arb") => "arbitrum".to_string(),
-        Some("optimism") | Some("op") => "optimism".to_string(),
-        Some("gnosis") | Some("gno") | Some("xdai") => "gnosis".to_string(),
+        Some("local") => "local".to_string(),
         Some("sepolia") | None => "sepolia".to_string(),
         _ => "sepolia".to_string(),
     }

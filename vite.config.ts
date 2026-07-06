@@ -32,5 +32,22 @@ export default defineConfig(async () => ({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**'],
+      exclude: [
+        '**/*.test.ts',
+        '**/*.spec.ts',
+        'src/app.html',
+        'src/app.css',
+        'src/**/*.svelte',
+      ],
+      thresholds: {
+        statements: 80,
+        branches: 80,
+        functions: 80,
+        lines: 80,
+      },
+    },
   },
 }));

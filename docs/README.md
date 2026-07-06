@@ -13,6 +13,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[dashboard/POLLS.md](./dashboard/POLLS.md)** | Dashboard polls: MLS announcements transport, replica, vote rules |
 | **[legacy-fixes/](./legacy-fixes/)** | Alpha-only repair and migration paths to remove before beta or public v1 ([catalog](./legacy-fixes/CATALOG.md)) |
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
+| **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |
 
@@ -22,4 +23,5 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 
 - **Greenfield:** No public alpha yet — prefer **breaking, slim changes** over compatibility layers for superseded designs. Agents and contributors: [`.cursor/rules/greenfield-no-legacy.mdc`](../.cursor/rules/greenfield-no-legacy.mdc).
 - **Code wins:** If this tree disagrees with `src-tauri/src/` or `src/`, treat the code as source of truth and update the doc.
+- **Chain names:** One canonical key per network (`local`, not `anvil`). See [`CHAIN_TERMINOLOGY.md`](./CHAIN_TERMINOLOGY.md).
 - **Product name:** User-facing copy says **Pacto**. Some Rust comments still say “Vector” for historical reasons.

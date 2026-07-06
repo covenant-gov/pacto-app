@@ -7,6 +7,7 @@ import { writable } from 'svelte/store';
 import { currentNpubForPersistence } from '../../stores/app';
 import { getCuratedRpcUrlsForChain } from './rpc-catalog';
 import { WALLET_ASSETS_CHAIN_IDS } from './assets';
+import type { SupportedChainId } from './chains';
 
 const STORAGE_VERSION = 1 as const;
 export const WALLET_RPC_PREFS_PREFIX = 'pacto_wallet_rpc_prefs_v1';

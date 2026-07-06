@@ -12,11 +12,18 @@ import {
 
 const NPUB = 'npub1test';
 
+function setDev(value: boolean) {
+  (import.meta.env as { DEV?: boolean }).DEV = value;
+}
+
 describe('rpc prefs', () => {
   const store = new Map<string, string>();
+  let originalDev: boolean | undefined;
 
   beforeEach(() => {
+    originalDev = (import.meta.env as { DEV?: boolean }).DEV;
     store.clear();
+    setDev(false);
     (globalThis as unknown as { localStorage: Storage }).localStorage = {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => {
@@ -34,6 +41,11 @@ describe('rpc prefs', () => {
   });
 
   afterEach(() => {
+    if (originalDev === undefined) {
+      delete (import.meta.env as { DEV?: boolean }).DEV;
+    } else {
+      setDev(originalDev);
+    }
     delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
 
@@ -61,8 +73,28 @@ describe('rpc prefs', () => {
   });
 
   it('persists under scoped storage key', () => {
-    saveDefaultRpc(NPUB, 'optimism', 'https://mainnet.optimism.io');
+    saveDefaultRpc(NPUB, 'mainnet', 'https://ethereum.publicnode.com');
     expect(store.has(`${WALLET_RPC_PREFS_PREFIX}_${NPUB}`)).toBe(true);
-    expect(loadRpcPrefs(NPUB).defaultRpc.optimism).toBe('https://mainnet.optimism.io');
+    expect(loadRpcPrefs(NPUB).defaultRpc.mainnet).toBe('https://ethereum.publicnode.com');
+  });
+
+  it('allows local personal RPCs like any other chain (both builds)', () => {
+    const url = 'http://localhost:8545';
+    expect(addPersonalRpc(NPUB, 'local', url).ok).toBe(true);
+    expect(listPersonalRpcs(NPUB, 'local')).toEqual([url]);
+  });
+
+  it('allows local default RPCs like any other chain (both builds)', () => {
+    const url = 'http://localhost:8545';
+    addPersonalRpc(NPUB, 'local', url);
+    saveDefaultRpc(NPUB, 'local', url);
+    expect(loadDefaultRpc(NPUB, 'local')).toBe(url);
+  });
+
+  it('resolves local URLs like any other chain (both builds)', () => {
+    const url = 'http://localhost:8545';
+    addPersonalRpc(NPUB, 'local', url);
+    saveDefaultRpc(NPUB, 'local', url);
+    expect(resolveUserRpcUrls('local', NPUB)).toEqual([url]);
   });
 });

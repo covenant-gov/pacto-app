@@ -7,6 +7,7 @@ import { get } from 'svelte/store';
 import { currentUser } from '../../stores/auth';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
+import { loadWalletEnabledChains } from './wallet-ui-prefs';
 import { persistWalletSummaryCache } from './wallet-summary-cache';
 
 const MIN_SUCCESS_INTERVAL_MS = 45_000;
@@ -32,7 +33,8 @@ export function scheduleWalletSummaryBackgroundPrefetch(npub: string | null | un
     try {
       const rows = loadWatchedErc20Rows(startedFor);
       const wire = watchedRowsToWire(rows);
-      const r = await getWalletSummary(wire);
+      const enabledChains = loadWalletEnabledChains(startedFor);
+      const r = await getWalletSummary(wire, enabledChains);
       if (!r.ok) return;
       if (get(currentUser)?.npub !== startedFor) return;
       persistWalletSummaryCache(startedFor, wire, r.summary);

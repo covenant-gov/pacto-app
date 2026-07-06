@@ -214,6 +214,46 @@ describe('parseWalletTxAnnouncement', () => {
   });
 });
 
+describe('local anvil network support', () => {
+  it('parseWalletTxRequest accepts network "local"', () => {
+    const j = `{"version":1,"type":"wallet_tx_request","request_id":"550e8400-e29b-41d4-a716-446655440000","network":"local","asset":"ETH","amount":"0.05","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const p = parseWalletTxRequest(j);
+    expect(p).not.toBeNull();
+    expect(p!.network).toBe('local');
+  });
+
+  it('parseWalletTxRequest rejects the retired "anvil" alias (canonical key is "local")', () => {
+    const j = `{"version":1,"type":"wallet_tx_request","request_id":"550e8400-e29b-41d4-a716-446655440000","network":"anvil","asset":"ETH","amount":"0.05","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    expect(parseWalletTxRequest(j)).toBeNull();
+  });
+
+  it('parseWalletTxAnnouncement accepts network "local"', () => {
+    const j = `{"version":1,"type":"wallet_tx_announcement","network":"local","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const p = parseWalletTxAnnouncement(j);
+    expect(p).not.toBeNull();
+    expect(p!.network).toBe('local');
+  });
+
+  it('parseWalletTxAnnouncement rejects the retired "anvil" alias (canonical key is "local")', () => {
+    const j = `{"version":1,"type":"wallet_tx_announcement","network":"anvil","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    expect(parseWalletTxAnnouncement(j)).toBeNull();
+  });
+
+  it('formatWalletTxRequest / parseWalletTxRequest round-trip preserves network local and fields', () => {
+    const payload = {
+      request_id: '550e8400-e29b-41d4-a716-446655440000',
+      network: 'local' as const,
+      asset: 'ETH',
+      amount: '0.05',
+      from_evm_address: SAMPLE_FROM_EVM,
+      created_at_ms: 1710000000000,
+    };
+    const again = parseWalletTxRequest(formatWalletTxRequest(payload));
+    expect(again).toEqual({ ...payload, type: 'wallet_tx_request', version: 1 });
+  });
+});
+
+
 const NPUB_A = 'npub1aaaaaaaaaaaaaa';
 const NPUB_B = 'npub1bbbbbbbbbbbbbb';
 const ADDR_A = '0xabcdef0123456789abcdef0123456789abcdef01';

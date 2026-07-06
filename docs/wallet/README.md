@@ -11,6 +11,7 @@ These files are **tracked in git** and are intended for references from **source
 | [USD_PRICING.md](./USD_PRICING.md) | Chainlink feeds; backend pricing / env. |
 | [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md) | Non-blocking on-chain UX; optimistic DM wallet announcements. |
 | [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) | Single source: `wallet-assets.json` + Rust `wallet_chain_config`; RPC env vars. |
+| [PACTO-APP-LOCAL-CHAIN-SETUP.md](./PACTO-APP-LOCAL-CHAIN-SETUP.md) | How to use the local Anvil / Nostr dev stack and how it is gated out of production. |
 | [MANUAL_E2E_CHECKLIST.md](./MANUAL_E2E_CHECKLIST.md) | Manual QA: Sepolia send/request/announcement/explorer verification. |
 | [HD_DERIVATION_V1.md](./HD_DERIVATION_V1.md) | BIP-44 path, address hash rule, legacy cutover, golden vector. |
 | [ONCHAIN_READ_PATTERN.md](./ONCHAIN_READ_PATTERN.md) | Shared pattern: persist / hydrate / background refresh for WalletBar + Safe-style reads. |

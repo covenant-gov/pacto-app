@@ -14,7 +14,7 @@ const AMOUNT_REGEX = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)$/;
 const MAX_AMOUNT_LEN = 32;
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
-const NETWORKS = new Set<string>(['mainnet', 'arbitrum', 'optimism', 'gnosis', 'sepolia']);
+const NETWORKS = new Set<string>(['mainnet', 'arbitrum', 'sepolia', 'local']);
 
 const EVM_ADDR_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
@@ -140,6 +140,7 @@ export function parseWalletTxRequest(content: string): WalletTxRequestPayload | 
   if (o.version !== SCHEMA_VERSION) return null;
   if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
   if (!isSupportedNetwork(o.network)) return null;
+  const network = o.network;
   if (!isWalletAssetLabel(o.asset)) return null;
   if (!isValidAmountString(o.amount)) return null;
   if (o.created_at_ms !== undefined) {
@@ -150,7 +151,7 @@ export function parseWalletTxRequest(content: string): WalletTxRequestPayload | 
     type: WALLET_TX_REQUEST_WIRE_TYPE,
     version: SCHEMA_VERSION,
     request_id: o.request_id,
-    network: o.network,
+    network,
     asset: o.asset,
     amount: o.amount.trim(),
     from_evm_address: (o.from_evm_address as string).trim(),
@@ -177,6 +178,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
   if (o.type !== WALLET_TX_ANNOUNCEMENT_WIRE_TYPE) return null;
   if (o.version !== SCHEMA_VERSION) return null;
   if (!isSupportedNetwork(o.network)) return null;
+  const network = o.network;
   if (!isWalletAssetLabel(o.asset)) return null;
   if (!isValidAmountString(o.amount)) return null;
   if (!isValidTxHash(o.tx_hash)) return null;
@@ -188,7 +190,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
   const out: WalletTxAnnouncementPayload = {
     type: WALLET_TX_ANNOUNCEMENT_WIRE_TYPE,
     version: SCHEMA_VERSION,
-    network: o.network,
+    network,
     asset: o.asset,
     amount: o.amount.trim(),
     tx_hash: o.tx_hash,

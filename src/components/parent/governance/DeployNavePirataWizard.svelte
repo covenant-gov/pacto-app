@@ -6,8 +6,11 @@
   import { deployNavePirataForParent } from '../../../lib/governance/api';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { getAddress, isAddress } from 'viem';
+  import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
   export let parentId: string;
+  /** Established squad network; when set the picker is pinned to it. */
+  export let squadNetwork: SupportedChainId | null = null;
   export let onClose: () => void;
   export let onComplete: (result: {
     txHash: string;
@@ -21,7 +24,7 @@
   const descId = 'nave-pirata-wizard-desc';
 
   let wizardStep: 1 | 2 | 3 = 1;
-  let deployNetwork: SupportedChainId = 'sepolia';
+  let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let captainInput = '';
   let metadataUriInput = '';
   let saltNonceInput = '';
@@ -50,6 +53,10 @@
 
   function nextFromStep1() {
     deployError = '';
+    if (!deployNetwork) {
+      deployError = 'Select a network for this squad.';
+      return;
+    }
     wizardStep = 2;
   }
 
@@ -79,6 +86,10 @@
 
   async function confirmDeploy() {
     deployError = '';
+    if (!deployNetwork) {
+      deployError = 'Select a network for this squad.';
+      return;
+    }
     const cap = normalizedCaptain();
     if (!cap || !metadataUriInput.trim()) {
       deployError = 'Captain and metadata URI are required.';
@@ -131,15 +142,23 @@
 
   {#if wizardStep === 1}
     <div class="nave-wizard-field">
-      <label class="nave-wizard-field-label" for="nave-deploy-network">Network</label>
-      <select id="nave-deploy-network" class="nave-wizard-field-input nave-wizard-field-select" bind:value={deployNetwork}>
-        <option value="sepolia">Sepolia</option>
-        <option value="mainnet">Ethereum</option>
-        <option value="optimism">Optimism</option>
-      </select>
+      <SquadDeployNetworkField
+        id="nave-deploy-network"
+        {squadNetwork}
+        bind:value={deployNetwork}
+        labelClass="nave-wizard-field-label"
+        selectClass="nave-wizard-field-input nave-wizard-field-select"
+      />
     </div>
+    {#if deployError}
+      <p class="input-error" role="alert">{deployError}</p>
+    {/if}
     <p class="muted nave-wizard-hint">
-      Uses the same RPC configuration as the embedded wallet for this chain.
+      {#if squadNetwork}
+        This squad's infrastructure is on {deployNetwork}. Uses the same RPC configuration as the embedded wallet.
+      {:else}
+        Locks this squad to the chosen network. Uses the same RPC configuration as the embedded wallet.
+      {/if}
     </p>
     <div class="modal-actions nave-wizard-actions">
       <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>

@@ -24,17 +24,17 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: lts/*
 
       - name: setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 11.7.0
           run_install: false
 
       - name: install Rust stable
