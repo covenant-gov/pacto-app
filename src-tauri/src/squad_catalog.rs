@@ -599,4 +599,137 @@ mod tests {
         input.commons_tags = None;
         assert!(prepare_row(input).is_err());
     }
+
+    #[test]
+    fn normalize_kind_defaults_to_squad() {
+        assert_eq!(normalize_kind(None).unwrap(), KIND_SQUAD);
+        assert_eq!(normalize_kind(Some("  ")).unwrap(), KIND_SQUAD);
+        assert_eq!(normalize_kind(Some("SQUAD-PAIR")).unwrap(), KIND_SQUAD_PAIR);
+        assert!(normalize_kind(Some("invalid")).is_err());
+    }
+
+    #[test]
+    fn normalize_visibility_defaults_to_private() {
+        assert_eq!(normalize_visibility(None).unwrap(), VIS_PRIVATE);
+        assert_eq!(normalize_visibility(Some("  ")).unwrap(), VIS_PRIVATE);
+        assert_eq!(normalize_visibility(Some("PUBLIC")).unwrap(), VIS_PUBLIC);
+        assert!(normalize_visibility(Some("hidden")).is_err());
+    }
+
+    #[test]
+    fn normalize_commons_tag_filters() {
+        assert_eq!(normalize_commons_tag(" #Foo_Bar "), Some("foo_bar".to_string()));
+        assert_eq!(normalize_commons_tag("new"), None);
+        assert_eq!(normalize_commons_tag("a"), Some("a".to_string()));
+        assert_eq!(normalize_commons_tag("a_very_long_tag_exceeding_32_chars_limit"), None);
+        assert_eq!(normalize_commons_tag("bad-tag"), None);
+        assert_eq!(normalize_commons_tag("bad!tag"), None);
+    }
+
+    #[test]
+    fn normalize_commons_tags_private_returns_none() {
+        assert_eq!(normalize_commons_tags(None, VIS_PRIVATE).unwrap(), None);
+        assert_eq!(normalize_commons_tags(Some(&["tag".to_string()]), VIS_PRIVATE).unwrap(), None);
+    }
+
+    #[test]
+    fn public_squad_commons_tags_validated() {
+        let tags = vec!["pacto".to_string()];
+        assert_eq!(
+            normalize_commons_tags(Some(&tags), VIS_PUBLIC).unwrap(),
+            Some(vec!["pacto".to_string()])
+        );
+        assert!(normalize_commons_tags(None, VIS_PUBLIC).is_err());
+        assert!(normalize_commons_tags(Some(&[]), VIS_PUBLIC).is_err());
+        assert!(normalize_commons_tags(Some(&["new".to_string()]), VIS_PUBLIC).is_err());
+        assert!(normalize_commons_tags(Some(&["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]), VIS_PUBLIC).is_err());
+    }
+
+    #[test]
+    fn paired_squads_required_for_squad_pair() {
+        let mut input = sample_upsert("pair", "Pair");
+        input.kind = Some(KIND_SQUAD_PAIR.to_string());
+        assert!(prepare_row(input).is_err());
+
+        let mut input = sample_upsert("pair", "Pair");
+        input.kind = Some(KIND_SQUAD_PAIR.to_string());
+        input.paired_squads = Some(vec![
+            PairedSquadRef { id: "a".to_string(), name: "A".to_string() },
+            PairedSquadRef { id: "b".to_string(), name: "B".to_string() },
+        ]);
+        let row = prepare_row(input).unwrap();
+        assert_eq!(row.paired_squads.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn paired_squads_rejects_non_two() {
+        let mut input = sample_upsert("pair", "Pair");
+        input.kind = Some(KIND_SQUAD_PAIR.to_string());
+        input.paired_squads = Some(vec![
+            PairedSquadRef { id: "a".to_string(), name: "A".to_string() },
+        ]);
+        assert!(prepare_row(input).is_err());
+    }
+
+    #[test]
+    fn prepare_row_rejects_empty_id_or_name() {
+        let mut input = sample_upsert("grp", "Squad");
+        input.id = "   ".to_string();
+        assert!(prepare_row(input).is_err());
+
+        let input = sample_upsert("grp", "  ");
+        assert!(prepare_row(input).is_err());
+    }
+
+    #[test]
+    fn prepare_row_trims_icon_url_and_blank_becomes_none() {
+        let mut input = sample_upsert("grp", "Squad");
+        input.icon_url = Some("  https://example.com/icon.png  ".to_string());
+        let row = prepare_row(input).unwrap();
+        assert_eq!(row.icon_url, Some("https://example.com/icon.png".to_string()));
+
+        let mut input = sample_upsert("grp", "Squad");
+        input.icon_url = Some("   ".to_string());
+        let row = prepare_row(input).unwrap();
+        assert_eq!(row.icon_url, None);
+    }
+
+    #[test]
+    fn validate_channels_rejects_blank_fields() {
+        let mut input = sample_upsert("grp", "Squad");
+        input.channels = vec![SquadChannelRow { name: "  ".to_string(), group_id: "g".to_string(), order: 0 }];
+        assert!(prepare_row(input).is_err());
+
+        let mut input = sample_upsert("grp", "Squad");
+        input.channels = vec![SquadChannelRow { name: "n".to_string(), group_id: "  ".to_string(), order: 0 }];
+        assert!(prepare_row(input).is_err());
+    }
+
+    #[test]
+    fn row_from_query_rejects_invalid_channels_json() {
+        let result = row_from_query(
+            "id".to_string(), "name".to_string(), None, KIND_SQUAD.to_string(), VIS_PRIVATE.to_string(),
+            None, None, "not-json".to_string(), 1, 2,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_squad_inner_blank_id_returns_none() {
+        let conn = test_conn();
+        assert!(get_squad_inner(&conn, "  ").unwrap().is_none());
+    }
+
+    #[test]
+    fn upsert_squad_inner_updates_existing_row() {
+        let conn = test_conn();
+        let row = prepare_row(sample_upsert("grp", "Alpha")).unwrap();
+        upsert_squad_inner(&conn, &row).unwrap();
+        let mut updated = prepare_row(sample_upsert("grp", "Beta")).unwrap();
+        updated.updated_at_ms = 2000;
+        upsert_squad_inner(&conn, &updated).unwrap();
+        let got = get_squad_inner(&conn, "grp").unwrap().unwrap();
+        assert_eq!(got.name, "Beta");
+        assert_eq!(got.updated_at_ms, 2000);
+    }
 }

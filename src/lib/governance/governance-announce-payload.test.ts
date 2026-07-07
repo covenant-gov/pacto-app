@@ -43,6 +43,45 @@ describe('governance_updated announce payloads (A4 wire shape)', () => {
     expect(payload.entry_id).toBe(entryId);
   });
 
+  it('pacto_gov payload includes pacto_gov_revision when provided', () => {
+    const entryId = pactoGovInfraId(PARENT);
+    const payload = buildPactoGovGovernanceAnnouncePayload({
+      parentId: PARENT,
+      topHatId: '42',
+      chain: 'sepolia',
+      providerPayload: '{"v":1}',
+      entryId,
+      pactoGovRevision: 'rev-1',
+    });
+    expect(payload.pacto_gov_revision).toBe('rev-1');
+  });
+
+  it('pacto_gov payload omits pacto_gov_revision when missing', () => {
+    const entryId = pactoGovInfraId(PARENT);
+    const payload = buildPactoGovGovernanceAnnouncePayload({
+      parentId: PARENT,
+      topHatId: '42',
+      chain: 'sepolia',
+      providerPayload: '{"v":1}',
+      entryId,
+    });
+    expect(payload.pacto_gov_revision).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(payload, 'pacto_gov_revision')).toBe(false);
+  });
+
+  it('pacto_gov payload omits pacto_gov_revision when only whitespace', () => {
+    const entryId = pactoGovInfraId(PARENT);
+    const payload = buildPactoGovGovernanceAnnouncePayload({
+      parentId: PARENT,
+      topHatId: '42',
+      chain: 'sepolia',
+      providerPayload: '{"v":1}',
+      entryId,
+      pactoGovRevision: '  ',
+    });
+    expect(payload.pacto_gov_revision).toBeUndefined();
+  });
+
   it('squad_admin payload maps provider for ingest', () => {
     const entryId = squadAdminInfraId(PARENT);
     const proxy = '0x2222222222222222222222222222222222222222';

@@ -211,3 +211,97 @@ pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Re
 
     Ok(buffer)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Runtime::new().expect("tokio runtime")
+    }
+
+    #[test]
+    fn generate_params_has_valid_hex_lengths() {
+        let params = generate_encryption_params();
+        assert_eq!(params.key.len(), 64, "32-byte key = 64 hex chars");
+        assert_eq!(params.nonce.len(), 32, "16-byte nonce = 32 hex chars");
+        assert!(hex::decode(&params.key).is_ok());
+        assert!(hex::decode(&params.nonce).is_ok());
+    }
+
+    #[test]
+    fn aes_gcm_round_trip() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let plaintext = b"hello pacto";
+        let encrypted = encrypt_data(plaintext, &params).expect("encrypt");
+        assert!(!encrypted.is_empty());
+        let decrypted = decrypt_data(&encrypted, &params.key, &params.nonce).expect("decrypt");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_too_short_input() {
+        let result = decrypt_data(
+            &[0u8; 15],
+            &hex::encode([0u8; 32]),
+            &hex::encode([0u8; 16]),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_wrong_tag() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let mut encrypted = encrypt_data(b"hello", &params).expect("encrypt");
+        let last = encrypted.len() - 1;
+        encrypted[last] ^= 0xff;
+        let result = decrypt_data(&encrypted, &params.key, &params.nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn hash_pass_is_deterministic() {
+        let first = rt().block_on(hash_pass("pacto-secret".to_string()));
+        let second = rt().block_on(hash_pass("pacto-secret".to_string()));
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn chacha_round_trip_with_password() {
+        let ciphertext = rt().block_on(internal_encrypt(
+            "plaintext message".to_string(),
+            Some("password".to_string()),
+        ));
+        assert!(!ciphertext.is_empty());
+        let decrypted = rt().block_on(internal_decrypt(ciphertext, Some("password".to_string())));
+        assert_eq!(decrypted.expect("decrypt"), "plaintext message");
+    }
+
+    #[test]
+    fn chacha_decrypt_rejects_wrong_password() {
+        let ciphertext = rt().block_on(internal_encrypt(
+            "plaintext message".to_string(),
+            Some("password".to_string()),
+        ));
+        let decrypted = rt().block_on(internal_decrypt(ciphertext, Some("wrong".to_string())));
+        assert!(decrypted.is_err());
+    }
+
+    #[test]
+    fn chacha_decrypt_rejects_short_ciphertext() {
+        let decrypted = rt().block_on(internal_decrypt("0x00".to_string(), Some("password".to_string())));
+        assert!(decrypted.is_err());
+    }
+
+    #[test]
+    fn chacha_decrypt_rejects_malformed_hex() {
+        let decrypted = rt().block_on(internal_decrypt("not-hex".to_string(), Some("password".to_string())));
+        assert!(decrypted.is_err());
+    }
+}

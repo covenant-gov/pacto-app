@@ -44,4 +44,41 @@ mod tests {
     fn parse_value_wei_decimal() {
         assert_eq!(parse_value_wei("1000").unwrap(), U256::from(1000u64));
     }
+
+    #[test]
+    fn parse_value_wei_empty_is_zero() {
+        assert_eq!(parse_value_wei("").unwrap(), U256::ZERO);
+        assert_eq!(parse_value_wei("   ").unwrap(), U256::ZERO);
+    }
+
+    #[test]
+    fn parse_value_wei_rejects_negative() {
+        assert!(parse_value_wei("-1").is_err());
+    }
+
+    #[test]
+    fn parse_value_wei_rejects_hex() {
+        assert!(parse_value_wei("0x1a").is_err());
+    }
+
+    #[test]
+    fn parse_data_hex_rejects_odd_length() {
+        assert!(parse_data_hex("0xabc").is_err());
+    }
+
+    #[test]
+    fn parse_data_hex_rejects_non_hex() {
+        assert!(parse_data_hex("0xzz").is_err());
+    }
+
+    #[test]
+    fn parse_data_hex_uppercase_prefix_and_case() {
+        assert_eq!(parse_data_hex("0XDEADBEEF").unwrap(), vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn parse_data_hex_zero_prefix_returns_empty() {
+        assert!(parse_data_hex("0x").unwrap().is_empty());
+        assert!(parse_data_hex("0X").unwrap().is_empty());
+    }
 }

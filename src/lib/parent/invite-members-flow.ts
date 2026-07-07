@@ -17,7 +17,7 @@ export async function loadInviteCandidateNpubs(
 ): Promise<string[]> {
   const inParent = new Set(await loadMembersForParent(parent, currentUserNpub));
   const uniqueNpubs = [...new Set(dmNpubs)];
-  return uniqueNpubs.filter((npub) => !inParent.has(npub));
+  return uniqueNpubs.filter((npub) => !inParent.has(npub) && npub !== currentUserNpub);
 }
 
 /** MLS invites + squad invite DMs for each npub. */

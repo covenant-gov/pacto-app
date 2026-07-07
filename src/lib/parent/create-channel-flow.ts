@@ -14,7 +14,6 @@ import {
   type Squad,
 } from '../../stores/squads';
 import {
-  activeSquadId,
   activeChannelId,
   activeHubChannelName,
   activeView,

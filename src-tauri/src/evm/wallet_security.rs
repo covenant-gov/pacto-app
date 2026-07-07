@@ -163,4 +163,67 @@ mod tests {
         let r = redact_urls_in_text(&e);
         assert!(!r.contains("abc"));
     }
+
+    #[test]
+    fn redacts_various_sensitive_query_keys() {
+        for key in ["key", "token", "secret", "password", "auth", "api_key", "apikey", "access_token", "refresh_token"] {
+            let url = format!("https://example.com?{}=leaked", key);
+            let r = redact_rpc_url_for_log(&url);
+            assert!(!r.contains("leaked"), "key {} should be redacted", key);
+            assert!(r.contains("[REDACTED]"));
+        }
+    }
+
+    #[test]
+    fn preserves_non_sensitive_query_values() {
+        let u = "https://example.com?foo=bar";
+        let r = redact_rpc_url_for_log(u);
+        assert!(r.contains("foo=bar"));
+        assert!(!r.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redacts_provider_path_segments() {
+        let u = "https://eth-mainnet.g.alchemy.com/v2/secret-key";
+        let r = redact_rpc_url_for_log(u);
+        assert!(!r.contains("secret-key"));
+        assert!(r.contains("/v2/[REDACTED]"));
+    }
+
+    #[test]
+    fn redacts_infura_v3_path_segment() {
+        let u = "https://mainnet.infura.io/v3/project-id";
+        let r = redact_rpc_url_for_log(u);
+        assert!(!r.contains("project-id"));
+        assert!(r.contains("/v3/[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_urls_in_text_handles_multiple_urls() {
+        let text = "https://a.com?key=1 https://b.com?token=2";
+        let r = redact_urls_in_text(text);
+        assert!(!r.contains("key=1"));
+        assert!(!r.contains("token=2"));
+    }
+
+    #[test]
+    fn redact_urls_in_text_handles_http() {
+        let text = "http://a.com?secret=x";
+        let r = redact_urls_in_text(text);
+        assert!(!r.contains("secret=x"));
+    }
+
+    #[test]
+    fn redact_unparsed_url_heuristic_strips_userinfo() {
+        let raw = "https://user:pass@host.com/path";
+        let r = redact_unparsed_url_heuristic(raw);
+        assert!(!r.contains("user"));
+        assert!(!r.contains("pass"));
+        assert!(r.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_unparsed_url_heuristic_without_scheme_returns_placeholder() {
+        assert_eq!(redact_unparsed_url_heuristic("just text"), "[rpc-url-unparsed]");
+    }
 }

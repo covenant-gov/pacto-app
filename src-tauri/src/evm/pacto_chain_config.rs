@@ -303,6 +303,12 @@ mod tests {
 
     #[test]
     fn sepolia_book_safe_bundle_overrides_legacy_defaults() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(&[
+            "PACTO_SAFE_PROXY_FACTORY",
+            "PACTO_SAFE_SINGLETON",
+            "PACTO_SAFE_FALLBACK_HANDLER",
+        ]);
         let safe = safe_factory_addresses("sepolia", 11_155_111).expect("safe book");
         assert_eq!(
             safe.proxy_factory,
@@ -312,5 +318,94 @@ mod tests {
             safe.singleton,
             address!("0x41675C099F32341bf84BFc5382aF534df5C7461a")
         );
+    }
+
+    #[test]
+    fn net_suffix_uppercases_and_replaces_dashes() {
+        assert_eq!(net_suffix("sepolia"), "SEPOLIA");
+        assert_eq!(net_suffix("arbitrum-one"), "ARBITRUM_ONE");
+    }
+
+    #[test]
+    fn safe_factory_addresses_env_override_wins() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(&[
+            "PACTO_SAFE_PROXY_FACTORY",
+            "PACTO_SAFE_SINGLETON",
+            "PACTO_SAFE_FALLBACK_HANDLER",
+        ]);
+        let factory = address!("0x1111111111111111111111111111111111111111");
+        let singleton = address!("0x2222222222222222222222222222222222222222");
+        let fallback = address!("0x3333333333333333333333333333333333333333");
+        let _guard = EnvVarGuard::new()
+            .set("PACTO_SAFE_PROXY_FACTORY", "0x1111111111111111111111111111111111111111")
+            .set("PACTO_SAFE_SINGLETON", "0x2222222222222222222222222222222222222222")
+            .set("PACTO_SAFE_FALLBACK_HANDLER", "0x3333333333333333333333333333333333333333");
+        let safe = safe_factory_addresses("sepolia", 11_155_111).expect("env override");
+        assert_eq!(safe.proxy_factory, factory);
+        assert_eq!(safe.singleton, singleton);
+        assert_eq!(safe.fallback_handler, fallback);
+    }
+
+    #[test]
+    fn safe_factory_addresses_mainnet_defaults() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(&[
+            "PACTO_SAFE_PROXY_FACTORY",
+            "PACTO_SAFE_SINGLETON",
+            "PACTO_SAFE_FALLBACK_HANDLER",
+        ]);
+        let safe = safe_factory_addresses("mainnet", 1).expect("mainnet defaults");
+        assert_eq!(
+            safe.singleton,
+            address!("0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552")
+        );
+    }
+
+    #[test]
+    fn default_fallback_for_chain_id_mainnet() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(&["PACTO_SAFE_FALLBACK_HANDLER"]);
+        let fb = default_fallback_for_chain_id(1).expect("mainnet fallback");
+        assert_eq!(fb, address!("0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4"));
+    }
+
+    #[test]
+    fn default_fallback_for_chain_id_unknown() {
+        assert!(default_fallback_for_chain_id(999_999).is_none());
+    }
+
+    static ENV_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn clear_env(keys: &[&str]) {
+        for key in keys {
+            std::env::remove_var(key);
+        }
+    }
+
+    struct EnvVarGuard {
+        _prev: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl EnvVarGuard {
+        fn new() -> Self {
+            Self { _prev: Vec::new() }
+        }
+        fn set(mut self, key: &'static str, value: &str) -> Self {
+            self._prev.push((key, std::env::var_os(key)));
+            std::env::set_var(key, value);
+            self
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            for (key, prev) in &self._prev {
+                match prev {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
     }
 }
