@@ -105,8 +105,6 @@ describe('resolveDashboardStructureSummary', () => {
     const cases: Array<{ chain: string; name: string; id: number }> = [
       { chain: 'mainnet', name: 'Ethereum', id: 1 },
       { chain: 'arbitrum', name: 'Arbitrum', id: 42161 },
-      { chain: 'optimism', name: 'Optimism', id: 10 },
-      { chain: 'gnosis', name: 'Gnosis', id: 100 },
       { chain: 'sepolia', name: 'Sepolia', id: 11155111 },
       { chain: 'local', name: 'Local Anvil', id: 31337 },
     ];
@@ -124,6 +122,5 @@ describe('resolveDashboardStructureSummary', () => {
     expect(s?.chainKey).toBe('sepolia');
     expect(s?.chainDisplayName).toBe('Sepolia');
     expect(s?.chainIdNumeric).toBe(11155111);
-  });
   });
 });

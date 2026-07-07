@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import type { SupportedChainId } from './chains';
 import {
   getEvmNativeBalance,
   getWalletSummary,
@@ -96,26 +97,30 @@ describe('backend-wallet', () => {
   describe('getWalletSummary', () => {
     it('returns an error when not in Tauri', async () => {
       vi.stubGlobal('window', undefined);
-      const result = await getWalletSummary([]);
+      const result = await getWalletSummary([], ['sepolia']);
       expect(result.ok).toBe(false);
       expect(failureMessage(result)).toBe('Wallet summary is only available in the desktop app.');
     });
 
-    it('invokes get_wallet_summary with watched tokens', async () => {
+    it('invokes get_wallet_summary with watched tokens and enabled chains', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
       const summary = { networks: [], totalUsdApprox: 0, prices: {} as never };
       mockedInvoke.mockResolvedValueOnce(summary);
       const watched = [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }];
-      const result = await getWalletSummary(watched);
+      const enabledChains: SupportedChainId[] = ['sepolia'];
+      const result = await getWalletSummary(watched, enabledChains);
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.summary).toEqual(summary);
-      expect(mockedInvoke).toHaveBeenCalledWith('get_wallet_summary', { watchedErc20s: watched });
+      expect(mockedInvoke).toHaveBeenCalledWith('get_wallet_summary', {
+        watchedErc20s: watched,
+        enabledChains,
+      });
     });
 
     it('returns the error message from a rejected invoke', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
       mockedInvoke.mockRejectedValueOnce(new Error('summary failed'));
-      const result = await getWalletSummary([]);
+      const result = await getWalletSummary([], ['sepolia']);
       expect(result.ok).toBe(false);
       expect(failureMessage(result)).toBe('summary failed');
     });

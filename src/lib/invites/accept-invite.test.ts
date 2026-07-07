@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import type { DmMessage } from '../../stores/dm';
+import { pactoAppInboxMessages } from '../../stores/dm';
 import type { PendingMlsWelcome } from '../api/nostr';
 import type { Squad } from '../../stores/app';
 
@@ -30,7 +31,9 @@ import {
   acceptingSquadInviteId,
   handleChannelAddedToSquad,
   handleMlsWelcomeAccepted,
+  reconcileStaleInviteDecisions,
   resetInviteAcceptState,
+  squadInviteResolvedByMembership,
 } from './accept-invite';
 import {
   acceptedChannelInviteMessageIds,

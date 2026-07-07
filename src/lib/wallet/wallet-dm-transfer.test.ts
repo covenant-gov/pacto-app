@@ -3,6 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../stores/dm', () => ({
   appendPendingOutboundDmMessage: vi.fn().mockReturnValue('opt-id'),
   patchOutboundWalletTxByHash: vi.fn(),
+  backendDmMessages: {
+    subscribe: (fn: (value: Record<string, unknown[]>) => void) => {
+      fn({});
+      return () => {};
+    },
+    set: vi.fn(),
+    update: vi.fn(),
+  },
 }));
 
 vi.mock('../../stores/toast', () => ({
