@@ -3906,7 +3906,7 @@ async fn get_reply_contexts<R: Runtime>(
     }
 
     // Do all SQLite work synchronously in a block to avoid Send issues
-    let (events, edits): (Vec<(String, i32, String, Option<String>)>, Vec<(String, String)>) = {
+    let (events, edits): (Vec<(String, i32, String, Option<String>, i32)>, Vec<(String, String)>) = {
         let conn = crate::account_manager::get_db_connection(handle)?;
 
         // Build placeholders for IN clause
@@ -3918,7 +3918,7 @@ async fn get_reply_contexts<R: Runtime>(
         // Query original messages
         let sql = format!(
             r#"
-            SELECT id, kind, content, npub
+            SELECT id, kind, content, npub, mine
             FROM events
             WHERE id IN ({})
             "#,
@@ -3938,10 +3938,11 @@ async fn get_reply_contexts<R: Runtime>(
                 row.get::<_, i32>(1)?,    // kind
                 row.get::<_, String>(2)?, // content
                 row.get::<_, Option<String>>(3)?, // npub
+                row.get::<_, i32>(4)?,    // mine
             ))
         }).map_err(|e| format!("Failed to query reply contexts: {}", e))?;
 
-        let events_result: Vec<(String, i32, String, Option<String>)> = rows.filter_map(|r| r.ok()).collect();
+        let events_result: Vec<(String, i32, String, Option<String>, i32)> = rows.filter_map(|r| r.ok()).collect();
         drop(stmt);
 
         // Query latest edits for these messages (most recent edit per message)
@@ -3982,8 +3983,17 @@ async fn get_reply_contexts<R: Runtime>(
 
     // Process events and decrypt content (async part)
     let mut contexts = HashMap::new();
-    for (id, kind, original_content, npub) in events {
+    for (id, kind, original_content, npub, mine) in events {
         let has_attachment = kind == event_kind::FILE_ATTACHMENT as i32;
+
+        // DM messages don't store the sender npub directly. For our own outbound DMs
+        // the npub column is NULL, so derive it from the current account so reply
+        // bars can render "You" instead of "Unknown".
+        let npub = if mine != 0 && npub.is_none() {
+            crate::account_manager::get_current_account().ok()
+        } else {
+            npub
+        };
 
         // Use latest edit content if available, otherwise use original
         let content_to_decrypt = latest_edits.get(&id).cloned().unwrap_or(original_content);

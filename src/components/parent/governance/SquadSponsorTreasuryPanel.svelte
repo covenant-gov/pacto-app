@@ -15,7 +15,6 @@
     isSponsorSummaryCacheStale,
     sponsorSummaryCacheKey,
   } from '../../../lib/governance/squad-sponsor-summary-cache';
-  import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
@@ -37,7 +36,7 @@
   let periodicRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let hydratedSponsorKey = '';
 
-  $: network = (sponsorRow?.chain?.trim() || 'sepolia') as SupportedChainId;
+  $: network = parseSupportedChainId(sponsorRow?.chain);
   $: poolBalanceWei = summary ? BigInt(summary.poolBalanceWei) : null;
   $: lowBalance =
     poolBalanceWei != null && poolBalanceWei < SPONSOR_LOW_BALANCE_WEI;

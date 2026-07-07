@@ -17,7 +17,7 @@ export function sponsorSummaryCacheKey(
   sponsorAddress: string,
   network: string
 ): string {
-  return `${parentId.trim()}:${sponsorAddress.trim().toLowerCase()}:${network.trim()}`;
+  return `${parentId.trim()}:${sponsorAddress.trim().toLowerCase()}:${network.trim().toLowerCase()}`;
 }
 
 export function getCachedSponsorSummary(key: string): SquadSponsorSummaryDto | null {

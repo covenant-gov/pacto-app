@@ -21,9 +21,37 @@ Squad / Network
 - Modular Governance Platform to accommodate various models of democracy and decision making
 - Safe Wallet for collective management of financial resources
 
-## Architecture Diagram
+## Architecture
 
-[WIP]
+Pacto is a Tauri v2 desktop app: a SvelteKit/Svelte frontend backed by a Rust backend. Encrypted messaging runs over Nostr; governance and treasury operations run over EVM chains via an embedded wallet derived from the same seed.
+
+```mermaid
+flowchart TB
+    subgraph Frontend["SvelteKit SPA (src/)"]
+        A[pages + components]
+        B[stores / lib modules]
+    end
+    subgraph Tauri["Tauri v2 webview bridge"]
+        C[invoke + event emit]
+    end
+    subgraph Backend["Rust backend (src-tauri/src/)"]
+        D[Nostr / MLS]
+        E[SQLite per npub]
+        F[EVM wallet + contracts]
+        G[crypto / media]
+    end
+    subgraph Network["External network"]
+        H[Nostr relays]
+        I[EVM / Aztec RPCs]
+    end
+    A <--> |invoke / listen| C
+    C <--> |commands + events| D
+    D <--> |read/write| E
+    D <--> |kinds 1059, 443, 444| H
+    F <--> |send / read| I
+```
+
+For a deeper walkthrough, see **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**.
 
 ## Fork
 

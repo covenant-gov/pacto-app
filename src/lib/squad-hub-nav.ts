@@ -27,6 +27,17 @@ export function resolveOpenHubParent(allSquads: Squad[], squadId: string | null)
   return allSquads.find((s) => s.id === squadId) ?? null;
 }
 
+/** Parent squad id for an MLS channel group (announcements row or child channel). */
+export function parentIdForChannelGroup(allSquads: Squad[], groupId: string): string | null {
+  const gid = groupId.trim();
+  if (!gid) return null;
+  for (const s of allSquads) {
+    if (s.id === gid) return s.id;
+    if (s.channels.some((ch) => ch.groupId === gid)) return s.id;
+  }
+  return null;
+}
+
 export function resolveHubChannelForSquad(
   squad: Squad,
   lastChannelBySquad: Record<string, string>,

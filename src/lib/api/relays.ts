@@ -32,10 +32,27 @@ export interface CustomRelay {
 export function validateRelayUrlInput(url: string): string | null {
   const trimmed = url.trim();
   if (!trimmed) return 'Enter a relay URL.';
-  if (!trimmed.startsWith('wss://')) return 'Relay URL must start with wss://';
-  const host = trimmed.slice('wss://'.length).replace(/\/+$/, '');
-  if (!host) return 'Relay URL must include a host.';
-  return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
+  }
+
+  if (!parsed.host) return 'Relay URL must include a host.';
+  if (parsed.username || parsed.password) return 'Relay URL must not contain userinfo.';
+
+  if (parsed.protocol === 'wss:') return null;
+
+  if (parsed.protocol === 'ws:') {
+    const host = parsed.hostname;
+    const isLocalhost = host === 'localhost';
+    const isLoopback = host === '127.0.0.1';
+    if (isLocalhost || isLoopback) return null;
+  }
+
+  return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
 }
 
 export function relayModeLabel(mode: string): string {

@@ -81,6 +81,7 @@ import { SQUAD_INFRA_CACHE_PREFIX } from '../dashboard/squad-infra-cache';
 import { SQUAD_MEMBER_EVM_CACHE_PREFIX } from '../dashboard/squad-member-evm-cache';
 import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapshot-cache';
 import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache';
+import { resetRelayedWalletTxKeys } from '../wallet/wallet-dm-transfer';
 import { resetInviteAcceptState } from '../invites/accept-invite';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
@@ -137,6 +138,7 @@ function clearAccountLocalStorage(npub?: string): void {
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
   resetInviteAcceptState();
+  resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();
   clearWalletSummaryCacheStore();

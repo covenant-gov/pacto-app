@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import {
   resolveHubParentSquad,
   resolveOpenHubParent,
+  parentIdForChannelGroup,
   restoreSquadsHubSelection,
   syncSquadsHubSelection,
   resolveHubChannelForSquad,
@@ -52,6 +53,28 @@ describe('resolveOpenHubParent', () => {
 
   it('returns null when no matching parent', () => {
     expect(resolveOpenHubParent([regular], 'missing')).toBeNull();
+  });
+});
+
+describe('parentIdForChannelGroup', () => {
+  const squadWithChannels: Squad = {
+    ...regular,
+    channels: [
+      { name: 'announcements', groupId: 'g-ann', order: 0 },
+      { name: 'general', groupId: 'g-gen', order: 1 },
+    ],
+  };
+
+  it('resolves announcements group id to parent squad', () => {
+    expect(parentIdForChannelGroup([squadWithChannels], 'g-ann')).toBe('squad-a');
+  });
+
+  it('resolves child channel group id to parent squad', () => {
+    expect(parentIdForChannelGroup([squadWithChannels], 'g-gen')).toBe('squad-a');
+  });
+
+  it('returns null when group is unknown', () => {
+    expect(parentIdForChannelGroup([squadWithChannels], 'missing')).toBeNull();
   });
 });
 

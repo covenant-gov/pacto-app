@@ -115,9 +115,7 @@ export function loadAccountState(npub: string): void {
         setStore([]);
       }
     }
-    void import('../lib/invites/accept-invite').then(({ reconcileStaleInviteDecisions }) => {
-      reconcileStaleInviteDecisions();
-    });
+    // reconcileStaleInviteDecisions already runs after hydrateSquadsFromDb() completes
     const rawDashboardMode = localStorage.getItem(`${PARENT_DASHBOARD_MODE_PREFIX}_${npub}`);
     parentDashboardChannelMode.set(parseParentDashboardChannelMode(rawDashboardMode));
   } catch {

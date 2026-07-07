@@ -39,6 +39,10 @@ const RECEIPT_RETRY_DELAY_MS = 15_000;
 const RECEIPT_RETRY_ATTEMPTS = 24;
 const relayedWalletTxKeys = new Set<string>();
 
+export function resetRelayedWalletTxKeys(): void {
+  relayedWalletTxKeys.clear();
+}
+
 function relayKey(peerNpub: string, txHash: string): string {
   return `${peerNpub.trim()}:${txHash.trim().toLowerCase()}`;
 }
@@ -127,6 +131,7 @@ async function relayConfirmedWalletTx(
   if (relayedWalletTxKeys.has(key) || peerThreadAlreadyHasRelayedWalletTx(params.peerNpub, params.txHash)) {
     return;
   }
+  if (relayedWalletTxKeys.size > 2000) relayedWalletTxKeys.clear();
   relayedWalletTxKeys.add(key);
   try {
     const ok = await params.sendDm(confirmedContent);

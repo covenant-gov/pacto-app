@@ -19,6 +19,7 @@ const summary: SquadSponsorSummaryDto = {
 describe('squad-sponsor-summary-cache', () => {
   it('builds stable cache keys', () => {
     expect(sponsorSummaryCacheKey('p1', '0xAbC', 'sepolia')).toBe('p1:0xabc:sepolia');
+    expect(sponsorSummaryCacheKey('p1', '0xAbC', 'SEPOLIA')).toBe('p1:0xabc:sepolia');
   });
 
   it('returns cached summary within TTL', () => {

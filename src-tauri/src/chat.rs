@@ -101,6 +101,37 @@ impl Chat {
         true
     }
 
+    /// Update reply context for any messages in this chat that reference `original.id`.
+    /// Returns the updated messages so callers can emit UI updates.
+    /// For DM chats, `is_original_mine` is used to derive the author's npub because DM
+    /// messages do not store the sender's npub directly.
+    pub fn update_replies_to_message(
+        &mut self,
+        original: &Message,
+        is_original_mine: bool,
+    ) -> Vec<Message> {
+        let npub = if self.chat_type == ChatType::DirectMessage {
+            if is_original_mine {
+                crate::account_manager::get_current_account().ok()
+            } else {
+                self.participants.first().cloned()
+            }
+        } else {
+            original.npub.clone()
+        };
+
+        let mut updated = Vec::new();
+        for msg in self.messages.iter_mut() {
+            if msg.replied_to == original.id && msg.replied_to_content.is_none() {
+                msg.replied_to_content = Some(original.content.clone());
+                msg.replied_to_npub = npub.clone();
+                msg.replied_to_has_attachment = Some(!original.attachments.is_empty());
+                updated.push(msg.clone());
+            }
+        }
+        updated
+    }
+
     /// Add a Reaction - if it was not already added
     pub fn add_reaction(&mut self, reaction: crate::Reaction, message_id: &str) -> bool {
         // Find the message
@@ -318,4 +349,143 @@ pub async fn mark_as_read(chat_id: String, message_id: Option<String>) -> bool {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Message;
+
+    fn text_message(id: &str, content: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            content: content.to_string(),
+            at: 1,
+            ..Default::default()
+        }
+    }
+
+    fn reply_message(id: &str, content: &str, replied_to: &str) -> Message {
+        Message {
+            id: id.to_string(),
+            content: content.to_string(),
+            replied_to: replied_to.to_string(),
+            at: 2,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn update_replies_fills_missing_reply_context() {
+        let mut chat = Chat::new_dm("npub1original".to_string());
+        let original = text_message("orig-id", "original message");
+        let reply = reply_message("reply-id", "reply message", "orig-id");
+        chat.internal_add_message(reply);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, false);
+
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].id, "reply-id");
+        assert_eq!(updated[0].replied_to_content.as_deref(), Some("original message"));
+        assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1original"));
+        let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
+        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("original message"));
+        assert_eq!(reply_in_chat.replied_to_npub.as_deref(), Some("npub1original"));
+    }
+
+    #[test]
+    fn update_replies_uses_current_account_for_own_messages() {
+        // For a DM, when the original message is ours, the method looks up the current
+        // account. In a test environment there is no current account, so the npub falls
+        // back to None, but the content is still filled.
+        let mut chat = Chat::new_dm("npub1original".to_string());
+        let original = text_message("orig-id", "original message");
+        let reply = reply_message("reply-id", "reply message", "orig-id");
+        chat.internal_add_message(reply);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, true);
+
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].replied_to_content.as_deref(), Some("original message"));
+        let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
+        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("original message"));
+    }
+
+    #[test]
+    fn update_replies_skips_messages_with_existing_context() {
+        let mut chat = Chat::new_dm("npub1original".to_string());
+        let original = text_message("orig-id", "new original");
+        let reply = Message {
+            id: "reply-id".to_string(),
+            content: "reply".to_string(),
+            replied_to: "orig-id".to_string(),
+            replied_to_content: Some("old original".to_string()),
+            at: 2,
+            ..Default::default()
+        };
+        chat.internal_add_message(reply);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, false);
+
+        assert!(updated.is_empty());
+        let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
+        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("old original"));
+    }
+
+    #[test]
+    fn update_replies_only_affects_messages_referencing_original() {
+        let mut chat = Chat::new_dm("npub1original".to_string());
+        let original = text_message("orig-id", "original");
+        let unrelated = reply_message("unrelated-id", "unrelated", "other-id");
+        let reply = reply_message("reply-id", "reply", "orig-id");
+        chat.internal_add_message(unrelated);
+        chat.internal_add_message(reply);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, false);
+
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].id, "reply-id");
+        assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1original"));
+        let unrelated_in_chat = chat.messages.iter().find(|m| m.id == "unrelated-id").unwrap();
+        assert!(unrelated_in_chat.replied_to_content.is_none());
+    }
+
+    #[test]
+    fn update_replies_updates_multiple_replies() {
+        let mut chat = Chat::new_dm("npub1original".to_string());
+        let original = text_message("orig-id", "original");
+        let reply1 = reply_message("reply-1", "first", "orig-id");
+        let reply2 = reply_message("reply-2", "second", "orig-id");
+        chat.internal_add_message(reply1);
+        chat.internal_add_message(reply2);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, false);
+
+        assert_eq!(updated.len(), 2);
+    }
+
+    #[test]
+    fn update_replies_uses_message_npub_for_group_chats() {
+        let mut chat = Chat::new("group-1".to_string(), ChatType::MlsGroup, vec![]);
+        let original = Message {
+            id: "orig-id".to_string(),
+            content: "original".to_string(),
+            npub: Some("npub1sender".to_string()),
+            at: 1,
+            ..Default::default()
+        };
+        let reply = reply_message("reply-id", "reply", "orig-id");
+        chat.internal_add_message(reply);
+        chat.internal_add_message(original.clone());
+
+        let updated = chat.update_replies_to_message(&original, false);
+
+        assert_eq!(updated.len(), 1);
+        assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1sender"));
+    }
 }

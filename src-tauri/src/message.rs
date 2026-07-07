@@ -817,31 +817,50 @@ pub async fn message(
                         {
                             let pending_id_for_early_update = Arc::clone(&pending_id);
                             let mut state = STATE.lock().await;
-                            if let Some(msg) = state.chats.iter_mut()
+                            if let Some(chat) = state.chats.iter_mut()
                                 .find(|chat| chat.id() == &receiver || chat.has_participant(&receiver))
-                                .and_then(|chat| chat.messages.iter_mut().find(|m| m.id == *pending_id_for_early_update))
                             {
-                                // Update the message ID and clear pending state
-                                msg.id = rumor_id.to_hex();
-                                msg.pending = false;
-                                msg.wrapper_event_id = Some(wrapper_id);
+                                // Update the message in-place and capture a clone for the backfill.
+                                let original = chat.messages.iter_mut()
+                                    .find(|m| m.id == *pending_id_for_early_update)
+                                    .map(|msg| {
+                                        msg.id = rumor_id.to_hex();
+                                        msg.pending = false;
+                                        msg.wrapper_event_id = Some(wrapper_id);
+                                        msg.clone()
+                                    });
                                 
-                                // Emit update to frontend for immediate visual feedback
-                                let handle = TAURI_APP.get().unwrap();
-                                let _ = handle.emit("message_update", serde_json::json!({
-                                    "old_id": pending_id_for_early_update.as_ref(),
-                                    "message": &msg,
-                                    "chat_id": &receiver
-                                }));
-                                
-                                // Save to DB immediately (don't wait for self-send)
-                                let message_to_save = msg.clone();
-                                let chat_to_save = state.get_chat(&receiver).cloned();
-                                drop(state); // Release lock before async DB operations
-                                
-                                if let Some(chat) = chat_to_save {
-                                    let _ = save_chat(handle.clone(), &chat).await;
-                                    let _ = crate::db::save_message(handle.clone(), &receiver, &message_to_save).await;
+                                if let Some(original) = original {
+                                    // Backfill reply context for any messages that arrived before
+                                    // this outbound message was persisted under its real rumor id.
+                                    // The bot can reply faster than we receive the relay's publish ack,
+                                    // so its reply may already be in state with empty context.
+                                    let updated_replies = chat.update_replies_to_message(&original, true);
+                                    
+                                    // Emit update to frontend for immediate visual feedback
+                                    let handle = TAURI_APP.get().unwrap();
+                                    let _ = handle.emit("message_update", serde_json::json!({
+                                        "old_id": pending_id_for_early_update.as_ref(),
+                                        "message": &original,
+                                        "chat_id": &receiver
+                                    }));
+                                    
+                                    // Also emit updates for replies whose context was backfilled
+                                    for reply in updated_replies {
+                                        let reply_id = reply.id.clone();
+                                        let _ = handle.emit("message_update", serde_json::json!({
+                                            "old_id": reply_id,
+                                            "message": reply,
+                                            "chat_id": &receiver
+                                        }));
+                                    }
+                                    
+                                    // Save to DB immediately (don't wait for self-send)
+                                    let chat_to_save = chat.clone();
+                                    drop(state); // Release lock before async DB operations
+                                    
+                                    let _ = save_chat(handle.clone(), &chat_to_save).await;
+                                    let _ = crate::db::save_message(handle.clone(), &receiver, &original).await;
                                 }
                             }
                         }

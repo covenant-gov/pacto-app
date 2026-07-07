@@ -1,34 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  interface Props {
-    title?: string;
-    onComplete: (pin: string) => void;
-    isProcessing?: boolean;
-    error?: string | null;
-    onErrorClear?: () => void;
-    onBack?: () => void;
-  }
+  export let title: string = 'Enter PIN';
+  export let onComplete: (pin: string) => void;
+  export let isProcessing: boolean = false;
+  export let error: string | null = null;
+  export let onErrorClear: (() => void) | undefined = undefined;
+  export let onBack: (() => void) | undefined = undefined;
 
-  let {
-    title = 'Enter PIN',
-    onComplete,
-    isProcessing = false,
-    error = null,
-    onErrorClear,
-    onBack,
-  }: Props = $props();
-
-  let digits = $state(['', '', '', '', '', '']);
-  let inputs: (HTMLInputElement | undefined)[] = $state([]);
-  let isShaking = $state(false);
-  let lastClearedForError = $state<string | null>(null);
+  let digits: string[] = ['', '', '', '', '', ''];
+  let inputs: HTMLInputElement[] = [];
+  let isShaking = false;
+  let lastClearedForError: string | null = null;
 
   function clearInputs() {
     digits = ['', '', '', '', '', ''];
-    for (const input of inputs) {
+    inputs.forEach((input) => {
       if (input) input.value = '';
-    }
+    });
     setTimeout(() => inputs[0]?.focus(), 100);
   }
 
@@ -37,13 +26,6 @@
     setTimeout(() => {
       isShaking = false;
     }, 500);
-  }
-
-  function trySubmit() {
-    if (!digits.every((d) => d !== '') || isProcessing) return;
-    lastClearedForError = null;
-    if (error && onErrorClear) onErrorClear();
-    onComplete(digits.join(''));
   }
 
   function handleInput(index: number, event: Event) {
@@ -61,14 +43,18 @@
       inputs[index + 1]?.focus();
     }
 
-    trySubmit();
+    if (digits.every((d) => d !== '') && !isProcessing) {
+      lastClearedForError = null;
+      if (error && onErrorClear) onErrorClear();
+      onComplete(digits.join(''));
+    }
   }
 
   function handleKeydown(index: number, event: KeyboardEvent) {
     if (event.key === 'Backspace') {
       event.preventDefault();
       digits[index] = '';
-      if (inputs[index]) inputs[index]!.value = '';
+      inputs[index].value = '';
       if (index > 0) inputs[index - 1]?.focus();
     } else if (event.key.length === 1 && !event.key.match(/^[0-9]$/)) {
       event.preventDefault();
@@ -83,7 +69,7 @@
     cleaned.split('').forEach((digit, i) => {
       if (i < 6) {
         digits[i] = digit;
-        if (inputs[i]) inputs[i]!.value = digit;
+        inputs[i].value = digit;
       }
     });
 
@@ -91,7 +77,9 @@
       inputs[cleaned.length]?.focus();
     } else {
       inputs[5]?.blur();
-      trySubmit();
+      if (digits.every((d) => d !== '') && !isProcessing) {
+        onComplete(digits.join(''));
+      }
     }
   }
 
@@ -99,17 +87,15 @@
     inputs[0]?.focus();
   });
 
-  $effect(() => {
-    if (error && error !== lastClearedForError && digits.every((d) => d !== '')) {
-      lastClearedForError = error;
-      clearInputs();
-      triggerShake();
-    }
-  });
+  $: if (error && error !== lastClearedForError && digits.every((d) => d !== '')) {
+    lastClearedForError = error;
+    clearInputs();
+    triggerShake();
+  }
 
-  $effect(() => {
-    if (!error) lastClearedForError = null;
-  });
+  $: if (!error) {
+    lastClearedForError = null;
+  }
 </script>
 
 <div class="pin-input-container">
@@ -120,22 +106,17 @@
   {/if}
 
   <div class="pin-inputs" class:shake={isShaking}>
-    {#each digits as digit, i (i)}
+    {#each digits as digit, i}
       <input
-        bind:this={
-          () => inputs[i],
-          (el) => {
-            inputs[i] = el;
-          }
-        }
+        bind:this={inputs[i]}
         type="password"
         inputmode="numeric"
         maxlength="1"
         value={digit}
         disabled={isProcessing}
-        oninput={(e) => handleInput(i, e)}
-        onkeydown={(e) => handleKeydown(i, e)}
-        onpaste={handlePaste}
+        on:input={(e) => handleInput(i, e)}
+        on:keydown={(e) => handleKeydown(i, e)}
+        on:paste={handlePaste}
         class="pin-digit"
         aria-label={`PIN digit ${i + 1}`}
       />
@@ -150,7 +131,7 @@
   {/if}
 
   {#if onBack && error}
-    <button type="button" class="btn-back" onclick={onBack} disabled={isProcessing}>
+    <button type="button" class="btn-back" on:click={onBack} disabled={isProcessing}>
       Back
     </button>
   {/if}

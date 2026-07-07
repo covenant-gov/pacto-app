@@ -200,6 +200,7 @@ cd src-tauri && cargo test
 - **Before adding an environment variable:** verify whether it is consumed by Vite (must start with `VITE_` or `ALCHEMY_`) or by Rust (read directly from `std::env`). Public protocol addresses never go in `.env`.
 - **Before changing SQLite schema:** check inline DDL in any Rust test that uses `open_in_memory()`.
 - **Before modifying the build or CI:** the Tauri action is the release path; changes to `vite.config.ts` or `src-tauri/tauri.conf.json` can break the desktop bundle or the updater.
+- **Before creating or updating a PR:** use the [`value-based-pr`](.agents/skills/value-based-pr/README.md) skill so the title and description explain what changed and why it matters, not just which files were touched.
 - **Greenfield posture:** do not preserve legacy layouts, old wire formats, or dual-read paths unless explicitly asked. Alpha-only repair code in `docs/legacy-fixes/` should be removed before public beta.
 - **Do not delete or narrow `.cursor/rules/`** unless the user explicitly asked to remove or replace a policy.
 - **`install.sh` at the repo root installs an external CLI (`pacto-bot-api`)**, not the Pacto desktop app; do not use it for local desktop setup.

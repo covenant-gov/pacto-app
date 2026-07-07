@@ -4,6 +4,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 
 | Area | Purpose |
 |------|---------|
+| **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
 | **[nostr/](./nostr/)** | Relay-facing behavior, rumor pipeline, module index |
 | **[mls/](./mls/)** | MDK engine, storage split, invites, eviction & leave |
@@ -16,6 +17,11 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |
+
+**Cross-cutting:**
+- Strategy: **[`STRATEGY.md`](../STRATEGY.md)** — what the product is, who it serves, and where the team is investing
+- Vocabulary: **[`CONCEPTS.md`](../CONCEPTS.md)** — shared terms for humans and coding agents
+- System architecture: **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — high-level data flows and layer responsibilities
 
 **Design specs (`ai-docs/`):** governance + dashboard architecture notes live under [`../ai-docs/gov-core/`](../ai-docs/gov-core/README.md) (ModPol channels, single-group MLS virtual defaults, governance library). Shell refactor history: [`../ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md`](../ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md). **UX speed backlog:** [`../ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md`](../ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md).
 

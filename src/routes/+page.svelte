@@ -138,7 +138,7 @@
   } from '../lib/governance/standalone-safe-payload';
   import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
-  import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel } from '../lib/squad-hub-nav';
+  import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
   import { subscribeAppEvents } from '../lib/app/tauri-subscriptions';
   import {
@@ -652,6 +652,7 @@
     $activeTopNavTab === 'squads'
   ) {
     const groupId = $activeChannelId;
+    const parentIdAtOpen = parentIdForChannelGroup(get(squads), groupId);
     dmLog('open channel', { groupId: groupId.slice(0, 20) + '…' });
     getChatMessageCount(groupId)
       .then((count) => {
@@ -665,7 +666,7 @@
           ...byGroup,
           [groupId]: msgs as DmMessage[],
         }));
-        const parentId = get(squads).find((s: Squad) => s.id === get(activeSquadId))?.id ?? null;
+        const parentId = parentIdForChannelGroup(get(squads), groupId) ?? parentIdAtOpen;
         ensureMlsAutomationReplayed(groupId, parentId);
         loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [groupId]: PAGE_SIZE }));
       })
