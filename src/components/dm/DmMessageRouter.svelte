@@ -39,7 +39,7 @@
   export let npub: string;
   export let isPactoAppThread: boolean;
   export let contactDisplayName: string;
-  export let fulfilledWalletRequestIds: Set<string>;
+  export let fulfilledWalletRequestIds: ReadonlySet<string>;
   export let acceptingSquadInviteId: string | null = null;
   export let acceptingChannelInSquadId: string | null = null;
   export let acceptingWalletPeerInfoRequestId: string | null = null;

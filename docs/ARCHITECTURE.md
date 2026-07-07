@@ -23,7 +23,7 @@ flowchart TB
     end
     subgraph Network["External network"]
         H[Nostr relays]
-        I[EVM / Aztec RPCs]
+        I[EVM RPCs]
     end
     A <-->|invoke / listen| C
     C <-->|commands + events| D
@@ -70,9 +70,9 @@ flowchart LR
     end
 ```
 
-- **DMs** use NIP-59 Gift Wraps (kind 1059). The inner rumor uses kinds 14 (text), 15 (file), 7 (reaction), 30078 (typing), etc.
+- **DMs** use NIP-17 private DMs (gift wraps per NIP-59, kind 1059). The inner rumor uses kinds 14 (text), 15 (file), 7 (reaction), 30078 (typing), etc.
 - **MLS groups** use kind 444 on the wire; kind 443 welcomes arrive inside a Gift Wrap.
-- Both DM and MLS decrypted messages land in the same unified `Chat` / `Message` model in SQLite.
+- Both DM and MLS decrypted messages are materialized into the same in-memory `Chat` / `Message` model. The persisted storage is more layered: raw Nostr-shaped events live in the `events` table, chat metadata in `chats`, and MDK engine state in `vector-mls.db`. A legacy `messages` table is still present but no longer the primary store.
 
 ### 2. EVM wallet
 
@@ -93,7 +93,8 @@ flowchart LR
 ```
 
 - The same BIP-39 seed derives both Nostr keys and EVM addresses.
-- **Reads** (balances, contract observation, receipt polling) happen in the frontend via viem.
+- **Frontend reads** (wallet balances, general contract observation, Safe reads, receipt polling) happen in the frontend via viem.
+- **Curated governance reads** (e.g., pacto-gov dashboard and squad sponsor registry lookups) happen in Rust using Alloy, alongside all writes.
 - **Writes** (WalletBar sends, treasury deployments, governance transactions) happen in Rust using Alloy.
 - Signer purpose matters: `squad` keys can act on treasury and governance; `advanced` keys are restricted to the Advanced panel.
 

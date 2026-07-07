@@ -11,9 +11,15 @@ import type { SquadSponsorSummaryDto } from './api';
 
 const summary: SquadSponsorSummaryDto = {
   chain: 'sepolia',
+  chainId: 11155111,
   parentId: 'parent-1',
+  squadId: 'squad-1',
   sponsorAddress: '0xabc',
+  paymasterAddress: '0xdef',
+  variant: 'standard',
+  topHatId: '1',
   poolBalanceWei: '10000000000000000',
+  totalShares: '0',
 };
 
 describe('squad-sponsor-summary-cache', () => {

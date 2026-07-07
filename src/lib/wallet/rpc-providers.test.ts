@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   buildAlchemyRpcUrl,
   resolveProviderPrimaryRpcUrl,
@@ -6,14 +6,12 @@ import {
 } from './rpc-providers';
 
 describe('rpc providers', () => {
-  const env = import.meta.env as ImportMetaEnv & Record<string, string | undefined>;
-
   beforeEach(() => {
-    delete env.ALCHEMY_RPC_KEY;
+    vi.unstubAllEnvs();
   });
 
   afterEach(() => {
-    delete env.ALCHEMY_RPC_KEY;
+    vi.unstubAllEnvs();
   });
 
   it('builds Alchemy URLs per chain host', () => {
@@ -29,14 +27,14 @@ describe('rpc providers', () => {
   });
 
   it('resolves primary URL when ALCHEMY_RPC_KEY is set', () => {
-    env.ALCHEMY_RPC_KEY = 'my-key';
+    vi.stubEnv('ALCHEMY_RPC_KEY', 'my-key');
     expect(resolveProviderPrimaryRpcUrl('arbitrum')).toBe(
       'https://arb-mainnet.g.alchemy.com/v2/my-key',
     );
   });
 
   it('appends curated fallbacks after provider primary', () => {
-    env.ALCHEMY_RPC_KEY = 'my-key';
+    vi.stubEnv('ALCHEMY_RPC_KEY', 'my-key');
     const urls = resolveProviderRpcUrls('sepolia');
     expect(urls[0]).toBe('https://eth-sepolia.g.alchemy.com/v2/my-key');
     expect(urls.length).toBeGreaterThan(1);

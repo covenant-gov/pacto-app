@@ -1,11 +1,29 @@
 {
   "version": 1,
   "skills": {
+    "desktop-applications": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "skillPath": "toolchains/rust/desktop-applications/SKILL.md",
+      "computedHash": "a786ce0a9c0e1fb1f2797b4eb35a8069c4e26c7b5fc66c773bd15911d30092a4"
+    },
+    "playwright": {
+      "source": "bobmatnyc/claude-mpm-skills",
+      "sourceType": "github",
+      "skillPath": "toolchains/javascript/testing/playwright/SKILL.md",
+      "computedHash": "003fc7f5ee2ba795786f4f5689900be32fcdf53a834777512091ac1192274c07"
+    },
     "tauri-v2": {
       "source": "nodnarbnitram/claude-code-extensions",
       "sourceType": "github",
       "skillPath": ".claude/skills/tauri-v2/SKILL.md",
       "computedHash": "377c61c46cf48c35b942042bc8abb9a039049a47f37d7f12b4f491d012777490"
+    },
+    "vitest-testing": {
+      "source": "secondsky/claude-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/vitest-testing/skills/vitest-testing/SKILL.md",
+      "computedHash": "1c24e993c451a720db0c66b444b2623aee3597699c6054858fb8251b38a5eb3b"
     }
   }
 }

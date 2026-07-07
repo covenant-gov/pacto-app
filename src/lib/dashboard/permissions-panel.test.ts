@@ -58,8 +58,10 @@ describe('resolveDashboardPermissionsContext', () => {
 
   it('unknown provider is other_provider', () => {
     const ctx = resolveDashboardPermissionsContext({
+      id: 'infra-1',
       parentId: 'p1',
       provider: 'bread_coop',
+      infraType: 'bread_coop',
       chain: 'sepolia',
       canonicalRef: 'x',
       createdAtMs: 1,

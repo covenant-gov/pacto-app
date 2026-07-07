@@ -31,6 +31,7 @@
   } from '../lib/api/nostr';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
+  import { parseSupportedChainId } from '../lib/wallet/chains';
   import { resumePendingWalletTxConfirmations } from '../lib/wallet/wallet-dm-transfer';
   import { getAddress } from 'viem';
   import {

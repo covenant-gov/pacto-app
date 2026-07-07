@@ -17,6 +17,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |
+| **[testing/](./testing/)** | Test coverage status and backend phased testing plan ([README](./testing/README.md)) |
 
 **Cross-cutting:**
 - Strategy: **[`STRATEGY.md`](../STRATEGY.md)** — what the product is, who it serves, and where the team is investing

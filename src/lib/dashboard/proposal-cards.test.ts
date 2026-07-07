@@ -11,8 +11,10 @@ describe('buildDashboardProposalCards', () => {
     const cards = buildDashboardProposalCards({
       treasurySafes: [],
       governanceConfig: {
+        id: 'infra-1',
         parentId: 'p1',
         provider: 'pacto_gov',
+        infraType: 'pacto_gov',
         chain: 'sepolia',
         canonicalRef: '0xabc',
         createdAtMs: 1,
@@ -66,8 +68,10 @@ describe('buildDashboardProposalCards', () => {
         },
       ],
       governanceConfig: {
+        id: 'infra-1',
         parentId: 'p1',
         provider: 'pacto_gov',
+        infraType: 'pacto_gov',
         chain: 'sepolia',
         canonicalRef: 'hat',
         createdAtMs: 1,

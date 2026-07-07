@@ -39,7 +39,7 @@ export async function readContract<
   address: Address;
   abi: TAbi;
   functionName: TFunctionName;
-  args?: ContractFunctionArgs<TAbi, TFunctionName>;
+  args?: ContractFunctionArgs<TAbi, any, TFunctionName>;
 }): Promise<unknown> {
   const client = createWalletPublicClient(params.chainId);
   try {

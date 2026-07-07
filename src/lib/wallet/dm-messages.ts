@@ -206,7 +206,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
 /** On-chain confirmation pending — not Nostr relay `message.pending`. */
 export function isWalletTxAnnouncementOnChainPending(
   payload: WalletTxAnnouncementPayload,
-  msg: { id?: string; failed?: boolean },
+  msg: { id?: string; failed?: boolean; pending?: boolean },
 ): boolean {
   if (msg.failed) return false;
   if (payload.block_number) return false;

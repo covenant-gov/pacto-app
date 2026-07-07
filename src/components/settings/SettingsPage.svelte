@@ -36,7 +36,7 @@
     }
 
     const markerY = scrollRoot.getBoundingClientRect().top + SCROLL_MARKER_OFFSET_PX;
-    let next = SECTION_LINKS[0].id;
+    let next: (typeof SECTION_LINKS)[number]['id'] = SECTION_LINKS[0].id;
 
     for (const link of SECTION_LINKS) {
       const el = document.getElementById(link.id);
