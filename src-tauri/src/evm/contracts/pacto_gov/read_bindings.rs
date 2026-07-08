@@ -28,6 +28,11 @@ sol! {
         }
 
         function deployment(uint256 _topHatId) external view returns (Deployment memory _deployment);
+
+        event NavePirataRegistered(
+            uint256 indexed _topHatId,
+            Deployment _deployment
+        );
     }
 
     interface ITreasuryAuthority {

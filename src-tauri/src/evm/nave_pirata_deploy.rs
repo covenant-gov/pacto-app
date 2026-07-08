@@ -12,6 +12,8 @@ use tauri::{AppHandle, Runtime};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams,
 };
+use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
+use alloy::sol_types::SolEvent;
 use super::pacto_chain_config;
 use super::rpc::{
     connect_signing_provider, contract_call_request, parse_salt_nonce, parse_address,
@@ -70,16 +72,45 @@ fn addresses_from_nave_pirata_deployed_log(
     Ok((top_hat, captain, safe, quartermaster, mutiny, treasury, squad_admin))
 }
 
+fn addresses_from_nave_pirata_registered_log(
+    log: &alloy::rpc::types::Log,
+    registry: Address,
+) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
+    if log.address() != registry {
+        return Err("log address mismatch".to_string());
+    }
+    let decoded = NavePirataRegistered::decode_raw_log(log.topics(), log.data().data.as_ref())
+        .map_err(|e| format!("NavePirataRegistered decode: {e}"))?;
+    let d = decoded._deployment;
+    Ok((
+        decoded._topHatId,
+        d.deployer,
+        d.safe,
+        d.quartermaster,
+        d.mutinyModule,
+        d.treasuryAuthority,
+        d.squadAdminProxy,
+    ))
+}
+
 fn nave_pirata_addresses_from_receipt(
     receipt: &TransactionReceipt,
     factory: Address,
+    registry: Option<Address>,
 ) -> Result<(U256, Address, Address, Address, Address, Address, Address), String> {
     for log in receipt.logs() {
         if let Ok(all) = addresses_from_nave_pirata_deployed_log(log, factory) {
             return Ok(all);
         }
     }
-    Err("no NavePirataDeployed log from factory in receipt".into())
+    if let Some(registry) = registry {
+        for log in receipt.logs() {
+            if let Ok(all) = addresses_from_nave_pirata_registered_log(log, registry) {
+                return Ok(all);
+            }
+        }
+    }
+    Err("no NavePirataDeployed or NavePirataRegistered log in receipt".into())
 }
 
 #[derive(Serialize)]
@@ -181,7 +212,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     .await?;
 
     let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) =
-        nave_pirata_addresses_from_receipt(&receipt, factory).map_err(|e| {
+        nave_pirata_addresses_from_receipt(&receipt, factory, addrs.nave_pirata_registry).map_err(|e| {
             wallet_err_json_with_tx_hash(
                 "PARSE_RECEIPT",
                 e,
@@ -190,10 +221,12 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
             )
         })?;
 
+    let tx_hash = format!("0x{:x}", receipt.transaction_hash);
     let top_hat_str = top_hat.to_string();
     let payload = json!({
         "v": 1,
         "parentId": parent_id.trim(),
+        "txHash": tx_hash,
         "safe": format!("{:#x}", safe_a),
         "quartermaster": format!("{:#x}", qm_a),
         "mutinyModule": format!("{:#x}", mm_a),
@@ -203,7 +236,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     .to_string();
 
     Ok(NavePirataDeployResult {
-        tx_hash: format!("0x{:x}", receipt.transaction_hash),
+        tx_hash,
         chain: net.key.clone(),
         chain_id: net.chain_id,
         top_hat_id: top_hat_str,
