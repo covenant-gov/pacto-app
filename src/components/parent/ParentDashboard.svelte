@@ -45,6 +45,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   import { resolveDashboardPermissionsContext } from '../../lib/dashboard/permissions-panel';
   import {
     fetchHatsTree,
+    fetchRolesTreeAnnotations,
     fetchSettingsChainMemberMaps,
     fetchSquadMemberEvmByNpub,
     fetchTreasuryProposalVoteMap,
@@ -225,6 +226,13 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   let hatsTreeError = '';
   let hatsTreeKey = '';
 
+  let roleLabelByHatId: Record<string, string> = {};
+  let wearersByHatId: Record<string, string[]> = {};
+  let rolesTreeAnnotationsLoading = false;
+  let rolesTreeAnnotationsRefreshing = false;
+  let rolesTreeAnnotationsError = '';
+  let rolesTreeAnnotationsKey = '';
+
   let memberHatByAddress: Record<string, string> = {};
   let memberRolesByAddress: Record<string, string> = {};
   let settingsChainLoading = false;
@@ -329,6 +337,37 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     }
   }
 
+  async function loadRolesTreeAnnotations() {
+    const topHat = pactoGovRow?.canonicalRef?.trim();
+    const evmKey = Object.values(squadMemberEvmByNpub)
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean)
+      .sort()
+      .join(',');
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}`;
+    if (!topHat || rolesTreeAnnotationsKey === key) return;
+    rolesTreeAnnotationsKey = key;
+    const hadData = Object.keys(roleLabelByHatId).length > 0;
+    if (hadData) {
+      rolesTreeAnnotationsLoading = false;
+      rolesTreeAnnotationsRefreshing = true;
+    } else {
+      rolesTreeAnnotationsLoading = true;
+      rolesTreeAnnotationsRefreshing = false;
+    }
+    rolesTreeAnnotationsError = '';
+    const result = await fetchRolesTreeAnnotations({
+      network: pactoNetwork,
+      topHatId: topHat,
+      squadMemberEvmByNpub,
+    });
+    rolesTreeAnnotationsLoading = false;
+    rolesTreeAnnotationsRefreshing = false;
+    roleLabelByHatId = result.roleLabelByHatId;
+    wearersByHatId = result.wearersByHatId;
+    if (result.error) rolesTreeAnnotationsError = result.error;
+  }
+
   async function loadSettingsChainContext() {
     const topHat = pactoGovRow?.canonicalRef?.trim() ?? null;
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? null;
@@ -394,6 +433,15 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     void loadHatsTree();
   }
 
+  $: if (dashboardView === 'roles_tree' && pactoGovRow?.canonicalRef && parentId) {
+    void squadMemberEvmByNpub;
+    void loadRolesTreeAnnotations();
+  }
+
+  $: if (dashboardView === 'roles_tree' && parentId) {
+    void loadSquadMemberEvm();
+  }
+
   $: if (dashboardView === 'settings' && (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)) {
     void loadSettingsChainContext();
   }
@@ -431,6 +479,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       void loadSquadMemberEvm();
     } else if (id === 'roles_tree' && pactoGovRow?.canonicalRef) {
       void loadHatsTree();
+      void loadRolesTreeAnnotations();
+      void loadSquadMemberEvm();
     }
   }
 
@@ -652,6 +702,11 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {hatsTreeLoading}
               hatsTreeRefreshing={hatsTreeRefreshing}
               {hatsTreeError}
+              {roleLabelByHatId}
+              {wearersByHatId}
+              rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
+              rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
+              {rolesTreeAnnotationsError}
               onOpenLaunchpad={openLaunchpad}
             />
           {:catch}
