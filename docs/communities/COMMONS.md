@@ -4,8 +4,6 @@
 
 Broadcasts are **public Nostr events** on trusted relays — not MLS, not Gift Wrap. Anyone on those relays can read tag text and messages. Squad identity on cards uses the stable **announcements MLS group id** ([`DESIGN.md`](./DESIGN.md)).
 
-Internal backlog and phase history: [`ai-docs/commons/COMMONS_PLAN.md`](../../ai-docs/commons/COMMONS_PLAN.md).
-
 ---
 
 ## Product rules
@@ -19,7 +17,7 @@ Internal backlog and phase history: [`ai-docs/commons/COMMONS_PLAN.md`](../../ai
 | **Cooldown** | One active broadcast per **(author npub, subject)** — user npub or squad id. UI blocks re-publish until `expiresAt`. |
 | **Cancel** | The author can retract an active broadcast. Publishes a replacement (NIP-33, same `d`) with `cancelled: true`; clients drop it from the feed even before `expiresAt`, and the author's cooldown lifts so they can rebroadcast immediately. Newest-event-wins keeps the tombstone hidden and prevents feed spam. |
 | **Feed** | Active broadcasts only; relay lookback **≤ 72 h** (max TTL). Refreshes every **60 s** while Commons is open. |
-| **Squad broadcast roles** | Stub allows all members today; `canBroadcastSquad` in `src/lib/commons/permissions.ts` will gate on Squad Admin when on-chain roles ship ([`ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md#commons-squad-broadcast-role-gate)). |
+| **Squad broadcast roles** | Stub allows all members today; `canBroadcastSquad` in `src/lib/commons/permissions.ts` will gate on Squad Admin when on-chain roles ship (see [PACTO_GOV.md](../wallet/PACTO_GOV.md)). |
 
 ---
 
@@ -199,4 +197,4 @@ Relays: **`TRUSTED_RELAYS`** only (same curated set as other app-specific public
 | [`DESIGN.md`](./DESIGN.md) | Squad id = announcements MLS group id |
 | [`../nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md) | Nostr paths vs MLS/DM |
 | [`../dashboard/POLLS.md`](../dashboard/POLLS.md) | Kind 30078 JSON schema pattern |
-| [`../../ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md) | Future Squad Admin broadcast gate |
+| [`../wallet/PACTO_GOV.md`](../wallet/PACTO_GOV.md) | Future Squad Admin broadcast gate |

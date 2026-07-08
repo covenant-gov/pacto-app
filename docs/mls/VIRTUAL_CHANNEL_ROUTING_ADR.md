@@ -1,8 +1,8 @@
 # ADR: Virtual channel routing for single MLS group (squad defaults)
 
-**Status:** Accepted (implementation backlog items follow [`MLS_SINGLE_GROUP_VIRTUAL_CHANNELS_TECH_SPEC.md`](../../ai-docs/gov-core/MLS_SINGLE_GROUP_VIRTUAL_CHANNELS_TECH_SPEC.md)).
+**Status:** Accepted. Remaining single-group virtual-channel backlog is tracked in this ADR and [`../dashboard/POLLS.md`](../dashboard/POLLS.md) transport notes.
 
-**Step 17 decision (Phase G′):** **Option A** — rename wire bucket **`monitor` → `inbox`** everywhere (UI, JSON, SQLite, Rust ingest). No dual-read compatibility for the old slug (pre-alpha greenfield).
+**Inbox bucket rename:** wire bucket **`monitor` → `inbox`** everywhere (UI, JSON, SQLite, Rust ingest). No dual-read compatibility for the old slug (pre-alpha greenfield).
 
 **Scope:** Default squad/network conversation scope when **one MLS `groupId`** backs `#announcements`, `#personal-alerts`, and `#polls`. User-created MLS channels that remain separate groups are out of scope unless explicitly migrated later.
 
@@ -12,7 +12,7 @@
 
 ## Context
 
-The MLS virtual-channels spec §4 offered three carrier strategies:
+Three carrier strategies were considered for squad-default MLS groups:
 
 - **A.** JSON-only virtual bucket on serialized payload.
 - **B.** Nostr rumor tags only (Rust ingest avoids JSON sniffing).
@@ -123,5 +123,5 @@ Whatever stores `Message` rows must eventually persist a **normalized bucket** (
 
 ## Related documents
 
-- [`ai-docs/gov-core/MLS_SINGLE_GROUP_VIRTUAL_CHANNELS_TECH_SPEC.md`](../../ai-docs/gov-core/MLS_SINGLE_GROUP_VIRTUAL_CHANNELS_TECH_SPEC.md) — program-level spec and executable issues.
-- [`ai-docs/gov-core/DASHBOARD_MODPOL_CHANNELS_TECH_SPEC.md`](../../ai-docs/gov-core/DASHBOARD_MODPOL_CHANNELS_TECH_SPEC.md) — product semantics for announcements vs inbox vs polls.
+- This ADR — normative `pacto_bucket` / `pacto_virtual_bucket` contract.
+- [`../dashboard/POLLS.md`](../dashboard/POLLS.md) — polls virtual-channel transport.

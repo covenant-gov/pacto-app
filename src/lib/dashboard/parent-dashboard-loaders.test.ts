@@ -7,6 +7,7 @@ import {
   fetchTreasuryProposals,
   fetchHatsTree,
   fetchSettingsChainMemberMaps,
+  fetchRolesTreeAnnotations,
 } from './parent-dashboard-loaders';
 import { getMlsGroupMembers, type MlsGroupMembers } from '../api/nostr';
 import {
@@ -341,5 +342,89 @@ describe('fetchSettingsChainMemberMaps', () => {
     expect(result.memberHatByAddress).toEqual({});
     expect(result.memberRolesByAddress).toEqual({});
     expect(result.error).toBe('chain error');
+  });
+});
+
+const rolesTreeDeployment = {
+  chain: 'sepolia',
+  chainId: 11155111,
+  topHatId: '3519',
+  safe: '0x1111111111111111111111111111111111111111',
+  quartermaster: '0x2222222222222222222222222222222222222222',
+  mutinyModule: '0x3333333333333333333333333333333333333333',
+  treasuryAuthority: '0x4444444444444444444444444444444444444444',
+  squadAdminProxy: '0x5555555555555555555555555555555555555555',
+  captainHatId: '3519.1.1',
+  crewHatId: '3519.1.2',
+  squadAdminHatId: '3519.1.3',
+  mutinyRoleHatId: '3519.1.4',
+  quartermasterRoleHatId: '3519.1.5',
+  treasuryAuthorityRoleHatId: '3519.1.6',
+  deployedAt: 1,
+  deployer: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+};
+
+const captainAddress = '0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa';
+const crewAddress = '0xBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb';
+
+describe('fetchRolesTreeAnnotations', () => {
+  beforeEach(() => {
+    mockedGetNavePirataDeployment.mockResolvedValue(rolesTreeDeployment);
+    mockedGetMemberHatWearers.mockResolvedValue([
+      {
+        address: captainAddress,
+        hats: [{ hatId: rolesTreeDeployment.captainHatId, label: 'Captain' }],
+      },
+      {
+        address: crewAddress,
+        hats: [{ hatId: rolesTreeDeployment.crewHatId, label: 'Crew' }],
+      },
+    ]);
+    mockedGetSquadAdminExecutorRoles.mockResolvedValue({
+      address: captainAddress,
+      fullPermission: false,
+      paused: false,
+      roles: [{ role: 'Treasury', enabled: true }],
+    });
+  });
+
+  it('loads merged annotation maps and executor roles for squad members', async () => {
+    const result = await fetchRolesTreeAnnotations({
+      network: 'sepolia',
+      topHatId: '3519',
+      squadMemberEvmByNpub: {
+        'npub-captain': captainAddress,
+        'npub-crew': crewAddress,
+      },
+      squadAdminProxy: rolesTreeDeployment.squadAdminProxy,
+      squadAdminChain: 'sepolia',
+    });
+
+    expect(result.error).toBe('');
+    expect(result.roleLabelByHatId[rolesTreeDeployment.captainHatId]).toBe('Captain');
+    expect(result.roleLabelByHatId[rolesTreeDeployment.crewHatId]).toBe('Crew');
+    expect(result.wearerAddressesByHatId[rolesTreeDeployment.captainHatId]).toEqual([
+      captainAddress.toLowerCase(),
+    ]);
+    expect(result.wearerAddressesByHatId[rolesTreeDeployment.crewHatId]).toEqual([crewAddress.toLowerCase()]);
+    expect(result.executorRolesByAddress[captainAddress.toLowerCase()]).toBe('Treasury');
+    expect(mockedGetNavePirataDeployment).toHaveBeenCalledWith({ network: 'sepolia', topHatId: '3519' });
+    expect(mockedGetMemberHatWearers).toHaveBeenCalled();
+    expect(mockedGetSquadAdminExecutorRoles).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns empty maps when no squad member EVM addresses are shared', async () => {
+    const result = await fetchRolesTreeAnnotations({
+      network: 'sepolia',
+      topHatId: '3519',
+      squadMemberEvmByNpub: {},
+    });
+    expect(result).toEqual({
+      roleLabelByHatId: {},
+      wearerAddressesByHatId: {},
+      executorRolesByAddress: {},
+      error: '',
+    });
+    expect(mockedGetNavePirataDeployment).not.toHaveBeenCalled();
   });
 });

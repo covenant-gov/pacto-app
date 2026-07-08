@@ -1,4 +1,4 @@
-import type { MemberHatAssignmentDto, NavePirataDeploymentDto } from './api';
+import type { HatTreeNodeDto, MemberHatAssignmentDto, NavePirataDeploymentDto } from './api';
 import { hatChecksFromNaveDeployment } from './pacto-gov-payload';
 
 export function shortEvmAddress(addr: string): string {
@@ -82,4 +82,52 @@ export function memberHatByAddressFromAssignments(
     }
   }
   return map;
+}
+
+export type RolesTreeAnnotationMaps = {
+  roleLabelByHatId: Record<string, string>;
+  wearerAddressesByHatId: Record<string, string[]>;
+};
+
+/** Merge registry role hat ids and member wears into tree annotation maps. */
+export function mergeRolesTreeAnnotationMaps(
+  deployment: Pick<
+    NavePirataDeploymentDto,
+    | 'captainHatId'
+    | 'crewHatId'
+    | 'squadAdminHatId'
+    | 'mutinyRoleHatId'
+    | 'quartermasterRoleHatId'
+    | 'treasuryAuthorityRoleHatId'
+  >,
+  assignments: MemberHatAssignmentDto[],
+): RolesTreeAnnotationMaps {
+  return {
+    roleLabelByHatId: roleLabelByHatIdFromNaveDeployment(deployment),
+    wearerAddressesByHatId: wearerAddressesByHatIdFromAssignments(assignments),
+  };
+}
+
+export type AnnotatedRolesTreeNode = {
+  hatId: string;
+  roleLabel: string;
+  wearerAddresses: string[];
+};
+
+/** Collect hat nodes that have a Nave Pirata label and/or known wearers. */
+export function collectAnnotatedRolesTreeNodes(
+  tree: HatTreeNodeDto,
+  maps: RolesTreeAnnotationMaps,
+): AnnotatedRolesTreeNode[] {
+  const out: AnnotatedRolesTreeNode[] = [];
+  const walk = (node: HatTreeNodeDto) => {
+    const roleLabel = maps.roleLabelByHatId[node.hatId] ?? '';
+    const wearerAddresses = maps.wearerAddressesByHatId[node.hatId] ?? [];
+    if (roleLabel || wearerAddresses.length > 0) {
+      out.push({ hatId: node.hatId, roleLabel, wearerAddresses });
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  walk(tree);
+  return out;
 }
