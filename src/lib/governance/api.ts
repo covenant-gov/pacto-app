@@ -283,14 +283,14 @@ export async function deployNavePirataForParent(params: {
   network: string;
   parentId: string;
   captain: string;
-  metadataUri: string;
+  metadataUri?: string | null;
   saltNonce?: string | null;
 }): Promise<NavePirataDeployResultDto> {
   return (await invoke('deploy_nave_pirata_for_parent', {
     network: params.network,
     parentId: params.parentId,
     captain: params.captain,
-    metadataUri: params.metadataUri.trim(),
+    metadataUri: params.metadataUri?.trim() ?? '',
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
   })) as NavePirataDeployResultDto;
 }

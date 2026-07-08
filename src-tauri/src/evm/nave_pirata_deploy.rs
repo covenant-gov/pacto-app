@@ -134,13 +134,6 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         .map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
 
     let meta = metadata_uri.trim().to_string();
-    if meta.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_METADATA",
-            "metadata_uri must be non-empty",
-            None,
-        ));
-    }
 
     let salt = parse_salt_nonce(salt_nonce)
         .map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;

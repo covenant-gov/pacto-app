@@ -126,8 +126,8 @@
 
   let showSetSafeModal = false;
   let showDeploySafeModal = false;
-  let showNaveWizard = false;
   let showLaunchpad = false;
+  let showPactoGovDeploy = false;
   let showSponsorDeploy = false;
   let showSquadAdminDeploy = false;
   let showSquadRolesModal = false;
@@ -178,6 +178,25 @@
       return { address: addr, label: name };
     })
     .filter((row): row is { address: string; label: string } => row != null);
+
+  $: captainMemberOptions = (() => {
+    const me = $currentUser?.npub;
+    const rows = channelMembers
+      .map((npub) => {
+        const addr = squadMemberEvmByNpub[npub]?.trim();
+        if (!addr || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) return null;
+        const name = getProfileDisplayName($profiles[npub]) || `${npub.slice(0, 12)}…`;
+        const isMe = npub === me;
+        return { npub, address: addr, label: isMe ? `${name} (you)` : name };
+      })
+      .filter((row): row is { npub: string; address: string; label: string } => row != null);
+    rows.sort((a, b) => {
+      if (me && a.npub === me) return -1;
+      if (me && b.npub === me) return 1;
+      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+    });
+    return rows;
+  })();
 
   $: structureSummary = resolveDashboardStructureSummary(
     squadInfraRows === undefined ? undefined : pactoGovRow,
@@ -479,7 +498,7 @@
         selectDashboardView('governance');
         return;
       }
-      if (parentId?.trim()) showNaveWizard = true;
+      if (parentId?.trim()) showPactoGovDeploy = true;
     });
   }
 
@@ -695,10 +714,11 @@
   squadAdminNetwork={squadAdminNetwork}
   {squadNetwork}
   sponsorAddress={sponsorRow?.canonicalRef ?? ''}
+  {captainMemberOptions}
   memberEvmOptions={memberEvmOptionsForRoles}
   bind:showDeploySafeModal
-  bind:showNaveWizard
   bind:showLaunchpad
+  bind:showPactoGovDeploy
   bind:showSponsorDeploy
   bind:showSquadAdminDeploy
   bind:showSquadRolesModal
@@ -709,8 +729,8 @@
   bind:setSafeError
   bind:setSafeSaving
   onCloseDeploySafe={() => (showDeploySafeModal = false)}
-  onCloseNaveWizard={() => (showNaveWizard = false)}
   onCloseLaunchpad={() => (showLaunchpad = false)}
+  onClosePactoGovDeploy={() => (showPactoGovDeploy = false)}
   onCloseSponsorDeploy={() => (showSponsorDeploy = false)}
   onCloseSquadAdminDeploy={() => (showSquadAdminDeploy = false)}
   onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
@@ -735,7 +755,7 @@
     showToast('Safe deployed and added to treasury.');
     selectDashboardView('treasury');
   }}
-  onNaveComplete={async (out) => {
+  onPactoGovComplete={async (out) => {
     await onPactoGovDeployComplete?.({
       parentId: parentId!.trim(),
       announcementsGroupId: announcementsGroupId?.trim() ?? '',
@@ -745,7 +765,7 @@
       safeAddress: out.safeAddress,
       txHash: out.txHash,
     });
-    showNaveWizard = false;
+    showPactoGovDeploy = false;
     selectDashboardView('governance');
     showToast('Pacto Gov deployed — Governance and Roles Tree tabs are live.');
   }}
