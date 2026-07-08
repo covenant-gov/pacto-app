@@ -16,7 +16,7 @@ import {
   lastChannelBySquadId,
   lastOpenedSquadId,
 } from '../stores/navigation';
-import { squads, DASHBOARD_CHANNEL_ID, type Squad } from '../stores/squads';
+  import { squads, DASHBOARD_CHANNEL_ID, type Squad } from '../stores/squads';
 
 const regular: Squad = {
   id: 'squad-a',
@@ -147,5 +147,15 @@ describe('restoreSquadsHubSelection', () => {
   it('resolveEffectiveHubChannel defaults to dashboard when squad has no MLS channels yet', () => {
     const resolved = resolveEffectiveHubChannel(regular, null, {}, {});
     expect(resolved.channelId).toBe(DASHBOARD_CHANNEL_ID);
+  });
+
+  it('resolveEffectiveHubChannel keeps join-requests virtual channel', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+    };
+    const resolved = resolveEffectiveHubChannel(squad, '__join_requests__', {}, {});
+    expect(resolved.channelId).toBe('__join_requests__');
+    expect(resolved.hubChannelName).toBe('join-requests');
   });
 });

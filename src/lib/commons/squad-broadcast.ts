@@ -1,10 +1,12 @@
 import {
+  cancelCommonsBroadcast,
   getLocalActiveCommonsBroadcast,
   publishCommonsBroadcast,
 } from '../api/commons';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDurationHours, CommonsBroadcastLocalState } from './types';
 import {
+  clearCommonsBroadcastLocalState,
   getActiveCommonsBroadcastLocalState,
   localStateFromDto,
   recordCommonsBroadcastLocalState,
@@ -13,6 +15,7 @@ import {
   isPublicSquadForCommonsBroadcast,
   type PublicSquadBroadcastTarget,
 } from './squad-create-broadcast';
+import { normalizeCommonsTags } from './tags';
 
 export async function fetchActiveSquadCommonsBroadcast(
   squadId: string
@@ -43,6 +46,18 @@ export function formatBroadcastCooldownRemaining(
   return 'under 1m';
 }
 
+export async function cancelSquadCommonsBroadcast(
+  squadId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await cancelCommonsBroadcast('squad', squadId);
+    clearCommonsBroadcastLocalState('squad', squadId);
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: getInvokeErrorMessage(e, 'Failed to cancel broadcast.') };
+  }
+}
+
 export async function publishSquadCommonsBroadcast(
   squad: PublicSquadBroadcastTarget,
   options: {
@@ -51,10 +66,12 @@ export async function publishSquadCommonsBroadcast(
     skipIfActive?: boolean;
     /** Reserved tags applied by the app (e.g. `#new` at creation). */
     extraTags?: string[];
+    /** Author-selected tags; falls back to squad.commonsTags when omitted. */
+    tags?: string[];
   }
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; error: string }> {
   if (!isPublicSquadForCommonsBroadcast(squad)) {
-    return { ok: false, error: 'Only public squads with tags can broadcast.' };
+    return { ok: false, error: 'Only public squads can broadcast.' };
   }
 
   const message = options.message.trim();
@@ -68,7 +85,11 @@ export async function publishSquadCommonsBroadcast(
     return { ok: false, error: 'A broadcast is still active for this squad.' };
   }
 
-  const tags = [...(squad.commonsTags ?? []), ...(options.extraTags ?? [])];
+  const normalized = normalizeCommonsTags(options.tags ?? squad.commonsTags ?? []);
+  if (!normalized) {
+    return { ok: false, error: 'Add 1–3 valid tags.' };
+  }
+  const tags = [...normalized, ...(options.extraTags ?? [])];
 
   try {
     const dto = await publishCommonsBroadcast({

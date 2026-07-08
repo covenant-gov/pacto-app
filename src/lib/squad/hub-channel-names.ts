@@ -1,6 +1,9 @@
 /** Built-in squad hub sidebar channel slugs (not user-created chat channels). */
 
 export const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
+/** Virtual squad hub row for Commons join requests (not an MLS group). */
+export const JOIN_REQUESTS_CHANNEL_ID = '__join_requests__';
+export const JOIN_REQUESTS_CHANNEL_NAME = 'join-requests';
 /** Squad hub row for automation / roster alerts (MLS virtual bucket remains `inbox`). */
 export const PERSONAL_ALERTS_CHANNEL_NAME = 'personal-alerts';
 export const POLLS_CHANNEL_NAME = 'polls';

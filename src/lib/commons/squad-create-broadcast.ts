@@ -15,7 +15,7 @@ export interface PublicSquadBroadcastTarget {
 }
 
 export function isPublicSquadForCommonsBroadcast(squad: PublicSquadBroadcastTarget): boolean {
-  return squad.visibility === 'public' && (squad.commonsTags?.length ?? 0) > 0;
+  return squad.visibility === 'public';
 }
 
 export function defaultPublicSquadBroadcastMessage(name: string): string {
