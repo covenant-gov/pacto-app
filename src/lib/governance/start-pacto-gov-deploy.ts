@@ -18,7 +18,7 @@ export type PactoGovCaptainOption = {
   label: string;
 };
 
-function normalizeCaptain(raw: string): string | null {
+function normalizeCaptainAddress(raw: string): string | null {
   const t = raw.trim();
   if (!t || !isAddress(t as `0x${string}`)) return null;
   try {
@@ -26,6 +26,30 @@ function normalizeCaptain(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Captain picker options from persisted squad roster rows (not MLS member list). */
+export function buildCaptainMemberOptions(
+  squadMemberEvmByNpub: Record<string, string>,
+  currentUserNpub: string | null | undefined,
+  displayNameForNpub: (npub: string) => string,
+): PactoGovCaptainOption[] {
+  const me = currentUserNpub?.trim() ?? '';
+  const rows = Object.entries(squadMemberEvmByNpub)
+    .map(([npub, rawAddr]) => {
+      const address = normalizeCaptainAddress(rawAddr);
+      if (!address) return null;
+      const name = displayNameForNpub(npub)?.trim() || `${npub.slice(0, 12)}…`;
+      const isMe = npub === me;
+      return { npub, address, label: isMe ? `${name} (you)` : name };
+    })
+    .filter((row): row is PactoGovCaptainOption => row != null);
+  rows.sort((a, b) => {
+    if (me && a.npub === me) return -1;
+    if (me && b.npub === me) return 1;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  });
+  return rows;
 }
 
 /** Submit Pacto Gov deploy using squad network and the chosen captain address. */
@@ -44,7 +68,7 @@ export function startPactoGovDeploy(params: {
     return;
   }
 
-  const captain = normalizeCaptain(params.captain);
+  const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
     showToast('Pick a valid captain EVM address.');
     return;
