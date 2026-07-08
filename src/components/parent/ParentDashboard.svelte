@@ -337,6 +337,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     }
   }
 
+  function refreshRolesTree() {
+    hatsTreeKey = '';
+    rolesTreeAnnotationsKey = '';
+    void loadHatsTree();
+    void loadRolesTreeAnnotations();
+    void loadSquadMemberEvm();
+  }
+
   async function loadRolesTreeAnnotations() {
     const topHat = pactoGovRow?.canonicalRef?.trim();
     const evmKey = Object.values(squadMemberEvmByNpub)
@@ -707,6 +715,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
               rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
               {rolesTreeAnnotationsError}
+              onRefreshRolesTree={refreshRolesTree}
               onOpenLaunchpad={openLaunchpad}
             />
           {:catch}
