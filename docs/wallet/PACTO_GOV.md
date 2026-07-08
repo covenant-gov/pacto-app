@@ -16,9 +16,15 @@ When upstream interfaces change, update bindings in `evm/contracts/pacto_gov/` a
 
 ## Manual smoke (Sepolia)
 
-Operator checklist: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) §2 (Pacto Gov) and §4 (announce sync); requires squad sponsor first (§1).
+Operator checklist: [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) — **Pacto Gov / Nave Pirata** and **Governance announce sync**; deploy squad sponsor first.
+
+## Post-deploy UX (shipped)
+
+After in-app deploy: one **`governance_updated`** card in **`#announcements`** (labeled module links, top hat → Hats explorer, deploy tx); **Governance** tab infra panel; **Roles Tree** with Nave Pirata role badges, wearers (profile name when squad EVM shared), refresh, and BFS truncation note. Treasury tab excludes the governance treasury Safe. Receipt parse accepts **`NavePirataRegistered`** at the registry when the factory log is absent.
+
+Key paths: `src/routes/+page.svelte` (`finalizePactoGovDeploy`), `src-tauri/src/evm/nave_pirata_deploy.rs`, `src/lib/governance/pacto-gov-payload.ts`, `src/components/announcements/PactoGovDeployedAnnounceBody.svelte`, `src/components/parent/dashboard/DashboardRolesTreeTab.svelte`, `src/lib/governance/hats-tree-annotations.ts`.
 
 ## Related
 
 - Squad sponsor contracts: [github.com/covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor) (same pattern — external repo, env addresses, in-app bindings).
-- Planning: [`ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md), [`ai-docs/gov-core/`](../../ai-docs/gov-core/).
+- Virtual channel routing for deploy announces: [VIRTUAL_CHANNEL_ROUTING_ADR.md](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).

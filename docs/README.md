@@ -24,8 +24,6 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 - Vocabulary: **[`CONCEPTS.md`](../CONCEPTS.md)** — shared terms for humans and coding agents
 - System architecture: **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** — high-level data flows and layer responsibilities
 
-**Design specs (`ai-docs/`):** governance + dashboard architecture notes live under [`../ai-docs/gov-core/`](../ai-docs/gov-core/README.md) (ModPol channels, single-group MLS virtual defaults, governance library). Shell refactor history: [`../ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md`](../ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md). **UX speed backlog:** [`../ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md`](../ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md).
-
 ## Conventions
 
 - **Greenfield:** No public alpha yet — prefer **breaking, slim changes** over compatibility layers for superseded designs. Agents and contributors: [`.cursor/rules/greenfield-no-legacy.mdc`](../.cursor/rules/greenfield-no-legacy.mdc).

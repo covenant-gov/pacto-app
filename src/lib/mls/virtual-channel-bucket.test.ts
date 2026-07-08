@@ -66,9 +66,15 @@ describe('deriveVirtualBucketFromMessageContent', () => {
 
     const gov = buildAnnounceContent({
       type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
-      payload: { parent_id: 'p', provider: 'x', canonical_ref: 'y' },
+      payload: { parent_id: 'p', provider: 'gnosis_safe', canonical_ref: 'y' },
     });
     expect(deriveVirtualBucketFromMessageContent(gov)).toBe('inbox');
+
+    const pactoGov = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+      payload: { parent_id: 'p', provider: 'pacto_gov', canonical_ref: '3519' },
+    });
+    expect(deriveVirtualBucketFromMessageContent(pactoGov)).toBe('announcements');
 
     const pollCreated = buildAnnounceContent({
       type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
@@ -252,6 +258,23 @@ describe('announceCardAllowedForTimelineBucket', () => {
     expect(
       announceCardAllowedForTimelineBucket(govParsed, { content: govContent, virtual_bucket: 'announcements' })
     ).toBe(false);
+  });
+
+  it('allows pacto_gov governance in announcements', () => {
+    const content = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+      payload: { parent_id: 'p', provider: 'pacto_gov', canonical_ref: '3519' },
+    });
+    const parsed = parseAnnouncement(content);
+    expect(parsed).not.toBeNull();
+    if (!parsed) return;
+    expect(
+      announceCardAllowedForTimelineBucket(parsed, {
+        content,
+        virtual_bucket: 'announcements',
+      })
+    ).toBe(true);
+    expect(deriveVirtualBucketFromMessageContent(content)).toBe('announcements');
   });
 
   it('allows squad sponsor governance in announcements', () => {

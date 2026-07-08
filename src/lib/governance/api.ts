@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 
 /** Mirrors `SquadInfraRow` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadInfraDto {
@@ -216,6 +217,7 @@ export function buildPactoGovGovernanceAnnouncePayload(params: {
   chain: string;
   providerPayload: string;
   entryId: string;
+  txHash?: string | null;
   pactoGovRevision?: string | null;
 }): {
   parent_id: string;
@@ -232,7 +234,7 @@ export function buildPactoGovGovernanceAnnouncePayload(params: {
     canonical_ref: params.topHatId,
     chain: params.chain,
     entry_id: params.entryId,
-    provider_payload: params.providerPayload,
+    provider_payload: withPactoGovProviderPayloadTxHash(params.providerPayload, params.txHash),
     ...(params.pactoGovRevision?.trim()
       ? { pacto_gov_revision: params.pactoGovRevision.trim() }
       : {}),

@@ -1,8 +1,14 @@
 <script lang="ts">
   import HatsTreeDiagram from '../governance/HatsTreeDiagram.svelte';
+  import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import type { HatTreeNodeDto } from '../../../lib/governance/api';
   import type { DashboardStructureSummary } from '../../../lib/dashboard/structure-summary';
+  import {
+    HATS_TREE_DEFAULT_MAX_DEPTH,
+    HATS_TREE_DEFAULT_MAX_NODES,
+    isHatsTreeLikelyTruncated,
+  } from '../../../lib/governance/hats-tree-read';
 
   export let squadInfraRows: unknown[] | undefined = undefined;
   export let hasSponsor = false;
@@ -11,7 +17,18 @@
   export let hatsTreeLoading = false;
   export let hatsTreeRefreshing = false;
   export let hatsTreeError = '';
+  export let roleLabelByHatId: Record<string, string> = {};
+  export let wearerAddressesByHatId: Record<string, string[]> = {};
+  export let executorRolesByAddress: Record<string, string> = {};
+  export let squadMemberEvmByNpub: Record<string, string> = {};
+  export let rolesTreeAnnotationsLoading = false;
+  export let rolesTreeAnnotationsRefreshing = false;
+  export let rolesTreeAnnotationsError = '';
+  export let onRefreshRolesTree: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
+
+  $: rolesTreeRefreshing = hatsTreeRefreshing || rolesTreeAnnotationsRefreshing;
+  $: rolesTreeLoading = hatsTreeLoading || rolesTreeAnnotationsLoading;
 </script>
 
 {#if squadInfraRows !== undefined && !hasSponsor}
@@ -21,7 +38,18 @@
   </div>
 {/if}
 <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-tree-heading">
-  <h3 id="roles-tree-heading" class="section-heading">Roles Tree</h3>
+  <div class="roles-tree-section-head">
+    <h3 id="roles-tree-heading" class="section-heading">Roles Tree</h3>
+    {#if structureSummary}
+      <RefreshIconButton
+        className="roles-tree-refresh-btn"
+        disabled={rolesTreeLoading || rolesTreeRefreshing}
+        spinning={rolesTreeRefreshing}
+        ariaLabel={rolesTreeRefreshing ? 'Refreshing roles tree' : 'Refresh roles tree'}
+        on:click={onRefreshRolesTree}
+      />
+    {/if}
+  </div>
   {#if structureSummary === undefined}
     <p class="dashboard-placeholder-text muted">Loading roles tree context…</p>
   {:else if structureSummary === null}
@@ -48,19 +76,33 @@
     {:else}
       <p class="dashboard-placeholder-text muted">Explorer link could not be built for this hat id format.</p>
     {/if}
-    {#if hatsTreeRefreshing}
-      <p class="dashboard-refresh-note muted" role="status">Refreshing Hats tree…</p>
-    {/if}
     {#if hatsTreeError && hatsTree}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
     {/if}
+    {#if rolesTreeAnnotationsError}
+      <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
+    {/if}
     {#if hatsTreeLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">Loading Hats tree from chain…</p>
+    {:else if rolesTreeAnnotationsLoading && !hatsTree}
+      <p class="dashboard-placeholder-text muted">Loading role labels and wearers…</p>
     {:else if !hatsTree && hatsTreeError}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
     {:else if hatsTree}
+      {#if isHatsTreeLikelyTruncated(hatsTree)}
+        <p class="hats-tree-truncation-note muted" role="status">
+          Showing up to {HATS_TREE_DEFAULT_MAX_NODES} hats (depth {HATS_TREE_DEFAULT_MAX_DEPTH}). Open the Hats
+          tree explorer for the full tree.
+        </p>
+      {/if}
       <p class="roles-table-caption">On-chain tree</p>
-      <HatsTreeDiagram root={hatsTree} />
+      <HatsTreeDiagram
+        root={hatsTree}
+        {roleLabelByHatId}
+        {wearerAddressesByHatId}
+        {executorRolesByAddress}
+        {squadMemberEvmByNpub}
+      />
     {/if}
   {/if}
 </section>
@@ -92,8 +134,21 @@
     padding: 16px;
   }
 
-  .dashboard-placeholder-section .section-heading {
-    margin-bottom: 8px;
+  .roles-tree-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .roles-tree-section-head .section-heading {
+    margin: 0;
+  }
+
+  :global(.roles-tree-refresh-btn) {
+    flex-shrink: 0;
   }
 
   .section-heading {
@@ -101,6 +156,12 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0 0 12px 0;
+  }
+
+  .hats-tree-truncation-note {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    margin: 0 0 10px;
   }
 
   .dashboard-placeholder-text {

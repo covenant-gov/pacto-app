@@ -19,9 +19,8 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 ## Manual smoke (Sepolia)
 
-See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** §1 (squad sponsor).
+See **[OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md)** — **Squad sponsor**.
 
 ## Related
 
 - Nave Pirata / governance stack: [PACTO_GOV.md](./PACTO_GOV.md)
-- Planning: [`ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md)

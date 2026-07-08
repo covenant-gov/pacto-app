@@ -11,7 +11,7 @@ import {
   ANNOUNCE_TYPE_SAFE_PROPOSAL,
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
   ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED,
-  isSponsorGovernanceAnnounce,
+  isAnnouncementsGovernanceAnnounce,
   type AnnounceMessage,
 } from '../announcements';
 import {
@@ -112,7 +112,7 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'announcements';
   if (ann?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
-    return isSponsorGovernanceAnnounce(ann) ? 'announcements' : 'inbox';
+    return isAnnouncementsGovernanceAnnounce(ann) ? 'announcements' : 'inbox';
   }
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED || ann?.type === ANNOUNCE_TYPE_SAFE_PROPOSAL) {
     return 'inbox';
@@ -123,7 +123,7 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
 
 /** Automation-shaped announces belong in **inbox** for MLS timeline partitioning (ADR), except squad sponsor deploys. */
 export function isInboxOnlyStructuredAnnounce(parsed: AnnounceMessage): boolean {
-  if (isSponsorGovernanceAnnounce(parsed)) return false;
+  if (isAnnouncementsGovernanceAnnounce(parsed)) return false;
   switch (parsed.type) {
     case ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED:
     case ANNOUNCE_TYPE_SAFE_PROPOSAL:

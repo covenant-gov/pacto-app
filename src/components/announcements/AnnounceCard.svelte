@@ -11,6 +11,8 @@
   import SignerShareAnnounceBody from './SignerShareAnnounceBody.svelte';
   import DashboardPollCreatedAnnounceBody from './DashboardPollCreatedAnnounceBody.svelte';
   import GovernanceUpdatedAnnounceBody from './GovernanceUpdatedAnnounceBody.svelte';
+  import PactoGovDeployedAnnounceBody from './PactoGovDeployedAnnounceBody.svelte';
+  import { isPactoGovGovernanceProvider } from '../../lib/announcements';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
   export let id: string = '';
@@ -58,12 +60,21 @@
   {:else if safeAnnounceOnly}
     <SafeAnnounceBody announce={safeAnnounceOnly} {authorName} {timestamp} />
   {:else if governanceUpdatedPayload}
-    <GovernanceUpdatedAnnounceBody
-      payload={governanceUpdatedPayload}
-      {authorName}
-      {authorNpub}
-      {timestamp}
-    />
+    {#if isPactoGovGovernanceProvider(governanceUpdatedPayload.provider)}
+      <PactoGovDeployedAnnounceBody
+        payload={governanceUpdatedPayload}
+        {authorName}
+        {authorNpub}
+        {timestamp}
+      />
+    {:else}
+      <GovernanceUpdatedAnnounceBody
+        payload={governanceUpdatedPayload}
+        {authorName}
+        {authorNpub}
+        {timestamp}
+      />
+    {/if}
   {:else}
     <div class="announce-body">
       <p class="announce-title">Announcement</p>

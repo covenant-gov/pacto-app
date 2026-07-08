@@ -27,4 +27,4 @@ Other modular gov tools can still ship **in-app UX** (surface proposals, links, 
 - **Bread Cooperative** — placeholder module until specs land.
 - **Safe** — multisig treasury and flows that complement modules above.
 
-This doc does not lock schema or UX names; see `ai-docs/gov-core/` tech specs for concrete implementation steps.
+This doc does not lock schema or UX names; concrete behavior lives in `src/` and the tracked indexes under `docs/wallet/`, `docs/mls/`, and `docs/shell/`.

@@ -134,12 +134,13 @@
     pactoGovTreasuryEntryId,
     primaryGovernanceView,
   } from '../lib/governance/api';
+  import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
   import {
     buildStandaloneSafeProviderPayload,
     isPactoGovTreasurySafe,
     pactoGovPayloadFromInfra,
   } from '../lib/governance/standalone-safe-payload';
-  import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
+  import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
   import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
@@ -313,17 +314,22 @@
     txHash: string;
   }) {
     const entryId = pactoGovInfraId(params.parentId);
+    const providerPayload = withPactoGovProviderPayloadTxHash(
+      params.providerPayload,
+      params.txHash,
+    );
     await upsertSquadInfra({
       id: entryId,
       parentId: params.parentId,
       infraType: 'pacto_gov',
       chain: params.chain,
       canonicalRef: params.topHatId,
-      providerPayload: params.providerPayload,
+      providerPayload,
     });
     const row = get(squads).find((s: Squad) => s.id === params.parentId);
     const gid =
-      (row ? resolveAutomatedAnnounceGroupId(row) : null) ?? params.announcementsGroupId.trim();
+      (row ? getAnnouncementsChannel(row)?.groupId?.trim() : null) ??
+      params.announcementsGroupId.trim();
 
     const safeCanonical = governanceCanonicalSafeRef(params.safeAddress);
     const treasuryEntryId = pactoGovTreasuryEntryId(params.parentId);
@@ -333,41 +339,27 @@
       entryId: treasuryEntryId,
     });
 
-    if (gid) {
-      const chainKey = parseSupportedChainId(params.chain);
-      const txHex = params.txHash?.trim();
-      const explorerTxUrl = txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
-      await sendDmMessage(
-        gid,
-        buildAnnounceContent({
-          type: ANNOUNCE_TYPE_SAFE_UPDATED,
-          payload: {
-            squad_id: params.parentId,
-            safe_address: safeCanonical,
-            chain: params.chain,
-            entry_id: treasuryEntryId,
-            tx_hash: txHex || undefined,
-            explorer_tx_url: explorerTxUrl ?? undefined,
-          },
-        }),
-        '',
-        { virtualBucket: 'inbox' },
-      );
-      await sendDmMessage(
-        gid,
-        buildAnnounceContent({
-          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
-          payload: buildPactoGovGovernanceAnnouncePayload({
-            parentId: params.parentId,
-            topHatId: params.topHatId,
-            chain: params.chain,
-            providerPayload: params.providerPayload,
-            entryId,
+    try {
+      if (gid) {
+        await sendDmMessage(
+          gid,
+          buildAnnounceContent({
+            type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+            payload: buildPactoGovGovernanceAnnouncePayload({
+              parentId: params.parentId,
+              topHatId: params.topHatId,
+              chain: params.chain,
+              providerPayload,
+              entryId,
+              txHash: params.txHash,
+            }),
           }),
-        }),
-        '',
-        { virtualBucket: 'inbox' },
-      );
+          '',
+          { virtualBucket: 'announcements' },
+        );
+      }
+    } catch {
+      // Infra is persisted below; announce failure must not block dashboard refresh.
     }
     await mergeTreasurySafesForParent(params.parentId);
     await mergeSquadInfraForParent(params.parentId);
