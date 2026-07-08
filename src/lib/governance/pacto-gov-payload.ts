@@ -41,6 +41,45 @@ export function withPactoGovProviderPayloadTxHash(
   }
 }
 
+export type PactoGovDeployAnnounceRow =
+  | { kind: 'address'; label: string; address: string }
+  | { kind: 'hat'; label: string; hatId: string };
+
+function isEvmAddress(addr: string | undefined): addr is string {
+  return !!addr?.trim() && /^0x[a-fA-F0-9]{40}$/.test(addr.trim());
+}
+
+/** Labeled contract rows for Pacto Gov deploy announcement cards. */
+export function pactoGovDeployAnnounceRows(params: {
+  providerPayload: string | null | undefined;
+  topHatId: string;
+}): PactoGovDeployAnnounceRow[] {
+  const parsed = parsePactoGovProviderPayload(params.providerPayload);
+  const rows: PactoGovDeployAnnounceRow[] = [];
+  const push = (label: string, addr: string | undefined) => {
+    if (isEvmAddress(addr)) rows.push({ kind: 'address', label, address: addr.trim() });
+  };
+  push('Treasury Safe', parsed?.safe);
+  push('Squad Admin', parsed?.squadAdminProxy);
+  push('Quartermaster', parsed?.quartermaster);
+  push('Mutiny module', parsed?.mutinyModule);
+  push('Treasury Authority', parsed?.treasuryAuthority);
+  const hatId = params.topHatId?.trim();
+  if (hatId) rows.push({ kind: 'hat', label: 'Top hat', hatId });
+  return rows;
+}
+
+export function txHashFromPactoGovProviderPayload(raw: string | null | undefined): string {
+  if (!raw?.trim()) return '';
+  try {
+    const parsed = JSON.parse(raw) as { txHash?: unknown; tx_hash?: unknown };
+    const h = parsed.txHash ?? parsed.tx_hash;
+    return typeof h === 'string' ? h.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 /** Hat id + label pairs for `get_member_hat_wearers` when registry deployment is loaded. */
 export function hatChecksFromNaveDeployment(d: {
   captainHatId: string;
