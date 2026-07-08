@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatWearerDisplayLabel,
   memberHatByAddressFromAssignments,
+  npubByEvmAddressFromSquadRoster,
   roleLabelByHatIdFromNaveDeployment,
-  wearersByHatIdFromAssignments,
+  wearerAddressesByHatIdFromAssignments,
 } from './hats-tree-annotations';
 
 const deployment = {
@@ -27,9 +29,9 @@ describe('roleLabelByHatIdFromNaveDeployment', () => {
   });
 });
 
-describe('wearersByHatIdFromAssignments', () => {
-  it('inverts member assignments to hat id → short addresses', () => {
-    const wearers = wearersByHatIdFromAssignments([
+describe('wearerAddressesByHatIdFromAssignments', () => {
+  it('inverts member assignments to hat id → lowercase addresses', () => {
+    const wearers = wearerAddressesByHatIdFromAssignments([
       {
         address: '0x897aBcdEF1234567890AbCdEf1234567890ABcdEf',
         hats: [
@@ -43,10 +45,46 @@ describe('wearersByHatIdFromAssignments', () => {
       },
     ]);
     expect(wearers).toEqual({
-      '100': ['0x897a…cdEf'],
-      '101': ['0x1234…7890'],
-      '102': ['0x897a…cdEf'],
+      '100': ['0x897abcdef1234567890abcdef1234567890abcdef'],
+      '101': ['0x1234567890123456789012345678901234567890'],
+      '102': ['0x897abcdef1234567890abcdef1234567890abcdef'],
     });
+  });
+});
+
+describe('npubByEvmAddressFromSquadRoster', () => {
+  it('inverts squad member EVM roster to address → npub', () => {
+    expect(
+      npubByEvmAddressFromSquadRoster({
+        npub1: '0xAbCdEf1234567890AbCdEf1234567890AbCdEf12',
+        npub2: '0x1234567890123456789012345678901234567890',
+      }),
+    ).toEqual({
+      '0xabcdef1234567890abcdef1234567890abcdef12': 'npub1',
+      '0x1234567890123456789012345678901234567890': 'npub2',
+    });
+  });
+});
+
+describe('formatWearerDisplayLabel', () => {
+  const npubByAddress = {
+    '0xabcdef1234567890abcdef1234567890abcdef12': 'npub-captain',
+  };
+
+  it('prefers profile display name when roster matches', () => {
+    expect(
+      formatWearerDisplayLabel(
+        '0xAbCdEf1234567890AbCdEf1234567890AbCdEf12',
+        npubByAddress,
+        () => 'Captain Ada',
+      ),
+    ).toBe('Captain Ada');
+  });
+
+  it('falls back to short address when no roster match', () => {
+    expect(
+      formatWearerDisplayLabel('0x9999999999999999999999999999999999999999', npubByAddress, () => ''),
+    ).toBe('0x9999…9999');
   });
 });
 
