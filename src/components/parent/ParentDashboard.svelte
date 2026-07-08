@@ -16,6 +16,7 @@
   import {
     hasSponsorInfra,
     pactoGovInfraRow,
+    pactoGovTreasuryEntryId,
     sponsorInfraRow,
     withLegacyProvider,
   } from '../../lib/governance/api';
@@ -141,7 +142,9 @@
   $: parentId = parent?.id;
   $: sponsorRow = sponsorInfraRow(squadInfraRows);
   $: hasSponsor = hasSponsorInfra(squadInfraRows);
-  $: displayedTreasurySafes = [...(treasurySafes ?? [])].slice(0, TREASURY_SAFE_UI_CAP);
+  $: displayedTreasurySafes = [...(treasurySafes ?? [])]
+    .filter((e) => !parentId || e.id !== pactoGovTreasuryEntryId(parentId))
+    .slice(0, TREASURY_SAFE_UI_CAP);
 
   $: pactoGovRow = pactoGovInfraRow(squadInfraRows);
   $: hasPactoGov = pactoGovRow != null;
@@ -621,6 +624,9 @@
               {squadInfraRows}
               {hasSponsor}
               {pactoPayload}
+              pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
+              pactoGovChain={pactoGovRow?.chain}
+              pactoGovProviderPayload={pactoGovRow?.providerPayload}
               {treasuryProposals}
               {treasuryProposalsLoading}
               treasuryProposalsRefreshing={treasuryProposalsRefreshing}

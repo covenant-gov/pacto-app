@@ -1,11 +1,17 @@
 <script lang="ts">
   import TreasuryProposalCard from '../governance/TreasuryProposalCard.svelte';
+  import PactoGovInfraList from '../governance/PactoGovInfraList.svelte';
   import type { TreasuryProposalDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
+  import { parseSupportedChainId } from '../../../lib/wallet/chains';
 
   export let squadInfraRows: unknown[] | undefined = undefined;
   export let hasSponsor = false;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
+  export let pactoGovTopHatId = '';
+  export let pactoGovChain: string | undefined = undefined;
+  export let pactoGovProviderPayload: string | undefined = undefined;
   export let treasuryProposals: TreasuryProposalDto[] = [];
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsRefreshing = false;
@@ -33,6 +39,19 @@
     </p>
     <button type="button" class="btn-primary governance-deploy-cta" on:click={onOpenLaunchpad}>Deploy Pacto Gov</button>
   {:else}
+    <div class="governance-infra-panel" aria-labelledby="governance-infra-heading">
+      <h4 id="governance-infra-heading" class="governance-infra-heading">Pacto Gov deployment</h4>
+      {#if pactoGovChain}
+        <p class="governance-infra-network">{getWalletNetworkDisplayName(parseSupportedChainId(pactoGovChain))}</p>
+      {/if}
+      <PactoGovInfraList
+        providerPayload={pactoGovProviderPayload}
+        topHatId={pactoGovTopHatId}
+        chain={pactoGovChain}
+      />
+    </div>
+
+    <h4 class="governance-proposals-heading">Treasury proposals</h4>
     {#if treasuryProposalsRefreshing}
       <p class="dashboard-refresh-note muted" role="status">Refreshing proposals…</p>
     {/if}
@@ -98,6 +117,34 @@
     font-weight: 600;
     color: var(--text-secondary);
     margin: 0 0 12px 0;
+  }
+
+  .governance-infra-panel {
+    margin-bottom: 20px;
+  }
+
+  .governance-infra-heading {
+    margin: 0 0 6px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+  }
+
+  .governance-infra-network {
+    margin: 0 0 8px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  .governance-proposals-heading {
+    margin: 0 0 10px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
   }
 
   .dashboard-placeholder-text {

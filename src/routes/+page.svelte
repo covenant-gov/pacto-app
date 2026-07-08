@@ -341,25 +341,6 @@
 
     try {
       if (gid) {
-        const chainKey = parseSupportedChainId(params.chain);
-        const txHex = params.txHash?.trim();
-        const explorerTxUrl = txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
-        await sendDmMessage(
-          gid,
-          buildAnnounceContent({
-            type: ANNOUNCE_TYPE_SAFE_UPDATED,
-            payload: {
-              squad_id: params.parentId,
-              safe_address: safeCanonical,
-              chain: params.chain,
-              entry_id: treasuryEntryId,
-              tx_hash: txHex || undefined,
-              explorer_tx_url: explorerTxUrl ?? undefined,
-            },
-          }),
-          '',
-          { virtualBucket: 'inbox' },
-        );
         await sendDmMessage(
           gid,
           buildAnnounceContent({
