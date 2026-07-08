@@ -22,6 +22,8 @@
   export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
   /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
   export let squadNetwork: SupportedChainId | null = null;
+  /** Sponsor clone address when sponsor infra is deployed. */
+  export let sponsorAddress = '';
   export let memberEvmOptions: { address: string; label: string }[] = [];
 
   export let showDeploySafeModal = false;
@@ -143,6 +145,8 @@
     {hasPactoGov}
     {hasSquadAdmin}
     {vaultSafeCount}
+    {squadNetwork}
+    {sponsorAddress}
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
     onDeploySponsor={onDeploySponsor}

@@ -62,7 +62,7 @@
     activeDmTab,
     activeDmId,
     composingNewChat,
-    walletSidebarOpen,
+    dmWalletSidebarVisible,
     backendDmMessages,
     dmThreadAnnouncementsByNpub,
     appendPendingOutboundDmMessage,
@@ -220,17 +220,6 @@
   ) {
     closeCommonsBroadcastModal();
   }
-
-  /** When true, the DM wallet panel is not shown (other top nav, DM tab, or new chat), but open state stays until the user closes it. */
-  $: walletSidebarInvalidContext =
-    $activeTopNavTab !== 'dms' ||
-    $activeView !== 'hub' ||
-    ($activeDmTab !== 'friends' && $activeDmTab !== 'pinned') ||
-    $composingNewChat ||
-    isPactoAppThreadId($activeDmId);
-
-  $: dmWalletSidebarVisible =
-    $walletSidebarOpen && !!$activeDmId && !walletSidebarInvalidContext;
 
   /** Pin control: hidden on Requests/Pending tabs; on Search tab only for Friends/Pinned conversations. */
   $: showDmPinOption = (() => {
@@ -504,10 +493,18 @@
               : tab === 'search'
                 ? $allDmEntriesUnified
                 : $pinnedList;
-      const lastOpened = $lastOpenedDmByTab[tab];
-      const stillInList = lastOpened && list.some((e: DmEntry) => e.npub === lastOpened);
-      const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
-      activeDmId.set(npub);
+      const current = $activeDmId;
+      const currentInList =
+        !!current &&
+        (tab === 'pinned' && isPactoAppThreadId(current)
+          ? true
+          : list.some((e: DmEntry) => e.npub === current));
+      if (!currentInList) {
+        const lastOpened = $lastOpenedDmByTab[tab];
+        const stillInList = lastOpened && list.some((e: DmEntry) => e.npub === lastOpened);
+        const npub = stillInList ? lastOpened : list[0]?.npub ?? null;
+        activeDmId.set(npub);
+      }
     }
   }
 
@@ -935,11 +932,12 @@
         <div class="dm-area">
           <MessengerNavbar />
           <div class="dm-main-row">
-            <div class="dm-area-center" class:dm-area-center--wallet-open={dmWalletSidebarVisible}>
+            <div class="dm-area-center" class:dm-area-center--wallet-open={$dmWalletSidebarVisible}>
             <div class="dm-main">
             {#if $composingNewChat}
               <MessengerChatView />
             {:else if $activeDmId}
+              {#key $activeDmId}
               <DmThread
                 npub={$activeDmId}
                 messages={mergedDmMessages}
@@ -995,6 +993,7 @@
                 showWalletButton={($activeDmTab === 'friends' || $activeDmTab === 'pinned') &&
                   !isPactoAppThreadId($activeDmId) /* wallet: Friends + Pinned only; not Pending/Requests/new chat */ }
               />
+              {/key}
             {:else}
               <div class="dm-empty">
                 <p>Select a conversation or start a new chat</p>
@@ -1002,7 +1001,7 @@
             {/if}
             </div>
             </div>
-            {#if dmWalletSidebarVisible && $activeDmId}
+            {#if $dmWalletSidebarVisible && $activeDmId}
               <ResizableSidebar
                 edge="trailing"
                 sidebarClass="dm-wallet-resizable"

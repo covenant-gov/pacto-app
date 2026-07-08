@@ -22,7 +22,7 @@
     typingByChat,
     dmWalletPeerExchangeTick,
     type DmMessage,
-    walletSidebarOpen,
+    dmWalletSidebarVisible,
     toggleWalletSidebar,
     type DmTab,
     appendDmThreadAnnouncement,
@@ -344,9 +344,9 @@
             <button
               type="button"
               class="dm-thread-wallet-btn"
-              title={$walletSidebarOpen ? 'Close wallet' : 'Open wallet'}
-              aria-label={$walletSidebarOpen ? 'Close wallet sidebar' : 'Open wallet sidebar'}
-              aria-expanded={$walletSidebarOpen}
+              title={$dmWalletSidebarVisible ? 'Close wallet' : 'Open wallet'}
+              aria-label={$dmWalletSidebarVisible ? 'Close wallet sidebar' : 'Open wallet sidebar'}
+              aria-expanded={$dmWalletSidebarVisible}
               aria-controls="wallet-bar"
               on:click={() => toggleWalletSidebar()}
             >

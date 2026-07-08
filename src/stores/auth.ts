@@ -5,6 +5,7 @@ import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKe
 import { dmLog } from '../lib/utils/dm-debug';
 import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
+import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 
@@ -125,6 +126,7 @@ export async function createAccount(pin: string): Promise<void> {
     const npub = await getCurrentAccount();
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
+    closeWalletSidebar();
 
     markSessionUnlocked();
     isAuthenticated.set(true);
@@ -175,6 +177,7 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
 
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
+    closeWalletSidebar();
 
     markSessionUnlocked();
     isAuthenticated.set(true);
@@ -210,6 +213,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
 
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
+    closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 
     markSessionUnlocked();
