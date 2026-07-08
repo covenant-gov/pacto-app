@@ -136,7 +136,7 @@
     isPactoGovTreasurySafe,
     pactoGovPayloadFromInfra,
   } from '../lib/governance/standalone-safe-payload';
-  import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
+  import { resolveAutomatedAnnounceGroupId, getAnnouncementsChannel } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
   import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
@@ -320,7 +320,8 @@
     });
     const row = get(squads).find((s: Squad) => s.id === params.parentId);
     const gid =
-      (row ? resolveAutomatedAnnounceGroupId(row) : null) ?? params.announcementsGroupId.trim();
+      (row ? getAnnouncementsChannel(row)?.groupId?.trim() : null) ??
+      params.announcementsGroupId.trim();
 
     const safeCanonical = governanceCanonicalSafeRef(params.safeAddress);
     const treasuryEntryId = pactoGovTreasuryEntryId(params.parentId);
@@ -364,7 +365,7 @@
             }),
           }),
           '',
-          { virtualBucket: 'inbox' },
+          { virtualBucket: 'announcements' },
         );
       }
     } catch {
