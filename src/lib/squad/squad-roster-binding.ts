@@ -7,7 +7,7 @@ import {
 } from '../wallet/evm-accounts';
 import { publishSquadMemberEvmShare } from './squad-member-evm-share';
 
-/** Bind the active squad-purpose signer to this parent and publish roster share to Inbox. */
+/** Bind the active squad-purpose signer to this parent and publish roster share to #announcements. */
 export async function bindDefaultSquadSigner(announcementsGroupId: string): Promise<boolean> {
   const rosterId = announcementsGroupId.trim();
   if (!rosterId) return false;

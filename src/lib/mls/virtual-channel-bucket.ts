@@ -110,7 +110,7 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
 
   const ann = parseAnnouncement(trimmed);
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
-  if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'inbox';
+  if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'announcements';
   if (ann?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
     return isSponsorGovernanceAnnounce(ann) ? 'announcements' : 'inbox';
   }
@@ -127,7 +127,6 @@ export function isInboxOnlyStructuredAnnounce(parsed: AnnounceMessage): boolean 
   switch (parsed.type) {
     case ANNOUNCE_TYPE_SQUAD_SAFE_UPDATED:
     case ANNOUNCE_TYPE_SAFE_PROPOSAL:
-    case ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE:
     case ANNOUNCE_TYPE_GOVERNANCE_UPDATED:
       return true;
     default:
@@ -135,13 +134,14 @@ export function isInboxOnlyStructuredAnnounce(parsed: AnnounceMessage): boolean 
   }
 }
 
-/**
- * Prefer rendering structured automation rows only when the message resolves to **inbox**, matching SQLite ingest gates.
- */
+/** Prefer rendering structured automation rows only when the message resolves to the correct virtual bucket. */
 export function announceCardAllowedForTimelineBucket(
   parsed: AnnounceMessage,
   msg: { virtual_bucket?: string | null; content?: string | null },
 ): boolean {
+  if (parsed.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
+    return resolveVirtualBucketForTimelineMessage(msg) === 'announcements';
+  }
   if (!isInboxOnlyStructuredAnnounce(parsed)) return true;
   return resolveVirtualBucketForTimelineMessage(msg) === 'inbox';
 }
@@ -162,6 +162,7 @@ export function resolveVirtualBucketForTimelineMessage(m: {
   const ann =
     m.content?.trim().startsWith('{') === true ? parseAnnouncement(m.content) : null;
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
+  if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'announcements';
 
   const pb = m.virtual_bucket?.trim();
   if (pb === 'announcements' || pb === 'inbox' || pb === 'polls') return pb;

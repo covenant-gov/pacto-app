@@ -88,7 +88,7 @@ describe('deriveVirtualBucketFromMessageContent', () => {
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
       payload: { parent_id: 'p', evm_address: '0xdef' },
     });
-    expect(deriveVirtualBucketFromMessageContent(evmShare)).toBe('inbox');
+    expect(deriveVirtualBucketFromMessageContent(evmShare)).toBe('announcements');
   });
 
   it('treats unknown JSON as announcements', () => {
@@ -279,7 +279,7 @@ describe('announceCardAllowedForTimelineBucket', () => {
     ).toBe(true);
   });
 
-  it('treats squad_member_evm_share like other inbox bots', () => {
+  it('routes squad_member_evm_share to announcements', () => {
     const raw = buildAnnounceContent({
       type: ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
       payload: { parent_id: 'p', evm_address: '0x0000000000000000000000000000000000000001' },
@@ -287,7 +287,12 @@ describe('announceCardAllowedForTimelineBucket', () => {
     const p = parseAnnouncement(raw);
     expect(p).not.toBeNull();
     if (!p) return;
-    expect(announceCardAllowedForTimelineBucket(p, { content: raw, virtual_bucket: 'inbox' })).toBe(true);
-    expect(announceCardAllowedForTimelineBucket(p, { content: raw, virtual_bucket: 'polls' })).toBe(false);
+    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
+    expect(
+      announceCardAllowedForTimelineBucket(p, { content: raw, virtual_bucket: 'announcements' })
+    ).toBe(true);
+    expect(
+      resolveVirtualBucketForTimelineMessage({ content: raw, virtual_bucket: 'inbox' })
+    ).toBe('announcements');
   });
 });
