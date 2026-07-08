@@ -40,13 +40,16 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
                 return Some("announcements".to_string());
             }
             if ty == Some("governance_updated") {
-                let sponsor = val
+                let public_gov = val
                     .get("payload")
                     .and_then(|p| p.get("provider"))
                     .and_then(|x| x.as_str())
-                    .map(|s| s.trim().eq_ignore_ascii_case("sponsor"))
+                    .map(|s| {
+                        let p = s.trim();
+                        p.eq_ignore_ascii_case("sponsor") || p.eq_ignore_ascii_case("pacto_gov")
+                    })
                     .unwrap_or(false);
-                return Some(if sponsor {
+                return Some(if public_gov {
                     "announcements".to_string()
                 } else {
                     "inbox".to_string()
@@ -89,8 +92,19 @@ mod tests {
     use crate::stored_event::event_kind;
 
     #[test]
-    fn governance_announce_derives_inbox_bucket() {
+    fn pacto_gov_governance_announce_derives_announcements_bucket() {
         let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"pacto_gov","canonical_ref":"1"}}"#;
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            content,
+            &[],
+        );
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn non_public_governance_announce_derives_inbox_bucket() {
+        let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"gnosis_safe","canonical_ref":"0x1"}}"#;
         let bucket = normalize_virtual_bucket_for_message(
             event_kind::PRIVATE_DIRECT_MESSAGE,
             content,

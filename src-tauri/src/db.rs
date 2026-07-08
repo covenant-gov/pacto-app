@@ -2025,8 +2025,8 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
     });
     let effective_bucket = derived_bucket.as_deref();
 
-    // Sponsor infra must sync for every squad member even when bucket metadata was missing on ingest.
-    if is_sponsor_governance_announce_content(content) {
+    // Squad-wide governance deploys sync even when bucket metadata was missing on ingest.
+    if is_announcements_governance_announce_content(content) {
         maybe_upsert_governance_from_announce(handle, content);
     }
 
@@ -2037,12 +2037,12 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
         try_apply_squad_contract_allowlist_announce(handle, content);
         return;
     }
-    if effective_bucket == Some("announcements") && is_sponsor_governance_announce_content(content) {
+    if effective_bucket == Some("announcements") && is_announcements_governance_announce_content(content) {
         return;
     }
 }
 
-fn is_sponsor_governance_announce_content(content: &str) -> bool {
+fn is_announcements_governance_announce_content(content: &str) -> bool {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(content.trim()) else {
         return false;
     };
@@ -2052,7 +2052,10 @@ fn is_sponsor_governance_announce_content(content: &str) -> bool {
     val.get("payload")
         .and_then(|p| p.get("provider"))
         .and_then(|x| x.as_str())
-        .map(|s| s.trim().eq_ignore_ascii_case("sponsor"))
+        .map(|s| {
+            let p = s.trim();
+            p.eq_ignore_ascii_case("sponsor") || p.eq_ignore_ascii_case("pacto_gov")
+        })
         .unwrap_or(false)
 }
 

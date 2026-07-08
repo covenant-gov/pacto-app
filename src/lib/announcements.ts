@@ -110,10 +110,34 @@ export function isSponsorGovernanceProvider(provider: string): boolean {
   return provider.trim().toLowerCase() === 'sponsor';
 }
 
+export function isPactoGovGovernanceProvider(provider: string): boolean {
+  return provider.trim().toLowerCase() === 'pacto_gov';
+}
+
+/** Squad-wide governance deploys surfaced in #announcements (not inbox). */
+export function isAnnouncementsGovernanceProvider(provider: string): boolean {
+  const p = provider.trim().toLowerCase();
+  return p === 'sponsor' || p === 'pacto_gov';
+}
+
 export function isSponsorGovernanceAnnounce(msg: AnnounceMessage): boolean {
   return (
     msg.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED &&
     isSponsorGovernanceProvider(msg.payload.provider)
+  );
+}
+
+export function isPactoGovGovernanceAnnounce(msg: AnnounceMessage): boolean {
+  return (
+    msg.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED &&
+    isPactoGovGovernanceProvider(msg.payload.provider)
+  );
+}
+
+export function isAnnouncementsGovernanceAnnounce(msg: AnnounceMessage): boolean {
+  return (
+    msg.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED &&
+    isAnnouncementsGovernanceProvider(msg.payload.provider)
   );
 }
 
@@ -222,7 +246,7 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
 
 /**
  * Build content string for posting an announcement (e.g. from Set Safe flow or Create proposal).
- * Squad sponsor deploys and roster EVM shares use `announcements`; other governance automation uses `inbox`.
+ * Squad sponsor and Pacto Gov deploys use `announcements`; other governance automation uses `inbox`.
  */
 export function buildAnnounceContent<T extends AnnounceMessage>(
   msg: T,
@@ -232,7 +256,7 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
     options?.virtualBucket ??
     (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED || msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE
       ? 'announcements'
-      : isSponsorGovernanceAnnounce(msg)
+      : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'
         : 'inbox');
   return JSON.stringify({ pacto_virtual_bucket, type: msg.type, payload: msg.payload });
