@@ -1,11 +1,17 @@
 <script lang="ts">
   import Modal from '../../ui/Modal.svelte';
+  import type { SupportedChainId } from '../../../lib/wallet/chains';
+  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
 
   export let hasSponsor: boolean;
   export let hasPactoGov: boolean;
   export let hasSquadAdmin: boolean;
   export let vaultSafeCount = 0;
   export let hasAnnouncementsChannel: boolean;
+  /** Established squad network; read-only here — change in Settings. */
+  export let squadNetwork: SupportedChainId | null = null;
+  /** Sponsor clone address when already deployed. */
+  export let sponsorAddress = '';
   export let onClose: () => void;
   export let onDeploySponsor: () => void;
   export let onDeploySquadAdmin: () => void;
@@ -15,6 +21,7 @@
 
   const titleId = 'launchpad-modal-title';
   const descId = 'launchpad-modal-desc';
+  const networkNoteId = 'launchpad-squad-network-note';
 
   $: otherInfraLocked = !hasSponsor;
   $: channelBlocked = !hasAnnouncementsChannel;
@@ -25,6 +32,23 @@
   <p id={descId} class="launchpad-desc">
     Choose on-chain infrastructure for this squad. Squad sponsor funds gas sponsorship and must be deployed first.
   </p>
+
+  <section class="launchpad-squad-network" aria-labelledby="launchpad-squad-network-label">
+    <span id="launchpad-squad-network-label" class="launchpad-squad-network-label">Squad network</span>
+    {#if squadNetwork}
+      <p class="launchpad-squad-network-value" aria-describedby={networkNoteId}>
+        {getWalletNetworkDisplayName(squadNetwork)}
+      </p>
+      <p id={networkNoteId} class="launchpad-squad-network-note muted">
+        All infra deploys to this network. Change it in Settings.
+      </p>
+    {:else}
+      <p id={networkNoteId} class="launchpad-squad-network-note muted">
+        Not set yet. Choose a network in Settings before deploying, or your first deploy will establish it.
+      </p>
+    {/if}
+  </section>
+
   {#if channelBlocked}
     <p class="launchpad-channel-note muted" role="status">
       Add an #announcements channel before deploying or linking treasury infra.
@@ -34,24 +58,31 @@
   <ul class="launchpad-grid" role="list">
     <li class="launchpad-card" class:launchpad-card--primary={!hasSponsor}>
       <h3 class="launchpad-card-title">Squad sponsor</h3>
-      <p class="launchpad-card-desc">
-        {#if hasSponsor}
-          Sponsor clone is deployed. Top up balance from the Treasury tab or deposit again after deploy.
-        {:else}
-          Required first deploy — ERC-4337 gas pool for this squad.
-        {/if}
-      </p>
-      <button
-        type="button"
-        class="btn-primary launchpad-card-btn"
-        disabled={channelBlocked}
-        on:click={() => {
-          onClose();
-          onDeploySponsor();
-        }}
-      >
-        {hasSponsor ? 'Deploy another network…' : 'Deploy squad sponsor'}
-      </button>
+      {#if hasSponsor}
+        <div class="launchpad-deployed-status" role="status">
+          <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
+          <div class="launchpad-deployed-body">
+            <p class="launchpad-deployed-label">Deployed</p>
+            {#if sponsorAddress}
+              <code class="launchpad-deployed-addr">{sponsorAddress}</code>
+            {/if}
+            <p class="launchpad-card-desc">Top up balance from the Treasury tab.</p>
+          </div>
+        </div>
+      {:else}
+        <p class="launchpad-card-desc">Required first deploy — ERC-4337 gas pool for this squad.</p>
+        <button
+          type="button"
+          class="btn-primary launchpad-card-btn"
+          disabled={channelBlocked}
+          on:click={() => {
+            onClose();
+            onDeploySponsor();
+          }}
+        >
+          Deploy squad sponsor
+        </button>
+      {/if}
     </li>
 
     <li class="launchpad-card" class:launchpad-card--locked={otherInfraLocked}>
@@ -108,7 +139,7 @@
         {#if otherInfraLocked}
           Deploy squad sponsor first.
         {:else if vaultSafeCount > 0}
-          {vaultSafeCount} vault {vaultSafeCount === 1 ? 'Safe' : 'Safes'} linked. Deploy another or import an existing address.
+          {vaultSafeCount} vault {vaultSafeCount === 1 ? 'Safe' : 'Safes'} linked on the squad network. Deploy a new Safe or import an existing address.
         {:else}
           Deploy a new multisig or import an existing Safe address.
         {/if}
@@ -158,6 +189,38 @@
     font-size: 0.9375rem;
     line-height: 1.5;
     color: var(--text-secondary);
+  }
+
+  .launchpad-squad-network {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .launchpad-squad-network-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+
+  .launchpad-squad-network-value {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .launchpad-squad-network-note {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
   }
 
   .launchpad-channel-note {
@@ -221,5 +284,47 @@
 
   .launchpad-card-btn {
     align-self: flex-start;
+  }
+
+  .launchpad-deployed-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .launchpad-deployed-check {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--success) 18%, transparent);
+    color: var(--success);
+    font-size: 0.875rem;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+  }
+
+  .launchpad-deployed-body {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .launchpad-deployed-label {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--success);
+  }
+
+  .launchpad-deployed-addr {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    word-break: break-all;
   }
 </style>

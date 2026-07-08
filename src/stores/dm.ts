@@ -1,8 +1,10 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+import { activeTopNavTab, activeView } from './navigation';
 import type { SupportedChainId } from '../lib/wallet/chains';
 import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
 import {
   isPactoAppRoutableInviteContent,
+  isPactoAppThreadId,
   mergePactoAppInboxEntry,
   PACTO_APP_DM_THREAD_ID,
   resolveInviteInviterNpub,
@@ -55,14 +57,6 @@ export type WalletSendPrefillPayload = {
 export const walletSendPrefillFromRequest = writable<WalletSendPrefillPayload | null>(null);
 
 export const dmWalletPeerExchangeTick = writable(0);
-
-export function toggleWalletSidebar(): void {
-  walletSidebarOpen.update((open) => !open);
-}
-
-export function closeWalletSidebar(): void {
-  walletSidebarOpen.set(false);
-}
 
 export interface DmEntry {
   npub: string;
@@ -196,6 +190,27 @@ export interface DmChatSnapshot {
 }
 
 export const activeDmId = writable<string | null>(null);
+
+/** True when the DM wallet panel is actually rendered (open flag + valid DM context). */
+export const dmWalletSidebarVisible = derived(
+  [walletSidebarOpen, activeDmId, activeTopNavTab, activeView, activeDmTab, composingNewChat],
+  ([$open, $dmId, $topNav, $view, $dmTab, $composing]) =>
+    $open &&
+    !!$dmId &&
+    $topNav === 'dms' &&
+    $view === 'hub' &&
+    ($dmTab === 'friends' || $dmTab === 'pinned') &&
+    !$composing &&
+    !isPactoAppThreadId($dmId),
+);
+
+export function toggleWalletSidebar(): void {
+  walletSidebarOpen.set(!get(dmWalletSidebarVisible));
+}
+
+export function closeWalletSidebar(): void {
+  walletSidebarOpen.set(false);
+}
 
 export const LAST_DM_NPUB_PREFIX = 'pacto_last_dm_npub';
 activeDmId.subscribe((id) => {

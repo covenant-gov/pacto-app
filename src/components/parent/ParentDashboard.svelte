@@ -694,6 +694,7 @@
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   squadAdminNetwork={squadAdminNetwork}
   {squadNetwork}
+  sponsorAddress={sponsorRow?.canonicalRef ?? ''}
   memberEvmOptions={memberEvmOptionsForRoles}
   bind:showDeploySafeModal
   bind:showNaveWizard
