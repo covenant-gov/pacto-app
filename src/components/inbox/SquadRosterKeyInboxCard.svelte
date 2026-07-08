@@ -4,6 +4,7 @@
     clearDeferredSquadRosterKeyChoice,
     deferSquadRosterKeyChoice,
   } from '../../lib/squad/squad-roster-key-choice';
+  import { setPersonalAlertNeeded } from '../../stores/squad-hub-alerts';
   import { showToast } from '../../stores/toast';
 
   export let parentId: string;
@@ -22,6 +23,7 @@
         return;
       }
       clearDeferredSquadRosterKeyChoice(parentId);
+      setPersonalAlertNeeded(parentId, false);
       showToast('Squad roster signer set (default account).');
       onComplete();
     } finally {
@@ -39,6 +41,7 @@
         return;
       }
       clearDeferredSquadRosterKeyChoice(parentId);
+      setPersonalAlertNeeded(parentId, false);
       showToast('New squad key created for this group. Your DM wallet signer is unchanged.');
       onComplete();
     } finally {
@@ -48,6 +51,7 @@
 
   function defer(): void {
     deferSquadRosterKeyChoice(parentId);
+    setPersonalAlertNeeded(parentId, false);
     onComplete();
   }
 </script>

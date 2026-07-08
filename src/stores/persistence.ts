@@ -32,6 +32,7 @@ import {
   LAST_DM_NPUB_PREFIX,
 } from './dm';
 import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
+import { loadJoinRequestAckCounts } from './squad-hub-alerts';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 
@@ -122,6 +123,7 @@ export function loadAccountState(npub: string): void {
     // ignore parse errors
   }
   loadDeferredSquadRosterKeyParentIds();
+  loadJoinRequestAckCounts();
   hydrateWalletSummaryCacheFromDisk(npub);
   hydrateTreasurySafesCacheFromDisk(npub);
   hydrateSquadInfraCacheFromDisk(npub);

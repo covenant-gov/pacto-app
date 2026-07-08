@@ -6,6 +6,7 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
   import { loadPendingJoinRequestsForSquad, respondToCommonsJoinRequest } from '../../lib/commons/join-requests';
+  import { refreshJoinRequestAlertForSquad, acknowledgeJoinRequestsForSquad } from '../../stores/squad-hub-alerts';
   import { runInviteMembersToParent } from '../../lib/parent/invite-members-flow';
   import type { Squad } from '../../stores/squads';
   import { JOIN_REQUESTS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
@@ -23,6 +24,7 @@
     error = '';
     try {
       requests = await loadPendingJoinRequestsForSquad(squad.id);
+      void refreshJoinRequestAlertForSquad(squad.id);
       const npubs = [...new Set(requests.map((r) => r.requesterNpub))];
       await Promise.all(npubs.map((npub) => loadProfile(npub)));
     } catch (e) {
@@ -34,6 +36,7 @@
   }
 
   onMount(() => {
+    acknowledgeJoinRequestsForSquad(squad.id);
     void refresh();
   });
 
@@ -51,6 +54,7 @@
       return;
     }
     requests = requests.filter((r) => r.eventId !== request.eventId);
+    void refreshJoinRequestAlertForSquad(squad.id);
     showToast('Join request rejected.');
   }
 
@@ -76,6 +80,7 @@
         actingOn = null;
         if (!invitedNpubs.includes(request.requesterNpub)) return;
         requests = requests.filter((r) => r.eventId !== request.eventId);
+        void refreshJoinRequestAlertForSquad(squad.id);
         const name = getProfileDisplayName($profiles[request.requesterNpub]) || 'Member';
         showToast(`Invite sent to ${name}.`);
       },
