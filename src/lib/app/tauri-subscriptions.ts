@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { listPendingMlsWelcomes, fetchMessages } from '../api/nostr';
+import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
 import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../announcements';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import {
@@ -100,6 +100,12 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (isPactoRoutableInvite) {
       if (!m.mine) {
         appendPactoAppInboxMessage(m, resolveInviteInviterNpub(m, chat_id, content));
+        const invite = parseSquadInviteMessage(content);
+        if (invite?.groupId) {
+          void syncMlsGroupsNow(invite.groupId).catch((e) =>
+            dmError('syncMlsGroupsNow after squad invite DM', e)
+          );
+        }
       }
     } else {
       backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
@@ -163,6 +169,12 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       if (isPactoAppRoutableInviteContent(msgContent)) {
         if (!m.mine) {
           appendPactoAppInboxMessage(m, resolveInviteInviterNpub(m, chat_id, msgContent));
+          const invite = parseSquadInviteMessage(msgContent);
+          if (invite?.groupId) {
+            void syncMlsGroupsNow(invite.groupId).catch((e) =>
+              dmError('syncMlsGroupsNow after squad invite DM update', e)
+            );
+          }
         }
       } else {
         backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {

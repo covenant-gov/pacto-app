@@ -380,7 +380,7 @@
           inviteErrorBanner = '';
         }, 8000);
       },
-      onComplete: () => {
+      onComplete: (_invitedNpubs) => {
         inviting = false;
       },
     });
