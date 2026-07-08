@@ -16,6 +16,7 @@
   import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
   import SquadRosterKeyInboxCard from '../inbox/SquadRosterKeyInboxCard.svelte';
   import { needsSquadRosterKeyChoice } from '../../lib/squad/squad-roster-key-choice';
+  import { refreshPersonalAlertForSquad, setPersonalAlertNeeded } from '../../stores/squad-hub-alerts';
   import {
     activeChannelId,
     activeHubChannelName,
@@ -196,7 +197,9 @@
       showRosterKeyCard = false;
       return;
     }
-    showRosterKeyCard = await needsSquadRosterKeyChoice(activeParent.id, announcementsGroupIdForMembers);
+    const needed = await needsSquadRosterKeyChoice(activeParent.id, announcementsGroupIdForMembers);
+    showRosterKeyCard = needed;
+    if (!needed) setPersonalAlertNeeded(activeParent.id, false);
   }
 
   $: if (isPersonalAlertsChannel && activeParent && announcementsGroupIdForMembers) {
@@ -205,7 +208,9 @@
   }
 
   function onRosterKeyChoiceComplete(): void {
+    if (activeParent) setPersonalAlertNeeded(activeParent.id, false);
     void refreshRosterKeyCard();
+    if (activeParent) void refreshPersonalAlertForSquad(activeParent);
   }
 
   $: currentMessages = (() => {

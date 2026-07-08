@@ -18,6 +18,7 @@
     activeChannelId,
     activeHubChannelName,
     activeView,
+    activeTopNavTab,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
   } from '../../stores/navigation';
@@ -50,8 +51,42 @@
   } from '../../lib/parent/invite-members-flow';
   import { runExitParent } from '../../lib/parent/exit-parent-flow';
   import { buildHubSidebarChannels } from '../../lib/parent-navbar';
+  import { JOIN_REQUESTS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
+  import { commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
+  import { deferredSquadRosterKeyParentIds } from '../../lib/squad/squad-roster-key-choice';
+  import {
+    acknowledgeJoinRequestsForSquad,
+    refreshAllSquadHubAlerts,
+    refreshJoinRequestAlertForSquad,
+    refreshPersonalAlertForSquad,
+    refreshSquadHubAlerts,
+  } from '../../stores/squad-hub-alerts';
 
   $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
+
+  $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
+    void refreshAllSquadHubAlerts($squads);
+  }
+
+  $: if ($activeTopNavTab === 'squads' && activeParent) {
+    void refreshSquadHubAlerts(activeParent);
+  }
+
+  $: if ($activeTopNavTab === 'squads' && activeParent && $commonsJoinRequestRevision >= 0) {
+    void refreshJoinRequestAlertForSquad(activeParent.id);
+  }
+
+  $: if ($activeTopNavTab === 'squads' && activeParent && $deferredSquadRosterKeyParentIds) {
+    void refreshPersonalAlertForSquad(activeParent);
+  }
+
+  $: personalAlertRefreshKey =
+    $activeTopNavTab === 'squads' && activeParent
+      ? `${activeParent.id}:${$activeChannelId ?? ''}:${$activeHubChannelName ?? ''}`
+      : '';
+  $: if (personalAlertRefreshKey && activeParent) {
+    void refreshPersonalAlertForSquad(activeParent);
+  }
 
   $: rawChannels = activeParent
     ? [...activeParent.channels].sort((a, b) => a.order - b.order)
@@ -197,6 +232,9 @@
     activeView.set('hub');
     if ($activeSquadId) {
       const sid = $activeSquadId;
+      if (channel.name === JOIN_REQUESTS_CHANNEL_NAME) {
+        acknowledgeJoinRequestsForSquad(sid);
+      }
       lastChannelBySquadId.update((m) => ({ ...m, [sid]: channel.groupId }));
       lastHubChannelNameBySquadId.update((m) => {
         const next = { ...m };
@@ -415,6 +453,7 @@
 <ParentSidebar
   parentName={activeParent?.name ?? ''}
   subheading={subheading}
+  squadId={activeParent?.id ?? null}
   channels={channels}
   activeChannelId={$activeChannelId}
   activeHubChannelName={$activeHubChannelName}
