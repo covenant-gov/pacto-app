@@ -243,5 +243,57 @@ mod tests {
         assert_eq!(explorer_url_for_tx(local, "0xabc..."), "");
     }
 
+    #[test]
+    fn mainnet_network_is_in_wallet_networks() {
+        let net = wallet_networks()
+            .iter()
+            .find(|n| n.key == "mainnet")
+            .expect("mainnet should be present");
+        assert_eq!(net.chain_id, 1);
+    }
+
+    #[test]
+    fn network_by_key_unknown_returns_none() {
+        assert!(network_by_key("unknown").is_none());
+    }
+
+    #[test]
+    fn rpc_urls_for_network_includes_public_fallbacks() {
+        let net = network_by_key("sepolia").unwrap();
+        let urls = rpc_urls_for(net);
+        assert!(!urls.is_empty());
+        assert!(urls.iter().any(|u| u.contains("publicnode.com")));
+    }
+
+    #[test]
+    fn explorer_url_for_tx_formats_hash_without_double_prefix() {
+        let net = WalletNetworkConfig {
+            key: "test".to_string(),
+            chain_id: 1,
+            display_name: "Test".to_string(),
+            explorer_tx_path: "https://explorer.com/tx/".to_string(),
+            native_symbol: "ETH".to_string(),
+            native_decimals: 18,
+            usdc_address: "".to_string(),
+            usdt_address: "".to_string(),
+            usdc_decimals: 6,
+            usdt_decimals: 6,
+        };
+        assert_eq!(
+            explorer_url_for_tx(&net, "0xdeadbeef"),
+            "https://explorer.com/tx/0xdeadbeef"
+        );
+    }
+
+    #[test]
+    fn alchemy_key_injected_into_mainnet_urls() {
+        let prev = std::env::var_os("ALCHEMY_RPC_KEY");
+        std::env::set_var("ALCHEMY_RPC_KEY", "test-key");
+        let _guard = EnvVarGuard("ALCHEMY_RPC_KEY", prev);
+        let mainnet = network_by_key("mainnet").unwrap();
+        let urls = rpc_urls_for(mainnet);
+        assert!(urls.iter().any(|u| u.contains("g.alchemy.com")));
+        assert!(urls.iter().any(|u| u.contains("publicnode.com")));
+    }
 
 }

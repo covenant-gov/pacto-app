@@ -852,3 +852,124 @@ pub fn mime_from_extension_safe(extension: &str, image_only: bool) -> Result<Str
 pub fn is_image_mime(mime: &str) -> bool {
     mime.trim().starts_with("image/")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_https_urls_basic() {
+        let text = "Check https://example.com and https://foo.bar/path?x=1.";
+        let urls = extract_https_urls(text);
+        assert_eq!(urls, vec!["https://example.com", "https://foo.bar/path?x=1"]);
+    }
+
+    #[test]
+    fn extract_https_urls_trims_trailing_punctuation() {
+        let text = "See https://example.com, (https://foo.bar), and https://baz.com.";
+        let urls = extract_https_urls(text);
+        assert_eq!(urls, vec!["https://example.com", "https://foo.bar", "https://baz.com"]);
+    }
+
+    #[test]
+    fn extract_https_urls_ignores_http() {
+        let text = "http://insecure.com and https://secure.com";
+        let urls = extract_https_urls(text);
+        assert_eq!(urls, vec!["https://secure.com"]);
+    }
+
+    #[test]
+    fn get_file_type_description_known() {
+        assert_eq!(get_file_type_description("png"), "Picture");
+        assert_eq!(get_file_type_description("PNG"), "Picture");
+        assert_eq!(get_file_type_description("pdf"), "PDF Document");
+    }
+
+    #[test]
+    fn get_file_type_description_unknown_defaults_to_file() {
+        assert_eq!(get_file_type_description("xyz"), "File");
+    }
+
+    #[test]
+    fn format_bytes_sizes() {
+        assert_eq!(format_bytes(0), "0 B");
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(1536), "1.5 KB");
+        assert_eq!(format_bytes(2 * 1024 * 1024), "2.0 MB");
+        assert_eq!(format_bytes(3 * 1024 * 1024 * 1024), "3.0 GB");
+    }
+
+    #[test]
+    fn bytes_to_hex_string_round_trip() {
+        let bytes = vec![0xde, 0xad, 0xbe, 0xef];
+        let hex = bytes_to_hex_string(&bytes);
+        assert_eq!(hex, "deadbeef");
+        assert_eq!(hex_string_to_bytes(&hex), bytes);
+    }
+
+    #[test]
+    fn hex_string_to_bytes_accepts_uppercase() {
+        assert_eq!(hex_string_to_bytes("DEADBEEF"), vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn hex_string_to_bytes_ignores_odd_trailing_nibble() {
+        // Current behavior drops the trailing odd digit.
+        assert_eq!(hex_string_to_bytes("abc"), vec![0xab]);
+    }
+
+    #[test]
+    fn calculate_file_hash_is_sha256_hex() {
+        let data = b"hello";
+        assert_eq!(
+            calculate_file_hash(data),
+            "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn nearest_neighbor_downsample_preserves_corners() {
+        // 2x2 image with four distinct colors.
+        let pixels = vec![
+            255, 0, 0, 255, 0, 255, 0, 255,
+            0, 0, 255, 255, 255, 255, 0, 255,
+        ];
+        let out = nearest_neighbor_downsample(&pixels, 2, 2, 1, 1);
+        assert_eq!(out, vec![255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn has_alpha_transparency_detects_alpha() {
+        let opaque = vec![255, 255, 255, 255, 0, 0, 0, 255];
+        assert!(!has_alpha_transparency(&opaque));
+        let transparent = vec![255, 255, 255, 128, 0, 0, 0, 255];
+        assert!(has_alpha_transparency(&transparent));
+    }
+
+    #[test]
+    fn mime_from_extension_normalizes() {
+        assert_eq!(mime_from_extension("png"), "image/png");
+        assert_eq!(mime_from_extension(".PNG"), "image/png");
+        assert_eq!(mime_from_extension("unknown"), "application/octet-stream");
+    }
+
+    #[test]
+    fn extension_from_mime_known_and_fallback() {
+        assert_eq!(extension_from_mime("image/png"), "png");
+        assert_eq!(extension_from_mime("application/x-foo"), "x-foo");
+        assert_eq!(extension_from_mime("malformed"), "bin");
+    }
+
+    #[test]
+    fn mime_from_extension_safe_restricts_to_images() {
+        assert_eq!(mime_from_extension_safe("png", true).unwrap(), "image/png");
+        assert_eq!(mime_from_extension_safe("png", false).unwrap(), "image/png");
+        assert!(mime_from_extension_safe("pdf", true).is_err());
+    }
+
+    #[test]
+    fn is_image_mime_check() {
+        assert!(is_image_mime("image/png"));
+        assert!(!is_image_mime("application/pdf"));
+    }
+}
