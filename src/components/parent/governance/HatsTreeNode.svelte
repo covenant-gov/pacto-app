@@ -2,20 +2,31 @@
   import type { HatTreeNodeDto } from '$lib/governance/api';
 
   export let node: HatTreeNodeDto;
+  export let roleLabelByHatId: Record<string, string> = {};
+  export let wearersByHatId: Record<string, string[]> = {};
+
+  $: roleLabel = roleLabelByHatId[node.hatId] ?? '';
+  $: wearers = wearersByHatId[node.hatId] ?? [];
 </script>
 
 <li class="hats-tree-node" role="treeitem" aria-expanded="true">
   <div class="hats-tree-node-card">
     <span class="hats-tree-node-title">{node.details?.trim() || 'Untitled hat'}</span>
+    {#if roleLabel}
+      <span class="hats-tree-role-badge">{roleLabel}</span>
+    {/if}
     <code class="hats-tree-node-id">{node.hatId}</code>
     <span class="hats-tree-node-meta muted"
       >{node.supply}/{node.maxSupply} · {node.active ? 'active' : 'inactive'}</span
     >
+    {#if wearers.length > 0}
+      <span class="hats-tree-wearers muted">Worn by {wearers.join(', ')}</span>
+    {/if}
   </div>
   {#if (node.children?.length ?? 0) > 0}
     <ul class="hats-tree-children" role="group">
       {#each node.children ?? [] as child (child.hatId)}
-        <svelte:self node={child} />
+        <svelte:self node={child} {roleLabelByHatId} {wearersByHatId} />
       {/each}
     </ul>
   {/if}
@@ -60,6 +71,22 @@
     font-weight: 600;
     font-size: 0.9375rem;
     color: var(--text-primary);
+  }
+
+  .hats-tree-role-badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+  }
+
+  .hats-tree-wearers {
+    font-size: 0.75rem;
+    width: 100%;
   }
 
   .hats-tree-node-id {

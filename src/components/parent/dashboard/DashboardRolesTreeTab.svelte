@@ -11,6 +11,11 @@
   export let hatsTreeLoading = false;
   export let hatsTreeRefreshing = false;
   export let hatsTreeError = '';
+  export let roleLabelByHatId: Record<string, string> = {};
+  export let wearersByHatId: Record<string, string[]> = {};
+  export let rolesTreeAnnotationsLoading = false;
+  export let rolesTreeAnnotationsRefreshing = false;
+  export let rolesTreeAnnotationsError = '';
   export let onOpenLaunchpad: () => void = () => {};
 </script>
 
@@ -48,19 +53,24 @@
     {:else}
       <p class="dashboard-placeholder-text muted">Explorer link could not be built for this hat id format.</p>
     {/if}
-    {#if hatsTreeRefreshing}
+    {#if hatsTreeRefreshing || rolesTreeAnnotationsRefreshing}
       <p class="dashboard-refresh-note muted" role="status">Refreshing Hats tree…</p>
     {/if}
     {#if hatsTreeError && hatsTree}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
     {/if}
+    {#if rolesTreeAnnotationsError}
+      <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
+    {/if}
     {#if hatsTreeLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">Loading Hats tree from chain…</p>
+    {:else if rolesTreeAnnotationsLoading && !hatsTree}
+      <p class="dashboard-placeholder-text muted">Loading role labels and wearers…</p>
     {:else if !hatsTree && hatsTreeError}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
     {:else if hatsTree}
       <p class="roles-table-caption">On-chain tree</p>
-      <HatsTreeDiagram root={hatsTree} />
+      <HatsTreeDiagram root={hatsTree} {roleLabelByHatId} {wearersByHatId} />
     {/if}
   {/if}
 </section>

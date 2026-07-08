@@ -13,6 +13,11 @@ import {
   formatSquadAdminExecutorRoles,
   hatChecksFromNaveDeployment,
 } from '../governance/pacto-gov-payload';
+import {
+  memberHatByAddressFromAssignments,
+  roleLabelByHatIdFromNaveDeployment,
+  wearersByHatIdFromAssignments,
+} from '../governance/hats-tree-annotations';
 import { isTreasuryProposalActive } from '../governance/treasury-proposal-ui';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { listSquadMemberEvmInvokeArgs } from '../squad/squad-member-evm-share';
@@ -111,6 +116,44 @@ export async function fetchHatsTree(params: {
   }
 }
 
+export async function fetchRolesTreeAnnotations(params: {
+  network: SupportedChainId;
+  topHatId: string;
+  squadMemberEvmByNpub: Record<string, string>;
+}): Promise<{
+  roleLabelByHatId: Record<string, string>;
+  wearersByHatId: Record<string, string[]>;
+  error: string;
+}> {
+  const memberAddresses = Object.values(params.squadMemberEvmByNpub).filter(Boolean);
+  if (memberAddresses.length === 0) {
+    return { roleLabelByHatId: {}, wearersByHatId: {}, error: '' };
+  }
+
+  try {
+    const deployment = await getNavePirataDeployment({
+      network: params.network,
+      topHatId: params.topHatId,
+    });
+    const assignments = await getMemberHatWearers({
+      network: params.network,
+      memberAddresses,
+      hatChecks: hatChecksFromNaveDeployment(deployment),
+    });
+    return {
+      roleLabelByHatId: roleLabelByHatIdFromNaveDeployment(deployment),
+      wearersByHatId: wearersByHatIdFromAssignments(assignments),
+      error: '',
+    };
+  } catch (e) {
+    return {
+      roleLabelByHatId: {},
+      wearersByHatId: {},
+      error: getInvokeErrorMessage(e, 'Could not load role labels or hat wearers.'),
+    };
+  }
+}
+
 export async function fetchSettingsChainMemberMaps(params: {
   network: SupportedChainId;
   topHatId: string | null;
@@ -141,13 +184,7 @@ export async function fetchSettingsChainMemberMaps(params: {
         memberAddresses: evmAddresses,
         hatChecks: hatChecksFromNaveDeployment(deployment),
       });
-      const hatMap: Record<string, string> = {};
-      for (const row of assignments) {
-        if (row.hats.length > 0) {
-          hatMap[row.address.toLowerCase()] = row.hats.map((h) => h.label).join(', ');
-        }
-      }
-      memberHatByAddress = hatMap;
+      memberHatByAddress = memberHatByAddressFromAssignments(assignments);
     }
 
     if (params.squadAdminProxy) {
