@@ -18,6 +18,12 @@
   import { needsSquadRosterKeyChoice } from '../../lib/squad/squad-roster-key-choice';
   import { refreshPersonalAlertForSquad, setPersonalAlertNeeded } from '../../stores/squad-hub-alerts';
   import {
+    ensureMlsGroupMembers,
+    membersByGroupId,
+    membersLoadingByGroupId,
+    refreshMlsGroupMembers,
+  } from '../../stores/mls-group-members';
+  import {
     activeChannelId,
     activeHubChannelName,
     squads,
@@ -104,8 +110,6 @@
   let channelMenuOpen = false;
   let showLeaveChannelConfirm = false;
   let showInviteToChannelModal = false;
-  let channelMembers: string[] = [];
-  let loadingMembers = false;
   let inviteToChannelCandidates: string[] = [];
   let loadingInviteCandidates = false;
   let selectedInviteNpub: string | null = null;
@@ -286,21 +290,32 @@
     groupSendError.set(null);
   }
 
-  // When members panel is open and the MLS group for the sidebar changes, refresh the list
+  // When members panel is open and the MLS group for the sidebar changes, hydrate that group once.
   let prevMembersGroupIdForPanel: string | null = null;
-  $: if ($showMembersPanel && effectiveMembersGroupId && prevMembersGroupIdForPanel !== effectiveMembersGroupId) {
-    prevMembersGroupIdForPanel = effectiveMembersGroupId;
-    loadChannelMembers();
-  }
-  $: if (!$showMembersPanel) prevMembersGroupIdForPanel = null;
+  let prevMembersVersionByGroup: Record<string, number> = {};
 
-  // When root bumps membership version for the active group (mls_group_updated / mls_group_left),
-  // refetch members if the panel is open.
-  $: if ($showMembersPanel && effectiveMembersGroupId) {
-    const gid = effectiveMembersGroupId;
+  $: panelMembersGroupId = effectiveMembersGroupId;
+  $: panelMembers =
+    panelMembersGroupId != null ? ($membersByGroupId[panelMembersGroupId] ?? []) : [];
+  $: panelMembersLoading =
+    panelMembersGroupId != null ? ($membersLoadingByGroupId[panelMembersGroupId] ?? false) : false;
+  $: showPanelMembersLoading = panelMembersLoading && panelMembers.length === 0;
+
+  $: if ($showMembersPanel && panelMembersGroupId && prevMembersGroupIdForPanel !== panelMembersGroupId) {
+    prevMembersGroupIdForPanel = panelMembersGroupId;
+    void ensureMlsGroupMembers(panelMembersGroupId);
+  }
+  $: if (!$showMembersPanel) {
+    prevMembersGroupIdForPanel = null;
+  }
+
+  $: if ($showMembersPanel && panelMembersGroupId) {
+    const gid = panelMembersGroupId;
     const version = $membershipVersionByGroupId[gid] ?? 0;
-    if (version > 0) {
-      loadChannelMembers();
+    const prev = prevMembersVersionByGroup[gid] ?? -1;
+    if (version !== prev) {
+      prevMembersVersionByGroup = { ...prevMembersVersionByGroup, [gid]: version };
+      if (version > 0) void refreshMlsGroupMembers(gid);
     }
   }
 
@@ -412,9 +427,8 @@
   function openMembersPanel() {
     showMembersPanel.set(true);
     prevMembersGroupIdForPanel = effectiveMembersGroupId;
-    channelMembers = [];
     closeChannelMenu();
-    loadChannelMembers();
+    if (effectiveMembersGroupId) void ensureMlsGroupMembers(effectiveMembersGroupId);
   }
   function toggleMembersPanel() {
     if ($showMembersPanel) {
@@ -423,27 +437,13 @@
       openMembersPanel();
     }
   }
-  async function loadChannelMembers() {
-    const groupId = effectiveMembersGroupId;
-    if (!groupId) return;
-    loadingMembers = true;
-    try {
-      await syncMlsGroupsNow(groupId).catch(() => {});
-      const result = await getMlsGroupMembers(groupId);
-      channelMembers = result.members ?? [];
-    } catch {
-      channelMembers = [];
-    } finally {
-      loadingMembers = false;
-    }
-  }
-
   function openInviteToChannelModal() {
     showInviteToChannelModal = true;
     selectedInviteNpub = null;
     closeChannelMenu();
-    loadInviteToChannelCandidates();
+    void loadInviteToChannelCandidates();
   }
+
   async function loadInviteToChannelCandidates() {
     const groupId = $activeChannelId;
     if (!groupId) return;
@@ -810,10 +810,10 @@
           <h3 class="members-panel-title">Members</h3>
         </div>
         <div class="members-panel-list">
-          {#if loadingMembers}
+          {#if showPanelMembersLoading}
             <p class="members-panel-loading">Loading…</p>
           {:else}
-            {#each channelMembers as npub (npub)}
+            {#each panelMembers as npub (npub)}
               {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
               <div class="members-panel-member">
                 {#if avatarSrc}
