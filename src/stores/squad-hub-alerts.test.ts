@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import * as rosterKeyChoice from '../lib/squad/squad-roster-key-choice';
+import { JOIN_REQUESTS_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
 import {
-  acknowledgeJoinRequestsForSquad,
-  joinRequestAckCountBySquadId,
-  joinRequestPendingCountBySquadId,
-  joinRequestUnreadCount,
+  hubChannelAlertCount,
   personalAlertsNeededBySquadId,
   refreshPersonalAlertForSquad,
   resetSquadHubAlertStores,
@@ -18,17 +16,11 @@ describe('squad hub channel alerts', () => {
     resetSquadHubAlertStores();
   });
 
-  it('computes join-request unread from pending minus per-user ack', () => {
-    joinRequestPendingCountBySquadId.set({ squad1: 3 });
-    joinRequestAckCountBySquadId.set({ squad1: 1 });
-    expect(joinRequestUnreadCount('squad1')).toBe(2);
-  });
-
-  it('acknowledgeJoinRequestsForSquad syncs ack to current pending', () => {
-    joinRequestPendingCountBySquadId.set({ squad1: 4 });
-    acknowledgeJoinRequestsForSquad('squad1');
-    expect(get(joinRequestAckCountBySquadId).squad1).toBe(4);
-    expect(joinRequestUnreadCount('squad1')).toBe(0);
+  it('join-requests badge shows squad-wide pending count', () => {
+    const joinRequests = {
+      squad1: [{ eventId: 'a' }, { eventId: 'b' }],
+    };
+    expect(hubChannelAlertCount(JOIN_REQUESTS_CHANNEL_NAME, 'squad1', joinRequests as never)).toBe(2);
   });
 
   it('personal alert flag is independent per squad', () => {

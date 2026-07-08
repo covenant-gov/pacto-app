@@ -6,10 +6,9 @@
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import {
     hubChannelAlertCount,
-    joinRequestAckCountBySquadId,
-    joinRequestPendingCountBySquadId,
     personalAlertsNeededBySquadId,
   } from '../../stores/squad-hub-alerts';
+  import { pendingJoinRequestsBySquadId } from '../../stores/squad-join-requests';
 
   /** Squad row id for hub-channel alert badges. */
   export let squadId: string | null = null;
@@ -75,12 +74,11 @@
   $: showPartnerSquads = partnerSquads.length > 0 || showPairWithSquadAction;
   $: ({ defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels));
   $: hubAlertByChannelName = (() => {
-    const pending = $joinRequestPendingCountBySquadId;
-    const ack = $joinRequestAckCountBySquadId;
     const personal = $personalAlertsNeededBySquadId;
+    const joinRequests = $pendingJoinRequestsBySquadId;
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
-      out[channel.name] = hubChannelAlertCount(channel.name, squadId, pending, ack, personal);
+      out[channel.name] = hubChannelAlertCount(channel.name, squadId, joinRequests, personal);
     }
     return out;
   })();
