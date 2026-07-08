@@ -24,6 +24,23 @@ export function parsePactoGovProviderPayload(
   }
 }
 
+/** Ensure deploy tx hash is present in v1 provider_payload JSON (announce + infra parity). */
+export function withPactoGovProviderPayloadTxHash(
+  raw: string,
+  txHash: string | null | undefined,
+): string {
+  const hash = txHash?.trim();
+  if (!hash) return raw;
+  try {
+    const parsed = JSON.parse(raw) as PactoGovProviderPayloadV1 & { tx_hash?: string };
+    if (!parsed || typeof parsed !== 'object') return raw;
+    if (parsed.txHash?.trim() === hash || parsed.tx_hash?.trim() === hash) return raw;
+    return JSON.stringify({ ...parsed, txHash: hash });
+  } catch {
+    return raw;
+  }
+}
+
 /** Hat id + label pairs for `get_member_hat_wearers` when registry deployment is loaded. */
 export function hatChecksFromNaveDeployment(d: {
   captainHatId: string;
