@@ -92,6 +92,7 @@ import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } f
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
+import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -146,6 +147,7 @@ export function clearAccountState(npub?: string): void {
   resetCommonsJoinRequestRevision();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
+  resetMlsGroupMembersStores();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();

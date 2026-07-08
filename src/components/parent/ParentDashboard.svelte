@@ -43,13 +43,18 @@
   import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
   import { resolveDashboardPermissionsContext } from '../../lib/dashboard/permissions-panel';
   import {
-    fetchDashboardChannelMembers,
     fetchHatsTree,
     fetchSettingsChainMemberMaps,
     fetchSquadMemberEvmByNpub,
     fetchTreasuryProposalVoteMap,
     fetchTreasuryProposals,
   } from '../../lib/dashboard/parent-dashboard-loaders';
+  import {
+    ensureMlsGroupMembers,
+    membersByGroupId,
+    membersLoadingByGroupId,
+    refreshMlsGroupMembers,
+  } from '../../stores/mls-group-members';
   import {
     getCachedHatsTree,
     getCachedTreasuryProposals,
@@ -374,9 +379,13 @@
     parent?.channels?.[0]?.groupId ??
     null;
 
-  let channelMembers: string[] = [];
-  let loadingMembers = false;
   let prevMembersGroupIdForPanel: string | null = null;
+  let prevMembersVersionByGroup: Record<string, number> = {};
+  $: channelMembers = announcementsGroupId ? ($membersByGroupId[announcementsGroupId] ?? []) : [];
+  $: loadingMembers =
+    announcementsGroupId
+      ? ($membersLoadingByGroupId[announcementsGroupId] ?? false) && channelMembers.length === 0
+      : false;
   $: squadMemberEvmByNpub = parentId ? ($squadMemberEvmByParentId[parentId] ?? {}) : {};
 
   async function loadSquadMemberEvm() {
@@ -387,16 +396,9 @@
     if (npub) persistSquadMemberEvmForParent(npub, parentId, rows);
   }
 
-  async function loadDashboardMembers() {
-    if (!announcementsGroupId) return;
-    loadingMembers = true;
-    channelMembers = await fetchDashboardChannelMembers(announcementsGroupId);
-    loadingMembers = false;
-  }
-
   function selectDashboardView(id: ParentDashboardView) {
     parentDashboardChannelMode.set(id);
-    if (id === 'settings' && announcementsGroupId) loadDashboardMembers();
+    if (id === 'settings' && announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
   }
 
   function prefetchDashboardTabIntent(id: ParentDashboardView) {
@@ -415,8 +417,7 @@
   function openDashboardMembersPanel() {
     showMembersPanel.set(true);
     prevMembersGroupIdForPanel = announcementsGroupId;
-    channelMembers = [];
-    loadDashboardMembers();
+    if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
   }
 
   function toggleMembersPanel() {
@@ -429,15 +430,17 @@
 
   $: if ($showMembersPanel && announcementsGroupId && prevMembersGroupIdForPanel !== announcementsGroupId) {
     prevMembersGroupIdForPanel = announcementsGroupId;
-    loadDashboardMembers();
+    void ensureMlsGroupMembers(announcementsGroupId);
   }
   $: if (!$showMembersPanel) prevMembersGroupIdForPanel = null;
 
   $: if ($showMembersPanel && announcementsGroupId) {
     const gid = announcementsGroupId;
     const version = $membershipVersionByGroupId[gid] ?? 0;
-    if (version > 0) {
-      loadDashboardMembers();
+    const prev = prevMembersVersionByGroup[gid] ?? -1;
+    if (version !== prev) {
+      prevMembersVersionByGroup = { ...prevMembersVersionByGroup, [gid]: version };
+      if (version > 0) void refreshMlsGroupMembers(gid);
     }
   }
 
