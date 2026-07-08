@@ -11,6 +11,8 @@ describe('resolveDashboardPermissionsContext', () => {
     const ctx = resolveDashboardPermissionsContext(undefined);
     expect(ctx.phase).toBe('loading');
     expect(ctx.catalogRows).toEqual([]);
+    expect(ctx.leadNote).toBe('');
+    expect(ctx.showExecutorMappingPlaceholder).toBe(false);
   });
 
   it('mls_only when no row', () => {
@@ -18,6 +20,24 @@ describe('resolveDashboardPermissionsContext', () => {
     expect(ctx.phase).toBe('mls_only');
     expect(ctx.catalogRows).toEqual([]);
     expect(ctx.leadNote).toContain('Pacto Gov');
+    expect(ctx.showExecutorMappingPlaceholder).toBe(false);
+  });
+
+  it('pacto_gov without revision omits pactoGovRevision', () => {
+    const row: ParentGovernanceDto = {
+      id: 'pacto-gov-p1',
+      parentId: 'p1',
+      infraType: 'pacto_gov',
+      provider: 'pacto_gov',
+      chain: 'sepolia',
+      canonicalRef: '1',
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    };
+    const ctx = resolveDashboardPermissionsContext(row);
+    expect(ctx.phase).toBe('pacto_gov');
+    expect(ctx.pactoGovRevision).toBeUndefined();
+    expect(ctx.showExecutorMappingPlaceholder).toBe(false);
   });
 
   it('pacto_gov includes catalog and revision', () => {
@@ -39,7 +59,7 @@ describe('resolveDashboardPermissionsContext', () => {
     expect(ctx.showExecutorMappingPlaceholder).toBe(false);
   });
 
-  it('gnosis_safe uses treasury catalog', () => {
+  it('gnosis_safe uses treasury catalog and keeps executor placeholder off', () => {
     const row: ParentGovernanceDto = {
       id: 'standalone-safe-p1',
       parentId: 'p1',
@@ -69,5 +89,7 @@ describe('resolveDashboardPermissionsContext', () => {
     });
     expect(ctx.phase).toBe('other_provider');
     expect(ctx.catalogRows).toEqual([]);
+    expect(ctx.leadNote).toContain('not wired');
+    expect(ctx.showExecutorMappingPlaceholder).toBe(false);
   });
 });
