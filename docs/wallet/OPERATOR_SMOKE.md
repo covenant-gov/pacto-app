@@ -34,10 +34,12 @@ See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
 Requires **sponsor** for same `parentId`.
 
-- [ ] **Deploy** → **Set up Pacto Gov**; captain = embedded wallet, metadata URI set.
-- [ ] **Governance** + **Treasury** (`Governance: Treasury`); **Roles Tree** loads.
-- [ ] Explorer: `NavePirataDeployed` log; `topHatId` / Safe match infra `provider_payload`.
-- [ ] Reload — `pacto_gov` row present.
+- [ ] **Deploy** → **Set up Pacto Gov**; pick captain from squad members with shared EVM.
+- [ ] **Governance** tab shows **Pacto Gov deployment** infra (labeled contract links); **Treasury proposals** section below.
+- [ ] **Treasury** tab does **not** list the governance treasury Safe (vault Safes + sponsor only).
+- [ ] **#announcements** shows deploy card with module addresses, top hat (Hats tree link), and deploy tx link.
+- [ ] **Roles Tree** tab loads on-chain tree after deploy.
+- [ ] Reload — `pacto_gov` row present; `provider_payload` includes `txHash`.
 
 | Symptom | Likely cause |
 |---------|----------------|
@@ -67,13 +69,13 @@ Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance 
 
 ## 4. Governance announce sync (A4)
 
-After any deploy: **`governance_updated`** (and **`squad_safe_updated`** for treasury links) → **`squad_infra`** on reload or second client.
+After deploy: **`governance_updated`** → **`squad_infra`** on reload or second client. Pacto Gov uses **`#announcements`** (not inbox). No separate **`squad_safe_updated`** for the governance treasury Safe.
 
-**Wire:** `buildAnnounceContent` with `type: "governance_updated"` — fields `parent_id`, `provider`, `canonical_ref`, `entry_id`, `chain`, `provider_payload`. Ingest: `maybe_upsert_governance_from_announce` in `src-tauri/src/db.rs`.
+**Wire:** `buildAnnounceContent` with `type: "governance_updated"` — fields `parent_id`, `provider`, `canonical_ref`, `entry_id`, `chain`, `provider_payload` (v1 JSON with module addresses + `txHash`). Ingest: `maybe_upsert_governance_from_announce` in `src-tauri/src/db.rs`.
 
 - [ ] **Single client:** deploy → note `listSquadInfra` → quit/restart → same rows and refs.
-- [ ] **Two clients:** Client A deploys; Client B opens **#dashboard** after MLS sync — same infra without redeploy.
-- [ ] Inbox shows announce; `entry_id` matches infra row id (`sponsor-{parentId}`, `pacto-gov-{parentId}`, etc.).
+- [ ] **Two clients:** Client A deploys; Client B opens **#announcements** after MLS sync — structured Pacto Gov card + same infra without redeploy.
+- [ ] **#announcements** shows card; `entry_id` matches infra row id (`pacto-gov-{parentId}`, `sponsor-{parentId}`, etc.).
 
 | Symptom | Likely cause |
 |---------|----------------|
@@ -81,7 +83,7 @@ After any deploy: **`governance_updated`** (and **`squad_safe_updated`** for tre
 | Second client empty | Not in MLS group or announcements channel |
 | Duplicate rows | Same deploy, different `entry_id` |
 
-Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`.
+Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`, `src/lib/governance/pacto-gov-deploy-announce.test.ts`.
 
 ---
 

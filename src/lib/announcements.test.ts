@@ -24,6 +24,14 @@ describe('buildAnnounceContent', () => {
     expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
   });
 
+  it('sets pacto_virtual_bucket announcements for pacto_gov deploy', () => {
+    const s = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+      payload: { parent_id: 'p', provider: 'pacto_gov', canonical_ref: '3519' },
+    });
+    expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
+  });
+
   it('sets pacto_virtual_bucket announcements for dashboard_poll_created', () => {
     const s = buildAnnounceContent({
       type: ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
