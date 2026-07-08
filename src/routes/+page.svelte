@@ -8,6 +8,7 @@
   import PersonalBroadcastModal from '../components/commons/PersonalBroadcastModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
   import ParentDashboard from '../components/parent/ParentDashboard.svelte';
+  import SquadJoinRequestsPanel from '../components/squad/SquadJoinRequestsPanel.svelte';
   import Profile from '../components/profile/Profile.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
@@ -95,6 +96,7 @@
     revertDmChat,
     type DmChatSnapshot,
     DASHBOARD_CHANNEL_ID,
+    JOIN_REQUESTS_CHANNEL_ID,
     treasurySafesByParentId,
     squadInfraByParentId,
     type TreasurySafeEntry,
@@ -175,10 +177,13 @@
   $: showParentDashboard =
     openHubParent != null &&
     (!effectiveHubChannel.channelId || effectiveHubChannel.channelId === DASHBOARD_CHANNEL_ID);
+  $: showJoinRequestsPanel =
+    openHubParent != null && effectiveHubChannel.channelId === JOIN_REQUESTS_CHANNEL_ID;
   $: showMlsChatView =
     openHubParent != null &&
     !!effectiveHubChannel.channelId &&
-    effectiveHubChannel.channelId !== DASHBOARD_CHANNEL_ID;
+    effectiveHubChannel.channelId !== DASHBOARD_CHANNEL_ID &&
+    effectiveHubChannel.channelId !== JOIN_REQUESTS_CHANNEL_ID;
 
   $: if ($activeTopNavTab === 'squads' && $squads.length > 0) {
     syncSquadsHubSelection();
@@ -545,6 +550,7 @@
       const squad = $squads.find((s: Squad) => s.id === sid);
       const cidBelongsToSquad =
         cid === DASHBOARD_CHANNEL_ID ||
+        cid === JOIN_REQUESTS_CHANNEL_ID ||
         (squad?.channels.some((c: Channel) => c.groupId === cid) ?? false);
       if (cidBelongsToSquad && squad) {
         lastOpenedChannelId.set(cid);
@@ -554,7 +560,9 @@
           return next;
         });
         const hub =
-          resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
+          cid === JOIN_REQUESTS_CHANNEL_ID
+            ? 'join-requests'
+            : resolveHubChannelNameForGroupSelection(squad.channels, cid, $activeHubChannelName) ?? '';
         lastHubChannelNameBySquadId.update((m) => {
           const next = { ...m };
           if (!hub) delete next[sid];
@@ -649,6 +657,7 @@
   $: if (
     $activeChannelId &&
     $activeChannelId !== DASHBOARD_CHANNEL_ID &&
+    $activeChannelId !== JOIN_REQUESTS_CHANNEL_ID &&
     !$activeChannelId.startsWith('creating-') &&
     $activeTopNavTab === 'squads'
   ) {
@@ -1091,6 +1100,10 @@
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
             />
+            {/key}
+          {:else if showJoinRequestsPanel && openHubParent}
+            {#key `${openHubParent.id}:${JOIN_REQUESTS_CHANNEL_ID}`}
+              <SquadJoinRequestsPanel squad={openHubParent} />
             {/key}
           {:else if showMlsChatView}
             {#if ChatViewComponent}

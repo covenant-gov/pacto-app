@@ -17,6 +17,7 @@
   import { portal } from '../../lib/utils/portal';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
   import { showToast } from '../../stores/toast';
+  import EditIconButton from '../ui/EditIconButton.svelte';
 
   export let accountNpub: string;
   export let squadAccounts: EvmAccountRow[] = [];
@@ -136,30 +137,13 @@
         <dd><code>{shortAddr(receiverAddress)}</code></dd>
       </div>
     </dl>
-    <button
-      type="button"
-      class="dwc-summary-edit"
+    <EditIconButton
       disabled={accountsLoading || squadAccounts.length === 0}
-      aria-label="Edit default EVM account"
-      title="Edit"
+      ariaLabel="Edit default EVM account"
+      title="Edit default EVM account"
+      className="dwc-summary-edit"
       on:click={openEdit}
-    >
-      <svg
-        class="dwc-summary-edit-icon"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M12 20h9" />
-        <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-      </svg>
-    </button>
+    />
   </div>
 
   {#if squadAccounts.length === 0 && !accountsLoading}
@@ -267,41 +251,26 @@
     display: contents;
   }
 
-  .dwc-summary-edit {
+  :global(.dwc-summary-edit) {
     grid-column: 3;
     grid-row: 1 / span 3;
     align-self: start;
     justify-self: end;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 2rem;
     height: 2rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border-color: var(--border);
     background: var(--bg-hover);
     color: var(--text-primary);
-    cursor: pointer;
-    font-family: inherit;
     transition: border-color 0.2s;
   }
 
-  .dwc-summary-edit:hover:not(:disabled) {
+  :global(.dwc-summary-edit:hover:not(:disabled)) {
     border-color: var(--accent);
   }
 
-  .dwc-summary-edit:disabled {
+  :global(.dwc-summary-edit:disabled) {
     opacity: 0.45;
     cursor: not-allowed;
-  }
-
-  .dwc-summary-edit-icon {
-    display: block;
-    width: 1.125rem;
-    height: 1.125rem;
-    flex-shrink: 0;
   }
 
   .dwc-summary-row dt {

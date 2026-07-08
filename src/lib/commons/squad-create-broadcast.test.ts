@@ -5,7 +5,7 @@ import {
 } from './squad-create-broadcast';
 
 describe('isPublicSquadForCommonsBroadcast', () => {
-  it('requires public visibility and tags', () => {
+  it('requires public visibility', () => {
     expect(
       isPublicSquadForCommonsBroadcast({
         id: 'g1',
@@ -22,7 +22,7 @@ describe('isPublicSquadForCommonsBroadcast', () => {
         kind: 'squad',
         visibility: 'public',
       })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isPublicSquadForCommonsBroadcast({
         id: 'g1',

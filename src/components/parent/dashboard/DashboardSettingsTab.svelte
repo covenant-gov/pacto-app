@@ -1,6 +1,7 @@
 <script lang="ts">
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
+  import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth';
@@ -9,9 +10,12 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import type { Squad } from '../../../stores/squads';
 
   /** Enable when squad key rotation backend is wired. */
   const ROTATE_SQUAD_KEY_ENABLED = false;
+
+  export let squad: Squad;
 
   export let permissionsCtx: DashboardPermissionsContext;
   export let squadAdminCtx: ResolvedSquadAdminContext | null = null;
@@ -52,6 +56,8 @@
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
 </script>
+
+<SquadBroadcastSettingsSection {squad} />
 
 <section
   id="settings-user-squad"

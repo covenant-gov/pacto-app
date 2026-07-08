@@ -17,15 +17,18 @@ import {
 } from './parent-navbar';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  JOIN_REQUESTS_CHANNEL_NAME,
   PERSONAL_ALERTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from '../stores/app';
+import { buildHubSidebarChannels } from './parent-navbar';
 
 describe('partitionHubSidebarChannels', () => {
   it('splits built-in hub rows from user-created channels', () => {
     const channels = [
       { name: 'dashboard', groupId: '__dashboard__', order: -1 },
       { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId: 'g', order: 0 },
+      { name: JOIN_REQUESTS_CHANNEL_NAME, groupId: '__join_requests__', order: 0 },
       { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId: 'g', order: 1 },
       { name: POLLS_CHANNEL_NAME, groupId: 'g', order: 2 },
       { name: 'c1', groupId: 'c1g', order: 3 },
@@ -34,10 +37,26 @@ describe('partitionHubSidebarChannels', () => {
     expect(defaultHubChannels.map((c) => c.name)).toEqual([
       'dashboard',
       ANNOUNCEMENTS_CHANNEL_NAME,
+      JOIN_REQUESTS_CHANNEL_NAME,
       PERSONAL_ALERTS_CHANNEL_NAME,
       POLLS_CHANNEL_NAME,
     ]);
     expect(customChannels.map((c) => c.name)).toEqual(['c1']);
+  });
+});
+
+describe('buildHubSidebarChannels', () => {
+  it('inserts join-requests directly under announcements', () => {
+    const raw = defaultChannelRowsForGroupId('g');
+    const built = buildHubSidebarChannels(raw);
+    expect(built.map((c) => c.name)).toEqual([
+      'dashboard',
+      ANNOUNCEMENTS_CHANNEL_NAME,
+      JOIN_REQUESTS_CHANNEL_NAME,
+      PERSONAL_ALERTS_CHANNEL_NAME,
+      POLLS_CHANNEL_NAME,
+    ]);
+    expect(built.find((c) => c.name === JOIN_REQUESTS_CHANNEL_NAME)?.groupId).toBe('__join_requests__');
   });
 });
 

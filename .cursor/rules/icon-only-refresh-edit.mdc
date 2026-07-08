@@ -1,0 +1,43 @@
+---
+description: Refresh and Edit actions use icon-only buttons, never visible text labels
+globs: src/**/*.svelte
+alwaysApply: true
+---
+
+# Icon-only Refresh and Edit actions
+
+Never render **Refresh** or **Edit** as visible button/link label text in the UI.
+
+## Use shared components
+
+- **Refresh** → `RefreshIconButton` (`src/components/ui/RefreshIconButton.svelte`)
+- **Edit** → `EditIconButton` (`src/components/ui/EditIconButton.svelte`)
+
+Both are icon-only controls. Pass meaning via `ariaLabel` (required) and optional `title` for hover tooltips.
+
+```svelte
+<!-- ✅ GOOD -->
+<RefreshIconButton
+  spinning={loading}
+  ariaLabel={loading ? 'Refreshing join requests' : 'Refresh join requests'}
+  on:click={refresh}
+/>
+
+<EditIconButton ariaLabel="Edit default EVM account" on:click={openEdit} />
+```
+
+```svelte
+<!-- ❌ BAD -->
+<button type="button" on:click={refresh}>Refresh</button>
+<button type="button" on:click={openEdit}>Edit</button>
+```
+
+## Allowed exceptions
+
+- **Status copy** is fine: “Refreshing…”, “Refreshing proposals…” (not action buttons).
+- **Modal/page headings** may say “Edit …” when naming a form (`<h2>Edit profile</h2>`).
+- **`aria-label` / `title`** should describe the action in plain language; they are not visible labels.
+
+## New work
+
+When adding reload or edit affordances in Svelte UI, default to the shared icon buttons. Do not introduce new text-labeled Refresh/Edit controls or duplicate inline refresh/pencil SVGs unless there is a strong layout reason — then still keep the control icon-only with accessible naming.
