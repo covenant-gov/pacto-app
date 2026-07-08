@@ -6,11 +6,12 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../../lib/wallet/chains';
   import {
-    loadDeployNavePirataWizard,
+    loadDeployPactoGovModal,
     loadDeploySafeModal,
     loadDeploySquadAdminModal,
     loadDeploySquadSponsorModal,
   } from '../../../lib/parent/deploy-wizard-components';
+  import type { PactoGovCaptainOption, PactoGovDeployComplete } from '../../../lib/governance/start-pacto-gov-deploy';
 
   export let parentId: string;
   export let announcementsGroupId: string | null = null;
@@ -26,10 +27,11 @@
   /** Sponsor clone address when sponsor infra is deployed. */
   export let sponsorAddress = '';
   export let memberEvmOptions: { address: string; label: string }[] = [];
+  export let captainMemberOptions: PactoGovCaptainOption[] = [];
 
   export let showDeploySafeModal = false;
-  export let showNaveWizard = false;
   export let showLaunchpad = false;
+  export let showPactoGovDeploy = false;
   export let showSponsorDeploy = false;
   export let showSquadAdminDeploy = false;
   export let showSquadRolesModal = false;
@@ -48,13 +50,7 @@
     entryId: string;
     txHash?: string;
   }) => Promise<void> = async () => {};
-  export let onNaveComplete: (out: {
-    chain: string;
-    topHatId: string;
-    providerPayload: string;
-    safeAddress: string;
-    txHash: string;
-  }) => Promise<void> = async () => {};
+  export let onPactoGovComplete: (out: PactoGovDeployComplete) => Promise<void> = async () => {};
   export let onSquadAdminComplete: (out: {
     chain: string;
     squadAdminProxy: string;
@@ -70,8 +66,8 @@
   export let onConfirmSetSafe: () => void | Promise<void> = () => {};
   export let onCloseSetSafe: () => void = () => {};
   export let onCloseDeploySafe: () => void = () => {};
-  export let onCloseNaveWizard: () => void = () => {};
   export let onCloseLaunchpad: () => void = () => {};
+  export let onClosePactoGovDeploy: () => void = () => {};
   export let onCloseSponsorDeploy: () => void = () => {};
   export let onCloseSquadAdminDeploy: () => void = () => {};
   export let onCloseSquadRolesModal: () => void = () => {};
@@ -82,7 +78,7 @@
   export let onImportSafe: () => void = () => {};
 
   let DeploySafeModalComponent: Component | null = null;
-  let DeployNaveWizardComponent: Component | null = null;
+  let DeployPactoGovModalComponent: Component | null = null;
   let DeploySquadSponsorComponent: Component | null = null;
   let DeploySquadAdminComponent: Component | null = null;
 
@@ -91,9 +87,9 @@
       DeploySafeModalComponent = c;
     });
   }
-  $: if (showNaveWizard && !DeployNaveWizardComponent) {
-    void loadDeployNavePirataWizard().then((c) => {
-      DeployNaveWizardComponent = c;
+  $: if (showPactoGovDeploy && !DeployPactoGovModalComponent) {
+    void loadDeployPactoGovModal().then((c) => {
+      DeployPactoGovModalComponent = c;
     });
   }
   $: if (showSponsorDeploy && !DeploySquadSponsorComponent) {
@@ -125,17 +121,18 @@
   {/if}
 {/if}
 
-{#if showNaveWizard && parentId.trim()}
-  {#if DeployNaveWizardComponent}
-    <DeployNaveWizardComponent
+{#if showPactoGovDeploy && parentId.trim()}
+  {#if DeployPactoGovModalComponent}
+    <DeployPactoGovModalComponent
       parentId={parentId.trim()}
       {squadNetwork}
-      onClose={onCloseNaveWizard}
-      onComplete={onNaveComplete}
+      {captainMemberOptions}
+      onClose={onClosePactoGovDeploy}
+      onComplete={onPactoGovComplete}
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy wizard…</p>
+      <p class="wizard-loading-text">Loading deploy modal…</p>
     </div>
   {/if}
 {/if}
