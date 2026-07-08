@@ -35,12 +35,15 @@ describe('governance_updated announce payloads (A4 wire shape)', () => {
       parentId: PARENT,
       topHatId: '42',
       chain: 'sepolia',
-      providerPayload: '{"v":1}',
+      providerPayload: '{"v":1,"safe":"0x1"}',
       entryId,
+      txHash: '0xdeployhash',
     });
     expect(payload.provider).toBe('pacto_gov');
     expect(payload.canonical_ref).toBe('42');
     expect(payload.entry_id).toBe(entryId);
+    const embedded = JSON.parse(payload.provider_payload) as { txHash?: string };
+    expect(embedded.txHash).toBe('0xdeployhash');
   });
 
   it('pacto_gov payload includes pacto_gov_revision when provided', () => {

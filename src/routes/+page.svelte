@@ -131,6 +131,7 @@
     pactoGovTreasuryEntryId,
     primaryGovernanceView,
   } from '../lib/governance/api';
+  import { withPactoGovProviderPayloadTxHash } from '../lib/governance/pacto-gov-payload';
   import {
     buildStandaloneSafeProviderPayload,
     isPactoGovTreasurySafe,
@@ -310,13 +311,17 @@
     txHash: string;
   }) {
     const entryId = pactoGovInfraId(params.parentId);
+    const providerPayload = withPactoGovProviderPayloadTxHash(
+      params.providerPayload,
+      params.txHash,
+    );
     await upsertSquadInfra({
       id: entryId,
       parentId: params.parentId,
       infraType: 'pacto_gov',
       chain: params.chain,
       canonicalRef: params.topHatId,
-      providerPayload: params.providerPayload,
+      providerPayload,
     });
     const row = get(squads).find((s: Squad) => s.id === params.parentId);
     const gid =
@@ -360,8 +365,9 @@
               parentId: params.parentId,
               topHatId: params.topHatId,
               chain: params.chain,
-              providerPayload: params.providerPayload,
+              providerPayload,
               entryId,
+              txHash: params.txHash,
             }),
           }),
           '',
