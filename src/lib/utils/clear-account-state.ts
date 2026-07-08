@@ -90,10 +90,8 @@ import { recentEmojisStore } from '../../stores/emojis';
 import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
-import {
-  JOIN_REQUEST_ACK_COUNT_PREFIX,
-  resetSquadHubAlertStores,
-} from '../../stores/squad-hub-alerts';
+import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
+import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -119,7 +117,6 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_wallet_tx_request_accepted',
   PACTO_COMMONS_BROADCASTS_PREFIX,
   PACTO_COMMONS_JOIN_REQUESTS_PREFIX,
-  JOIN_REQUEST_ACK_COUNT_PREFIX,
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
 ] as const;
@@ -147,6 +144,7 @@ export function clearAccountState(npub?: string): void {
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();
   resetCommonsJoinRequestRevision();
+  resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();

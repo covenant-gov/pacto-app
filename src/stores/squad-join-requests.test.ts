@@ -1,0 +1,52 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
+import * as joinRequestsApi from '../lib/commons/join-requests';
+import {
+  getJoinRequestPendingCount,
+  pendingJoinRequestsBySquadId,
+  removePendingJoinRequest,
+  resetSquadJoinRequestStores,
+} from './squad-join-requests';
+import type { CommonsJoinRequestDto } from '../lib/commons/types';
+
+function sampleRequest(eventId: string): CommonsJoinRequestDto {
+  return {
+    eventId,
+    requesterNpub: 'npub1',
+    squadId: 'squad1',
+    squadName: 'Z',
+    broadcastEventId: 'b1',
+    createdAt: 1,
+    status: 'pending',
+  };
+}
+
+describe('squad join requests store', () => {
+  beforeEach(() => {
+    resetSquadJoinRequestStores();
+    vi.restoreAllMocks();
+  });
+
+  it('getJoinRequestPendingCount reflects pending list length', () => {
+    pendingJoinRequestsBySquadId.set({ squad1: [sampleRequest('a'), sampleRequest('b')] });
+    expect(getJoinRequestPendingCount('squad1')).toBe(2);
+  });
+
+  it('removePendingJoinRequest decrements only on accept/reject', () => {
+    pendingJoinRequestsBySquadId.set({ squad1: [sampleRequest('a'), sampleRequest('b')] });
+    removePendingJoinRequest('squad1', 'a');
+    expect(getJoinRequestPendingCount('squad1')).toBe(1);
+    expect(get(pendingJoinRequestsBySquadId).squad1.map((r) => r.eventId)).toEqual(['b']);
+  });
+
+  it('ensureJoinRequestsHydrated fetches once per squad', async () => {
+    const fetchSpy = vi
+      .spyOn(joinRequestsApi, 'loadPendingJoinRequestsForSquad')
+      .mockResolvedValue([sampleRequest('x')]);
+    const { ensureJoinRequestsHydrated } = await import('./squad-join-requests');
+    await ensureJoinRequestsHydrated('squad1');
+    await ensureJoinRequestsHydrated('squad1');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getJoinRequestPendingCount('squad1')).toBe(1);
+  });
+});

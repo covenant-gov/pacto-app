@@ -1,12 +1,18 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { currentUser } from '../../stores/auth';
   import { profiles, loadProfile } from '../../stores/profiles';
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
-  import { loadPendingJoinRequestsForSquad, respondToCommonsJoinRequest } from '../../lib/commons/join-requests';
-  import { refreshJoinRequestAlertForSquad, acknowledgeJoinRequestsForSquad } from '../../stores/squad-hub-alerts';
+  import { respondToCommonsJoinRequest } from '../../lib/commons/join-requests';
+  import {
+    ensureJoinRequestsHydrated,
+    joinRequestsHydratedBySquadId,
+    joinRequestsSyncingBySquadId,
+    pendingJoinRequestsBySquadId,
+    removePendingJoinRequest,
+    syncJoinRequestsForSquad,
+  } from '../../stores/squad-join-requests';
   import { runInviteMembersToParent } from '../../lib/parent/invite-members-flow';
   import type { Squad } from '../../stores/squads';
   import { JOIN_REQUESTS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
@@ -14,31 +20,35 @@
 
   export let squad: Squad;
 
-  let requests: CommonsJoinRequestDto[] = [];
-  let loading = true;
   let actingOn: string | null = null;
   let error = '';
+  let profileLoadToken = 0;
 
-  async function refresh() {
-    loading = true;
-    error = '';
-    try {
-      requests = await loadPendingJoinRequestsForSquad(squad.id);
-      void refreshJoinRequestAlertForSquad(squad.id);
-      const npubs = [...new Set(requests.map((r) => r.requesterNpub))];
-      await Promise.all(npubs.map((npub) => loadProfile(npub)));
-    } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not load join requests.';
-      requests = [];
-    } finally {
-      loading = false;
-    }
+  $: requests = $pendingJoinRequestsBySquadId[squad.id] ?? [];
+  $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
+  $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
+  $: loading = !hydrated && syncing;
+
+  $: if (squad?.id) {
+    void ensureJoinRequestsHydrated(squad.id);
   }
 
-  onMount(() => {
-    acknowledgeJoinRequestsForSquad(squad.id);
-    void refresh();
-  });
+  $: if (requests.length > 0) {
+    const token = ++profileLoadToken;
+    const npubs = [...new Set(requests.map((r) => r.requesterNpub))];
+    void Promise.all(npubs.map((npub) => loadProfile(npub))).then(() => {
+      if (token !== profileLoadToken) return;
+    });
+  }
+
+  async function refresh() {
+    error = '';
+    try {
+      await syncJoinRequestsForSquad(squad.id);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Could not load join requests.';
+    }
+  }
 
   async function handleReject(request: CommonsJoinRequestDto) {
     if (actingOn) return;
@@ -53,8 +63,7 @@
       showToast(result.error);
       return;
     }
-    requests = requests.filter((r) => r.eventId !== request.eventId);
-    void refreshJoinRequestAlertForSquad(squad.id);
+    removePendingJoinRequest(squad.id, request.eventId);
     showToast('Join request rejected.');
   }
 
@@ -79,8 +88,7 @@
       onComplete: (invitedNpubs) => {
         actingOn = null;
         if (!invitedNpubs.includes(request.requesterNpub)) return;
-        requests = requests.filter((r) => r.eventId !== request.eventId);
-        void refreshJoinRequestAlertForSquad(squad.id);
+        removePendingJoinRequest(squad.id, request.eventId);
         const name = getProfileDisplayName($profiles[request.requesterNpub]) || 'Member';
         showToast(`Invite sent to ${name}.`);
       },
@@ -153,9 +161,9 @@
 
   <div class="join-requests-footer">
     <RefreshIconButton
-      disabled={loading}
-      spinning={loading}
-      ariaLabel={loading ? 'Refreshing join requests' : 'Refresh join requests'}
+      disabled={syncing}
+      spinning={syncing}
+      ariaLabel={syncing ? 'Refreshing join requests' : 'Refresh join requests'}
       on:click={() => refresh()}
     />
   </div>
