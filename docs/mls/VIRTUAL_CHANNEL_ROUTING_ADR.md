@@ -4,7 +4,7 @@
 
 **Step 17 decision (Phase G′):** **Option A** — rename wire bucket **`monitor` → `inbox`** everywhere (UI, JSON, SQLite, Rust ingest). No dual-read compatibility for the old slug (pre-alpha greenfield).
 
-**Scope:** Default squad/network conversation scope when **one MLS `groupId`** backs `#announcements`, `#inbox`, and `#polls`. User-created MLS channels that remain separate groups are out of scope unless explicitly migrated later.
+**Scope:** Default squad/network conversation scope when **one MLS `groupId`** backs `#announcements`, `#personal-alerts`, and `#polls`. User-created MLS channels that remain separate groups are out of scope unless explicitly migrated later.
 
 **Posture:** Greenfield / pre-release — describe **one** normative contract; do not extend this ADR with alternate routing trees for superseded layouts. See [`.cursor/rules/greenfield-no-legacy.mdc`](../../.cursor/rules/greenfield-no-legacy.mdc).
 
@@ -40,8 +40,8 @@ Only one canonical enum is used everywhere (tag value === JSON value).
 
 | Value | Meaning |
 |-------|---------|
-| `announcements` | Human-facing chat and member-authored broadcast intent. |
-| `inbox` | Automation: treasury/governance announce cards, signer roster visibility rows, other bot-style MLS rows. |
+| `announcements` | Human-facing chat and **squad-wide state** the whole group should see (member roster EVM shares, sponsor deploys, poll created). |
+| `inbox` | **Personal prompts and automation** for the viewing member: treasury/governance cards, Safe proposals, roster setup cards in `#personal-alerts`. Wire bucket name remains `inbox`. |
 | `polls` | Dashboard poll create/vote structured MLS payloads (and future poll-shaped traffic). |
 
 Future buckets extend this enum in the same ADR (revision) before code assumes open strings.
@@ -106,12 +106,12 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 | 2 | JSON parse succeeds and `pacto_virtual_bucket` valid | Field value |
 | 3 | Payload classified as dashboard poll rumor (existing poll ingest path / `d` tag convention) | `polls` |
 | 4 | `parseAnnouncement`-style governance/treasury/Safe (and similar **structured announce**) payloads used for automation today | `inbox` |
-| 5 | JSON `type` identifies signer roster share (`squad_member_evm_share` family) | `inbox` |
+| 5 | JSON `type` identifies **`squad_member_evm_share`** (member published roster EVM address) | `announcements` |
 | 6 | Plaintext or JSON without any rule above | `announcements` |
 
 **Rationale for default `announcements`:** safest UX default for unknown content (human-readable traffic); automation paths should **always** set tag or field once virtual routing lands.
 
-**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`; sidebar rows (`#announcements`, `#inbox`, `#polls`) partition that stream via persisted **virtual bucket** metadata and ADR derivation—not separate MLS rooms.
+**Single MLS stream:** default squad/network traffic uses **one** physical `group_id`; sidebar rows (`#announcements`, `#personal-alerts`, `#polls`) partition that stream via persisted **virtual bucket** metadata and ADR derivation—not separate MLS rooms.
 
 ---
 

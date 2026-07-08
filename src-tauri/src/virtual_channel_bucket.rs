@@ -52,8 +52,11 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
                     "inbox".to_string()
                 });
             }
-            if matches!(ty, Some("squad_safe_updated" | "safe_proposal" | "squad_member_evm_share")) {
+            if matches!(ty, Some("squad_safe_updated" | "safe_proposal")) {
                 return Some("inbox".to_string());
+            }
+            if ty == Some("squad_member_evm_share") {
+                return Some("announcements".to_string());
             }
         }
     }
@@ -99,6 +102,17 @@ mod tests {
     #[test]
     fn sponsor_governance_announce_derives_announcements_bucket() {
         let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"sponsor","canonical_ref":"0x1"}}"#;
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            content,
+            &[],
+        );
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn squad_member_evm_share_derives_announcements_bucket() {
+        let content = r#"{"type":"squad_member_evm_share","payload":{"parent_id":"p","evm_address":"0x1"}}"#;
         let bucket = normalize_virtual_bucket_for_message(
             event_kind::PRIVATE_DIRECT_MESSAGE,
             content,

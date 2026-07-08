@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
 import { get, writable } from 'svelte/store';
 import { currentUser } from '../../stores/auth';
+import { listEvmAccountSquadBindings } from './evm-account-squad-bindings';
 import { listSquadMemberEvmInvokeArgs } from './squad-member-evm-share';
 
 const DEFER_PREFIX = 'pacto_squad_roster_key_deferred';
@@ -63,8 +63,6 @@ export function clearDeferredSquadRosterKeyChoice(parentId: string): void {
   });
 }
 
-type EvmRow = { memberNpub: string; evmAddress: string; updatedAtMs: number };
-
 /** True when the current user still needs to pick a roster key for this parent. */
 export async function needsSquadRosterKeyChoice(
   parentId: string,
@@ -74,10 +72,15 @@ export async function needsSquadRosterKeyChoice(
   if (!me) return false;
   const rosterArgs = listSquadMemberEvmInvokeArgs(parentId, announcementsGroupId);
   if (!rosterArgs.parentId) return false;
-  if (get(deferredSquadRosterKeyParentIds).includes(rosterArgs.parentId)) return false;
+  const rosterIds = new Set(
+    [rosterArgs.parentId, rosterArgs.altParentId, parentId.trim()]
+      .map((id) => id?.trim())
+      .filter((id): id is string => !!id)
+  );
+  if ([...rosterIds].some((id) => get(deferredSquadRosterKeyParentIds).includes(id))) return false;
   try {
-    const rows = await invoke<EvmRow[]>('list_squad_member_evm', rosterArgs);
-    return !rows.some((r) => r.memberNpub === me && r.evmAddress?.trim());
+    const bindings = await listEvmAccountSquadBindings();
+    return !bindings.some((b) => rosterIds.has(b.parentId.trim()));
   } catch {
     return false;
   }

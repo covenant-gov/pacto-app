@@ -222,7 +222,7 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
 
 /**
  * Build content string for posting an announcement (e.g. from Set Safe flow or Create proposal).
- * Squad sponsor deploys use `announcements`; other governance automation uses `inbox`.
+ * Squad sponsor deploys and roster EVM shares use `announcements`; other governance automation uses `inbox`.
  */
 export function buildAnnounceContent<T extends AnnounceMessage>(
   msg: T,
@@ -230,7 +230,7 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
 ): string {
   const pacto_virtual_bucket =
     options?.virtualBucket ??
-    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED
+    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED || msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE
       ? 'announcements'
       : isSponsorGovernanceAnnounce(msg)
         ? 'announcements'
