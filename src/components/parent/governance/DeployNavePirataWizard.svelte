@@ -2,9 +2,9 @@
   import { onMount } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import { getEvmAddress } from '../../../lib/api/auth';
   import { deployNavePirataForParent } from '../../../lib/governance/api';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
+  import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { getAddress, isAddress } from 'viem';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
@@ -26,18 +26,28 @@
   let wizardStep: 1 | 2 | 3 = 1;
   let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let captainInput = '';
+  let captainLoading = true;
+  let captainResolveError = '';
   let metadataUriInput = '';
   let saltNonceInput = '';
   let deployError = '';
 
   onMount(async () => {
+    captainLoading = true;
+    captainResolveError = '';
     try {
-      const addr = await getEvmAddress();
+      const addr = await resolveSquadRosterEvmAddress(parentId.trim());
       if (addr?.trim() && isAddress(addr.trim() as `0x${string}`)) {
         captainInput = getAddress(addr.trim() as `0x${string}`);
+      } else {
+        captainResolveError =
+          'No squad EVM address for this squad. Set it in Settings → User-per-Squad EVM address before deploying.';
       }
     } catch {
-      /* optional default */
+      captainResolveError =
+        'Could not resolve your squad EVM address. Check Settings → User-per-Squad EVM address.';
+    } finally {
+      captainLoading = false;
     }
   });
 
@@ -67,6 +77,14 @@
 
   function nextFromStep2() {
     deployError = '';
+    if (captainLoading) {
+      deployError = 'Loading your squad EVM address…';
+      return;
+    }
+    if (captainResolveError) {
+      deployError = captainResolveError;
+      return;
+    }
     const cap = normalizedCaptain();
     if (!cap) {
       deployError = 'Enter a valid captain wallet address (0x…).';
@@ -129,8 +147,8 @@
 >
   <h2 id={titleId}>Deploy Pacto Gov</h2>
   <p id={descId} class="nave-wizard-desc">
-    Deploy the Nave Pirata factory bundle for this squad. Gas is paid from your embedded wallet. Factory and master
-    copy addresses must be configured for this machine (see env vars in <code class="nave-wizard-code">nave_pirata_deploy</code>
+    Deploy the Nave Pirata factory bundle for this squad. Gas is paid from your squad-assigned EVM address (Settings).
+    Factory and master copy addresses must be configured for this machine (see env vars in <code class="nave-wizard-code">nave_pirata_deploy</code>
     module docs).
   </p>
 
@@ -171,10 +189,21 @@
         id="nave-captain"
         type="text"
         class="nave-wizard-field-input"
-        placeholder="0x…"
+        placeholder={captainLoading ? 'Loading…' : '0x…'}
         bind:value={captainInput}
+        readonly
+        aria-readonly="true"
         autocomplete="off"
       />
+      <p class="muted nave-wizard-hint">
+        {#if captainLoading}
+          Resolving your squad-assigned address…
+        {:else if captainResolveError}
+          {captainResolveError}
+        {:else}
+          Uses your squad EVM address from Settings. The deploy transaction is signed with this key.
+        {/if}
+      </p>
     </div>
     <div class="nave-wizard-field">
       <label class="nave-wizard-field-label" for="nave-metadata">Metadata URI</label>
@@ -203,7 +232,14 @@
     {/if}
     <div class="modal-actions nave-wizard-actions">
       <button type="button" class="btn-secondary" on:click={backToStep1}>Back</button>
-      <button type="button" class="btn-primary" on:click={nextFromStep2}>Continue</button>
+      <button
+        type="button"
+        class="btn-primary"
+        disabled={captainLoading || !!captainResolveError || !normalizedCaptain()}
+        on:click={nextFromStep2}
+      >
+        Continue
+      </button>
     </div>
   {:else}
     <dl class="nave-wizard-review">
@@ -315,9 +351,10 @@
   }
 
   .nave-wizard-field-input:disabled,
-  .nave-wizard-field-select:disabled {
-    opacity: 0.65;
-    cursor: not-allowed;
+  .nave-wizard-field-select:disabled,
+  .nave-wizard-field-input[readonly] {
+    opacity: 0.85;
+    cursor: default;
   }
 
   .nave-wizard-actions {
