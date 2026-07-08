@@ -9,7 +9,7 @@
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
-  import { parseEther } from 'viem';
+  import { parseEther, getAddress, isAddress } from 'viem';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
   import SquadDeployNetworkField from './SquadDeployNetworkField.svelte';
 
@@ -60,6 +60,15 @@
     return `${t.slice(0, 10)}…${t.slice(-8)}`;
   }
 
+  function canonicalAddress(addr: string | null): string | null {
+    if (!addr?.trim() || !isAddress(addr.trim() as `0x${string}`)) return null;
+    try {
+      return getAddress(addr.trim() as `0x${string}`);
+    } catch {
+      return null;
+    }
+  }
+
   function parsePositiveDepositWei(amountTrimmed: string): bigint | null {
     try {
       const wei = parseEther(amountTrimmed.replace(/,/g, ''));
@@ -90,7 +99,11 @@
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
-      if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
+      const defaultCanon = canonicalAddress(defaultSignerAddress);
+      const squadCanon = canonicalAddress(squadSignerAddress);
+      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
+        signerWallet = 'squad';
+      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
         signerWallet = 'squad';
       } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
         signerWallet = 'default';
@@ -125,9 +138,21 @@
 
   $: parentId, deployNetwork, void refreshAll();
 
-  $: selectedAddress =
-    signerWallet === 'default' ? defaultSignerAddress : squadSignerAddress;
-  $: selectedBalance = signerWallet === 'default' ? defaultBalance : squadBalance;
+  $: defaultCanonical = canonicalAddress(defaultSignerAddress);
+  $: squadCanonical = canonicalAddress(squadSignerAddress);
+  $: signersAreSame =
+    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
+
+  $: selectedAddress = signersAreSame
+    ? squadCanonical
+    : signerWallet === 'default'
+      ? defaultSignerAddress
+      : squadSignerAddress;
+  $: selectedBalance = signersAreSame
+    ? squadBalance
+    : signerWallet === 'default'
+      ? defaultBalance
+      : squadBalance;
 
   $: depositTrimmed = initialDepositEth.trim();
   $: depositWei = parsePositiveDepositWei(depositTrimmed);
@@ -149,8 +174,11 @@
     !selectedBalance.error &&
     amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
 
-  $: signerUnavailable =
-    signerWallet === 'default' ? !defaultSignerAddress : !squadSignerAddress;
+  $: signerUnavailable = signersAreSame
+    ? !squadCanonical
+    : signerWallet === 'default'
+      ? !defaultSignerAddress
+      : !squadSignerAddress;
 
   $: canDeploy =
     deployNetwork !== '' &&
@@ -215,8 +243,13 @@
 <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-sponsor-modal-panel">
   <h2 id={titleId}>Deploy squad sponsor</h2>
   <p id={descId} class="sponsor-deploy-desc">
-    Creates a per-squad sponsor clone from the factory. Gas is paid from the signer you choose below. An
-    initial deposit seeds the sponsorship pool in the same transaction.
+    Creates a per-squad sponsor clone from the factory.
+    {#if signersAreSame}
+      Gas and the initial deposit use your squad signer (same as your default wallet).
+    {:else}
+      Gas is paid from the signer you choose below.
+    {/if}
+    An initial deposit seeds the sponsorship pool in the same transaction.
   </p>
 
   <div class="sponsor-deploy-field">
@@ -229,6 +262,24 @@
     />
   </div>
 
+  {#if signersAreSame}
+    <div class="sponsor-signer-single" aria-live="polite">
+      <span class="sponsor-deploy-label">Pay gas and deposit from</span>
+      <p class="sponsor-signer-single-addr">
+        <code>{shortAddress(squadCanonical)}</code>
+        <span class="sponsor-signer-single-sub">Squad signer</span>
+      </p>
+      <p class="sponsor-signer-balance">
+        {#if addressesLoading || squadBalance.loading}
+          Balance: …
+        {:else if squadBalance.error}
+          Balance unavailable
+        {:else}
+          Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+        {/if}
+      </p>
+    </div>
+  {:else}
   <fieldset class="sponsor-signer-fieldset" disabled={addressesLoading}>
     <legend class="sponsor-deploy-label">Pay gas and deposit from</legend>
     <div class="sponsor-signer-options">
@@ -285,6 +336,7 @@
       </label>
     </div>
   </fieldset>
+  {/if}
 
   <div class="sponsor-deploy-field">
     <label class="sponsor-deploy-label" for="sponsor-initial-deposit">Initial deposit (ETH)</label>
@@ -345,6 +397,28 @@
     padding: 0;
     border: none;
     min-width: 0;
+  }
+
+  .sponsor-signer-single {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+  }
+
+  .sponsor-signer-single-addr {
+    margin: 4px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.9375rem;
+  }
+
+  .sponsor-signer-single-sub {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
   }
 
   .sponsor-deploy-label {
