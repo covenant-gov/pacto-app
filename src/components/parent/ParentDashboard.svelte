@@ -22,6 +22,7 @@
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
+  import { poaInfraRow } from '../../lib/governance/poa-payload';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
     loadSquadNetworkOverride,
@@ -118,6 +119,15 @@
         infraRowId: string;
       }) => Promise<void>)
     | undefined = undefined;
+  export let onPoaLinkComplete:
+    | ((params: {
+        parentId: string;
+        chain: string;
+        orgId: string;
+        executor?: string;
+        label?: string;
+      }) => Promise<void>)
+    | undefined = undefined;
 
   let showSetSafeModal = false;
   let showDeploySafeModal = false;
@@ -126,12 +136,20 @@
   let showSponsorDeploy = false;
   let showSquadAdminDeploy = false;
   let showSquadRolesModal = false;
+  let showSetPoaModal = false;
 
   let setSafeInput = '';
   let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
   let setSafeLabel = '';
   let setSafeError = '';
   let setSafeSaving = false;
+
+  let setPoaOrgId = '';
+  let setPoaChain: SupportedChainId = DEFAULT_CHAIN_ID;
+  let setPoaExecutor = '';
+  let setPoaLabel = '';
+  let setPoaError = '';
+  let setPoaSaving = false;
 
   $: parentId = parent?.id;
   $: sponsorRow = sponsorInfraRow(squadInfraRows);
@@ -143,6 +161,7 @@
   $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
   $: vaultSafeCount = standaloneSafeInfraRows(squadInfraRows).length;
+  $: hasPoa = poaInfraRow(squadInfraRows) != null;
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
@@ -502,6 +521,70 @@
     setSafeError = '';
   }
 
+  /** Linking a read-only POA org does not require a squad sponsor (no gas is spent). */
+  function openImportPoa() {
+    if (hasPoa) {
+      showToast('A POA org is already linked for this squad.');
+      return;
+    }
+    showSetPoaModal = true;
+    setPoaOrgId = '';
+    setPoaChain = squadNetwork ?? DEFAULT_CHAIN_ID;
+    setPoaExecutor = '';
+    setPoaLabel = '';
+    setPoaError = '';
+  }
+
+  function closeSetPoaModal() {
+    showSetPoaModal = false;
+    setPoaOrgId = '';
+    setPoaExecutor = '';
+    setPoaLabel = '';
+    setPoaError = '';
+  }
+
+  async function confirmSetPoa() {
+    const orgId = setPoaOrgId.trim();
+    if (!orgId) {
+      setPoaError = 'Enter a POA org id';
+      return;
+    }
+    if (!/^0x[a-fA-F0-9]{64}$/.test(orgId)) {
+      setPoaError = 'Invalid org id (expected 0x + 64 hex chars)';
+      return;
+    }
+    const executor = setPoaExecutor.trim();
+    if (executor && !/^0x[a-fA-F0-9]{40}$/.test(executor)) {
+      setPoaError = 'Invalid executor address (expected 0x + 40 hex chars)';
+      return;
+    }
+    if (!onPoaLinkComplete) {
+      setPoaError = 'Link POA org is not available';
+      return;
+    }
+    if (!parentId?.trim()) {
+      setPoaError = 'Squad is not ready';
+      return;
+    }
+    setPoaSaving = true;
+    setPoaError = '';
+    try {
+      await onPoaLinkComplete({
+        parentId: parentId.trim(),
+        chain: setPoaChain,
+        orgId,
+        executor: executor || undefined,
+        label: setPoaLabel.trim() || undefined,
+      });
+      closeSetPoaModal();
+      showToast('POA org linked for this squad.');
+    } catch (e) {
+      setPoaError = e instanceof Error ? e.message : 'Failed to link POA org';
+    } finally {
+      setPoaSaving = false;
+    }
+  }
+
   async function confirmSetSafe() {
     const addr = setSafeInput.trim();
     if (!addr) {
@@ -687,6 +770,7 @@
   {hasPactoGov}
   {hasSquadAdmin}
   {vaultSafeCount}
+  {hasPoa}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   squadAdminNetwork={squadAdminNetwork}
   {squadNetwork}
@@ -698,11 +782,18 @@
   bind:showSquadAdminDeploy
   bind:showSquadRolesModal
   bind:showSetSafeModal
+  bind:showSetPoaModal
   bind:setSafeInput
   bind:setSafeChain
   bind:setSafeLabel
   bind:setSafeError
   bind:setSafeSaving
+  bind:setPoaOrgId
+  bind:setPoaChain
+  bind:setPoaExecutor
+  bind:setPoaLabel
+  bind:setPoaError
+  bind:setPoaSaving
   onCloseDeploySafe={() => (showDeploySafeModal = false)}
   onCloseNaveWizard={() => (showNaveWizard = false)}
   onCloseLaunchpad={() => (showLaunchpad = false)}
@@ -711,6 +802,9 @@
   onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
   onCloseSetSafe={closeSetSafeModal}
   onConfirmSetSafe={confirmSetSafe}
+  onCloseSetPoa={closeSetPoaModal}
+  onConfirmSetPoa={confirmSetPoa}
+  onImportPoa={openImportPoa}
   onDeploySponsor={openSponsorDeploy}
   onDeploySquadAdmin={openSquadAdminDeploy}
   onDeployPactoGov={openPactoGovDeploy}

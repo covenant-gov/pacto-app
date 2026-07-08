@@ -130,6 +130,8 @@
     buildSquadAdminGovernanceAnnouncePayload,
     squadAdminInfraId,
     pactoGovTreasuryEntryId,
+    poaInfraId,
+    buildPoaGovernanceAnnouncePayload,
     primaryGovernanceView,
   } from '../lib/governance/api';
   import {
@@ -137,6 +139,7 @@
     isPactoGovTreasurySafe,
     pactoGovPayloadFromInfra,
   } from '../lib/governance/standalone-safe-payload';
+  import { buildPoaProviderPayload } from '../lib/governance/poa-payload';
   import { resolveAutomatedAnnounceGroupId } from '../lib/parent-navbar';
   import { resolveHubChannelNameForGroupSelection } from '../lib/mls/virtual-channel-bucket';
   import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
@@ -409,6 +412,50 @@
             sponsorAddress: params.sponsorAddress,
             chain: params.chain,
             providerPayload: params.providerPayload,
+            entryId,
+          }),
+        }),
+        '',
+        { virtualBucket: 'announcements' },
+      );
+    }
+    await mergeSquadInfraForParent(params.parentId);
+  }
+
+  /** Persist a linked POA (POP protocol) org infra row and announce it to the squad. */
+  async function finalizePoaLink(params: {
+    parentId: string;
+    chain: string;
+    orgId: string;
+    executor?: string;
+    label?: string;
+  }) {
+    const entryId = poaInfraId(params.parentId);
+    const providerPayload = buildPoaProviderPayload({
+      orgId: params.orgId,
+      executor: params.executor,
+      label: params.label,
+    });
+    await upsertSquadInfra({
+      id: entryId,
+      parentId: params.parentId,
+      infraType: 'poa',
+      chain: params.chain,
+      canonicalRef: params.orgId,
+      providerPayload,
+    });
+    const row = get(squads).find((s: Squad) => s.id === params.parentId);
+    const gid = row ? resolveAutomatedAnnounceGroupId(row) : null;
+    if (gid) {
+      await sendDmMessage(
+        gid,
+        buildAnnounceContent({
+          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+          payload: buildPoaGovernanceAnnouncePayload({
+            parentId: params.parentId,
+            orgId: params.orgId,
+            chain: params.chain,
+            providerPayload,
             entryId,
           }),
         }),
@@ -1090,6 +1137,7 @@
               onPactoGovDeployComplete={finalizePactoGovDeploy}
               onSponsorDeployComplete={finalizeSponsorDeploy}
               onSquadAdminDeployComplete={finalizeSquadAdminDeploy}
+              onPoaLinkComplete={finalizePoaLink}
             />
             {/key}
           {:else if showMlsChatView}

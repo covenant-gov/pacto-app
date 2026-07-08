@@ -5,6 +5,7 @@
   export let hasPactoGov: boolean;
   export let hasSquadAdmin: boolean;
   export let vaultSafeCount = 0;
+  export let hasPoa = false;
   export let hasAnnouncementsChannel: boolean;
   export let onClose: () => void;
   export let onDeploySponsor: () => void;
@@ -12,6 +13,7 @@
   export let onDeployPactoGov: () => void;
   export let onDeploySafe: () => void;
   export let onImportSafe: () => void;
+  export let onImportPoa: () => void = () => {};
 
   const titleId = 'launchpad-modal-title';
   const descId = 'launchpad-modal-desc';
@@ -137,6 +139,28 @@
           Import Safe
         </button>
       </div>
+    </li>
+
+    <li class="launchpad-card">
+      <h3 class="launchpad-card-title">POA (POP Governance)</h3>
+      <p class="launchpad-card-desc">
+        {#if hasPoa}
+          A POA organization is linked. Its on-chain modules are recorded for this squad.
+        {:else}
+          Link an existing on-chain POA (POP protocol) organization as a governance connector.
+        {/if}
+      </p>
+      <button
+        type="button"
+        class="btn-primary launchpad-card-btn"
+        disabled={channelBlocked || hasPoa}
+        on:click={() => {
+          onClose();
+          onImportPoa();
+        }}
+      >
+        {hasPoa ? 'POA linked' : 'Link POA org'}
+      </button>
     </li>
 
     <li class="launchpad-card launchpad-card--muted">

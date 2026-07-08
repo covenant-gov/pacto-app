@@ -19,6 +19,7 @@
   export let hasPactoGov = false;
   export let hasSquadAdmin = false;
   export let vaultSafeCount = 0;
+  export let hasPoa = false;
   export let squadAdminProxy = '';
   export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
   /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
@@ -32,12 +33,20 @@
   export let showSquadAdminDeploy = false;
   export let showSquadRolesModal = false;
   export let showSetSafeModal = false;
+  export let showSetPoaModal = false;
 
   export let setSafeInput = '';
   export let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
   export let setSafeLabel = '';
   export let setSafeError = '';
   export let setSafeSaving = false;
+
+  export let setPoaOrgId = '';
+  export let setPoaChain: SupportedChainId = DEFAULT_CHAIN_ID;
+  export let setPoaExecutor = '';
+  export let setPoaLabel = '';
+  export let setPoaError = '';
+  export let setPoaSaving = false;
 
   export let onDeploySafeSuccess: (params: {
     safeAddress: string;
@@ -78,6 +87,9 @@
   export let onDeployPactoGov: () => void = () => {};
   export let onDeploySafe: () => void = () => {};
   export let onImportSafe: () => void = () => {};
+  export let onImportPoa: () => void = () => {};
+  export let onConfirmSetPoa: () => void | Promise<void> = () => {};
+  export let onCloseSetPoa: () => void = () => {};
 
   let DeploySafeModalComponent: Component | null = null;
   let DeployNaveWizardComponent: Component | null = null;
@@ -144,6 +156,7 @@
     {hasPactoGov}
     {hasSquadAdmin}
     {vaultSafeCount}
+    {hasPoa}
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
     onDeploySponsor={onDeploySponsor}
@@ -151,6 +164,7 @@
     onDeployPactoGov={onDeployPactoGov}
     onDeploySafe={onDeploySafe}
     onImportSafe={onImportSafe}
+    onImportPoa={onImportPoa}
   />
 {/if}
 
@@ -218,6 +232,57 @@
         <button type="button" class="btn-secondary" on:click={onCloseSetSafe} disabled={setSafeSaving}>Cancel</button>
         <button type="button" class="btn-primary" on:click={onConfirmSetSafe} disabled={setSafeSaving}
           >{setSafeSaving ? 'Saving…' : 'Add to treasury'}</button
+        >
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showSetPoaModal}
+  <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="set-poa-title">
+    <div class="modal-content">
+      <h3 id="set-poa-title">Link POA org</h3>
+      <p class="modal-desc">
+        Connect an existing on-chain POA (POP protocol) organization. Enter its org id; the link is
+        recorded for this squad and announced to members.
+      </p>
+      <label class="modal-field-label" for="import-poa-org">Org id (bytes32)</label>
+      <input
+        id="import-poa-org"
+        type="text"
+        class="input-address"
+        placeholder="0x… (64 hex chars)"
+        bind:value={setPoaOrgId}
+        aria-invalid={setPoaError ? 'true' : undefined}
+        aria-describedby={setPoaError ? 'set-poa-error' : undefined}
+      />
+      <label class="modal-field-label" for="import-poa-chain">Network</label>
+      <ChainIdSelect id="import-poa-chain" bind:value={setPoaChain} disabled={setPoaSaving} />
+      <label class="modal-field-label" for="import-poa-executor">Executor address (optional)</label>
+      <input
+        id="import-poa-executor"
+        type="text"
+        class="input-address"
+        placeholder="0x..."
+        bind:value={setPoaExecutor}
+      />
+      <label class="modal-field-label" for="import-poa-label">Label (optional)</label>
+      <input
+        id="import-poa-label"
+        type="text"
+        class="input-address"
+        placeholder="e.g. Main DAO"
+        bind:value={setPoaLabel}
+      />
+      {#if setPoaError}
+        <p id="set-poa-error" class="input-error" role="alert">{setPoaError}</p>
+      {/if}
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" on:click={onCloseSetPoa} disabled={setPoaSaving}
+          >Cancel</button
+        >
+        <button type="button" class="btn-primary" on:click={onConfirmSetPoa} disabled={setPoaSaving}
+          >{setPoaSaving ? 'Linking…' : 'Link POA org'}</button
         >
       </div>
     </div>

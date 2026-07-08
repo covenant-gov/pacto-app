@@ -82,6 +82,7 @@ export function infraTypeFromLegacyProvider(provider: string): string {
   if (p === 'pacto-gov') return 'pacto_gov';
   if (p === 'squad_sponsor') return 'sponsor';
   if (p === 'squad_admin' || p === 'squad-admin') return 'squad_admin';
+  if (p === 'poa' || p === 'poa_gov' || p === 'pop') return 'poa';
   return p;
 }
 
@@ -258,6 +259,36 @@ export function buildStandaloneSafeGovernanceAnnouncePayload(params: {
     parent_id: params.parentId,
     provider: 'gnosis_safe',
     canonical_ref: params.safeAddress,
+    chain: params.chain,
+    entry_id: params.entryId,
+    provider_payload: params.providerPayload,
+  };
+}
+
+/** Stable id for POA (POP protocol) governance infra row per parent. */
+export function poaInfraId(parentId: string): string {
+  return `poa-${parentId}`;
+}
+
+/** Wire payload for `governance_updated` when a POA (POP protocol) org is linked. */
+export function buildPoaGovernanceAnnouncePayload(params: {
+  parentId: string;
+  orgId: string;
+  chain: string;
+  providerPayload: string;
+  entryId: string;
+}): {
+  parent_id: string;
+  provider: 'poa';
+  canonical_ref: string;
+  chain: string;
+  entry_id: string;
+  provider_payload: string;
+} {
+  return {
+    parent_id: params.parentId,
+    provider: 'poa',
+    canonical_ref: params.orgId,
     chain: params.chain,
     entry_id: params.entryId,
     provider_payload: params.providerPayload,

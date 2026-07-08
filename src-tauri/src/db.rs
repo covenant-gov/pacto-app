@@ -502,6 +502,7 @@ fn normalize_infra_type(raw: &str) -> Result<String, String> {
         "squad_admin" | "squad-admin" => Ok("squad_admin".to_string()),
         "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => Ok("standalone_safe".to_string()),
         "bread_coop" | "bread-coop" | "bread" => Ok("bread_coop".to_string()),
+        "poa" | "poa_gov" | "pop" => Ok("poa".to_string()),
         _ => Err(format!("unknown squad infra type: {}", raw.trim())),
     }
 }
