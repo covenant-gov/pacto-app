@@ -4,6 +4,7 @@ import type { SquadAdminExecutorRolesDto } from './api';
 export interface PactoGovProviderPayloadV1 {
   v?: number;
   parentId?: string;
+  txHash?: string;
   safe?: string;
   quartermaster?: string;
   mutinyModule?: string;

@@ -333,41 +333,45 @@
       entryId: treasuryEntryId,
     });
 
-    if (gid) {
-      const chainKey = parseSupportedChainId(params.chain);
-      const txHex = params.txHash?.trim();
-      const explorerTxUrl = txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
-      await sendDmMessage(
-        gid,
-        buildAnnounceContent({
-          type: ANNOUNCE_TYPE_SAFE_UPDATED,
-          payload: {
-            squad_id: params.parentId,
-            safe_address: safeCanonical,
-            chain: params.chain,
-            entry_id: treasuryEntryId,
-            tx_hash: txHex || undefined,
-            explorer_tx_url: explorerTxUrl ?? undefined,
-          },
-        }),
-        '',
-        { virtualBucket: 'inbox' },
-      );
-      await sendDmMessage(
-        gid,
-        buildAnnounceContent({
-          type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
-          payload: buildPactoGovGovernanceAnnouncePayload({
-            parentId: params.parentId,
-            topHatId: params.topHatId,
-            chain: params.chain,
-            providerPayload: params.providerPayload,
-            entryId,
+    try {
+      if (gid) {
+        const chainKey = parseSupportedChainId(params.chain);
+        const txHex = params.txHash?.trim();
+        const explorerTxUrl = txHex && txHex.length > 0 ? getExplorerTxUrl(chainKey, txHex) : null;
+        await sendDmMessage(
+          gid,
+          buildAnnounceContent({
+            type: ANNOUNCE_TYPE_SAFE_UPDATED,
+            payload: {
+              squad_id: params.parentId,
+              safe_address: safeCanonical,
+              chain: params.chain,
+              entry_id: treasuryEntryId,
+              tx_hash: txHex || undefined,
+              explorer_tx_url: explorerTxUrl ?? undefined,
+            },
           }),
-        }),
-        '',
-        { virtualBucket: 'inbox' },
-      );
+          '',
+          { virtualBucket: 'inbox' },
+        );
+        await sendDmMessage(
+          gid,
+          buildAnnounceContent({
+            type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
+            payload: buildPactoGovGovernanceAnnouncePayload({
+              parentId: params.parentId,
+              topHatId: params.topHatId,
+              chain: params.chain,
+              providerPayload: params.providerPayload,
+              entryId,
+            }),
+          }),
+          '',
+          { virtualBucket: 'inbox' },
+        );
+      }
+    } catch {
+      // Infra is persisted below; announce failure must not block dashboard refresh.
     }
     await mergeTreasurySafesForParent(params.parentId);
     await mergeSquadInfraForParent(params.parentId);
