@@ -227,7 +227,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   let hatsTreeKey = '';
 
   let roleLabelByHatId: Record<string, string> = {};
-  let wearersByHatId: Record<string, string[]> = {};
+  let wearerAddressesByHatId: Record<string, string[]> = {};
+  let executorRolesByAddress: Record<string, string> = {};
   let rolesTreeAnnotationsLoading = false;
   let rolesTreeAnnotationsRefreshing = false;
   let rolesTreeAnnotationsError = '';
@@ -352,7 +353,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       .filter(Boolean)
       .sort()
       .join(',');
-    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}`;
+    const squadAdmin = squadAdminCtx?.proxy?.trim() ?? '';
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
     const hadData = Object.keys(roleLabelByHatId).length > 0;
@@ -368,11 +370,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       network: pactoNetwork,
       topHatId: topHat,
       squadMemberEvmByNpub,
+      squadAdminProxy: squadAdminCtx?.proxy ?? null,
+      squadAdminChain: squadAdminCtx?.chain ?? null,
     });
     rolesTreeAnnotationsLoading = false;
     rolesTreeAnnotationsRefreshing = false;
     roleLabelByHatId = result.roleLabelByHatId;
-    wearersByHatId = result.wearersByHatId;
+    wearerAddressesByHatId = result.wearerAddressesByHatId;
+    executorRolesByAddress = result.executorRolesByAddress;
     if (result.error) rolesTreeAnnotationsError = result.error;
   }
 
@@ -711,7 +716,9 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               hatsTreeRefreshing={hatsTreeRefreshing}
               {hatsTreeError}
               {roleLabelByHatId}
-              {wearersByHatId}
+              {wearerAddressesByHatId}
+              {executorRolesByAddress}
+              {squadMemberEvmByNpub}
               rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
               rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
               {rolesTreeAnnotationsError}

@@ -27,21 +27,45 @@ export function roleLabelByHatIdFromNaveDeployment(
   return map;
 }
 
-/** Invert member hat assignments to hat id → short wearer addresses. */
-export function wearersByHatIdFromAssignments(
+/** Invert `squadMemberEvmByNpub` to lowercase EVM address → npub. */
+export function npubByEvmAddressFromSquadRoster(
+  squadMemberEvmByNpub: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [npub, addr] of Object.entries(squadMemberEvmByNpub)) {
+    const trimmed = addr?.trim();
+    if (trimmed) out[trimmed.toLowerCase()] = npub;
+  }
+  return out;
+}
+
+export function formatWearerDisplayLabel(
+  address: string,
+  npubByAddress: Record<string, string>,
+  displayNameForNpub: (npub: string) => string,
+): string {
+  const npub = npubByAddress[address.trim().toLowerCase()];
+  if (npub) {
+    const name = displayNameForNpub(npub)?.trim();
+    if (name && name !== 'Unknown') return name;
+  }
+  return shortEvmAddress(address);
+}
+
+/** Invert member hat assignments to hat id → wearer addresses (lowercase). */
+export function wearerAddressesByHatIdFromAssignments(
   assignments: MemberHatAssignmentDto[],
-  formatAddress: (addr: string) => string = shortEvmAddress,
 ): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const row of assignments) {
     const addr = row.address?.trim();
     if (!addr) continue;
-    const display = formatAddress(addr);
+    const key = addr.toLowerCase();
     for (const hat of row.hats) {
       const id = hat.hatId?.trim();
       if (!id) continue;
       if (!out[id]) out[id] = [];
-      if (!out[id].includes(display)) out[id].push(display);
+      if (!out[id].includes(key)) out[id].push(key);
     }
   }
   return out;

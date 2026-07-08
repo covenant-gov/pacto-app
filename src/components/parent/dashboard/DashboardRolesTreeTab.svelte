@@ -18,7 +18,9 @@
   export let hatsTreeRefreshing = false;
   export let hatsTreeError = '';
   export let roleLabelByHatId: Record<string, string> = {};
-  export let wearersByHatId: Record<string, string[]> = {};
+  export let wearerAddressesByHatId: Record<string, string[]> = {};
+  export let executorRolesByAddress: Record<string, string> = {};
+  export let squadMemberEvmByNpub: Record<string, string> = {};
   export let rolesTreeAnnotationsLoading = false;
   export let rolesTreeAnnotationsRefreshing = false;
   export let rolesTreeAnnotationsError = '';
@@ -94,7 +96,13 @@
         </p>
       {/if}
       <p class="roles-table-caption">On-chain tree</p>
-      <HatsTreeDiagram root={hatsTree} {roleLabelByHatId} {wearersByHatId} />
+      <HatsTreeDiagram
+        root={hatsTree}
+        {roleLabelByHatId}
+        {wearerAddressesByHatId}
+        {executorRolesByAddress}
+        {squadMemberEvmByNpub}
+      />
     {/if}
   {/if}
 </section>
