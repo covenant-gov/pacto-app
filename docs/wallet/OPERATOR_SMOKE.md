@@ -1,6 +1,6 @@
 # Wallet & governance — operator smoke (Sepolia)
 
-Single checklist for manual Sepolia verification on **desktop (Tauri)**. Execution plan and phase labels: [`ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md). Post–step 17 regression matrix: [`ai-docs/STEP17_POST_CLEANUP.md`](../../ai-docs/STEP17_POST_CLEANUP.md) (T0–T2).
+Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 
 ## Shared prerequisites
 
@@ -14,7 +14,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**. Executi
 
 ---
 
-## 1. Squad sponsor (A1)
+## 1. Squad sponsor
 
 - [ ] **#dashboard** → **Deploy** → **Deploy squad sponsor** (Sepolia).
 - [ ] **Treasury** shows pool balance; optional deposit.
@@ -30,7 +30,7 @@ See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
 ---
 
-## 2. Pacto Gov / Nave Pirata (A2)
+## 2. Pacto Gov / Nave Pirata
 
 Requires **sponsor** for same `parentId`.
 
@@ -39,6 +39,9 @@ Requires **sponsor** for same `parentId`.
 - [ ] **Treasury** tab does **not** list the governance treasury Safe (vault Safes + sponsor only).
 - [ ] **#announcements** shows deploy card with module addresses, top hat (Hats tree link), and deploy tx link.
 - [ ] **Roles Tree** tab loads on-chain tree after deploy.
+- [ ] **Roles Tree** shows **Captain** / **Crew** badges on registry hat nodes when wears exist.
+- [ ] **Roles Tree** lists wearers under labeled nodes (profile name when squad EVM is shared, else short address).
+- [ ] **Roles Tree** refresh icon re-fetches tree + role/wearer maps without reload.
 - [ ] Reload — `pacto_gov` row present; `provider_payload` includes `txHash`.
 
 | Symptom | Likely cause |
@@ -49,9 +52,11 @@ Requires **sponsor** for same `parentId`.
 
 See [PACTO_GOV.md](./PACTO_GOV.md).
 
+**Roles Tree unit tests:** `src/lib/governance/roles-tree-annotations.test.ts`, `src/lib/governance/hats-tree-annotations.test.ts`, `src/lib/dashboard/parent-dashboard-loaders.test.ts`.
+
 ---
 
-## 3. Standalone Safe (A3)
+## 3. Standalone Safe
 
 Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance treasury Safe must not duplicate as `standalone_safe`.
 
@@ -67,7 +72,7 @@ Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance 
 
 ---
 
-## 4. Governance announce sync (A4)
+## 4. Governance announce sync
 
 After deploy: **`governance_updated`** → **`squad_infra`** on reload or second client. Pacto Gov uses **`#announcements`** (not inbox). No separate **`squad_safe_updated`** for the governance treasury Safe.
 
@@ -87,7 +92,7 @@ Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`, `
 
 ---
 
-## 5. Advanced contract call (H10)
+## 5. Advanced contract call
 
 Settings → Profile → Wallet → **Advanced contract call**. Requires **advanced-purpose** signer (import or **Add advanced account**).
 
@@ -97,11 +102,11 @@ Settings → Profile → Wallet → **Advanced contract call**. Requires **advan
 - [ ] Roster share rejects advanced-purpose address.
 - [ ] Reverting calldata → simulate shows revert.
 
-See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md), [`ai-docs/EVM_INTEGRATION_LAYERS.md`](../../ai-docs/EVM_INTEGRATION_LAYERS.md).
+See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 ---
 
-## 6. Squad contract allowlist (I12)
+## 6. Squad contract allowlist
 
 Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **squad-purpose** active signer.
 
@@ -111,9 +116,9 @@ Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **sq
 
 ---
 
-## 7. Inbox & per-squad roster keys (step 17 / G′)
+## 7. Inbox & per-squad roster keys
 
-Requires Phase **G** (squad vs advanced accounts). Two test accounts helpful.
+Requires **squad-purpose** vs **advanced-purpose** signers. Two test accounts helpful.
 
 **Inbox rename**
 
@@ -131,7 +136,7 @@ Requires Phase **G** (squad vs advanced accounts). Two test accounts helpful.
 - [ ] Curated deploy (e.g. Safe) uses **roster-bound** address when it differs from global active.
 - [ ] Advanced address still rejected on roster ingest; Advanced panel unrelated to roster.
 
-See [`ai-docs/INHOUSE_GOV.md`](../../ai-docs/INHOUSE_GOV.md) step **17**.
+See **Inbox & per-squad roster keys** above.
 
 ---
 

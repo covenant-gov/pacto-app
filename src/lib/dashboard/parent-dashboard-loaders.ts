@@ -15,8 +15,7 @@ import {
 } from '../governance/pacto-gov-payload';
 import {
   memberHatByAddressFromAssignments,
-  roleLabelByHatIdFromNaveDeployment,
-  wearerAddressesByHatIdFromAssignments,
+  mergeRolesTreeAnnotationMaps,
 } from '../governance/hats-tree-annotations';
 import { isTreasuryProposalActive } from '../governance/treasury-proposal-ui';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
@@ -190,9 +189,10 @@ export async function fetchRolesTreeAnnotations(params: {
         evmAddresses: memberAddresses,
       });
     }
+    const maps = mergeRolesTreeAnnotationMaps(deployment, assignments);
     return {
-      roleLabelByHatId: roleLabelByHatIdFromNaveDeployment(deployment),
-      wearerAddressesByHatId: wearerAddressesByHatIdFromAssignments(assignments),
+      roleLabelByHatId: maps.roleLabelByHatId,
+      wearerAddressesByHatId: maps.wearerAddressesByHatId,
       executorRolesByAddress,
       error: '',
     };

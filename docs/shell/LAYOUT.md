@@ -2,8 +2,6 @@
 
 How the logged-in app shell is split after the SM refactor: **Svelte orchestrates**, **`src/lib/` owns side effects and testable decisions**.
 
-**Execution history:** [`ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md`](../../ai-docs/shell-refactor/SHELL_MODULARIZATION_PLAN.md)
-
 ---
 
 ## Top-level map
@@ -72,5 +70,4 @@ Dashboard tab persistence: `parentDashboardChannelMode` in `stores/navigation.ts
 - [`docs/communities/DESIGN.md`](../communities/DESIGN.md) — squads, squad-pairs, stable ids
 - [`docs/messaging/OVERVIEW.md`](../messaging/OVERVIEW.md) — DM vs MLS transport
 - [`docs/wallet/DM_WALLET_MESSAGE_SCHEMA.md`](../wallet/DM_WALLET_MESSAGE_SCHEMA.md) — wallet DM payloads routed by `DmMessageRouter`
-- [`docs/wallet/ONCHAIN_READ_PATTERN.md`](../wallet/ONCHAIN_READ_PATTERN.md) — persist / hydrate / SWR (wallet; dashboard extension in SP plan)
-- [`ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md`](../../ai-docs/speed/UX_SPEED_AND_DATA_READ_PLAN.md) — executable UX speed backlog (SP-1–4)
+- [`docs/wallet/ONCHAIN_READ_PATTERN.md`](../wallet/ONCHAIN_READ_PATTERN.md) — persist / hydrate / SWR (wallet; dashboard uses the same pattern)

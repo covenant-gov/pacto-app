@@ -24,5 +24,4 @@ So: **pairwise exchange** remains the primary, privacy-minded path for **knowing
 
 - `src-tauri/src/wallet_ops.rs` — `resolve_peer_send_address` order
 - `src-tauri/src/db.rs` — `get_dm_peer_evm_stored`, `get_profile_evm_address`, `set_dm_peer_evm_address`
-- `ai-docs/wallet/PEER_EVM_ADDRESS_SYNC_AND_OBSERVABILITY.md` — flow and observability notes
 - `src-tauri/src/profile.rs` — Kind 0 publish includes merged **`evm_address`** for **self**; `from_metadata` can read **`evm_address`** from Kind 0 JSON for **any** profile
