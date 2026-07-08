@@ -22,8 +22,14 @@ describe('normalizeHatIdPathSegment', () => {
     expect(normalizeHatIdPathSegment(' 298 ')).toBe('298');
   });
 
-  it('converts hex hat ids to decimal', () => {
-    expect(normalizeHatIdPathSegment('0x12a')).toBe('298');
+  it('trims whitespace-only strings to null', () => {
+    expect(normalizeHatIdPathSegment('   ')).toBe(null);
+    expect(normalizeHatIdPathSegment('\t\n')).toBe(null);
+  });
+
+  it('accepts uppercase hex and decimal strings', () => {
+    expect(normalizeHatIdPathSegment('0x12A')).toBe('298');
+    expect(normalizeHatIdPathSegment('000298')).toBe('000298');
   });
 
   it('returns null for empty or invalid', () => {
@@ -41,8 +47,15 @@ describe('hatsTreeExplorerUrl', () => {
     );
   });
 
-  it('returns null when hat id is unusable', () => {
-    expect(hatsTreeExplorerUrl(1, 'nope')).toBe(null);
+  it('returns null for non-finite chain ids', () => {
+    expect(hatsTreeExplorerUrl(NaN, '298')).toBe(null);
+    expect(hatsTreeExplorerUrl(Infinity, '298')).toBe(null);
+    expect(hatsTreeExplorerUrl(-Infinity, '0x12a')).toBe(null);
+  });
+
+  it('trims whitespace from hat id before normalizing', () => {
+    expect(hatsTreeExplorerUrl(10, '  298  ')).toBe('https://app.hatsprotocol.xyz/trees/10/298');
+    expect(hatsTreeExplorerUrl(10, '  nope  ')).toBe(null);
   });
 });
 
@@ -81,5 +94,33 @@ describe('resolveDashboardStructureSummary', () => {
   it('treats the retired "anvil" alias as unknown (falls back to sepolia)', () => {
     const s = resolveDashboardStructureSummary({ ...pactoGovRow, chain: 'anvil' });
     expect(s?.chainKey).toBe('sepolia');
+  });
+
+  it('returns null when canonical ref is empty or whitespace', () => {
+    expect(resolveDashboardStructureSummary({ ...pactoGovRow, canonicalRef: '' })).toBe(null);
+    expect(resolveDashboardStructureSummary({ ...pactoGovRow, canonicalRef: '   ' })).toBe(null);
+  });
+
+  it('returns summary for each supported chain', () => {
+    const cases: Array<{ chain: string; name: string; id: number }> = [
+      { chain: 'mainnet', name: 'Ethereum', id: 1 },
+      { chain: 'arbitrum', name: 'Arbitrum', id: 42161 },
+      { chain: 'sepolia', name: 'Sepolia', id: 11155111 },
+      { chain: 'local', name: 'Local Anvil', id: 31337 },
+    ];
+    for (const { chain, name, id } of cases) {
+      const s = resolveDashboardStructureSummary({ ...pactoGovRow, chain });
+      expect(s?.chainKey).toBe(chain as SquadInfraDto['chain']);
+      expect(s?.chainDisplayName).toBe(name);
+      expect(s?.chainIdNumeric).toBe(id);
+      expect(s?.hatsExplorerUrl).toBe(`https://app.hatsprotocol.xyz/trees/${id}/298`);
+    }
+  });
+
+  it('falls back to sepolia for unknown chain strings', () => {
+    const s = resolveDashboardStructureSummary({ ...pactoGovRow, chain: 'unknown' });
+    expect(s?.chainKey).toBe('sepolia');
+    expect(s?.chainDisplayName).toBe('Sepolia');
+    expect(s?.chainIdNumeric).toBe(11155111);
   });
 });
