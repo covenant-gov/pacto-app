@@ -72,8 +72,9 @@
       parent: squad,
       npubsToInvite: [request.requesterNpub],
       onErrorBanner: (message) => showToast(message),
-      onComplete: () => {
+      onComplete: (invitedNpubs) => {
         actingOn = null;
+        if (!invitedNpubs.includes(request.requesterNpub)) return;
         requests = requests.filter((r) => r.eventId !== request.eventId);
         const name = getProfileDisplayName($profiles[request.requesterNpub]) || 'Member';
         showToast(`Invite sent to ${name}.`);

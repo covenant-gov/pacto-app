@@ -6,12 +6,14 @@ import {
   syncMlsGroupsNow,
   getMlsGroupMembers,
   backfillSquadMemberEvmFromProfiles,
+  type PendingMlsWelcome,
 } from '../api/nostr';
 import { defaultChannelRowsForGroupId } from '../parent-navbar';
 import { pactoAppInboxMessages } from '../../stores/dm';
 import { normalizeStoredSquad } from '../squad-pair';
 import { persistSquad, persistSquadPatch } from '../squad/squad-catalog';
 import { dmError } from '../utils/dm-debug';
+import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import {
   squads,
   activeSquadId,
@@ -26,7 +28,7 @@ import {
   type DmMessage,
   type Squad,
 } from '../../stores/app';
-import { pendingReadyToast } from '../../stores/toast';
+import { pendingReadyToast, showToast } from '../../stores/toast';
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
 const acceptedSquadInviteGroupIds = new Set<string>();
@@ -45,7 +47,38 @@ export function resetInviteAcceptState(): void {
 }
 
 export function squadInviteResolvedByMembership(groupId: string): boolean {
-  return get(squads).some((s) => s.id === groupId);
+  const target = groupId.trim().toLowerCase();
+  return get(squads).some((s) => s.id.trim().toLowerCase() === target);
+}
+
+function sameMlsGroupId(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+function findPendingWelcomeForGroup(
+  welcomes: PendingMlsWelcome[],
+  groupId: string
+): PendingMlsWelcome | undefined {
+  return welcomes.find((w) => sameMlsGroupId(w.nostr_group_id, groupId));
+}
+
+async function resolvePendingWelcomeForGroup(groupId: string): Promise<PendingMlsWelcome | undefined> {
+  try {
+    await syncMlsGroupsNow(groupId);
+  } catch (e) {
+    dmError('syncMlsGroupsNow before accept invite', e);
+  }
+  let welcomes = await listPendingMlsWelcomes();
+  let welcome = findPendingWelcomeForGroup(welcomes, groupId);
+  if (welcome) return welcome;
+
+  try {
+    await syncMlsGroupsNow(null);
+  } catch (e) {
+    dmError('syncMlsGroupsNow (all) before accept invite', e);
+  }
+  welcomes = await listPendingMlsWelcomes();
+  return findPendingWelcomeForGroup(welcomes, groupId);
 }
 
 export function channelInSquadInviteResolvedByMembership(
@@ -102,8 +135,7 @@ export async function acceptAnnouncementsInvite(
     );
     return;
   }
-  const welcomes = await listPendingMlsWelcomes();
-  const welcome = welcomes.find((w) => w.nostr_group_id === payload.groupId);
+  const welcome = await resolvePendingWelcomeForGroup(payload.groupId);
   if (!welcome) {
     const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
     err.noWelcome = true;
@@ -206,6 +238,11 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
       return;
     }
     dmError('Accept squad invite failed', e);
+    if ((e as Error & { noWelcome?: boolean }).noWelcome) {
+      showToast('No squad invite found yet. Wait a moment and try Accept again.');
+      return;
+    }
+    showToast(getInvokeErrorMessage(e, 'Could not accept squad invite.'));
   } finally {
     acceptingSquadInviteId.set(null);
   }
