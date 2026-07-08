@@ -3,6 +3,8 @@
   import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
+  import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
+  import { showToast } from '../../../stores/toast';
   import { profiles } from '../../../stores/profiles';
   import { currentUser } from '../../../stores/auth';
   import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
@@ -55,6 +57,21 @@
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+
+  let copiedRosterEvm = false;
+
+  async function copyRosterEvm() {
+    if (!myRosterEvm) return;
+    const ok = await copyTextToClipboard(myRosterEvm);
+    if (ok) {
+      copiedRosterEvm = true;
+      setTimeout(() => {
+        copiedRosterEvm = false;
+      }, 2000);
+    } else {
+      showToast('Could not copy address.');
+    }
+  }
 </script>
 
 <SquadBroadcastSettingsSection {squad} />
@@ -69,7 +86,32 @@
   {#if announcementsGroupId && parentId}
     <div class="user-roster-key-box">
       {#if myRosterEvm}
-        <code class="user-roster-addr-full">{myRosterEvm}</code>
+        <div class="user-roster-addr-row">
+          <code class="user-roster-addr-full">{myRosterEvm}</code>
+          <button
+            type="button"
+            class="user-roster-copy-btn"
+            aria-label={copiedRosterEvm ? 'Copied' : 'Copy EVM address'}
+            title={copiedRosterEvm ? 'Copied' : 'Copy'}
+            on:click={copyRosterEvm}
+          >
+            <svg
+              class="user-roster-copy-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+        </div>
       {:else}
         <span class="user-roster-empty muted">Not shared yet</span>
       {/if}
@@ -288,13 +330,44 @@
     border: 1px solid var(--border-subtle);
   }
 
+  .user-roster-addr-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
   .user-roster-addr-full {
-    display: block;
+    flex: 1;
+    min-width: 0;
     font-family: ui-monospace, monospace;
     font-size: 0.8125rem;
     line-height: 1.45;
     word-break: break-all;
     color: var(--text-primary);
+  }
+
+  .user-roster-copy-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .user-roster-copy-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
+
+  .user-roster-copy-icon {
+    display: block;
   }
 
   .user-roster-empty {

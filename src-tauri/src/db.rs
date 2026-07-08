@@ -1297,6 +1297,43 @@ mod allowlist_tests {
     }
 }
 
+#[cfg(test)]
+mod squad_infra_row_id_tests {
+    use super::{
+        pacto_gov_infra_row_id, pacto_gov_treasury_row_id, squad_admin_infra_row_id,
+        squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
+    };
+
+    const LONG_PARENT: &str =
+        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+
+    #[test]
+    fn short_parent_uses_direct_pacto_gov_id() {
+        let parent = "smoke-squad-alpha";
+        assert_eq!(pacto_gov_infra_row_id(parent), format!("pacto-gov-{parent}"));
+    }
+
+    #[test]
+    fn long_parent_hashes_pacto_gov_ids_within_limit() {
+        assert_eq!(LONG_PARENT.len(), 64);
+        let gov = pacto_gov_infra_row_id(LONG_PARENT);
+        let treasury = pacto_gov_treasury_row_id(LONG_PARENT);
+        let sponsor = squad_sponsor_infra_row_id(LONG_PARENT);
+        let admin = squad_admin_infra_row_id(LONG_PARENT);
+
+        for id in [&gov, &treasury, &sponsor, &admin] {
+            assert!(id.len() <= SQUAD_INFRA_ID_MAX);
+        }
+        assert!(gov.starts_with("pg-"));
+        assert!(treasury.starts_with("pgt-"));
+        assert_eq!(
+            gov,
+            "pg-68025c1968089de1fee3538c1da6fb961996d68a176ad60013a5d8bba755508f"
+        );
+        assert_eq!(gov, pacto_gov_infra_row_id(LONG_PARENT));
+    }
+}
+
 fn upsert_squad_infra_inner<R: Runtime>(
     handle: &AppHandle<R>,
     id: &str,
@@ -1434,6 +1471,34 @@ pub fn squad_admin_infra_row_id(parent_id: &str) -> String {
     } else {
         format!(
             "sa-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
+/// Stable SQLite row id for the pacto-gov infra entry for this parent.
+pub fn pacto_gov_infra_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("pacto-gov-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "pg-{}",
+            hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
+        )
+    }
+}
+
+/// Stable SQLite row id for the pacto-gov treasury entry for this parent.
+pub fn pacto_gov_treasury_row_id(parent_id: &str) -> String {
+    let pid = parent_id.trim();
+    let direct = format!("pacto-gov-treasury-{pid}");
+    if direct.len() <= SQUAD_INFRA_ID_MAX {
+        direct
+    } else {
+        format!(
+            "pgt-{}",
             hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
         )
     }

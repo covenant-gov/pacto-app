@@ -20,6 +20,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     sponsorInfraRow,
     withLegacyProvider,
   } from '../../lib/governance/api';
+  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
@@ -185,24 +186,11 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     })
     .filter((row): row is { address: string; label: string } => row != null);
 
-  $: captainMemberOptions = (() => {
-    const me = $currentUser?.npub;
-    const rows = channelMembers
-      .map((npub) => {
-        const addr = squadMemberEvmByNpub[npub]?.trim();
-        if (!addr || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) return null;
-        const name = getProfileDisplayName($profiles[npub]) || `${npub.slice(0, 12)}…`;
-        const isMe = npub === me;
-        return { npub, address: addr, label: isMe ? `${name} (you)` : name };
-      })
-      .filter((row): row is { npub: string; address: string; label: string } => row != null);
-    rows.sort((a, b) => {
-      if (me && a.npub === me) return -1;
-      if (me && b.npub === me) return 1;
-      return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
-    });
-    return rows;
-  })();
+  $: captainMemberOptions = buildCaptainMemberOptions(
+    squadMemberEvmByNpub,
+    $currentUser?.npub,
+    (npub) => getProfileDisplayName($profiles[npub]),
+  );
 
   $: structureSummary = resolveDashboardStructureSummary(
     squadInfraRows === undefined ? undefined : pactoGovRow,
@@ -566,7 +554,11 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
         selectDashboardView('governance');
         return;
       }
-      if (parentId?.trim()) showPactoGovDeploy = true;
+      if (parentId?.trim()) {
+        void loadSquadMemberEvm();
+        if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
+        showPactoGovDeploy = true;
+      }
     });
   }
 

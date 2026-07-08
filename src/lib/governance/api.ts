@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 
+export {
+  pactoGovInfraId,
+  pactoGovTreasuryEntryId,
+  squadAdminInfraId,
+  squadSponsorInfraId,
+} from './squad-infra-row-id';
+
 /** Mirrors `SquadInfraRow` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadInfraDto {
   id: string;
@@ -66,16 +73,6 @@ export async function upsertSquadInfra(params: {
   });
 }
 
-/** Stable id for pacto-gov infra row per parent. */
-export function pactoGovInfraId(parentId: string): string {
-  return `pacto-gov-${parentId}`;
-}
-
-/** Stable treasury row id for the Safe deployed with Nave Pirata (`Governance: Treasury`). */
-export function pactoGovTreasuryEntryId(parentId: string): string {
-  return `pacto-gov-treasury-${parentId}`;
-}
-
 /** Maps legacy announce / UI provider strings to squad infra types. */
 export function infraTypeFromLegacyProvider(provider: string): string {
   const p = provider.trim().toLowerCase();
@@ -84,11 +81,6 @@ export function infraTypeFromLegacyProvider(provider: string): string {
   if (p === 'squad_sponsor') return 'sponsor';
   if (p === 'squad_admin' || p === 'squad-admin') return 'squad_admin';
   return p;
-}
-
-/** Stable id for squad sponsor infra row per parent. */
-export function squadSponsorInfraId(parentId: string): string {
-  return `sponsor-${parentId}`;
 }
 
 /** Sponsor infra row for a parent, if any. */
@@ -436,11 +428,6 @@ export async function getSquadAdminExecutorRoles(params: {
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
   })) as SquadAdminExecutorRolesDto;
-}
-
-/** Stable id for squad-admin infra row per parent. */
-export function squadAdminInfraId(parentId: string): string {
-  return `squad-admin-${parentId}`;
 }
 
 /** Wire payload for `governance_updated` when squad-admin infra is deployed. */
