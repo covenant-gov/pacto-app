@@ -7,7 +7,7 @@
   import { getProfileDisplayName, getProfileAvatarSrc } from '../../lib/utils/profile';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
-  import { commonsJoinRequestBlockReason } from '../../lib/commons/commons-join-request';
+  import { commonsJoinRequestBlockReason, commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
 
   export let broadcast: CommonsBroadcastDto;
@@ -52,7 +52,10 @@
   })();
   $: localSquadIds = $squads.map((s) => s.id);
   $: myNpub = $currentUser?.npub;
-  $: joinBlockReason = isSquad ? commonsJoinRequestBlockReason(broadcast, myNpub, localSquadIds) : null;
+  $: joinBlockReason = (() => {
+    $commonsJoinRequestRevision;
+    return isSquad ? commonsJoinRequestBlockReason(broadcast, myNpub, localSquadIds) : null;
+  })();
   $: canMessage = isUser && !!myNpub && broadcast.authorNpub !== myNpub;
   $: canJoin = isSquad && !joinBlockReason && !!myNpub;
   $: profileName = userProfile ? getProfileDisplayName(userProfile) : '';
@@ -80,6 +83,7 @@
         actionError = result.error;
         return;
       }
+      actionError = '';
       showToast(`Join request sent for ${squadLabel}.`);
       onClose();
     } finally {

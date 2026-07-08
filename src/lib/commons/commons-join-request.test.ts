@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   commonsJoinRequestBlockReason,
+  commonsJoinRequestRevision,
   formatCommonsJoinRequestMessage,
   isJoinRequestRateLimited,
   parseCommonsJoinRequestMessage,
   recordJoinRequestSent,
+  resetCommonsJoinRequestRevision,
 } from './commons-join-request';
 import type { CommonsBroadcastDto } from './types';
 
@@ -49,6 +52,7 @@ describe('commonsJoinRequestBlockReason', () => {
 
 describe('join request rate limit', () => {
   beforeEach(() => {
+    resetCommonsJoinRequestRevision();
     const store = new Map<string, string>();
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store.get(k) ?? null,
@@ -67,7 +71,9 @@ describe('join request rate limit', () => {
 
   it('records and checks cooldown', () => {
     const now = 1_000_000;
+    const before = get(commonsJoinRequestRevision);
     recordJoinRequestSent('group-1', now);
+    expect(get(commonsJoinRequestRevision)).toBe(before + 1);
     expect(isJoinRequestRateLimited('group-1', now + 100)).toBe(true);
     expect(isJoinRequestRateLimited('group-1', now + 86401)).toBe(false);
   });

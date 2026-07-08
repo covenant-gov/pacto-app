@@ -1,3 +1,4 @@
+import { writable } from 'svelte/store';
 import { persistenceKey } from '../../stores/persistence-context';
 import type { CommonsBroadcastDto } from './types';
 
@@ -45,6 +46,13 @@ export function formatCommonsJoinRequestMessage(payload: CommonsJoinRequestPaylo
 export const PACTO_COMMONS_JOIN_REQUESTS_PREFIX = 'pacto_commons_join_requests';
 export const COMMONS_JOIN_REQUEST_COOLDOWN_SECS = 24 * 3600;
 
+/** Bumps when join-request cooldown state changes so Commons UI reacts without refresh. */
+export const commonsJoinRequestRevision = writable(0);
+
+export function resetCommonsJoinRequestRevision(): void {
+  commonsJoinRequestRevision.set(0);
+}
+
 type JoinRequestSentMap = Record<string, number>;
 
 function readJoinRequestMap(): JoinRequestSentMap {
@@ -89,6 +97,7 @@ export function recordJoinRequestSent(squadId: string, nowSecs = Math.floor(Date
   const map = readJoinRequestMap();
   map[id] = nowSecs;
   writeJoinRequestMap(map);
+  commonsJoinRequestRevision.update((n) => n + 1);
 }
 
 export function squadIdFromBroadcast(broadcast: CommonsBroadcastDto): string {

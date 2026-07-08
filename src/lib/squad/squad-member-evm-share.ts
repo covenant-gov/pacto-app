@@ -10,7 +10,7 @@ export function formatSquadMemberEvmShare(rosterParentId: string, evmAddress: st
     version: SQUAD_MEMBER_EVM_SHARE_VERSION,
     type: SQUAD_MEMBER_EVM_SHARE_TYPE,
     payload: { parent_id: rosterParentId, evm_address: evmAddress },
-    pacto_virtual_bucket: 'inbox',
+    pacto_virtual_bucket: 'announcements',
   });
 }
 
@@ -35,10 +35,8 @@ export type PublishSquadMemberEvmShareOptions = {
 };
 
 /**
- * Record the current user's preferred squad/network signer address (EVM) for this community and broadcast to #announcements.
- * `announcementsMlsGroupId` is both the MLS destination and the roster `parent_id` key (must match for all members).
- * Uses the **active squad-purpose EVM signing account** when `options.evmAddress` is omitted.
- * Other members receive their own row when their client publishes (e.g. on invite accept). This does not change on-chain Safe owners.
+ * Record the current user's squad roster signer for this parent and publish a `squad_member_evm_share` row to #announcements.
+ * `announcementsMlsGroupId` is both the MLS destination and roster `parent_id` (must match for all members).
  */
 export async function publishSquadMemberEvmShare(
   announcementsMlsGroupId: string,
@@ -57,7 +55,7 @@ export async function publishSquadMemberEvmShare(
   }
   const json = formatSquadMemberEvmShare(rosterId, fromWallet);
   try {
-    await sendDmMessage(rosterId, json, '', { virtualBucket: 'inbox' });
+    await sendDmMessage(rosterId, json, '', { virtualBucket: 'announcements' });
   } catch (e) {
     console.warn('[squad-member-evm] sendDmMessage failed', e);
     return false;

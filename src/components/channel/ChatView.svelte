@@ -94,7 +94,7 @@
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
   $: hideChannelOverflowMenu =
     isAnnouncementsChannel || isPersonalAlertsChannel || isPollsChannel;
-  $: channelParsesStructuredAnnounces = isAnnouncementsChannel || isPersonalAlertsChannel;
+  $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
@@ -195,6 +195,7 @@
   }
 
   $: if (isPersonalAlertsChannel && activeParent && announcementsGroupIdForMembers) {
+    const _membership = $membershipVersionByGroupId[announcementsGroupIdForMembers] ?? 0;
     void refreshRosterKeyCard();
   }
 

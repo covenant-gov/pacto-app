@@ -88,7 +88,7 @@ import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch'
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { recentEmojisStore } from '../../stores/emojis';
 import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';
-import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX } from '../commons/commons-join-request';
+import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
@@ -141,6 +141,7 @@ export function clearAccountState(npub?: string): void {
   resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();
+  resetCommonsJoinRequestRevision();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();
