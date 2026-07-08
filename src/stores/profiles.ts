@@ -10,6 +10,18 @@ import { hydrateDmUnreadFromInitChats } from './dm-unread';
 import { currentUser } from './auth';
 import { showToast } from './toast';
 
+type InitFinishedPayload = {
+  profiles?: NostrProfile[];
+  chats?: Array<{
+    id?: string;
+    chat_type?: string;
+    messages?: Array<{ at: number; mine?: boolean }>;
+    last_read?: string;
+    created_at?: number;
+  }>;
+  dm_flags?: Record<string, { has_from_me?: boolean; has_from_them?: boolean }>;
+};
+
 const LAST_DM_NPUB_PREFIX = 'pacto_last_dm_npub';
 let lastOpenChatRestored = false;
 
@@ -27,14 +39,14 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
     const prev = typeof window !== 'undefined' ? (window as unknown as { [key: string]: (() => void) | undefined })[INIT_LISTENER_KEY] : undefined;
     if (prev) prev();
 
-    const unlisten = await listen('init_finished', (event: any) => {
+    const unlisten = await listen<InitFinishedPayload>('init_finished', (event) => {
       const payload = event.payload;
       dmLog('init_finished received', {
         profilesCount: payload?.profiles?.length ?? 0,
         chatsCount: payload?.chats?.length ?? 0,
       });
       // [Squad/Invite] debug: which chats (npubs) we got so we can see if inviter DM exists
-      const chats = (payload?.chats && Array.isArray(payload.chats)) ? (payload.chats as { id?: string; chat_type?: string }[]) : [];
+      const chats = (payload?.chats && Array.isArray(payload.chats)) ? payload.chats : [];
       const dmNpubs = chats.filter((c) => typeof c.id === 'string' && (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage')).map((c) => c.id as string);
       console.log('[Squad/Invite] init_finished: chats total=', chats.length, 'dm npubs=', dmNpubs.length, 'ids (first 5)=', dmNpubs.slice(0, 5).map((id) => id.slice(0, 24) + '…'));
       if (!payload) return;
@@ -60,29 +72,25 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
         const profilesMap = payload.profiles
           ? Object.fromEntries(payload.profiles.map((p: NostrProfile) => [p.id, p]))
           : {};
-        type ChatPayload = {
-          id: string;
-          chat_type?: string;
-          messages?: Array<{ at: number; mine?: boolean }>;
-          created_at?: number;
-        };
-        const dmChats = (payload.chats as ChatPayload[]).filter(
+      const dmChats = payload.chats.filter(
           (c) =>
             typeof c.id === 'string' &&
             (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage')
         );
-        const dmFlags = (payload as { dm_flags?: Record<string, { has_from_me?: boolean; has_from_them?: boolean }> }).dm_flags;
+        const dmFlags = payload.dm_flags;
         const map: Record<string, DmChatState> = {};
         for (const c of dmChats) {
+          const id = c.id;
+          if (typeof id !== 'string') continue;
           const ms = c.messages ?? [];
           // Prefer backend dm_flags (from full DB) so Friends vs Requests vs Pending is correct when init only loads 1 message per chat
-          const flags = dmFlags?.[c.id];
+          const flags = dmFlags?.[id];
           const hasFromMe = flags ? flags.has_from_me ?? false : ms.some((m: { mine?: boolean }) => m.mine === true);
           const hasFromThem = flags ? flags.has_from_them ?? false : ms.some((m: { mine?: boolean }) => m.mine === false);
           const lastAt = ms.length > 0 ? Math.max(...ms.map((m: { at?: number }) => m.at ?? 0)) : (c.created_at ?? 0);
-          const profile = profilesMap[c.id];
-          map[c.id] = {
-            npub: c.id,
+          const profile = profilesMap[id];
+          map[id] = {
+            npub: id,
             name: getProfileDisplayName(profile ?? undefined),
             avatar: profile?.avatar_cached || profile?.avatar,
             hasFromMe,
@@ -140,7 +148,7 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
     await listen('kind0_profile_published', () => {
       showToast('Profile metadata (Kind 0) published to the network.');
     });
-    await listen('kind0_profile_publish_failed', (event: any) => {
+    await listen<string>('kind0_profile_publish_failed', (event) => {
       const p = event.payload;
       const msg = typeof p === 'string' && p.trim() ? p : 'Could not publish profile metadata.';
       showToast(msg);
@@ -153,8 +161,8 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
 // Listen for profile updates from backend
 (async () => {
   try {
-    await listen('profile_update', (event: any) => {
-      const profile = event.payload as NostrProfile;
+    await listen<NostrProfile>('profile_update', (event) => {
+      const profile = event.payload;
       if (profile?.id) {
         dmLog('profile_update', { npub: profile.id.slice(0, 20) + '…', name: profile.display_name || profile.name });
         profiles.update((p) => {
@@ -174,8 +182,8 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
 // Listen for nickname changes
 (async () => {
   try {
-    await listen('profile_nick_changed', (event: any) => {
-      const payload = event.payload as { profile_id?: string; value?: string };
+    await listen<{ profile_id?: string; value?: string }>('profile_nick_changed', (event) => {
+      const payload = event.payload;
       const { profile_id, value } = payload;
       if (!profile_id || value === undefined) return;
       dmLog('profile_nick_changed', { npub: profile_id.slice(0, 20) + '…', nickname: value });
@@ -219,7 +227,7 @@ export async function loadProfile(npub: string): Promise<NostrProfile> {
       const profile = await fetchNostrProfile(npub);
       profiles.update(p => ({ ...p, [npub]: profile }));
       return profile;
-    } catch (fetchError) {
+    } catch {
       // Not in cache, trigger background fetch
       await loadNostrProfile(npub);
       

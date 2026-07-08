@@ -89,9 +89,9 @@ export async function checkAuthStatus(): Promise<'needs-auth' | 'needs-pin' | 'a
     }
 
     return 'needs-pin';
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Auth check failed:', error);
-    authError.set(error.message || 'Failed to check auth status');
+    authError.set(error instanceof Error ? error.message : 'Failed to check auth status');
     return 'needs-auth';
   } finally {
     authLoading.set(false);
@@ -136,9 +136,9 @@ export async function createAccount(pin: string): Promise<void> {
 
     dmLog('createAccount: done (fetchMessages will run from +page onMount)');
     authLoading.set(false);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create account failed:', error);
-    authError.set(error.message || 'Failed to create account');
+    authError.set(error instanceof Error ? error.message : 'Failed to create account');
     authLoading.set(false);
     throw error;
   }
@@ -187,9 +187,9 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
     runPostLoginNetworkSync(npub);
 
     dmLog('importAccount: done');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Import account failed:', error);
-    authError.set(error.message || 'Failed to import account');
+    authError.set(error instanceof Error ? error.message : 'Failed to import account');
     authLoading.set(false);
     throw error;
   }
@@ -221,9 +221,9 @@ export async function unlockWithPin(pin: string): Promise<void> {
     await maybeApplyLocalDevDefaults(npub);
 
     dmLog('unlockWithPin: done');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Unlock failed:', error);
-    authError.set(error.message || 'Incorrect PIN or failed to decrypt');
+    authError.set(error instanceof Error ? error.message : 'Incorrect PIN or failed to decrypt');
     throw error;
   } finally {
     authLoading.set(false);
@@ -246,9 +246,9 @@ export async function logout(): Promise<void> {
     clearSessionUnlocked();
     clearAccountState(npub);
     await invoke('logout');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Logout failed:', error);
-    authError.set(error.message || 'Failed to logout');
+    authError.set(error instanceof Error ? error.message : 'Failed to logout');
     isAuthenticated.set(false);
     currentUser.set(null);
     throw error;

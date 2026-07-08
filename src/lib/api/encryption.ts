@@ -68,7 +68,7 @@ export async function loadAndDecryptKey(pin: string): Promise<string> {
     });
     return decryptedKey;
   } catch (error) {
-    throw new Error('Incorrect PIN');
+    throw new Error('Incorrect PIN', { cause: error });
   }
 }
 

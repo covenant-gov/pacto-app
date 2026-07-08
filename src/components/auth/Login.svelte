@@ -86,8 +86,8 @@
         await createAccount(pin);
       }
       // On success, auth store will handle state and user will see app
-    } catch (e: any) {
-      error = e.message || 'Failed to create account';
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to create account';
       currentStep = 'pin-create';
       firstPin = '';
     }
@@ -99,8 +99,8 @@
     try {
       await unlockWithPin(pin);
       // On success, auth store will handle state and user will see app
-    } catch (e: any) {
-      error = e.message || 'Incorrect PIN';
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Incorrect PIN';
       // Stay on unlock screen for retry
     } finally {
       unlockInFlight = false;

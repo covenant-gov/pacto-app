@@ -139,7 +139,7 @@
     } catch (e) {
       const msg = getInvokeErrorMessage(e, 'Failed to publish poll.');
       showToast(msg);
-      throw new Error(msg);
+      throw new Error(msg, { cause: e });
     }
   }
 

@@ -45,8 +45,8 @@
     try {
       error = null;
       await loadProfile(npub);
-    } catch (e: any) {
-      error = e.message || 'Failed to load profile';
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to load profile';
       console.error('Profile load error:', e);
     }
   }
@@ -85,9 +85,9 @@
       saveError = null;
       const url = await uploadAvatar(selected, 'avatar');
       editAvatarUrl = url;
-    } catch (e: any) {
+    } catch (e) {
       console.error('Upload avatar failed:', e);
-      saveError = e?.message || 'Failed to upload avatar';
+      saveError = e instanceof Error ? e.message : 'Failed to upload avatar';
     } finally {
       uploadingAvatar = false;
     }
@@ -263,7 +263,8 @@
                     } catch (_) {
                       // clipboard write may fail silently
                     }
-                  }}>
+                  }}
+                >
                   <svg
                     class="btn-copy-account-id-icon"
                     width="18"

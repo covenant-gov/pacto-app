@@ -962,7 +962,7 @@
                   try {
                     await setNickname(id, value);
                   } catch (e) {
-                    throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'));
+                    throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'), { cause: e });
                   }
                 }}
                 onDeleteChat={isPactoAppThreadId($activeDmId)

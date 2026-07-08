@@ -188,7 +188,7 @@ function sanitizeWithEmoji(html: string): string {
   }
 }
 
-const URL_REGEX = /(https?:\/\/[^\s<>"']+?)([.,;:!?)\]\']*)(?=\s|$|<|>)/g;
+const URL_REGEX = /(https?:\/\/[^\s<>"']+?)([.,;:!?)\]'"]*)(?=\s|$|<|>)/g;
 
 function isSafeUrl(url: string): boolean {
   const t = url.toLowerCase().trim();
