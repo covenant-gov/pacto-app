@@ -8,8 +8,8 @@
     parentDashboardChannelMode,
     type ParentDashboardChannelMode,
   } from '../../stores/app';
-  import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
-  import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
+import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
+import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto } from '../../lib/governance/api';
@@ -142,9 +142,11 @@
   $: parentId = parent?.id;
   $: sponsorRow = sponsorInfraRow(squadInfraRows);
   $: hasSponsor = hasSponsorInfra(squadInfraRows);
-  $: displayedTreasurySafes = [...(treasurySafes ?? [])]
-    .filter((e) => !parentId || e.id !== pactoGovTreasuryEntryId(parentId))
-    .slice(0, TREASURY_SAFE_UI_CAP);
+  $: displayedTreasurySafes = vaultTreasurySafesForParent(
+    treasurySafes ?? [],
+    parentId ?? '',
+    pactoGovTreasuryEntryId,
+  ).slice(0, TREASURY_SAFE_UI_CAP);
 
   $: pactoGovRow = pactoGovInfraRow(squadInfraRows);
   $: hasPactoGov = pactoGovRow != null;
