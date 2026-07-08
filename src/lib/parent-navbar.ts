@@ -4,7 +4,10 @@
 import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
+  DASHBOARD_CHANNEL_ID,
   DASHBOARD_CHANNEL_NAME,
+  JOIN_REQUESTS_CHANNEL_ID,
+  JOIN_REQUESTS_CHANNEL_NAME,
   PERSONAL_ALERTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
 } from './squad/hub-channel-names';
@@ -26,9 +29,30 @@ export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
     name === DASHBOARD_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
+    name === JOIN_REQUESTS_CHANNEL_NAME ||
     name === PERSONAL_ALERTS_CHANNEL_NAME ||
     name === POLLS_CHANNEL_NAME
   );
+}
+
+/** Virtual + MLS rows shown in the squad hub sidebar (dashboard first, join-requests under announcements). */
+export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
+  rawChannels: T[]
+): Array<T | { name: string; groupId: string; order: number }> {
+  const sorted = [...rawChannels].sort((a, b) => a.order - b.order);
+  const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
+  const rest = sorted.filter((c) => c.name !== ANNOUNCEMENTS_CHANNEL_NAME);
+  const out: Array<T | { name: string; groupId: string; order: number }> = [
+    { name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 },
+  ];
+  if (announcements) out.push(announcements);
+  out.push({
+    name: JOIN_REQUESTS_CHANNEL_NAME,
+    groupId: JOIN_REQUESTS_CHANNEL_ID,
+    order: announcements?.order ?? 0,
+  });
+  out.push(...rest);
+  return out;
 }
 
 export function partitionHubSidebarChannels<T extends { name: string }>(

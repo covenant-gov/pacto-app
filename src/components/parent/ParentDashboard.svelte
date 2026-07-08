@@ -645,6 +645,7 @@
         {:else if dashboardView === 'settings'}
           {#await loadDashboardSettingsTab() then SettingsTab}
             <SettingsTab
+              squad={parent}
               {permissionsCtx}
               {squadAdminCtx}
             {settingsChainError}

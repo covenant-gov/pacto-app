@@ -105,9 +105,12 @@ fn normalize_commons_tags(raw: Option<&[String]>, visibility: &str) -> Result<Op
         return Ok(None);
     }
     let Some(tags) = raw else {
-        return Err("public squads require commonsTags".to_string());
+        return Ok(None);
     };
-    if tags.is_empty() || tags.len() > 3 {
+    if tags.is_empty() {
+        return Ok(None);
+    }
+    if tags.len() > 3 {
         return Err("commonsTags must contain 1 to 3 tags".to_string());
     }
     let mut out: Vec<String> = Vec::new();

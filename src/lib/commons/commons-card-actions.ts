@@ -7,16 +7,14 @@ import {
   newChatDraftMessage,
 } from '../../stores/dm';
 import { loadProfile } from '../../stores/profiles';
-import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDto } from './types';
 import {
   commonsJoinRequestBlockReason,
-  formatCommonsJoinRequestMessage,
   recordJoinRequestSent,
   squadIdFromBroadcast,
-  type CommonsJoinRequestPayload,
 } from './commons-join-request';
+import { submitCommonsJoinRequest } from './join-requests';
 
 /**
  * Open the DMs "New Chat" compose view with the recipient and a partial
@@ -45,19 +43,14 @@ export async function sendCommonsJoinRequest(
   }
 
   const squadId = squadIdFromBroadcast(broadcast);
-  const payload: CommonsJoinRequestPayload = {
-    type: 'commons_join_request',
-    squadId,
-    squadName: broadcast.squadName ?? 'Squad',
-    squadKind: broadcast.squadKind,
-    broadcastEventId: broadcast.eventId,
-    requesterNpub,
-  };
-
   try {
-    const ok = await sendDmMessage(broadcast.authorNpub, formatCommonsJoinRequestMessage(payload));
-    if (!ok) {
-      return { ok: false, error: 'Could not send join request.' };
+    const result = await submitCommonsJoinRequest({
+      squadId,
+      squadName: broadcast.squadName ?? 'Squad',
+      broadcastEventId: broadcast.eventId,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
     }
     recordJoinRequestSent(squadId);
     return { ok: true };

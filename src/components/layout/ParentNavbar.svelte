@@ -4,13 +4,6 @@
   import InviteToParentModal from '../channel/InviteToParentModal.svelte';
   import ExitParentModal from '../channel/ExitParentModal.svelte';
   import PairWithSquadModal from '../squad/PairWithSquadModal.svelte';
-  import BroadcastSquadModal from '../commons/BroadcastSquadModal.svelte';
-  import { isPublicSquadForCommonsBroadcast } from '../../lib/commons/squad-create-broadcast';
-  import {
-    canBroadcastSquad,
-    broadcastSquadRoleDeniedReason,
-    COMMONS_BROADCAST_ROLE_DENIED_REASON,
-  } from '../../lib/commons/permissions';
   import {
     squads,
     parentsCreatingAnnouncements,
@@ -56,52 +49,14 @@
     runInviteMembersToParent,
   } from '../../lib/parent/invite-members-flow';
   import { runExitParent } from '../../lib/parent/exit-parent-flow';
+  import { buildHubSidebarChannels } from '../../lib/parent-navbar';
 
   $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
-
-  $: liveActiveParent = $activeSquadId
-    ? ($squads.find((s) => s.id === $activeSquadId) as Squad | undefined)
-    : undefined;
-
-  $: squadBroadcastTarget =
-    liveActiveParent &&
-    isPublicSquadForCommonsBroadcast({
-      id: liveActiveParent.id,
-      name: liveActiveParent.name,
-      kind: liveActiveParent.kind,
-      iconUrl: liveActiveParent.iconUrl,
-      visibility: liveActiveParent.visibility,
-      commonsTags: liveActiveParent.commonsTags,
-    })
-      ? {
-          id: liveActiveParent.id,
-          name: liveActiveParent.name,
-          kind: liveActiveParent.kind,
-          iconUrl: liveActiveParent.iconUrl,
-          visibility: liveActiveParent.visibility,
-          commonsTags: liveActiveParent.commonsTags,
-        }
-      : null;
-
-  $: broadcastPermissionInput = squadBroadcastTarget
-    ? { userNpub: $currentUser?.npub, squad: squadBroadcastTarget }
-    : null;
-
-  $: showBroadcastSquadMenu = !!squadBroadcastTarget && !!canShowParentMenuActions;
-  $: squadBroadcastRoleOk =
-    !!broadcastPermissionInput && canBroadcastSquad(broadcastPermissionInput);
-  $: broadcastSquadDisabled = showBroadcastSquadMenu && !squadBroadcastRoleOk;
-  $: broadcastSquadDisabledTitle =
-    broadcastSquadDisabled && broadcastPermissionInput
-      ? broadcastSquadRoleDeniedReason(broadcastPermissionInput) ?? COMMONS_BROADCAST_ROLE_DENIED_REASON
-      : COMMONS_BROADCAST_ROLE_DENIED_REASON;
 
   $: rawChannels = activeParent
     ? [...activeParent.channels].sort((a, b) => a.order - b.order)
     : [];
-  $: channels = activeParent
-    ? [{ name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 }, ...rawChannels]
-    : [];
+  $: channels = activeParent ? buildHubSidebarChannels(rawChannels) : [];
 
   $: creating =
     activeParent &&
@@ -433,16 +388,6 @@
 
   let showExitModal = false;
   let exitError = '';
-  let showBroadcastSquadModal = false;
-
-  function openBroadcastSquadModal() {
-    if (!squadBroadcastRoleOk || !canShowParentMenuActions || !liveActiveParent) return;
-    showBroadcastSquadModal = true;
-  }
-
-  function closeBroadcastSquadModal() {
-    showBroadcastSquadModal = false;
-  }
 
   function openExitModal() {
     showExitModal = true;
@@ -486,10 +431,6 @@
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
   onInvite={openInviteModal}
-  showBroadcastSquad={showBroadcastSquadMenu}
-  {broadcastSquadDisabled}
-  broadcastSquadDisabledTitle={broadcastSquadDisabledTitle}
-  onBroadcastSquad={squadBroadcastRoleOk ? openBroadcastSquadModal : undefined}
   onExitSquad={openExitModal}
   partnerSquads={partnerSquads}
   activePartnerSquadId={activePartnerSquadId}
@@ -556,12 +497,3 @@
   onClose={closePairWithSquadModal}
   onCreate={handleCreateSquadPair}
 />
-
-{#if showBroadcastSquadModal && liveActiveParent && squadBroadcastTarget}
-  <BroadcastSquadModal
-    squad={squadBroadcastTarget}
-    broadcastAllowed={squadBroadcastRoleOk}
-    broadcastDeniedReason={broadcastSquadDisabledTitle}
-    onClose={closeBroadcastSquadModal}
-  />
-{/if}

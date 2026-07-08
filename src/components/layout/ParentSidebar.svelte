@@ -37,10 +37,6 @@
   export let onCreateChannel: () => void = () => {};
   export let onRetryCreate: () => void = () => {};
   export let onInvite: () => void = () => {};
-  export let showBroadcastSquad = false;
-  export let broadcastSquadDisabled = false;
-  export let broadcastSquadDisabledTitle = '';
-  export let onBroadcastSquad: (() => void) | undefined = undefined;
   export let onExitSquad: (() => void) | undefined = undefined;
 
   /** Partner squad-pairs linked to the active hub. */
@@ -71,7 +67,6 @@
   $: ({ defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels));
   $: showCustomChannelDivider = defaultHubChannels.length > 0 && customChannels.length > 0;
   $: inviteLabel = 'Invite to Squad';
-  $: showBroadcastSquadItem = showBroadcastSquad || broadcastSquadDisabled;
   $: showExit = typeof onExitSquad === 'function';
   $: exitLabel = 'Exit Squad';
   $: onExit = onExitSquad;
@@ -114,23 +109,6 @@
               >
                 {inviteLabel}
               </button>
-              {#if showBroadcastSquadItem}
-                <button
-                  type="button"
-                  class="parent-menu-item"
-                  class:parent-menu-item-disabled={broadcastSquadDisabled}
-                  role="menuitem"
-                  disabled={broadcastSquadDisabled}
-                  title={broadcastSquadDisabled ? broadcastSquadDisabledTitle : undefined}
-                  on:click={() => {
-                    if (broadcastSquadDisabled || !onBroadcastSquad) return;
-                    menuOpen = false;
-                    onBroadcastSquad();
-                  }}
-                >
-                  Broadcast Squad
-                </button>
-              {/if}
               {#if showExit && onExit}
                 <button
                   type="button"
