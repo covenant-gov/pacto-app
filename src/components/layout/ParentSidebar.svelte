@@ -4,6 +4,15 @@
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import chevronDownIcon from '../../icons/chevron-down.svg';
+  import {
+    hubChannelAlertCount,
+    joinRequestAckCountBySquadId,
+    joinRequestPendingCountBySquadId,
+    personalAlertsNeededBySquadId,
+  } from '../../stores/squad-hub-alerts';
+
+  /** Squad row id for hub-channel alert badges. */
+  export let squadId: string | null = null;
 
   /** Channel shape for list items (name, groupId, order). Re-exported via type. */
   interface ParentChannel {
@@ -65,6 +74,16 @@
 
   $: showPartnerSquads = partnerSquads.length > 0 || showPairWithSquadAction;
   $: ({ defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels));
+  $: hubAlertByChannelName = (() => {
+    const pending = $joinRequestPendingCountBySquadId;
+    const ack = $joinRequestAckCountBySquadId;
+    const personal = $personalAlertsNeededBySquadId;
+    const out: Record<string, number> = {};
+    for (const channel of [...defaultHubChannels, ...customChannels]) {
+      out[channel.name] = hubChannelAlertCount(channel.name, squadId, pending, ack, personal);
+    }
+    return out;
+  })();
   $: showCustomChannelDivider = defaultHubChannels.length > 0 && customChannels.length > 0;
   $: inviteLabel = 'Invite to Squad';
   $: showExit = typeof onExitSquad === 'function';
@@ -164,6 +183,7 @@
               <Channel
                 name={channel.name}
                 type="text"
+                alertCount={hubAlertByChannelName[channel.name] ?? 0}
                 active={activeView === 'hub' &&
                   activeChannelId === channel.groupId &&
                   (groupIdDupCount[channel.groupId] <= 1 ||
@@ -186,6 +206,7 @@
               <Channel
                 name={channel.name}
                 type="text"
+                alertCount={hubAlertByChannelName[channel.name] ?? 0}
                 active={activeView === 'hub' &&
                   activeChannelId === channel.groupId &&
                   (groupIdDupCount[channel.groupId] <= 1 ||
