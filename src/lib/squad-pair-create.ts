@@ -27,6 +27,7 @@ import {
 import { pendingReadyToast } from '../stores/toast';
 import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broadcast';
 import { persistCreatedSquad } from './squad/squad-catalog';
+import { initSquadBot } from './squad/squad-bot';
 import type { PairedSquads } from './squad-pair';
 
 function resolvePublicSquadBroadcastTarget(squadId: string) {
@@ -168,6 +169,7 @@ export function runSquadPairCreateFlow(
         updatedAt: Date.now(),
       };
       await persistCreatedSquad(tempId, finalized);
+      void initSquadBot(groupId);
       removeParentCreatingAnnouncements(tempId);
       parentCreateErrorById.update((m) => {
         const next = { ...m };
@@ -235,6 +237,7 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
     updatedAt: Date.now(),
   };
   await persistCreatedSquad(parent.id, finalized);
+  void initSquadBot(gid);
   if (get(activeSquadId) === parent.id) {
     activeSquadId.set(gid);
     activeChannelId.set(gid);
