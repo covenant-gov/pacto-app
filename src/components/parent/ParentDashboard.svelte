@@ -114,6 +114,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
         providerPayload: string;
         safeAddress: string;
         txHash: string;
+        infraRowId?: string;
       }) => Promise<void>)
     | undefined = undefined;
   export let onSquadAdminDeployComplete:
@@ -835,6 +836,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       providerPayload: out.providerPayload,
       safeAddress: out.safeAddress,
       txHash: out.txHash,
+      infraRowId: out.infraRowId,
     });
     showPactoGovDeploy = false;
     selectDashboardView('governance');

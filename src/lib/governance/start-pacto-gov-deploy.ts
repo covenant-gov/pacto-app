@@ -10,6 +10,7 @@ export type PactoGovDeployComplete = {
   topHatId: string;
   safeAddress: string;
   providerPayload: string;
+  infraRowId: string;
 };
 
 export type PactoGovCaptainOption = {
@@ -82,6 +83,8 @@ export function startPactoGovDeploy(params: {
         network,
         parentId,
         captain,
+        // Hats metadata URI; captain modal has no field yet — stable placeholder until product adds one.
+        metadataUri: `pacto://squad/${parentId}`,
       }),
     onSuccess: async (result) => {
       await params.onComplete({
@@ -90,6 +93,7 @@ export function startPactoGovDeploy(params: {
         topHatId: result.topHatId,
         safeAddress: result.safeAddress,
         providerPayload: result.providerPayload,
+        infraRowId: result.infraRowId,
       });
     },
   });
