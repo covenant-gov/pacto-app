@@ -270,6 +270,8 @@ export interface NavePirataDeployResultDto {
   treasuryAuthority: string;
   squadAdminProxy: string;
   providerPayload: string;
+  /** Stable `squad_infra` row id persisted by the backend on deploy. */
+  infraRowId: string;
 }
 
 /** Backend: `deploy_nave_pirata_for_parent`. */

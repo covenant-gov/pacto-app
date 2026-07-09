@@ -309,8 +309,10 @@
     providerPayload: string;
     safeAddress: string;
     txHash: string;
+    infraRowId?: string;
   }) {
-    const entryId = pactoGovInfraId(params.parentId);
+    // Backend already persisted infra + treasury on deploy; re-upsert is idempotent merge for UI sync.
+    const entryId = params.infraRowId?.trim() || pactoGovInfraId(params.parentId);
     const providerPayload = withPactoGovProviderPayloadTxHash(
       params.providerPayload,
       params.txHash,

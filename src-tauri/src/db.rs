@@ -880,6 +880,21 @@ fn parent_has_pacto_gov_infra(conn: &rusqlite::Connection, parent_id: &str) -> b
         > 0
 }
 
+/// Whether this parent already has a `pacto_gov` infra row (duplicate-deploy guard).
+pub fn parent_has_pacto_gov_infra_row<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<bool, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(false);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let has = parent_has_pacto_gov_infra(&conn, pid);
+    crate::account_manager::return_db_connection(conn);
+    Ok(has)
+}
+
 /// Interim v1: mutations require deployed Pacto Gov. Target: on-chain captain / allowlist-admin role.
 fn require_allowlist_mutation_allowed(conn: &rusqlite::Connection, parent_id: &str) -> Result<(), String> {
     let pid = parent_id.trim();
@@ -1532,6 +1547,50 @@ pub fn pacto_gov_treasury_row_id(parent_id: &str) -> String {
             hex::encode(alloy::primitives::keccak256(pid.as_bytes()).as_slice())
         )
     }
+}
+
+/// Persist or refresh the pacto-gov infra row after deploy (and for announce ingest).
+/// `canonical_ref` is the top hat id string.
+pub fn persist_pacto_gov_infra<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    top_hat_id: &str,
+    provider_payload: &str,
+) -> Result<(), String> {
+    let hat = top_hat_id.trim();
+    if hat.is_empty() {
+        return Err("top_hat_id must be non-empty".to_string());
+    }
+    upsert_squad_infra_inner(
+        handle,
+        pacto_gov_infra_row_id(parent_id).as_str(),
+        parent_id,
+        "pacto_gov",
+        Some(chain),
+        hat,
+        None,
+        Some(provider_payload),
+    )
+}
+
+/// Persist governance treasury Safe after Pacto Gov deploy (idempotent).
+pub fn persist_pacto_gov_treasury_safe<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    safe_address: &str,
+) -> Result<(), String> {
+    let norm = crate::evm::normalize_hex_address(safe_address.trim())
+        .ok_or_else(|| "invalid safe address".to_string())?;
+    upsert_parent_treasury_row(
+        handle,
+        parent_id,
+        norm.as_str(),
+        chain,
+        "",
+        Some(pacto_gov_treasury_row_id(parent_id).as_str()),
+    )
 }
 
 /// Persist or refresh the squad-admin infra row after deploy (and for announce ingest).
