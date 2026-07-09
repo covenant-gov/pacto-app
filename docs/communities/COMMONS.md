@@ -16,10 +16,10 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
 | **Commons on** | Squad may publish a public discovery card. **Exactly 3 tags** are required **while broadcasting**; a later broadcast may use different tags. Create-with-Commons-on auto-publishes a **72 h** `#new` broadcast (needs 3 tags at create). Re-broadcast from settings / modal (24 / 48 / 72 h) without `#new`. |
 | **User visibility** | No separate setting — **broadcasting is the public signal**. A user is discoverable only while they have an active broadcast. |
 | **New vs active (implicit)** | A user's audience is derived, never chosen. The **first user broadcast ever** is shown as **new user** and carries the reserved **`#new`** tag; every later broadcast is **active user** with no `#new`. Tracked coarsely per npub (cancelling the first broadcast does not reset it). Newly created squads with Commons on always broadcast `#new` at create. The reserved `#new` tag cannot be self-selected. |
-| **Cooldown** | One active broadcast per **(author npub, subject)** — user npub or squad id. UI blocks re-publish until `expiresAt`. |
-| **Cancel** | The author can retract an active broadcast. Publishes a replacement (NIP-33, same `d`) with `cancelled: true`; clients drop it from the feed even before `expiresAt`, and the author's cooldown lifts so they can rebroadcast immediately. Newest-event-wins keeps the tombstone hidden and prevents feed spam. |
+| **Cooldown** | One active broadcast per **(author npub, subject)** — user npub or squad id. Squad broadcasts are **signed by the squad bot**; author npub is the bot. UI blocks re-publish until `expiresAt`. |
+| **Cancel** | A **bot key holder** can retract an active squad broadcast (signed by the bot). Publishes a replacement (NIP-33, same `d`) with `cancelled: true`; clients drop it from the feed even before `expiresAt`, and the cooldown lifts so they can rebroadcast immediately. Newest-event-wins keeps the tombstone hidden and prevents feed spam. |
 | **Feed** | Active broadcasts only; relay lookback **≤ 72 h** (max TTL). Refreshes every **60 s** while Commons is open. |
-| **Squad broadcast roles** | Stub allows all members today; `canBroadcastSquad` in `src/lib/commons/permissions.ts` will gate on Squad Admin when on-chain roles ship (see [PACTO_GOV.md](../wallet/PACTO_GOV.md)). |
+| **Squad broadcast roles** | Only **bot key holders** with a local bot secret may publish/cancel. Holder list is Settings + MLS meta; SquadAdmin will gate who may be holders later ([`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). |
 
 ---
 
@@ -33,11 +33,13 @@ Wire/storage may still use `visibility: 'public' | 'private'` for Commons eligib
    - **Combine logic:** **Category** tile search = **ANY** of all tags in that category (one category chip in the filter bar; no 3-tag cap). **Tags** menu search = **AND** of up to 3 chosen tags (each shown as a chip). Show and Audience are **AND** on top of either mode. **All** on a switch means no constraint. Picking tags clears an active category; opening **Tags** clears category. **Categories** resets everything.
 4. Cards show name, tags, message, time until expiry.
 5. **Message** (user) → opens DM with that npub.
-6. **Request to join** (squad) → structured DM (`commons_join_request`); squad side uses existing invite/join handling.
+6. **Request to join** (squad) → opens a DM to the **squad bot** (card `authorNpub`). Holders fan out into MLS `#join-requests` (see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)).
 
 ### Publish — squad
 
-- **Create with Commons on** → automatic **72 h `#new`** broadcast (exactly **3** tags from create form + reserved `#new`).
+Squad discovery cards are **authored by the squad bot** (same UX as messaging a user from their card: DM the author). Only holders with a local bot secret can publish.
+
+- **Create with Commons on** → automatic **72 h `#new`** broadcast (exactly **3** tags from create form + reserved `#new`), signed by the bot after `initSquadBot`.
 - **Dashboard Settings → Commons on → broadcast** → duration + message modal; pick **exactly 3** tags (may differ from a prior broadcast; no `#new`).
 - Cooldown copy when a broadcast is still active.
 
@@ -113,9 +115,9 @@ Public **Kind 30078** ([NIP-33](https://github.com/nostr-protocol/nips/blob/mast
 | Squad id | Must match `squad` tag and payload; stable announcements group id |
 | Expired | Dropped from feed and pruned from local cache |
 
-### Join request DM (not Commons feed)
+### Join request (not Commons feed)
 
-Kind **14** text with JSON `schema: pacto.commons.join_request.v1` — see `src/lib/commons/commons-join-request.ts`. Rate-limited client-side (24 h per squad target).
+Squad cards open a **NIP-17 DM to the bot** (`authorNpub` on the card). Holders fan out into MLS `#join-requests` — see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md). Client-side rate limit: 24 h per squad target.
 
 ---
 

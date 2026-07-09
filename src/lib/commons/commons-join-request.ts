@@ -117,7 +117,7 @@ export function commonsJoinRequestBlockReason(
   if (broadcast.subject !== 'squad') return null;
   const squadId = squadIdFromBroadcast(broadcast);
   if (!squadId) return 'Missing squad id.';
-  if (myNpub && broadcast.authorNpub === myNpub) return 'This is your squad broadcast.';
+  if (myNpub && broadcast.authorNpub === myNpub) return 'This is your broadcast.';
   if (isLocalSquadMember(squadId, localSquadIds)) return 'You are already in this squad.';
   if (isJoinRequestRateLimited(squadId)) return 'Join request sent recently.';
   return null;

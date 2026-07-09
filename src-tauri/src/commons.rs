@@ -522,16 +522,30 @@ pub async fn commons_publish_broadcast<R: Runtime>(
     let content = serde_json::to_string(&wire).map_err(|e| e.to_string())?;
 
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
-    let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    let author_npub = pk.to_bech32().map_err(|e| e.to_string())?;
-
     let builder = broadcast_event_builder(&wire, &content);
 
-    let event = client
-        .sign_event_builder(builder)
-        .await
-        .map_err(|e| e.to_string())?;
+    let (event, author_npub) = if subject == "squad" {
+        let squad_id = squad_wire
+            .as_ref()
+            .map(|s| s.id.as_str())
+            .ok_or_else(|| "squad id required".to_string())?;
+        let (bot_keys, bot_npub) =
+            crate::squad_bot::bot_keys_for_holder(&handle, squad_id).await?;
+        let event = builder
+            .sign_with_keys(&bot_keys)
+            .map_err(|e| e.to_string())?;
+        (event, bot_npub)
+    } else {
+        let signer = client.signer().await.map_err(|e| e.to_string())?;
+        let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+        let author_npub = pk.to_bech32().map_err(|e| e.to_string())?;
+        let event = client
+            .sign_event_builder(builder)
+            .await
+            .map_err(|e| e.to_string())?;
+        (event, author_npub)
+    };
+
     client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
         .await
@@ -591,7 +605,8 @@ pub async fn commons_fetch_broadcasts(limit: Option<u32>) -> Result<Vec<CommonsB
 }
 
 #[tauri::command]
-pub async fn commons_get_local_active(
+pub async fn commons_get_local_active<R: Runtime>(
+    handle: AppHandle<R>,
     subject: String,
     subject_id: String,
 ) -> Result<Option<CommonsBroadcastDto>, String> {
@@ -604,19 +619,21 @@ pub async fn commons_get_local_active(
         return Err("subjectId is required".into());
     }
 
-    let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
-    let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    let my_npub = pk.to_bech32().map_err(|e| e.to_string())?;
+    let author_npub = if subject == "squad" {
+        crate::squad_bot::bot_npub_for_squad(&handle, subject_id)?
+            .ok_or_else(|| "Squad bot not initialized".to_string())?
+    } else {
+        let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
+        let signer = client.signer().await.map_err(|e| e.to_string())?;
+        let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+        let my_npub = pk.to_bech32().map_err(|e| e.to_string())?;
+        if subject_id != my_npub {
+            return Err("subjectId must match current user for user broadcasts".into());
+        }
+        my_npub
+    };
 
-    if subject == "user" && subject_id != my_npub {
-        return Err("subjectId must match current user for user broadcasts".into());
-    }
-
-    let handle = crate::TAURI_APP
-        .get()
-        .ok_or_else(|| "App handle not initialized".to_string())?;
-    let conn = crate::account_manager::get_db_connection(handle)?;
+    let conn = crate::account_manager::get_db_connection(&handle)?;
     ensure_commons_broadcasts_table(&conn)?;
     prune_expired_broadcasts(&conn)?;
     let now = unix_now_secs();
@@ -633,7 +650,7 @@ pub async fn commons_get_local_active(
         .map_err(|e| e.to_string())?;
     let row = stmt
         .query_row(
-            params![my_npub, subject, subject_id, now],
+            params![author_npub, subject, subject_id, now],
             row_to_dto_with_cancelled,
         )
         .optional()
@@ -696,13 +713,19 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
     }
 
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
-    let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    let author_npub = pk.to_bech32().map_err(|e| e.to_string())?;
 
-    if subject == "user" && subject_id != author_npub {
-        return Err("subjectId must match current user for user broadcasts".into());
-    }
+    let (author_npub, bot_keys) = if subject == "squad" {
+        let (keys, bot_npub) = crate::squad_bot::bot_keys_for_holder(&handle, &subject_id).await?;
+        (bot_npub, Some(keys))
+    } else {
+        let signer = client.signer().await.map_err(|e| e.to_string())?;
+        let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;
+        let author_npub = pk.to_bech32().map_err(|e| e.to_string())?;
+        if subject_id != author_npub {
+            return Err("subjectId must match current user for user broadcasts".into());
+        }
+        (author_npub, None)
+    };
 
     // Read the active (non-cancelled) broadcast content to rebuild as a tombstone.
     let now = unix_now_secs();
@@ -741,10 +764,16 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
     let content = serde_json::to_string(&wire).map_err(|e| e.to_string())?;
 
     let builder = broadcast_event_builder(&wire, &content);
-    let event = client
-        .sign_event_builder(builder)
-        .await
-        .map_err(|e| e.to_string())?;
+    let event = if let Some(keys) = bot_keys {
+        builder
+            .sign_with_keys(&keys)
+            .map_err(|e| e.to_string())?
+    } else {
+        client
+            .sign_event_builder(builder)
+            .await
+            .map_err(|e| e.to_string())?
+    };
     client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
         .await

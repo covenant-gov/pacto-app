@@ -46,7 +46,7 @@ describe('commonsJoinRequestBlockReason', () => {
   });
 
   it('blocks own broadcast', () => {
-    expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1author', [])).toMatch(/your squad/i);
+    expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1author', [])).toMatch(/your broadcast/i);
   });
 });
 
