@@ -1,7 +1,5 @@
 # Squad bot join inbox (wire sketch)
 
-**Status:** Wave A locked (2026-07-09). Implementation follows [`ai-docs/gov-core/SQUAD_BOT_JOIN_INBOX_PLAN.md`](../../ai-docs/gov-core/SQUAD_BOT_JOIN_INBOX_PLAN.md) (gitignored planning tree).
-
 Private Commons join: requesters **DM the squad bot**; holders fan out into MLS. No public Kind 30078 join request/response.
 
 ## Channel backing
@@ -128,6 +126,8 @@ Store nsec only in account-encrypted local storage. Never put `nsec` in MLS cont
 
 Squad discovery broadcasts are **signed by the bot**. Requesters DM the card author (bot npub), same pattern as user→user Commons DM.
 
-## Out of scope here
+After **key rotation**, the next broadcast uses the new bot npub. Stale cards may still point at the previous bot until they expire or a holder cancels and rebroadcasts.
 
-Retiring public 30078 join request/response — see plan Waves D–E. Holder Settings UI and bot init are Wave B (shipped in app).
+## Related
+
+Holder Settings UI and bot init are in-app. Retiring the legacy public Kind 30078 join request/response path is tracked separately.

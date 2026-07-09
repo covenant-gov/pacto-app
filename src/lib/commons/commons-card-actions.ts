@@ -1,20 +1,17 @@
 import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
-  addPendingDm,
   composingNewChat,
   newChatDraftNpub,
   newChatDraftMessage,
 } from '../../stores/dm';
 import { loadProfile } from '../../stores/profiles';
-import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDto } from './types';
 import {
   commonsJoinRequestBlockReason,
   recordJoinRequestSent,
   squadIdFromBroadcast,
 } from './commons-join-request';
-import { submitCommonsJoinRequest } from './join-requests';
 
 /**
  * Open the DMs "New Chat" compose view with the recipient and a partial
@@ -32,6 +29,23 @@ export function openCommonsUserDmRequest(authorNpub: string, displayName?: strin
   void loadProfile(authorNpub);
 }
 
+/** Open a DM to the squad bot (card author) with a join-request draft. */
+export function openCommonsSquadJoinDm(broadcast: CommonsBroadcastDto): void {
+  const botNpub = broadcast.authorNpub?.trim() ?? '';
+  if (!botNpub.startsWith('npub1')) return;
+  const squadName = broadcast.squadName?.trim() || 'your squad';
+  const squadId = squadIdFromBroadcast(broadcast);
+  newChatDraftNpub.set(botNpub);
+  newChatDraftMessage.set(
+    `I'd like to join ${squadName}${squadId ? ` (${squadId.slice(0, 12)}…)` : ''}. Broadcast: ${broadcast.eventId}`
+  );
+  activeDmId.set(null);
+  composingNewChat.set(true);
+  activeTopNavTab.set('dms');
+  activeView.set('hub');
+  void loadProfile(botNpub);
+}
+
 export async function sendCommonsJoinRequest(
   broadcast: CommonsBroadcastDto,
   requesterNpub: string,
@@ -42,19 +56,12 @@ export async function sendCommonsJoinRequest(
     return { ok: false, error: blockReason };
   }
 
-  const squadId = squadIdFromBroadcast(broadcast);
-  try {
-    const result = await submitCommonsJoinRequest({
-      squadId,
-      squadName: broadcast.squadName ?? 'Squad',
-      broadcastEventId: broadcast.eventId,
-    });
-    if (!result.ok) {
-      return { ok: false, error: result.error };
-    }
-    recordJoinRequestSent(squadId);
-    return { ok: true };
-  } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Could not send join request.') };
+  if (!broadcast.authorNpub?.startsWith('npub1')) {
+    return { ok: false, error: 'Squad broadcast is missing a bot author.' };
   }
+
+  const squadId = squadIdFromBroadcast(broadcast);
+  openCommonsSquadJoinDm(broadcast);
+  recordJoinRequestSent(squadId);
+  return { ok: true };
 }

@@ -109,7 +109,7 @@
         return;
       }
       actionError = '';
-      showToast(`Join request sent for ${squadLabel}.`);
+      showToast(`Opening DM to ${squadLabel} inbox…`);
     } finally {
       joinBusy = false;
     }

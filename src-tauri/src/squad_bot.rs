@@ -423,6 +423,56 @@ fn require_holder(holders: &[String], me: &str) -> Result<(), String> {
     }
 }
 
+/// Load bot `Keys` for the current account when they are a holder with a local secret.
+pub async fn bot_keys_for_holder<R: Runtime>(
+    handle: &AppHandle<R>,
+    squad_id: &str,
+) -> Result<(Keys, String), String> {
+    let squad_id = squad_id.trim();
+    if squad_id.is_empty() {
+        return Err("squadId is required".into());
+    }
+    let me = current_npub()?;
+    let (bot_npub_meta, holders, key_epoch, enc) = {
+        let conn = crate::account_manager::get_db_connection(handle)?;
+        let (bot_npub, holders, key_epoch, _) = read_meta_row(&conn, squad_id)?
+            .ok_or_else(|| "Squad bot not initialized — open Join inbox settings first".to_string())?;
+        require_holder(&holders, &me)?;
+        let (secret_bot, secret_epoch, enc) = read_secret_row(&conn, squad_id)?;
+        crate::account_manager::return_db_connection(conn);
+        if secret_bot != bot_npub || secret_epoch != key_epoch {
+            return Err("Local bot secret is stale — ask a holder to re-share or rotate".into());
+        }
+        (bot_npub, holders, key_epoch, enc)
+    };
+    let _ = (holders, key_epoch);
+    let nsec = decrypt_nsec(enc).await?;
+    let keys = Keys::parse(&nsec).map_err(|_| "Invalid stored bot nsec".to_string())?;
+    let derived = keys
+        .public_key()
+        .to_bech32()
+        .map_err(|e| e.to_string())?;
+    if derived != bot_npub_meta {
+        return Err("Stored bot nsec does not match bot npub".into());
+    }
+    Ok((keys, bot_npub_meta))
+}
+
+/// Bot npub from meta (no secret required) — for active-broadcast lookups.
+pub fn bot_npub_for_squad<R: Runtime>(
+    handle: &AppHandle<R>,
+    squad_id: &str,
+) -> Result<Option<String>, String> {
+    let squad_id = squad_id.trim();
+    if squad_id.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let row = read_meta_row(&conn, squad_id)?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(row.map(|(bot_npub, _, _, _)| bot_npub))
+}
+
 /// Create bot identity for a new squad (creator = sole holder). Idempotent if already present.
 #[tauri::command]
 pub async fn squad_bot_init<R: Runtime>(

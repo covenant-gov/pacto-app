@@ -16,6 +16,16 @@ import {
   type PublicSquadBroadcastTarget,
 } from './squad-create-broadcast';
 import { normalizeSquadBroadcastTags } from './tags';
+import { ensureSquadBot } from '../squad/squad-bot';
+
+async function requireBotHolder(squadId: string): Promise<string | null> {
+  const state = await ensureSquadBot(squadId);
+  if (!state) return 'Squad bot is not initialized. Open Join inbox settings first.';
+  if (!state.iAmHolder || !state.hasLocalSecret) {
+    return 'Only bot key holders with a local secret can publish or cancel squad Commons broadcasts.';
+  }
+  return null;
+}
 
 export async function fetchActiveSquadCommonsBroadcast(
   squadId: string
@@ -49,6 +59,8 @@ export function formatBroadcastCooldownRemaining(
 export async function cancelSquadCommonsBroadcast(
   squadId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireBotHolder(squadId);
+  if (gate) return { ok: false, error: gate };
   try {
     await cancelCommonsBroadcast('squad', squadId);
     clearCommonsBroadcastLocalState('squad', squadId);
@@ -78,6 +90,9 @@ export async function publishSquadCommonsBroadcast(
   if (!message) {
     return { ok: false, error: 'Message is required.' };
   }
+
+  const gate = await requireBotHolder(squad.id);
+  if (gate) return { ok: false, error: gate };
 
   const active = await fetchActiveSquadCommonsBroadcast(squad.id);
   if (active) {
