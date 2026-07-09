@@ -27,6 +27,7 @@
   let acting = false;
   let addNpub = '';
   let error = '';
+  let copiedBotNpub = false;
 
   $: squadId = announcementsGroupId?.trim() || '';
   $: myNpub = $currentUser?.npub ?? '';
@@ -74,7 +75,14 @@
   async function copyBotNpub() {
     if (!state?.botNpub) return;
     const ok = await copyTextToClipboard(state.botNpub);
-    showToast(ok ? 'Bot npub copied.' : 'Could not copy.');
+    if (ok) {
+      copiedBotNpub = true;
+      setTimeout(() => {
+        copiedBotNpub = false;
+      }, 2000);
+    } else {
+      showToast('Could not copy.');
+    }
   }
 
   async function onAdd() {
@@ -127,8 +135,12 @@
   }
 </script>
 
-<section class="squad-bot-holders" aria-labelledby="squad-bot-holders-title">
-  <h3 id="squad-bot-holders-title" class="section-title">Join inbox / Bot key holders</h3>
+<section
+  id="settings-squad-bot-holders"
+  class="dashboard-section squad-bot-holders-section"
+  aria-labelledby="squad-bot-holders-title"
+>
+  <h3 id="squad-bot-holders-title" class="section-heading">Join inbox / Bot key holders</h3>
   <p class="section-lead">
     Commons join requests are DMs to this squad’s bot. Only listed holders keep the bot key on their
     device. {#if squadAdminActive}
@@ -149,31 +161,56 @@
       Initialize bot
     </button>
   {:else}
-    <dl class="meta">
-      <div>
-        <dt>Bot npub</dt>
-        <dd>
-          <code class="mono">{state.botNpub}</code>
-          <button type="button" class="linkish" on:click={copyBotNpub}>Copy</button>
-        </dd>
+    <div class="bot-details">
+      <div class="bot-key-box">
+        <span class="bot-key-box-label">Bot npub</span>
+        <div class="bot-key-value-row">
+          <code class="bot-key-value-full">{state.botNpub}</code>
+          <button
+            type="button"
+            class="bot-key-copy-btn"
+            aria-label={copiedBotNpub ? 'Copied' : 'Copy bot npub'}
+            title={copiedBotNpub ? 'Copied' : 'Copy'}
+            on:click={copyBotNpub}
+          >
+            <svg
+              class="bot-key-copy-icon"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div>
-        <dt>Key epoch</dt>
-        <dd>{state.keyEpoch}</dd>
+
+      <div class="bot-meta-grid">
+        <div class="bot-key-box bot-key-box-compact">
+          <span class="bot-key-box-label">Key epoch</span>
+          <span class="bot-key-box-value">{state.keyEpoch}</span>
+        </div>
+        <div class="bot-key-box bot-key-box-compact">
+          <span class="bot-key-box-label">Your device</span>
+          <span class="bot-key-box-value">
+            {#if state.hasLocalSecret}
+              Holds bot key
+            {:else if state.iAmHolder}
+              Listed as holder — waiting for key share
+            {:else}
+              Not a holder
+            {/if}
+          </span>
+        </div>
       </div>
-      <div>
-        <dt>Your device</dt>
-        <dd>
-          {#if state.hasLocalSecret}
-            Holds bot key
-          {:else if state.iAmHolder}
-            Listed as holder — waiting for key share
-          {:else}
-            Not a holder
-          {/if}
-        </dd>
-      </div>
-    </dl>
+    </div>
 
     <h4 class="subhead">Holders</h4>
     <ul class="holder-list">
@@ -216,28 +253,34 @@
       </div>
 
       <div class="rotate-row">
-        <button type="button" class="btn secondary" disabled={acting} on:click={() => void onRotate()}>
-          Rotate bot key
+        <button
+          type="button"
+          class="btn-secondary squad-bot-rotate-btn"
+          disabled={acting}
+          on:click={() => void onRotate()}
+        >
+          Rotate Bot Key
         </button>
-        <p class="hint">
-          Use after removing a holder. Posts a notice in #announcements and shares the new key with
-          remaining holders.
-        </p>
       </div>
     {/if}
   {/if}
 </section>
 
 <style>
-  .squad-bot-holders {
-    margin: 1.25rem 0 1.75rem;
-    padding-top: 0.5rem;
+  .squad-bot-holders-section {
+    margin-bottom: 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 16px;
   }
-  .section-title {
-    margin: 0 0 0.35rem;
-    font-size: 1rem;
+
+  .section-heading {
+    font-size: 0.875rem;
     font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0 0 12px;
   }
+
   .section-lead,
   .hint,
   .muted {
@@ -250,27 +293,75 @@
     color: var(--danger, #c44);
     font-size: 0.875rem;
   }
-  .meta {
-    display: grid;
-    gap: 0.5rem;
+  .bot-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     margin: 0 0 1rem;
   }
-  .meta dt {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    opacity: 0.7;
+  .bot-key-box {
+    padding: 10px 12px;
+    background: var(--bg-elevated);
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
   }
-  .meta dd {
-    margin: 0.15rem 0 0;
+  .bot-key-box-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+  }
+  .bot-key-value-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
+    align-items: flex-start;
+    gap: 8px;
   }
-  .mono {
-    font-size: 0.8rem;
+  .bot-key-value-full {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    line-height: 1.45;
     word-break: break-all;
+    color: var(--text-primary);
+  }
+  .bot-key-copy-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .bot-key-copy-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+  }
+  .bot-key-copy-icon {
+    display: block;
+  }
+  .bot-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 10px;
+  }
+  .bot-key-box-compact {
+    min-width: 0;
+  }
+  .bot-key-box-value {
+    display: block;
+    font-size: 0.875rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    word-break: break-word;
   }
   .subhead {
     margin: 0 0 0.35rem;
@@ -301,13 +392,30 @@
   .rotate-row {
     margin-top: 0.5rem;
   }
-  .btn {
+  .btn-secondary {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
     cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-secondary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .squad-bot-rotate-btn {
+    margin-top: 0.25rem;
   }
   .btn:disabled,
   select:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .btn {
+    cursor: pointer;
   }
   .linkish {
     background: none;

@@ -132,7 +132,7 @@
       disabled={!ROTATE_SQUAD_KEY_ENABLED}
       on:click={() => (rotateModalOpen = true)}
     >
-      Rotate key
+      Rotate EVM key
     </button>
   {:else}
     <p class="dashboard-placeholder-text muted">No announcements channel for this squad.</p>

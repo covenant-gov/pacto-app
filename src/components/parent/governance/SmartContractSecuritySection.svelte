@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { isAddress } from 'viem';
+  import chevronDownIcon from '../../../icons/chevron-down.svg';
   import { showToast } from '../../../stores/toast';
   import { profiles } from '../../../stores/profiles';
   import { getProfileDisplayName } from '../../../lib/utils/profile';
@@ -61,6 +62,7 @@
   let callSimulating = false;
   let callSending = false;
   let squadSigner: string | null = null;
+  let callSectionOpen = false;
 
   const shippedAbis = listShippedAbiRefs();
 
@@ -284,7 +286,24 @@
   {/if}
 
   <div class="allowlist-call">
-    <h5 class="allowlist-subhead">Squad contract call</h5>
+    <h5 class="allowlist-subhead">
+      <button
+        type="button"
+        class="allowlist-call-toggle"
+        aria-expanded={callSectionOpen}
+        aria-controls="squad-contract-call-panel"
+        on:click={() => (callSectionOpen = !callSectionOpen)}
+      >
+        <img
+          src={chevronDownIcon}
+          alt=""
+          class="allowlist-call-chevron"
+          class:allowlist-call-chevron--open={callSectionOpen}
+        />
+        <span>Squad contract call</span>
+      </button>
+    </h5>
+    <div id="squad-contract-call-panel" class="allowlist-call-panel" hidden={!callSectionOpen}>
     {#if !squadSigner}
       <p class="smart-contract-security-note muted">Set a signer under Settings → Default wallet config.</p>
     {:else}
@@ -335,6 +354,7 @@
         </button>
       </div>
     {/if}
+    </div>
   </div>
 </section>
 
@@ -406,6 +426,48 @@
     margin: 0 0 10px;
     font-size: 0.9375rem;
     font-weight: 600;
+  }
+
+  .allowlist-call-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent;
+    font: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    border-radius: 6px;
+    outline: none;
+  }
+
+  .allowlist-call-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .allowlist-call-chevron {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    display: block;
+    transform: rotate(-90deg);
+    transition: transform 0.15s ease;
+    filter: var(--icon-dropdown-filter);
+  }
+
+  .allowlist-call-chevron--open {
+    transform: rotate(0deg);
+  }
+
+  .allowlist-call-panel[hidden] {
+    display: none;
   }
 
   .allowlist-field-label {
