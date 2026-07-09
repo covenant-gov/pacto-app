@@ -8,6 +8,7 @@
   import {
     addSquadBotHolder,
     canAddBotHolder,
+    canManageBotHolders,
     ensureSquadBot,
     getSquadBotState,
     removeSquadBotHolder,
@@ -18,6 +19,8 @@
 
   export let announcementsGroupId: string | null = null;
   export let channelMembers: string[] = [];
+  export let squadAdminActive = false;
+  export let executorRolesLabel = '';
 
   let state: SquadBotState | null = null;
   let loading = true;
@@ -27,7 +30,11 @@
 
   $: squadId = announcementsGroupId?.trim() || '';
   $: myNpub = $currentUser?.npub ?? '';
-  $: canManage = !!(state?.iAmHolder && state?.hasLocalSecret);
+  $: canManage = canManageBotHolders({
+    squadAdminActive,
+    executorRolesLabel,
+    state,
+  });
   $: candidates = channelMembers.filter(
     (n) => n && n !== myNpub && !(state?.holders ?? []).includes(n)
   );
@@ -72,7 +79,10 @@
 
   async function onAdd() {
     if (!squadId || !addNpub || acting) return;
-    const block = canAddBotHolder(channelMembers, myNpub, addNpub, state?.holders ?? []);
+    const block = canAddBotHolder(channelMembers, myNpub, addNpub, state?.holders ?? [], {
+      squadAdminActive,
+      executorRolesLabel,
+    });
     if (block) {
       showToast(block);
       return;
@@ -121,8 +131,12 @@
   <h3 id="squad-bot-holders-title" class="section-title">Join inbox / Bot key holders</h3>
   <p class="section-lead">
     Commons join requests are DMs to this squad’s bot. Only listed holders keep the bot key on their
-    device. Until SquadAdmin is live, any member who is already a holder may add another current
-    member.
+    device. {#if squadAdminActive}
+      With Squad Admin deployed, only members with <strong>Full</strong> executor scope on their roster
+      EVM may add, remove, or rotate holders.
+    {:else}
+      Until Squad Admin is live, any member who is already a holder may add another current member.
+    {/if}
   </p>
 
   {#if loading}
@@ -179,6 +193,13 @@
         </li>
       {/each}
     </ul>
+
+    {#if state.iAmHolder && state.hasLocalSecret && !canManage && squadAdminActive}
+      <p class="hint">
+        You hold the bot key but need Squad Admin <strong>Full</strong> executor scope on your roster
+        EVM to change the holder list.
+      </p>
+    {/if}
 
     {#if canManage}
       <div class="add-row">

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatBotJoinDm,
+  formatJoinResponseDm,
   formatMlsJoinRequest,
   formatMlsJoinRequestResponse,
   mergeJoinRequestsFromMlsMessages,
   SQUAD_BOT_JOIN_DM_SCHEMA,
+  SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
   SQUAD_JOIN_REQUEST_SCHEMA,
 } from './squad-join-mls';
 
@@ -18,6 +20,18 @@ describe('squad-join-mls wire', () => {
     const parsed = JSON.parse(raw);
     expect(parsed.schema).toBe(SQUAD_BOT_JOIN_DM_SCHEMA);
     expect(parsed.squadId).toBe('s1');
+  });
+
+  it('formats join response dm', () => {
+    const raw = formatJoinResponseDm({
+      squadId: 's1',
+      squadName: 'Pirates',
+      requestId: 'r1',
+      status: 'rejected',
+    });
+    const parsed = JSON.parse(raw);
+    expect(parsed.schema).toBe(SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA);
+    expect(parsed.status).toBe('rejected');
   });
 
   it('merges pending requests and applies first response', () => {

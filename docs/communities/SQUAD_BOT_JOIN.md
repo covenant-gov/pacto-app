@@ -121,6 +121,22 @@ First write wins while status is still pending:
 
 `status`: `accepted` | `rejected`.
 
+### `pacto.squad.bot_join_response.v1` → NIP-17 to requester
+
+After accept/reject, the operator sends a private DM to the requester (same gift-wrap path as other DMs):
+
+```json
+{
+  "schema": "pacto.squad.bot_join_response.v1",
+  "squadId": "<id>",
+  "squadName": "…",
+  "requestId": "<same as MLS request>",
+  "status": "accepted"
+}
+```
+
+Accept still delivers the MLS welcome + squad invite DM separately.
+
 ## Bot key share (not MLS group plaintext)
 
 NIP-17 DM from rotating holder → each current holder npub:
