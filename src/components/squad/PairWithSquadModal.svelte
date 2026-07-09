@@ -32,7 +32,7 @@
     !!selectedPartnerSquadId &&
     candidates.length > 0 &&
     !creating &&
-    (visibility !== 'public' || tags.length > 0);
+    (visibility !== 'public' || tags.length === 3);
 
   $: if (open) {
     setTimeout(() => document.getElementById('squad-pair-name')?.focus(), 0);

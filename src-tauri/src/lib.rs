@@ -2630,6 +2630,7 @@ async fn notifs() -> Result<bool, String> {
                             }));
                             db::apply_inbox_virtual_bucket_side_effects(
                                 &handle,
+                                &group_id_for_emit,
                                 record.virtual_bucket.as_deref(),
                                 &record.content,
                                 record.npub.as_deref(),

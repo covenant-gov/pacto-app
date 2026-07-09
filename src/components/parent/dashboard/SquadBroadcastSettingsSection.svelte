@@ -97,7 +97,7 @@
           commonsTags: undefined,
         }));
         if (!result) {
-          showToast('Could not update squad broadcast settings.');
+          showToast('Could not update Commons settings.');
           return;
         }
         mode = 'disabled';
@@ -109,7 +109,7 @@
         visibility: 'public',
       }));
       if (!result) {
-        showToast('Could not enable squad broadcast.');
+        showToast('Could not turn Commons on for this squad.');
         return;
       }
       mode = 'enabled';
@@ -150,7 +150,7 @@
 >
   <h3 id="settings-squad-broadcast-heading" class="section-heading">Squad Broadcast</h3>
 
-  <div class="squad-broadcast-mode" role="radiogroup" aria-label="Squad broadcast mode">
+  <div class="squad-broadcast-mode" role="radiogroup" aria-label="Commons broadcast">
     <label class="squad-broadcast-mode-option">
       <input
         type="radio"
@@ -160,7 +160,7 @@
         disabled={savingMode}
         on:change={() => void setMode('disabled')}
       />
-      <span>Disabled</span>
+      <span>Commons off</span>
     </label>
     <label class="squad-broadcast-mode-option">
       <input
@@ -171,13 +171,14 @@
         disabled={savingMode}
         on:change={() => void setMode('enabled')}
       />
-      <span>Enabled</span>
+      <span>Commons on</span>
     </label>
   </div>
 
   {#if mode === 'enabled'}
     <p class="squad-broadcast-hint muted">
-      Public squads can publish time-bounded broadcasts in Commons. Tags are chosen when you start a broadcast.
+      Your squad stays private and encrypted. Commons only posts a public discovery card with exactly
+      3 tags while you broadcast. You can pick different tags on the next broadcast.
     </p>
 
     <div class="commons-personal squad-broadcast-status" aria-label="Squad broadcast status">

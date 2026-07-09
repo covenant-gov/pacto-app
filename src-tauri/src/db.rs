@@ -1165,7 +1165,22 @@ pub fn remove_squad_contract_allowlist<R: Runtime>(
     Ok(())
 }
 
-pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+/// True when payload parent/squad id matches the MLS chat (announcements group id).
+pub fn side_effect_parent_matches_chat(chat_id: &str, payload_parent_id: &str) -> bool {
+    let chat = chat_id.trim();
+    let parent = payload_parent_id.trim();
+    !chat.is_empty() && !parent.is_empty() && chat == parent
+}
+
+pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return,
@@ -1181,6 +1196,20 @@ pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandl
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
     };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
+    // Prefer MLS author; reject if payload claims a different adder.
+    if let Some(claimed) = p
+        .get("added_by_npub")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if claimed != author {
+            return;
+        }
+    }
     let action = p.get("action").and_then(|v| v.as_str()).unwrap_or("upsert");
     let entry_id = p
         .get("entry_id")
@@ -1214,14 +1243,6 @@ pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandl
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let added_by = p
-        .get("added_by_npub")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if added_by.is_empty() {
-        return;
-    }
     let abi_ref = p
         .get("abi_ref")
         .and_then(|v| v.as_str())
@@ -1269,7 +1290,7 @@ pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandl
             &chain_norm,
             &addr_norm,
             label.trim(),
-            added_by,
+            author,
             &abi_ref,
             &notes,
             created_at_ms,
@@ -1281,7 +1302,7 @@ pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(handle: &AppHandl
 
 #[cfg(test)]
 mod allowlist_tests {
-    use super::allowlist_row_id;
+    use super::{allowlist_row_id, side_effect_parent_matches_chat};
 
     #[test]
     fn stable_allowlist_row_id_normalizes_address_case() {
@@ -1294,6 +1315,15 @@ mod allowlist_tests {
             id,
             "allowlist-parent-1-sepolia-0xabcdefabcdefabcdefabcdefabcdefabcdefab"
         );
+    }
+
+    #[test]
+    fn side_effect_parent_must_match_chat() {
+        assert!(side_effect_parent_matches_chat("grp-a", "grp-a"));
+        assert!(side_effect_parent_matches_chat(" grp-a ", "grp-a"));
+        assert!(!side_effect_parent_matches_chat("grp-a", "grp-b"));
+        assert!(!side_effect_parent_matches_chat("", "grp-a"));
+        assert!(!side_effect_parent_matches_chat("grp-a", ""));
     }
 }
 
@@ -1552,7 +1582,8 @@ pub fn upsert_squad_infra<R: Runtime>(
 
 /// If content is a squad_safe_updated announce JSON, upsert a treasury row (idempotent per parent + address + chain).
 /// Wire format uses `squad_id` for the parent id. Optional: `chain`, `label`, `entry_id`.
-pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+/// `chat_id` must match `payload.squad_id` (MLS announcements group id).
+pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str, chat_id: &str) {
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return,
@@ -1568,6 +1599,9 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
     };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
     let safe_address = match p.get("safe_address").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
@@ -1592,7 +1626,16 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
 
 /// If content is a `governance_updated` announce JSON, upsert `squad_infra` (merge by `entry_id` or generated id).
 /// Wire format: `payload.parent_id`, `payload.provider`, `payload.canonical_ref`; optional `chain`, `pacto_gov_revision`, `provider_payload`, `entry_id`.
-pub fn maybe_upsert_governance_from_announce<R: Runtime>(handle: &AppHandle<R>, content: &str) {
+/// Requires MLS message author and `payload.parent_id` == `chat_id`. Role gates deferred to SquadAdmin.
+pub fn maybe_upsert_governance_from_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    if author_npub.map(str::trim).filter(|s| !s.is_empty()).is_none() {
+        return;
+    }
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return,
@@ -1608,6 +1651,9 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(handle: &AppHandle<R>, 
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
     };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
     let provider = match p.get("provider").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.trim(),
         _ => return,
@@ -2064,6 +2110,7 @@ pub async fn replay_automation_side_effects_for_chat<R: Runtime>(
     for msg in &messages {
         apply_inbox_virtual_bucket_side_effects(
             handle,
+            chat_id,
             msg.virtual_bucket.as_deref(),
             &msg.content,
             msg.npub.as_deref(),
@@ -2075,8 +2122,10 @@ pub async fn replay_automation_side_effects_for_chat<R: Runtime>(
 /// Applies treasury (`squad_safe_updated`), governance (`governance_updated`), and roster EVM (`squad_member_evm_share`)
 /// side effects when the MLS chat row is classified into the **inbox** virtual bucket (routing ADR).
 /// Squad sponsor `governance_updated` announces also ingest from **announcements** so all members sync infra.
+/// `chat_id` is the MLS group id (squad announcements id); payload parent ids must match it.
 pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
     handle: &AppHandle<R>,
+    chat_id: &str,
     virtual_bucket: Option<&str>,
     content: &str,
     author_npub: Option<&str>,
@@ -2092,14 +2141,14 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
 
     // Squad-wide governance deploys sync even when bucket metadata was missing on ingest.
     if is_announcements_governance_announce_content(content) {
-        maybe_upsert_governance_from_announce(handle, content);
+        maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
 
     if effective_bucket == Some("inbox") {
-        try_apply_squad_member_evm_share(handle, content, author_npub);
-        apply_parent_safe_announce(handle, content);
-        maybe_upsert_governance_from_announce(handle, content);
-        try_apply_squad_contract_allowlist_announce(handle, content);
+        try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
+        apply_parent_safe_announce(handle, content, chat_id);
+        maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
+        try_apply_squad_contract_allowlist_announce(handle, content, chat_id, author_npub);
         return;
     }
     if effective_bucket == Some("announcements") && is_announcements_governance_announce_content(content) {
@@ -2128,6 +2177,7 @@ fn is_announcements_governance_announce_content(content: &str) -> bool {
 pub fn try_apply_squad_member_evm_share<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
+    chat_id: &str,
     author_npub: Option<&str>,
 ) {
     let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -2158,6 +2208,9 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     else {
         return;
     };
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
     let Some(raw_addr) = p
         .get("evm_address")
         .and_then(|v| v.as_str())
@@ -2180,11 +2233,16 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    let _ = conn.execute(
+    if let Err(e) = conn.execute(
         "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(parent_id, member_npub) DO UPDATE SET evm_address = excluded.evm_address, updated_at_ms = excluded.updated_at_ms",
         rusqlite::params![parent_id, author, norm, now_ms],
-    );
+    ) {
+        eprintln!(
+            "[squad_member_evm_share] failed to upsert for parent {}: {}",
+            parent_id, e
+        );
+    }
     crate::account_manager::return_db_connection(conn);
 }
 

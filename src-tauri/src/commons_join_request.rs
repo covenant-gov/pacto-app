@@ -314,6 +314,7 @@ async fn sync_join_requests_from_relays(squad_ids: &[String]) -> Result<u32, Str
             continue;
         }
         if let Some((wire, responder_npub)) = try_parse_join_request_response_event(&event) {
+            // Any known-squad member may respond until SquadAdmin role gates ship.
             if squad_set.contains(wire.squad_id.as_str()) {
                 if apply_join_request_response_row(
                     &conn,
@@ -451,6 +452,8 @@ pub async fn commons_respond_join_request<R: Runtime>(
     handle: AppHandle<R>,
     input: CommonsRespondJoinRequestInput,
 ) -> Result<CommonsJoinRequestDto, String> {
+    // Privileged AC (captain / SquadAdmin) deferred — any local account that can open the
+    // join-requests UI for this squad may accept/reject until on-chain roles ship.
     let request_event_id = input.request_event_id.trim();
     let squad_id = input.squad_id.trim();
     let status = input.status.trim();

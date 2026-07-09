@@ -596,10 +596,13 @@ mod tests {
     }
 
     #[test]
-    fn public_squad_requires_commons_tags() {
+    fn commons_on_allows_missing_catalog_tags() {
+        // `visibility: public` means Commons broadcasting enabled; tags are chosen per broadcast.
         let mut input = sample_upsert("grp-announce", "Alpha");
         input.visibility = Some(VIS_PUBLIC.to_string());
         input.commons_tags = None;
-        assert!(prepare_row(input).is_err());
+        let row = prepare_row(input).expect("commons on without catalog tags");
+        assert_eq!(row.visibility, VIS_PUBLIC);
+        assert!(row.commons_tags.is_none());
     }
 }
