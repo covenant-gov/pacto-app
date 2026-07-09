@@ -133,6 +133,16 @@
         </div>
       {:else if profile}
         <div class="profile-content">
+        {#if !isEditing}
+          <div class="profile-top-bar">
+            <EditIconButton
+              ariaLabel="Edit profile"
+              title="Edit profile"
+              className="profile-edit-btn"
+              on:click={startEditing}
+            />
+          </div>
+        {/if}
         <!-- Banner -->
         {#if bannerSrc}
           <div class="profile-banner">
@@ -287,12 +297,6 @@
 
             <!-- Actions -->
             <div class="profile-actions">
-              <EditIconButton
-                ariaLabel="Edit profile"
-                title="Edit profile"
-                className="profile-edit-btn"
-                on:click={startEditing}
-              />
               <div class="profile-actions-exports">
                 <button
                   type="button"
@@ -371,6 +375,15 @@
     display: flex;
     flex-direction: column;
     gap: 32px;
+  }
+
+  .profile-top-bar {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .profile-top-bar :global(.profile-edit-btn) {
+    flex-shrink: 0;
   }
 
   .profile-banner {
@@ -528,13 +541,6 @@
     margin-top: 24px;
     padding-top: 24px;
     border-top: 1px solid var(--border-subtle);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .profile-actions :global(.profile-edit-btn) {
-    align-self: flex-start;
   }
 
   .profile-actions-exports {

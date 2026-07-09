@@ -2,9 +2,11 @@
   import { onMount } from 'svelte';
   import Message from '../dm/Message.svelte';
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
+  import SquadBotAnnounceCard from '../announcements/SquadBotAnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
+  import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
@@ -722,12 +724,22 @@
           {#each virtualTimelineMessages as message (message.id)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
+            {@const squadBotAnnounce =
+              channelParsesStructuredAnnounces ? parseSquadBotAnnounceMessage(message.content) : null}
             {@const announceForCard =
               parsed && announceCardAllowedForTimelineBucket(parsed, message) ? parsed : null}
             {#if announceForCard}
               <AnnounceCard
                 id={message.id}
                 announce={announceForCard}
+                authorName={props.authorName}
+                authorNpub={message.npub}
+                timestamp={props.timestamp}
+              />
+            {:else if squadBotAnnounce}
+              <SquadBotAnnounceCard
+                id={message.id}
+                announce={squadBotAnnounce}
                 authorName={props.authorName}
                 authorNpub={message.npub}
                 timestamp={props.timestamp}
