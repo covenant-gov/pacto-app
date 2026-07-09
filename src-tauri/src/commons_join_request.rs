@@ -287,7 +287,7 @@ async fn sync_join_requests_from_relays(squad_ids: &[String]) -> Result<u32, Str
         .since(Timestamp::from(since as u64))
         .limit(500);
 
-    let mut events = client
+    let mut stream = client
         .stream_events_from(
             TRUSTED_RELAYS.to_vec(),
             filter,
@@ -295,6 +295,12 @@ async fn sync_join_requests_from_relays(squad_ids: &[String]) -> Result<u32, Str
         )
         .await
         .map_err(|e| e.to_string())?;
+
+    // Buffer first so the DB pool mutex is not held across relay awaits.
+    let mut buffered = Vec::new();
+    while let Some(event) = stream.next().await {
+        buffered.push(event);
+    }
 
     let handle = crate::TAURI_APP
         .get()
@@ -304,16 +310,16 @@ async fn sync_join_requests_from_relays(squad_ids: &[String]) -> Result<u32, Str
 
     let squad_set: HashSet<&str> = squad_ids.iter().map(|s| s.as_str()).collect();
     let mut ingested = 0u32;
-    while let Some(event) = events.next().await {
-        if let Some((wire, requester_npub)) = try_parse_join_request_event(&event) {
+    for event in &buffered {
+        if let Some((wire, requester_npub)) = try_parse_join_request_event(event) {
             if squad_set.contains(wire.squad_id.as_str()) {
-                if upsert_join_request_row(&conn, &event, &wire, &requester_npub).is_ok() {
+                if upsert_join_request_row(&conn, event, &wire, &requester_npub).is_ok() {
                     ingested += 1;
                 }
             }
             continue;
         }
-        if let Some((wire, responder_npub)) = try_parse_join_request_response_event(&event) {
+        if let Some((wire, responder_npub)) = try_parse_join_request_response_event(event) {
             // Any known-squad member may respond until SquadAdmin role gates ship.
             if squad_set.contains(wire.squad_id.as_str()) {
                 if apply_join_request_response_row(
