@@ -1,8 +1,11 @@
 import { get, writable } from 'svelte/store';
-import { loadPendingJoinRequestsForSquad } from '../lib/commons/join-requests';
 import type { CommonsJoinRequestDto } from '../lib/commons/types';
+import {
+  fanOutBotJoinDmsToMls,
+  loadPendingJoinRequestsFromMls,
+} from '../lib/squad/squad-join-mls';
 
-/** Squad-wide pending Commons join requests (same inbox for every member). */
+/** Squad-wide pending join requests from MLS join_requests bucket. */
 export const pendingJoinRequestsBySquadId = writable<Record<string, CommonsJoinRequestDto[]>>({});
 
 /** True after the first successful fetch for a squad this session. */
@@ -36,7 +39,8 @@ function setPendingForSquad(squadId: string, requests: CommonsJoinRequestDto[]):
 }
 
 async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequestDto[]> {
-  const requests = await loadPendingJoinRequestsForSquad(squadId);
+  await fanOutBotJoinDmsToMls(squadId).catch(() => 0);
+  const requests = await loadPendingJoinRequestsFromMls(squadId);
   setPendingForSquad(squadId, requests);
   return requests;
 }
@@ -55,7 +59,7 @@ export async function ensureJoinRequestsHydrated(squadId: string): Promise<void>
   }
 }
 
-/** Relay sync + replace pending list (manual refresh or background squad update). */
+/** Bot inbox sync + MLS reload (manual refresh or background squad update). */
 export async function syncJoinRequestsForSquad(squadId: string): Promise<void> {
   const id = squadId.trim();
   if (!id || hydratingSquadIds.has(id)) return;

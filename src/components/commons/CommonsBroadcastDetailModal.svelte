@@ -84,7 +84,7 @@
         return;
       }
       actionError = '';
-      showToast(`Opening DM to ${squadLabel} inbox…`);
+      showToast(`Join request sent to ${squadLabel}.`);
       onClose();
     } finally {
       joinBusy = false;

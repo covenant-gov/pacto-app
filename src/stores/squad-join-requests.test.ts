@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
-import * as joinRequestsApi from '../lib/commons/join-requests';
+import * as squadJoinMls from '../lib/squad/squad-join-mls';
 import {
   getJoinRequestPendingCount,
   pendingJoinRequestsBySquadId,
@@ -40,8 +40,9 @@ describe('squad join requests store', () => {
   });
 
   it('ensureJoinRequestsHydrated fetches once per squad', async () => {
+    vi.spyOn(squadJoinMls, 'fanOutBotJoinDmsToMls').mockResolvedValue(0);
     const fetchSpy = vi
-      .spyOn(joinRequestsApi, 'loadPendingJoinRequestsForSquad')
+      .spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls')
       .mockResolvedValue([sampleRequest('x')]);
     const { ensureJoinRequestsHydrated } = await import('./squad-join-requests');
     await ensureJoinRequestsHydrated('squad1');
