@@ -4,6 +4,7 @@ import {
   formatJoinResponseDm,
   formatMlsJoinRequest,
   formatMlsJoinRequestResponse,
+  isExpectedNonHolderBotSyncError,
   mergeJoinRequestsFromMlsMessages,
   SQUAD_BOT_JOIN_DM_SCHEMA,
   SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
@@ -106,5 +107,13 @@ describe('squad-join-mls wire', () => {
     expect(pending).toEqual([]);
     expect(JSON.parse(accept).schema).toBeDefined();
     expect(SQUAD_JOIN_REQUEST_SCHEMA).toContain('join_request');
+  });
+});
+
+describe('isExpectedNonHolderBotSyncError', () => {
+  it('treats holder/secret errors as expected for non-holders', () => {
+    expect(isExpectedNonHolderBotSyncError('Only bot key holders can perform this action')).toBe(true);
+    expect(isExpectedNonHolderBotSyncError('Local bot secret required')).toBe(true);
+    expect(isExpectedNonHolderBotSyncError('MLS offline')).toBe(false);
   });
 });

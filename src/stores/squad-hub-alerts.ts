@@ -53,9 +53,7 @@ export function setPersonalAlertNeeded(squadId: string, needed: boolean): void {
   const id = squadId.trim();
   if (!id) return;
   personalAlertsNeededBySquadId.update((m) => ({ ...m, [id]: needed }));
-  if (!needed) {
-    personalAlertRefreshGenBySquadId.set(id, (personalAlertRefreshGenBySquadId.get(id) ?? 0) + 1);
-  }
+  personalAlertRefreshGenBySquadId.set(id, (personalAlertRefreshGenBySquadId.get(id) ?? 0) + 1);
 }
 
 export async function refreshPersonalAlertForSquad(squad: Squad): Promise<void> {

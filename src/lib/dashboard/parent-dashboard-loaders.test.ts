@@ -8,6 +8,7 @@ import {
   fetchHatsTree,
   fetchSettingsChainMemberMaps,
   fetchRolesTreeAnnotations,
+  isSupersededLoaderKey,
 } from './parent-dashboard-loaders';
 import { getMlsGroupMembers, type MlsGroupMembers } from '../api/nostr';
 import {
@@ -426,5 +427,12 @@ describe('fetchRolesTreeAnnotations', () => {
       error: '',
     });
     expect(mockedGetNavePirataDeployment).not.toHaveBeenCalled();
+  });
+});
+
+describe('isSupersededLoaderKey', () => {
+  it('detects superseded loader keys', () => {
+    expect(isSupersededLoaderKey('active', 'captured')).toBe(true);
+    expect(isSupersededLoaderKey('same', 'same')).toBe(false);
   });
 });

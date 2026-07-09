@@ -171,6 +171,17 @@ export async function syncBotJoinDms(squadId: string): Promise<SquadBotJoinDmDto
   return invoke<SquadBotJoinDmDto[]>('squad_bot_sync_join_dms', { squadId: squadId.trim() });
 }
 
+/** Non-holders lack bot secret — bot inbox sync is expected to fail for them. */
+export function isExpectedNonHolderBotSyncError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('holder') ||
+    lower.includes('bot secret') ||
+    lower.includes('not initialized') ||
+    lower.includes('stale')
+  );
+}
+
 /** Holder: unwrap bot DMs and fan out missing requests into MLS join_requests. */
 export async function fanOutBotJoinDmsToMls(squadId: string): Promise<number> {
   const id = squadId.trim();
@@ -182,9 +193,9 @@ export async function fanOutBotJoinDmsToMls(squadId: string): Promise<number> {
   try {
     dms = await syncBotJoinDms(id);
   } catch (e) {
-    // Non-holders cannot sync bot inbox.
-    console.warn('[squad-join] bot join dm sync skipped', e);
-    return 0;
+    const message = getInvokeErrorMessage(e, 'Could not sync bot inbox.');
+    if (isExpectedNonHolderBotSyncError(message)) return 0;
+    throw new Error(message);
   }
   if (dms.length === 0) return 0;
 

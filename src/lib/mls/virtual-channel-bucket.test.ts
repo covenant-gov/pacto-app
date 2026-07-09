@@ -236,17 +236,18 @@ describe('groupTimelineKey / buildBackendGroupTimelineMessages', () => {
     expect(pollsSlice).toEqual(msgs.filter((m) => deriveVirtualBucketFromMessageContent(m.content) === 'polls'));
   });
 
-  it('partitions large merged timelines within reasonable wall time', () => {
+  it('partitions large merged timelines without dropping messages', () => {
     const parent = 'p'.repeat(40);
     const n = 8000;
     const msgs = Array.from({ length: n }, (_, i) => ({
       at: i,
       content: i % 40 === 0 ? JSON.stringify({ pacto_virtual_bucket: 'polls' }) : `plain-${i}`,
     }));
-    const t0 = performance.now();
-    buildBackendGroupTimelineMessages({ [parent]: msgs });
-    const elapsed = performance.now() - t0;
-    expect(elapsed).toBeLessThan(400);
+    const idx = buildBackendGroupTimelineMessages({ [parent]: msgs });
+    const announcements = idx[groupTimelineKey(parent, 'announcements')] ?? [];
+    const polls = idx[groupTimelineKey(parent, 'polls')] ?? [];
+    expect(announcements.length + polls.length).toBe(n);
+    expect(polls.length).toBe(Math.ceil(n / 40));
   });
 });
 

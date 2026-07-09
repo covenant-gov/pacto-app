@@ -8,6 +8,7 @@
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
   import {
     ensureJoinRequestsHydrated,
+    joinRequestsErrorBySquadId,
     joinRequestsHydratedBySquadId,
     joinRequestsSyncingBySquadId,
     pendingJoinRequestsBySquadId,
@@ -22,12 +23,13 @@
   export let squad: Squad;
 
   let actingOn: string | null = null;
-  let error = '';
+  let refreshError = '';
   let profileLoadToken = 0;
 
   $: requests = $pendingJoinRequestsBySquadId[squad.id] ?? [];
   $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
   $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
+  $: loadError = $joinRequestsErrorBySquadId[squad.id] ?? refreshError;
   $: loading = !hydrated && syncing;
 
   $: if (squad?.id) {
@@ -43,11 +45,11 @@
   }
 
   async function refresh() {
-    error = '';
+    refreshError = '';
     try {
       await syncJoinRequestsForSquad(squad.id);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not load join requests.';
+      refreshError = e instanceof Error ? e.message : 'Could not load join requests.';
     }
   }
 
@@ -127,8 +129,8 @@
 
   {#if loading}
     <p class="join-requests-muted" role="status">Loading join requests…</p>
-  {:else if error}
-    <p class="join-requests-error" role="alert">{error}</p>
+  {:else if loadError}
+    <p class="join-requests-error" role="alert">{loadError}</p>
   {:else if requests.length === 0}
     <p class="join-requests-muted">No pending join requests.</p>
   {:else}
