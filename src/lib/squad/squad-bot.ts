@@ -114,13 +114,39 @@ export async function rotateSquadBotKey(
   }
 }
 
+/** When SquadAdmin is live, holder management requires Full executor scope on roster EVM. */
+export function hasSquadAdminHolderManageRights(executorRolesLabel: string | undefined): boolean {
+  const label = executorRolesLabel?.trim();
+  if (!label || label === '—') return false;
+  const lower = label.toLowerCase();
+  if (lower.includes('(paused)')) return false;
+  return lower.startsWith('full') || /\bfull\b/.test(lower);
+}
+
+export function canManageBotHolders(input: {
+  squadAdminActive: boolean;
+  executorRolesLabel?: string;
+  state: SquadBotState | null;
+}): boolean {
+  if (!input.state?.iAmHolder || !input.state?.hasLocalSecret) return false;
+  if (!input.squadAdminActive) return true;
+  return hasSquadAdminHolderManageRights(input.executorRolesLabel);
+}
+
 /** Pure eligibility: actor and target must be MLS members; actor must already be a holder. */
 export function canAddBotHolder(
   members: string[],
   actorNpub: string,
   targetNpub: string,
-  holders: string[]
+  holders: string[],
+  options?: { squadAdminActive?: boolean; executorRolesLabel?: string }
 ): string | null {
+  if (
+    options?.squadAdminActive &&
+    !hasSquadAdminHolderManageRights(options.executorRolesLabel)
+  ) {
+    return 'Squad Admin Full executor scope is required to manage bot key holders.';
+  }
   if (!members.includes(actorNpub)) return 'You must be a squad member.';
   if (!members.includes(targetNpub)) return 'That person is not a current squad member.';
   if (!holders.includes(actorNpub)) return 'Only bot key holders can add holders.';

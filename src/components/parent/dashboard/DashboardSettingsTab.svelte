@@ -77,7 +77,14 @@
 
 <SquadBroadcastSettingsSection {squad} />
 
-<SquadBotHoldersSection {announcementsGroupId} {channelMembers} />
+<SquadBotHoldersSection
+  {announcementsGroupId}
+  {channelMembers}
+  squadAdminActive={!!squadAdminCtx}
+  executorRolesLabel={myRosterEvm
+    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
+    : ''}
+/>
 
 <section
   id="settings-user-squad"

@@ -5,6 +5,7 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
   import { respondToMlsJoinRequest } from '../../lib/squad/squad-join-mls';
+  import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
   import {
     ensureJoinRequestsHydrated,
     joinRequestsHydratedBySquadId,
@@ -48,6 +49,12 @@
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not load join requests.';
     }
+  }
+
+  async function handleMute(request: CommonsJoinRequestDto) {
+    muteJoinRequester(squad.id, request.requesterNpub);
+    removePendingJoinRequest(squad.id, request.eventId);
+    showToast('Requester muted for this squad.');
   }
 
   async function handleReject(request: CommonsJoinRequestDto) {
@@ -137,6 +144,14 @@
             <p class="join-request-npub">{request.requesterNpub}</p>
           </div>
           <div class="join-request-actions">
+            <button
+              type="button"
+              class="join-request-btn is-mute"
+              disabled={!!actingOn}
+              on:click={() => handleMute(request)}
+            >
+              Mute
+            </button>
             <button
               type="button"
               class="join-request-btn is-reject"
@@ -276,6 +291,18 @@
     border-radius: 8px;
     font-size: 0.8125rem;
     cursor: pointer;
+  }
+
+  .join-request-btn.is-mute {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 8px 10px;
+  }
+
+  .join-request-btn.is-mute:hover:not(:disabled) {
+    color: var(--text-secondary);
   }
 
   .join-request-btn.is-reject {
