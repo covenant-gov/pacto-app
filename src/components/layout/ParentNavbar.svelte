@@ -10,7 +10,6 @@
     parentCreateErrorById,
     parentPendingCreateMembers,
     DASHBOARD_CHANNEL_ID,
-    DASHBOARD_CHANNEL_NAME,
     type Squad,
   } from '../../stores/squads';
   import {

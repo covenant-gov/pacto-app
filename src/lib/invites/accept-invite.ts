@@ -69,7 +69,7 @@ async function resolvePendingWelcomeForGroup(groupId: string): Promise<PendingMl
     dmError('syncMlsGroupsNow before accept invite', e);
   }
   let welcomes = await listPendingMlsWelcomes();
-  let welcome = findPendingWelcomeForGroup(welcomes, groupId);
+  const welcome = findPendingWelcomeForGroup(welcomes, groupId);
   if (welcome) return welcome;
 
   try {

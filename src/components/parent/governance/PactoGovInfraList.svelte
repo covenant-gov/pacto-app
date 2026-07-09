@@ -44,6 +44,7 @@
           <code class="pacto-gov-infra-value" title={row.address}>{shortAddr(row.address)}</code>
           {@const explorerUrl = explorerAddressUrl(chainId, row.address)}
           {#if explorerUrl}
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
             <a
               class="pacto-gov-infra-link"
               href={explorerUrl}
@@ -57,6 +58,7 @@
           <code class="pacto-gov-infra-value" title={row.hatId}>{shortHatId(row.hatId)}</code>
           {@const hatsUrl = hatsTreeExplorerUrl(chainIdNumeric, row.hatId)}
           {#if hatsUrl}
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
             <a
               class="pacto-gov-infra-link"
               href={hatsUrl}
@@ -73,6 +75,7 @@
 {/if}
 {#if explorerTxUrl}
   <p class="pacto-gov-infra-tx">
+    <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
     <a class="pacto-gov-infra-link" href={explorerTxUrl} target="_blank" rel="noopener noreferrer">
       View deployment transaction
     </a>

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { currentUser } from '../../stores/auth';
   import { profiles, loadProfile } from '../../stores/profiles';
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';

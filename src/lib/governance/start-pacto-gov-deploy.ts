@@ -67,14 +67,22 @@ export function startPactoGovDeploy(params: {
   const network = params.squadNetwork;
   if (!network) {
     const message = 'Set the squad network in Settings before deploying Pacto Gov.';
-    params.onReject?.(message) ?? showToast(message);
+    if (params.onReject) {
+      params.onReject(message);
+    } else {
+      showToast(message);
+    }
     return false;
   }
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
     const message = 'Pick a valid captain EVM address.';
-    params.onReject?.(message) ?? showToast(message);
+    if (params.onReject) {
+      params.onReject(message);
+    } else {
+      showToast(message);
+    }
     return false;
   }
 

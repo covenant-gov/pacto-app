@@ -75,7 +75,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
     const message = getInvokeErrorMessage(e, 'Could not load join requests.');
     setErrorForSquad(id, message);
     setPendingForSquad(id, []);
-    throw new Error(message);
+    throw new Error(message, { cause: e });
   }
 }
 

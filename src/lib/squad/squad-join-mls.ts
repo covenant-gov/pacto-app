@@ -189,13 +189,13 @@ export async function fanOutBotJoinDmsToMls(squadId: string): Promise<number> {
   const me = get(currentUser)?.npub;
   if (!me) return 0;
 
-  let dms: SquadBotJoinDmDto[] = [];
+  let dms: SquadBotJoinDmDto[];
   try {
     dms = await syncBotJoinDms(id);
   } catch (e) {
     const message = getInvokeErrorMessage(e, 'Could not sync bot inbox.');
     if (isExpectedNonHolderBotSyncError(message)) return 0;
-    throw new Error(message);
+    throw new Error(message, { cause: e });
   }
   if (dms.length === 0) return 0;
 
