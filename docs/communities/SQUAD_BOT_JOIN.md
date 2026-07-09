@@ -130,4 +130,4 @@ Squad discovery broadcasts are **signed by the bot**. Requesters DM the card aut
 
 ## Out of scope here
 
-Holder Settings UI, key generation, retiring public 30078 join — see plan Waves B–E.
+Retiring public 30078 join request/response — see plan Waves D–E. Holder Settings UI and bot init are Wave B (shipped in app).

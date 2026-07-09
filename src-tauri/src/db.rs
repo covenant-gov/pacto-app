@@ -2229,6 +2229,10 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
 
+    if effective_bucket == Some("announcements") || effective_bucket.is_none() {
+        try_apply_squad_bot_meta(handle, content, chat_id);
+    }
+
     if effective_bucket == Some("inbox") {
         try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
         apply_parent_safe_announce(handle, content, chat_id);
@@ -2239,6 +2243,37 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
     if effective_bucket == Some("announcements") && is_announcements_governance_announce_content(content) {
         return;
     }
+}
+
+fn try_apply_squad_bot_meta<R: Runtime>(handle: &AppHandle<R>, content: &str, chat_id: &str) {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(content.trim()) else {
+        return;
+    };
+    let schema = val.get("schema").and_then(|x| x.as_str()).unwrap_or("");
+    if schema != crate::squad_bot::SQUAD_BOT_META_SCHEMA
+        && schema != crate::squad_bot::SQUAD_BOT_KEY_ROTATED_SCHEMA
+    {
+        return;
+    }
+    let Some(squad_id) = val
+        .get("squadId")
+        .or_else(|| val.get("squad_id"))
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return;
+    };
+    if !side_effect_parent_matches_chat(chat_id, squad_id) {
+        return;
+    }
+    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
+        return;
+    };
+    if let Err(e) = crate::squad_bot::apply_meta_from_content(&conn, content) {
+        eprintln!("[squad_bot] apply meta failed: {e}");
+    }
+    crate::account_manager::return_db_connection(conn);
 }
 
 fn is_announcements_governance_announce_content(content: &str) -> bool {

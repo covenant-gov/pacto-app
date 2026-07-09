@@ -58,6 +58,7 @@ mod dashboard_poll;
 
 mod commons;
 mod commons_join_request;
+mod squad_bot;
 
 mod virtual_channel_bucket;
 
@@ -1450,6 +1451,20 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                         RumorProcessingResult::TextMessage(mut msg) => {
                             // Set the wrapper event ID for database storage
                             msg.wrapper_event_id = Some(wrapper_event_id.clone());
+                            if let Some(handle) = TAURI_APP.get() {
+                                match crate::squad_bot::apply_key_share_from_content(handle, &msg.content)
+                                    .await
+                                {
+                                    Ok(true) => {
+                                        // Bot key share consumed; do not persist nsec in the DM timeline.
+                                        return true;
+                                    }
+                                    Ok(false) => {}
+                                    Err(e) => {
+                                        eprintln!("[squad_bot] key share rejected: {e}");
+                                    }
+                                }
+                            }
                             handle_text_message(msg, &contact, is_mine, is_new, &wrapper_event_id).await
                         }
                         RumorProcessingResult::FileAttachment(mut msg) => {
@@ -6388,6 +6403,11 @@ pub fn run() {
             commons_join_request::commons_publish_join_request,
             commons_join_request::commons_fetch_join_requests,
             commons_join_request::commons_respond_join_request,
+            squad_bot::squad_bot_init,
+            squad_bot::squad_bot_get_state,
+            squad_bot::squad_bot_add_holder,
+            squad_bot::squad_bot_remove_holder,
+            squad_bot::squad_bot_rotate_key,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,
