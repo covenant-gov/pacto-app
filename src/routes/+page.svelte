@@ -51,7 +51,6 @@
     filterPeerThreadMessages,
   } from '../lib/pacto-app-inbox';
   import { isAuthenticated, currentUser } from '../stores/auth';
-  import { profiles } from '../stores/profiles';
   import {
     squads,
     activeSquadId,
@@ -97,8 +96,6 @@
     DASHBOARD_CHANNEL_ID,
     treasurySafesByParentId,
     squadInfraByParentId,
-    type TreasurySafeEntry,
-    type SquadInfraDto,
     type DmMessage,
     type DmTab,
     type DmEntry,
@@ -566,10 +563,6 @@
   }
 
   // Nickname edit for current DM contact
-  let showNicknameEdit = false;
-  let nicknameEditValue = '';
-  let nicknameSaving = false;
-  let nicknameError: string | null = null;
 
   // Clear send error when user switches to a different DM
   $: if (prevDmId !== $activeDmId) {

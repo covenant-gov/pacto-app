@@ -110,7 +110,6 @@
 
   async function fetchBalance(address: string | null): Promise<SignerBalance> {
     if (!address || !deployNetwork) return emptyBalance();
-    const loading = { ...emptyBalance(), loading: true };
     const result = await getEvmNativeBalance(deployNetwork, address);
     if (result.ok) {
       return {

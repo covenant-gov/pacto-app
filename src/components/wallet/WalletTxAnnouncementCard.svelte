@@ -70,7 +70,7 @@
         class="wallet-tx-announce-link"
         href={explorerUrl}
         target="_blank"
-        rel="noopener noreferrer"
+        rel="external noopener noreferrer"
         title={explorerUrl}
       >
         {explorerLabel}

@@ -31,7 +31,7 @@
     </p>
   {:else}
     <p class="structure-summary-lead dashboard-placeholder-text">
-      Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id{' '}
+      Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id 
       <code class="structure-mono">{structureSummary.chainIdNumeric}</code>).
     </p>
     <dl class="structure-dl">

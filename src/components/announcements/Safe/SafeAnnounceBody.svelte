@@ -70,13 +70,13 @@
           class="safe-explorer-link"
           href={safeExplorerUrl}
           target="_blank"
-          rel="noopener noreferrer"
+          rel="external noopener noreferrer"
         >
           View on explorer
         </a>
       {/if}
       {#if safeAppUrl}
-        <a class="safe-explorer-link" href={safeAppUrl} target="_blank" rel="noopener noreferrer">
+        <a class="safe-explorer-link" href={safeAppUrl} target="_blank" rel="external noopener noreferrer">
           Open in Safe
         </a>
       {/if}
@@ -93,7 +93,7 @@
           Copy tx hash
         </button>
         {#if explorerTx}
-          <a class="safe-explorer-link" href={explorerTx} target="_blank" rel="noopener noreferrer">
+          <a class="safe-explorer-link" href={explorerTx} target="_blank" rel="external noopener noreferrer">
             View transaction
           </a>
         {/if}

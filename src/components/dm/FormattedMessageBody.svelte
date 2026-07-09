@@ -91,7 +91,9 @@
   aria-label="Message content"
 >
   {#if content?.trim()}
+    <!-- eslint-disable svelte/no-at-html-tags -->
     {@html formatted}
+    <!-- eslint-enable svelte/no-at-html-tags -->
   {:else}
     <span class="formatted-message-body-empty"> </span>
   {/if}

@@ -3,14 +3,11 @@ import { countUnreadInThread } from '../lib/dm/dm-unread';
 import {
   PACTO_APP_DM_THREAD_ID,
   pactoAppInboxMessages,
-  backendDmMessages,
   dmList,
   pendingList,
   pinnedList,
-  pinnedDmNpubs,
   requestsList,
   dmSidebarCategoryForNpub,
-  dmChatsByNpub,
 } from './dm';
 import { persistenceKey } from './persistence-context';
 
@@ -99,8 +96,8 @@ export function clearPactoAppInboxUnread(lastMessageId: string): void {
 
 export function unreadCountForSidebarEntry(
   npub: string,
-  chats: Record<string, unknown>,
-  pinned: Set<string>,
+  _chats: Record<string, unknown>,
+  _pinned: Set<string>,
 ): number {
   if (npub === PACTO_APP_DM_THREAD_ID) return get(pactoAppInboxUnreadCount);
   return unreadCountForNpub(npub);

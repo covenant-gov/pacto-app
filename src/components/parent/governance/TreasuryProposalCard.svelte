@@ -47,7 +47,7 @@
     <p class="proposal-card-outcome">{outcome}</p>
   {/if}
   <p class="proposal-card-meta muted">
-    Yeas {proposal.yeas} / nays {proposal.nays} · snapshot {proposal.snapshot} · deadline{' '}
+    Yeas {proposal.yeas} / nays {proposal.nays} · snapshot {proposal.snapshot} · deadline 
     {new Date(proposal.deadline * 1000).toLocaleString()}
   </p>
   <p class="proposal-card-target muted">

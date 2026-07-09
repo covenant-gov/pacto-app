@@ -32,7 +32,7 @@
     onImport(words.join(' '));
   }
 
-  function handlePaste(event: ClipboardEvent) {
+  function handlePaste(_event: ClipboardEvent) {
     // Let default paste behavior work, then trim
     setTimeout(() => {
       privateKey = privateKey.trim();

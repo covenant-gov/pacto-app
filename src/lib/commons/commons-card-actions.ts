@@ -1,7 +1,6 @@
 import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
-  addPendingDm,
   composingNewChat,
   newChatDraftNpub,
   newChatDraftMessage,

@@ -123,7 +123,7 @@
           argsJson,
         });
       }
-    } catch (e) {
+    } catch (_e) {
       builtCalldata = '0x';
     }
   }

@@ -1347,7 +1347,7 @@ function getStored<T>(key: string, fallback: T): T {
   }
 }
 
-let arrFavoriteEmojis: EmojiEntry[] = getStored<EmojiEntry[]>('favoriteEmojis', []);
+const arrFavoriteEmojis: EmojiEntry[] = getStored<EmojiEntry[]>('favoriteEmojis', []);
 let arrRecentEmojis: EmojiEntry[] = getStored<EmojiEntry[]>('recentEmojis', []);
 
 /** Reactive store for recent emojis (picker UI subscribes to this). */
@@ -1493,17 +1493,17 @@ export function searchEmojis(search: string): EmojiEntry[] {
   
   // Sort by relevance
   return results
-      .sort((a, b) => {
-          if (Math.abs(a.score - b.score) > 0.01) return a.score - b.score;
-          
-          // For same scores, prefer shorter matched words
-          const aLen = a.matchedWord.length;
-          const bLen = b.matchedWord.length;
-          if (aLen !== bLen) return aLen - bLen;
-          
-          return a.matchedWord.localeCompare(b.matchedWord);
-      })
-      .map(({ score, matchedWord, ...emoji }) => emoji);
+    .sort((a, b) => {
+      if (Math.abs(a.score - b.score) > 0.01) return a.score - b.score;
+
+      // For same scores, prefer shorter matched words
+      const aLen = a.matchedWord.length;
+      const bLen = b.matchedWord.length;
+      if (aLen !== bLen) return aLen - bLen;
+
+      return a.matchedWord.localeCompare(b.matchedWord);
+    })
+    .map(({ score: _score, matchedWord: _matchedWord, ...emoji }) => emoji);
 }
 
 /** Return our most used emojis (by used count). */

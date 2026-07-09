@@ -233,7 +233,7 @@
               <a
                 href={profile.website}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="external noopener noreferrer"
                 class="website"
                 on:click|preventDefault={() => openExternalUrl(profile.website!)}
               >
@@ -260,9 +260,10 @@
                       await navigator.clipboard.writeText(profile?.id ?? '');
                       copiedNpub = true;
                       setTimeout(() => (copiedNpub = false), 2000);
-                    } catch (_) {}
-                  }}
-                >
+                    } catch (_) {
+                      // clipboard write may fail silently
+                    }
+                  }}>
                   <svg
                     class="btn-copy-account-id-icon"
                     width="18"

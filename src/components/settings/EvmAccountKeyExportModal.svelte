@@ -203,7 +203,7 @@
         {/if}
 
         <div class="pin-boxes">
-          {#each pinDigits as digit, i}
+          {#each pinDigits as digit, i (i)}
             <input
               bind:this={pinInputs[i]}
               type="password"

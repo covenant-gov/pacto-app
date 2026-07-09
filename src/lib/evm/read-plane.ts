@@ -5,6 +5,7 @@
 
 import {
   type Abi,
+  type AbiStateMutability,
   type Address,
   type ContractFunctionArgs,
   type ContractFunctionName,
@@ -39,7 +40,7 @@ export async function readContract<
   address: Address;
   abi: TAbi;
   functionName: TFunctionName;
-  args?: ContractFunctionArgs<TAbi, any, TFunctionName>;
+  args?: ContractFunctionArgs<TAbi, AbiStateMutability, TFunctionName>;
 }): Promise<unknown> {
   const client = createWalletPublicClient(params.chainId);
   try {

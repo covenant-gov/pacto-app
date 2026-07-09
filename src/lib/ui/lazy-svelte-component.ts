@@ -1,10 +1,10 @@
 import type { Component } from 'svelte';
 
-type SvelteModule = { default: Component<any> };
-
 /** Cache the dynamic import promise; reuse the resolved component across mounts. */
-export function createLazyComponent(loader: () => Promise<SvelteModule>): () => Promise<Component<any>> {
-  let cached: Promise<SvelteModule> | null = null;
+export function createLazyComponent<P extends Record<string, unknown>>(
+  loader: () => Promise<{ default: Component<P> }>,
+): () => Promise<Component<P>> {
+  let cached: Promise<{ default: Component<P> }> | null = null;
   return () => {
     if (!cached) cached = loader();
     return cached.then((m) => m.default);

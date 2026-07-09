@@ -170,7 +170,7 @@
                 <span class="emoji-picker-label">Smileys &amp; more</span>
               {/if}
               <div class="emoji-picker-grid">
-                {#each EMOJI_GRID as emoji}
+                {#each EMOJI_GRID as emoji (emoji)}
                   <button
                     type="button"
                     class="emoji-picker-item"

@@ -73,7 +73,7 @@
           class="gov-updated-explorer-link"
           href={explorerUrl}
           target="_blank"
-          rel="noopener noreferrer"
+          rel="external noopener noreferrer"
         >
           {explorerLabel}
         </a>
@@ -82,7 +82,7 @@
   {/if}
   {#if explorerTxUrl}
     <p class="gov-updated-tx">
-      <a class="gov-updated-explorer-link" href={explorerTxUrl} target="_blank" rel="noopener noreferrer">
+      <a class="gov-updated-explorer-link" href={explorerTxUrl} target="_blank" rel="external noopener noreferrer">
         View deployment transaction
       </a>
     </p>

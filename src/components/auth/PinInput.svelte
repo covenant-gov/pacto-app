@@ -106,7 +106,7 @@
   {/if}
 
   <div class="pin-inputs" class:shake={isShaking}>
-    {#each digits as digit, i}
+    {#each digits as digit, i (i)}
       <input
         bind:this={inputs[i]}
         type="password"

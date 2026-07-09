@@ -567,7 +567,7 @@
     <div class="dashboard-view-nav" role="tablist" aria-label="Dashboard section">
       <span class="dashboard-view-nav-label" aria-hidden="true">Mode</span>
       <div class="dashboard-mode-switcher" role="group">
-        {#each DASHBOARD_VIEWS as v}
+        {#each DASHBOARD_VIEWS as v (v.id)}
           <button
             type="button"
             role="tab"

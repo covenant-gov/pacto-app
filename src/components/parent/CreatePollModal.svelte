@@ -113,7 +113,7 @@
 
     <p class="modal-field-label">Choices</p>
     <ul class="create-poll-options" role="list">
-      {#each optionRows as _, i}
+      {#each optionRows as _, i (i)}
         <li class="create-poll-option-row">
           <input
             type="text"

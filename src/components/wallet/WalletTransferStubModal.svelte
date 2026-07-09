@@ -406,7 +406,7 @@
     {/if}
     {#if mode === 'send' && insufficientFunds && selectedBalanceRow}
       <p class="wallet-stub-insufficient" role="alert">
-        This amount is more than your {assetCode} balance on this network. Available: {selectedBalanceRow.balanceDecimal}{' '}
+        This amount is more than your {assetCode} balance on this network. Available: {selectedBalanceRow.balanceDecimal} 
         {assetCode}.
       </p>
     {:else if mode === 'send' && sendBalanceError && !sendBalanceLoading}
@@ -439,7 +439,7 @@
             class="wallet-stub-error-link"
             href={explorerLinkForError}
             target="_blank"
-            rel="noopener noreferrer"
+            rel="external noopener noreferrer"
             title={explorerLinkForError}
           >
             {explorerLinkLabel}

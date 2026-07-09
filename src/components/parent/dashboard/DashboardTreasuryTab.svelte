@@ -114,7 +114,7 @@
               <dt>Owners</dt>
               <dd>
                 <ul class="safe-owners-list">
-                  {#each st.state.owners as owner}
+                  {#each st.state.owners as owner (owner)}
                     <li><code class="safe-owner-address">{shortAddress(owner as string)}</code></li>
                   {/each}
                 </ul>

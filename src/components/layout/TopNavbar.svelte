@@ -58,7 +58,7 @@
 <div class="top-navbar" role="tablist" aria-label="Main view">
   <span class="top-navbar-label" aria-hidden="true">View</span>
   <div class="mode-switcher" role="group" aria-label="Main views">
-    {#each tabs as tab}
+    {#each tabs as tab (tab.id)}
       <button
         type="button"
         role="tab"

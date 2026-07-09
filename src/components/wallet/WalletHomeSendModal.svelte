@@ -364,7 +364,7 @@
             </div>
           {/if}
           {#if explorerLinkForError}
-            <a class="home-send-error-link" href={explorerLinkForError} target="_blank" rel="noopener noreferrer">
+            <a class="home-send-error-link" href={explorerLinkForError} target="_blank" rel="external noopener noreferrer">
               {explorerLinkLabel}
             </a>
           {/if}

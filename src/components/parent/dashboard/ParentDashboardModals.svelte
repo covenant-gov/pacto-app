@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Component } from 'svelte';
   import LaunchpadModal from '../governance/LaunchpadModal.svelte';
   import SquadRolesModal from '../governance/SquadRolesModal.svelte';
   import ChainIdSelect from '../../wallet/ChainIdSelect.svelte';
@@ -79,10 +78,10 @@
   export let onDeploySafe: () => void = () => {};
   export let onImportSafe: () => void = () => {};
 
-  let DeploySafeModalComponent: Component | null = null;
-  let DeployNaveWizardComponent: Component | null = null;
-  let DeploySquadSponsorComponent: Component | null = null;
-  let DeploySquadAdminComponent: Component | null = null;
+  let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
+  let DeployNaveWizardComponent: Awaited<ReturnType<typeof loadDeployNavePirataWizard>> | null = null;
+  let DeploySquadSponsorComponent: Awaited<ReturnType<typeof loadDeploySquadSponsorModal>> | null = null;
+  let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;
 
   $: if (showDeploySafeModal && !DeploySafeModalComponent) {
     void loadDeploySafeModal().then((c) => {

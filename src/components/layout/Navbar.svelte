@@ -34,7 +34,6 @@
     parentCreateErrorById,
     parentPendingCreateMembers,
     ANNOUNCEMENTS_CHANNEL_NAME,
-    DASHBOARD_CHANNEL_ID,
     type TopNavTab,
     type DmTab,
     type Squad,
@@ -42,7 +41,6 @@
   import { currentUser } from '../../stores/auth';
   import { sendSquadInviteDm } from '../../lib/pacto-app-inbox';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
-  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
   import { pendingReadyToast } from '../../stores/toast';
   import { schedulePublicSquadCreateBroadcast } from '../../lib/commons/squad-create-broadcast';

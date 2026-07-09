@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
-import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validatePrivateKeyFormat, validateRecoveryPhraseForImport } from '../lib/api/encryption';
+import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validateRecoveryPhraseForImport } from '../lib/api/encryption';
 import { dmLog } from '../lib/utils/dm-debug';
 import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';

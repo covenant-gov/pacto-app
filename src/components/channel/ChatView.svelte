@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import Message from '../dm/Message.svelte';
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
@@ -120,8 +119,6 @@
   let pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
   let pollsChannelBodyEl: HTMLDivElement | null = null;
   let pollsSplitResizing = false;
-  let pollsSplitResizeStartY = 0;
-  let pollsSplitResizeStartPercent = POLLS_SPLIT_DEFAULT;
 
   function clampPollsSplitPercent(n: number): number {
     return Math.max(POLLS_SPLIT_MIN, Math.min(POLLS_SPLIT_MAX, n));
@@ -166,8 +163,6 @@
   function startPollsSplitResize(e: MouseEvent): void {
     e.preventDefault();
     pollsSplitResizing = true;
-    pollsSplitResizeStartY = e.clientY;
-    pollsSplitResizeStartPercent = pollsChatSplitPercent;
   }
 
   function onPollsSplitMouseMove(e: MouseEvent): void {
