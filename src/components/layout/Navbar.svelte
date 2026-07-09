@@ -323,7 +323,7 @@
   $: canCreateSquad =
     organizeSquadName.trim().length > 0 &&
     organizeSquadMembers.length > 0 &&
-    (organizeSquadVisibility !== 'public' || organizeSquadTags.length > 0);
+    (organizeSquadVisibility !== 'public' || organizeSquadTags.length === 3);
   $: organizeMemberList = [...$pinnedList, ...$dmList];
 
   $: if (showOrganizeSquadModal) {

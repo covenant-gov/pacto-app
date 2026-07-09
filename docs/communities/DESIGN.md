@@ -96,7 +96,7 @@ Roster bindings (`squad_member_evm_account`, `squad_member_evm`) and on-chain in
 
 ## 7. Commons discovery
 
-Public squads and users may publish time-bounded broadcasts to **Commons** (top-nav discovery feed). See [`COMMONS.md`](./COMMONS.md).
+Squads with **Commons on** and users may publish time-bounded broadcasts to **Commons** (top-nav discovery feed). The MLS squad stays private; only the Nostr mirror is public. See [`COMMONS.md`](./COMMONS.md).
 
 ---
 

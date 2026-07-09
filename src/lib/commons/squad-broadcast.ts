@@ -15,7 +15,7 @@ import {
   isPublicSquadForCommonsBroadcast,
   type PublicSquadBroadcastTarget,
 } from './squad-create-broadcast';
-import { normalizeCommonsTags } from './tags';
+import { normalizeSquadBroadcastTags } from './tags';
 
 export async function fetchActiveSquadCommonsBroadcast(
   squadId: string
@@ -71,7 +71,7 @@ export async function publishSquadCommonsBroadcast(
   }
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; error: string }> {
   if (!isPublicSquadForCommonsBroadcast(squad)) {
-    return { ok: false, error: 'Only public squads can broadcast.' };
+    return { ok: false, error: 'Turn Commons on for this squad before broadcasting.' };
   }
 
   const message = options.message.trim();
@@ -85,9 +85,9 @@ export async function publishSquadCommonsBroadcast(
     return { ok: false, error: 'A broadcast is still active for this squad.' };
   }
 
-  const normalized = normalizeCommonsTags(options.tags ?? squad.commonsTags ?? []);
+  const normalized = normalizeSquadBroadcastTags(options.tags ?? squad.commonsTags ?? []);
   if (!normalized) {
-    return { ok: false, error: 'Add 1–3 valid tags.' };
+    return { ok: false, error: 'Choose exactly 3 valid tags.' };
   }
   const tags = [...normalized, ...(options.extraTags ?? [])];
 

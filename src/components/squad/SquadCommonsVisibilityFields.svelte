@@ -5,7 +5,7 @@
   export let visibility: SquadVisibility = 'private';
   export let tags: string[] = [];
   export let tagError = '';
-  export let fieldsetName = 'squad-visibility';
+  export let fieldsetName = 'squad-commons';
   export let disabled = false;
 
   export function resetCommonsFields() {
@@ -16,22 +16,23 @@
 </script>
 
 <fieldset class="commons-visibility-fieldset">
-  <legend class="commons-visibility-legend">Visibility</legend>
+  <legend class="commons-visibility-legend">Commons</legend>
   <label class="commons-visibility-option">
     <input type="radio" name={fieldsetName} value="private" bind:group={visibility} {disabled} />
-    <span>Private</span>
+    <span>Commons off</span>
   </label>
   <label class="commons-visibility-option">
     <input type="radio" name={fieldsetName} value="public" bind:group={visibility} {disabled} />
-    <span>Public</span>
+    <span>Commons on</span>
   </label>
   <p class="commons-visibility-hint muted">
-    Public squads can be discovered in Commons when broadcasting (tags required).
+    Your squad stays private and encrypted. Commons only posts a public discovery card with 3 tags
+    while you broadcast.
   </p>
 </fieldset>
 
 {#if visibility === 'public'}
-  <span class="commons-tags-label">Tags (1–3)</span>
+  <span class="commons-tags-label">Tags (exactly 3)</span>
   <CommonsTagPicker bind:selected={tags} maxTags={3} {disabled} placeholder="Search tags…" />
   {#if tagError}
     <p class="commons-tags-error" role="alert">{tagError}</p>

@@ -1373,6 +1373,7 @@ impl MlsService {
                                 if let Some(handle) = TAURI_APP.get() {
                                     crate::db::apply_inbox_virtual_bucket_side_effects(
                                         handle,
+                                        &chat_id,
                                         msg.virtual_bucket.as_deref(),
                                         &msg.content,
                                         msg.npub.as_deref(),

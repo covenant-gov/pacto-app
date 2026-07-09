@@ -1,4 +1,4 @@
-import { normalizeCommonsTags } from './commons/tags';
+import { normalizeSquadBroadcastTags } from './commons/tags';
 
 export type SquadKind = 'squad' | 'squad-pair';
 
@@ -30,7 +30,8 @@ export interface StoredSquadRow {
 
 function normalizeStoredCommonsTags(raw: string[] | undefined): string[] | undefined {
   if (!raw?.length) return undefined;
-  return normalizeCommonsTags(raw) ?? undefined;
+  // Last-used broadcast defaults only; incomplete sets are dropped.
+  return normalizeSquadBroadcastTags(raw) ?? undefined;
 }
 
 export function isSquadPairKind(kind: SquadKind | undefined): boolean {

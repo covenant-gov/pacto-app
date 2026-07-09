@@ -9,8 +9,8 @@ Per-account squad and squad-pair rows live in **`squads`** (`vector.db`), not `l
 | `id` | Primary key; announcements MLS group id |
 | `name` | Display name |
 | `kind` | `squad` or `squad-pair` |
-| `visibility` | `private` or `public` |
-| `commons_tags` | JSON string array when public |
+| `visibility` | Wire: `private` (Commons off) or `public` (Commons on). MLS squad is always private; this flag only enables discovery broadcasts. |
+| `commons_tags` | Optional last-used tag defaults (exactly 3 when set). Tags for an active broadcast are on the Nostr event. |
 | `paired_squads` | JSON `[{id,name},{id,name}]` when squad-pair |
 | `channels` | JSON `[{name, groupId, order}]` |
 | `icon_url` | Optional |
