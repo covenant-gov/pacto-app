@@ -3,7 +3,6 @@
   import SquadRolesModal from '../governance/SquadRolesModal.svelte';
   import ChainIdSelect from '../../wallet/ChainIdSelect.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import type { Component } from 'svelte';
   import { DEFAULT_CHAIN_ID } from '../../../lib/wallet/chains';
   import {
     loadDeployPactoGovModal,
@@ -80,7 +79,7 @@
   let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
   let DeploySquadSponsorComponent: Awaited<ReturnType<typeof loadDeploySquadSponsorModal>> | null = null;
   let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;
-  let DeployPactoGovModalComponent: Component | null = null;
+  let DeployPactoGovModalComponent: Awaited<ReturnType<typeof loadDeployPactoGovModal>> | null = null;
 
   $: if (showDeploySafeModal && !DeploySafeModalComponent) {
     void loadDeploySafeModal().then((c) => {

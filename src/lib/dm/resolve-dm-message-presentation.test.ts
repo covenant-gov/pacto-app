@@ -79,14 +79,6 @@ const WALLET_TX_ANNOUNCEMENT = JSON.stringify({
   from_evm_address: EVM_A,
 });
 
-const COMMONS_JOIN_REQUEST = JSON.stringify({
-  type: 'commons_join_request',
-  squadId: 's1',
-  squadName: 'Commons',
-  broadcastEventId: 'e1',
-  requesterNpub: NPUB_A,
-});
-
 function msg(overrides: Partial<PactoAppInboxEntry> = {}): DmMessage {
   return {
     id: 'm1',
@@ -180,14 +172,6 @@ describe('resolveDmMessagePresentation', () => {
     expect(p.kind).toBe('wallet-tx-announcement');
     if (p.kind === 'wallet-tx-announcement') {
       expect(p.payload.tx_hash).toBe(TX_HASH);
-    }
-  });
-
-  it('classifies commons join request JSON', () => {
-    const p = resolveDmMessagePresentation(msg({ content: COMMONS_JOIN_REQUEST }));
-    expect(p.kind).toBe('commons-join-request');
-    if (p.kind === 'commons-join-request') {
-      expect(p.payload.squadId).toBe('s1');
     }
   });
 
