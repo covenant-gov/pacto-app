@@ -84,7 +84,7 @@
         return;
       }
       actionError = '';
-      showToast(`Join request sent for ${squadLabel}.`);
+      showToast(`Join request sent to ${squadLabel}.`);
       onClose();
     } finally {
       joinBusy = false;

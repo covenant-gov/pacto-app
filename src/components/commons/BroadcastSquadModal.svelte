@@ -43,7 +43,7 @@
     roleAllowed &&
     !hasActiveBroadcast &&
     message.trim().length > 0 &&
-    tags.length > 0 &&
+    tags.length === 3 &&
     !publishing &&
     !cancelling;
   $: busy = publishing || cancelling;
@@ -181,7 +181,7 @@
       <p class="broadcast-role-denied" role="status">{broadcastDeniedReason}</p>
     {/if}
     <form on:submit|preventDefault={handleSubmit}>
-      <span class="broadcast-label">Tags (1–3)</span>
+      <span class="broadcast-label">Tags (exactly 3)</span>
       <CommonsTagPicker
         bind:selected={tags}
         maxTags={3}

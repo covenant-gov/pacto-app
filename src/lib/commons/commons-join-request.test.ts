@@ -1,12 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   commonsJoinRequestBlockReason,
   commonsJoinRequestRevision,
-  formatCommonsJoinRequestMessage,
   isJoinRequestRateLimited,
-  parseCommonsJoinRequestMessage,
   recordJoinRequestSent,
   resetCommonsJoinRequestRevision,
 } from './commons-join-request';
@@ -26,35 +24,23 @@ const squadBroadcast: CommonsBroadcastDto = {
   createdAt: 1,
 };
 
-describe('parseCommonsJoinRequestMessage', () => {
-  it('round-trips payload', () => {
-    const payload = {
-      type: 'commons_join_request' as const,
-      squadId: 'group-1',
-      squadName: 'Neo Builders',
-      broadcastEventId: 'evt1',
-      requesterNpub: 'npub1me',
-    };
-    const parsed = parseCommonsJoinRequestMessage(formatCommonsJoinRequestMessage(payload));
-    expect(parsed).toEqual(payload);
-  });
-});
-
 describe('commonsJoinRequestBlockReason', () => {
   it('blocks when already a member', () => {
     expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1me', ['group-1'])).toMatch(/already/i);
   });
 
   it('blocks own broadcast', () => {
-    expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1author', [])).toMatch(/your squad/i);
+    expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1author', [])).toMatch(/your broadcast/i);
   });
 });
 
 describe('join request rate limit', () => {
+  const store = new Map<string, string>();
+
   beforeEach(() => {
     resetCommonsJoinRequestRevision();
-    const store = new Map<string, string>();
-    vi.stubGlobal('localStorage', {
+    store.clear();
+    (globalThis as unknown as { localStorage: Storage }).localStorage = {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => {
         store.set(k, v);
@@ -62,11 +48,17 @@ describe('join request rate limit', () => {
       removeItem: (k: string) => {
         store.delete(k);
       },
-      clear: () => {
-        store.clear();
+      clear: () => store.clear(),
+      key: (i: number) => [...store.keys()][i] ?? null,
+      get length() {
+        return store.size;
       },
-    });
+    } as Storage;
     setCurrentNpubForPersistence('npub1test');
+  });
+
+  afterEach(() => {
+    delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
 
   it('records and checks cooldown', () => {

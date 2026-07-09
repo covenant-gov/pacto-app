@@ -250,7 +250,7 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
  */
 export function buildAnnounceContent<T extends AnnounceMessage>(
   msg: T,
-  options?: { virtualBucket?: 'announcements' | 'inbox' | 'polls' }
+  options?: { virtualBucket?: 'announcements' | 'inbox' | 'polls' | 'join_requests' }
 ): string {
   const pacto_virtual_bucket =
     options?.virtualBucket ??

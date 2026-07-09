@@ -15,7 +15,17 @@ import {
   isPublicSquadForCommonsBroadcast,
   type PublicSquadBroadcastTarget,
 } from './squad-create-broadcast';
-import { normalizeCommonsTags } from './tags';
+import { normalizeSquadBroadcastTags } from './tags';
+import { ensureSquadBot } from '../squad/squad-bot';
+
+async function requireBotHolder(squadId: string): Promise<string | null> {
+  const state = await ensureSquadBot(squadId);
+  if (!state) return 'Squad bot is not initialized. Open Join inbox settings first.';
+  if (!state.iAmHolder || !state.hasLocalSecret) {
+    return 'Only bot key holders with a local secret can publish or cancel squad Commons broadcasts.';
+  }
+  return null;
+}
 
 export async function fetchActiveSquadCommonsBroadcast(
   squadId: string
@@ -49,6 +59,8 @@ export function formatBroadcastCooldownRemaining(
 export async function cancelSquadCommonsBroadcast(
   squadId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireBotHolder(squadId);
+  if (gate) return { ok: false, error: gate };
   try {
     await cancelCommonsBroadcast('squad', squadId);
     clearCommonsBroadcastLocalState('squad', squadId);
@@ -71,7 +83,7 @@ export async function publishSquadCommonsBroadcast(
   }
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; error: string }> {
   if (!isPublicSquadForCommonsBroadcast(squad)) {
-    return { ok: false, error: 'Only public squads can broadcast.' };
+    return { ok: false, error: 'Turn Commons on for this squad before broadcasting.' };
   }
 
   const message = options.message.trim();
@@ -79,15 +91,18 @@ export async function publishSquadCommonsBroadcast(
     return { ok: false, error: 'Message is required.' };
   }
 
+  const gate = await requireBotHolder(squad.id);
+  if (gate) return { ok: false, error: gate };
+
   const active = await fetchActiveSquadCommonsBroadcast(squad.id);
   if (active) {
     if (options.skipIfActive) return { ok: true, skipped: true };
     return { ok: false, error: 'A broadcast is still active for this squad.' };
   }
 
-  const normalized = normalizeCommonsTags(options.tags ?? squad.commonsTags ?? []);
+  const normalized = normalizeSquadBroadcastTags(options.tags ?? squad.commonsTags ?? []);
   if (!normalized) {
-    return { ok: false, error: 'Add 1–3 valid tags.' };
+    return { ok: false, error: 'Choose exactly 3 valid tags.' };
   }
   const tags = [...normalized, ...(options.extraTags ?? [])];
 

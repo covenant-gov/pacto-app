@@ -4,7 +4,6 @@
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
   import WalletTxAnnouncementCard from '../wallet/WalletTxAnnouncementCard.svelte';
   import WalletPeerExchangeCard from '../wallet/WalletPeerExchangeCard.svelte';
-  import CommonsJoinRequestCard from './CommonsJoinRequestCard.svelte';
   import type { WalletPeerInfoRequestPayload } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -193,9 +192,6 @@
     pending={isWalletTxAnnouncementOnChainPending(presentation.payload, msg)}
     failed={!!msg.failed}
   />
-{:else if presentation.kind === 'commons-join-request'}
-  {@const requesterName = getInviterDisplay(msg, npub, $profiles).inviterName}
-  <CommonsJoinRequestCard payload={presentation.payload} isMine={msg.mine} {requesterName} />
 {:else}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}

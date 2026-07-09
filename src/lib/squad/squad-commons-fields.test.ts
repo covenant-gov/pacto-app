@@ -1,25 +1,35 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSquadCommonsOnCreate, validatePublicSquadTags } from './squad-commons-fields';
+import { resolveSquadCommonsOnCreate, validateCommonsOnCreateTags } from './squad-commons-fields';
 
 describe('resolveSquadCommonsOnCreate', () => {
-  it('strips tags for private squads', () => {
-    expect(resolveSquadCommonsOnCreate('private', ['neo'])).toEqual({ visibility: 'private' });
-  });
-
-  it('keeps normalized tags for public squads', () => {
-    expect(resolveSquadCommonsOnCreate('public', ['#Neo', 'dao'])).toEqual({
-      visibility: 'public',
-      commonsTags: ['neo', 'dao'],
+  it('strips tags when Commons is off', () => {
+    expect(resolveSquadCommonsOnCreate('private', ['neo', 'dao', 'art'])).toEqual({
+      visibility: 'private',
     });
   });
 
-  it('throws when public without valid tags', () => {
-    expect(() => resolveSquadCommonsOnCreate('public', [])).toThrow();
+  it('enables Commons without tags when none provided', () => {
+    expect(resolveSquadCommonsOnCreate('public', [])).toEqual({ visibility: 'public' });
+  });
+
+  it('keeps exactly three normalized tags', () => {
+    expect(resolveSquadCommonsOnCreate('public', ['#Neo', 'dao', 'art'])).toEqual({
+      visibility: 'public',
+      commonsTags: ['neo', 'dao', 'art'],
+    });
+  });
+
+  it('drops incomplete tag sets', () => {
+    expect(resolveSquadCommonsOnCreate('public', ['neo', 'dao'])).toEqual({
+      visibility: 'public',
+    });
   });
 });
 
-describe('validatePublicSquadTags', () => {
-  it('requires at least one tag', () => {
-    expect(validatePublicSquadTags([])).toMatch(/at least one tag/i);
+describe('validateCommonsOnCreateTags', () => {
+  it('requires exactly three tags', () => {
+    expect(validateCommonsOnCreateTags([])).toMatch(/exactly 3/i);
+    expect(validateCommonsOnCreateTags(['neo', 'dao'])).toMatch(/exactly 3/i);
+    expect(validateCommonsOnCreateTags(['neo', 'dao', 'art'])).toBeNull();
   });
 });

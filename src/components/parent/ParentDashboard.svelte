@@ -51,6 +51,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     fetchSquadMemberEvmByNpub,
     fetchTreasuryProposalVoteMap,
     fetchTreasuryProposals,
+    isSupersededLoaderKey,
   } from '../../lib/dashboard/parent-dashboard-loaders';
   import {
     ensureMlsGroupMembers,
@@ -114,6 +115,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
         providerPayload: string;
         safeAddress: string;
         txHash: string;
+        infraRowId?: string;
       }) => Promise<void>)
     | undefined = undefined;
   export let onSquadAdminDeployComplete:
@@ -275,12 +277,15 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     }
     treasuryProposalsError = '';
     const result = await fetchTreasuryProposals({ network: pactoNetwork, treasuryAuthority: ta });
+    if (isSupersededLoaderKey(treasuryProposalsKey, key)) return;
     treasuryProposalsLoading = false;
     treasuryProposalsRefreshing = false;
     if (!result.error) {
       treasuryProposals = result.proposals;
       if (npub) persistTreasuryProposalsSnapshot(npub, key, result.proposals);
-      await loadTreasuryProposalVotes();
+      if (!isSupersededLoaderKey(treasuryProposalsKey, key)) {
+        await loadTreasuryProposalVotes();
+      }
     } else if (cached) {
       treasuryProposalsError = result.error;
     } else {
@@ -313,6 +318,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     }
     hatsTreeError = '';
     const result = await fetchHatsTree({ network: pactoNetwork, topHatId: topHat });
+    if (isSupersededLoaderKey(hatsTreeKey, key)) return;
     hatsTreeLoading = false;
     hatsTreeRefreshing = false;
     if (!result.error) {
@@ -361,6 +367,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       squadAdminProxy: squadAdminCtx?.proxy ?? null,
       squadAdminChain: squadAdminCtx?.chain ?? null,
     });
+    if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
     rolesTreeAnnotationsRefreshing = false;
     roleLabelByHatId = result.roleLabelByHatId;
@@ -402,6 +409,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       squadAdminChain: squadAdminCtx?.chain ?? null,
       squadMemberEvmByNpub,
     });
+    if (isSupersededLoaderKey(settingsChainKey, cacheKey)) return;
     settingsChainLoading = false;
     settingsChainRefreshing = false;
     if (!result.error) {
@@ -463,10 +471,12 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
 
   async function loadSquadMemberEvm() {
     if (!parentId) return;
-    const rows = await fetchSquadMemberEvmByNpub(parentId, announcementsGroupId);
-    squadMemberEvmByParentId.update((m) => ({ ...m, [parentId]: rows }));
+    const loadParentId = parentId;
+    const rows = await fetchSquadMemberEvmByNpub(loadParentId, announcementsGroupId);
+    if (parentId !== loadParentId) return;
+    squadMemberEvmByParentId.update((m) => ({ ...m, [loadParentId]: rows }));
     const npub = $currentUser?.npub;
-    if (npub) persistSquadMemberEvmForParent(npub, parentId, rows);
+    if (npub) persistSquadMemberEvmForParent(npub, loadParentId, rows);
   }
 
   function selectDashboardView(id: ParentDashboardView) {
@@ -835,6 +845,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       providerPayload: out.providerPayload,
       safeAddress: out.safeAddress,
       txHash: out.txHash,
+      infraRowId: out.infraRowId,
     });
     showPactoGovDeploy = false;
     selectDashboardView('governance');

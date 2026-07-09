@@ -104,10 +104,11 @@ pub async fn send_and_confirm<P: Provider>(
         })?;
 
     if !receipt.status() {
-        return Err(wallet_err_json(
+        return Err(wallet_err_json_with_tx_hash(
             "TX_REVERTED",
             "Transaction was mined but reverted",
             None,
+            format!("0x{:x}", receipt.transaction_hash),
         ));
     }
 
@@ -131,10 +132,11 @@ pub async fn wait_for_transaction_receipt<P: Provider>(
         })?;
         if let Some(receipt) = receipt {
             if !receipt.status() {
-                return Err(wallet_err_json(
+                return Err(wallet_err_json_with_tx_hash(
                     "TX_REVERTED",
                     "Transaction was mined but reverted",
                     None,
+                    submitted,
                 ));
             }
             return Ok(receipt);

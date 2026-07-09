@@ -1,11 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type {
-  CommonsBroadcastDto,
-  CommonsJoinRequestDto,
-  CommonsPublishBroadcastInput,
-  CommonsPublishJoinRequestInput,
-  CommonsRespondJoinRequestInput,
-} from '../commons/types';
+import type { CommonsBroadcastDto, CommonsPublishBroadcastInput } from '../commons/types';
 
 export async function publishCommonsBroadcast(
   input: CommonsPublishBroadcastInput
@@ -34,26 +28,4 @@ export async function cancelCommonsBroadcast(
   subjectId: string
 ): Promise<void> {
   await invoke('commons_cancel_broadcast', { subject, subjectId });
-}
-
-export async function publishCommonsJoinRequest(
-  input: CommonsPublishJoinRequestInput
-): Promise<CommonsJoinRequestDto> {
-  return invoke<CommonsJoinRequestDto>('commons_publish_join_request', { input });
-}
-
-export async function fetchCommonsJoinRequests(
-  squadIds: string[],
-  pendingOnly = true
-): Promise<CommonsJoinRequestDto[]> {
-  return invoke<CommonsJoinRequestDto[]>('commons_fetch_join_requests', {
-    squadIds,
-    pendingOnly,
-  });
-}
-
-export async function respondCommonsJoinRequest(
-  input: CommonsRespondJoinRequestInput
-): Promise<CommonsJoinRequestDto> {
-  return invoke<CommonsJoinRequestDto>('commons_respond_join_request', { input });
 }

@@ -18,6 +18,7 @@
   import { showToast } from '../../stores/toast';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
+  import EditIconButton from '../ui/EditIconButton.svelte';
 
   export let accountNpub: string | null = null;
   export let evmAddress: string | null = null;
@@ -205,30 +206,13 @@
                   >
                     Export key
                   </button>
-                  <button
-                    type="button"
-                    class="wallet-view-account-more"
+                  <EditIconButton
                     disabled={accountsLoading}
-                    aria-label="Edit account name"
+                    ariaLabel="Edit account name"
                     title="Edit display name"
+                    className="evm-account-edit-btn"
                     on:click={() => onEditAccount(acc)}
-                  >
-                    <svg
-                      class="wallet-view-account-edit-svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="1.75"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-                    </svg>
-                  </button>
+                  />
                   <button
                     type="button"
                     class="wallet-view-account-copy-icon-btn"
@@ -312,30 +296,13 @@
               {#if acc.isActiveAdvanced && isAdvancedRow(acc)}
                 <span class="wallet-view-account-badge">Advanced signer</span>
               {/if}
-              <button
-                type="button"
-                class="wallet-view-account-more"
+              <EditIconButton
                 disabled={accountsLoading}
-                aria-label="Edit account name"
+                ariaLabel="Edit account name"
                 title="Edit display name"
+                className="evm-account-edit-btn"
                 on:click={() => onEditAccount(acc)}
-              >
-                <svg
-                  class="wallet-view-account-edit-svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.75"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-              </button>
+              />
               <button
                 type="button"
                 class="wallet-view-account-copy-icon-btn"
@@ -414,30 +381,13 @@
                 >
                   Export key
                 </button>
-                <button
-                  type="button"
-                  class="wallet-view-account-more"
+                <EditIconButton
                   disabled={accountsLoading}
-                  aria-label="Edit account name"
+                  ariaLabel="Edit account name"
                   title="Edit display name"
+                  className="evm-account-edit-btn"
                   on:click={() => onEditAccount(acc)}
-                >
-                  <svg
-                    class="wallet-view-account-edit-svg"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.75"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
-                  </svg>
-                </button>
+                />
                 </div>
               </div>
             </li>
@@ -562,7 +512,7 @@
     gap: 8px;
   }
 
-  .evm-section :global(.wallet-view-account-more),
+  .evm-section :global(.evm-account-edit-btn),
   .evm-section :global(.wallet-view-account-copy-icon-btn),
   .evm-section :global(.wallet-view-btn-export-key) {
     display: inline-flex;
@@ -576,15 +526,11 @@
     transition: border-color 0.2s;
   }
 
-  .evm-section :global(.wallet-view-account-more) {
+  .evm-section :global(.evm-account-edit-btn) {
     width: 2rem;
     height: 2rem;
-    padding: 0;
     min-width: unset;
-  }
-
-  .evm-section :global(.wallet-view-account-edit-svg) {
-    display: block;
+    padding: 0;
   }
 
   .evm-section :global(.wallet-view-account-copy-icon-btn) {
@@ -606,7 +552,7 @@
     border-color: var(--accent);
   }
 
-  .evm-section :global(.wallet-view-account-more:hover) {
+  .evm-section :global(.evm-account-edit-btn:hover:not(:disabled)) {
     border-color: var(--accent);
   }
 

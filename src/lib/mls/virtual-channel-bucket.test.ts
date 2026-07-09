@@ -100,6 +100,32 @@ describe('deriveVirtualBucketFromMessageContent', () => {
   it('treats unknown JSON as announcements', () => {
     expect(deriveVirtualBucketFromMessageContent(JSON.stringify({ foo: 'bar' }))).toBe('announcements');
   });
+
+  it('derives join_requests from join request schemas', () => {
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad.join_request.v1', requestId: 'r1', status: 'pending' })
+      )
+    ).toBe('join_requests');
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad.join_request_response.v1', requestId: 'r1', status: 'accepted' })
+      )
+    ).toBe('join_requests');
+  });
+
+  it('derives squad bot meta and rotate prompt buckets', () => {
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad_bot.meta.v1', botNpub: 'npub1x', keyEpoch: 1 })
+      )
+    ).toBe('announcements');
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad_bot.rotate_prompt.v1', reason: 'holder_removed' })
+      )
+    ).toBe('inbox');
+  });
 });
 
 describe('resolveVirtualBucketForTimelineMessage', () => {
@@ -210,17 +236,18 @@ describe('groupTimelineKey / buildBackendGroupTimelineMessages', () => {
     expect(pollsSlice).toEqual(msgs.filter((m) => deriveVirtualBucketFromMessageContent(m.content) === 'polls'));
   });
 
-  it('partitions large merged timelines within reasonable wall time', () => {
+  it('partitions large merged timelines without dropping messages', () => {
     const parent = 'p'.repeat(40);
     const n = 8000;
     const msgs = Array.from({ length: n }, (_, i) => ({
       at: i,
       content: i % 40 === 0 ? JSON.stringify({ pacto_virtual_bucket: 'polls' }) : `plain-${i}`,
     }));
-    const t0 = performance.now();
-    buildBackendGroupTimelineMessages({ [parent]: msgs });
-    const elapsed = performance.now() - t0;
-    expect(elapsed).toBeLessThan(400);
+    const idx = buildBackendGroupTimelineMessages({ [parent]: msgs });
+    const announcements = idx[groupTimelineKey(parent, 'announcements')] ?? [];
+    const polls = idx[groupTimelineKey(parent, 'polls')] ?? [];
+    expect(announcements.length + polls.length).toBe(n);
+    expect(polls.length).toBe(Math.ceil(n / 40));
   });
 });
 

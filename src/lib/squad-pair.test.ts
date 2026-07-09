@@ -61,23 +61,31 @@ describe('normalizeStoredSquad', () => {
     ).toBeUndefined();
   });
 
-  it('keeps normalized tags for public squads', () => {
+  it('keeps exactly three normalized tags when Commons is on', () => {
     const normalized = normalizeStoredSquad({
       ...regularSquad,
       visibility: 'public',
-      commonsTags: ['#Neo', 'dao'],
+      commonsTags: ['#Neo', 'dao', 'art'],
     });
     expect(normalized.visibility).toBe('public');
-    expect(normalized.commonsTags).toEqual(['neo', 'dao']);
+    expect(normalized.commonsTags).toEqual(['neo', 'dao', 'art']);
   });
 
-  it('drops invalid tags on public squads', () => {
-    const normalized = normalizeStoredSquad({
-      ...regularSquad,
-      visibility: 'public',
-      commonsTags: ['!!!'],
-    });
-    expect(normalized.commonsTags).toBeUndefined();
+  it('drops incomplete or invalid tag defaults when Commons is on', () => {
+    expect(
+      normalizeStoredSquad({
+        ...regularSquad,
+        visibility: 'public',
+        commonsTags: ['#Neo', 'dao'],
+      }).commonsTags
+    ).toBeUndefined();
+    expect(
+      normalizeStoredSquad({
+        ...regularSquad,
+        visibility: 'public',
+        commonsTags: ['!!!'],
+      }).commonsTags
+    ).toBeUndefined();
   });
 });
 

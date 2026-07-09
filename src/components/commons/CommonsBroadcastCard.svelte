@@ -109,7 +109,7 @@
         return;
       }
       actionError = '';
-      showToast(`Join request sent for ${squadLabel}.`);
+      showToast(`Join request sent to ${squadLabel}.`);
     } finally {
       joinBusy = false;
     }

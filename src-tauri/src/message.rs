@@ -355,7 +355,7 @@ pub async fn message(
                 .as_ref()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
-                .filter(|s| matches!(s.as_str(), "announcements" | "inbox" | "polls"))
+                .filter(|s| matches!(s.as_str(), "announcements" | "inbox" | "polls" | "join_requests"))
         } else {
             None
         },
@@ -397,6 +397,7 @@ pub async fn message(
             })).unwrap();
             db::apply_inbox_virtual_bucket_side_effects(
                 &handle,
+                &receiver,
                 msg.virtual_bucket.as_deref(),
                 &msg.content,
                 msg.npub.as_deref(),
@@ -763,7 +764,7 @@ pub async fn message(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
         {
-            if matches!(vb.as_str(), "announcements" | "inbox" | "polls") {
+            if matches!(vb.as_str(), "announcements" | "inbox" | "polls" | "join_requests") {
                 rumor = rumor.tag(Tag::custom(TagKind::custom("pacto_bucket"), [vb.as_str()]));
             }
         }

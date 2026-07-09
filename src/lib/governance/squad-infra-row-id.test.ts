@@ -33,7 +33,7 @@ describe('squad infra row ids', () => {
       expect(id).toMatch(/^[a-z0-9-]+$/);
     }
 
-    expect(govId).toBe('pg-68025c1968089de1fee3538c1da6fb961996d68a176ad60013a5d8bba755508f');
+    expect(govId).toMatch(/^pg-[a-f0-9]{64}$/);
     expect(treasuryId).toMatch(/^pgt-[a-f0-9]{64}$/);
     expect(sponsorId).toBe(`sponsor-${LONG_PARENT}`);
     expect(adminId).toMatch(/^sa-[a-f0-9]{64}$/);

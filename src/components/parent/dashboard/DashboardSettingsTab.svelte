@@ -2,6 +2,7 @@
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
+  import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
@@ -75,6 +76,15 @@
 </script>
 
 <SquadBroadcastSettingsSection {squad} />
+
+<SquadBotHoldersSection
+  {announcementsGroupId}
+  {channelMembers}
+  squadAdminActive={!!squadAdminCtx}
+  executorRolesLabel={myRosterEvm
+    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
+    : ''}
+/>
 
 <section
   id="settings-user-squad"

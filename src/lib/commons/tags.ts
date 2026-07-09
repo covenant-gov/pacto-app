@@ -18,14 +18,31 @@ export function isReservedCommonsTag(raw: string): boolean {
 /**
  * Returns normalized unique author-selectable tags, or null when invalid.
  * Rejects reserved tags (e.g. `#new`) — those are applied by the app only.
+ * Default: 1–3 tags (user broadcasts). Pass `{ exact: 3 }` for squad broadcasts.
  */
-export function normalizeCommonsTags(raw: string[]): string[] | null {
-  if (raw.length === 0 || raw.length > 3) return null;
+export function normalizeCommonsTags(
+  raw: string[],
+  opts?: { exact?: number }
+): string[] | null {
+  const exact = opts?.exact;
+  if (exact != null) {
+    if (raw.length !== exact) return null;
+  } else if (raw.length === 0 || raw.length > 3) {
+    return null;
+  }
   const out: string[] = [];
   for (const item of raw) {
     const t = normalizeCommonsTag(item);
     if (!t || RESERVED_COMMONS_TAGS.includes(t)) return null;
     if (!out.includes(t)) out.push(t);
   }
+  if (exact != null) {
+    return out.length === exact ? out : null;
+  }
   return out.length > 0 ? out : null;
+}
+
+/** Squad Commons broadcasts require exactly three author-selectable tags. */
+export function normalizeSquadBroadcastTags(raw: string[]): string[] | null {
+  return normalizeCommonsTags(raw, { exact: 3 });
 }

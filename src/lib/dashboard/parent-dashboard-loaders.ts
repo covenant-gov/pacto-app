@@ -24,6 +24,11 @@ import { withReadPlaneLimit } from '../evm/read-plane-limiter';
 
 import { parseSupportedChainId, type SupportedChainId } from '../wallet/chains';
 
+/** True when an async dashboard loader finished for a superseded cache key. */
+export function isSupersededLoaderKey(activeKey: string, capturedKey: string): boolean {
+  return activeKey !== capturedKey;
+}
+
 type SquadMemberEvmRow = { memberNpub: string; evmAddress: string; updatedAtMs: number };
 
 export async function fetchSquadMemberEvmByNpub(
