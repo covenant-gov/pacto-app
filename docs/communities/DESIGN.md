@@ -41,14 +41,15 @@ Structured DMs that carry a parent id should use that **same** announcements MLS
 
 The announcements channel label should be **`"announcements"`** (lowercase) for **everyone**.
 
-Default hub channels after invite accept: **dashboard**, **announcements**, **personal-alerts**, **polls** (see `defaultChannelRowsForGroupId` in `src/lib/parent-navbar.ts`). When the default trio shares one MLS group id, the sidebar rows partition one physical stream by virtual bucket — see [`docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md`](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).
+Default hub channels after invite accept: **dashboard**, **announcements**, **join-requests**, **personal-alerts**, **polls** (see `defaultChannelRowsForGroupId` / `buildHubSidebarChannels` in `src/lib/parent-navbar.ts`). When the default channels share one MLS group id, the sidebar rows partition one physical stream by virtual bucket — see [`docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md`](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).
 
 ### Hub channel semantics (product)
 
 | Sidebar row | Virtual bucket | Purpose |
 |-------------|----------------|---------|
-| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), sponsor deploy announces, dashboard poll created. |
-| **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account. Not a feed of other members' automation. |
+| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), sponsor deploy announces, dashboard poll created, squad bot metadata / key-rotated notices. |
+| **#join-requests** | `join_requests` | Private Commons join request fan-out and accept/reject (MLS virtual bucket; bot DM ingress — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). Not a separate MLS group. |
+| **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
 
 **Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts**. After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Profile backfill into `squad_member_evm` does **not** satisfy the prompt — only an explicit account binding does.

@@ -1,7 +1,7 @@
 /**
  * Virtual bucket routing for squad/network default channels when one MLS group backs
- * announcements, inbox, and polls. Matches docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md (client-side;
- * rumor tags are not available on DmMessage).
+ * announcements, inbox, polls, and join_requests. Matches docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md
+ * (client-side; rumor tags are not available on DmMessage).
  */
 
 import {
@@ -21,7 +21,16 @@ import {
   normalizeHubChannelName,
 } from '../squad/hub-channel-names';
 
-export type VirtualBucket = 'announcements' | 'inbox' | 'polls';
+export type VirtualBucket = 'announcements' | 'inbox' | 'polls' | 'join_requests';
+
+function isVirtualBucket(value: string): value is VirtualBucket {
+  return (
+    value === 'announcements' ||
+    value === 'inbox' ||
+    value === 'polls' ||
+    value === 'join_requests'
+  );
+}
 
 /** Separator between MLS parent id and bucket in {@link groupTimelineKey} (not valid in hex MLS ids). */
 export const GROUP_TIMELINE_KEY_SEP = '\x1f';
@@ -35,7 +44,7 @@ export function parseGroupTimelineKey(key: string): { parentGroupId: string; buc
   if (i <= 0) return null;
   const parentGroupId = key.slice(0, i);
   const bucket = key.slice(i + GROUP_TIMELINE_KEY_SEP.length);
-  if (bucket !== 'announcements' && bucket !== 'inbox' && bucket !== 'polls') return null;
+  if (!isVirtualBucket(bucket)) return null;
   return { parentGroupId, bucket };
 }
 
@@ -96,7 +105,7 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   const rec = parsed as Record<string, unknown>;
 
   const vb = rec['pacto_virtual_bucket'];
-  if (vb === 'announcements' || vb === 'inbox' || vb === 'polls') return vb;
+  if (typeof vb === 'string' && isVirtualBucket(vb)) return vb;
 
   if (
     rec['schema'] === 'pacto.dashboard_poll.v1' &&
@@ -106,6 +115,20 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
     typeof rec['option_id'] === 'string'
   ) {
     return 'polls';
+  }
+
+  const schema = rec['schema'];
+  if (
+    schema === 'pacto.squad.join_request.v1' ||
+    schema === 'pacto.squad.join_request_response.v1'
+  ) {
+    return 'join_requests';
+  }
+  if (schema === 'pacto.squad_bot.meta.v1' || schema === 'pacto.squad_bot.key_rotated.v1') {
+    return 'announcements';
+  }
+  if (schema === 'pacto.squad_bot.rotate_prompt.v1') {
+    return 'inbox';
   }
 
   const ann = parseAnnouncement(trimmed);
@@ -165,7 +188,7 @@ export function resolveVirtualBucketForTimelineMessage(m: {
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'announcements';
 
   const pb = m.virtual_bucket?.trim();
-  if (pb === 'announcements' || pb === 'inbox' || pb === 'polls') return pb;
+  if (pb && isVirtualBucket(pb)) return pb;
   return deriveVirtualBucketFromMessageContent(m.content);
 }
 

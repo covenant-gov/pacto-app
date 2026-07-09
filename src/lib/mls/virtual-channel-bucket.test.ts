@@ -100,6 +100,32 @@ describe('deriveVirtualBucketFromMessageContent', () => {
   it('treats unknown JSON as announcements', () => {
     expect(deriveVirtualBucketFromMessageContent(JSON.stringify({ foo: 'bar' }))).toBe('announcements');
   });
+
+  it('derives join_requests from join request schemas', () => {
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad.join_request.v1', requestId: 'r1', status: 'pending' })
+      )
+    ).toBe('join_requests');
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad.join_request_response.v1', requestId: 'r1', status: 'accepted' })
+      )
+    ).toBe('join_requests');
+  });
+
+  it('derives squad bot meta and rotate prompt buckets', () => {
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad_bot.meta.v1', botNpub: 'npub1x', keyEpoch: 1 })
+      )
+    ).toBe('announcements');
+    expect(
+      deriveVirtualBucketFromMessageContent(
+        JSON.stringify({ schema: 'pacto.squad_bot.rotate_prompt.v1', reason: 'holder_removed' })
+      )
+    ).toBe('inbox');
+  });
 });
 
 describe('resolveVirtualBucketForTimelineMessage', () => {
