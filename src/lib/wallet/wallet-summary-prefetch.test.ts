@@ -18,10 +18,15 @@ vi.mock('./wallet-summary-cache', () => ({
   persistWalletSummaryCache: vi.fn(),
 }));
 
+vi.mock('./wallet-ui-prefs', () => ({
+  loadWalletEnabledChains: vi.fn().mockReturnValue(['sepolia']),
+}));
+
 import { currentUser } from '../../stores/auth';
 import { getWalletSummary } from './backend-wallet';
 import { loadWatchedErc20Rows, watchedRowsToWire } from './watched-tokens';
 import { persistWalletSummaryCache } from './wallet-summary-cache';
+import { loadWalletEnabledChains } from './wallet-ui-prefs';
 
 describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   let schedule: (npub: string | null | undefined) => void;
@@ -35,6 +40,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
     vi.mocked(loadWatchedErc20Rows).mockReset().mockReturnValue([]);
     vi.mocked(watchedRowsToWire).mockReset().mockReturnValue([]);
     vi.mocked(persistWalletSummaryCache).mockReset();
+    vi.mocked(loadWalletEnabledChains).mockReset().mockReturnValue(['sepolia']);
     const mod = await import('./wallet-summary-prefetch');
     schedule = mod.scheduleWalletSummaryBackgroundPrefetch;
   });
@@ -64,7 +70,10 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(loadWatchedErc20Rows).toHaveBeenCalledWith('npub1');
-    expect(getWalletSummary).toHaveBeenCalledWith([{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }]);
+    expect(getWalletSummary).toHaveBeenCalledWith(
+      [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }],
+      ['sepolia'],
+    );
     expect(persistWalletSummaryCache).toHaveBeenCalledWith(
       'npub1',
       [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }],

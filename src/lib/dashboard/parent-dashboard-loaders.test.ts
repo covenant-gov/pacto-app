@@ -289,12 +289,12 @@ describe('fetchSettingsChainMemberMaps', () => {
       network: 'sepolia',
       topHatId: null,
       squadAdminProxy: '0xAdmin',
-      squadAdminChain: 'optimism',
+      squadAdminChain: 'arbitrum',
       squadMemberEvmByNpub: { npub1: '0xABC' },
     });
 
     expect(mockedGetSquadAdminExecutorRoles).toHaveBeenCalledWith({
-      network: 'optimism',
+      network: 'arbitrum',
       squadAdminProxy: '0xAdmin',
       executorAddress: '0xABC',
     });

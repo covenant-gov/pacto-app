@@ -6,11 +6,10 @@ import {
   loadProfile,
   getProfile,
   isProfileLoading,
-  type NostrProfile,
 } from './profiles';
 import { dmChatsByNpub, blockedDmNpubs, activeDmId } from './dm';
 import { currentUser } from './auth';
-import { fetchNostrProfile, loadNostrProfile } from '../lib/api/nostr';
+import { fetchNostrProfile, loadNostrProfile, type NostrProfile } from '../lib/api/nostr';
 import { showToast } from './toast';
 import { setCurrentNpubForPersistence } from './persistence-context';
 

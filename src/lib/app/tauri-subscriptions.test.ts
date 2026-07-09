@@ -91,6 +91,10 @@ vi.mock('../announcements', () => ({
 vi.mock('../wallet/dm-messages', () => ({
   parseWalletTxAnnouncement: (...args: unknown[]) =>
     mocks.mockFunctions.parseWalletTxAnnouncement(...args),
+  walletTxAnnouncementHash: (...args: unknown[]) => {
+    const parsed = mocks.mockFunctions.parseWalletTxAnnouncement(...args);
+    return parsed?.tx_hash?.toLowerCase() ?? null;
+  },
 }));
 
 vi.mock('../pacto-app-inbox', () => ({
