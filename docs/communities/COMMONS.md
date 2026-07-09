@@ -177,7 +177,7 @@ Cleared on logout via `clearAccountState`, except `pacto_commons_broadcasted_<np
 | Tag browse / search | `CommonsTagBrowser.svelte` (passive tiles), `CommonsTagMenu.svelte` (shared genre dropdown), `CommonsTagPicker.svelte` (searchable picker wrapping the menu, used in the broadcast composer) |
 | Personal panel | `CommonsPersonalPanel.svelte` |
 | Card actions | `src/lib/commons/commons-card-actions.ts` |
-| Join request | `src/lib/commons/commons-join-request.ts`, `CommonsJoinRequestCard.svelte` |
+| Join request (rate limit + CTA gate) | `src/lib/commons/commons-join-request.ts`; private bot DM + MLS — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md) |
 | Role gate (stub) | `src/lib/commons/permissions.ts` |
 | Squad create Commons UI | `SquadCommonsVisibilityFields.svelte` |
 

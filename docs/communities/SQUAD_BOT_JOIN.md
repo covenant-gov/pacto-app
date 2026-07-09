@@ -145,4 +145,4 @@ After **key rotation**, the next broadcast uses the new bot npub. Stale cards ma
 
 ## Related
 
-Holder Settings UI and bot init are in-app. Retiring the legacy public Kind 30078 join request/response path is tracked separately.
+Holder Settings UI and bot init are in-app. Public Kind 30078 join request/response is retired; join is bot DM + MLS only.

@@ -57,7 +57,6 @@ pub use chat::{Chat, ChatType, ChatMetadata};
 mod dashboard_poll;
 
 mod commons;
-mod commons_join_request;
 mod squad_bot;
 
 mod virtual_channel_bucket;
@@ -6400,9 +6399,6 @@ pub fn run() {
             commons::commons_fetch_broadcasts,
             commons::commons_get_local_active,
             commons::commons_cancel_broadcast,
-            commons_join_request::commons_publish_join_request,
-            commons_join_request::commons_fetch_join_requests,
-            commons_join_request::commons_respond_join_request,
             squad_bot::squad_bot_init,
             squad_bot::squad_bot_get_state,
             squad_bot::squad_bot_add_holder,

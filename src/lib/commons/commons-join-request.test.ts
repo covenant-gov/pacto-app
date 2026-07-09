@@ -4,9 +4,7 @@ import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
   commonsJoinRequestBlockReason,
   commonsJoinRequestRevision,
-  formatCommonsJoinRequestMessage,
   isJoinRequestRateLimited,
-  parseCommonsJoinRequestMessage,
   recordJoinRequestSent,
   resetCommonsJoinRequestRevision,
 } from './commons-join-request';
@@ -25,20 +23,6 @@ const squadBroadcast: CommonsBroadcastDto = {
   squadName: 'Neo Builders',
   createdAt: 1,
 };
-
-describe('parseCommonsJoinRequestMessage', () => {
-  it('round-trips payload', () => {
-    const payload = {
-      type: 'commons_join_request' as const,
-      squadId: 'group-1',
-      squadName: 'Neo Builders',
-      broadcastEventId: 'evt1',
-      requesterNpub: 'npub1me',
-    };
-    const parsed = parseCommonsJoinRequestMessage(formatCommonsJoinRequestMessage(payload));
-    expect(parsed).toEqual(payload);
-  });
-});
 
 describe('commonsJoinRequestBlockReason', () => {
   it('blocks when already a member', () => {
