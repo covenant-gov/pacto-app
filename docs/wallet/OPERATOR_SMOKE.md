@@ -7,7 +7,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 - [ ] Copy [`.env.example`](../../.env.example) → `.env` (or export before `tauri dev`) for **RPC**.
 - [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically). Protocol factory addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md).
 - [ ] Logged-in profile with **Sepolia ETH**; wallet unlocked.
-- [ ] Test squad/network with **`#announcements`** and **`#inbox`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
+- [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
 
 **Deploy order:** sponsor → Pacto Gov / vault Safe → announce sync. Advanced panel and allowlist tests need squad infra where noted.
@@ -110,33 +110,33 @@ See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **squad-purpose** active signer.
 
-- [ ] **Add contract** → row + **`squad_contract_allowlist_updated`** on **#inbox**; **Remove** announces delete.
+- [ ] **Add contract** → row + **`squad_contract_allowlist_updated`** on **#personal-alerts**; **Remove** announces delete.
 - [ ] Allowlisted target: simulate + **Send (squad key)** mines; other `0x` → **`TARGET_NOT_ALLOWLISTED`**.
 - [ ] Advanced panel still sends arbitrary `to`; squad command refuses advanced signer.
 
 ---
 
-## 7. Inbox & per-squad roster keys
+## 7. Personal alerts & per-squad roster keys
 
 Requires **squad-purpose** vs **advanced-purpose** signers. Two test accounts helpful.
 
-**Inbox rename**
+**Sidebar label**
 
-- [ ] Sidebar **`#inbox`** (not `#monitor`); automation still in Inbox timeline.
+- [ ] Sidebar **`#personal-alerts`** (not `#monitor`); automation still in the personal-alerts timeline (wire bucket `inbox`).
 
-**Join key choice (Inbox card, not DM Share / Not now)**
+**Join key choice (personal-alerts card, not DM Share / Not now)**
 
 - [ ] **Default squad signer** → roster row matches active squad signer; global active unchanged.
 - [ ] **New key for this squad** → new derived account bound; global active unchanged; DM Send unchanged.
 - [ ] **Defer** → no roster until card completed.
-- [ ] Create path does not auto-share without Inbox choice.
+- [ ] Create path does not auto-share without personal-alerts choice.
 
 **Deploy & air-gap**
 
 - [ ] Curated deploy (e.g. Safe) uses **roster-bound** address when it differs from global active.
 - [ ] Advanced address still rejected on roster ingest; Advanced panel unrelated to roster.
 
-See **Inbox & per-squad roster keys** above.
+See **Personal alerts & per-squad roster keys** above.
 
 ---
 

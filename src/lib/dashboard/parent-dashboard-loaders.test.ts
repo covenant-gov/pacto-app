@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchRolesTreeAnnotations } from './parent-dashboard-loaders';
+import {
+  fetchRolesTreeAnnotations,
+  isSupersededLoaderKey,
+} from './parent-dashboard-loaders';
 
 const getNavePirataDeployment = vi.fn();
 const getMemberHatWearers = vi.fn();
@@ -100,5 +103,12 @@ describe('fetchRolesTreeAnnotations', () => {
       error: '',
     });
     expect(getNavePirataDeployment).not.toHaveBeenCalled();
+  });
+});
+
+describe('isSupersededLoaderKey', () => {
+  it('detects superseded loader keys', () => {
+    expect(isSupersededLoaderKey('active', 'captured')).toBe(true);
+    expect(isSupersededLoaderKey('same', 'same')).toBe(false);
   });
 });

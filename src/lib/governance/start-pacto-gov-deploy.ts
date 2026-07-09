@@ -53,26 +53,29 @@ export function buildCaptainMemberOptions(
   return rows;
 }
 
-/** Submit Pacto Gov deploy using squad network and the chosen captain address. */
+/** Submit Pacto Gov deploy using squad network and the chosen captain address. Returns false when validation fails. */
 export function startPactoGovDeploy(params: {
   parentId: string;
   squadNetwork: SupportedChainId | null;
   captain: string;
   onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
-}): void {
+  onReject?: (message: string) => void;
+}): boolean {
   const parentId = params.parentId.trim();
-  if (!parentId) return;
+  if (!parentId) return false;
 
   const network = params.squadNetwork;
   if (!network) {
-    showToast('Set the squad network in Settings before deploying Pacto Gov.');
-    return;
+    const message = 'Set the squad network in Settings before deploying Pacto Gov.';
+    params.onReject?.(message) ?? showToast(message);
+    return false;
   }
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
-    showToast('Pick a valid captain EVM address.');
-    return;
+    const message = 'Pick a valid captain EVM address.';
+    params.onReject?.(message) ?? showToast(message);
+    return false;
   }
 
   runOnChainInBackground({
@@ -97,4 +100,5 @@ export function startPactoGovDeploy(params: {
       });
     },
   });
+  return true;
 }

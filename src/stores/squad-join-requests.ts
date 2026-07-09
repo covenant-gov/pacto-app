@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import type { CommonsJoinRequestDto } from '../lib/commons/types';
+import { getInvokeErrorMessage } from '../lib/utils/tauri-errors';
 import {
   fanOutBotJoinDmsToMls,
   loadPendingJoinRequestsFromMls,
@@ -13,6 +14,9 @@ export const joinRequestsHydratedBySquadId = writable<Record<string, boolean>>({
 
 /** True while a squad inbox is fetching from the backend. */
 export const joinRequestsSyncingBySquadId = writable<Record<string, boolean>>({});
+
+/** Load failures for holders (not "no pending requests"). */
+export const joinRequestsErrorBySquadId = writable<Record<string, string>>({});
 
 const hydratingSquadIds = new Set<string>();
 
@@ -38,11 +42,41 @@ function setPendingForSquad(squadId: string, requests: CommonsJoinRequestDto[]):
   joinRequestsHydratedBySquadId.update((m) => ({ ...m, [id]: true }));
 }
 
+function setErrorForSquad(squadId: string, error: string | null): void {
+  const id = squadId.trim();
+  if (!id) return;
+  joinRequestsErrorBySquadId.update((m) => {
+    if (!error) {
+      if (!(id in m)) return m;
+      const next = { ...m };
+      delete next[id];
+      return next;
+    }
+    return { ...m, [id]: error };
+  });
+}
+
 async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequestDto[]> {
-  await fanOutBotJoinDmsToMls(squadId).catch(() => 0);
-  const requests = await loadPendingJoinRequestsFromMls(squadId);
-  setPendingForSquad(squadId, requests);
-  return requests;
+  const id = squadId.trim();
+  setErrorForSquad(id, null);
+  try {
+    await fanOutBotJoinDmsToMls(id);
+  } catch (e) {
+    const message = getInvokeErrorMessage(e, 'Could not sync bot inbox.');
+    setErrorForSquad(id, message);
+    setPendingForSquad(id, []);
+    return [];
+  }
+  try {
+    const requests = await loadPendingJoinRequestsFromMls(id);
+    setPendingForSquad(id, requests);
+    return requests;
+  } catch (e) {
+    const message = getInvokeErrorMessage(e, 'Could not load join requests.');
+    setErrorForSquad(id, message);
+    setPendingForSquad(id, []);
+    throw new Error(message);
+  }
 }
 
 /** First load for a squad this session; no-op when already hydrated or in flight. */
@@ -53,6 +87,8 @@ export async function ensureJoinRequestsHydrated(squadId: string): Promise<void>
   joinRequestsSyncingBySquadId.update((m) => ({ ...m, [id]: true }));
   try {
     await fetchPendingForSquad(id);
+  } catch {
+    // error stored in joinRequestsErrorBySquadId
   } finally {
     hydratingSquadIds.delete(id);
     joinRequestsSyncingBySquadId.update((m) => ({ ...m, [id]: false }));
@@ -94,5 +130,6 @@ export function resetSquadJoinRequestStores(): void {
   pendingJoinRequestsBySquadId.set({});
   joinRequestsHydratedBySquadId.set({});
   joinRequestsSyncingBySquadId.set({});
+  joinRequestsErrorBySquadId.set({});
   hydratingSquadIds.clear();
 }
