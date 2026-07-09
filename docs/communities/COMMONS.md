@@ -197,6 +197,7 @@ Relays: **`TRUSTED_RELAYS`** only (same curated set as other app-specific public
 | Doc | Relevance |
 |-----|-----------|
 | [`DESIGN.md`](./DESIGN.md) | Squad id = announcements MLS group id |
+| [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md) | Private join via squad bot + `join_requests` virtual bucket |
 | [`../nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md) | Nostr paths vs MLS/DM |
 | [`../dashboard/POLLS.md`](../dashboard/POLLS.md) | Kind 30078 JSON schema pattern |
 | [`../wallet/PACTO_GOV.md`](../wallet/PACTO_GOV.md) | Future Squad Admin broadcast gate |

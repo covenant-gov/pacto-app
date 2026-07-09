@@ -3905,7 +3905,7 @@ pub fn event_exists_by_wrapper<R: Runtime>(
 ///
 /// Returns events ordered by created_at descending (newest first).
 /// Optionally filter by event kinds and/or persisted `virtual_bucket`
-/// (`announcements` | `inbox` | `polls`) so LIMIT/OFFSET apply to the filtered set.
+/// (`announcements` | `inbox` | `polls` | `join_requests`) so LIMIT/OFFSET apply to the filtered set.
 pub async fn get_events<R: Runtime>(
     handle: &AppHandle<R>,
     chat_id: i64,
@@ -3916,7 +3916,7 @@ pub async fn get_events<R: Runtime>(
 ) -> Result<Vec<StoredEvent>, String> {
     let bucket = virtual_bucket_filter
         .map(str::trim)
-        .filter(|w| matches!(*w, "announcements" | "inbox" | "polls"));
+        .filter(|w| matches!(*w, "announcements" | "inbox" | "polls" | "join_requests"));
 
     // Do all SQLite work synchronously in a block to avoid Send issues
     let events: Vec<StoredEvent> = {
