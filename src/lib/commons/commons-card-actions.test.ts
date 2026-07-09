@@ -1,20 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { get } from 'svelte/store';
-import { openCommonsSquadJoinDm } from './commons-card-actions';
-import { newChatDraftMessage, newChatDraftNpub } from '../../stores/dm';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { sendCommonsJoinRequest } from './commons-card-actions';
 import type { CommonsBroadcastDto } from './types';
+
+vi.mock('../api/nostr', () => ({
+  sendDmMessage: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('../../stores/profiles', () => ({
   loadProfile: vi.fn(),
 }));
 
-describe('openCommonsSquadJoinDm', () => {
+import { sendDmMessage } from '../api/nostr';
+
+describe('sendCommonsJoinRequest', () => {
   beforeEach(() => {
-    newChatDraftNpub.set(null);
-    newChatDraftMessage.set('');
+    vi.mocked(sendDmMessage).mockClear();
   });
 
-  it('targets broadcast authorNpub (bot) with a join draft', () => {
+  it('sends structured bot join DM to broadcast author', async () => {
     const broadcast: CommonsBroadcastDto = {
       eventId: 'evt1',
       authorNpub: 'npub1botxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -28,9 +31,11 @@ describe('openCommonsSquadJoinDm', () => {
       squadId: 'squad-mls-id',
       squadName: 'Pirates',
     };
-    openCommonsSquadJoinDm(broadcast);
-    expect(get(newChatDraftNpub)).toBe(broadcast.authorNpub);
-    expect(get(newChatDraftMessage)).toMatch(/join Pirates/i);
-    expect(get(newChatDraftMessage)).toMatch(/evt1/);
+    const result = await sendCommonsJoinRequest(broadcast, 'npub1me', []);
+    expect(result).toEqual({ ok: true });
+    expect(sendDmMessage).toHaveBeenCalledWith(
+      broadcast.authorNpub,
+      expect.stringContaining('pacto.squad.bot_join_dm.v1')
+    );
   });
 });

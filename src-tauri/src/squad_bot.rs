@@ -11,6 +11,8 @@ pub const SQUAD_BOT_META_SCHEMA: &str = "pacto.squad_bot.meta.v1";
 pub const SQUAD_BOT_KEY_ROTATED_SCHEMA: &str = "pacto.squad_bot.key_rotated.v1";
 pub const SQUAD_BOT_ROTATE_PROMPT_SCHEMA: &str = "pacto.squad_bot.rotate_prompt.v1";
 pub const SQUAD_BOT_KEY_SHARE_SCHEMA: &str = "pacto.squad_bot.key_share.v1";
+pub const SQUAD_BOT_JOIN_DM_SCHEMA: &str = "pacto.squad.bot_join_dm.v1";
+pub const SQUAD_BOT_JOIN_DM_LOOKBACK_SECS: u64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -889,6 +891,114 @@ pub async fn apply_key_share_from_content<R: Runtime>(
     Ok(true)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadBotJoinDmDto {
+    pub request_id: String,
+    pub squad_id: String,
+    pub squad_name: String,
+    pub broadcast_event_id: String,
+    pub requester_npub: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SquadBotJoinDmWire {
+    schema: String,
+    squad_id: String,
+    squad_name: String,
+    broadcast_event_id: String,
+}
+
+fn parse_join_dm_content(content: &str) -> Option<SquadBotJoinDmWire> {
+    let wire: SquadBotJoinDmWire = serde_json::from_str(content.trim()).ok()?;
+    if wire.schema != SQUAD_BOT_JOIN_DM_SCHEMA {
+        return None;
+    }
+    if wire.squad_id.trim().is_empty()
+        || wire.squad_name.trim().is_empty()
+        || wire.broadcast_event_id.trim().is_empty()
+    {
+        return None;
+    }
+    Some(wire)
+}
+
+/// Fetch gift wraps addressed to this squad's bot and return parsed join DMs.
+#[tauri::command]
+pub async fn squad_bot_sync_join_dms<R: Runtime>(
+    handle: AppHandle<R>,
+    squad_id: String,
+) -> Result<Vec<SquadBotJoinDmDto>, String> {
+    let squad_id = squad_id.trim().to_string();
+    if squad_id.is_empty() {
+        return Err("squadId is required".into());
+    }
+    let (bot_keys, bot_npub) = bot_keys_for_holder(&handle, &squad_id).await?;
+    let bot_pk = bot_keys.public_key();
+
+    let client = crate::get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
+    let since = unix_now_secs().saturating_sub(SQUAD_BOT_JOIN_DM_LOOKBACK_SECS as i64);
+    let filter = Filter::new()
+        .pubkey(bot_pk)
+        .kind(Kind::GiftWrap)
+        .since(Timestamp::from(since as u64))
+        .limit(200);
+
+    let events = client
+        .fetch_events_from(
+            crate::TRUSTED_RELAYS.to_vec(),
+            filter,
+            std::time::Duration::from_secs(12),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut out: Vec<SquadBotJoinDmDto> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for event in events {
+        let unwrapped = match UnwrappedGift::from_gift_wrap(&bot_keys, &event).await {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        let rumor = unwrapped.rumor;
+        if rumor.kind != Kind::PrivateDirectMessage {
+            continue;
+        }
+        let Some(wire) = parse_join_dm_content(&rumor.content) else {
+            continue;
+        };
+        if wire.squad_id.trim() != squad_id {
+            continue;
+        }
+        let requester_npub = match unwrapped.sender.to_bech32() {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+        if requester_npub == bot_npub {
+            continue;
+        }
+        let request_id = rumor
+            .id
+            .map(|id| id.to_hex())
+            .unwrap_or_else(|| event.id.to_hex());
+        if !seen.insert(request_id.clone()) {
+            continue;
+        }
+        out.push(SquadBotJoinDmDto {
+            request_id,
+            squad_id: wire.squad_id.trim().to_string(),
+            squad_name: wire.squad_name.trim().to_string(),
+            broadcast_event_id: wire.broadcast_event_id.trim().to_string(),
+            requester_npub,
+            created_at: rumor.created_at.as_u64() as i64,
+        });
+    }
+    out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(out)
+}
+
 /// Pure helpers for unit tests (membership / holder list rules).
 pub fn can_add_holder(members: &[String], actor: &str, target: &str, holders: &[String]) -> Result<(), String> {
     if !members.iter().any(|m| m == actor) {
@@ -933,5 +1043,18 @@ mod tests {
         assert_eq!(v["schema"], SQUAD_BOT_META_SCHEMA);
         assert_eq!(v["pacto_virtual_bucket"], "announcements");
         assert_eq!(v["keyEpoch"], 1);
+    }
+
+    #[test]
+    fn parse_join_dm_accepts_schema() {
+        let raw = r#"{"schema":"pacto.squad.bot_join_dm.v1","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
+        let wire = parse_join_dm_content(raw).expect("parse");
+        assert_eq!(wire.squad_id, "s1");
+    }
+
+    #[test]
+    fn parse_join_dm_rejects_other_schema() {
+        let raw = r#"{"schema":"other","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
+        assert!(parse_join_dm_content(raw).is_none());
     }
 }

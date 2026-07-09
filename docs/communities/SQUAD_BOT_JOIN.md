@@ -69,6 +69,21 @@ Personal-alerts nudge when a holder is removed (remaining holders):
 }
 ```
 
+### `pacto.squad.bot_join_dm.v1` → NIP-17 to bot
+
+Requester → bot (gift wrap). Holders unwrap with bot keys and fan out to MLS:
+
+```json
+{
+  "schema": "pacto.squad.bot_join_dm.v1",
+  "squadId": "<id>",
+  "squadName": "…",
+  "broadcastEventId": "<commons event id>"
+}
+```
+
+`requestId` for MLS fan-out is the inner rumor event id (stable across holders).
+
 ### `pacto.squad.join_request.v1` → `join_requests`
 
 Fan-out after a holder unwraps a bot DM (dedupe on `requestId`):

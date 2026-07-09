@@ -117,7 +117,7 @@ Public **Kind 30078** ([NIP-33](https://github.com/nostr-protocol/nips/blob/mast
 
 ### Join request (not Commons feed)
 
-Squad cards open a **NIP-17 DM to the bot** (`authorNpub` on the card). Holders fan out into MLS `#join-requests` — see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md). Client-side rate limit: 24 h per squad target.
+Squad cards send a **NIP-17 DM to the bot** (`pacto.squad.bot_join_dm.v1`). Holders unwrap with the bot key and fan out into MLS `#join-requests` — see [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md). Client-side rate limit: 24 h per squad target.
 
 ---
 

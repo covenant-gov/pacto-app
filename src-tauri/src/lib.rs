@@ -6408,6 +6408,7 @@ pub fn run() {
             squad_bot::squad_bot_add_holder,
             squad_bot::squad_bot_remove_holder,
             squad_bot::squad_bot_rotate_key,
+            squad_bot::squad_bot_sync_join_dms,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,

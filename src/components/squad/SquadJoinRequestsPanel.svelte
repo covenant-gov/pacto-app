@@ -4,7 +4,7 @@
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
-  import { respondToCommonsJoinRequest } from '../../lib/commons/join-requests';
+  import { respondToMlsJoinRequest } from '../../lib/squad/squad-join-mls';
   import {
     ensureJoinRequestsHydrated,
     joinRequestsHydratedBySquadId,
@@ -53,8 +53,8 @@
   async function handleReject(request: CommonsJoinRequestDto) {
     if (actingOn) return;
     actingOn = request.eventId;
-    const result = await respondToCommonsJoinRequest({
-      requestEventId: request.eventId,
+    const result = await respondToMlsJoinRequest({
+      requestId: request.eventId,
       squadId: request.squadId,
       status: 'rejected',
     });
@@ -70,8 +70,8 @@
   async function handleAccept(request: CommonsJoinRequestDto) {
     if (actingOn) return;
     actingOn = request.eventId;
-    const respondResult = await respondToCommonsJoinRequest({
-      requestEventId: request.eventId,
+    const respondResult = await respondToMlsJoinRequest({
+      requestId: request.eventId,
       squadId: request.squadId,
       status: 'accepted',
     });
@@ -114,7 +114,7 @@
   <header class="join-requests-header">
     <h2 class="join-requests-title">#{JOIN_REQUESTS_CHANNEL_NAME}</h2>
     <p class="join-requests-lead">
-      People who requested to join <strong>{squad.name}</strong> from Commons.
+      People who requested to join <strong>{squad.name}</strong> via the squad bot inbox.
     </p>
   </header>
 

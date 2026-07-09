@@ -1,3 +1,12 @@
+import { sendDmMessage } from '../api/nostr';
+import { getInvokeErrorMessage } from '../utils/tauri-errors';
+import type { CommonsBroadcastDto } from './types';
+import {
+  commonsJoinRequestBlockReason,
+  recordJoinRequestSent,
+  squadIdFromBroadcast,
+} from './commons-join-request';
+import { formatBotJoinDm } from '../squad/squad-join-mls';
 import { activeTopNavTab, activeView } from '../../stores/navigation';
 import {
   activeDmId,
@@ -6,12 +15,6 @@ import {
   newChatDraftMessage,
 } from '../../stores/dm';
 import { loadProfile } from '../../stores/profiles';
-import type { CommonsBroadcastDto } from './types';
-import {
-  commonsJoinRequestBlockReason,
-  recordJoinRequestSent,
-  squadIdFromBroadcast,
-} from './commons-join-request';
 
 /**
  * Open the DMs "New Chat" compose view with the recipient and a partial
@@ -29,23 +32,7 @@ export function openCommonsUserDmRequest(authorNpub: string, displayName?: strin
   void loadProfile(authorNpub);
 }
 
-/** Open a DM to the squad bot (card author) with a join-request draft. */
-export function openCommonsSquadJoinDm(broadcast: CommonsBroadcastDto): void {
-  const botNpub = broadcast.authorNpub?.trim() ?? '';
-  if (!botNpub.startsWith('npub1')) return;
-  const squadName = broadcast.squadName?.trim() || 'your squad';
-  const squadId = squadIdFromBroadcast(broadcast);
-  newChatDraftNpub.set(botNpub);
-  newChatDraftMessage.set(
-    `I'd like to join ${squadName}${squadId ? ` (${squadId.slice(0, 12)}…)` : ''}. Broadcast: ${broadcast.eventId}`
-  );
-  activeDmId.set(null);
-  composingNewChat.set(true);
-  activeTopNavTab.set('dms');
-  activeView.set('hub');
-  void loadProfile(botNpub);
-}
-
+/** Send a structured join request DM to the squad bot (card author). */
 export async function sendCommonsJoinRequest(
   broadcast: CommonsBroadcastDto,
   requesterNpub: string,
@@ -56,12 +43,22 @@ export async function sendCommonsJoinRequest(
     return { ok: false, error: blockReason };
   }
 
-  if (!broadcast.authorNpub?.startsWith('npub1')) {
+  const botNpub = broadcast.authorNpub?.trim() ?? '';
+  if (!botNpub.startsWith('npub1')) {
     return { ok: false, error: 'Squad broadcast is missing a bot author.' };
   }
 
   const squadId = squadIdFromBroadcast(broadcast);
-  openCommonsSquadJoinDm(broadcast);
-  recordJoinRequestSent(squadId);
-  return { ok: true };
+  const content = formatBotJoinDm({
+    squadId,
+    squadName: broadcast.squadName ?? 'Squad',
+    broadcastEventId: broadcast.eventId,
+  });
+  try {
+    await sendDmMessage(botNpub, content);
+    recordJoinRequestSent(squadId);
+    return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: getInvokeErrorMessage(e, 'Could not send join request.') };
+  }
 }
