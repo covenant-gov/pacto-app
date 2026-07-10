@@ -73,6 +73,7 @@ jobs:
 
       - name: Read release notes
         id: notes
+        shell: bash
         run: |
           body=$(cat release-body.md)
           delimiter="RELEASE_NOTES_EOF_${{ github.run_id }}"
