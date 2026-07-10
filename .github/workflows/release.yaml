@@ -75,7 +75,7 @@ jobs:
         id: notes
         run: |
           body=$(cat release-body.md)
-          delimiter="$(openssl rand -hex 8)"
+          delimiter="RELEASE_NOTES_EOF_${{ github.run_id }}"
           echo "body<<${delimiter}" >> $GITHUB_OUTPUT
           echo "$body" >> $GITHUB_OUTPUT
           echo "${delimiter}" >> $GITHUB_OUTPUT
@@ -97,8 +97,21 @@ jobs:
           # Targets are used on macos runners (both architectures) and the linux arm64 cross-compile job.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || (matrix.args == '--target aarch64-unknown-linux-gnu' && 'aarch64-unknown-linux-gnu' || '') }}
 
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev
+          # Install Vulkan SDK with glslc compiler
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+
       - name: Setup Linux arm64 cross-compilation
+        id: cross-compile
         if: matrix.args == '--target aarch64-unknown-linux-gnu'
+        continue-on-error: true
         run: |
           sudo dpkg --add-architecture arm64
           sudo apt-get update
@@ -110,22 +123,15 @@ jobs:
             libgtk-3-dev:arm64 \
             libayatana-appindicator3-dev:arm64 \
             librsvg2-dev:arm64 \
-            libasound2-dev:arm64 \
-            patchelf:arm64
+            libasound2-dev:arm64
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> $GITHUB_ENV
           echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev
-          # Install Vulkan SDK with glslc compiler
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-          sudo apt-get update
-          sudo apt-get install -y vulkan-sdk
+      - name: Warn on skipped Linux arm64 build
+        if: matrix.args == '--target aarch64-unknown-linux-gnu' && steps.cross-compile.outputs.status != 'success'
+        run: echo "::warning::Linux arm64 cross-compilation dependencies unavailable; skipping arm64 build."
 
       - name: Install Vulkan SDK and OpenSSL (Windows)
         if: matrix.platform == 'windows-latest'
@@ -170,6 +176,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - uses: tauri-apps/tauri-action@v0
+        if: matrix.args != '--target aarch64-unknown-linux-gnu' || steps.cross-compile.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
