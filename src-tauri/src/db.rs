@@ -1187,6 +1187,33 @@ pub fn side_effect_parent_matches_chat(chat_id: &str, payload_parent_id: &str) -
     !chat.is_empty() && !parent.is_empty() && chat == parent
 }
 
+/// True when `author_npub` is the MLS group creator for `chat_id`.
+/// Interim v1: only the group creator is an MLS admin; reject if the group is unknown.
+fn is_author_mls_admin_for_chat<R: Runtime>(
+    handle: &AppHandle<R>,
+    chat_id: &str,
+    author_npub: &str,
+) -> bool {
+    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
+        return false;
+    };
+    let creator: Option<String> = conn
+        .query_row(
+            "SELECT creator_pubkey FROM mls_groups WHERE group_id = ?1",
+            rusqlite::params![chat_id.trim()],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+    crate::account_manager::return_db_connection(conn);
+    creator
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|c| c == author_npub.trim())
+        .unwrap_or(false)
+}
+
 pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
@@ -1224,6 +1251,9 @@ pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(
         if claimed != author {
             return;
         }
+    }
+    if !is_author_mls_admin_for_chat(handle, chat_id, author) {
+        return;
     }
     let action = p.get("action").and_then(|v| v.as_str()).unwrap_or("upsert");
     let entry_id = p
@@ -1642,7 +1672,16 @@ pub fn upsert_squad_infra<R: Runtime>(
 /// If content is a squad_safe_updated announce JSON, upsert a treasury row (idempotent per parent + address + chain).
 /// Wire format uses `squad_id` for the parent id. Optional: `chain`, `label`, `entry_id`.
 /// `chat_id` must match `payload.squad_id` (MLS announcements group id).
-pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &str, chat_id: &str) {
+/// Requires MLS message author and `payload.squad_id` == `chat_id`. Author must be the MLS group creator.
+pub fn apply_parent_safe_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return,
@@ -1659,6 +1698,9 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
         _ => return,
     };
     if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
+    if !is_author_mls_admin_for_chat(handle, chat_id, author) {
         return;
     }
     let safe_address = match p.get("safe_address").and_then(|v| v.as_str()) {
@@ -1685,16 +1727,16 @@ pub fn apply_parent_safe_announce<R: Runtime>(handle: &AppHandle<R>, content: &s
 
 /// If content is a `governance_updated` announce JSON, upsert `squad_infra` (merge by `entry_id` or generated id).
 /// Wire format: `payload.parent_id`, `payload.provider`, `payload.canonical_ref`; optional `chain`, `pacto_gov_revision`, `provider_payload`, `entry_id`.
-/// Requires MLS message author and `payload.parent_id` == `chat_id`. Role gates deferred to SquadAdmin.
+/// Requires MLS message author and `payload.parent_id` == `chat_id`. Author must be the MLS group creator.
 pub fn maybe_upsert_governance_from_announce<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
     chat_id: &str,
     author_npub: Option<&str>,
 ) {
-    if author_npub.map(str::trim).filter(|s| !s.is_empty()).is_none() {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
         return;
-    }
+    };
     let parsed: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(_) => return,
@@ -1711,6 +1753,9 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         _ => return,
     };
     if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return;
+    }
+    if !is_author_mls_admin_for_chat(handle, chat_id, author) {
         return;
     }
     let provider = match p.get("provider").and_then(|v| v.as_str()) {
@@ -2235,7 +2280,7 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
 
     if effective_bucket == Some("inbox") {
         try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
-        apply_parent_safe_announce(handle, content, chat_id);
+        apply_parent_safe_announce(handle, content, chat_id, author_npub);
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
         try_apply_squad_contract_allowlist_announce(handle, content, chat_id, author_npub);
         return;

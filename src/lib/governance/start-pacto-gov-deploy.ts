@@ -60,6 +60,7 @@ export function startPactoGovDeploy(params: {
   captain: string;
   onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
   onReject?: (message: string) => void;
+  onError?: (message: string) => void;
 }): boolean {
   const parentId = params.parentId.trim();
   if (!parentId) return false;
@@ -107,6 +108,7 @@ export function startPactoGovDeploy(params: {
         infraRowId: result.infraRowId,
       });
     },
+    onError: params.onError,
   });
   return true;
 }

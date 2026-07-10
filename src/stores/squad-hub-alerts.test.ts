@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import * as rosterKeyChoice from '../lib/squad/squad-roster-key-choice';
 import { JOIN_REQUESTS_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
@@ -36,7 +36,6 @@ describe('squad hub channel alerts', () => {
   });
 
   it('stale refreshPersonalAlertForSquad cannot restore cleared badge', async () => {
-    vi.useFakeTimers();
     const squad = {
       id: 'squad1',
       name: 'Test',
@@ -44,24 +43,45 @@ describe('squad hub channel alerts', () => {
     } as Squad;
     personalAlertsNeededBySquadId.set({ squad1: true });
 
-    const needsSpy = vi.spyOn(rosterKeyChoice, 'needsSquadRosterKeyChoice').mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => resolve(true), 50);
-        })
-    );
+    let resolveNeeds: (value: boolean) => void = () => {};
+    const needsPromise = new Promise<boolean>((resolve) => {
+      resolveNeeds = resolve;
+    });
+    const needsSpy = vi
+      .spyOn(rosterKeyChoice, 'needsSquadRosterKeyChoice')
+      .mockImplementation(() => needsPromise);
 
     const pending = refreshPersonalAlertForSquad(squad);
     setPersonalAlertNeeded('squad1', false);
-    await vi.advanceTimersByTimeAsync(50);
+    resolveNeeds(true);
     await pending;
 
     expect(get(personalAlertsNeededBySquadId).squad1).toBe(false);
     needsSpy.mockRestore();
-    vi.useRealTimers();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it('stale refreshPersonalAlertForSquad cannot overwrite optimistic set', async () => {
+    const squad = {
+      id: 'squad1',
+      name: 'Test',
+      channels: [{ name: 'announcements', groupId: 'grp-1', order: 0 }],
+    } as Squad;
+    personalAlertsNeededBySquadId.set({ squad1: false });
+
+    let resolveNeeds: (value: boolean) => void = () => {};
+    const needsPromise = new Promise<boolean>((resolve) => {
+      resolveNeeds = resolve;
+    });
+    const needsSpy = vi
+      .spyOn(rosterKeyChoice, 'needsSquadRosterKeyChoice')
+      .mockImplementation(() => needsPromise);
+
+    const pending = refreshPersonalAlertForSquad(squad);
+    setPersonalAlertNeeded('squad1', true);
+    resolveNeeds(false);
+    await pending;
+
+    expect(get(personalAlertsNeededBySquadId).squad1).toBe(true);
+    needsSpy.mockRestore();
   });
 });

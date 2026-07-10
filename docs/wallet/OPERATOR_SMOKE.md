@@ -74,7 +74,7 @@ Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance 
 
 ## 4. Governance announce sync
 
-After deploy: **`governance_updated`** → **`squad_infra`** on reload or second client. Pacto Gov uses **`#announcements`** (not inbox). No separate **`squad_safe_updated`** for the governance treasury Safe.
+After deploy: **`governance_updated`** → **`squad_infra`** on reload or second client. Pacto Gov uses **`#announcements`** (not `#personal-alerts`). No separate **`squad_safe_updated`** for the governance treasury Safe.
 
 **Wire:** `buildAnnounceContent` with `type: "governance_updated"` — fields `parent_id`, `provider`, `canonical_ref`, `entry_id`, `chain`, `provider_payload` (v1 JSON with module addresses + `txHash`). Ingest: `maybe_upsert_governance_from_announce` in `src-tauri/src/db.rs`.
 

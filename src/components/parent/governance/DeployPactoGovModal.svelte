@@ -74,16 +74,21 @@
       deployError = 'Pick a captain with a shared squad EVM address.';
       return;
     }
-    const started = startPactoGovDeploy({
+    startPactoGovDeploy({
       parentId: parentId.trim(),
       squadNetwork,
       captain: captainAddress,
       onReject: (message) => {
         deployError = message;
       },
-      onComplete,
+      onError: (message) => {
+        deployError = message;
+      },
+      onComplete: async (out) => {
+        await onComplete(out);
+        onClose();
+      },
     });
-    if (started) onClose();
   }
 </script>
 
