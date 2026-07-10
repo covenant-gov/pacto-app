@@ -22,6 +22,17 @@ vi.mock('../utils/tauri-errors', () => ({
 vi.mock('../../stores/toast', () => ({
   showToast: vi.fn(),
 }));
+vi.mock('../squad/squad-bot', () => ({
+  ensureSquadBot: vi.fn().mockResolvedValue({
+    squadId: 'squad1',
+    botNpub: 'npub1bot',
+    holders: [],
+    keyEpoch: 0,
+    updatedAt: 0,
+    hasLocalSecret: true,
+    iAmHolder: true,
+  }),
+}));
 
 const squadId = 'squad1';
 const nowSecs = Math.floor(Date.now() / 1000);
@@ -50,7 +61,7 @@ function makeSquad(overrides: Partial<PublicSquadBroadcastTarget> = {}): PublicS
     name: 'Neo Builders',
     kind: 'squad',
     visibility: 'public',
-    commonsTags: ['neo'],
+    commonsTags: ['neo', 'builders', 'community'],
     ...overrides,
   };
 }
@@ -64,7 +75,7 @@ function makeDto(overrides: Partial<CommonsBroadcastDto> = {}): CommonsBroadcast
     message: 'New squad: Neo Builders',
     durationHours: 72,
     expiresAt: nowSecs + 3600 * 72,
-    tags: ['neo', COMMONS_NEW_TAG],
+    tags: ['neo', 'builders', 'community', COMMONS_NEW_TAG],
     createdAt: 1,
     ...overrides,
   };
@@ -136,7 +147,7 @@ describe('publishPublicSquadCreateBroadcast', () => {
       subject: 'squad',
       message: 'New squad: Neo Builders',
       durationHours: 72,
-      tags: ['neo', COMMONS_NEW_TAG],
+      tags: ['neo', 'builders', 'community', COMMONS_NEW_TAG],
       squad: {
         id: squadId,
         name: 'Neo Builders',
@@ -145,7 +156,7 @@ describe('publishPublicSquadCreateBroadcast', () => {
       },
     });
     expect(getActiveCommonsBroadcastLocalState('squad', squadId, nowSecs)).toEqual(
-      expect.objectContaining({ tags: ['neo', COMMONS_NEW_TAG] })
+      expect.objectContaining({ tags: ['neo', 'builders', 'community', COMMONS_NEW_TAG] })
     );
   });
 
@@ -194,7 +205,7 @@ describe('schedulePublicSquadCreateBroadcast', () => {
           subject: 'squad',
           message: 'New squad: Neo Builders',
           durationHours: 72,
-          tags: ['neo', COMMONS_NEW_TAG],
+          tags: ['neo', 'builders', 'community', COMMONS_NEW_TAG],
         })
       )
     );

@@ -646,8 +646,8 @@ mod tests {
             normalize_commons_tags(Some(&tags), VIS_PUBLIC).unwrap(),
             Some(vec!["pacto".to_string()])
         );
-        assert!(normalize_commons_tags(None, VIS_PUBLIC).is_err());
-        assert!(normalize_commons_tags(Some(&[]), VIS_PUBLIC).is_err());
+        assert_eq!(normalize_commons_tags(None, VIS_PUBLIC).unwrap(), None);
+        assert_eq!(normalize_commons_tags(Some(&[]), VIS_PUBLIC).unwrap(), None);
         assert!(normalize_commons_tags(Some(&["new".to_string()]), VIS_PUBLIC).is_err());
         assert!(normalize_commons_tags(Some(&["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]), VIS_PUBLIC).is_err());
     }

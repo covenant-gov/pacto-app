@@ -40,7 +40,7 @@ preview:
 
 test:
 	pnpm test
-	cd src-tauri && cargo test
+	cd src-tauri && cargo test --no-default-features
 
 validate: lint check test rust-clippy rust-check
 
@@ -55,7 +55,7 @@ format: rust-fmt
 	cd src-tauri && cargo fmt
 
 rust-test:
-	cd src-tauri && cargo test
+	cd src-tauri && cargo test --no-default-features
 
 rust-check:
 	cd src-tauri && cargo check

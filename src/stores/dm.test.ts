@@ -48,6 +48,10 @@ import {
   toPactoAppInboxEntry,
   isPactoAppRoutableInviteContent,
 } from '../lib/pacto-app-inbox';
+import {
+  activeTopNavTab,
+  activeView,
+} from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
 
 vi.mock('../lib/pacto-app-inbox', () => ({
@@ -90,6 +94,8 @@ describe('dm', () => {
 
   afterEach(() => {
     activeDmTab.set('friends');
+    activeTopNavTab.set('commons');
+    activeView.set('hub');
     pinnedDmNpubs.set(new Set());
     blockedDmNpubs.set(new Set());
     dmChatsByNpub.set({});
@@ -127,6 +133,9 @@ describe('dm', () => {
 
   describe('wallet sidebar', () => {
     it('toggles the wallet sidebar', () => {
+      activeDmId.set('npub1test');
+      activeTopNavTab.set('dms');
+      activeView.set('hub');
       toggleWalletSidebar();
       expect(get(walletSidebarOpen)).toBe(true);
       toggleWalletSidebar();

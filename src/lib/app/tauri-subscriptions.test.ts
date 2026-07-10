@@ -53,6 +53,8 @@ const mocks = vi.hoisted(() => {
     updateChannelNameIfPlaceholder: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
+    parseSquadInviteMessage: vi.fn(),
+    syncMlsGroupsNow: vi.fn(),
     parseAnnouncement: vi.fn(),
     parseWalletTxAnnouncement: vi.fn(),
     isPactoAppRoutableInviteContent: vi.fn(),
@@ -81,6 +83,8 @@ vi.mock('@tauri-apps/api/event', () => ({
 vi.mock('../api/nostr', () => ({
   listPendingMlsWelcomes: (...args: unknown[]) => mocks.mockFunctions.listPendingMlsWelcomes(...args),
   fetchMessages: (...args: unknown[]) => mocks.mockFunctions.fetchMessages(...args),
+  parseSquadInviteMessage: (...args: unknown[]) => mocks.mockFunctions.parseSquadInviteMessage(...args),
+  syncMlsGroupsNow: (...args: unknown[]) => mocks.mockFunctions.syncMlsGroupsNow(...args),
 }));
 
 vi.mock('../announcements', () => ({

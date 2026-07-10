@@ -15,6 +15,17 @@ vi.mock('../utils/tauri-errors', () => ({
     typeof e === 'string' && e ? e : fallback
   ),
 }));
+vi.mock('../squad/squad-bot', () => ({
+  ensureSquadBot: vi.fn().mockResolvedValue({
+    squadId: 'squad1',
+    botNpub: 'npub1bot',
+    holders: [],
+    keyEpoch: 0,
+    updatedAt: 0,
+    hasLocalSecret: true,
+    iAmHolder: true,
+  }),
+}));
 
 const squadId = 'squad1';
 const nowSecs = Math.floor(Date.now() / 1000);
@@ -43,7 +54,7 @@ function makeSquad(overrides: { visibility?: 'public' | 'private'; commonsTags?:
     name: 'Neo Builders',
     kind: 'squad' as const,
     visibility: 'public' as const,
-    commonsTags: ['neo'],
+    commonsTags: ['neo', 'builders', 'community'],
     ...overrides,
   };
 }
@@ -142,7 +153,7 @@ describe('publishSquadCommonsBroadcast', () => {
       durationHours: 24,
     });
 
-    expect(result).toEqual({ ok: false, error: 'Only public squads with tags can broadcast.' });
+    expect(result).toEqual({ ok: false, error: 'Turn Commons on for this squad before broadcasting.' });
   });
 
   it('rejects an empty message', async () => {
@@ -180,11 +191,11 @@ describe('publishSquadCommonsBroadcast', () => {
 
   it('publishes a public squad broadcast with tags and squad metadata', async () => {
     vi.mocked(getLocalActiveCommonsBroadcast).mockResolvedValueOnce(null);
-    const dto = makeDto({ tags: ['neo', 'new'] });
+    const dto = makeDto({ tags: ['neo', 'builders', 'community', 'new'] });
     vi.mocked(publishCommonsBroadcast).mockResolvedValueOnce(dto);
 
     const result = await publishSquadCommonsBroadcast(
-      makeSquad({ commonsTags: ['neo'] }),
+      makeSquad({ commonsTags: ['neo', 'builders', 'community'] }),
       {
         message: 'hello',
         durationHours: 72,
@@ -197,7 +208,7 @@ describe('publishSquadCommonsBroadcast', () => {
       subject: 'squad',
       message: 'hello',
       durationHours: 72,
-      tags: ['neo', 'new'],
+      tags: ['neo', 'builders', 'community', 'new'],
       squad: {
         id: squadId,
         name: 'Neo Builders',
@@ -206,7 +217,7 @@ describe('publishSquadCommonsBroadcast', () => {
       },
     });
     expect(getActiveCommonsBroadcastLocalState('squad', squadId, nowSecs)).toEqual(
-      expect.objectContaining({ tags: ['neo', 'new'] })
+      expect.objectContaining({ tags: ['neo', 'builders', 'community', 'new'] })
     );
   });
 
