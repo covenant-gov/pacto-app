@@ -70,7 +70,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `static/` | Static assets, including twemoji SVGs. |
 | `docs/` | Authoritative tracked docs for architecture, wallet, MLS, storage, build, governance. |
 | `.cursor/rules/` | Editor-enforced project policies: brief comments, no legacy shims, no issue IDs, no Cursor attribution, no unrequested deletions. |
-| `.github/workflows/` | `main.yaml` — Tauri cross-platform release builds on push to `main`. |
+| `.github/workflows/` | `release.yaml` — Tauri cross-platform release builds on `v*` tags. |
 
 ## Development Commands
 
@@ -164,7 +164,7 @@ cd src-tauri && cargo test
 | `src/stores/persistence.ts` | Loads npub-scoped account state from `localStorage`. |
 | `docs/README.md` | Docs index and navigation hub. |
 | `.cursor/rules/*.mdc` | Editor-enforced project policies. |
-| `.github/workflows/main.yaml` | Cross-platform Tauri release CI. |
+| `.github/workflows/release.yaml` | Tag-driven cross-platform Tauri release CI. |
 
 ## Runtime/Tooling Preferences
 
@@ -177,7 +177,7 @@ cd src-tauri && cargo test
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
 - **Whisper feature:** Enabled by default. Metal on macOS, Vulkan on Windows/Linux, excluded on Android. Feature-gated in `Cargo.toml`.
 - **MCP bridge:** `tauri-plugin-mcp-bridge` is included in debug builds only; release builds exclude it.
-- **CI:** `.github/workflows/main.yaml` publishes macOS (arm64 + x86_64), Ubuntu, and Windows bundles on every push to `main`. Requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
+- **CI:** `.github/workflows/release.yaml` publishes macOS (arm64 + x86_64), Ubuntu, and Windows bundles on every `v*` tag. Requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
 
 ## Testing & QA
 
@@ -189,7 +189,7 @@ cd src-tauri && cargo test
   - Reset Svelte stores in `beforeEach`/`afterEach`.
   - Rust DB tests create `rusqlite::Connection::open_in_memory()` and execute the minimal schema DDL inline.
 - **Coverage:** `@vitest/coverage-v8` is available via `pnpm test:coverage:serve`; no configured thresholds.
-- **Quality gates:** The `main.yaml` workflow only builds and publishes releases; it does **not** run `pnpm test` or `cargo test`. Local verification is the current safety net.
+- **Quality gates:** The `release.yaml` workflow only builds and publishes releases; it does **not** run `pnpm test` or `cargo test`. Local verification is the current safety net.
 - **Manual QA:** `docs/wallet/MANUAL_E2E_CHECKLIST.md` and `docs/wallet/OPERATOR_SMOKE.md`.
 - **Security posture:** `docs/audits/README.md` states there is no independent third-party audit; treat wallet/key-handling code as alpha-grade.
 
