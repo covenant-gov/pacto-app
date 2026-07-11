@@ -113,6 +113,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Sync SvelteKit types
+        run: pnpm svelte-kit sync
+
       - name: Build landing site
         run: pnpm --filter pacto-landing build
 
