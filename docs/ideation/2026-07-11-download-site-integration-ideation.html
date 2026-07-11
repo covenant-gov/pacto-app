@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideation: Combine pacto-download into pacto-app</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --text: #1a1a1a;
+      --muted: #666;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+      --border: #e5e5e5;
+      --card-bg: #ffffff;
+      --warn-bg: #fff7ed;
+      --warn-border: #f97316;
+      --success-bg: #f0fdf4;
+      --success-border: #22c55e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0a0a0a;
+        --text: #e5e5e5;
+        --muted: #a3a3a3;
+        --accent: #60a5fa;
+        --accent-soft: #1e3a8a;
+        --border: #262626;
+        --card-bg: #171717;
+        --warn-bg: #2a1810;
+        --warn-border: #f97316;
+        --success-bg: #0f291e;
+        --success-border: #22c55e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 { font-size: 1.75rem; margin: 0 0 0.75rem; line-height: 1.2; }
+    .meta { font-size: 0.875rem; color: var(--muted); }
+    .meta span { margin-right: 1.5rem; }
+
+    h2 { font-size: 1.25rem; margin: 2rem 0 1rem; }
+    h3 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; }
+    p, ul { max-width: 70ch; }
+
+    .axis-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 0.75rem 0 1.5rem;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li {
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .idea {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    .idea-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .idea-id {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .idea-title { font-size: 1.1rem; font-weight: 600; margin: 0; }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.25rem;
+    }
+    .chip {
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .chip-confidence { background: var(--success-bg); border-color: var(--success-border); color: var(--text); }
+    .field { margin: 0.75rem 0; }
+    .field-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+    .basis-tag { font-weight: 600; color: var(--accent); }
+
+    .callout {
+      background: var(--warn-bg);
+      border-left: 4px solid var(--warn-border);
+      padding: 0.75rem 1rem;
+      border-radius: 0 0.5rem 0.5rem 0;
+      margin: 1rem 0;
+    }
+    .callout p { margin: 0; font-size: 0.9rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0 2rem;
+      font-size: 0.9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    td:first-child { width: 3rem; }
+
+    .diagram {
+      margin: 1rem 0 1.5rem;
+    }
+    .diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      margin-top: 3rem;
+      padding-top: 1rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="eyebrow">Ideation Artifact</div>
+      <h1>Combine pacto-download into the pacto-app repo</h1>
+      <div class="meta">
+        <span><strong>Date:</strong> 2026-07-11</span>
+        <span><strong>Topic:</strong> download-site-integration</span>
+        <span><strong>Mode:</strong> repo-grounded</span>
+      </div>
+      <div class="meta" style="margin-top: 0.5rem;">
+        <span><strong>Focus:</strong> combine the pacto-download site into pacto-app and eliminate manual config.js updates</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>Grounding Context</h2>
+      <p><strong>Project shape.</strong> Pacto is a Tauri v2 desktop app: a SvelteKit/Svelte 5 static SPA (src/) backed by a Rust backend (src-tauri/). The build uses <code>@sveltejs/adapter-static</code> with a fallback to <code>index.html</code> and SSR disabled. The frontend is built by Vite and consumed by the Tauri CLI.</p>
+      <p><strong>Auth layout.</strong> <code>src/routes/+layout.svelte</code> gates every route behind an auth check: unauthenticated users see <code>&lt;Login /&gt;</code>. Any public download page must either bypass that layout or live outside the <code>src/routes/</code> tree.</p>
+      <p><strong>Release pipeline.</strong> <code>.github/workflows/release.yaml</code> triggers on <code>v*</code> tags, generates a changelog with git-cliff, and uses <code>tauri-apps/tauri-action@v1</code> to build cross-platform bundles (macOS aarch64/x86_64, Linux x86_64 and optional aarch64, Windows x86_64) and publish a draft GitHub release with updater JSON.</p>
+      <p><strong>Current download site.</strong> The separate <a href="https://github.com/covenant-gov/pacto-download">pacto-download</a> repo has a <code>config.js</code> that hardcodes <code>releaseTag: "v0.1.0"</code> and a fixed list of five filenames. It is updated manually per release.</p>
+      <p><strong>External prior art.</strong> Tauri/Electron apps commonly keep binaries on GitHub Releases and serve a marketing/download page from a static host such as GitHub Pages, Cloudflare Pages, or Vercel. The same-repo pattern is well established (e.g., OpenIT uses an Astro landing site that fetches the latest GitHub release at build time). Best practice is to avoid storing binaries in git, avoid hardcoding versioned filenames, and rebuild the site when a release is published.</p>
+    </section>
+
+    <section>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>Code placement</li>
+        <li>Release data source</li>
+        <li>Deployment target</li>
+        <li>Update automation</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Ranked Ideas</h2>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-header">
+          <div>
+            <div class="idea-id">Idea 1</div>
+            <h3 class="idea-title">SvelteKit public <code>/download</code> route with build-time GitHub API and GitHub Pages</h3>
+            <div class="chips">
+              <span class="chip chip-confidence">Confidence 85%</span>
+              <span class="chip">Complexity Medium</span>
+              <span class="chip">Axis: Code placement</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Description</div>
+          <p>Add a new <code>src/routes/download/+page.svelte</code> route that opts out of the auth-gated root layout via <code>+layout@.svelte</code> or a public route group such as <code>(public)</code>. Prerender the page with the existing static adapter. At build time, fetch the latest release from the GitHub API using <code>GITHUB_TOKEN</code> and map the published asset names to per-platform download buttons. Deploy the built site to GitHub Pages from a workflow triggered on <code>release:published</code>.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <p><span class="basis-tag">direct:</span> <code>src/routes/+layout.svelte</code> gates every route behind <code>{#if $isAuthenticated &amp;&amp; $currentUser}</code>; <code>svelte.config.js</code> already uses <code>@sveltejs/adapter-static</code> with <code>fallback: "index.html"</code>. <span class="basis-tag">external:</span> OpenIT's same-repo <code>landing/</code> Astro site fetches the latest GitHub release at build time and links to platform assets.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <p>This collapses the second codebase into the same repo and build pipeline while removing the manual per-release edit of <code>config.js</code>. It keeps the download page on the same design system as the app and lets future marketing routes grow naturally.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <p>Requires carving a public route out of an auth-gated SvelteKit app; mixing app and marketing surfaces may complicate layout boundaries and bundle splitting; prerendering needs asset data available at build time.</p>
+        </div>
+
+        <div class="diagram">
+          <svg viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow: release published triggers a workflow that builds the SvelteKit download page using the GitHub API, then deploys to GitHub Pages">
+            <rect x="10" y="50" width="120" height="60" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="70" y="85" text-anchor="middle" font-size="12" fill="var(--text)">release:published</text>
+
+            <line x1="130" y1="80" x2="190" y2="80" stroke="var(--muted)" stroke-width="2"/>
+            <polygon points="190,80 182,76 182,84" fill="var(--muted)"/>
+
+            <rect x="200" y="40" width="140" height="80" rx="8" fill="var(--card-bg)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="270" y="70" text-anchor="middle" font-size="12" fill="var(--text)">Build download</text>
+            <text x="270" y="90" text-anchor="middle" font-size="12" fill="var(--text)">page + GitHub API</text>
+
+            <line x1="340" y1="80" x2="400" y2="80" stroke="var(--muted)" stroke-width="2"/>
+            <polygon points="400,80 392,76 392,84" fill="var(--muted)"/>
+
+            <rect x="410" y="40" width="120" height="80" rx="8" fill="var(--card-bg)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="470" y="70" text-anchor="middle" font-size="12" fill="var(--text)">Static site</text>
+            <text x="470" y="90" text-anchor="middle" font-size="12" fill="var(--text)">(build/)</text>
+
+            <line x1="530" y1="80" x2="590" y2="80" stroke="var(--muted)" stroke-width="2"/>
+            <polygon points="590,80 582,76 582,84" fill="var(--muted)"/>
+
+            <rect x="600" y="50" width="90" height="60" rx="8" fill="var(--success-bg)" stroke="var(--success-border)" stroke-width="2"/>
+            <text x="645" y="85" text-anchor="middle" font-size="12" fill="var(--text)">GitHub Pages</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-header">
+          <div>
+            <div class="idea-id">Idea 2</div>
+            <h3 class="idea-title">Separate <code>landing/</code> static site with generated manifest and GitHub Pages</h3>
+            <div class="chips">
+              <span class="chip chip-confidence">Confidence 85%</span>
+              <span class="chip">Complexity Medium</span>
+              <span class="chip">Axis: Code placement</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Description</div>
+          <p>Add a lightweight static site at the repo root (e.g., <code>landing/</code> or <code>download/</code>) using Vite, Astro, or plain HTML. Keep it outside the SvelteKit route tree so the auth-gated layout is never involved. Extend the release workflow to generate a <code>pacto-release.json</code> manifest mapping platforms to the actual asset URLs published by tauri-action. Consume the manifest at build time and deploy the site to GitHub Pages.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <p><span class="basis-tag">direct:</span> <code>src/routes/+layout.svelte</code> renders <code>&lt;Login /&gt;</code> for unauthenticated users; release.yaml already produces a <code>latest.json</code> via tauri-action. <span class="basis-tag">reasoned:</span> A separate directory avoids risky root-layout refactoring and lets marketing surfaces evolve independently from the Tauri desktop app.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <p>This gives the same single-source-of-truth benefit while decoupling the public marketing site from the auth-gated app. The generated manifest becomes a reusable artifact for future distribution channels such as package managers or mirroring scripts.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <p>Adds a second build tool and a small amount of duplicated CSS/branding logic; requires a second CI deploy step; the public site and the app must be kept visually consistent.</p>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-header">
+          <div>
+            <div class="idea-id">Idea 3</div>
+            <h3 class="idea-title">Minimal <code>static/download.html</code> with client-side GitHub API fetch</h3>
+            <div class="chips">
+              <span class="chip chip-confidence">Confidence 65%</span>
+              <span class="chip">Complexity Low</span>
+              <span class="chip">Axis: Code placement</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Description</div>
+          <p>Drop a single static file into <code>static/download.html</code> (plus a small JS file) that calls the GitHub Releases API from the browser and renders platform download cards. No new SvelteKit route, no new build pipeline, and no changes to the release workflow beyond copying the file to the host.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <p><span class="basis-tag">direct:</span> <code>static/</code> currently holds only images and JS helpers; no public pages exist yet. <span class="basis-tag">external:</span> The GitHub Releases API endpoint is <code>https://api.github.com/repos/covenant-gov/pacto-app/releases/latest</code>.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <p>This is the smallest possible integration that removes the separate repo and kills the manual per-release PR. It avoids touching the SvelteKit routing, auth layout, or build pipeline entirely.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <p>Unauthenticated GitHub API calls are capped at 60 requests per hour per IP; users behind NATs or VPNs may hit the limit; the page is not SEO-friendly; it breaks without JavaScript.</p>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-header">
+          <div>
+            <div class="idea-id">Idea 4</div>
+            <h3 class="idea-title">Reuse the Tauri updater <code>latest.json</code> as the data source</h3>
+            <div class="chips">
+              <span class="chip chip-confidence">Confidence 80%</span>
+              <span class="chip">Complexity Medium</span>
+              <span class="chip">Axis: Release data source</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Description</div>
+          <p>Stop maintaining <code>config.js</code>. The release workflow already generates and uploads a <code>latest.json</code> for the Tauri updater. Parse that file (or a variant of it) to build the download page, so the updater and the download site share one data source. This can be layered on top of any of the three code-placement options above.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <p><span class="basis-tag">direct:</span> release.yaml uses <code>tauri-apps/tauri-action@v1</code> with <code>uploadUpdaterJson: true</code>, so <code>latest.json</code> is already produced. <span class="basis-tag">external:</span> Tauri updater JSON schema includes platform entries with URLs and signatures.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <p>It eliminates the manual drift between <code>config.js</code> and the actual release assets and turns a CI artifact into a shared source of truth. The download page becomes a consumer of the same manifest the updater already trusts.</p>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <p><code>latest.json</code> is designed for the updater, not humans, so it may lack friendly platform labels or file-size metadata; the schema could change; it may need augmentation for assets the updater does not consume (e.g., <code>.rpm</code> / <code>.deb</code> if not already included).</p>
+        </div>
+      </article>
+    </section>
+
+    <section>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Use the GitHub Release page as the canonical download destination</td>
+            <td>Abandons the branded download page rather than combining it into the repo; does not meet the stated goal.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>SaaS webhook-triggered download page rebuild</td>
+            <td>Over-engineered; relies on external webhook complexity with no clear benefit over a <code>release:published</code> workflow trigger.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Docker-style CI-generated release manifest</td>
+            <td>Merged into Idea 2 as a richer variant of the generated manifest approach; kept out to avoid near-duplication.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Browser-extension-store listing route</td>
+            <td>Merged into Idea 1; the manifest-derived public route concept is already captured by the SvelteKit <code>/download</code> approach.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Deploy on <code>release:published</code> rather than tag push</td>
+            <td>Merged into Ideas 1 and 2 as the recommended automation trigger; not a standalone recommendation.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <p><strong>Note on filtering.</strong> No fresh-context verifier subagent was dispatched for this run. The candidate set was small and the evidence straightforward, so filtering was performed by the orchestrator using the Phase 1 grounding and the generated ideas.</p>
+      </div>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-07-11T22:00Z by ce-ideate from user prompt about combining pacto-download into pacto-app.
+    </footer>
+  </div>
+</body>
+</html>
