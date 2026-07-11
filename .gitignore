@@ -12,3 +12,8 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 ai-docs/
 target/
+
+landing/.astro
+landing/dist
+landing/pnpm-lock.yaml
+landing/public/pacto-release.json

@@ -5,7 +5,7 @@ import ts from 'typescript-eslint';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-	{ ignores: ['.svelte-kit/', 'build/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/'] },
+	{ ignores: ['.svelte-kit/', 'build/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/', 'landing/.astro/', 'landing/dist/'] },
 	js.configs.recommended,
 	...ts.configs.recommended,
 	...svelte.configs.recommended,

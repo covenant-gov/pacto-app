@@ -1,3 +1,6 @@
+packages:
+  - .
+  - landing
 allowBuilds:
   esbuild: true
   fsevents: false

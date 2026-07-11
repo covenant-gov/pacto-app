@@ -50,6 +50,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 
 | Term | Definition |
 |------|------------|
+| **pacto-release.json** | Per-release manifest generated from GitHub release assets, consumed by the public landing/download page. Includes platform, friendly label, asset URL, and file size. |
 | **Tauri v2** | Desktop app framework: Svelte frontend in a webview, Rust backend. |
 | **invoke** | Frontend -> backend typed RPC via `tauri-apps/api/core`. |
 | **emit** | Backend -> frontend event pushed through `AppHandle::emit`. |
