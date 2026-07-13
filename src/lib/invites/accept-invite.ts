@@ -4,8 +4,6 @@ import {
   acceptMlsWelcome,
   parseSquadInviteMessage,
   syncMlsGroupsNow,
-  getMlsGroupMembers,
-  backfillSquadMemberEvmFromProfiles,
   type PendingMlsWelcome,
 } from '../api/nostr';
 import { defaultChannelRowsForGroupId } from '../parent-navbar';
@@ -188,13 +186,6 @@ export async function acceptAnnouncementsInvite(
     await syncMlsGroupsNow(payload.groupId);
   } catch (e) {
     dmError('syncMlsGroupsNow after accept invite', e);
-  }
-  try {
-    const membersResult = await getMlsGroupMembers(payload.groupId);
-    const memberNpubs = (membersResult.members ?? []) as string[];
-    await backfillSquadMemberEvmFromProfiles(payload.groupId, memberNpubs);
-  } catch (e) {
-    dmError('backfillSquadMemberEvmFromProfiles after accept', e);
   }
   bumpMembershipVersion(payload.groupId);
   pendingReadyToast.set({

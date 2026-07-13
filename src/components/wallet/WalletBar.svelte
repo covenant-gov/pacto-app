@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { invoke } from '@tauri-apps/api/core';
   import { getEvmAddress } from '../../lib/api/auth';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
@@ -94,9 +93,7 @@
   let peerWalletReady = false;
   let walletInfoRequestSending = false;
 
-  const EVM_PAYOUT_RE = /^0x[a-fA-F0-9]{40}$/;
-
-  /** Same resolution as send: `dm_peer_evm`, then peer profile `evm_address` (Kind 0). */
+  /** Unlock Send/Request only after pairwise `dm_peer_evm` exchange. */
   async function syncPeerWalletReady() {
     if (!npub) {
       peerWalletReady = false;
@@ -104,28 +101,13 @@
     }
     try {
       const fromDm = await getDmPeerEvmAddress(npub);
-      if (fromDm?.trim()) {
-        peerWalletReady = true;
-        return;
-      }
-    } catch {
-      /* fall through */
-    }
-    const fromStore = contactProfile?.evm_address?.trim() ?? '';
-    if (EVM_PAYOUT_RE.test(fromStore)) {
-      peerWalletReady = true;
-      return;
-    }
-    try {
-      const p = (await invoke('get_profile', { npub })) as { evm_address?: string; evmAddress?: string };
-      const a = (p?.evm_address ?? p?.evmAddress ?? '').trim();
-      peerWalletReady = EVM_PAYOUT_RE.test(a);
+      peerWalletReady = Boolean(fromDm?.trim());
     } catch {
       peerWalletReady = false;
     }
   }
 
-  $: npub, contactProfile, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
+  $: npub, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
 
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;

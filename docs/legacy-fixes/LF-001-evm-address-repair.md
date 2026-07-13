@@ -12,7 +12,7 @@ Legacy derivation used `keccak256(0x04 || x || y)` (65 bytes). Ethereum uses `ke
 ## What we shipped
 
 - **Permanent:** `evm::address_from_evm_secret_32` and nostr-linked derivation used via `derive_evm_hex_from_nostr_secret` (canonical hash, no `0x04` in keccak input). User-facing: **[`docs/wallet/HD_DERIVATION_V1.md`](../wallet/HD_DERIVATION_V1.md)** (address hash rule + legacy notes).
-- **Legacy only:** `db::repair_evm_address_if_needed` rewrites **`settings.evm_address`** (active signer) when it disagrees with the decrypted key-derived address (**`set_wallet_signing_evm_address`**). Mine **`profiles.evm_address`** / Kind 0 update on a separate republish path.
+- **Legacy only:** `db::repair_evm_address_if_needed` rewrites **`settings.evm_address`** (active signer) when it disagrees with the decrypted key-derived address (**`set_wallet_signing_evm_address`**).
 
 ## Code locations
 
@@ -21,7 +21,7 @@ Legacy derivation used `keccak256(0x04 || x || y)` (65 bytes). Ethereum uses `ke
 
 ## User-facing / relay impact
 
-Repair updates **local `settings.evm_address`** only. **Kind 0** `evm_address` for *mine* updates when the user runs **`update_profile`** or **`republish_kind0_metadata_with_wallet_default`** (default-shared merge).
+Repair updates **local `settings.evm_address`** only. Kind 0 does not carry an EVM address.
 
 ## Removal checklist (before public v1)
 

@@ -33,7 +33,6 @@ import {
   acceptMlsWelcome,
   inviteMemberToGroup,
   getMlsGroupMembers,
-  backfillSquadMemberEvmFromProfiles,
   leaveMlsGroup,
   syncMlsGroupsNow,
   listDashboardPolls,
@@ -491,18 +490,6 @@ describe('getMlsGroupMembers', () => {
     const result = await getMlsGroupMembers('g1');
     expect(mockedInvoke).toHaveBeenCalledWith('get_mls_group_members', { groupId: 'g1' });
     expect(result.members).toEqual(['npub1']);
-  });
-});
-
-describe('backfillSquadMemberEvmFromProfiles', () => {
-  it('invokes backfill_squad_member_evm_missing_from_profiles', async () => {
-    mockedInvoke.mockResolvedValueOnce(3);
-    const result = await backfillSquadMemberEvmFromProfiles('parent-1', ['npub1', 'npub2']);
-    expect(mockedInvoke).toHaveBeenCalledWith('backfill_squad_member_evm_missing_from_profiles', {
-      parentId: 'parent-1',
-      memberNpubs: ['npub1', 'npub2'],
-    });
-    expect(result).toBe(3);
   });
 });
 

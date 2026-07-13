@@ -351,24 +351,6 @@ pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) 
     set_wallet_signing_evm_address(handle, address).await
 }
 
-/// Cached contact payout address (`profiles.evm_address`); not populated from Kind 0.
-pub fn get_profile_evm_address<R: Runtime>(
-    handle: &AppHandle<R>,
-    npub: &str,
-) -> Result<Option<String>, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    let r: Option<String> = conn
-        .query_row(
-            "SELECT evm_address FROM profiles WHERE npub = ?1",
-            rusqlite::params![npub],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to read profile evm_address: {}", e))?;
-    crate::account_manager::return_db_connection(conn);
-    Ok(r.filter(|s| !s.trim().is_empty()))
-}
-
 /// Read `evm_address` from settings without repair (internal use).
 pub(crate) fn read_stored_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
@@ -2409,61 +2391,6 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
         );
     }
     crate::account_manager::return_db_connection(conn);
-}
-
-/// For each `member_npub`, if there is no `squad_member_evm` row yet for `parent_id`, insert one from
-/// `profiles.evm_address` when it validates. Does not overwrite existing roster rows.
-#[command]
-pub fn backfill_squad_member_evm_missing_from_profiles<R: Runtime>(
-    handle: AppHandle<R>,
-    parent_id: String,
-    member_npubs: Vec<String>,
-) -> Result<u32, String> {
-    let parent = parent_id.trim();
-    if parent.is_empty() {
-        return Ok(0);
-    }
-    let conn = crate::account_manager::get_db_connection(&handle)?;
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    let mut inserted: u32 = 0;
-    for npub_raw in member_npubs {
-        let npub = npub_raw.trim();
-        if npub.is_empty() {
-            continue;
-        }
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM squad_member_evm WHERE parent_id = ?1 AND member_npub = ?2 LIMIT 1",
-                rusqlite::params![parent, npub],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(|e| format!("Failed to check squad_member_evm: {}", e))?
-            .is_some();
-        if exists {
-            continue;
-        }
-        let Some(raw) = get_profile_evm_address(&handle, npub)? else {
-            continue;
-        };
-        let Some(norm) = crate::evm::normalize_hex_address(raw.trim()) else {
-            continue;
-        };
-        if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str()).is_err() {
-            continue;
-        };
-        conn.execute(
-            "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![parent, npub, norm, now_ms],
-        )
-        .map_err(|e| format!("Failed to backfill squad_member_evm: {}", e))?;
-        inserted += 1;
-    }
-    crate::account_manager::return_db_connection(conn);
-    Ok(inserted)
 }
 
 #[command]

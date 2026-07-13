@@ -381,14 +381,11 @@ fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> R
     }
     let dm_peer = db::get_dm_peer_evm_stored(app, to_npub)
         .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
-    let profile_peer = db::get_profile_evm_address(app, to_npub)
-        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
-    let peer_addr_opt = dm_peer.or(profile_peer);
 
-    let Some(peer_raw) = peer_addr_opt else {
+    let Some(peer_raw) = dm_peer else {
         log::warn!(
             target: "pacto_wallet",
-            "wallet_build_and_send_transaction: missing evm_address for npub prefix={}…",
+            "wallet_build_and_send_transaction: missing dm_peer_evm for npub prefix={}…",
             to_npub.chars().take(16).collect::<String>()
         );
         return Err(wallet_err_json(

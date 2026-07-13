@@ -57,4 +57,4 @@ Phrase: `abandon abandon abandon abandon abandon abandon abandon abandon abandon
 
 - Derivation: `src-tauri/src/evm.rs` (`derive_eth_bip44_v1_from_mnemonic_phrase`).  
 - Persistence and active account: `src-tauri/src/evm_accounts.rs`, `src-tauri/src/wallet_ops.rs`.  
-- **Kind 0 profile:** optional public **`evm_address`** is the **default-shared** account (`default_shared_evm_account_id`), not necessarily the **active** signer — see `docs/wallet/README.md`, `src-tauri/src/profile.rs`.
+- **Kind 0 profile:** does not publish EVM addresses; pairwise DM exchange and MLS roster shares carry payout addresses instead — see `docs/wallet/README.md`, `src-tauri/src/profile.rs`.

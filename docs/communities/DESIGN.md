@@ -52,7 +52,7 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 | **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
 
-**Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts**. After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Profile backfill into `squad_member_evm` does **not** satisfy the prompt — only an explicit account binding does.
+**Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts**. After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Only an explicit account binding satisfies the prompt.
 
 ---
 

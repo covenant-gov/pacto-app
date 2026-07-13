@@ -160,7 +160,7 @@ export function parseWalletOpError(raw: string): WalletOpParsedError | null {
 }
 
 /**
- * Build, sign, and broadcast a transfer to the peer's DM-exchanged payout address (`dm_peer_evm`, with legacy `profiles.evm_address` fallback).
+ * Build, sign, and broadcast a transfer to the peer's DM-exchanged payout address (`dm_peer_evm`).
  * Tauri maps camelCase keys to the Rust command's `snake_case` parameters.
  */
 export async function walletBuildAndSendTransaction(
