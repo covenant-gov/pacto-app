@@ -16,10 +16,13 @@
 
   let messageText = "";
   let textareaEl: HTMLTextAreaElement | undefined;
-  let emojiPickerOpen = false;
-  $: if (disabled) emojiPickerOpen = false;
   let emojiPickerEl: HTMLDivElement | undefined;
+  let emojiPickerOpen = false;
   let emojiSearchQuery = "";
+  $: if (disabled) {
+    emojiPickerOpen = false;
+    emojiSearchQuery = '';
+  }
 
   const fullEmojiList = getEmojiList();
   const EMOJI_GRID = fullEmojiList.map((e) => e.emoji);
@@ -60,20 +63,50 @@
     messageText = messageText.slice(0, start) + emoji + messageText.slice(end);
     const entry = fullEmojiList.find((e) => e.emoji === emoji);
     if (entry) addToRecentEmojis(entry);
-    emojiPickerOpen = false;
+    await closeEmojiPicker({ refocusComposer: true });
     onTyping?.();
     await tick();
     if (textareaEl) {
-      textareaEl.focus();
       const pos = start + emoji.length;
       textareaEl.setSelectionRange(pos, pos);
     }
   }
 
+  async function closeEmojiPicker(opts?: { refocusComposer?: boolean }) {
+    emojiPickerOpen = false;
+    emojiSearchQuery = '';
+    if (opts?.refocusComposer) {
+      await tick();
+      textareaEl?.focus();
+    }
+  }
+
+  function toggleEmojiPicker() {
+    if (emojiPickerOpen) {
+      void closeEmojiPicker();
+      return;
+    }
+    emojiSearchQuery = '';
+    emojiPickerOpen = true;
+  }
+
+  function handleEmojiSearchKeydown(event: KeyboardEvent) {
+    event.stopPropagation();
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      void closeEmojiPicker({ refocusComposer: true });
+    }
+  }
+
   function handleClickOutside(event: MouseEvent) {
     const target = event.target as Node;
-    if (emojiPickerOpen && emojiPickerEl && !emojiPickerEl.contains(target) && !(event.target as HTMLElement)?.closest?.('.emoji-trigger-btn')) {
-      emojiPickerOpen = false;
+    if (
+      emojiPickerOpen &&
+      emojiPickerEl &&
+      !emojiPickerEl.contains(target) &&
+      !(event.target as HTMLElement)?.closest?.('.emoji-trigger-btn')
+    ) {
+      void closeEmojiPicker();
     }
   }
 </script>
@@ -91,10 +124,7 @@
         aria-expanded={emojiPickerOpen}
         aria-haspopup="grid"
         title="Insert emoji"
-        on:click={() => {
-          emojiPickerOpen = !emojiPickerOpen;
-          if (emojiPickerOpen) emojiSearchQuery = '';
-        }}
+        on:click={toggleEmojiPicker}
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
       </button>
@@ -122,9 +152,25 @@
               placeholder="Search emoji…"
               bind:value={emojiSearchQuery}
               on:click|stopPropagation
-              on:keydown|stopPropagation
+              on:keydown={handleEmojiSearchKeydown}
               aria-label="Search emoji"
             />
+            <button
+              type="button"
+              class="emoji-picker-close"
+              aria-label="Close emoji picker"
+              title="Close"
+              on:click|stopPropagation={() => closeEmojiPicker({ refocusComposer: true })}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path
+                  d="M3 3l8 8M11 3L3 11"
+                  stroke="currentColor"
+                  stroke-width="1.75"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
           </div>
           {#if emojiSearchQuery.trim()}
             <div class="emoji-picker-section">
@@ -277,11 +323,15 @@
   }
 
   .emoji-picker-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex-shrink: 0;
   }
 
   .emoji-search-input {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     padding: 6px 10px;
     font-size: 0.8125rem;
@@ -298,6 +348,26 @@
 
   .emoji-search-input:focus {
     border-color: var(--accent);
+  }
+
+  .emoji-picker-close {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .emoji-picker-close:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
   }
 
   .emoji-picker-empty {
