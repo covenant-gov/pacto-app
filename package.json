@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "changelog": "git-cliff --output CHANGELOG.md",
+    "changelog": "git-cliff --output CHANGELOG.md && ./scripts/post-process-changelog.sh",
     "bump-version": "./scripts/bump-version.sh",
     "bump:patch": "./scripts/bump-version.sh patch",
     "bump:minor": "./scripts/bump-version.sh minor",

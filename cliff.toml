@@ -11,19 +11,15 @@ footer = ""
 
 trim = true
 
-body = """
-{% if version %}\
-## {{ version }}
-{% else %}\
-## Unreleased
-{% endif %}\
+body = """{% if version %}\
+## {{ version }}{% else %}\
+## Unreleased{% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | upper_first }}
-{% for commit in commits %}
+{% for commit in commits -%}
 - {% if commit.breaking %}[**breaking**] {% endif %}{{ commit.message | upper_first }}{% if commit.scope %} ({{ commit.scope }}){% endif %}
 {% endfor %}
-{% endfor %}
-"""
+{% endfor %}"""
 
 [git]
 conventional_commits = true
@@ -48,5 +44,6 @@ commit_parsers = [
 
 filter_commits = false
 tag_pattern = "v[0-9].*"
+ignore_tags = "v0.1.0"
 topo_order = false
 sort_commits = "oldest"
