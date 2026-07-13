@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAsset, findSignatureAsset, buildManifest } from './generate-release-manifest.mjs';
+import { parseAsset, findSignatureAsset, buildManifest, getReleaseTag } from './generate-release-manifest.mjs';
 
 describe('parseAsset', () => {
   it('maps macOS DMG assets by architecture', () => {
@@ -105,5 +105,42 @@ describe('buildManifest', () => {
       () => buildManifest('v0.2.0', '2026-07-11T00:00:00Z', 'https://example.com/release', [{ name: 'latest.json', size: 1 }]),
       /Release v0.2.0 has no installer assets/
     );
+  });
+});
+
+describe('getReleaseTag', () => {
+  const envKeys = ['RELEASE_TAG', 'GITHUB_REF', 'GITHUB_REF_NAME'];
+
+  function clearEnv() {
+    for (const key of envKeys) {
+      delete process.env[key];
+    }
+  }
+
+  it('uses RELEASE_TAG when provided', () => {
+    clearEnv();
+    process.env.RELEASE_TAG = 'v1.0.0';
+    assert.equal(getReleaseTag(), 'v1.0.0');
+    clearEnv();
+  });
+
+  it('derives the tag from GITHUB_REF when it is a tag ref', () => {
+    clearEnv();
+    process.env.GITHUB_REF = 'refs/tags/v0.2.0';
+    assert.equal(getReleaseTag(), 'v0.2.0');
+    clearEnv();
+  });
+
+  it('falls back to null for branch refs so latest release is used', () => {
+    clearEnv();
+    process.env.GITHUB_REF = 'refs/heads/main';
+    assert.equal(getReleaseTag(), null);
+    clearEnv();
+  });
+
+  it('falls back to null when no tag context is present', () => {
+    clearEnv();
+    assert.equal(getReleaseTag(), null);
+    clearEnv();
   });
 });
