@@ -52,15 +52,11 @@ export function shouldSendReciprocalWalletPeerGrant(params: {
   peerNpub: string;
   myNpub: string;
   messages: WalletPeerExchangeMessage[];
-  alreadyReciprocatedRequestIds: ReadonlySet<string> | readonly string[];
+  alreadyReciprocatedRequestIds: readonly string[];
 }): boolean {
   const { grant, peerNpub, myNpub, messages, alreadyReciprocatedRequestIds } = params;
   if (grant.grantor_npub !== peerNpub) return false;
-  if (alreadyReciprocatedRequestIds instanceof Set) {
-    if (alreadyReciprocatedRequestIds.has(grant.request_id)) return false;
-  } else if (alreadyReciprocatedRequestIds.includes(grant.request_id)) {
-    return false;
-  }
+  if (alreadyReciprocatedRequestIds.includes(grant.request_id)) return false;
   if (!threadHasOutboundRequestForId(messages, grant.request_id, myNpub)) return false;
   if (threadHasOutboundGrantForRequest(messages, grant.request_id, myNpub)) return false;
   return true;
