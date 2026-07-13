@@ -8,6 +8,24 @@ Pacto is a private, censorship-resistant, and governable community organizing pl
 
 Privacy on these blockchains is achieved through Zero-Knowledge (ZK) proving schemes, which verify computation without exposing sensitive data. This enables voting and payments with Ethereum's security and immutability guarantees while keeping user activity private.
 
+## Install
+
+Download the latest release for your platform from **[covenant-gov.github.io/pacto-app/](https://covenant-gov.github.io/pacto-app/)**.
+
+### macOS
+
+Pacto is not currently signed by Apple. After installing the app, you may see a warning that says **"pacto is damaged and can't be opened. You should move it to the Trash."** (or similar):
+
+![macOS damaged app warning](docs/build/macos-damaged-warning.png)
+
+To run the app, open a terminal and remove the quarantine attribute:
+
+```bash
+xattr -r -d com.apple.quarantine /Applications/pacto.app
+```
+
+Then launch Pacto from Applications.
+
 ## Feature Set
 
 Core
