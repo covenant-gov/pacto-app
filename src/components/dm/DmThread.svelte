@@ -18,6 +18,7 @@
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
   import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
+  import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
@@ -485,7 +486,7 @@
       </div>
     {/if}
     {#if messages.length > 0}
-      {#each messages as msg (msg.id)}
+      {#each messages as msg, i (msg.id)}
         <DmMessageRouter
           {msg}
           {npub}
@@ -502,6 +503,7 @@
           {onAcceptWalletPeerInfoRequest}
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
+          compact={shouldStackWithPrevious(messages[i - 1], msg)}
         />
       {/each}
     {:else}

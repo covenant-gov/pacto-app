@@ -14,6 +14,7 @@
     announceCardAllowedForTimelineBucket,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
+  import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
   import SquadRosterKeyInboxCard from '../inbox/SquadRosterKeyInboxCard.svelte';
   import { needsSquadRosterKeyChoice } from '../../lib/squad/squad-roster-key-choice';
@@ -278,6 +279,13 @@
             : 'Message';
     }
     return base;
+  }
+
+  function channelMessageIsCard(message: DmMessage): boolean {
+    if (!channelParsesStructuredAnnounces) return false;
+    const parsed = parseAnnouncement(message.content);
+    if (parsed && announceCardAllowedForTimelineBucket(parsed, message)) return true;
+    return Boolean(parseSquadBotAnnounceMessage(message.content));
   }
 
   let prevTimelineKeyForSendError: string | null = null;
@@ -677,9 +685,16 @@
                       </button>
                     </div>
                   {/if}
-                  {#each virtualTimelineMessages as message (message.id)}
+                  {#each virtualTimelineMessages as message, i (message.id)}
                     {@const props = toMessageProps(message)}
-                    <Message {...props} />
+                    <Message
+                      {...props}
+                      compact={shouldStackChannelWithPrevious(
+                        virtualTimelineMessages[i - 1],
+                        message,
+                        channelMessageIsCard
+                      )}
+                    />
                   {/each}
                 {/if}
               </div>
@@ -721,7 +736,7 @@
               onComplete={onRosterKeyChoiceComplete}
             />
           {/if}
-          {#each virtualTimelineMessages as message (message.id)}
+          {#each virtualTimelineMessages as message, i (message.id)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
             {@const squadBotAnnounce =
@@ -745,7 +760,14 @@
                 timestamp={props.timestamp}
               />
             {:else}
-              <Message {...props} />
+              <Message
+                {...props}
+                compact={shouldStackChannelWithPrevious(
+                  virtualTimelineMessages[i - 1],
+                  message,
+                  channelMessageIsCard
+                )}
+              />
             {/if}
           {/each}
         {/if}
