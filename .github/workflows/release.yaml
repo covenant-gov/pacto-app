@@ -45,6 +45,19 @@ jobs:
           path: release-body.md
           retention-days: 1
 
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --output CHANGELOG.md
+
+      - name: Upload CHANGELOG
+        uses: actions/upload-artifact@v7
+        with:
+          name: changelog
+          path: CHANGELOG.md
+          retention-days: 1
+
   publish-tauri:
     needs: release-notes
     permissions:
@@ -72,6 +85,11 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: release-notes
+
+      - name: Download changelog
+        uses: actions/download-artifact@v7
+        with:
+          name: changelog
 
       - name: Read release notes
         id: notes
@@ -168,3 +186,9 @@ jobs:
           uploadUpdaterJson: true
           retryAttempts: 3
           uploadWorkflowArtifacts: true
+
+      - name: Upload CHANGELOG to release
+        if: matrix.platform == 'ubuntu-24.04'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber

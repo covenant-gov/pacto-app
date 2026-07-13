@@ -1,6 +1,12 @@
 [changelog]
-# Header and footer are kept empty because the release workflow composes its own body.
-header = ""
+# Header is rendered at the top of CHANGELOG.md; the release workflow composes its own body below it.
+header = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
 footer = ""
 
 trim = true
@@ -25,6 +31,8 @@ filter_unconventional = false
 split_commits = false
 
 commit_parsers = [
+    { message = "^Merge", skip = true },
+    { message = "^merge", skip = true },
     { message = "^feat", group = "Features" },
     { message = "^fix", group = "Bug Fixes" },
     { message = "^doc", group = "Documentation" },
