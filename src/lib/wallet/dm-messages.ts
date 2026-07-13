@@ -4,6 +4,7 @@
  */
 
 import type { SupportedChainId } from './chains';
+import { isValidNpub } from '$lib/utils/npub';
 export const WALLET_TX_REQUEST_WIRE_TYPE = 'wallet_tx_request';
 export const WALLET_TX_ANNOUNCEMENT_WIRE_TYPE = 'wallet_tx_announcement';
 
@@ -42,9 +43,8 @@ function isValidTxHash(s: unknown): s is string {
   return typeof s === 'string' && TX_HASH_REGEX.test(s);
 }
 
-/** Minimal npub check for v1 payloads (bech32 `npub1…`). */
-function isLikelyNpub(s: unknown): s is string {
-  return typeof s === 'string' && s.startsWith('npub1') && s.length >= 16;
+function isWireNpub(s: unknown): s is string {
+  return typeof s === 'string' && isValidNpub(s);
 }
 
 function isOptionalBlockNumber(s: unknown): s is string | undefined {
@@ -182,7 +182,7 @@ export function parseWalletTxAnnouncement(content: string): WalletTxAnnouncement
   if (!isWalletAssetLabel(o.asset)) return null;
   if (!isValidAmountString(o.amount)) return null;
   if (!isValidTxHash(o.tx_hash)) return null;
-  if (!isLikelyNpub(o.from_npub) || !isLikelyNpub(o.to_npub)) return null;
+  if (!isWireNpub(o.from_npub) || !isWireNpub(o.to_npub)) return null;
   if (o.request_id !== undefined && typeof o.request_id !== 'string') return null;
   if (!isOptionalBlockNumber(o.block_number)) return null;
   if (!isWireEvmAddress(o.from_evm_address)) return null;
@@ -317,12 +317,16 @@ export function formatWalletPeerInfoRequest(
 export function formatWalletPeerInfoGrant(
   payload: Omit<WalletPeerInfoGrantPayload, 'type' | 'version'> & { version?: number }
 ): string {
+  const evm = typeof payload.evm_address === 'string' ? payload.evm_address.trim() : '';
+  if (!isWireEvmAddress(evm)) {
+    throw new Error('evm_address must be a 0x-prefixed 20-byte hex address');
+  }
   return JSON.stringify({
     version: SCHEMA_VERSION,
     type: WALLET_PEER_INFO_GRANT_WIRE_TYPE,
     request_id: payload.request_id,
     grantor_npub: payload.grantor_npub,
-    evm_address: payload.evm_address.trim(),
+    evm_address: evm,
   });
 }
 
@@ -351,7 +355,7 @@ export function parseWalletPeerInfoRequest(content: string): WalletPeerInfoReque
   if (o.type !== WALLET_PEER_INFO_REQUEST_WIRE_TYPE) return null;
   if (o.version !== SCHEMA_VERSION) return null;
   if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
-  if (!isLikelyNpub(o.requester_npub)) return null;
+  if (!isWireNpub(o.requester_npub)) return null;
   // Consent-only: ignore any legacy requester_evm_address on the wire.
   return {
     type: WALLET_PEER_INFO_REQUEST_WIRE_TYPE,
@@ -376,7 +380,7 @@ export function parseWalletPeerInfoGrant(content: string): WalletPeerInfoGrantPa
   if (o.type !== WALLET_PEER_INFO_GRANT_WIRE_TYPE) return null;
   if (o.version !== SCHEMA_VERSION) return null;
   if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
-  if (!isLikelyNpub(o.grantor_npub)) return null;
+  if (!isWireNpub(o.grantor_npub)) return null;
   if (!isWireEvmAddress(o.evm_address)) return null;
   return {
     type: WALLET_PEER_INFO_GRANT_WIRE_TYPE,

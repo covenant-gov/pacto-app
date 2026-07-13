@@ -41,8 +41,6 @@ pub struct SlimProfile {
     bot: bool,
     avatar_cached: String,
     banner_cached: String,
-    #[serde(default)]
-    evm_address: String,
     // Omitting: messages, last_updated, mine
 }
 
@@ -66,7 +64,6 @@ impl Default for SlimProfile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
-            evm_address: String::new(),
         }
     }
 }
@@ -91,7 +88,6 @@ impl From<&Profile> for SlimProfile {
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
             banner_cached: profile.banner_cached.clone(),
-            evm_address: profile.evm_address.clone(),
         }
     }
 }
@@ -119,7 +115,6 @@ impl SlimProfile {
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
             banner_cached: self.banner_cached.clone(),
-            evm_address: self.evm_address.clone(),
         }
     }
 }
@@ -128,7 +123,7 @@ impl SlimProfile {
 pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let profiles = stmt.query_map([], |row| {
@@ -170,7 +165,6 @@ pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<S
             bot: row.get::<_, i32>(15)? != 0,
             avatar_cached: validated_avatar_cached,
             banner_cached: validated_banner_cached,
-            evm_address: row.get::<_, String>(18).unwrap_or_default(),
         })
     })
     .map_err(|e| format!("Failed to query profiles: {}", e))?
@@ -189,8 +183,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -208,8 +202,7 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             blocked = excluded.blocked,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
-            banner_cached = excluded.banner_cached,
-            evm_address = excluded.evm_address",
+            banner_cached = excluded.banner_cached",
         rusqlite::params![
             profile.id,  // This is the npub
             profile.name,
@@ -229,7 +222,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.bot as i32,
             profile.avatar_cached,
             profile.banner_cached,
-            profile.evm_address,
         ],
     ).map_err(|e| format!("Failed to insert profile: {}", e))?;
 
@@ -332,7 +324,7 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
     Ok(result)
 }
 
-/// Active signing address only (`settings.evm_address`). Does not update `profiles.evm_address`.
+/// Active signing address only (`settings.evm_address`). Does not touch `profiles`.
 pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;

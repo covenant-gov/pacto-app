@@ -371,7 +371,7 @@ pub async fn get_evm_native_balance(network: String, address: String) -> Result<
     })
 }
 
-fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> Result<Address, String> {
+fn map_dm_peer_send_address(to_npub: &str, dm_peer: Option<&str>) -> Result<Address, String> {
     if to_npub.trim().is_empty() {
         return Err(wallet_err_json(
             "MISSING_RECIPIENT",
@@ -379,10 +379,7 @@ fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> R
             None,
         ));
     }
-    let dm_peer = db::get_dm_peer_evm_stored(app, to_npub)
-        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
-
-    let Some(peer_raw) = dm_peer else {
+    let Some(peer_raw) = dm_peer.map(str::trim).filter(|s| !s.is_empty()) else {
         log::warn!(
             target: "pacto_wallet",
             "wallet_build_and_send_transaction: missing dm_peer_evm for npub prefix={}…",
@@ -395,13 +392,19 @@ fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> R
         ));
     };
 
-    parse_address(&peer_raw).map_err(|e| {
+    parse_address(peer_raw).map_err(|e| {
         wallet_err_json(
             "INVALID_PEER_EVM_ADDRESS",
             e,
             Some(to_npub.to_string()),
         )
     })
+}
+
+fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> Result<Address, String> {
+    let dm_peer = db::get_dm_peer_evm_stored(app, to_npub)
+        .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
+    map_dm_peer_send_address(to_npub, dm_peer.as_deref())
 }
 
 /// Tauri command: resolve peer EVM from `to_npub`, **or** use `to_address_evm` when set (raw `0x` recipient from Settings).
@@ -570,4 +573,54 @@ pub async fn wallet_wait_for_transaction(
         chain_id: net.chain_id,
         block_number: receipt.block_number().map(|n| n.to_string()),
     })
+}
+
+#[cfg(test)]
+mod resolve_peer_send_address_tests {
+    use super::*;
+
+    fn err_code(err: &str) -> String {
+        let v: serde_json::Value = serde_json::from_str(err).expect("wallet err json");
+        v.get("code")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    #[test]
+    fn empty_npub_is_missing_recipient() {
+        let err = map_dm_peer_send_address("", Some("0x1111111111111111111111111111111111111111")).unwrap_err();
+        assert_eq!(err_code(&err), "MISSING_RECIPIENT");
+    }
+
+    #[test]
+    fn missing_peer_row_is_missing_peer_evm() {
+        let err = map_dm_peer_send_address("npub1peer", None).unwrap_err();
+        assert_eq!(err_code(&err), "MISSING_PEER_EVM_ADDRESS");
+    }
+
+    #[test]
+    fn empty_peer_address_is_missing_peer_evm() {
+        let err = map_dm_peer_send_address("npub1peer", Some("   ")).unwrap_err();
+        assert_eq!(err_code(&err), "MISSING_PEER_EVM_ADDRESS");
+    }
+
+    #[test]
+    fn invalid_peer_hex_is_invalid_peer_evm() {
+        let err = map_dm_peer_send_address("npub1peer", Some("0xbad")).unwrap_err();
+        assert_eq!(err_code(&err), "INVALID_PEER_EVM_ADDRESS");
+    }
+
+    #[test]
+    fn valid_peer_resolves_address() {
+        let addr = map_dm_peer_send_address(
+            "npub1peer",
+            Some("0x1111111111111111111111111111111111111111"),
+        )
+        .unwrap();
+        assert_eq!(
+            addr,
+            parse_address("0x1111111111111111111111111111111111111111").unwrap()
+        );
+    }
 }

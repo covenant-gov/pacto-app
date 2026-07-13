@@ -36,9 +36,6 @@ pub struct Profile {
     pub avatar_cached: String,
     /// Local cached path for banner image (for offline support)
     pub banner_cached: String,
-    /// Local-only payout cache (not Kind 0). Cleared on metadata sync; DM pay uses `dm_peer_evm`.
-    #[serde(default)]
-    pub evm_address: String,
 }
 
 impl Default for Profile {
@@ -69,7 +66,6 @@ impl Profile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
-            evm_address: String::new(),
         }
     }
 
@@ -151,12 +147,6 @@ impl Profile {
                 self.nip05 = nip05;
                 changed = true;
             }
-        }
-
-        // Kind 0 must not carry EVM; drop any previously synced value.
-        if !self.evm_address.is_empty() {
-            self.evm_address.clear();
-            changed = true;
         }
 
         // Bot (custom metadata field)
@@ -866,15 +856,5 @@ mod kind0_evm_tests {
         let json = kind0_metadata_json_without_evm(&contaminated).unwrap();
         assert!(!json.contains("evm_address"));
         assert!(json.contains("alice"));
-    }
-
-    #[test]
-    fn from_metadata_clears_stale_evm_address() {
-        let mut profile = super::Profile::new();
-        profile.evm_address = "0x1111111111111111111111111111111111111111".to_string();
-        let meta = Metadata::new().name("bob");
-        assert!(profile.from_metadata(meta));
-        assert!(profile.evm_address.is_empty());
-        assert_eq!(profile.name, "bob");
     }
 }

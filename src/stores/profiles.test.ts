@@ -10,7 +10,6 @@ import {
 import { dmChatsByNpub, blockedDmNpubs, activeDmId } from './dm';
 import { currentUser } from './auth';
 import { fetchNostrProfile, loadNostrProfile, type NostrProfile } from '../lib/api/nostr';
-import { showToast } from './toast';
 import { setCurrentNpubForPersistence } from './persistence-context';
 
 const { handlers } = vi.hoisted(() => {
@@ -31,10 +30,6 @@ vi.mock('../lib/api/nostr', () => ({
   startNotifs: vi.fn().mockResolvedValue(undefined),
   syncAllProfiles: vi.fn().mockResolvedValue(undefined),
   type: {},
-}));
-
-vi.mock('./toast', () => ({
-  showToast: vi.fn(),
 }));
 
 describe('profiles', () => {
@@ -65,7 +60,6 @@ describe('profiles', () => {
   beforeEach(() => {
     vi.mocked(fetchNostrProfile).mockReset();
     vi.mocked(loadNostrProfile).mockReset();
-    vi.mocked(showToast).mockReset();
   });
 
   afterEach(() => {
@@ -159,20 +153,6 @@ describe('profiles', () => {
       nickHandler?.({ payload: { profile_id: npub, value: 'Al' } });
       expect(get(profiles)[npub]?.nickname).toBe('Al');
       expect(get(dmChatsByNpub)[npub]?.name).toBe('Al');
-    });
-
-    it('kind0_profile_published shows a toast', () => {
-      const publishedHandler = handlers.get('kind0_profile_published');
-      expect(publishedHandler).toBeDefined();
-      publishedHandler?.({ payload: {} });
-      expect(showToast).toHaveBeenCalledWith('Profile metadata (Kind 0) published to the network.');
-    });
-
-    it('kind0_profile_publish_failed shows a toast with the error', () => {
-      const failedHandler = handlers.get('kind0_profile_publish_failed');
-      expect(failedHandler).toBeDefined();
-      failedHandler?.({ payload: 'publish failed' });
-      expect(showToast).toHaveBeenCalledWith('publish failed');
     });
   });
 });

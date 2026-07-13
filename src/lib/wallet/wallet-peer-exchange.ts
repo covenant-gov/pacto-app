@@ -45,6 +45,24 @@ export function threadHasOutboundRequestForId(
 }
 
 /**
+ * Whether an inbound grant's EVM address may be persisted for this peer.
+ * Requires we either requested this exchange or already granted (accept + reciprocal).
+ */
+export function shouldPersistInboundWalletPeerGrant(params: {
+  grant: WalletPeerInfoGrantPayload;
+  peerNpub: string;
+  myNpub: string;
+  messages: WalletPeerExchangeMessage[];
+}): boolean {
+  const { grant, peerNpub, myNpub, messages } = params;
+  if (grant.grantor_npub !== peerNpub) return false;
+  return (
+    threadHasOutboundRequestForId(messages, grant.request_id, myNpub) ||
+    threadHasOutboundGrantForRequest(messages, grant.request_id, myNpub)
+  );
+}
+
+/**
  * Whether receiving this grant should trigger a one-shot reciprocal grant from us.
  */
 export function shouldSendReciprocalWalletPeerGrant(params: {

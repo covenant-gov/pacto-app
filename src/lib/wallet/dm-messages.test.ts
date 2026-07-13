@@ -10,14 +10,17 @@ import {
   parseWalletPeerInfoGrant,
   parseWalletPeerInfoDecline,
   formatWalletPeerInfoRequest,
+  formatWalletPeerInfoGrant,
   isWalletTxAnnouncementOnChainPending,
 } from './dm-messages';
 
 const SAMPLE_FROM_EVM = '0x1111111111111111111111111111111111111111';
+const NPUB_SENDER = 'npub1senderaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const NPUB_RECIPIENT = 'npub1recipientbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 const VALID_REQUEST_JSON = `{"version":1,"type":"wallet_tx_request","request_id":"550e8400-e29b-41d4-a716-446655440000","network":"sepolia","asset":"ETH","amount":"0.05","from_evm_address":"${SAMPLE_FROM_EVM}","created_at_ms":1710000000000}`;
 
-const VALID_ANNOUNCE_JSON = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}","request_id":"550e8400-e29b-41d4-a716-446655440000","block_number":"12345678"}`;
+const VALID_ANNOUNCE_JSON = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"${NPUB_SENDER}","to_npub":"${NPUB_RECIPIENT}","from_evm_address":"${SAMPLE_FROM_EVM}","request_id":"550e8400-e29b-41d4-a716-446655440000","block_number":"12345678"}`;
 
 describe('parseWalletTxRequest', () => {
   it('parses compact schema example', () => {
@@ -38,7 +41,7 @@ describe('parseWalletTxRequest', () => {
   it('rejects wrong type', () => {
     expect(
       parseWalletTxRequest(
-        '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"' +
+        '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"' +
           SAMPLE_FROM_EVM +
           '"}'
       )
@@ -151,7 +154,7 @@ describe('parseWalletTxAnnouncement', () => {
   });
 
   it('allows optional request_id and block_number omitted', () => {
-    const minimal = `{"version":1,"type":"wallet_tx_announcement","network":"mainnet","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const minimal = `{"version":1,"type":"wallet_tx_announcement","network":"mainnet","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
     const p = parseWalletTxAnnouncement(minimal);
     expect(p).not.toBeNull();
     expect(p!.request_id).toBeUndefined();
@@ -159,7 +162,7 @@ describe('parseWalletTxAnnouncement', () => {
   });
 
   it('rejects bad tx hash', () => {
-    const bad = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xshort","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const bad = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xshort","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
     expect(parseWalletTxAnnouncement(bad)).toBeNull();
   });
 
@@ -188,14 +191,14 @@ describe('parseWalletTxAnnouncement', () => {
   it('rejects missing from_evm_address', () => {
     expect(
       parseWalletTxAnnouncement(
-        '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb"}'
+        '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}'
       )
     ).toBeNull();
   });
 
   it('rejects invalid from_evm_address on announcement', () => {
     const bad =
-      '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"0xshort"}';
+      '{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"0xshort"}';
     expect(parseWalletTxAnnouncement(bad)).toBeNull();
   });
 
@@ -206,8 +209,8 @@ describe('parseWalletTxAnnouncement', () => {
         asset: 'ETH',
         amount: '1',
         tx_hash: '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
-        from_npub: 'npub1aaaaaaaaaaaaaaaaaaaa',
-        to_npub: 'npub1bbbbbbbbbbbbbbbbbbbb',
+        from_npub: 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        to_npub: 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         from_evm_address: '',
       })
     ).toThrow();
@@ -228,14 +231,14 @@ describe('local anvil network support', () => {
   });
 
   it('parseWalletTxAnnouncement accepts network "local"', () => {
-    const j = `{"version":1,"type":"wallet_tx_announcement","network":"local","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const j = `{"version":1,"type":"wallet_tx_announcement","network":"local","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
     const p = parseWalletTxAnnouncement(j);
     expect(p).not.toBeNull();
     expect(p!.network).toBe('local');
   });
 
   it('parseWalletTxAnnouncement rejects the retired "anvil" alias (canonical key is "local")', () => {
-    const j = `{"version":1,"type":"wallet_tx_announcement","network":"anvil","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+    const j = `{"version":1,"type":"wallet_tx_announcement","network":"anvil","asset":"USDC","amount":"10.00","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1senderaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1recipientbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
     expect(parseWalletTxAnnouncement(j)).toBeNull();
   });
 
@@ -254,8 +257,8 @@ describe('local anvil network support', () => {
 });
 
 
-const NPUB_A = 'npub1aaaaaaaaaaaaaa';
-const NPUB_B = 'npub1bbbbbbbbbbbbbb';
+const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const NPUB_B = 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const ADDR_A = '0xabcdef0123456789abcdef0123456789abcdef01';
 
 describe('wallet peer info exchange', () => {
@@ -281,12 +284,30 @@ describe('wallet peer info exchange', () => {
     expect(p).not.toHaveProperty('requester_evm_address');
   });
 
+  it('rejects short requester_npub', () => {
+    expect(
+      parseWalletPeerInfoRequest(
+        '{"version":1,"type":"wallet_peer_info_request","request_id":"x","requester_npub":"npub1short"}'
+      )
+    ).toBeNull();
+  });
+
   it('parses wallet_peer_info_grant', () => {
     const j = `{"version":1,"type":"wallet_peer_info_grant","request_id":"rid-1","grantor_npub":"${NPUB_B}","evm_address":"${ADDR_A}"}`;
     const g = parseWalletPeerInfoGrant(j);
     expect(g).not.toBeNull();
     expect(g!.grantor_npub).toBe(NPUB_B);
     expect(g!.evm_address).toBe(ADDR_A);
+  });
+
+  it('formatWalletPeerInfoGrant throws on invalid evm_address', () => {
+    expect(() =>
+      formatWalletPeerInfoGrant({
+        request_id: 'rid-1',
+        grantor_npub: NPUB_B,
+        evm_address: '0xbad',
+      })
+    ).toThrow(/evm_address/);
   });
 
   it('parses wallet_peer_info_decline', () => {
@@ -306,8 +327,8 @@ describe('isWalletTxAnnouncementOnChainPending', () => {
       asset: 'USDC',
       amount: '10.00',
       tx_hash: '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
-      from_npub: 'npub1senderaaaaaaaaaaaaaaaa',
-      to_npub: 'npub1recipientbbbbbbbbbbbbbb',
+      from_npub: 'npub1senderaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      to_npub: 'npub1recipientbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       from_evm_address: SAMPLE_FROM_EVM,
     }),
   )!;
@@ -332,8 +353,8 @@ describe('isWalletTxAnnouncementOnChainPending', () => {
 });
 
 describe('getFulfilledWalletRequestIdsFromMessages', () => {
-  const annWithReq = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}","request_id":"req-uuid-1"}`;
-  const annNoReq = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+  const annWithReq = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}","request_id":"req-uuid-1"}`;
+  const annNoReq = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"1","tx_hash":"0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
 
   it('returns request_ids from announcements only', () => {
     const set = getFulfilledWalletRequestIdsFromMessages([
@@ -348,7 +369,7 @@ describe('getFulfilledWalletRequestIdsFromMessages', () => {
 
 describe('dedupeWalletTxAnnouncements', () => {
   const TX = '0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  const pending = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"0.000001","tx_hash":"${TX}","from_npub":"npub1aaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
+  const pending = `{"version":1,"type":"wallet_tx_announcement","network":"sepolia","asset":"ETH","amount":"0.000001","tx_hash":"${TX}","from_npub":"npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","to_npub":"npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","from_evm_address":"${SAMPLE_FROM_EVM}"}`;
   const confirmed = `${pending.slice(0, -1)},"block_number":"12345678"}`;
 
   it('keeps one announcement per tx_hash, preferring confirmed relayed rows', () => {

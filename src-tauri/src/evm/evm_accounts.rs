@@ -259,32 +259,6 @@ fn new_import_id() -> String {
     format!("imp-{}", hex::encode(b))
 }
 
-/// Local default receiving address (`default_shared_evm_account_id`); not published on Kind 0.
-/// Kept for DM wallet grants (next steps); not referenced until exchange uses it.
-#[allow(dead_code)]
-pub async fn resolve_default_shared_evm_address_string<R: Runtime>(handle: AppHandle<R>) -> Option<String> {
-    let _ = ensure_ready(handle.clone()).await.ok();
-    let addr_opt = if let Ok(conn) = account_manager::get_db_connection(&handle) {
-        let inner = if let Some(id) = sql_get_setting(&conn, SETTING_DEFAULT_SHARED).ok().flatten() {
-            conn.query_row(
-                "SELECT address FROM evm_accounts WHERE id = ?1",
-                rusqlite::params![&id],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .ok()
-            .flatten()
-        } else {
-            None
-        };
-        account_manager::return_db_connection(conn);
-        inner
-    } else {
-        None
-    };
-    addr_opt.filter(|s| !s.trim().is_empty())
-}
-
 fn count_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<i64, String> {
     let conn = account_manager::get_db_connection(handle)?;
     let c: i64 = conn

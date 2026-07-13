@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
+  import { getEvmAddress } from '../../lib/api/auth';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -93,14 +95,17 @@
 
   /** Unlock Send/Request only after pairwise `dm_peer_evm` exchange. */
   async function syncPeerWalletReady() {
-    if (!npub) {
+    const peerNpub = npub;
+    if (!peerNpub) {
       peerWalletReady = false;
       return;
     }
     try {
-      const fromDm = await getDmPeerEvmAddress(npub);
+      const fromDm = await getDmPeerEvmAddress(peerNpub);
+      if (npub !== peerNpub) return;
       peerWalletReady = Boolean(fromDm?.trim());
     } catch {
+      if (npub !== peerNpub) return;
       peerWalletReady = false;
     }
   }
@@ -109,7 +114,8 @@
 
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;
-    if (!me || !npub || walletInfoRequestSending) return;
+    const peerNpub = npub;
+    if (!me || !peerNpub || walletInfoRequestSending) return;
     if (peerWalletReady) {
       showToast('You already have a payout address for this contact.');
       return;
@@ -121,11 +127,19 @@
     }
     walletInfoRequestSending = true;
     try {
+      const myAddr =
+        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
+      if (npub !== peerNpub) return;
+      if (!myAddr) {
+        showToast('Add or select a wallet before requesting theirs.');
+        return;
+      }
       const json = formatWalletPeerInfoRequest({
         request_id: crypto.randomUUID(),
         requester_npub: me,
       });
       const ok = await post(json);
+      if (npub !== peerNpub) return;
       if (ok) {
         showToast('Request sent. Waiting for your contact to accept.');
       } else {

@@ -708,6 +708,10 @@
   ) {
     const peerNpub = $activeDmId;
     if (!peerNpub) return;
+    if (get(declinedWalletPeerInfoRequestMessageIds).includes(msg.id)) {
+      showToast('You already declined this request. Ask them to send a new one.');
+      return;
+    }
     if (payload.requester_npub !== peerNpub) {
       showToast('This request does not match this conversation.');
       return;

@@ -9,6 +9,7 @@
   } from '../../lib/wallet/dm-messages';
   import {
     formatReciprocalWalletPeerGrant,
+    shouldPersistInboundWalletPeerGrant,
     shouldSendReciprocalWalletPeerGrant,
   } from '../../lib/wallet/wallet-peer-exchange';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
@@ -43,7 +44,7 @@
   export let canLoadOlder = false;
   export let loadingOlder = false;
   export let onLoadOlder: () => void = () => {};
-  export let onSend: (content: string) => void = () => {};
+  export let onSend: (content: string) => void | boolean | Promise<boolean> = () => {};
   export let onTyping: () => void = () => {};
   export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
   export let onAcceptChannelInSquad: (
@@ -119,17 +120,27 @@
 
   $: (() => {
     const uid = $currentUser?.npub;
-    if (!uid || !npub) return;
-    const reciprocatedIds = $reciprocatedWalletPeerInfoRequestIds;
+    const peerNpub = npub;
+    if (!uid || !peerNpub) return;
     for (const msg of messages) {
       if (msg.mine) continue;
       const g = parseWalletPeerInfoGrant(msg.content ?? '');
-      if (!g || g.grantor_npub !== npub) continue;
+      if (!g || g.grantor_npub !== peerNpub) continue;
 
-      if (!appliedWalletGrantIds.has(msg.id)) {
+      if (
+        !appliedWalletGrantIds.has(msg.id) &&
+        shouldPersistInboundWalletPeerGrant({
+          grant: g,
+          peerNpub,
+          myNpub: uid,
+          messages,
+        })
+      ) {
         appliedWalletGrantIds.add(msg.id);
-        void setDmPeerEvmAddress(npub, g.evm_address).then(
+        const forPeer = peerNpub;
+        void setDmPeerEvmAddress(forPeer, g.evm_address).then(
           () => {
+            if (npub !== forPeer) return;
             dmWalletPeerExchangeTick.update((t: number) => t + 1);
           },
           () => {
@@ -142,10 +153,10 @@
       if (
         !shouldSendReciprocalWalletPeerGrant({
           grant: g,
-          peerNpub: npub,
+          peerNpub,
           myNpub: uid,
           messages,
-          alreadyReciprocatedRequestIds: reciprocatedIds,
+          alreadyReciprocatedRequestIds: get(reciprocatedWalletPeerInfoRequestIds),
         })
       ) {
         continue;
@@ -155,6 +166,10 @@
         try {
           const myAddr =
             (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
+          if (npub !== peerNpub || get(currentUser)?.npub !== uid) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
           if (!myAddr) {
             reciprocalGrantInFlight.delete(g.request_id);
             showToast('Add or select a wallet to finish sharing your payout address.');
@@ -163,7 +178,7 @@
           if (
             !shouldSendReciprocalWalletPeerGrant({
               grant: g,
-              peerNpub: npub,
+              peerNpub,
               myNpub: uid,
               messages,
               alreadyReciprocatedRequestIds: get(reciprocatedWalletPeerInfoRequestIds),
@@ -177,7 +192,16 @@
             myNpub: uid,
             myEvmAddress: myAddr,
           });
-          onSend(grantJson);
+          const sendResult = await Promise.resolve(onSend(grantJson));
+          if (npub !== peerNpub || get(currentUser)?.npub !== uid) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
+          if (sendResult === false) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            showToast('Could not share your address. Open the chat to try again.');
+            return;
+          }
           reciprocatedWalletPeerInfoRequestIds.update((ids) =>
             ids.includes(g.request_id) ? ids : [...ids, g.request_id]
           );

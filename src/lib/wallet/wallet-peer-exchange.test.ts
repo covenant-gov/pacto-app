@@ -1,14 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
   shouldSendReciprocalWalletPeerGrant,
+  shouldPersistInboundWalletPeerGrant,
   threadHasOutboundRequestForId,
   threadHasOutboundGrantForRequest,
   formatReciprocalWalletPeerGrant,
 } from './wallet-peer-exchange';
 import { formatWalletPeerInfoGrant, formatWalletPeerInfoRequest } from './dm-messages';
 
-const NPUB_A = 'npub1aaaaaaaaaaaaaa';
-const NPUB_B = 'npub1bbbbbbbbbbbbbb';
+const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const NPUB_B = 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const ADDR_A = '0xabcdef0123456789abcdef0123456789abcdef01';
 const ADDR_B = '0x1111111111111111111111111111111111111111';
 
@@ -135,5 +136,70 @@ describe('wallet-peer-exchange', () => {
     expect(j).toContain('wallet_peer_info_grant');
     expect(j).toContain(ADDR_A);
     expect(j).toContain('rid-1');
+  });
+
+  it('persists inbound grant when we requested the exchange', () => {
+    const messages = [
+      { mine: true, content: requestJson },
+      { mine: false, content: grantFromB },
+    ];
+    expect(
+      shouldPersistInboundWalletPeerGrant({
+        grant: {
+          type: 'wallet_peer_info_grant',
+          version: 1,
+          request_id: 'rid-1',
+          grantor_npub: NPUB_B,
+          evm_address: ADDR_B,
+        },
+        peerNpub: NPUB_B,
+        myNpub: NPUB_A,
+        messages,
+      })
+    ).toBe(true);
+  });
+
+  it('persists inbound reciprocal grant after we accepted', () => {
+    const peerRequest = formatWalletPeerInfoRequest({
+      request_id: 'rid-1',
+      requester_npub: NPUB_B,
+    });
+    const messages = [
+      { mine: false, content: peerRequest },
+      { mine: true, content: grantFromA },
+      { mine: false, content: grantFromB },
+    ];
+    expect(
+      shouldPersistInboundWalletPeerGrant({
+        grant: {
+          type: 'wallet_peer_info_grant',
+          version: 1,
+          request_id: 'rid-1',
+          grantor_npub: NPUB_B,
+          evm_address: ADDR_B,
+        },
+        peerNpub: NPUB_B,
+        myNpub: NPUB_A,
+        messages,
+      })
+    ).toBe(true);
+  });
+
+  it('does not persist unsolicited inbound grant', () => {
+    const messages = [{ mine: false, content: grantFromB }];
+    expect(
+      shouldPersistInboundWalletPeerGrant({
+        grant: {
+          type: 'wallet_peer_info_grant',
+          version: 1,
+          request_id: 'rid-1',
+          grantor_npub: NPUB_B,
+          evm_address: ADDR_B,
+        },
+        peerNpub: NPUB_B,
+        myNpub: NPUB_A,
+        messages,
+      })
+    ).toBe(false);
   });
 });
