@@ -7,7 +7,13 @@
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
+  import {
+    formatReciprocalWalletPeerGrant,
+    shouldSendReciprocalWalletPeerGrant,
+  } from '../../lib/wallet/wallet-peer-exchange';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
+  import { getEvmAddress } from '../../lib/api/auth';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
   import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
@@ -26,9 +32,11 @@
     toggleWalletSidebar,
     type DmTab,
     appendDmThreadAnnouncement,
+    reciprocatedWalletPeerInfoRequestIds,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
+  import { get } from 'svelte/store';
 
   export let npub: string;
   export let messages: DmMessage[] = [];
@@ -101,29 +109,84 @@
   $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
+  let reciprocalGrantInFlight = new Set<string>();
 
   $: if (npub !== appliedWalletGrantsForNpub) {
     appliedWalletGrantsForNpub = npub;
     appliedWalletGrantIds = new Set();
+    reciprocalGrantInFlight = new Set();
   }
 
   $: (() => {
     const uid = $currentUser?.npub;
     if (!uid || !npub) return;
+    const reciprocatedIds = $reciprocatedWalletPeerInfoRequestIds;
     for (const msg of messages) {
       if (msg.mine) continue;
       const g = parseWalletPeerInfoGrant(msg.content ?? '');
       if (!g || g.grantor_npub !== npub) continue;
-      if (appliedWalletGrantIds.has(msg.id)) continue;
-      appliedWalletGrantIds.add(msg.id);
-      void setDmPeerEvmAddress(npub, g.evm_address).then(
-        () => {
+
+      if (!appliedWalletGrantIds.has(msg.id)) {
+        appliedWalletGrantIds.add(msg.id);
+        void setDmPeerEvmAddress(npub, g.evm_address).then(
+          () => {
+            dmWalletPeerExchangeTick.update((t: number) => t + 1);
+          },
+          () => {
+            appliedWalletGrantIds.delete(msg.id);
+          }
+        );
+      }
+
+      if (reciprocalGrantInFlight.has(g.request_id)) continue;
+      if (
+        !shouldSendReciprocalWalletPeerGrant({
+          grant: g,
+          peerNpub: npub,
+          myNpub: uid,
+          messages,
+          alreadyReciprocatedRequestIds: reciprocatedIds,
+        })
+      ) {
+        continue;
+      }
+      reciprocalGrantInFlight.add(g.request_id);
+      void (async () => {
+        try {
+          const myAddr =
+            (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
+          if (!myAddr) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            showToast('Add or select a wallet to finish sharing your payout address.');
+            return;
+          }
+          if (
+            !shouldSendReciprocalWalletPeerGrant({
+              grant: g,
+              peerNpub: npub,
+              myNpub: uid,
+              messages,
+              alreadyReciprocatedRequestIds: get(reciprocatedWalletPeerInfoRequestIds),
+            })
+          ) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
+          const grantJson = formatReciprocalWalletPeerGrant({
+            requestId: g.request_id,
+            myNpub: uid,
+            myEvmAddress: myAddr,
+          });
+          onSend(grantJson);
+          reciprocatedWalletPeerInfoRequestIds.update((ids) =>
+            ids.includes(g.request_id) ? ids : [...ids, g.request_id]
+          );
           dmWalletPeerExchangeTick.update((t: number) => t + 1);
-        },
-        () => {
-          appliedWalletGrantIds.delete(msg.id);
+          showToast('Wallet addresses exchanged for this chat.');
+        } catch {
+          reciprocalGrantInFlight.delete(g.request_id);
         }
-      );
+      })();
     }
   })();
 

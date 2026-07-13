@@ -11,6 +11,7 @@ import {
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
+  reciprocatedWalletPeerInfoRequestIds,
 } from './invite-decisions';
 
 function makeGetKey(prefix: string): string | null {
@@ -43,6 +44,7 @@ describe('invite-decisions', () => {
     declinedWalletTxRequestMessageIds.set([]);
     acceptedWalletPeerInfoRequestMessageIds.set([]);
     declinedWalletPeerInfoRequestMessageIds.set([]);
+    reciprocatedWalletPeerInfoRequestIds.set([]);
     vi.unstubAllGlobals();
   });
 
@@ -60,6 +62,7 @@ describe('invite-decisions', () => {
     declinedWalletTxRequestMessageIds.set(['m3']);
     acceptedWalletPeerInfoRequestMessageIds.set(['m4']);
     declinedWalletPeerInfoRequestMessageIds.set(['m5']);
+    reciprocatedWalletPeerInfoRequestIds.set(['rid-1']);
 
     expect(JSON.parse(storage.get('test_pacto_invite_accepted_squad') ?? '[]')).toEqual(['s1', 's2']);
     expect(JSON.parse(storage.get('test_pacto_invite_declined_squad') ?? '[]')).toEqual(['s3']);
@@ -68,6 +71,7 @@ describe('invite-decisions', () => {
     expect(JSON.parse(storage.get('test_pacto_wallet_tx_request_declined') ?? '[]')).toEqual(['m3']);
     expect(JSON.parse(storage.get('test_pacto_wallet_peer_info_request_accepted') ?? '[]')).toEqual(['m4']);
     expect(JSON.parse(storage.get('test_pacto_wallet_peer_info_request_declined') ?? '[]')).toEqual(['m5']);
+    expect(JSON.parse(storage.get('test_pacto_wallet_peer_info_reciprocated') ?? '[]')).toEqual(['rid-1']);
   });
 
   it('returns load entries that hydrate stores from localStorage keys', () => {
@@ -91,5 +95,6 @@ describe('invite-decisions', () => {
     expect(get(declinedWalletTxRequestMessageIds)).toEqual(['id-4']);
     expect(get(acceptedWalletPeerInfoRequestMessageIds)).toEqual(['id-5']);
     expect(get(declinedWalletPeerInfoRequestMessageIds)).toEqual(['id-6']);
+    expect(get(reciprocatedWalletPeerInfoRequestIds)).toEqual(['id-7']);
   });
 });

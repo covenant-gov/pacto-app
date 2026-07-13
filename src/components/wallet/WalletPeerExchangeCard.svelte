@@ -43,7 +43,7 @@
       case 'request-out':
         return `Waiting for ${peerName} to accept or decline.`;
       case 'grant-in':
-        return `${peerName} shared their payout address. Send or Request unlocks once both addresses are exchanged.`;
+        return `${peerName} shared their payout address. Your address is sent back automatically so both of you can use Send or Request.`;
       case 'grant-out':
         return `You shared your payout address with ${peerName}.`;
       case 'decline-in':
