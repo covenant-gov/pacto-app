@@ -123,11 +123,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev
-          # Install Vulkan SDK with glslc compiler
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
-          sudo apt-get update
-          sudo apt-get install -y vulkan-sdk
+          # whisper-rs/ggml-vulkan needs glslc. LunarG's vulkan-sdk is only published for amd64,
+          # so on arm64 runners install glslc from Ubuntu's own repositories.
+          if [ "$(uname -m)" = "aarch64" ]; then
+            sudo apt-get install -y glslc
+          else
+            # Install Vulkan SDK with glslc compiler
+            wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+            sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+            sudo apt-get update
+            sudo apt-get install -y vulkan-sdk
+          fi
 
       - name: Install Vulkan SDK and OpenSSL (Windows)
         if: matrix.platform == 'windows-latest'
