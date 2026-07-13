@@ -50,7 +50,6 @@ const PEER_INFO_REQUEST = JSON.stringify({
   type: 'wallet_peer_info_request',
   request_id: 'r1',
   requester_npub: NPUB_A,
-  requester_evm_address: EVM_A,
 });
 
 const PEER_INFO_GRANT = JSON.stringify({

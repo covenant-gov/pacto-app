@@ -41,7 +41,6 @@
     type WalletPeerInfoRequestPayload,
   } from '../lib/wallet/dm-messages';
   import { getEvmAddress } from '../lib/api/auth';
-  import { setDmPeerEvmAddress } from '../lib/api/wallet-peers';
   import { scheduleWalletSummaryBackgroundPrefetch } from '../lib/wallet/wallet-summary-prefetch';
   import { getActiveEvmSignerAddress } from '../lib/wallet/evm-accounts';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
@@ -716,17 +715,10 @@
     if (acceptingWalletPeerInfoRequestId) return;
     acceptingWalletPeerInfoRequestId = msg.id;
     try {
-      // Request includes the other party's address; accepting saves it here immediately so this side can pay
-      // them without a second request. WalletBar only refreshes when this tick runs.
-      await setDmPeerEvmAddress(peerNpub, payload.requester_evm_address);
-      dmWalletPeerExchangeTick.update((t: number) => t + 1);
-
       const myAddr =
         (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
       if (!myAddr) {
-        showToast(
-          'Their address is saved. Add or select a wallet, then tap Accept again to send yours.'
-        );
+        showToast('Add or select a wallet, then tap Accept to share your address.');
         return;
       }
       const me = get(currentUser)?.npub;
@@ -738,9 +730,7 @@
       });
       const ok = await handleDmSend(grantJson);
       if (!ok) {
-        showToast(
-          'Could not send your address. Theirs is saved on this device; tap Accept to try again.'
-        );
+        showToast('Could not send your address. Tap Accept to try again.');
         return;
       }
       acceptedWalletPeerInfoRequestMessageIds.update((ids: string[]) =>
@@ -750,7 +740,7 @@
         ids.filter((id) => id !== msg.id)
       );
       dmWalletPeerExchangeTick.update((t: number) => t + 1);
-      showToast('Wallet addresses exchanged for this chat.');
+      showToast('Your address was shared. Waiting for theirs.');
     } catch (e: unknown) {
       dmError('Accept wallet peer info failed', e);
       showToast('Could not complete wallet exchange.');

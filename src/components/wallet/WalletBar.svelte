@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { getEvmAddress } from '../../lib/api/auth';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
@@ -23,7 +22,6 @@
     persistWalletSummaryCache,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
-  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import {
     walletSendPrefillFromRequest,
@@ -123,16 +121,9 @@
     }
     walletInfoRequestSending = true;
     try {
-      const addr =
-        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
-      if (!addr) {
-        showToast('Your wallet address is not ready yet.');
-        return;
-      }
       const json = formatWalletPeerInfoRequest({
         request_id: crypto.randomUUID(),
         requester_npub: me,
-        requester_evm_address: addr.trim(),
       });
       const ok = await post(json);
       if (ok) {
@@ -379,8 +370,8 @@
   {#if !peerWalletReady}
     <div class="wallet-bar-init">
       <p class="wallet-bar-init-text">
-        Their payout address for this chat is not on your device yet. Send a private request (your address is
-        included). When they accept, both of you can send to each other without a second request.
+        Their payout address for this chat is not on your device yet. Send a private request to exchange
+        addresses. When they accept, both of you can send to each other.
       </p>
       <button
         type="button"

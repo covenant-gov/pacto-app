@@ -259,25 +259,26 @@ const NPUB_B = 'npub1bbbbbbbbbbbbbb';
 const ADDR_A = '0xabcdef0123456789abcdef0123456789abcdef01';
 
 describe('wallet peer info exchange', () => {
-  it('parses and formats wallet_peer_info_request', () => {
+  it('parses and formats wallet_peer_info_request without an address', () => {
     const j = formatWalletPeerInfoRequest({
       request_id: 'rid-1',
       requester_npub: NPUB_A,
-      requester_evm_address: ADDR_A,
     });
+    expect(j).not.toContain('requester_evm_address');
     const p = parseWalletPeerInfoRequest(j);
     expect(p).not.toBeNull();
     expect(p!.request_id).toBe('rid-1');
     expect(p!.requester_npub).toBe(NPUB_A);
-    expect(p!.requester_evm_address).toBe(ADDR_A);
+    expect(p).not.toHaveProperty('requester_evm_address');
   });
 
-  it('rejects request with invalid address', () => {
-    expect(
-      parseWalletPeerInfoRequest(
-        `{"version":1,"type":"wallet_peer_info_request","request_id":"x","requester_npub":"${NPUB_A}","requester_evm_address":"not-hex"}`
-      )
-    ).toBeNull();
+  it('ignores legacy requester_evm_address on parse', () => {
+    const p = parseWalletPeerInfoRequest(
+      `{"version":1,"type":"wallet_peer_info_request","request_id":"x","requester_npub":"${NPUB_A}","requester_evm_address":"${ADDR_A}"}`
+    );
+    expect(p).not.toBeNull();
+    expect(p!.requester_npub).toBe(NPUB_A);
+    expect(p).not.toHaveProperty('requester_evm_address');
   });
 
   it('parses wallet_peer_info_grant', () => {

@@ -287,7 +287,6 @@ export interface WalletPeerInfoRequestPayload {
   version: typeof SCHEMA_VERSION;
   request_id: string;
   requester_npub: string;
-  requester_evm_address: string;
 }
 
 export interface WalletPeerInfoGrantPayload {
@@ -312,7 +311,6 @@ export function formatWalletPeerInfoRequest(
     type: WALLET_PEER_INFO_REQUEST_WIRE_TYPE,
     request_id: payload.request_id,
     requester_npub: payload.requester_npub,
-    requester_evm_address: payload.requester_evm_address.trim(),
   });
 }
 
@@ -354,13 +352,12 @@ export function parseWalletPeerInfoRequest(content: string): WalletPeerInfoReque
   if (o.version !== SCHEMA_VERSION) return null;
   if (typeof o.request_id !== 'string' || o.request_id.length === 0) return null;
   if (!isLikelyNpub(o.requester_npub)) return null;
-  if (!isWireEvmAddress(o.requester_evm_address)) return null;
+  // Consent-only: ignore any legacy requester_evm_address on the wire.
   return {
     type: WALLET_PEER_INFO_REQUEST_WIRE_TYPE,
     version: SCHEMA_VERSION,
     request_id: o.request_id,
     requester_npub: o.requester_npub,
-    requester_evm_address: o.requester_evm_address.trim(),
   };
 }
 

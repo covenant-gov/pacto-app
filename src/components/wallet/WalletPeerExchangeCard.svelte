@@ -39,17 +39,17 @@
   $: body = (() => {
     switch (variant) {
       case 'request-in':
-        return `${peerName} asked to exchange payout addresses. Their address is included; if you accept, yours is sent back and both devices store both addresses.`;
+        return `${peerName} asked to exchange payout addresses. If you accept, your address is sent and theirs is shared back so both of you can send payments.`;
       case 'request-out':
         return `Waiting for ${peerName} to accept or decline.`;
       case 'grant-in':
-        return `${peerName} accepted. You can use Send or Request in the wallet sidebar.`;
+        return `${peerName} shared their payout address. Send or Request unlocks once both addresses are exchanged.`;
       case 'grant-out':
-        return `${peerName} can now send to your embedded wallet address for this chat.`;
+        return `You shared your payout address with ${peerName}.`;
       case 'decline-in':
-        return `${peerName} declined to share a wallet address.`;
+        return `${peerName} declined to exchange wallet addresses.`;
       case 'decline-out':
-        return `You chose not to share your wallet address with ${peerName}.`;
+        return `You chose not to exchange wallet addresses with ${peerName}.`;
       default:
         return '';
     }
