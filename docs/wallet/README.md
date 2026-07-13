@@ -6,7 +6,7 @@ These files are **tracked in git** and are intended for references from **source
 
 | Document | Summary |
 |----------|---------|
-| [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md) | JSON schema for DM `wallet_tx_request` / `wallet_tx_announcement`. |
+| [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md) | JSON schema for DM peer-info exchange + `wallet_tx_*` cards. |
 | [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md) | RPC env vars; viem read-only vs Rust send. |
 | [USD_PRICING.md](./USD_PRICING.md) | Chainlink feeds; backend pricing / env. |
 | [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md) | Non-blocking on-chain UX; optimistic DM wallet announcements. |

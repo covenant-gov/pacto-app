@@ -10,6 +10,14 @@ Use this to verify send, request, announcements, and RPC behavior on a **test ne
 - [ ] **Recipient** payout address is in **`dm_peer_evm`** after a completed wallet-info exchange in this DM. Without it, send returns **`MISSING_PEER_EVM_ADDRESS`**.
 - [ ] Optional: set **`ALCHEMY_RPC_KEY`** in `.env` if public defaults are flaky. See [CHAIN_CONFIG.md](./CHAIN_CONFIG.md) and [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
+## A0. Wallet address exchange (privacy)
+
+- [ ] Fresh DM: **both** users see **Send exchange request** (not Send/Request), even if either has a Kind 0 profile on relays.
+- [ ] User A sends exchange request → card has **no** `0x` address in the summary; A still gated.
+- [ ] User B **declines** → both still gated; either can send another request.
+- [ ] User A requests again → B **accepts** → B’s grant appears → A auto-sends reciprocal grant → **both** unlock **Send** / **Request**.
+- [ ] Optional: after a profile publish, Kind 0 JSON on relays has **no** `evm_address` field.
+
 ## A. Wallet bar & balances
 
 - [ ] Open the DM → open **Wallet** from the chat header → sidebar shows peer + **Balance**.
