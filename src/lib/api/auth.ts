@@ -71,7 +71,7 @@ export async function setEvmAddress(address: string): Promise<void> {
   try {
     await updateProfile({ name: '', avatar: '', banner: '', about: '' });
   } catch {
-    // Relays offline or client not ready; local state still holds the address. Kind 0 `evm_address` follows the default-shared publish path when `update_profile` succeeds.
+    // Relays offline or client not ready; local state still holds the address.
   }
 }
 

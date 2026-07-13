@@ -4,7 +4,7 @@
 use rand::Rng;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 
 use crate::account_manager;
 use crate::crypto;
@@ -222,7 +222,7 @@ fn account_purpose_by_id(conn: &rusqlite::Connection, account_id: &str) -> Resul
 fn require_squad_purpose_account_id(conn: &rusqlite::Connection, account_id: &str) -> Result<(), String> {
     if account_purpose_by_id(conn, account_id)? != PURPOSE_SQUAD {
         return Err(
-            "Only squad-purpose accounts may be the active signer or default shared address.".to_string(),
+            "Only squad-purpose accounts may be the active signer or default receiving address.".to_string(),
         );
     }
     Ok(())
@@ -259,21 +259,9 @@ fn new_import_id() -> String {
     format!("imp-{}", hex::encode(b))
 }
 
-/// Publishes Kind 0 (profile metadata) in the background; local DB and `profile_update` still update when it finishes.
-fn spawn_kind0_republish_with_events<R: Runtime>(handle: AppHandle<R>) {
-    tokio::spawn(async move {
-        match crate::profile::republish_kind0_metadata_with_wallet_default().await {
-            Ok(()) => {
-                let _ = handle.emit("kind0_profile_published", true);
-            }
-            Err(e) => {
-                let _ = handle.emit("kind0_profile_publish_failed", e);
-            }
-        }
-    });
-}
-
-/// Address to publish on Kind 0: `evm_accounts.address` for `default_shared_evm_account_id` (initialized in `ensure_ready`).
+/// Local default receiving address (`default_shared_evm_account_id`); not published on Kind 0.
+/// Kept for DM wallet grants (next steps); not referenced until exchange uses it.
+#[allow(dead_code)]
 pub async fn resolve_default_shared_evm_address_string<R: Runtime>(handle: AppHandle<R>) -> Option<String> {
     let _ = ensure_ready(handle.clone()).await.ok();
     let addr_opt = if let Ok(conn) = account_manager::get_db_connection(&handle) {
@@ -621,7 +609,7 @@ pub async fn add_evm_account<R: Runtime>(
     ensure_ready(handle.clone()).await?;
     let purpose_norm = normalize_purpose(purpose.as_deref().unwrap_or(PURPOSE_SQUAD))?;
     if purpose_norm == PURPOSE_ADVANCED && set_default_shared {
-        return Err("Advanced accounts cannot be the default shared (Kind 0) address.".to_string());
+        return Err("Advanced accounts cannot be the default receiving address.".to_string());
     }
     let phrase = get_mnemonic_for_hd(handle.clone()).await?;
     let label_trimmed = label.trim().to_string();
@@ -670,13 +658,8 @@ pub async fn add_evm_account<R: Runtime>(
     let active_adv = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.unwrap_or_default();
     account_manager::return_db_connection(conn);
 
-    let republish = set_default_shared;
     if purpose_norm == PURPOSE_SQUAD {
         sync_signing_material_from_active(handle.clone()).await?;
-    }
-
-    if republish {
-        spawn_kind0_republish_with_events(handle.clone());
     }
 
     let is_active = id == active;
@@ -828,10 +811,6 @@ pub async fn update_evm_account<R: Runtime>(
 
     account_manager::return_db_connection(conn);
 
-    if set_default_shared {
-        spawn_kind0_republish_with_events(handle.clone());
-    }
-
     sync_signing_material_from_active(handle.clone()).await?;
 
     let (id, scheme, hd_idx, address, label_out, purpose_raw) = row;
@@ -896,7 +875,6 @@ pub async fn set_default_shared_evm_account<R: Runtime>(
     require_squad_purpose_account_id(&conn, &account_id)?;
     sql_set_setting(&conn, SETTING_DEFAULT_SHARED, &account_id)?;
     account_manager::return_db_connection(conn);
-    spawn_kind0_republish_with_events(handle.clone());
     Ok(())
 }
 

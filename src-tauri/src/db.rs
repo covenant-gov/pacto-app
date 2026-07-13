@@ -332,7 +332,7 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
     Ok(result)
 }
 
-/// Active signing address only (`settings.evm_address`). Does not update `profiles.evm_address` (peer-facing default is separate).
+/// Active signing address only (`settings.evm_address`). Does not update `profiles.evm_address`.
 pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
@@ -345,13 +345,13 @@ pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, ad
     Ok(())
 }
 
-/// Persists **`settings.evm_address`** (active signing address). Mine **`profiles.evm_address`** and Kind 0 are updated when the client publishes profile metadata (e.g. `update_profile` after onboarding).
+/// Persists **`settings.evm_address`** (active signing address).
 #[command]
 pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     set_wallet_signing_evm_address(handle, address).await
 }
 
-/// Embedded wallet: payout address stored for a contact (`profiles.evm_address`).
+/// Cached contact payout address (`profiles.evm_address`); not populated from Kind 0.
 pub fn get_profile_evm_address<R: Runtime>(
     handle: &AppHandle<R>,
     npub: &str,
