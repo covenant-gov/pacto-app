@@ -4,12 +4,11 @@
 import type { Channel } from '../stores/squads';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  DASHBOARD_CHANNEL_ID,
-  DASHBOARD_CHANNEL_NAME,
-  JOIN_REQUESTS_CHANNEL_ID,
-  JOIN_REQUESTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
+  MY_DASHBOARD_CHANNEL_ID,
+  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_NAME,
 } from './squad/hub-channel-names';
 import {
   defaultChannelRowsForGroupId,
@@ -24,33 +23,45 @@ export interface ParentWithChannels {
   channels: Channel[];
 }
 
-/** Built-in hub rows (dashboard + default MLS trio), not user-created chat channels. */
+const OBSOLETE_HUB_SIDEBAR_NAMES = new Set([
+  'dashboard',
+  'personal-alerts',
+  'monitor',
+  'inbox',
+  'join-requests',
+]);
+
+/** Built-in hub rows (pinned dashboards + default MLS), not user-created chat channels. */
 export function isDefaultHubSidebarChannel(name: string): boolean {
   return (
-    name === DASHBOARD_CHANNEL_NAME ||
+    name === SQUAD_DASHBOARD_CHANNEL_NAME ||
+    name === MY_DASHBOARD_CHANNEL_NAME ||
     name === ANNOUNCEMENTS_CHANNEL_NAME ||
-    name === JOIN_REQUESTS_CHANNEL_NAME ||
-    name === PERSONAL_ALERTS_CHANNEL_NAME ||
     name === POLLS_CHANNEL_NAME
   );
 }
 
-/** Virtual + MLS rows shown in the squad hub sidebar (dashboard first, join-requests under announcements). */
+/**
+ * Virtual + MLS rows for the squad hub sidebar.
+ * Pinned order: squad-dashboard → my-dashboard → announcements → polls → (custom below divider).
+ */
 export function buildHubSidebarChannels<T extends { name: string; groupId: string; order: number }>(
   rawChannels: T[]
 ): Array<T | { name: string; groupId: string; order: number }> {
-  const sorted = [...rawChannels].sort((a, b) => a.order - b.order);
+  const sorted = [...rawChannels]
+    .filter((c) => !OBSOLETE_HUB_SIDEBAR_NAMES.has(c.name))
+    .sort((a, b) => a.order - b.order);
   const announcements = sorted.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
-  const rest = sorted.filter((c) => c.name !== ANNOUNCEMENTS_CHANNEL_NAME);
+  const polls = sorted.find((c) => c.name === POLLS_CHANNEL_NAME);
+  const rest = sorted.filter(
+    (c) => c.name !== ANNOUNCEMENTS_CHANNEL_NAME && c.name !== POLLS_CHANNEL_NAME
+  );
   const out: Array<T | { name: string; groupId: string; order: number }> = [
-    { name: DASHBOARD_CHANNEL_NAME, groupId: DASHBOARD_CHANNEL_ID, order: -1 },
+    { name: SQUAD_DASHBOARD_CHANNEL_NAME, groupId: SQUAD_DASHBOARD_CHANNEL_ID, order: -2 },
+    { name: MY_DASHBOARD_CHANNEL_NAME, groupId: MY_DASHBOARD_CHANNEL_ID, order: -1 },
   ];
   if (announcements) out.push(announcements);
-  out.push({
-    name: JOIN_REQUESTS_CHANNEL_NAME,
-    groupId: JOIN_REQUESTS_CHANNEL_ID,
-    order: announcements?.order ?? 0,
-  });
+  if (polls) out.push(polls);
   out.push(...rest);
   return out;
 }
@@ -77,17 +88,10 @@ export function getAnnouncementsChannel(parent: ParentWithChannels): Channel {
   );
 }
 
-/** `#personal-alerts` MLS channel when present. */
-export function getPersonalAlertsChannel(parent: ParentWithChannels): Channel | undefined {
-  return parent.channels.find((c) => c.name === PERSONAL_ALERTS_CHANNEL_NAME);
-}
-
 /**
- * MLS group id for automated governance/treasury announce rows — prefers `#personal-alerts`, falls back to `#announcements`.
+ * MLS group id for automated governance/treasury announce rows (inbox bucket on announcements group).
  */
 export function resolveAutomatedAnnounceGroupId(parent: ParentWithChannels): string | null {
-  const personalAlerts = getPersonalAlertsChannel(parent)?.groupId?.trim();
-  if (personalAlerts) return personalAlerts;
   const ann = getAnnouncementsChannel(parent)?.groupId?.trim();
   return ann || null;
 }
@@ -101,9 +105,9 @@ export function resolvePollsMlsGroupId(parent: ParentWithChannels): string | nul
   return ann || null;
 }
 
-/** Default squad/network MLS rooms to invite people into (announce → inbox → polls). May share one physical group id. */
+/** Default squad/network MLS rooms to invite people into (announce → polls). May share one physical group id. */
 export function orderedDefaultInviteChannels(parent: ParentWithChannels): Channel[] {
-  const order = [ANNOUNCEMENTS_CHANNEL_NAME, PERSONAL_ALERTS_CHANNEL_NAME, POLLS_CHANNEL_NAME];
+  const order = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME];
   return order
     .map((name) => parent.channels.find((c) => c.name === name))
     .filter((c): c is Channel => !!c);

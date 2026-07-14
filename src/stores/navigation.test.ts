@@ -7,9 +7,9 @@ import {
   activeChannelId,
   activeHubChannelName,
   activeView,
-  parentDashboardChannelMode,
-  PARENT_DASHBOARD_MODE_PREFIX,
-  parseParentDashboardChannelMode,
+  squadDashboardChannelMode,
+  SQUAD_DASHBOARD_MODE_PREFIX,
+  parseSquadDashboardChannelMode,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -51,7 +51,7 @@ describe('navigation', () => {
     activeChannelId.set(null);
     activeHubChannelName.set(null);
     activeView.set('hub');
-    parentDashboardChannelMode.set('governance');
+    squadDashboardChannelMode.set('status');
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -68,29 +68,30 @@ describe('navigation', () => {
     expect(get(activeChannelId)).toBeNull();
     expect(get(activeHubChannelName)).toBeNull();
     expect(get(activeView)).toBe('hub');
-    expect(get(parentDashboardChannelMode)).toBe('governance');
+    expect(get(squadDashboardChannelMode)).toBe('status');
     expect(get(showMembersPanel)).toBe(false);
   });
 
-  it('parses known parent dashboard channel modes', () => {
-    expect(parseParentDashboardChannelMode('governance')).toBe('governance');
-    expect(parseParentDashboardChannelMode('roles_tree')).toBe('roles_tree');
-    expect(parseParentDashboardChannelMode('treasury')).toBe('treasury');
-    expect(parseParentDashboardChannelMode('settings')).toBe('settings');
+  it('parses known squad dashboard channel modes', () => {
+    expect(parseSquadDashboardChannelMode('status')).toBe('status');
+    expect(parseSquadDashboardChannelMode('governance')).toBe('governance');
+    expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
+    expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
+    expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
   });
 
-  it('resets unknown or legacy parent dashboard modes to governance', () => {
-    expect(parseParentDashboardChannelMode(null)).toBe('governance');
-    expect(parseParentDashboardChannelMode('')).toBe('governance');
-    expect(parseParentDashboardChannelMode('nope')).toBe('governance');
-    expect(parseParentDashboardChannelMode('polls')).toBe('governance');
-    expect(parseParentDashboardChannelMode('modules')).toBe('governance');
+  it('resets unknown squad dashboard modes to status', () => {
+    expect(parseSquadDashboardChannelMode(null)).toBe('status');
+    expect(parseSquadDashboardChannelMode('')).toBe('status');
+    expect(parseSquadDashboardChannelMode('nope')).toBe('status');
+    expect(parseSquadDashboardChannelMode('polls')).toBe('status');
+    expect(parseSquadDashboardChannelMode('modules')).toBe('status');
   });
 
-  it('persists parent dashboard channel mode under an npub-scoped key', () => {
+  it('persists squad dashboard channel mode under an npub-scoped key', () => {
     setCurrentNpubForPersistence('npub1abc');
-    parentDashboardChannelMode.set('treasury');
-    expect(storage.get(`${PARENT_DASHBOARD_MODE_PREFIX}_npub1abc`)).toBe('treasury');
+    squadDashboardChannelMode.set('treasury');
+    expect(storage.get(`${SQUAD_DASHBOARD_MODE_PREFIX}_npub1abc`)).toBe('treasury');
   });
 
   it('persists last opened squad and channel ids', () => {
@@ -124,7 +125,7 @@ describe('navigation', () => {
   });
 
   it('skips persistence when no npub is set', () => {
-    parentDashboardChannelMode.set('settings');
+    squadDashboardChannelMode.set('crew');
     expect(storage.size).toBe(0);
   });
 

@@ -11,7 +11,7 @@ vi.mock('../squad-hub-nav', () => ({
 
 import { invoke } from '@tauri-apps/api/core';
 import { restoreSquadsHubSelection } from '../squad-hub-nav';
-import { squads, DASHBOARD_CHANNEL_ID } from '../../stores/squads';
+import { squads } from '../../stores/squads';
 import {
   hydrateSquadsFromDb,
   listSquads,
@@ -54,8 +54,9 @@ describe('squad-catalog', () => {
     vi.mocked(invoke).mockResolvedValue([sampleRow]);
     await hydrateSquadsFromDb();
     const names = get(squads)[0]?.channels.map((c) => c.name);
-    expect(names).toContain('personal-alerts');
+    expect(names).toContain('announcements');
     expect(names).toContain('polls');
+    expect(names).not.toContain('personal-alerts');
   });
 
   it('skips malformed rows without dropping valid squads', async () => {
@@ -91,7 +92,7 @@ describe('squad-catalog', () => {
         { name: 'announcements', groupId: 'g1', order: 0 },
         { name: 'personal-alerts', groupId: 'g1', order: 1 },
         { name: 'polls', groupId: 'g1', order: 2 },
-        { name: 'dashboard', groupId: DASHBOARD_CHANNEL_ID, order: 3 },
+        { name: 'custom', groupId: 'custom-g', order: 3 },
       ],
     });
     squads.set([
@@ -132,7 +133,7 @@ describe('squad-catalog', () => {
       channels: [...s.channels, { name: 'general', groupId: 'g2', order: 1 }],
     }));
     expect(invoke).toHaveBeenCalledWith('upsert_squad', expect.any(Object));
-    expect(get(squads)[0]?.channels).toHaveLength(4);
+    expect(get(squads)[0]?.channels).toHaveLength(3);
   });
 
   it('hydrateSquadsFromDb clears squads on invoke failure', async () => {

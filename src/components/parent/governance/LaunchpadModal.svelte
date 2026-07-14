@@ -91,7 +91,7 @@
         {#if otherInfraLocked}
           Deploy squad sponsor first.
         {:else if hasPactoGov}
-          Nave Pirata is deployed for this squad. Open the Governance and Roles Tree tabs to explore on-chain state.
+          Nave Pirata is deployed for this squad. Open the Governance and Roles tabs to explore on-chain state.
         {:else}
           Nave Pirata factory bundle (Hats tree, treasury authority, Safe module).
         {/if}

@@ -9,7 +9,8 @@
     parentsCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
-    DASHBOARD_CHANNEL_ID,
+    MY_DASHBOARD_CHANNEL_ID,
+    SQUAD_DASHBOARD_CHANNEL_ID,
     type Squad,
   } from '../../stores/squads';
   import {
@@ -221,15 +222,17 @@
   }
 
   function selectChannel(channel: { groupId: string; name: string }) {
+    const isVirtual =
+      channel.groupId === SQUAD_DASHBOARD_CHANNEL_ID || channel.groupId === MY_DASHBOARD_CHANNEL_ID;
     activeChannelId.set(channel.groupId);
-    activeHubChannelName.set(channel.groupId === DASHBOARD_CHANNEL_ID ? null : channel.name);
+    activeHubChannelName.set(isVirtual ? null : channel.name);
     activeView.set('hub');
     if ($activeSquadId) {
       const sid = $activeSquadId;
       lastChannelBySquadId.update((m) => ({ ...m, [sid]: channel.groupId }));
       lastHubChannelNameBySquadId.update((m) => {
         const next = { ...m };
-        if (channel.groupId === DASHBOARD_CHANNEL_ID) delete next[sid];
+        if (isVirtual) delete next[sid];
         else next[sid] = channel.name;
         return next;
       });

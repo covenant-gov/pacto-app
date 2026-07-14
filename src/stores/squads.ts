@@ -4,12 +4,11 @@ import type { SquadInfraDto } from '../lib/governance/api';
 import { ensureDefaultHubChannelRows } from '../lib/squad/hub-channel-rows';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  DASHBOARD_CHANNEL_ID,
-  DASHBOARD_CHANNEL_NAME,
-  JOIN_REQUESTS_CHANNEL_ID,
-  JOIN_REQUESTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
+  MY_DASHBOARD_CHANNEL_ID,
+  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_NAME,
   normalizeHubChannelName,
 } from '../lib/squad/hub-channel-names';
 import {
@@ -23,12 +22,11 @@ export type { SquadKind, PairedSquadRef, PairedSquads, SquadVisibility };
 export { partnerSquadsForAnchor, partnerSquadsForHubParent } from '../lib/squad-pair';
 export {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  DASHBOARD_CHANNEL_ID,
-  DASHBOARD_CHANNEL_NAME,
-  JOIN_REQUESTS_CHANNEL_ID,
-  JOIN_REQUESTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
+  MY_DASHBOARD_CHANNEL_ID,
+  MY_DASHBOARD_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_NAME,
   normalizeHubChannelName,
 };
 

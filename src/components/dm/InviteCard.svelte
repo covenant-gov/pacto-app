@@ -84,7 +84,7 @@
       <p class="invite-card-status invite-card-status-accepted" aria-live="polite">Accepted</p>
       {#if variant === 'squad' || variant === 'squad-pair'}
         <p class="invite-card-evm-caption muted">
-          Set your roster signer in the squad <strong>#personal-alerts</strong> channel when you open it.
+          Set your roster signer in <strong>#my-dashboard</strong> → Alerts when you open it.
         </p>
       {/if}
     {:else if status === 'declined'}

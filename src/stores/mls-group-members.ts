@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { getMlsGroupMembers, syncMlsGroupsNow } from '../lib/api/nostr';
-import { JOIN_REQUESTS_CHANNEL_ID, DASHBOARD_CHANNEL_ID } from '../lib/squad/hub-channel-names';
+import { MY_DASHBOARD_CHANNEL_ID, SQUAD_DASHBOARD_CHANNEL_ID } from '../lib/squad/hub-channel-names';
 
 /** MLS group id → member npubs (shared across hub channels that share one group). */
 export const membersByGroupId = writable<Record<string, string[]>>({});
@@ -13,7 +13,7 @@ const loadingGroupIds = new Set<string>();
 function isValidMembersGroupId(groupId: string | null | undefined): groupId is string {
   const id = groupId?.trim();
   if (!id) return false;
-  if (id === DASHBOARD_CHANNEL_ID || id === JOIN_REQUESTS_CHANNEL_ID) return false;
+  if (id === SQUAD_DASHBOARD_CHANNEL_ID || id === MY_DASHBOARD_CHANNEL_ID) return false;
   if (id.startsWith('creating-')) return false;
   return true;
 }

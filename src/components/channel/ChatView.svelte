@@ -16,9 +16,6 @@
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
   import DashboardPollsPanel from '../parent/DashboardPollsPanel.svelte';
-  import SquadRosterKeyInboxCard from '../inbox/SquadRosterKeyInboxCard.svelte';
-  import { needsSquadRosterKeyChoice } from '../../lib/squad/squad-roster-key-choice';
-  import { refreshPersonalAlertForSquad, setPersonalAlertNeeded } from '../../stores/squad-hub-alerts';
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
@@ -44,9 +41,9 @@
     parentsCreatingAnnouncements,
     parentCreateErrorById,
     ANNOUNCEMENTS_CHANNEL_NAME,
-    PERSONAL_ALERTS_CHANNEL_NAME,
     POLLS_CHANNEL_NAME,
-    DASHBOARD_CHANNEL_ID,
+    SQUAD_DASHBOARD_CHANNEL_ID,
+    MY_DASHBOARD_CHANNEL_ID,
     membershipVersionByGroupId,
     type DmMessage,
     type Squad,
@@ -92,18 +89,20 @@
     null;
   $: effectiveMembersGroupId = (() => {
     if (!$activeChannelId) return null;
-    if ($activeChannelId === DASHBOARD_CHANNEL_ID) return announcementsGroupIdForMembers;
+    if (
+      $activeChannelId === SQUAD_DASHBOARD_CHANNEL_ID ||
+      $activeChannelId === MY_DASHBOARD_CHANNEL_ID
+    ) {
+      return announcementsGroupIdForMembers;
+    }
     return $activeChannelId;
   })();
 
   $: channelName = activeChannel?.name || 'channel';
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
-  $: isPersonalAlertsChannel =
-    (activeParent && activeChannel?.name === PERSONAL_ALERTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
-  $: hideChannelOverflowMenu =
-    isAnnouncementsChannel || isPersonalAlertsChannel || isPollsChannel;
+  $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel;
   $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
@@ -192,29 +191,6 @@
     loadPollsChannelLayout();
   });
 
-  let showRosterKeyCard = false;
-
-  async function refreshRosterKeyCard(): Promise<void> {
-    if (!isPersonalAlertsChannel || !activeParent) {
-      showRosterKeyCard = false;
-      return;
-    }
-    const needed = await needsSquadRosterKeyChoice(activeParent.id, announcementsGroupIdForMembers);
-    showRosterKeyCard = needed;
-    if (!needed) setPersonalAlertNeeded(activeParent.id, false);
-  }
-
-  $: if (isPersonalAlertsChannel && activeParent && announcementsGroupIdForMembers) {
-    const _membership = $membershipVersionByGroupId[announcementsGroupIdForMembers] ?? 0;
-    void refreshRosterKeyCard();
-  }
-
-  function onRosterKeyChoiceComplete(): void {
-    if (activeParent) setPersonalAlertNeeded(activeParent.id, false);
-    void refreshRosterKeyCard();
-    if (activeParent) void refreshPersonalAlertForSquad(activeParent);
-  }
-
   $: currentMessages = (() => {
     if (!$activeChannelId) return [];
     const list = [...($backendGroupMessages[$activeChannelId] ?? [])];
@@ -224,7 +200,6 @@
 
   function channelNameToVirtualBucket(name: string): VirtualBucket | null {
     if (name === ANNOUNCEMENTS_CHANNEL_NAME) return 'announcements';
-    if (name === PERSONAL_ALERTS_CHANNEL_NAME) return 'inbox';
     if (name === POLLS_CHANNEL_NAME) return 'polls';
     return null;
   }
@@ -232,7 +207,8 @@
   $: virtualBucketSingleGroup =
     !!activeParent &&
     !!$activeChannelId &&
-    $activeChannelId !== DASHBOARD_CHANNEL_ID &&
+    $activeChannelId !== SQUAD_DASHBOARD_CHANNEL_ID &&
+    $activeChannelId !== MY_DASHBOARD_CHANNEL_ID &&
     defaultTrioSharesSingleMlsGroup(activeParent.channels);
 
   $: selectedVirtualBucket = activeChannel ? channelNameToVirtualBucket(activeChannel.name) : null;
@@ -332,7 +308,7 @@
 
   async function handleSendMessage(content: string) {
     const groupId = $activeChannelId;
-    if (!groupId || isPersonalAlertsChannel) return;
+    if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket =
       virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
@@ -729,13 +705,6 @@
               </button>
             </div>
           {/if}
-          {#if isPersonalAlertsChannel && showRosterKeyCard && activeParent && announcementsGroupIdForMembers}
-            <SquadRosterKeyInboxCard
-              parentId={activeParent.id}
-              announcementsGroupId={announcementsGroupIdForMembers}
-              onComplete={onRosterKeyChoiceComplete}
-            />
-          {/if}
           {#each virtualTimelineMessages as message, i (message.id)}
             {@const props = toMessageProps(message)}
             {@const parsed = channelParsesStructuredAnnounces ? parseAnnouncement(message.content) : null}
@@ -776,7 +745,7 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating || isPersonalAlertsChannel} />
+    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
     {/if}
 
     <!-- Leave channel confirm -->

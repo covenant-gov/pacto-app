@@ -17,7 +17,8 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   showMembersPanel,
-  parentDashboardChannelMode,
+  squadDashboardChannelMode,
+  myDashboardChannelMode,
   dashboardPollReplicaNonceByParentId,
 } from '../../stores/navigation';
 import {
@@ -202,7 +203,8 @@ export function clearAccountState(npub?: string): void {
   activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
   activeDmTab.set('friends');
   activeView.set('hub');
-  parentDashboardChannelMode.set('governance');
+  squadDashboardChannelMode.set('status');
+  myDashboardChannelMode.set('status');
   showMembersPanel.set(false);
   walletSidebarOpen.set(false);
   walletSendPrefillFromRequest.set(null);

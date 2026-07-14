@@ -39,7 +39,7 @@
 {/if}
 <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-tree-heading">
   <div class="roles-tree-section-head">
-    <h3 id="roles-tree-heading" class="section-heading">Roles Tree</h3>
+    <h3 id="roles-tree-heading" class="section-heading">Roles</h3>
     {#if structureSummary}
       <RefreshIconButton
         className="roles-tree-refresh-btn"
