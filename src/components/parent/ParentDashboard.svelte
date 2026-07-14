@@ -681,7 +681,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       </div>
     </div>
     <div class="parent-dashboard-body">
-      <div class="parent-dashboard">
+      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'roles'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
           <div class="dashboard-header">
             <p class="dashboard-subtitle">
@@ -919,8 +919,9 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
 
   .parent-dashboard-body {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
     min-height: 0;
+    min-width: 0;
   }
 
   .dashboard-view-nav {
@@ -1044,6 +1045,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   .parent-dashboard {
     padding: 24px;
     max-width: 560px;
+  }
+
+  /* Roles org-chart needs the full mode width (siblings branch sideways). */
+  .parent-dashboard-wide {
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
   }
 
   .dashboard-header {

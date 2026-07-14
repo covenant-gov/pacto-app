@@ -37,9 +37,10 @@
     <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
   </div>
 {/if}
-<section class="dashboard-section dashboard-placeholder-section" aria-labelledby="roles-tree-heading">
+
+<section class="roles-tree-panel" aria-labelledby="roles-tree-heading">
   <div class="roles-tree-section-head">
-    <h3 id="roles-tree-heading" class="section-heading">Roles</h3>
+    <h3 id="roles-tree-heading" class="section-heading">On-chain tree</h3>
     {#if structureSummary}
       <RefreshIconButton
         className="roles-tree-refresh-btn"
@@ -59,13 +60,12 @@
     </p>
   {:else}
     <p class="structure-summary-lead dashboard-placeholder-text">
-      Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id 
-      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>).
+      Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id
+      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>). Tree id
+      <code class="structure-mono" title={structureSummary.treeIdRaw}
+        >{structureSummary.treeDomain ?? structureSummary.treeIdRaw}</code
+      >.
     </p>
-    <dl class="structure-dl">
-      <dt>Tree / top hat id</dt>
-      <dd><code class="structure-mono">{structureSummary.treeIdRaw}</code></dd>
-    </dl>
     {#if structureSummary.hatsExplorerUrl}
       {@const hatsUrl = structureSummary.hatsExplorerUrl}
       <p class="structure-actions">
@@ -95,7 +95,6 @@
           tree explorer for the full tree.
         </p>
       {/if}
-      <p class="roles-table-caption">On-chain tree</p>
       <HatsTreeDiagram
         root={hatsTree}
         {roleLabelByHatId}
@@ -109,7 +108,7 @@
 
 <style>
   .sponsor-empty-banner {
-    margin: 0 16px 16px;
+    margin: 0 0 16px;
     padding: 14px 16px;
     border: 1px solid var(--border-subtle);
     border-radius: 10px;
@@ -128,10 +127,9 @@
     color: var(--text-secondary);
   }
 
-  .dashboard-section {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
+  .roles-tree-panel {
+    min-width: 0;
+    width: 100%;
   }
 
   .roles-tree-section-head {
@@ -184,25 +182,6 @@
     margin-top: 0;
   }
 
-  .structure-dl {
-    margin: 0 0 14px;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 6px 14px;
-    font-size: 0.875rem;
-  }
-
-  .structure-dl dt {
-    margin: 0;
-    color: var(--text-muted);
-    font-weight: 500;
-  }
-
-  .structure-dl dd {
-    margin: 0;
-    word-break: break-all;
-  }
-
   .structure-mono {
     font-size: 0.8125rem;
     color: var(--text-primary);
@@ -213,33 +192,14 @@
     margin: 0 0 12px;
   }
 
-  .roles-table-caption {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-    margin: 0 0 8px 0;
-  }
-
-  .btn-primary,
-  .btn-secondary {
+  .btn-primary {
     padding: 8px 16px;
     border-radius: 6px;
     font-size: 0.875rem;
     cursor: pointer;
-  }
-
-  .btn-primary {
     background: var(--accent);
     color: var(--accent-contrast, #fff);
     border: none;
-  }
-
-  .btn-secondary {
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
   }
 
   .btn-link {

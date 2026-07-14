@@ -9,6 +9,7 @@
     pactoGovDeployAnnounceRows,
     txHashFromPactoGovProviderPayload,
   } from '../../../lib/governance/pacto-gov-payload';
+  import { prettyHatId } from '../../../lib/governance/pretty-hat-id';
 
   export let providerPayload: string | null | undefined = undefined;
   export let topHatId = '';
@@ -21,10 +22,8 @@
     return `${a.slice(0, 10)}…${a.slice(-8)}`;
   }
 
-  function shortHatId(id: string): string {
-    const t = id.trim();
-    if (t.length <= 16) return t;
-    return `${t.slice(0, 8)}…${t.slice(-6)}`;
+  function displayHatId(id: string): string {
+    return prettyHatId(id) ?? id.trim();
   }
 
   $: chainId = parseSupportedChainId(chain);
@@ -55,7 +54,7 @@
             </a>
           {/if}
         {:else}
-          <code class="pacto-gov-infra-value" title={row.hatId}>{shortHatId(row.hatId)}</code>
+          <code class="pacto-gov-infra-value" title={row.hatId}>{displayHatId(row.hatId)}</code>
           {@const hatsUrl = hatsTreeExplorerUrl(chainIdNumeric, row.hatId)}
           {#if hatsUrl}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
