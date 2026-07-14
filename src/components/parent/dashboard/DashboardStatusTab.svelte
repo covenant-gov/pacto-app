@@ -2,6 +2,7 @@
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
+  import EditIconButton from '../../ui/EditIconButton.svelte';
   import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
   import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -21,25 +22,65 @@
   export let squadNetwork: SupportedChainId | null = null;
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
-  export let onOpenSquadRolesModal: () => void = () => {};
+  export let hasSponsor = false;
+  export let hasGovernance = false;
+  export let hasSquadAdmin = false;
+  export let onOpenDeploy: () => void = () => {};
 
   const squadNetworkOptions = listSquadDeployNetworkOptions();
+  let editingNetwork = false;
   let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
-  $: squadNetworkChoice = squadNetwork ?? squadNetworkChoice;
+  $: if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : 'Not set';
+  $: networkHint = squadNetworkFromInfra ? 'Locked to deployed infra' : '';
 
   function applySquadNetwork() {
     if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
       onSetSquadNetwork(squadNetworkChoice);
     }
+    editingNetwork = false;
+  }
+
+  function cancelNetworkEdit() {
+    squadNetworkChoice = squadNetwork ?? '';
+    editingNetwork = false;
   }
 </script>
 
-<section class="dashboard-section checklist-stub" aria-labelledby="squad-status-checklist-heading">
-  <h3 id="squad-status-checklist-heading" class="section-heading">Checklist</h3>
-  <p class="muted dashboard-placeholder-text">Setup checklist coming soon.</p>
+<section class="status-checklist" aria-label="Setup checklist">
+  <span class="meta-label">Checklist</span>
+  <ul class="checklist" role="list">
+    <li class="checklist-item" class:done={hasSponsor}>
+      {#if hasSponsor}
+        <span class="check-mark" aria-hidden="true">✓</span>
+        <span>Squad sponsor</span>
+      {:else}
+        <span class="check-todo" aria-hidden="true">○</span>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy squad sponsor</button>
+      {/if}
+    </li>
+    <li class="checklist-item" class:done={hasGovernance}>
+      {#if hasGovernance}
+        <span class="check-mark" aria-hidden="true">✓</span>
+        <span>Squad governance</span>
+      {:else}
+        <span class="check-todo" aria-hidden="true">○</span>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad governance</button>
+      {/if}
+    </li>
+    <li class="checklist-item" class:done={hasSquadAdmin}>
+      {#if hasSquadAdmin}
+        <span class="check-mark" aria-hidden="true">✓</span>
+        <span>Squad admin</span>
+      {:else}
+        <span class="check-todo" aria-hidden="true">○</span>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad admin</button>
+      {/if}
+    </li>
+  </ul>
 </section>
 
 <SquadBroadcastSettingsSection {squad} />
@@ -53,201 +94,159 @@
     : ''}
 />
 
-<section
-  id="squad-status-network"
-  class="dashboard-section"
-  aria-labelledby="squad-status-network-heading"
->
-  <h3 id="squad-status-network-heading" class="section-heading">Squad network</h3>
-  <p class="dashboard-placeholder-text muted">
-    {#if squadNetwork}
-      Squad infrastructure targets <strong>{getWalletNetworkDisplayName(squadNetwork)}</strong>.
-      {#if squadNetworkFromInfra}
-        Existing on-chain infrastructure is chain-bound; changing this only retargets future deployments.
-      {/if}
-    {:else}
-      No network set yet. The first deployment picks and locks this squad's network.
-    {/if}
-  </p>
-  <div class="squad-network-edit">
-    <label class="squad-network-label" for="squad-status-network-select">Network for new deployments</label>
-    <select id="squad-status-network-select" class="squad-network-select" bind:value={squadNetworkChoice}>
-      <option value="" disabled>Select network…</option>
+<div class="status-fact-row" id="squad-status-network">
+  <span class="meta-label">Network</span>
+  {#if editingNetwork}
+    <select class="network-select" bind:value={squadNetworkChoice} aria-label="Squad network">
+      <option value="" disabled>Select…</option>
       {#each squadNetworkOptions as opt (opt.id)}
         <option value={opt.id}>{opt.label}</option>
       {/each}
     </select>
     <button
       type="button"
-      class="btn-secondary squad-network-apply"
+      class="btn-text"
       disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
       on:click={applySquadNetwork}
     >
       Save
     </button>
-  </div>
-</section>
-
-<section class="dashboard-section" aria-labelledby="squad-status-permissions-heading">
-  <h3 id="squad-status-permissions-heading" class="section-heading">Permissions overview</h3>
-  {#if permissionsCtx.phase === 'loading'}
-    <p class="dashboard-placeholder-text muted">Loading permissions context…</p>
+    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>Cancel</button>
   {:else}
-    <p class="dashboard-placeholder-text dashboard-placeholder-lead">{permissionsCtx.leadNote}</p>
-    {#if permissionsCtx.pactoGovRevision}
-      <p class="permissions-revision muted">
-        pacto-gov revision <code class="permissions-revision-code">{permissionsCtx.pactoGovRevision}</code>
-      </p>
+    <span class="network-value">{networkLabel}</span>
+    {#if networkHint}
+      <span class="muted network-hint">{networkHint}</span>
     {/if}
-    {#if permissionsCtx.catalogRows.length > 0}
-      <div class="settings-actions-row">
-        <p class="roles-table-caption">Privilege model</p>
-        {#if squadAdminCtx}
-          <button type="button" class="btn-secondary settings-roles-btn" on:click={onOpenSquadRolesModal}>
-            Manage privileges
-          </button>
-        {/if}
-      </div>
-      <ul class="permissions-catalog-list" role="list">
-        {#each permissionsCtx.catalogRows as row (row.id)}
-          <li class="permissions-catalog-card">
-            <h4 class="permissions-catalog-title">{row.title}</h4>
-            <p class="permissions-catalog-summary">{row.summary}</p>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+    <EditIconButton
+      ariaLabel="Edit squad network"
+      title="Edit network"
+      on:click={() => (editingNetwork = true)}
+    />
   {/if}
+</div>
+
+{#if parentId}
   <SmartContractSecuritySection
     {parentId}
     announcementsGroupId={announcementsGroupId ?? ''}
     canManage={permissionsCtx.phase === 'pacto_gov'}
+    compact
   />
-</section>
+{/if}
 
 <style>
-  .dashboard-section {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
-  }
-  .checklist-stub {
-    margin-bottom: 16px;
-  }
-  .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
-  }
-  .dashboard-placeholder-text {
-    font-size: 0.875rem;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
-  }
-  .dashboard-placeholder-lead {
-    margin-bottom: 16px;
-  }
-  .muted {
-    color: var(--text-muted);
-  }
-  .squad-network-edit {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 10px;
-  }
-  .squad-network-label {
-    display: block;
-    width: 100%;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-    margin: 0 0 4px;
-  }
-  .squad-network-select {
-    flex: 1;
-    min-width: 160px;
-    max-width: 240px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-  .squad-network-apply {
-    font-size: 0.875rem;
-    padding: 8px 14px;
-  }
-  .permissions-revision {
-    margin: 0 0 14px;
-    font-size: 0.8125rem;
-  }
-  .permissions-revision-code {
-    font-family: ui-monospace, monospace;
-    color: var(--text-primary);
-  }
-  .permissions-catalog-list {
-    list-style: none;
-    margin: 0 0 16px;
-    padding: 0;
+  .status-checklist {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    padding: 8px 0 12px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.875rem;
   }
-  .permissions-catalog-card {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 12px;
-    background: var(--bg-elevated);
-  }
-  .permissions-catalog-title {
-    margin: 0 0 6px;
-    font-size: 0.9375rem;
-    font-weight: 600;
-  }
-  .permissions-catalog-summary {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-  .settings-actions-row {
+
+  .status-fact-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 8px 12px;
+    padding: 8px 0;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.875rem;
   }
-  .roles-table-caption {
-    font-size: 0.75rem;
+
+  .meta-label {
+    font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     color: var(--text-muted);
+    min-width: 5.5rem;
+  }
+
+  .checklist {
+    list-style: none;
     margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  .btn-secondary {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    background: var(--bg-secondary);
+
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .check-mark {
+    color: #1a7f4b;
+    font-weight: 700;
+    width: 1.1rem;
+    text-align: center;
+  }
+
+  .check-todo {
+    color: var(--text-muted);
+    width: 1.1rem;
+    text-align: center;
+  }
+
+  .checklist-item.done span:last-child {
+    color: var(--text-primary);
+  }
+
+  .checklist-action {
+    padding: 0;
+    border: none;
+    background: transparent;
     color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
+    font: inherit;
+    font-size: 0.875rem;
     cursor: pointer;
-    font-family: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
-  .btn-secondary:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+
+  .network-value {
+    font-weight: 500;
+    color: var(--text-primary);
   }
-  .settings-roles-btn {
+
+  .network-hint {
+    font-size: 0.75rem;
+  }
+
+  .muted {
+    color: var(--text-muted);
+  }
+
+  .network-select {
+    min-width: 140px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+  }
+
+  .btn-text {
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
     font-size: 0.8125rem;
-    padding: 6px 12px;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .btn-text:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    text-decoration: none;
   }
 </style>

@@ -23,7 +23,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
-  import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
     loadSquadNetworkOverride,
@@ -158,7 +157,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   $: hasPactoGov = pactoGovRow != null;
   $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
-  $: vaultSafeCount = standaloneSafeInfraRows(squadInfraRows).length;
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
@@ -706,7 +704,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {squadNetwork}
               squadNetworkFromInfra={infraSquadChain != null}
               onSetSquadNetwork={setSquadNetwork}
-              onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
+              {hasSponsor}
+              hasGovernance={hasPactoGov}
+              {hasSquadAdmin}
+              onOpenDeploy={openLaunchpad}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Status tab.</p>
@@ -785,6 +786,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {memberHatByAddress}
               {memberRolesByAddress}
               showManagePrivileges={!!squadAdminCtx}
+              pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
               onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
             />
           {:catch}
@@ -808,11 +810,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   {hasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
-  {vaultSafeCount}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   squadAdminNetwork={squadAdminNetwork}
   {squadNetwork}
   sponsorAddress={sponsorRow?.canonicalRef ?? ''}
+  pactoGovAddress={pactoPayload?.safe?.trim() ||
+    pactoPayload?.squadAdminProxy?.trim() ||
+    pactoGovRow?.canonicalRef?.trim() ||
+    ''}
   {captainMemberOptions}
   memberEvmOptions={memberEvmOptionsForRoles}
   bind:showDeploySafeModal

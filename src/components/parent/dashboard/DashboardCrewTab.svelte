@@ -16,6 +16,7 @@
   export let memberRolesByAddress: Record<string, string> = {};
   export let onOpenSquadRolesModal: () => void = () => {};
   export let showManagePrivileges = false;
+  export let pactoGovRevision = '';
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -24,12 +25,7 @@
 </script>
 
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
-  <div class="crew-heading-row">
-    <h3 id="crew-roster-heading" class="section-heading">Crew</h3>
-    {#if showManagePrivileges}
-      <button type="button" class="btn-secondary" on:click={onOpenSquadRolesModal}>Manage privileges</button>
-    {/if}
-  </div>
+  <h3 id="crew-roster-heading" class="section-heading">Crew</h3>
   <p class="caption muted">Membership from #announcements (MLS). Hats and privileges may be empty.</p>
 
   {#if settingsChainRefreshing}
@@ -100,6 +96,18 @@
   {/if}
 </section>
 
+{#if showManagePrivileges || pactoGovRevision}
+  <div class="privileges-row">
+    <span class="meta-label">Privileges</span>
+    {#if pactoGovRevision}
+      <code class="rev">{pactoGovRevision}</code>
+    {/if}
+    {#if showManagePrivileges}
+      <button type="button" class="btn-text" on:click={onOpenSquadRolesModal}>Manage</button>
+    {/if}
+  </div>
+{/if}
+
 {#if squad}
   <section class="join-requests-wrap" aria-label="Join requests">
     <SquadJoinRequestsPanel {squad} />
@@ -113,19 +121,11 @@
     padding: 16px;
     margin-bottom: 16px;
   }
-  .crew-heading-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
   .section-heading {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
-    margin: 0;
+    margin: 0 0 8px;
   }
   .caption {
     font-size: 0.8125rem;
@@ -201,15 +201,39 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
-  .btn-secondary {
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    background: var(--bg-secondary);
+  .privileges-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 0 12px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.875rem;
+  }
+  .meta-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    min-width: 5.5rem;
+  }
+  .rev {
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .btn-text {
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
     color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
+    font: inherit;
+    font-size: 0.8125rem;
     cursor: pointer;
-    font-family: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   .join-requests-wrap {
     margin-top: 8px;

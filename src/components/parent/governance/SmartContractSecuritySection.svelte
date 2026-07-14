@@ -3,8 +3,6 @@
   import { isAddress } from 'viem';
   import chevronDownIcon from '../../../icons/chevron-down.svg';
   import { showToast } from '../../../stores/toast';
-  import { profiles } from '../../../stores/profiles';
-  import { getProfileDisplayName } from '../../../lib/utils/profile';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName, getExplorerTxUrl } from '../../../lib/wallet/assets';
   import {
@@ -38,6 +36,8 @@
   export let announcementsGroupId = '';
   /** Interim v1: Pacto Gov deployed (captain-gated mutation ships with on-chain role check). */
   export let canManage = false;
+  /** Slimmer chrome for Status (collapsed add form by default). */
+  export let compact = false;
 
   let rows: SquadContractAllowlistRow[] = [];
   let loading = true;
@@ -48,6 +48,7 @@
   let addLabel = '';
   let addAbiRef = '';
   let addBusy = false;
+  let addSectionOpen = false;
 
   let callChain: SupportedChainId = DEFAULT_CHAIN_ID;
   let callTo = '';
@@ -98,10 +99,6 @@
     const t = a.trim();
     if (t.length < 18) return t;
     return `${t.slice(0, 10)}…${t.slice(-8)}`;
-  }
-
-  function npubLabel(npub: string): string {
-    return getProfileDisplayName($profiles[npub]) || (npub.length > 16 ? npub.slice(0, 12) + '…' : npub);
   }
 
   async function onAddContract() {
@@ -231,20 +228,19 @@
   $: canSendCall = callSimOk === true && !!squadSigner && isAddress(callTo.trim());
 </script>
 
-<section class="smart-contract-security" aria-labelledby="smart-contract-security-heading">
-  <h4 id="smart-contract-security-heading" class="roles-table-caption">Smart contract security</h4>
-  <p class="smart-contract-security-lead muted">
-    Only curated Pacto contracts until your squad adds allowlisted addresses. Members sign unofficial protocol calls with
-    <strong>squad EVM keys</strong> to explicit allowlist targets only (plus implicit deploy infra). Arbitrary calls use
-    Settings → Advanced.
-  </p>
+<section
+  class="smart-contract-security"
+  class:smart-contract-security--compact={compact}
+  aria-labelledby="smart-contract-security-heading"
+>
+  <h4 id="smart-contract-security-heading" class="roles-table-caption">Contracts</h4>
 
   {#if loading}
-    <p class="smart-contract-security-note muted">Loading allowlist…</p>
+    <p class="smart-contract-security-note muted">Loading…</p>
   {:else if loadError}
     <p class="smart-contract-security-note">{loadError}</p>
   {:else if rows.length === 0}
-    <p class="smart-contract-security-note muted">No allowlisted contracts yet.</p>
+    <p class="smart-contract-security-note muted">No allowlisted contracts.</p>
   {:else}
     <ul class="allowlist-list">
       {#each rows as row (row.id)}
@@ -252,7 +248,6 @@
           <div class="allowlist-main">
             <span class="allowlist-label">{row.label?.trim() || 'Unlabeled'}</span>
             <span class="allowlist-meta">{getWalletNetworkDisplayName(row.chain as SupportedChainId)} · {shortAddr(row.contractAddress)}</span>
-            <span class="allowlist-meta muted">Added by {npubLabel(row.addedByNpub)}</span>
           </div>
           {#if canManage}
             <button type="button" class="allowlist-remove" on:click={() => onRemove(row)}>Remove</button>
@@ -264,24 +259,42 @@
 
   {#if canManage}
     <div class="allowlist-add">
-      <h5 class="allowlist-subhead">Add contract</h5>
-      <label class="allowlist-field-label" for="allowlist-chain">Chain</label>
-      <select id="allowlist-chain" class="allowlist-input" bind:value={addChain}>
-        {#each WALLET_ASSETS_CHAIN_IDS as chain (chain)}
-          <option value={chain}>{getWalletNetworkDisplayName(chain)}</option>
-        {/each}
-      </select>
-      <label class="allowlist-field-label" for="allowlist-addr">Contract address</label>
-      <input id="allowlist-addr" class="allowlist-input" placeholder="0x…" bind:value={addAddress} />
-      <label class="allowlist-field-label" for="allowlist-label">Label</label>
-      <input id="allowlist-label" class="allowlist-input" placeholder="e.g. Uniswap router" bind:value={addLabel} />
-      <label class="allowlist-field-label" for="allowlist-abi">ABI ref (optional)</label>
-      <input id="allowlist-abi" class="allowlist-input" placeholder="erc20-minimal or URL" bind:value={addAbiRef} />
-      <button type="button" class="allowlist-btn" disabled={addBusy} on:click={onAddContract}>
-        {addBusy ? 'Adding…' : 'Add to allowlist'}
-      </button>
+      <h5 class="allowlist-subhead">
+        <button
+          type="button"
+          class="allowlist-call-toggle"
+          aria-expanded={addSectionOpen}
+          aria-controls="squad-contract-add-panel"
+          on:click={() => (addSectionOpen = !addSectionOpen)}
+        >
+          <img
+            src={chevronDownIcon}
+            alt=""
+            class="allowlist-call-chevron"
+            class:allowlist-call-chevron--open={addSectionOpen}
+          />
+          <span>Add contract</span>
+        </button>
+      </h5>
+      <div id="squad-contract-add-panel" class="allowlist-call-panel" hidden={!addSectionOpen}>
+        <label class="allowlist-field-label" for="allowlist-chain">Chain</label>
+        <select id="allowlist-chain" class="allowlist-input" bind:value={addChain}>
+          {#each WALLET_ASSETS_CHAIN_IDS as chain (chain)}
+            <option value={chain}>{getWalletNetworkDisplayName(chain)}</option>
+          {/each}
+        </select>
+        <label class="allowlist-field-label" for="allowlist-addr">Contract address</label>
+        <input id="allowlist-addr" class="allowlist-input" placeholder="0x…" bind:value={addAddress} />
+        <label class="allowlist-field-label" for="allowlist-label">Label</label>
+        <input id="allowlist-label" class="allowlist-input" placeholder="e.g. Uniswap router" bind:value={addLabel} />
+        <label class="allowlist-field-label" for="allowlist-abi">ABI ref (optional)</label>
+        <input id="allowlist-abi" class="allowlist-input" placeholder="erc20-minimal or URL" bind:value={addAbiRef} />
+        <button type="button" class="allowlist-btn" disabled={addBusy} on:click={onAddContract}>
+          {addBusy ? 'Adding…' : 'Add to allowlist'}
+        </button>
+      </div>
     </div>
-  {:else}
+  {:else if !compact}
     <p class="smart-contract-security-note muted">Only Role-approved members can add contracts once enabled.</p>
   {/if}
 
@@ -300,12 +313,12 @@
           class="allowlist-call-chevron"
           class:allowlist-call-chevron--open={callSectionOpen}
         />
-        <span>Squad contract call</span>
+        <span>Contract call</span>
       </button>
     </h5>
     <div id="squad-contract-call-panel" class="allowlist-call-panel" hidden={!callSectionOpen}>
     {#if !squadSigner}
-      <p class="smart-contract-security-note muted">Set a signer under Settings → Default wallet config.</p>
+      <p class="smart-contract-security-note muted">Set a signer under Default wallet config.</p>
     {:else}
       <p class="smart-contract-security-note muted">Signing as {shortAddr(squadSigner)}. Simulate before send.</p>
       <label class="allowlist-field-label" for="call-chain">Chain</label>
@@ -360,16 +373,20 @@
 
 <style>
   .smart-contract-security {
-    margin-top: 20px;
-    padding-top: 16px;
+    margin-top: 12px;
+    padding-top: 12px;
     border-top: 1px solid var(--border-subtle);
   }
 
-  .smart-contract-security-lead,
+  .smart-contract-security--compact {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+
   .smart-contract-security-note {
-    font-size: 0.875rem;
-    line-height: 1.5;
-    margin: 0 0 8px 0;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    margin: 0 0 6px 0;
   }
 
   .muted {
@@ -417,8 +434,8 @@
 
   .allowlist-add,
   .allowlist-call {
-    margin-top: 20px;
-    padding-top: 16px;
+    margin-top: 12px;
+    padding-top: 10px;
     border-top: 1px solid var(--border-subtle);
   }
 

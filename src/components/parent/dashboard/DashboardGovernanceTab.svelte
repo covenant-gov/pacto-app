@@ -32,12 +32,16 @@
   </div>
 {/if}
 <section class="dashboard-section dashboard-placeholder-section" aria-labelledby="governance-heading">
-  <h3 id="governance-heading" class="section-heading">Governance</h3>
+  <div class="governance-heading-row">
+    <h3 id="governance-heading" class="section-heading">Governance</h3>
+    <button type="button" class="btn-primary governance-deploy-btn" on:click={onOpenLaunchpad}>
+      Deploy
+    </button>
+  </div>
   {#if !pactoPayload?.treasuryAuthority}
-    <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-      Treasury Authority proposals appear here after you deploy <strong>Pacto Gov</strong> from Deploy.
+    <p class="dashboard-placeholder-text dashboard-placeholder-lead muted">
+      Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.
     </p>
-    <button type="button" class="btn-primary governance-deploy-cta" on:click={onOpenLaunchpad}>Deploy Pacto Gov</button>
   {:else}
     <div class="governance-infra-panel" aria-labelledby="governance-infra-heading">
       <h4 id="governance-infra-heading" class="governance-infra-heading">Pacto Gov deployment</h4>
@@ -109,14 +113,28 @@
   }
 
   .dashboard-placeholder-section .section-heading {
-    margin-bottom: 8px;
+    margin-bottom: 0;
+  }
+
+  .governance-heading-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin-bottom: 12px;
   }
 
   .section-heading {
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-secondary);
-    margin: 0 0 12px 0;
+    margin: 0;
+  }
+
+  .governance-deploy-btn {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
   }
 
   .governance-infra-panel {
@@ -161,10 +179,6 @@
   .dashboard-placeholder-text.muted,
   .muted {
     color: var(--text-muted);
-  }
-
-  .governance-deploy-cta {
-    margin-top: 8px;
   }
 
   .proposal-card-list {
