@@ -11,6 +11,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -40,10 +44,12 @@ jobs:
         run: node scripts/generate-release-manifest.mjs
 
       - name: Build Astro landing site
-        uses: withastro/action@v6
+        run: pnpm --filter pacto-landing build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          path: landing
-          package-manager: pnpm@11.7.0
+          path: landing/dist
 
   deploy:
     needs: build

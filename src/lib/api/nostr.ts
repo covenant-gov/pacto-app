@@ -40,8 +40,6 @@ export interface NostrProfile {
   // Cached image paths (for offline support)
   avatar_cached: string;
   banner_cached: string;
-  /** Kind 0 / DB payout `0x` when present (send path also uses `dm_peer_evm` first). */
-  evm_address?: string;
 }
 
 /**
@@ -526,17 +524,6 @@ export async function getMlsGroupMembers(groupId: string): Promise<MlsGroupMembe
   const result = (await invoke('get_mls_group_members', { groupId })) as MlsGroupMembers;
   dmLog('get_mls_group_members result', { members: result.members?.length ?? 0 });
   return result;
-}
-
-/** Insert missing `squad_member_evm` rows from local profile addresses if we already have them cached. */
-export async function backfillSquadMemberEvmFromProfiles(
-  parentId: string,
-  memberNpubs: string[]
-): Promise<number> {
-  return (await invoke('backfill_squad_member_evm_missing_from_profiles', {
-    parentId,
-    memberNpubs,
-  })) as number;
 }
 
 /**

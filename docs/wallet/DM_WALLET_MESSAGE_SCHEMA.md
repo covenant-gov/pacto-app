@@ -1,13 +1,33 @@
 # DM wallet messages — JSON schema
 
-This document defines the **machine-readable `content`** for two DM-only message kinds used by the WalletBar flows:
+This document defines the **machine-readable `content`** for DM-only wallet message kinds used by WalletBar flows:
 
-| Wire `type` value           | Purpose |
-|----------------------------|---------|
-| `wallet_tx_request`        | Sender asks the counterparty to pay (or acknowledges terms of a payment request). Rendered as a **request card** in the thread. |
-| `wallet_tx_announcement`   | Posted **only after** a successful on-chain receipt (see [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md)). Renders as a **transaction / announcement card**. |
+| Wire `type` value | Purpose |
+|-------------------|---------|
+| `wallet_peer_info_request` | Consent-only ask to exchange payout addresses (no `0x` on the wire). |
+| `wallet_peer_info_grant` | Shares one party’s payout `0x` after accept (and reciprocal grant from the requester). |
+| `wallet_peer_info_decline` | Peer declined the exchange; no addresses shared. |
+| `wallet_tx_request` | Sender asks the counterparty to pay. Rendered as a **request card**. |
+| `wallet_tx_announcement` | Posted **only after** a successful on-chain receipt (see [TRANSACTION_LIFECYCLE.md](./TRANSACTION_LIFECYCLE.md)). |
 
 They are **not** the same envelope as squad/network **`# announcements`** messages (`parseAnnouncement` in `src/lib/announcements.ts`). Wallet DM payloads live in **1:1 DM threads** and use the same general idea as other structured DMs (`squad_invite`, `channel_in_squad`, …): **one JSON object** in `content`, UTF-8, with a top-level `type` string discriminator.
+
+**Privacy:** Kind 0 profile metadata does **not** publish EVM addresses. DM Send/Request unlock only after both sides have the peer’s address in local **`dm_peer_evm`** (from grants), never from public profile fields.
+
+---
+
+## Pairwise address exchange (v1)
+
+```text
+A: wallet_peer_info_request (no address)
+B: accept → wallet_peer_info_grant (B’s 0x)
+A: auto reciprocal wallet_peer_info_grant (A’s 0x)
+→ both dm_peer_evm set → Send/Request unlocked
+```
+
+Decline posts `wallet_peer_info_decline` only; nothing is written to `dm_peer_evm`. Either party may send a new request later.
+
+Addresses persist **only** from inbound grants (`DmThread` + accept path sends the first grant; reciprocal is automatic for the original requester).
 
 ---
 
@@ -55,10 +75,60 @@ Must match **`WalletAssetCode`** in `src/lib/wallet/assets.ts`:
 
 - **`request_id`**: opaque string, **unique per request** in normal use. Implementations should use a **UUID** (e.g. RFC 4122 string) unless a shorter collision-resistant id is agreed.
 - **`tx_hash`**: `0x` + 64 hexadecimal characters (EIP-119).
+- **EVM addresses**: `0x` + 40 hex (checksum optional).
 
 ### Nostr npubs
 
-- **`from_npub`** / **`to_npub`**: bech32 `npub1…` strings as used elsewhere in Pacto.
+- **`from_npub`** / **`to_npub`** / **`requester_npub`** / **`grantor_npub`**: bech32 `npub1…` strings as used elsewhere in Pacto.
+
+---
+
+## `wallet_peer_info_request` (v1)
+
+Consent-only. **Must not** include a payout address. Legacy `requester_evm_address` on the wire is **ignored** by parsers and must not be persisted from the request.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | number | yes | Must be `1`. |
+| `type` | string | yes | Must be `wallet_peer_info_request`. |
+| `request_id` | string | yes | Ties later grants/decline to this ask. |
+| `requester_npub` | string | yes | Sender’s npub. |
+
+```json
+{"version":1,"type":"wallet_peer_info_request","request_id":"550e8400-e29b-41d4-a716-446655440000","requester_npub":"npub1requester…"}
+```
+
+---
+
+## `wallet_peer_info_grant` (v1)
+
+Carries the grantor’s payout address. Posted by the **acceptor** on Accept, and by the **original requester** as an automatic reciprocal grant when they see the acceptor’s grant for their `request_id`.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | number | yes | Must be `1`. |
+| `type` | string | yes | Must be `wallet_peer_info_grant`. |
+| `request_id` | string | yes | Same id as the related request. |
+| `grantor_npub` | string | yes | Party sharing their address. |
+| `evm_address` | string | yes | `0x` + 40 hex payout address. |
+
+```json
+{"version":1,"type":"wallet_peer_info_grant","request_id":"550e8400-e29b-41d4-a716-446655440000","grantor_npub":"npub1grantor…","evm_address":"0x1111111111111111111111111111111111111111"}
+```
+
+---
+
+## `wallet_peer_info_decline` (v1)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | number | yes | Must be `1`. |
+| `type` | string | yes | Must be `wallet_peer_info_decline`. |
+| `request_id` | string | yes | Same id as the related request. |
+
+```json
+{"version":1,"type":"wallet_peer_info_decline","request_id":"550e8400-e29b-41d4-a716-446655440000"}
+```
 
 ---
 
@@ -128,6 +198,14 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 
 ---
 
+## Peer-info card state (client)
+
+- **Accepted / declined:** npub-scoped lists of DM **message ids** (same pattern as channel invites).
+- **Reciprocal grants:** npub-scoped list of **`request_id`** values already reciprocated (`pacto_wallet_peer_info_reciprocated`), plus detection of an outbound grant in-thread, so reciprocal send is idempotent.
+- **Unlock:** WalletBar and `wallet_build_and_send_transaction` require **`dm_peer_evm`** for the peer; profile/Kind 0 addresses are not used.
+
+---
+
 ## Request card state (client)
 
 - **Accepted / declined:** Persisted per account (npub-scoped lists of DM **message ids**), same pattern as channel invite decisions. Toggling choice updates both lists so a message id is not simultaneously accepted and declined. **Decline** does **not** post a DM: only local/UI state (and a client toast for the person who declined); the requester sees the updated card when they sync the thread.
@@ -138,9 +216,10 @@ Posted **only** after a **successful** transaction receipt. Carries everything n
 
 ## Implementations
 
-- **TypeScript:** `src/lib/wallet/dm-messages.ts` — `parseWalletTxRequest`, `parseWalletTxAnnouncement`, `formatWalletTxRequest`, `formatWalletTxAnnouncement`, `getFulfilledWalletRequestIdsFromMessages`.
-- **Tests:** `src/lib/wallet/dm-messages.test.ts` (`npm run test`).
-- **UI:** `WalletTxRequestCard` / `WalletTxAnnouncementCard` in `src/components/wallet/`; rendered by `DmMessageRouter.svelte` (mounted from `DmThread.svelte`).
+- **TypeScript:** `src/lib/wallet/dm-messages.ts` — parse/format for peer-info and tx types; `src/lib/wallet/wallet-peer-exchange.ts` — reciprocal grant helpers.
+- **Tests:** `src/lib/wallet/dm-messages.test.ts`, `src/lib/wallet/wallet-peer-exchange.test.ts`, `src-tauri` `profile::kind0_evm_tests`.
+- **UI:** `WalletPeerExchangeCard`, `WalletTxRequestCard`, `WalletTxAnnouncementCard`; routed by `DmMessageRouter.svelte` from `DmThread.svelte`.
+- **Persistence:** SQLite `dm_peer_evm`; Tauri `get_dm_peer_evm_address` / `set_dm_peer_evm_address`.
 
 ---
 

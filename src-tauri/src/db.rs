@@ -41,8 +41,6 @@ pub struct SlimProfile {
     bot: bool,
     avatar_cached: String,
     banner_cached: String,
-    #[serde(default)]
-    evm_address: String,
     // Omitting: messages, last_updated, mine
 }
 
@@ -66,7 +64,6 @@ impl Default for SlimProfile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
-            evm_address: String::new(),
         }
     }
 }
@@ -91,7 +88,6 @@ impl From<&Profile> for SlimProfile {
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
             banner_cached: profile.banner_cached.clone(),
-            evm_address: profile.evm_address.clone(),
         }
     }
 }
@@ -119,7 +115,6 @@ impl SlimProfile {
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
             banner_cached: self.banner_cached.clone(),
-            evm_address: self.evm_address.clone(),
         }
     }
 }
@@ -128,7 +123,7 @@ impl SlimProfile {
 pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let profiles = stmt.query_map([], |row| {
@@ -170,7 +165,6 @@ pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<S
             bot: row.get::<_, i32>(15)? != 0,
             avatar_cached: validated_avatar_cached,
             banner_cached: validated_banner_cached,
-            evm_address: row.get::<_, String>(18).unwrap_or_default(),
         })
     })
     .map_err(|e| format!("Failed to query profiles: {}", e))?
@@ -189,8 +183,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached, evm_address)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -208,8 +202,7 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             blocked = excluded.blocked,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
-            banner_cached = excluded.banner_cached,
-            evm_address = excluded.evm_address",
+            banner_cached = excluded.banner_cached",
         rusqlite::params![
             profile.id,  // This is the npub
             profile.name,
@@ -229,7 +222,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.bot as i32,
             profile.avatar_cached,
             profile.banner_cached,
-            profile.evm_address,
         ],
     ).map_err(|e| format!("Failed to insert profile: {}", e))?;
 
@@ -332,7 +324,7 @@ pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, 
     Ok(result)
 }
 
-/// Active signing address only (`settings.evm_address`). Does not update `profiles.evm_address` (peer-facing default is separate).
+/// Active signing address only (`settings.evm_address`). Does not touch `profiles`.
 pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
@@ -345,28 +337,10 @@ pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, ad
     Ok(())
 }
 
-/// Persists **`settings.evm_address`** (active signing address). Mine **`profiles.evm_address`** and Kind 0 are updated when the client publishes profile metadata (e.g. `update_profile` after onboarding).
+/// Persists **`settings.evm_address`** (active signing address).
 #[command]
 pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
     set_wallet_signing_evm_address(handle, address).await
-}
-
-/// Embedded wallet: payout address stored for a contact (`profiles.evm_address`).
-pub fn get_profile_evm_address<R: Runtime>(
-    handle: &AppHandle<R>,
-    npub: &str,
-) -> Result<Option<String>, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    let r: Option<String> = conn
-        .query_row(
-            "SELECT evm_address FROM profiles WHERE npub = ?1",
-            rusqlite::params![npub],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to read profile evm_address: {}", e))?;
-    crate::account_manager::return_db_connection(conn);
-    Ok(r.filter(|s| !s.trim().is_empty()))
 }
 
 /// Read `evm_address` from settings without repair (internal use).
@@ -2409,61 +2383,6 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
         );
     }
     crate::account_manager::return_db_connection(conn);
-}
-
-/// For each `member_npub`, if there is no `squad_member_evm` row yet for `parent_id`, insert one from
-/// `profiles.evm_address` when it validates. Does not overwrite existing roster rows.
-#[command]
-pub fn backfill_squad_member_evm_missing_from_profiles<R: Runtime>(
-    handle: AppHandle<R>,
-    parent_id: String,
-    member_npubs: Vec<String>,
-) -> Result<u32, String> {
-    let parent = parent_id.trim();
-    if parent.is_empty() {
-        return Ok(0);
-    }
-    let conn = crate::account_manager::get_db_connection(&handle)?;
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    let mut inserted: u32 = 0;
-    for npub_raw in member_npubs {
-        let npub = npub_raw.trim();
-        if npub.is_empty() {
-            continue;
-        }
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM squad_member_evm WHERE parent_id = ?1 AND member_npub = ?2 LIMIT 1",
-                rusqlite::params![parent, npub],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(|e| format!("Failed to check squad_member_evm: {}", e))?
-            .is_some();
-        if exists {
-            continue;
-        }
-        let Some(raw) = get_profile_evm_address(&handle, npub)? else {
-            continue;
-        };
-        let Some(norm) = crate::evm::normalize_hex_address(raw.trim()) else {
-            continue;
-        };
-        if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(&handle, norm.as_str()).is_err() {
-            continue;
-        };
-        conn.execute(
-            "INSERT INTO squad_member_evm (parent_id, member_npub, evm_address, updated_at_ms) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![parent, npub, norm, now_ms],
-        )
-        .map_err(|e| format!("Failed to backfill squad_member_evm: {}", e))?;
-        inserted += 1;
-    }
-    crate::account_manager::return_db_connection(conn);
-    Ok(inserted)
 }
 
 #[command]

@@ -58,6 +58,8 @@
     payload: WalletPeerInfoRequestPayload
   ) => void | Promise<void> = () => {};
   export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
+  /** Nest under previous same-author plain message (hide avatar/header). */
+  export let compact: boolean = false;
 
   $: presentation = resolveDmMessagePresentation(msg);
   $: inviterNpubForCard = isInvitePresentation(presentation) ? inviteInviterNpub(msg, npub) : null;
@@ -195,6 +197,7 @@
 {:else}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}
+    {compact}
   />
 {/if}
 

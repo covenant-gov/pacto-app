@@ -607,7 +607,7 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         println!("[Migration] Cached image columns added successfully");
     }
 
-    // Migration: embedded wallet — peer payout address (from Nostr metadata custom `evm_address` + local account row)
+    // Migration: unused profiles.evm_address column (legacy; payouts use dm_peer_evm)
     let has_evm_address_col: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name='evm_address'",

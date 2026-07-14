@@ -38,6 +38,7 @@ import {
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
+  reciprocatedWalletPeerInfoRequestIds,
 } from '../../stores/invite-decisions';
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
@@ -80,6 +81,7 @@ describe('clearAccountState', () => {
     declinedWalletTxRequestMessageIds.set([]);
     acceptedWalletPeerInfoRequestMessageIds.set([]);
     declinedWalletPeerInfoRequestMessageIds.set([]);
+    reciprocatedWalletPeerInfoRequestIds.set([]);
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     activeDmTab.set('friends');
     activeView.set('hub');
@@ -178,6 +180,7 @@ describe('clearAccountState', () => {
     declinedWalletTxRequestMessageIds.set(['msg-3']);
     acceptedWalletPeerInfoRequestMessageIds.set(['msg-4']);
     declinedWalletPeerInfoRequestMessageIds.set(['msg-5']);
+    reciprocatedWalletPeerInfoRequestIds.set(['rid-1']);
 
     clearAccountState('npub1abcdef');
 
@@ -188,6 +191,7 @@ describe('clearAccountState', () => {
     expect(get(declinedWalletTxRequestMessageIds)).toEqual([]);
     expect(get(acceptedWalletPeerInfoRequestMessageIds)).toEqual([]);
     expect(get(declinedWalletPeerInfoRequestMessageIds)).toEqual([]);
+    expect(get(reciprocatedWalletPeerInfoRequestIds)).toEqual([]);
   });
 
   it('resets DM read state stores', () => {

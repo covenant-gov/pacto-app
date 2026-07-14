@@ -16,6 +16,7 @@ export const INVITE_DECISION_SCOPED_PREFIXES = [
   'pacto_wallet_tx_request_declined',
   'pacto_wallet_peer_info_request_accepted',
   'pacto_wallet_peer_info_request_declined',
+  'pacto_wallet_peer_info_reciprocated',
 ] as const;
 
 export const acceptedSquadInviteIds = writable<string[]>([]);
@@ -30,6 +31,8 @@ export const declinedWalletTxRequestMessageIds = writable<string[]>([]);
 export const acceptedWalletPeerInfoRequestMessageIds = writable<string[]>([]);
 /** DM `wallet_peer_info_request` messages the user declined. */
 export const declinedWalletPeerInfoRequestMessageIds = writable<string[]>([]);
+/** `request_id`s for which we already sent a reciprocal `wallet_peer_info_grant`. */
+export const reciprocatedWalletPeerInfoRequestIds = writable<string[]>([]);
 
 const STORES = [
   acceptedSquadInviteIds,
@@ -39,6 +42,7 @@ const STORES = [
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
+  reciprocatedWalletPeerInfoRequestIds,
 ] as const;
 
 function persist(prefix: string, ids: string[], getKey: PersistenceKeyGetter): void {

@@ -121,8 +121,15 @@ function getReleaseTag() {
   const fromArg = process.argv[2];
   if (fromArg) return fromArg;
 
-  const fromEnv = process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME;
+  const fromEnv = process.env.RELEASE_TAG;
   if (fromEnv) return fromEnv;
+
+  // Only treat GITHUB_REF as a tag if it actually is one; branch refs fall
+  // back to the latest release (e.g., manual workflow_dispatch from main).
+  const ref = process.env.GITHUB_REF;
+  if (ref && ref.startsWith('refs/tags/')) {
+    return ref.replace('refs/tags/', '');
+  }
 
   return null;
 }
@@ -146,4 +153,4 @@ if (pathToFileURL(process.argv[1]).href === import.meta.url) {
   });
 }
 
-export { main };
+export { main, getReleaseTag };

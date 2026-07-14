@@ -11,8 +11,8 @@ import type { DmMessage } from '../../stores/dm';
 import type { PactoAppInboxEntry } from '../pacto-app-inbox';
 import type { NostrProfile } from '../api/nostr';
 
-const NPUB_A = 'npub1alice0000000';
-const NPUB_B = 'npub1bob00000000';
+const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const NPUB_B = 'npub1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const EVM_A = '0x1111111111111111111111111111111111111111';
 const TX_HASH = `0x${'a'.repeat(64)}`;
 
@@ -50,7 +50,6 @@ const PEER_INFO_REQUEST = JSON.stringify({
   type: 'wallet_peer_info_request',
   request_id: 'r1',
   requester_npub: NPUB_A,
-  requester_evm_address: EVM_A,
 });
 
 const PEER_INFO_GRANT = JSON.stringify({

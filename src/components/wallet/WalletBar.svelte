@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
-  import { invoke } from '@tauri-apps/api/core';
-  import { getEvmAddress } from '../../lib/api/auth';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
+  import { getEvmAddress } from '../../lib/api/auth';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -24,7 +24,6 @@
     persistWalletSummaryCache,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
-  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { showToast } from '../../stores/toast';
   import {
     walletSendPrefillFromRequest,
@@ -94,42 +93,29 @@
   let peerWalletReady = false;
   let walletInfoRequestSending = false;
 
-  const EVM_PAYOUT_RE = /^0x[a-fA-F0-9]{40}$/;
-
-  /** Same resolution as send: `dm_peer_evm`, then peer profile `evm_address` (Kind 0). */
+  /** Unlock Send/Request only after pairwise `dm_peer_evm` exchange. */
   async function syncPeerWalletReady() {
-    if (!npub) {
+    const peerNpub = npub;
+    if (!peerNpub) {
       peerWalletReady = false;
       return;
     }
     try {
-      const fromDm = await getDmPeerEvmAddress(npub);
-      if (fromDm?.trim()) {
-        peerWalletReady = true;
-        return;
-      }
+      const fromDm = await getDmPeerEvmAddress(peerNpub);
+      if (npub !== peerNpub) return;
+      peerWalletReady = Boolean(fromDm?.trim());
     } catch {
-      /* fall through */
-    }
-    const fromStore = contactProfile?.evm_address?.trim() ?? '';
-    if (EVM_PAYOUT_RE.test(fromStore)) {
-      peerWalletReady = true;
-      return;
-    }
-    try {
-      const p = (await invoke('get_profile', { npub })) as { evm_address?: string; evmAddress?: string };
-      const a = (p?.evm_address ?? p?.evmAddress ?? '').trim();
-      peerWalletReady = EVM_PAYOUT_RE.test(a);
-    } catch {
+      if (npub !== peerNpub) return;
       peerWalletReady = false;
     }
   }
 
-  $: npub, contactProfile, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
+  $: npub, $dmWalletPeerExchangeTick, void syncPeerWalletReady();
 
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;
-    if (!me || !npub || walletInfoRequestSending) return;
+    const peerNpub = npub;
+    if (!me || !peerNpub || walletInfoRequestSending) return;
     if (peerWalletReady) {
       showToast('You already have a payout address for this contact.');
       return;
@@ -141,18 +127,19 @@
     }
     walletInfoRequestSending = true;
     try {
-      const addr =
+      const myAddr =
         (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
-      if (!addr) {
-        showToast('Your wallet address is not ready yet.');
+      if (npub !== peerNpub) return;
+      if (!myAddr) {
+        showToast('Add or select a wallet before requesting theirs.');
         return;
       }
       const json = formatWalletPeerInfoRequest({
         request_id: crypto.randomUUID(),
         requester_npub: me,
-        requester_evm_address: addr.trim(),
       });
       const ok = await post(json);
+      if (npub !== peerNpub) return;
       if (ok) {
         showToast('Request sent. Waiting for your contact to accept.');
       } else {
@@ -397,8 +384,8 @@
   {#if !peerWalletReady}
     <div class="wallet-bar-init">
       <p class="wallet-bar-init-text">
-        Their payout address for this chat is not on your device yet. Send a private request (your address is
-        included). When they accept, both of you can send to each other without a second request.
+        Their payout address for this chat is not on your device yet. Send a private request to exchange
+        addresses. When they accept, both of you can send to each other.
       </p>
       <button
         type="button"

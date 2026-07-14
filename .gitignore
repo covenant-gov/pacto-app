@@ -2,6 +2,7 @@
 coverage/
 tauri-dev.log
 node_modules
+.pnpm-store/
 /build
 /.svelte-kit
 /package
