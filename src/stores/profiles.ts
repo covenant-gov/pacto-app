@@ -8,7 +8,6 @@ import { getProfileDisplayName } from '../lib/utils/profile';
 import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
 import { hydrateDmUnreadFromInitChats } from './dm-unread';
 import { currentUser } from './auth';
-import { showToast } from './toast';
 
 type InitFinishedPayload = {
   profiles?: NostrProfile[];
@@ -139,22 +138,6 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
     }
   } catch (error) {
     console.error('Failed to register init_finished listener:', error);
-  }
-})();
-
-// Kind 0 profile republish finished (e.g. wallet default receiving address). Emitted after relays accept the event.
-(async () => {
-  try {
-    await listen('kind0_profile_published', () => {
-      showToast('Profile metadata (Kind 0) published to the network.');
-    });
-    await listen<string>('kind0_profile_publish_failed', (event) => {
-      const p = event.payload;
-      const msg = typeof p === 'string' && p.trim() ? p : 'Could not publish profile metadata.';
-      showToast(msg);
-    });
-  } catch (error) {
-    console.error('Failed to register kind0_profile publish listeners:', error);
   }
 })();
 

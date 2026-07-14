@@ -7,6 +7,8 @@
   export let content: string = '';
   export let timestamp: string = '';
   export let avatar: string = '';
+  /** Hide avatar + name/timestamp; nest under the previous message from the same author. */
+  export let compact: boolean = false;
   /** When set, show a reply bar above the body (author + truncated content or "Attachment"). */
   export let replyToId: string | undefined = undefined;
   export let replyAuthorName: string | undefined = undefined;
@@ -19,19 +21,23 @@
   }
 </script>
 
-<div class="message" id={id ? `msg-${id}` : undefined}>
-  <div class="avatar">
-    {#if avatar}
-      <img src={avatar} alt={authorName} />
-    {:else}
-      <div class="avatar-placeholder">{authorName.charAt(0).toUpperCase()}</div>
+<div class="message" class:compact id={id ? `msg-${id}` : undefined}>
+  <div class="avatar" aria-hidden={compact ? 'true' : undefined}>
+    {#if !compact}
+      {#if avatar}
+        <img src={avatar} alt={authorName} />
+      {:else}
+        <div class="avatar-placeholder">{authorName.charAt(0).toUpperCase()}</div>
+      {/if}
     {/if}
   </div>
   <div class="message-content">
-    <div class="message-header">
-      <span class="author-name">{authorName}</span>
-      <span class="timestamp"><time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time></span>
-    </div>
+    {#if !compact}
+      <div class="message-header">
+        <span class="author-name">{authorName}</span>
+        <span class="timestamp"><time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time></span>
+      </div>
+    {/if}
     {#if replyToId && (replyAuthorName != null || replyPreview != null)}
       <div class="msg-reply" role="region" aria-label="Reply to {replyAuthorName ?? 'message'}">
         <button
@@ -59,6 +65,11 @@
     transition: background 0.1s;
   }
 
+  .message.compact {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+
   .message:hover {
     background: var(--bg-hover);
   }
@@ -68,6 +79,12 @@
     height: 40px;
     flex-shrink: 0;
     margin-top: 2px;
+  }
+
+  .message.compact .avatar {
+    height: auto;
+    min-height: 0;
+    margin-top: 0;
   }
 
   .avatar img {

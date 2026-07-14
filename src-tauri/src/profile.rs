@@ -4,7 +4,6 @@ use tauri_plugin_fs::FsExt;
 
 use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
-use crate::evm::evm_accounts;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
 
@@ -37,9 +36,6 @@ pub struct Profile {
     pub avatar_cached: String,
     /// Local cached path for banner image (for offline support)
     pub banner_cached: String,
-    /// Ethereum payout address (0x…): Kind 0 `evm_address` for others; for **mine**, the default-shared wallet account (may differ from active signing address).
-    #[serde(default)]
-    pub evm_address: String,
 }
 
 impl Default for Profile {
@@ -70,7 +66,6 @@ impl Profile {
             bot: false,
             avatar_cached: String::new(),
             banner_cached: String::new(),
-            evm_address: String::new(),
         }
     }
 
@@ -151,18 +146,6 @@ impl Profile {
             if self.nip05 != nip05 {
                 self.nip05 = nip05;
                 changed = true;
-            }
-        }
-
-        // evm_address (optional Kind 0 extension; stored in custom map when deserialized from relays)
-        if let Some(raw) = meta.custom.get("evm_address") {
-            if let Some(s) = raw.as_str() {
-                let norm = crate::evm::normalize_hex_address(s.trim())
-                    .unwrap_or_else(|| s.trim().to_string());
-                if self.evm_address != norm {
-                    self.evm_address = norm;
-                    changed = true;
-                }
             }
         }
 
@@ -486,26 +469,11 @@ pub async fn load_profile(npub: String) -> bool {
     }
 }
 
-fn merge_evm_into_kind0_json(meta: &Metadata, evm: Option<String>) -> Result<String, serde_json::Error> {
+/// Serialize Kind 0 metadata and strip any `evm_address` (not published on relays).
+fn kind0_metadata_json_without_evm(meta: &Metadata) -> Result<String, serde_json::Error> {
     let mut v = serde_json::to_value(meta)?;
     if let serde_json::Value::Object(ref mut m) = v {
-        match evm {
-            Some(ref s) => {
-                let t = s.trim();
-                if !t.is_empty() {
-                    let norm = crate::evm::normalize_hex_address(t).unwrap_or_else(|| t.to_string());
-                    m.insert(
-                        "evm_address".to_string(),
-                        serde_json::Value::String(norm),
-                    );
-                } else {
-                    m.remove("evm_address");
-                }
-            }
-            None => {
-                m.remove("evm_address");
-            }
-        }
+        m.remove("evm_address");
     }
     serde_json::to_string(&v)
 }
@@ -603,10 +571,7 @@ async fn publish_vector_profile_kind0(
         build_metadata_from_vector_profile(&profile, &name, &avatar, &banner, &about)
     };
 
-    let evm_for_kind0 =
-        evm_accounts::resolve_default_shared_evm_address_string(handle.clone()).await;
-    let metadata_json =
-        merge_evm_into_kind0_json(&meta, evm_for_kind0.clone()).map_err(|e| e.to_string())?;
+    let metadata_json = kind0_metadata_json_without_evm(&meta).map_err(|e| e.to_string())?;
 
     let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone()).tag(
         Tag::custom(
@@ -633,8 +598,7 @@ async fn publish_vector_profile_kind0(
             .unwrap()
             .as_secs();
 
-        let handle_emit = TAURI_APP.get().ok_or_else(|| "App handle not initialized".to_string())?;
-        handle_emit
+        handle
             .emit("profile_update", &*profile_mutable)
             .map_err(|e| e.to_string())?;
 
@@ -645,11 +609,7 @@ async fn publish_vector_profile_kind0(
         )
     };
 
-    let handle_emit = TAURI_APP
-        .get()
-        .cloned()
-        .ok_or_else(|| "App handle not initialized".to_string())?;
-    db::set_profile(handle_emit.clone(), profile_clone)
+    db::set_profile(handle.clone(), profile_clone)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -659,10 +619,6 @@ async fn publish_vector_profile_kind0(
     });
 
     Ok(())
-}
-
-pub(crate) async fn republish_kind0_metadata_with_wallet_default() -> Result<(), String> {
-    publish_vector_profile_kind0(String::new(), String::new(), String::new(), String::new()).await
 }
 
 #[tauri::command]
@@ -876,5 +832,29 @@ pub async fn get_profile(npub: String) -> Result<Profile, String> {
     match state.get_profile(&npub) {
         Some(profile) => Ok(profile.clone()),
         None => Err(format!("Profile not found: {}", npub))
+    }
+}
+
+#[cfg(test)]
+mod kind0_evm_tests {
+    use super::kind0_metadata_json_without_evm;
+    use nostr_sdk::prelude::*;
+
+    #[test]
+    fn kind0_json_strips_evm_address_field() {
+        let meta = Metadata::new().name("alice");
+        let mut v = serde_json::to_value(&meta).unwrap();
+        if let serde_json::Value::Object(ref mut m) = v {
+            m.insert(
+                "evm_address".to_string(),
+                serde_json::Value::String(
+                    "0x1111111111111111111111111111111111111111".to_string(),
+                ),
+            );
+        }
+        let contaminated: Metadata = serde_json::from_value(v).unwrap();
+        let json = kind0_metadata_json_without_evm(&contaminated).unwrap();
+        assert!(!json.contains("evm_address"));
+        assert!(json.contains("alice"));
     }
 }

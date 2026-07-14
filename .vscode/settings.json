@@ -1,3 +1,9 @@
 {
-  "svelte.enable-ts-plugin": true
+  "svelte.enable-ts-plugin": true,
+  "files.watcherExclude": {
+    "**/.pnpm-store/**": true
+  },
+  "files.exclude": {
+    "**/.pnpm-store": true
+  }
 }

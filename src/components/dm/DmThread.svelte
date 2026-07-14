@@ -7,10 +7,18 @@
     getFulfilledWalletRequestIdsFromMessages,
     type WalletPeerInfoRequestPayload,
   } from '../../lib/wallet/dm-messages';
+  import {
+    formatReciprocalWalletPeerGrant,
+    shouldPersistInboundWalletPeerGrant,
+    shouldSendReciprocalWalletPeerGrant,
+  } from '../../lib/wallet/wallet-peer-exchange';
   import { setDmPeerEvmAddress } from '../../lib/api/wallet-peers';
+  import { getEvmAddress } from '../../lib/api/auth';
+  import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
   import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
+  import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
   import { toggleDmBlock } from '../../lib/api/nostr';
   import { profiles } from '../../stores/profiles';
@@ -26,16 +34,18 @@
     toggleWalletSidebar,
     type DmTab,
     appendDmThreadAnnouncement,
+    reciprocatedWalletPeerInfoRequestIds,
   } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
+  import { get } from 'svelte/store';
 
   export let npub: string;
   export let messages: DmMessage[] = [];
   export let canLoadOlder = false;
   export let loadingOlder = false;
   export let onLoadOlder: () => void = () => {};
-  export let onSend: (content: string) => void = () => {};
+  export let onSend: (content: string) => void | boolean | Promise<boolean> = () => {};
   export let onTyping: () => void = () => {};
   export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
   export let onAcceptChannelInSquad: (
@@ -101,29 +111,107 @@
   $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
+  let reciprocalGrantInFlight = new Set<string>();
 
   $: if (npub !== appliedWalletGrantsForNpub) {
     appliedWalletGrantsForNpub = npub;
     appliedWalletGrantIds = new Set();
+    reciprocalGrantInFlight = new Set();
   }
 
   $: (() => {
     const uid = $currentUser?.npub;
-    if (!uid || !npub) return;
+    const peerNpub = npub;
+    if (!uid || !peerNpub) return;
     for (const msg of messages) {
       if (msg.mine) continue;
       const g = parseWalletPeerInfoGrant(msg.content ?? '');
-      if (!g || g.grantor_npub !== npub) continue;
-      if (appliedWalletGrantIds.has(msg.id)) continue;
-      appliedWalletGrantIds.add(msg.id);
-      void setDmPeerEvmAddress(npub, g.evm_address).then(
-        () => {
+      if (!g || g.grantor_npub !== peerNpub) continue;
+
+      if (
+        !appliedWalletGrantIds.has(msg.id) &&
+        shouldPersistInboundWalletPeerGrant({
+          grant: g,
+          peerNpub,
+          myNpub: uid,
+          messages,
+        })
+      ) {
+        appliedWalletGrantIds.add(msg.id);
+        const forPeer = peerNpub;
+        void setDmPeerEvmAddress(forPeer, g.evm_address).then(
+          () => {
+            if (npub !== forPeer) return;
+            dmWalletPeerExchangeTick.update((t: number) => t + 1);
+          },
+          () => {
+            appliedWalletGrantIds.delete(msg.id);
+          }
+        );
+      }
+
+      if (reciprocalGrantInFlight.has(g.request_id)) continue;
+      if (
+        !shouldSendReciprocalWalletPeerGrant({
+          grant: g,
+          peerNpub,
+          myNpub: uid,
+          messages,
+          alreadyReciprocatedRequestIds: get(reciprocatedWalletPeerInfoRequestIds),
+        })
+      ) {
+        continue;
+      }
+      reciprocalGrantInFlight.add(g.request_id);
+      void (async () => {
+        try {
+          const myAddr =
+            (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
+          if (npub !== peerNpub || get(currentUser)?.npub !== uid) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
+          if (!myAddr) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            showToast('Add or select a wallet to finish sharing your payout address.');
+            return;
+          }
+          if (
+            !shouldSendReciprocalWalletPeerGrant({
+              grant: g,
+              peerNpub,
+              myNpub: uid,
+              messages,
+              alreadyReciprocatedRequestIds: get(reciprocatedWalletPeerInfoRequestIds),
+            })
+          ) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
+          const grantJson = formatReciprocalWalletPeerGrant({
+            requestId: g.request_id,
+            myNpub: uid,
+            myEvmAddress: myAddr,
+          });
+          const sendResult = await Promise.resolve(onSend(grantJson));
+          if (npub !== peerNpub || get(currentUser)?.npub !== uid) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            return;
+          }
+          if (sendResult === false) {
+            reciprocalGrantInFlight.delete(g.request_id);
+            showToast('Could not share your address. Open the chat to try again.');
+            return;
+          }
+          reciprocatedWalletPeerInfoRequestIds.update((ids) =>
+            ids.includes(g.request_id) ? ids : [...ids, g.request_id]
+          );
           dmWalletPeerExchangeTick.update((t: number) => t + 1);
-        },
-        () => {
-          appliedWalletGrantIds.delete(msg.id);
+          showToast('Wallet addresses exchanged for this chat.');
+        } catch {
+          reciprocalGrantInFlight.delete(g.request_id);
         }
-      );
+      })();
     }
   })();
 
@@ -398,7 +486,7 @@
       </div>
     {/if}
     {#if messages.length > 0}
-      {#each messages as msg (msg.id)}
+      {#each messages as msg, i (msg.id)}
         <DmMessageRouter
           {msg}
           {npub}
@@ -415,6 +503,7 @@
           {onAcceptWalletPeerInfoRequest}
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
+          compact={shouldStackWithPrevious(messages[i - 1], msg)}
         />
       {/each}
     {:else}

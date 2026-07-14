@@ -11,6 +11,7 @@ export {
   declinedWalletTxRequestMessageIds,
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
+  reciprocatedWalletPeerInfoRequestIds,
 } from './invite-decisions';
 
 export * from './persistence-context';
