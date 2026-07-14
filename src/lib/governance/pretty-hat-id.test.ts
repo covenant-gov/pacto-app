@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hatsTreeDomain, prettyHatId } from './pretty-hat-id';
+import { hatsTreeDomain, hatIdToHex, prettyHatId } from './pretty-hat-id';
 
 describe('hatsTreeDomain', () => {
   it('passes through bare tree domains', () => {
@@ -20,6 +20,21 @@ describe('hatsTreeDomain', () => {
   it('returns null for invalid input', () => {
     expect(hatsTreeDomain('')).toBeNull();
     expect(hatsTreeDomain('nope')).toBeNull();
+  });
+});
+
+describe('hatIdToHex', () => {
+  it('packs a bare tree domain into a top-hat hex id', () => {
+    expect(hatIdToHex('950')).toBe(
+      '0x000003b600000000000000000000000000000000000000000000000000000000',
+    );
+  });
+
+  it('formats a packed decimal hat id as hex', () => {
+    const packed = BigInt(950) << 224n;
+    expect(hatIdToHex(packed.toString(10))).toBe(
+      '0x000003b600000000000000000000000000000000000000000000000000000000',
+    );
   });
 });
 

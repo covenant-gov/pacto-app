@@ -151,8 +151,7 @@
     align-items: center;
     gap: 8px 12px;
     padding: 8px 0;
-    margin-bottom: 4px;
-    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 0;
     font-size: 0.875rem;
   }
 

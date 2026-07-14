@@ -142,13 +142,7 @@
 >
   <h3 id="squad-bot-holders-title" class="section-heading">Join inbox / Bot key holders</h3>
   <p class="section-lead">
-    Commons join requests are DMs to this squad’s bot. Only listed holders keep the bot key on their
-    device. {#if squadAdminActive}
-      With Squad Admin deployed, only members with <strong>Full</strong> executor scope on their roster
-      EVM may add, remove, or rotate holders.
-    {:else}
-      Until Squad Admin is live, any member who is already a holder may add another current member.
-    {/if}
+    Join requests DM this squad’s bot; only listed holders keep the key.
   </p>
 
   {#if loading}
@@ -192,23 +186,9 @@
         </div>
       </div>
 
-      <div class="bot-meta-grid">
-        <div class="bot-key-box bot-key-box-compact">
-          <span class="bot-key-box-label">Key epoch</span>
-          <span class="bot-key-box-value">{state.keyEpoch}</span>
-        </div>
-        <div class="bot-key-box bot-key-box-compact">
-          <span class="bot-key-box-label">Your device</span>
-          <span class="bot-key-box-value">
-            {#if state.hasLocalSecret}
-              Holds bot key
-            {:else if state.iAmHolder}
-              Listed as holder — waiting for key share
-            {:else}
-              Not a holder
-            {/if}
-          </span>
-        </div>
+      <div class="bot-key-box bot-key-box-compact">
+        <span class="bot-key-box-label">Key epoch</span>
+        <span class="bot-key-box-value">{state.keyEpoch}</span>
       </div>
     </div>
 
@@ -230,13 +210,6 @@
         </li>
       {/each}
     </ul>
-
-    {#if state.iAmHolder && state.hasLocalSecret && !canManage && squadAdminActive}
-      <p class="hint">
-        You hold the bot key but need Squad Admin <strong>Full</strong> executor scope on your roster
-        EVM to change the holder list.
-      </p>
-    {/if}
 
     {#if canManage}
       <div class="add-row">
@@ -282,7 +255,6 @@
   }
 
   .section-lead,
-  .hint,
   .muted {
     margin: 0 0 0.75rem;
     font-size: 0.875rem;
@@ -348,11 +320,6 @@
   .bot-key-copy-icon {
     display: block;
   }
-  .bot-meta-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-    gap: 10px;
-  }
   .bot-key-box-compact {
     min-width: 0;
   }
@@ -378,6 +345,9 @@
     gap: 0.75rem;
     padding: 0.35rem 0;
     border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .holder-list li:last-child {
+    border-bottom: none;
   }
   .add-row {
     display: flex;

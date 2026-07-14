@@ -31,6 +31,16 @@ export function hatsTreeDomain(raw: string): string | null {
 }
 
 /**
+ * Full uint256 hat id as `0x` + 64 hex chars (bare domains are packed as top hats).
+ */
+export function hatIdToHex(raw: string): string | null {
+  const id = parseHatIdBigInt(raw);
+  if (id === null) return null;
+  const packed = id <= TOPHAT_DOMAIN_MASK ? id << TOPHAT_SHIFT : id;
+  return `0x${packed.toString(16).padStart(64, '0')}`;
+}
+
+/**
  * Convert a raw Hats uint256 (decimal or hex) to pretty dotted form.
  * Returns null when the input cannot be parsed.
  */
