@@ -1,26 +1,34 @@
 <script lang="ts">
-  import TreasuryProposalCard from '../governance/TreasuryProposalCard.svelte';
-  import PactoGovInfraList from '../governance/PactoGovInfraList.svelte';
-  import type { TreasuryProposalDto } from '../../../lib/governance/api';
+  import PactoGovGovernanceShell from '../governance/PactoGovGovernanceShell.svelte';
+  import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
+  import type { TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
+  import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
 
-  export let squadInfraRows: unknown[] | undefined = undefined;
+  export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
   export let hasSponsor = false;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
   export let pactoGovTopHatId = '';
   export let pactoGovChain: string | undefined = undefined;
-  export let pactoGovProviderPayload: string | undefined = undefined;
+  export let parentId = '';
+  export let announcementsGroupId = '';
+  export let myAddress = '';
+  export let captainWearers: string[] = [];
+  export let crewWearers: string[] = [];
   export let treasuryProposals: TreasuryProposalDto[] = [];
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsRefreshing = false;
   export let treasuryProposalsError = '';
-  export let myVoterAddress = '';
   export let proposalHasVotedById: Record<string, boolean> = {};
-  export let proposalVotesLoading = false;
-  export let onTreasuryVoteClick: () => void = () => {};
+  export let onRefreshProposals: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
+  export let onOpenCrew: () => void = () => {};
+
+  $: provider = resolveGovernanceProvider(squadInfraRows);
+  $: network = pactoGovChain ?? 'sepolia';
+  $: openCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
 </script>
 
 {#if squadInfraRows !== undefined && !hasSponsor}
@@ -31,59 +39,59 @@
     <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
   </div>
 {/if}
-<section class="dashboard-section dashboard-placeholder-section" aria-labelledby="governance-heading">
-  <h3 id="governance-heading" class="section-heading">Governance</h3>
-  {#if !pactoPayload?.treasuryAuthority}
-    <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-      Treasury Authority proposals appear here after you deploy <strong>Pacto Gov</strong> from Deploy.
-    </p>
-    <button type="button" class="btn-primary governance-deploy-cta" on:click={onOpenLaunchpad}>Deploy Pacto Gov</button>
-  {:else}
-    <div class="governance-infra-panel" aria-labelledby="governance-infra-heading">
-      <h4 id="governance-infra-heading" class="governance-infra-heading">Pacto Gov deployment</h4>
-      {#if pactoGovChain}
-        <p class="governance-infra-network">{getWalletNetworkDisplayName(parseSupportedChainId(pactoGovChain))}</p>
-      {/if}
-      <PactoGovInfraList
-        providerPayload={pactoGovProviderPayload}
-        topHatId={pactoGovTopHatId}
-        chain={pactoGovChain}
-      />
-    </div>
 
-    <h4 class="governance-proposals-heading">Treasury proposals</h4>
+<section class="governance-section" aria-labelledby="governance-heading">
+  <div class="governance-heading-row">
+    <h3 id="governance-heading" class="section-heading">Governance</h3>
+    <button type="button" class="btn-primary governance-deploy-btn" on:click={onOpenLaunchpad}>
+      Deploy
+    </button>
+  </div>
+
+  {#if provider === 'none'}
+    <p class="dashboard-placeholder-text muted">
+      Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.
+    </p>
+  {:else if provider === 'abi_modules'}
+    <p class="dashboard-placeholder-text muted">
+      Custom ABI governance modules are reserved for a future pathway. Use Pacto Gov or contract allowlist
+      (Status) for now.
+    </p>
+  {:else if pactoPayload?.treasuryAuthority}
+    <p class="gov-network muted">
+      Pacto Gov on <strong>{getWalletNetworkDisplayName(parseSupportedChainId(network))}</strong>
+      {#if openCount}
+        · {openCount} open proposal{openCount === 1 ? '' : 's'}
+      {/if}
+    </p>
     {#if treasuryProposalsRefreshing}
       <p class="dashboard-refresh-note muted" role="status">Refreshing proposals…</p>
     {/if}
-    {#if treasuryProposalsError && treasuryProposals.length > 0}
-      <p class="chain-read-error" role="alert">{treasuryProposalsError}</p>
-    {/if}
-    {#if treasuryProposalsLoading && treasuryProposals.length === 0}
-      <p class="dashboard-placeholder-text muted">Loading treasury proposals…</p>
-    {:else if treasuryProposals.length === 0 && treasuryProposalsError}
-      <p class="chain-read-error" role="alert">{treasuryProposalsError}</p>
-    {:else if treasuryProposals.length === 0}
-      <p class="dashboard-placeholder-text muted">No treasury proposals on-chain yet for this deployment.</p>
-    {:else}
-      <ul class="proposal-card-list" role="list">
-        {#each treasuryProposals as proposal (proposal.proposalId)}
-          <TreasuryProposalCard
-            {proposal}
-            voterAddress={myVoterAddress}
-            hasVoted={proposalHasVotedById[proposal.proposalId]}
-            votePending={proposalVotesLoading}
-            onVoteYea={onTreasuryVoteClick}
-            onVoteNay={onTreasuryVoteClick}
-          />
-        {/each}
-      </ul>
-    {/if}
+    <PactoGovGovernanceShell
+      payload={pactoPayload}
+      {network}
+      {parentId}
+      {announcementsGroupId}
+      {myAddress}
+      {captainWearers}
+      {crewWearers}
+      {treasuryProposals}
+      {treasuryProposalsLoading}
+      {treasuryProposalsError}
+      {proposalHasVotedById}
+      {onRefreshProposals}
+      {onOpenCrew}
+    />
+  {:else}
+    <p class="dashboard-placeholder-text muted">
+      Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.
+    </p>
   {/if}
 </section>
 
 <style>
   .sponsor-empty-banner {
-    margin: 0 16px 16px;
+    margin: 0 0 16px;
     padding: 14px 16px;
     border: 1px solid var(--border-subtle);
     border-radius: 10px;
@@ -102,78 +110,37 @@
     color: var(--text-secondary);
   }
 
-  .dashboard-section {
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
+  .governance-section {
+    min-width: 0;
   }
 
-  .dashboard-placeholder-section .section-heading {
-    margin-bottom: 8px;
+  .governance-heading-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
   }
 
   .section-heading {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
-  }
-
-  .governance-infra-panel {
-    margin-bottom: 20px;
-  }
-
-  .governance-infra-heading {
-    margin: 0 0 6px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-  }
-
-  .governance-infra-network {
-    margin: 0 0 8px;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .governance-proposals-heading {
-    margin: 0 0 10px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-muted);
-  }
-
-  .dashboard-placeholder-text {
-    font-size: 0.875rem;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    margin: 0 0 12px 0;
-  }
-
-  .dashboard-placeholder-lead {
-    margin-bottom: 16px;
-  }
-
-  .dashboard-placeholder-text.muted,
-  .muted {
-    color: var(--text-muted);
-  }
-
-  .governance-deploy-cta {
-    margin-top: 8px;
-  }
-
-  .proposal-card-list {
-    list-style: none;
     margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .governance-deploy-btn {
+    flex-shrink: 0;
+  }
+
+  .gov-network,
+  .dashboard-placeholder-text,
+  .dashboard-refresh-note,
+  .muted {
+    margin: 0 0 12px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
   }
 
   .btn-primary {

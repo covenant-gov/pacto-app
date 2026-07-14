@@ -117,8 +117,8 @@
     <label class="pacto-gov-deploy-label" for="pacto-gov-captain">Captain</label>
     {#if captainMemberOptions.length === 0}
       <p class="pacto-gov-deploy-hint muted">
-        No squad members have shared an EVM address yet. Members share addresses in Settings or via the roster prompt in
-        #personal-alerts.
+        No squad members have shared an EVM address yet. Members share addresses in My Dashboard or via the roster prompt in
+        #my-dashboard Alerts.
       </p>
     {:else}
       <select

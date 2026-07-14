@@ -13,7 +13,7 @@ import {
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
   showMembersPanel,
-  parentDashboardChannelMode,
+  squadDashboardChannelMode,
   DEFAULT_TOP_NAV_TAB,
 } from '../../stores/navigation';
 import {
@@ -85,7 +85,7 @@ describe('clearAccountState', () => {
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     activeDmTab.set('friends');
     activeView.set('hub');
-    parentDashboardChannelMode.set('governance');
+    squadDashboardChannelMode.set('status');
     showMembersPanel.set(false);
     walletSidebarOpen.set(false);
     composingNewChat.set(false);
@@ -126,7 +126,7 @@ describe('clearAccountState', () => {
     activeHubChannelName.set('hub-1');
     activeView.set('profile');
     activeTopNavTab.set('dms');
-    parentDashboardChannelMode.set('treasury');
+    squadDashboardChannelMode.set('treasury');
     showMembersPanel.set(true);
 
     clearAccountState('npub1abcdef');
@@ -136,7 +136,7 @@ describe('clearAccountState', () => {
     expect(get(activeHubChannelName)).toBeNull();
     expect(get(activeView)).toBe('hub');
     expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
-    expect(get(parentDashboardChannelMode)).toBe('governance');
+    expect(get(squadDashboardChannelMode)).toBe('status');
     expect(get(showMembersPanel)).toBe(false);
   });
 

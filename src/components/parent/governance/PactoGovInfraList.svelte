@@ -9,6 +9,7 @@
     pactoGovDeployAnnounceRows,
     txHashFromPactoGovProviderPayload,
   } from '../../../lib/governance/pacto-gov-payload';
+  import { hatsTreeDomain, prettyHatId } from '../../../lib/governance/pretty-hat-id';
 
   export let providerPayload: string | null | undefined = undefined;
   export let topHatId = '';
@@ -21,10 +22,8 @@
     return `${a.slice(0, 10)}…${a.slice(-8)}`;
   }
 
-  function shortHatId(id: string): string {
-    const t = id.trim();
-    if (t.length <= 16) return t;
-    return `${t.slice(0, 8)}…${t.slice(-6)}`;
+  function displayHatValue(id: string): string {
+    return hatsTreeDomain(id) ?? prettyHatId(id) ?? id.trim();
   }
 
   $: chainId = parseSupportedChainId(chain);
@@ -37,7 +36,7 @@
 
 {#if rows.length > 0}
   <ul class="pacto-gov-infra-rows" role="list">
-    {#each rows as row (row.kind === 'address' ? row.address : row.hatId)}
+    {#each rows as row (row.kind === 'address' ? row.address : `${row.label}:${row.hatId}`)}
       <li class="pacto-gov-infra-row">
         <span class="pacto-gov-infra-label">{row.label}</span>
         {#if row.kind === 'address'}
@@ -55,7 +54,7 @@
             </a>
           {/if}
         {:else}
-          <code class="pacto-gov-infra-value" title={row.hatId}>{shortHatId(row.hatId)}</code>
+          <code class="pacto-gov-infra-value" title={row.hatId}>{displayHatValue(row.hatId)}</code>
           {@const hatsUrl = hatsTreeExplorerUrl(chainIdNumeric, row.hatId)}
           {#if hatsUrl}
             <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->

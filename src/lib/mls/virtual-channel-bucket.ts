@@ -16,7 +16,6 @@ import {
 } from '../announcements';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
   POLLS_CHANNEL_NAME,
   normalizeHubChannelName,
 } from '../squad/hub-channel-names';
@@ -54,21 +53,16 @@ export interface ChannelLike {
   order: number;
 }
 
-const DEFAULT_TRIO_CHANNEL_NAMES = [
-  ANNOUNCEMENTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
-  POLLS_CHANNEL_NAME,
-] as const;
+const DEFAULT_HUB_MLS_CHANNEL_NAMES = [ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME] as const;
 
-/** True when #announcements, #personal-alerts, and #polls exist and share one MLS group id. */
+/** True when #announcements and #polls exist and share one MLS group id. */
 export function defaultTrioSharesSingleMlsGroup(channels: ChannelLike[]): boolean {
   const byName = new Map(channels.map((c) => [c.name, c]));
-  const ann = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[0]);
-  const personalAlerts = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[1]);
-  const pol = byName.get(DEFAULT_TRIO_CHANNEL_NAMES[2]);
-  if (!ann || !personalAlerts || !pol) return false;
+  const ann = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[0]);
+  const pol = byName.get(DEFAULT_HUB_MLS_CHANNEL_NAMES[1]);
+  if (!ann || !pol) return false;
   const gid = ann.groupId.trim();
-  return gid.length > 0 && gid === personalAlerts.groupId.trim() && gid === pol.groupId.trim();
+  return gid.length > 0 && gid === pol.groupId.trim();
 }
 
 /**

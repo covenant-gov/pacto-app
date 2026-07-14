@@ -1,8 +1,4 @@
-import {
-  ANNOUNCEMENTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
-  POLLS_CHANNEL_NAME,
-} from './hub-channel-names';
+import { ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME } from './hub-channel-names';
 
 export interface HubChannelRow {
   name: string;
@@ -10,45 +6,54 @@ export interface HubChannelRow {
   order: number;
 }
 
-/** Default hub sidebar rows for an existing announcements MLS `groupId` (single-group default). */
+const OBSOLETE_DEFAULT_HUB_NAMES = new Set([
+  'personal-alerts',
+  'monitor',
+  'inbox',
+  'join-requests',
+  'dashboard',
+]);
+
+/** Default hub MLS rows for an announcements `groupId` (single-group default). */
 export function defaultChannelRowsForGroupId(groupId: string): HubChannelRow[] {
   return [
     { name: ANNOUNCEMENTS_CHANNEL_NAME, groupId, order: 0 },
-    { name: PERSONAL_ALERTS_CHANNEL_NAME, groupId, order: 1 },
-    { name: POLLS_CHANNEL_NAME, groupId, order: 2 },
+    { name: POLLS_CHANNEL_NAME, groupId, order: 1 },
   ];
 }
 
 /**
- * Backfill missing `#personal-alerts` / `#polls` rows when a parent only persisted `#announcements`
- * (invite accept) but uses the single-group default MLS scope.
+ * Backfill missing `#polls` and strip obsolete hub rows when the parent uses the
+ * single-group default MLS scope.
  */
 export function ensureDefaultHubChannelRows(channels: HubChannelRow[]): HubChannelRow[] {
   const ann = channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
   const gid = ann?.groupId?.trim();
   if (!gid || gid.startsWith('creating-')) return channels;
 
-  const hasPersonalAlerts = channels.some((c) => c.name === PERSONAL_ALERTS_CHANNEL_NAME);
   const hasPolls = channels.some((c) => c.name === POLLS_CHANNEL_NAME);
-  if (hasPersonalAlerts && hasPolls) return channels;
+  const hasObsolete = channels.some((c) => OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
+  if (hasPolls && !hasObsolete) return channels;
 
-  const defaultRows = channels.filter(
+  const mlsDefaults = channels.filter(
     (c) =>
       c.name === ANNOUNCEMENTS_CHANNEL_NAME ||
-      c.name === PERSONAL_ALERTS_CHANNEL_NAME ||
-      c.name === POLLS_CHANNEL_NAME
+      c.name === POLLS_CHANNEL_NAME ||
+      (OBSOLETE_DEFAULT_HUB_NAMES.has(c.name) && !c.groupId.startsWith('__'))
   );
   const singleGroupDefault =
-    defaultRows.length <= 1 || defaultRows.every((c) => c.groupId === ann!.groupId);
-  if (!singleGroupDefault) return channels;
+    mlsDefaults.length <= 1 || mlsDefaults.every((c) => c.groupId === ann!.groupId);
+  if (!singleGroupDefault) {
+    return channels.filter((c) => !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name));
+  }
 
   const extras = channels.filter(
     (c) =>
       c.name !== ANNOUNCEMENTS_CHANNEL_NAME &&
-      c.name !== PERSONAL_ALERTS_CHANNEL_NAME &&
-      c.name !== POLLS_CHANNEL_NAME
+      c.name !== POLLS_CHANNEL_NAME &&
+      !OBSOLETE_DEFAULT_HUB_NAMES.has(c.name)
   );
   const merged = defaultChannelRowsForGroupId(gid);
-  const custom = extras.map((c, i) => ({ ...c, order: 3 + i }));
+  const custom = extras.map((c, i) => ({ ...c, order: 2 + i }));
   return [...merged, ...custom];
 }

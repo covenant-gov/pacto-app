@@ -16,10 +16,15 @@ vi.mock('../dashboard/settings-chain-cache', () => ({
   removeSettingsChainCacheForParent: vi.fn(),
 }));
 
+vi.mock('../governance/gov-module-read-cache', () => ({
+  clearGovModuleReadsForParent: vi.fn(),
+}));
+
 import { removeTreasurySafesCacheForParent } from '../dashboard/treasury-safes-cache';
 import { removeSquadInfraCacheForParent } from '../dashboard/squad-infra-cache';
 import { removeSquadMemberEvmCacheForParent } from '../dashboard/squad-member-evm-cache';
 import { removeSettingsChainCacheForParent } from '../dashboard/settings-chain-cache';
+import { clearGovModuleReadsForParent } from '../governance/gov-module-read-cache';
 import { clearParentDashboardCaches } from './clear-parent-dashboard-caches';
 
 describe('clearParentDashboardCaches', () => {
@@ -28,18 +33,20 @@ describe('clearParentDashboardCaches', () => {
     vi.mocked(removeSquadInfraCacheForParent).mockReset();
     vi.mocked(removeSquadMemberEvmCacheForParent).mockReset();
     vi.mocked(removeSettingsChainCacheForParent).mockReset();
+    vi.mocked(clearGovModuleReadsForParent).mockReset();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('calls all four dashboard cache removal helpers', () => {
+  it('calls dashboard and governance cache removal helpers', () => {
     clearParentDashboardCaches('npub1test', 'parent-1');
     expect(removeTreasurySafesCacheForParent).toHaveBeenCalledWith('npub1test', 'parent-1');
     expect(removeSquadInfraCacheForParent).toHaveBeenCalledWith('npub1test', 'parent-1');
     expect(removeSquadMemberEvmCacheForParent).toHaveBeenCalledWith('npub1test', 'parent-1');
     expect(removeSettingsChainCacheForParent).toHaveBeenCalledWith('npub1test', 'parent-1');
+    expect(clearGovModuleReadsForParent).toHaveBeenCalledWith('parent-1');
   });
 
   it('returns early when npub is missing', () => {
@@ -48,6 +55,7 @@ describe('clearParentDashboardCaches', () => {
     expect(removeSquadInfraCacheForParent).not.toHaveBeenCalled();
     expect(removeSquadMemberEvmCacheForParent).not.toHaveBeenCalled();
     expect(removeSettingsChainCacheForParent).not.toHaveBeenCalled();
+    expect(clearGovModuleReadsForParent).not.toHaveBeenCalled();
   });
 
   it('returns early when parentId is missing', () => {
@@ -56,5 +64,6 @@ describe('clearParentDashboardCaches', () => {
     expect(removeSquadInfraCacheForParent).not.toHaveBeenCalled();
     expect(removeSquadMemberEvmCacheForParent).not.toHaveBeenCalled();
     expect(removeSettingsChainCacheForParent).not.toHaveBeenCalled();
+    expect(clearGovModuleReadsForParent).not.toHaveBeenCalled();
   });
 });

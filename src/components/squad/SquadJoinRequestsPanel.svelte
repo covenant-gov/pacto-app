@@ -16,7 +16,6 @@
   } from '../../stores/squad-join-requests';
   import { runInviteMembersToParent } from '../../lib/parent/invite-members-flow';
   import type { Squad } from '../../stores/squads';
-  import { JOIN_REQUESTS_CHANNEL_NAME } from '../../lib/squad/hub-channel-names';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
   export let squad: Squad;
@@ -120,7 +119,7 @@
 
 <section class="join-requests-panel" aria-label="Commons join requests">
   <header class="join-requests-header">
-    <h2 class="join-requests-title">#{JOIN_REQUESTS_CHANNEL_NAME}</h2>
+    <h2 class="join-requests-title">Join requests</h2>
     <p class="join-requests-lead">
       People who requested to join <strong>{squad.name}</strong> via the squad bot inbox.
     </p>

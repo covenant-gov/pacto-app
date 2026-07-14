@@ -2,14 +2,14 @@ import { get, writable } from 'svelte/store';
 import { needsSquadRosterKeyChoice } from '../lib/squad/squad-roster-key-choice';
 import {
   ANNOUNCEMENTS_CHANNEL_NAME,
-  JOIN_REQUESTS_CHANNEL_NAME,
-  PERSONAL_ALERTS_CHANNEL_NAME,
+  MY_DASHBOARD_CHANNEL_NAME,
+  SQUAD_DASHBOARD_CHANNEL_NAME,
 } from '../lib/squad/hub-channel-names';
 import { formatUnreadBadgeCount } from '../lib/dm/dm-unread';
 import type { CommonsJoinRequestDto } from '../lib/commons/types';
 import type { Squad } from './squads';
 
-/** Per-user action needed in #personal-alerts (roster signer prompt). */
+/** Per-user action needed in my-dashboard alerts (roster signer prompt). */
 export const personalAlertsNeededBySquadId = writable<Record<string, boolean>>({});
 
 const personalAlertRefreshGenBySquadId = new Map<string, number>();
@@ -27,10 +27,10 @@ export function hubChannelAlertCount(
 ): number {
   const sid = squadId?.trim();
   if (!sid) return 0;
-  if (channelName === JOIN_REQUESTS_CHANNEL_NAME) {
+  if (channelName === SQUAD_DASHBOARD_CHANNEL_NAME) {
     return (joinRequestsBySquad[sid] ?? []).length;
   }
-  if (channelName === PERSONAL_ALERTS_CHANNEL_NAME) {
+  if (channelName === MY_DASHBOARD_CHANNEL_NAME) {
     return personalBySquad[sid] ? 1 : 0;
   }
   return 0;

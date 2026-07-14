@@ -4,7 +4,7 @@ import {
   activeSquadId,
   activeChannelId,
   activeView,
-  DASHBOARD_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_ID,
 } from '../../stores/app';
 import { openSquadDashboard } from './open-squad-dashboard';
 
@@ -13,7 +13,7 @@ vi.mock('../../stores/app', () => ({
   activeSquadId: { set: vi.fn() },
   activeChannelId: { set: vi.fn() },
   activeView: { set: vi.fn() },
-  DASHBOARD_CHANNEL_ID: '#dashboard',
+  SQUAD_DASHBOARD_CHANNEL_ID: '#squad-dashboard',
 }));
 
 describe('openSquadDashboard', () => {
@@ -29,7 +29,7 @@ describe('openSquadDashboard', () => {
     openSquadDashboard('squad-123');
     expect(activeTopNavTab.set).toHaveBeenCalledWith('squads');
     expect(activeSquadId.set).toHaveBeenCalledWith('squad-123');
-    expect(activeChannelId.set).toHaveBeenCalledWith(DASHBOARD_CHANNEL_ID);
+    expect(activeChannelId.set).toHaveBeenCalledWith(SQUAD_DASHBOARD_CHANNEL_ID);
     expect(activeView.set).toHaveBeenCalledWith('hub');
   });
 

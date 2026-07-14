@@ -153,18 +153,16 @@ describe('defaultTrioSharesSingleMlsGroup', () => {
     expect(
       defaultTrioSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'a', order: 0 },
-        { name: 'personal-alerts', groupId: 'b', order: 1 },
-        { name: 'polls', groupId: 'c', order: 2 },
+        { name: 'polls', groupId: 'c', order: 1 },
       ])
     ).toBe(false);
   });
 
-  it('is true when default trio shares one group id', () => {
+  it('is true when announcements and polls share one group id', () => {
     expect(
       defaultTrioSharesSingleMlsGroup([
         { name: 'announcements', groupId: 'g', order: 0 },
-        { name: 'personal-alerts', groupId: 'g', order: 1 },
-        { name: 'polls', groupId: 'g', order: 2 },
+        { name: 'polls', groupId: 'g', order: 1 },
       ])
     ).toBe(true);
   });
@@ -173,8 +171,7 @@ describe('defaultTrioSharesSingleMlsGroup', () => {
 describe('resolveHubChannelNameForGroupSelection', () => {
   const channels = [
     { name: 'announcements', groupId: 'g', order: 0 },
-    { name: 'personal-alerts', groupId: 'g', order: 1 },
-    { name: 'polls', groupId: 'g', order: 2 },
+    { name: 'polls', groupId: 'g', order: 1 },
   ];
 
   it('returns the only name when unique', () => {

@@ -13,25 +13,56 @@ export const activeHubChannelName = writable<string | null>(null);
 export type ViewType = 'hub' | 'profile';
 export const activeView = writable<ViewType>('hub');
 
-/** #dashboard segmented mode: one remembered tab per account; unknown persisted values reset to `governance`. */
-export type ParentDashboardChannelMode = 'governance' | 'roles_tree' | 'treasury' | 'settings';
+/** #squad-dashboard segmented mode; unknown persisted values reset to `status`. */
+export type SquadDashboardChannelMode =
+  | 'status'
+  | 'governance'
+  | 'treasury'
+  | 'roles'
+  | 'crew';
 
-export const PARENT_DASHBOARD_MODE_PREFIX = 'pacto_parent_dashboard_mode';
+export const SQUAD_DASHBOARD_MODE_PREFIX = 'pacto_squad_dashboard_mode';
 
-export function parseParentDashboardChannelMode(raw: string | null): ParentDashboardChannelMode {
+export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboardChannelMode {
   const v = raw?.trim();
-  if (v === 'governance' || v === 'roles_tree' || v === 'treasury' || v === 'settings') return v;
-  return 'governance';
+  if (v === 'status' || v === 'governance' || v === 'treasury' || v === 'roles' || v === 'crew') {
+    return v;
+  }
+  return 'status';
 }
 
-export const parentDashboardChannelMode = writable<ParentDashboardChannelMode>('governance');
+export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
+
+/** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
+export type MyDashboardChannelMode = 'status' | 'alerts';
+
+export const MY_DASHBOARD_MODE_PREFIX = 'pacto_my_dashboard_mode';
+
+export function parseMyDashboardChannelMode(raw: string | null): MyDashboardChannelMode {
+  const v = raw?.trim();
+  if (v === 'status' || v === 'alerts') return v;
+  return 'status';
+}
+
+export const myDashboardChannelMode = writable<MyDashboardChannelMode>('status');
 
 /** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
 export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
 
-parentDashboardChannelMode.subscribe((mode) => {
+squadDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(PARENT_DASHBOARD_MODE_PREFIX);
+  const key = persistenceKey(SQUAD_DASHBOARD_MODE_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, mode);
+  } catch {
+    // ignore quota
+  }
+});
+
+myDashboardChannelMode.subscribe((mode) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(MY_DASHBOARD_MODE_PREFIX);
   if (!key) return;
   try {
     localStorage.setItem(key, mode);

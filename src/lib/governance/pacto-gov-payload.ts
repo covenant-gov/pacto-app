@@ -65,7 +65,9 @@ export function pactoGovDeployAnnounceRows(params: {
   push('Mutiny module', parsed?.mutinyModule);
   push('Treasury Authority', parsed?.treasuryAuthority);
   const hatId = params.topHatId?.trim();
-  if (hatId) rows.push({ kind: 'hat', label: 'Top hat', hatId });
+  if (hatId) {
+    rows.push({ kind: 'hat', label: 'Hat tree ID', hatId });
+  }
   return rows;
 }
 

@@ -16,7 +16,7 @@ import {
   lastChannelBySquadId,
   lastOpenedSquadId,
 } from '../stores/navigation';
-  import { squads, DASHBOARD_CHANNEL_ID, type Squad } from '../stores/squads';
+  import { squads, SQUAD_DASHBOARD_CHANNEL_ID, type Squad } from '../stores/squads';
 
 const regular: Squad = {
   id: 'squad-a',
@@ -85,7 +85,7 @@ describe('resolveHubChannelForSquad', () => {
       channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
     };
     const { channelId } = resolveHubChannelForSquad(squad, {}, {});
-    expect(channelId).toBe(DASHBOARD_CHANNEL_ID);
+    expect(channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 });
 
@@ -116,7 +116,7 @@ describe('restoreSquadsHubSelection', () => {
     lastOpenedSquadId.set('pair-ab');
     restoreSquadsHubSelection();
     expect(get(activeSquadId)).toBe('pair-ab');
-    expect(get(activeChannelId)).toBe(DASHBOARD_CHANNEL_ID);
+    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 
   it('selects first squad when last opened is missing', () => {
@@ -132,7 +132,7 @@ describe('restoreSquadsHubSelection', () => {
     activeSquadId.set('squad-a');
     activeChannelId.set(null);
     syncSquadsHubSelection();
-    expect(get(activeChannelId)).toBe(DASHBOARD_CHANNEL_ID);
+    expect(get(activeChannelId)).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 
   it('resolveEffectiveHubChannel defaults to dashboard when channel is missing', () => {
@@ -141,21 +141,21 @@ describe('restoreSquadsHubSelection', () => {
       channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
     };
     const resolved = resolveEffectiveHubChannel(squad, null, {}, {});
-    expect(resolved.channelId).toBe(DASHBOARD_CHANNEL_ID);
+    expect(resolved.channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 
   it('resolveEffectiveHubChannel defaults to dashboard when squad has no MLS channels yet', () => {
     const resolved = resolveEffectiveHubChannel(regular, null, {}, {});
-    expect(resolved.channelId).toBe(DASHBOARD_CHANNEL_ID);
+    expect(resolved.channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
   });
 
-  it('resolveEffectiveHubChannel keeps join-requests virtual channel', () => {
+  it('resolveEffectiveHubChannel keeps my-dashboard virtual channel', () => {
     const squad: Squad = {
       ...regular,
       channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
     };
-    const resolved = resolveEffectiveHubChannel(squad, '__join_requests__', {}, {});
-    expect(resolved.channelId).toBe('__join_requests__');
-    expect(resolved.hubChannelName).toBe('join-requests');
+    const resolved = resolveEffectiveHubChannel(squad, '__my_dashboard__', {}, {});
+    expect(resolved.channelId).toBe('__my_dashboard__');
+    expect(resolved.hubChannelName).toBeNull();
   });
 });

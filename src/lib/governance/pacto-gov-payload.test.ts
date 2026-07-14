@@ -46,7 +46,7 @@ describe('pactoGovDeployAnnounceRows', () => {
       { kind: 'address', label: 'Quartermaster', address: '0x3333333333333333333333333333333333333333' },
       { kind: 'address', label: 'Mutiny module', address: '0x4444444444444444444444444444444444444444' },
       { kind: 'address', label: 'Treasury Authority', address: '0x5555555555555555555555555555555555555555' },
-      { kind: 'hat', label: 'Top hat', hatId: '3519' },
+      { kind: 'hat', label: 'Hat tree ID', hatId: '3519' },
     ]);
   });
 });

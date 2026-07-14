@@ -17,13 +17,15 @@ const pactoGovRow: SquadInfraDto = {
 };
 
 describe('normalizeHatIdPathSegment', () => {
-  it('accepts decimal strings', () => {
+  it('accepts bare tree domains', () => {
     expect(normalizeHatIdPathSegment('298')).toBe('298');
-    expect(normalizeHatIdPathSegment(' 298 ')).toBe('298');
+    expect(normalizeHatIdPathSegment(' 950 ')).toBe('950');
+    expect(normalizeHatIdPathSegment('0x12a')).toBe('298');
   });
 
-  it('converts hex hat ids to decimal', () => {
-    expect(normalizeHatIdPathSegment('0x12a')).toBe('298');
+  it('extracts tree domain from a packed top-hat id', () => {
+    const packed950 = (BigInt(950) << 224n).toString(10);
+    expect(normalizeHatIdPathSegment(packed950)).toBe('950');
   });
 
   it('returns null for empty or invalid', () => {
@@ -34,10 +36,14 @@ describe('normalizeHatIdPathSegment', () => {
 });
 
 describe('hatsTreeExplorerUrl', () => {
-  it('builds explorer URLs like docs trees/{chainId}/{hat}', () => {
+  it('builds explorer URLs with tree domain, not full hat uint256', () => {
     expect(hatsTreeExplorerUrl(10, '298')).toBe('https://app.hatsprotocol.xyz/trees/10/298');
     expect(hatsTreeExplorerUrl(11155111, '0x12a')).toBe(
       'https://app.hatsprotocol.xyz/trees/11155111/298',
+    );
+    const packed950 = (BigInt(950) << 224n).toString(10);
+    expect(hatsTreeExplorerUrl(11155111, packed950)).toBe(
+      'https://app.hatsprotocol.xyz/trees/11155111/950',
     );
   });
 
@@ -65,9 +71,21 @@ describe('resolveDashboardStructureSummary', () => {
   it('returns summary for pacto_gov', () => {
     const s = resolveDashboardStructureSummary(pactoGovRow);
     expect(s?.treeIdRaw).toBe('298');
+    expect(s?.treeDomain).toBe('298');
     expect(s?.chainIdNumeric).toBe(42161);
     expect(s?.chainDisplayName).toBe('Arbitrum');
     expect(s?.hatsExplorerUrl).toBe('https://app.hatsprotocol.xyz/trees/42161/298');
+  });
+
+  it('extracts tree domain when canonicalRef is a packed top-hat id', () => {
+    const packed950 = (BigInt(950) << 224n).toString(10);
+    const s = resolveDashboardStructureSummary({
+      ...pactoGovRow,
+      chain: 'sepolia',
+      canonicalRef: packed950,
+    });
+    expect(s?.treeDomain).toBe('950');
+    expect(s?.hatsExplorerUrl).toBe('https://app.hatsprotocol.xyz/trees/11155111/950');
   });
 
   it('returns summary for local anvil chain', () => {

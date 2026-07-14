@@ -11,7 +11,8 @@
     lastOpenedChannelId,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
-    DASHBOARD_CHANNEL_ID,
+    SQUAD_DASHBOARD_CHANNEL_ID,
+    MY_DASHBOARD_CHANNEL_ID,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
 
@@ -24,10 +25,11 @@
     lastOpenedChannelId.set(goTo.channelId);
     lastChannelBySquadId.update((m) => ({ ...m, [goTo.id]: goTo.channelId }));
     const squad = $squads.find((s) => s.id === goTo.id);
-    const hub =
-      goTo.channelId === DASHBOARD_CHANNEL_ID
-        ? null
-        : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], goTo.channelId, goTo.hubChannelName ?? null);
+    const isVirtual =
+      goTo.channelId === SQUAD_DASHBOARD_CHANNEL_ID || goTo.channelId === MY_DASHBOARD_CHANNEL_ID;
+    const hub = isVirtual
+      ? null
+      : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], goTo.channelId, goTo.hubChannelName ?? null);
     activeHubChannelName.set(hub);
     if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [goTo.id]: hub }));
     clearToast();
