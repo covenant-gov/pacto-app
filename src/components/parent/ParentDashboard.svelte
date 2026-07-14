@@ -295,10 +295,23 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     }
   }
 
-  function onTreasuryVoteClick() {
-    showToast(
-      'On-chain vote signing is not wired yet — your vote status is loaded from Treasury Authority.',
-    );
+  function wearersForRoleLabel(label: string): string[] {
+    const hatId = Object.entries(roleLabelByHatId).find(([, l]) => l === label)?.[0];
+    if (!hatId) return [];
+    return wearerAddressesByHatId[hatId] ?? [];
+  }
+
+  $: captainWearers = wearersForRoleLabel('Captain');
+  $: crewWearers = wearersForRoleLabel('Crew');
+  $: myGovernanceAddress = (() => {
+    const npub = $currentUser?.npub;
+    if (!npub) return '';
+    return squadMemberEvmByNpub[npub]?.trim() ?? '';
+  })();
+
+  function refreshTreasuryProposals() {
+    treasuryProposalsKey = '';
+    void loadTreasuryProposals();
   }
 
   async function loadHatsTree() {
@@ -436,6 +449,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
 
   $: if (dashboardView === 'governance' && parentId) {
     void loadSquadMemberEvm();
+  }
+
+  $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef && parentId) {
+    void loadRolesTreeAnnotations();
   }
 
   $: if (dashboardView === 'roles' && pactoGovRow?.canonicalRef) {
@@ -681,7 +698,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       </div>
     </div>
     <div class="parent-dashboard-body">
-      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'roles'}>
+      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'roles' || dashboardView === 'governance'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
           <div class="dashboard-header">
             <p class="dashboard-subtitle">
@@ -720,16 +737,19 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {pactoPayload}
               pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
-              pactoGovProviderPayload={pactoGovRow?.providerPayload}
+              parentId={parentId ?? ''}
+              {announcementsGroupId}
+              myAddress={myGovernanceAddress || myVoterAddress}
+              {captainWearers}
+              {crewWearers}
               {treasuryProposals}
               {treasuryProposalsLoading}
               treasuryProposalsRefreshing={treasuryProposalsRefreshing}
               {treasuryProposalsError}
-              {myVoterAddress}
               {proposalHasVotedById}
-              {proposalVotesLoading}
-              onTreasuryVoteClick={onTreasuryVoteClick}
+              onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
+              onOpenCrew={() => selectDashboardView('crew')}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>
@@ -1047,7 +1067,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     max-width: 560px;
   }
 
-  /* Roles org-chart needs the full mode width (siblings branch sideways). */
+  /* Roles org-chart and Governance module grid need the full mode width. */
   .parent-dashboard-wide {
     max-width: none;
     width: 100%;
