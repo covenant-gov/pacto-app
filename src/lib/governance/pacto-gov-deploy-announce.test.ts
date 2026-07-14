@@ -77,7 +77,7 @@ describe('pacto gov deploy announce wire', () => {
       providerPayload: governancePayload.provider_payload,
       topHatId,
     });
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(6);
     for (const row of rows) {
       if (row.kind === 'address') {
         expect(explorerAddressUrl('sepolia', row.address)).toMatch(/^https:\/\//);

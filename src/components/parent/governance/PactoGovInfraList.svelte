@@ -9,7 +9,7 @@
     pactoGovDeployAnnounceRows,
     txHashFromPactoGovProviderPayload,
   } from '../../../lib/governance/pacto-gov-payload';
-  import { hatsTreeDomain, hatIdToHex, prettyHatId } from '../../../lib/governance/pretty-hat-id';
+  import { hatsTreeDomain, prettyHatId } from '../../../lib/governance/pretty-hat-id';
 
   export let providerPayload: string | null | undefined = undefined;
   export let topHatId = '';
@@ -22,9 +22,8 @@
     return `${a.slice(0, 10)}…${a.slice(-8)}`;
   }
 
-  function displayHatValue(label: string, id: string): string {
-    if (label === 'Tree ID') return hatsTreeDomain(id) ?? prettyHatId(id) ?? id.trim();
-    return hatIdToHex(id) ?? id.trim();
+  function displayHatValue(id: string): string {
+    return hatsTreeDomain(id) ?? prettyHatId(id) ?? id.trim();
   }
 
   $: chainId = parseSupportedChainId(chain);
@@ -55,22 +54,18 @@
             </a>
           {/if}
         {:else}
-          <code class="pacto-gov-infra-value" class:pacto-gov-infra-value-wrap={row.label === 'Top Hat'} title={row.hatId}
-            >{displayHatValue(row.label, row.hatId)}</code
-          >
-          {#if row.label === 'Tree ID'}
-            {@const hatsUrl = hatsTreeExplorerUrl(chainIdNumeric, row.hatId)}
-            {#if hatsUrl}
-              <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-              <a
-                class="pacto-gov-infra-link"
-                href={hatsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Hats tree
-              </a>
-            {/if}
+          <code class="pacto-gov-infra-value" title={row.hatId}>{displayHatValue(row.hatId)}</code>
+          {@const hatsUrl = hatsTreeExplorerUrl(chainIdNumeric, row.hatId)}
+          {#if hatsUrl}
+            <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+            <a
+              class="pacto-gov-infra-link"
+              href={hatsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Hats tree
+            </a>
           {/if}
         {/if}
       </li>
@@ -116,12 +111,6 @@
   .pacto-gov-infra-value {
     font-family: ui-monospace, monospace;
     color: var(--text-primary);
-  }
-
-  .pacto-gov-infra-value-wrap {
-    flex: 1 1 12rem;
-    min-width: 0;
-    word-break: break-all;
   }
 
   .pacto-gov-infra-link {

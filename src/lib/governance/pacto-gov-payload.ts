@@ -66,8 +66,7 @@ export function pactoGovDeployAnnounceRows(params: {
   push('Treasury Authority', parsed?.treasuryAuthority);
   const hatId = params.topHatId?.trim();
   if (hatId) {
-    rows.push({ kind: 'hat', label: 'Tree ID', hatId });
-    rows.push({ kind: 'hat', label: 'Top Hat', hatId });
+    rows.push({ kind: 'hat', label: 'Hat tree ID', hatId });
   }
   return rows;
 }

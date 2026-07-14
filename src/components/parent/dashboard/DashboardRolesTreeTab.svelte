@@ -61,7 +61,7 @@
   {:else}
     <p class="structure-summary-lead dashboard-placeholder-text">
       Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id
-      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>). Tree id
+      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>). Hat tree ID
       <code class="structure-mono" title={structureSummary.treeIdRaw}
         >{structureSummary.treeDomain ?? structureSummary.treeIdRaw}</code
       >.
