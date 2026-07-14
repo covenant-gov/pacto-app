@@ -26,6 +26,13 @@
   function executorRolesLabel(address: string): string {
     return executorRolesByAddress[address.trim().toLowerCase()] ?? '';
   }
+
+  /** Short display for uint256 hat ids; full value stays on `title`. */
+  function shortHatId(hatId: string): string {
+    const id = hatId.trim();
+    if (id.length <= 8) return id;
+    return `${id.slice(0, 8)}…`;
+  }
 </script>
 
 <li class="hats-tree-node" role="treeitem" aria-expanded="true">
@@ -34,7 +41,7 @@
     {#if roleLabel}
       <span class="hats-tree-role-badge">{roleLabel}</span>
     {/if}
-    <code class="hats-tree-node-id">{node.hatId}</code>
+    <code class="hats-tree-node-id" title={node.hatId}>{shortHatId(node.hatId)}</code>
     <span class="hats-tree-node-meta muted"
       >{node.supply}/{node.maxSupply} · {node.active ? 'active' : 'inactive'}</span
     >
