@@ -16,7 +16,6 @@
 
   let messageText = "";
   let textareaEl: HTMLTextAreaElement | undefined;
-  let emojiPickerEl: HTMLDivElement | undefined;
   let emojiPickerOpen = false;
   let emojiSearchQuery = "";
   $: if (disabled) {
@@ -25,9 +24,34 @@
   }
 
   const fullEmojiList = getEmojiList();
-  const EMOJI_GRID = fullEmojiList.map((e) => e.emoji);
+  /** Cap browse/search so opening the picker does not mount ~1k+ buttons and freeze the UI. */
+  const EMOJI_BROWSE_LIMIT = 100;
+  const EMOJI_SEARCH_LIMIT = 80;
+  const EMOJI_GRID_BROWSE = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const entry of fullEmojiList) {
+      if (seen.has(entry.emoji)) continue;
+      seen.add(entry.emoji);
+      out.push(entry.emoji);
+      if (out.length >= EMOJI_BROWSE_LIMIT) break;
+    }
+    return out;
+  })();
   $: recentEmojis = $recentEmojisStore;
-  $: searchResults = emojiSearchQuery.trim() ? searchEmojis(emojiSearchQuery.trim()) : [];
+  $: searchResults = (() => {
+    const q = emojiSearchQuery.trim();
+    if (!q) return [];
+    const seen = new Set<string>();
+    const out: typeof fullEmojiList = [];
+    for (const entry of searchEmojis(q)) {
+      if (seen.has(entry.emoji)) continue;
+      seen.add(entry.emoji);
+      out.push(entry);
+      if (out.length >= EMOJI_SEARCH_LIMIT) break;
+    }
+    return out;
+  })();
 
   function handleSubmit(event: Event) {
     event.preventDefault();
@@ -81,7 +105,8 @@
     }
   }
 
-  function toggleEmojiPicker() {
+  function toggleEmojiPicker(event: MouseEvent) {
+    event.stopPropagation();
     if (emojiPickerOpen) {
       void closeEmojiPicker();
       return;
@@ -99,19 +124,15 @@
   }
 
   function handleClickOutside(event: MouseEvent) {
-    const target = event.target as Node;
-    if (
-      emojiPickerOpen &&
-      emojiPickerEl &&
-      !emojiPickerEl.contains(target) &&
-      !(event.target as HTMLElement)?.closest?.('.emoji-trigger-btn')
-    ) {
-      void closeEmojiPicker();
-    }
+    if (!emojiPickerOpen) return;
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest?.('.emoji-picker') || target.closest?.('.emoji-trigger-btn')) return;
+    void closeEmojiPicker();
   }
 </script>
 
-<svelte:window on:click={handleClickOutside} />
+<svelte:window on:pointerdown={handleClickOutside} />
 
 <div class="message-input-container" class:disabled>
   <form on:submit|preventDefault={handleSubmit}>
@@ -141,9 +162,9 @@
       {#if emojiPickerOpen && !disabled}
         <div
           class="emoji-picker"
-          bind:this={emojiPickerEl}
           role="dialog"
           aria-label="Emoji picker"
+          on:pointerdown|stopPropagation
         >
           <div class="emoji-picker-search">
             <input
@@ -188,6 +209,9 @@
                     </button>
                   {/each}
                 </div>
+                {#if searchResults.length >= EMOJI_SEARCH_LIMIT}
+                  <p class="emoji-picker-hint">Showing top {EMOJI_SEARCH_LIMIT} matches — refine your search</p>
+                {/if}
               {:else}
                 <p class="emoji-picker-empty">No emojis found for "{emojiSearchQuery.trim()}"</p>
               {/if}
@@ -212,11 +236,9 @@
               </div>
             {/if}
             <div class="emoji-picker-section">
-              {#if recentEmojis.length > 0}
-                <span class="emoji-picker-label">Smileys &amp; more</span>
-              {/if}
+              <span class="emoji-picker-label">Smileys &amp; more</span>
               <div class="emoji-picker-grid">
-                {#each EMOJI_GRID as emoji (emoji)}
+                {#each EMOJI_GRID_BROWSE as emoji (emoji)}
                   <button
                     type="button"
                     class="emoji-picker-item"
@@ -228,6 +250,7 @@
                   </button>
                 {/each}
               </div>
+              <p class="emoji-picker-hint">Search for more emojis</p>
             </div>
           {/if}
         </div>
@@ -323,10 +346,16 @@
   }
 
   .emoji-picker-search {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
+    margin: -8px -8px 0;
+    padding: 8px 8px 6px;
+    background: var(--bg-elevated);
   }
 
   .emoji-search-input {
@@ -374,6 +403,12 @@
     margin: 0;
     padding: 12px 0;
     font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  .emoji-picker-hint {
+    margin: 4px 0 0;
+    font-size: 0.6875rem;
     color: var(--text-muted);
   }
 
