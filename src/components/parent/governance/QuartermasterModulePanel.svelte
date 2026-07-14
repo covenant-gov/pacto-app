@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import GovCtaButton from './GovCtaButton.svelte';
   import {
     getQuartermasterPending,
@@ -13,6 +12,12 @@
     type QuartermasterPendingDto,
     type QuartermasterStatusDto,
   } from '../../../lib/governance/api';
+  import {
+    fetchGovModuleReadCached,
+    isGovModuleReadStale,
+    peekGovModuleRead,
+    quartermasterReadCacheKey,
+  } from '../../../lib/governance/gov-module-read-cache';
   import {
     gateBlockedByMutinyMode,
     gatePermissionlessSigner,
@@ -29,20 +34,59 @@
 
   let status: QuartermasterStatusDto | null = null;
   let pending: QuartermasterPendingDto | null = null;
-  let loading = true;
+  let loading = false;
+  let refreshing = false;
   let acting = false;
   let error = '';
   let address = '';
+  let lastHydrateKey = '';
 
   $: captainGate = gateBlockedByMutinyMode(privilege, !!status?.mutinyActive);
   $: execGate = gatePermissionlessSigner(privilege);
 
-  async function reload() {
-    loading = true;
+  function applyStatus(next: QuartermasterStatusDto) {
+    status = next;
+    onMutinyMode(next.mutinyActive);
+  }
+
+  function cacheKey(): string {
+    return quartermasterReadCacheKey(network, quartermaster);
+  }
+
+  async function reload(force = false) {
+    const key = cacheKey();
+    const peeked = peekGovModuleRead<QuartermasterStatusDto>(key);
+    if (peeked) applyStatus(peeked);
+
+    const needFetch = force || !peeked || isGovModuleReadStale(key);
+    if (!needFetch) {
+      loading = false;
+      refreshing = false;
+      if (address.trim()) {
+        try {
+          pending = await getQuartermasterPending({
+            network,
+            quartermaster,
+            address: address.trim(),
+          });
+        } catch {
+          pending = null;
+        }
+      }
+      return;
+    }
+
+    if (!peeked) loading = true;
+    else refreshing = true;
     error = '';
     try {
-      status = await getQuartermasterStatus({ network, quartermaster });
-      onMutinyMode(status.mutinyActive);
+      const next = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        () => getQuartermasterStatus({ network, quartermaster }),
+        { force: force || !!peeked },
+      );
+      applyStatus(next);
       if (address.trim()) {
         pending = await getQuartermasterPending({
           network,
@@ -54,16 +98,23 @@
       }
     } catch (e) {
       error = getInvokeErrorMessage(e, 'Could not load quartermaster.');
-      status = null;
-      onMutinyMode(false);
+      if (!peeked) {
+        status = null;
+        onMutinyMode(false);
+      }
     } finally {
       loading = false;
+      refreshing = false;
     }
   }
 
-  onMount(() => {
-    void reload();
-  });
+  $: {
+    const key = `${parentId}|${network}|${quartermaster}`;
+    if (key !== lastHydrateKey && parentId.trim() && quartermaster.trim()) {
+      lastHydrateKey = key;
+      void reload(false);
+    }
+  }
 
   async function run(label: string, fn: () => Promise<unknown>) {
     if (acting) return;
@@ -71,7 +122,7 @@
     try {
       await fn();
       showToast(`${label} submitted.`);
-      await reload();
+      await reload(true);
     } catch (e) {
       showToast(getInvokeErrorMessage(e, `${label} failed.`));
     } finally {
@@ -83,7 +134,7 @@
 <div class="module-detail">
   {#if loading && !status}
     <p class="muted">Loading quartermaster…</p>
-  {:else if error}
+  {:else if error && !status}
     <p class="err">{error}</p>
   {:else if status}
     <p class="muted">
@@ -91,12 +142,15 @@
       {#if status.mutinyActive}
         · <strong>Mutiny mode on</strong> (captain roster actions blocked)
       {/if}
+      {#if refreshing}
+        · Updating…
+      {/if}
     </p>
 
     <div class="action-block">
       <h5 class="subhead">Target address</h5>
       <input bind:value={address} placeholder="0x…" disabled={acting} />
-      <button type="button" class="linkish" disabled={acting || !address.trim()} on:click={() => void reload()}>
+      <button type="button" class="linkish" disabled={acting || !address.trim()} on:click={() => void reload(true)}>
         Check pending
       </button>
       {#if pending}

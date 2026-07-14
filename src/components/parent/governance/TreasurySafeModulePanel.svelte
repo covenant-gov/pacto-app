@@ -11,6 +11,12 @@
     type SquadTrackedTokenRow,
   } from '../../../lib/governance/squad-tracked-tokens';
   import {
+    fetchGovModuleReadCached,
+    isGovModuleReadStale,
+    peekGovModuleRead,
+    safeBalancesCacheKey,
+  } from '../../../lib/governance/gov-module-read-cache';
+  import {
     gateRequiresCaptainOrCrew,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
@@ -26,11 +32,19 @@
   export let announcementsGroupId = '';
   export let privilege: GovernancePrivilege;
 
+  type SafeBalancesSnapshot = {
+    nativeDecimal: string;
+    nativeSymbol: string;
+    rows: SquadTrackedTokenRow[];
+    tokenBalances: Record<string, string>;
+    loadError: string;
+  };
+
   let rows: SquadTrackedTokenRow[] = [];
   let nativeDecimal = '';
   let nativeSymbol = '';
   let tokenBalances: Record<string, string> = {};
-  let loading = true;
+  let loading = false;
   let refreshing = false;
   let loadError = '';
   let addAddress = '';
@@ -41,38 +55,83 @@
   $: chainKey = (parseSupportedChainId(network) ?? network.trim().toLowerCase()) as SupportedChainId;
   $: safe = safeAddress.trim();
 
-  async function refreshAll() {
+  function applySnapshot(snap: SafeBalancesSnapshot) {
+    nativeDecimal = snap.nativeDecimal;
+    nativeSymbol = snap.nativeSymbol;
+    rows = snap.rows;
+    tokenBalances = snap.tokenBalances;
+    loadError = snap.loadError;
+  }
+
+  async function refreshAll(force = false) {
     const pid = parentId.trim();
     if (!pid || !safe) {
       rows = [];
       loading = false;
+      refreshing = false;
       return;
     }
-    refreshing = true;
-    loadError = '';
+
+    const key = safeBalancesCacheKey(pid, String(chainKey), safe);
+    const peeked = peekGovModuleRead<SafeBalancesSnapshot>(key);
+    if (peeked) applySnapshot(peeked);
+
+    const needFetch = force || !peeked || isGovModuleReadStale(key);
+    if (!needFetch) {
+      loading = false;
+      refreshing = false;
+      return;
+    }
+
+    if (!peeked) loading = true;
+    else refreshing = true;
     try {
-      const native = await getEvmNativeBalance(chainKey, safe);
-      if (native.ok) {
-        nativeDecimal = native.balance.balanceDecimal;
-        nativeSymbol = native.balance.symbol;
-      } else {
+      const snap = await fetchGovModuleReadCached(
+        key,
+        pid,
+        async () => {
+          let nextNativeDecimal = '';
+          let nextNativeSymbol = '';
+          let nextError = '';
+          const native = await getEvmNativeBalance(chainKey, safe);
+          if (native.ok) {
+            nextNativeDecimal = native.balance.balanceDecimal;
+            nextNativeSymbol = native.balance.symbol;
+          } else {
+            nextError = native.message;
+          }
+
+          const nextRows = await listSquadTrackedTokens(pid);
+          const onChain = nextRows.filter(
+            (r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase(),
+          );
+          const nextBalances: Record<string, string> = {};
+          await Promise.all(
+            onChain.map(async (r) => {
+              const res = await getEvmErc20Balance(String(chainKey), r.tokenAddress, safe);
+              nextBalances[r.id] = res.ok ? res.balance.balanceDecimal : '—';
+            }),
+          );
+          return {
+            nativeDecimal: nextNativeDecimal,
+            nativeSymbol: nextNativeSymbol,
+            rows: nextRows,
+            tokenBalances: nextBalances,
+            loadError: nextError,
+          };
+        },
+        { force: force || !!peeked },
+      );
+      applySnapshot(snap);
+    } catch (e) {
+      const msg = getInvokeErrorMessage(e, 'Could not load Safe balances.');
+      if (!peeked) {
+        loadError = msg;
         nativeDecimal = '';
         nativeSymbol = '';
-        loadError = native.message;
+        rows = [];
+        tokenBalances = {};
       }
-
-      rows = await listSquadTrackedTokens(pid);
-      const onChain = rows.filter((r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase());
-      const next: Record<string, string> = {};
-      await Promise.all(
-        onChain.map(async (r) => {
-          const res = await getEvmErc20Balance(String(chainKey), r.tokenAddress, safe);
-          next[r.id] = res.ok ? res.balance.balanceDecimal : '—';
-        }),
-      );
-      tokenBalances = next;
-    } catch (e) {
-      loadError = getInvokeErrorMessage(e, 'Could not load Safe balances.');
     } finally {
       loading = false;
       refreshing = false;
@@ -83,7 +142,7 @@
     const key = `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`;
     if (key !== lastLoadKey && parentId.trim() && safeAddress.trim()) {
       lastLoadKey = key;
-      void refreshAll();
+      void refreshAll(false);
     }
   }
 
@@ -116,7 +175,7 @@
       }
       addAddress = '';
       showToast(`${row.symbol} added as squad tracked coin.`);
-      await refreshAll();
+      await refreshAll(true);
     } catch (e) {
       showToast(getInvokeErrorMessage(e, 'Could not add tracked coin.'));
     } finally {
@@ -135,7 +194,7 @@
         );
       }
       showToast(`${row.symbol} removed from squad tracked coins.`);
-      await refreshAll();
+      await refreshAll(true);
     } catch (e) {
       showToast(getInvokeErrorMessage(e, 'Could not remove tracked coin.'));
     }
@@ -160,11 +219,11 @@
       spinning={refreshing}
       disabled={loading || refreshing}
       ariaLabel={refreshing ? 'Refreshing Safe balances' : 'Refresh Safe balances'}
-      on:click={() => void refreshAll()}
+      on:click={() => void refreshAll(true)}
     />
   </div>
 
-  {#if loading}
+  {#if loading && !nativeDecimal && rows.length === 0}
     <p class="muted" role="status">Loading balances…</p>
   {:else if loadError && !nativeDecimal}
     <p class="error" role="alert">{loadError}</p>
@@ -304,7 +363,6 @@
     background: var(--accent);
     color: var(--accent-contrast, #fff);
     font-size: 0.8125rem;
-    cursor: pointer;
   }
   .btn-primary:disabled {
     opacity: 0.55;

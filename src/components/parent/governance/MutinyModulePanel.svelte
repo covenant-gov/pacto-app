@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import GovCtaButton from './GovCtaButton.svelte';
   import {
     getMutinyStatus,
@@ -15,6 +14,12 @@
     type MutinyStatusDto,
   } from '../../../lib/governance/api';
   import {
+    fetchGovModuleReadCached,
+    isGovModuleReadStale,
+    mutinyReadCacheKey,
+    peekGovModuleRead,
+  } from '../../../lib/governance/gov-module-read-cache';
+  import {
     gatePermissionlessSigner,
     gateRequiresCaptain,
     gateRequiresCrew,
@@ -29,51 +34,91 @@
   export let privilege: GovernancePrivilege;
   export let onStatus: (info: { active: boolean; captain: string }) => void = () => {};
 
+  type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
+
   let status: MutinyStatusDto | null = null;
   let hasVoted = false;
-  let loading = true;
+  let loading = false;
+  let refreshing = false;
   let acting = false;
   let error = '';
   let startKind: 'crew' | 'committee' | 'eoa' | 'contract' | 'pause' = 'crew';
   let proposed = '';
   let resignTo = '';
+  let lastHydrateKey = '';
 
   $: crewGate = gateRequiresCrew(privilege);
   $: captainGate = gateRequiresCaptain(privilege);
   $: execGate = gatePermissionlessSigner(privilege);
   $: mutinyActive = !!(status && status.activeMutinyId !== '0' && !status.executed);
 
-  async function reload() {
-    loading = true;
+  function applySnapshot(snap: MutinySnapshot) {
+    status = snap.status;
+    hasVoted = snap.hasVoted;
+    onStatus({
+      active: snap.status.activeMutinyId !== '0' && !snap.status.executed,
+      captain: snap.status.captain ?? '',
+    });
+  }
+
+  function cacheKey(): string {
+    return mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
+  }
+
+  async function reload(force = false) {
+    const key = cacheKey();
+    const peeked = peekGovModuleRead<MutinySnapshot>(key);
+    if (peeked) applySnapshot(peeked);
+
+    const needFetch = force || !peeked || isGovModuleReadStale(key);
+    if (!needFetch) {
+      loading = false;
+      refreshing = false;
+      return;
+    }
+
+    if (!peeked) loading = true;
+    else refreshing = true;
     error = '';
     try {
-      status = await getMutinyStatus({ network, mutinyModule });
-      onStatus({
-        active: status.activeMutinyId !== '0' && !status.executed,
-        captain: status.captain ?? '',
-      });
-      if (status.activeMutinyId !== '0' && privilege.myAddress) {
-        hasVoted = await mutinyHasVoted({
-          network,
-          mutinyModule,
-          mutinyId: status.activeMutinyId,
-          voter: privilege.myAddress,
-        });
-      } else {
-        hasVoted = false;
-      }
+      const snap = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        async () => {
+          const next = await getMutinyStatus({ network, mutinyModule });
+          let voted = false;
+          if (next.activeMutinyId !== '0' && privilege.myAddress) {
+            voted = await mutinyHasVoted({
+              network,
+              mutinyModule,
+              mutinyId: next.activeMutinyId,
+              voter: privilege.myAddress,
+            });
+          }
+          return { status: next, hasVoted: voted };
+        },
+        { force: force || !!peeked },
+      );
+      applySnapshot(snap);
     } catch (e) {
       error = getInvokeErrorMessage(e, 'Could not load mutiny status.');
-      status = null;
-      onStatus({ active: false, captain: '' });
+      if (!peeked) {
+        status = null;
+        onStatus({ active: false, captain: '' });
+      }
     } finally {
       loading = false;
+      refreshing = false;
     }
   }
 
-  onMount(() => {
-    void reload();
-  });
+  $: {
+    const key = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
+    if (key !== lastHydrateKey && parentId.trim() && mutinyModule.trim()) {
+      lastHydrateKey = key;
+      void reload(false);
+    }
+  }
 
   async function run(label: string, fn: () => Promise<unknown>) {
     if (acting) return;
@@ -81,7 +126,7 @@
     try {
       await fn();
       showToast(`${label} submitted.`);
-      await reload();
+      await reload(true);
     } catch (e) {
       showToast(getInvokeErrorMessage(e, `${label} failed.`));
     } finally {
@@ -109,14 +154,17 @@
 </script>
 
 <div class="module-detail">
-  {#if loading}
+  {#if loading && !status}
     <p class="muted">Loading mutiny…</p>
-  {:else if error}
+  {:else if error && !status}
     <p class="err">{error}</p>
   {:else if status}
     <p class="muted">
       Captain tracked as <code>{status.captain || '—'}</code>
       · Active id {status.activeMutinyId}
+      {#if refreshing}
+        · Updating…
+      {/if}
     </p>
     {#if mutinyActive}
       <div class="status-box">
