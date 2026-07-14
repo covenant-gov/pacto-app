@@ -207,7 +207,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   let treasuryProposalsError = '';
   let treasuryProposalsKey = '';
   let proposalHasVotedById: Record<string, boolean> = {};
-  let proposalVotesLoading = false;
   let myVoterAddress = '';
 
   let hatsTree: HatTreeNodeDto | null = null;
@@ -245,7 +244,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       proposalHasVotedById = {};
       return;
     }
-    proposalVotesLoading = true;
     try {
       proposalHasVotedById = await fetchTreasuryProposalVoteMap({
         network: pactoNetwork,
@@ -255,8 +253,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       });
     } catch {
       proposalHasVotedById = {};
-    } finally {
-      proposalVotesLoading = false;
     }
   }
 
