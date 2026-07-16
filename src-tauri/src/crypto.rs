@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use crate::rand;
 use crate::rand::Rng;
 use crate::util::{bytes_to_hex_string, hex_string_to_bytes};
@@ -9,6 +10,7 @@ use chacha20poly1305::{
     aead::Aead,
     ChaCha20Poly1305, Nonce
 };
+use tauri::{AppHandle, Runtime};
 
 /// Represents encryption parameters
 #[derive(Debug)]
@@ -16,6 +18,25 @@ pub struct EncryptionParams {
     pub key: String,    // Hex string
     pub nonce: String,  // Hex string
 }
+
+/// Legacy hard-coded Argon2 salt used for accounts created before per-device
+/// salt support. Kept for U2 migration; do not use for new encryption.
+pub const LEGACY_SALT: &[u8] = b"vectovectvecvevpacto";
+
+/// Length of a random key-derivation salt, in bytes.
+pub const SALT_LENGTH: usize = 32;
+
+/// Argon2id memory cost in KiB (matches the legacy `hash_pass` setting).
+pub const ARGON_MEMORY_KIB: u32 = 96 * 1024;
+
+/// Argon2id iteration count (matches the legacy `hash_pass` setting).
+pub const ARGON_ITERATIONS: u32 = 4;
+
+/// Argon2id parallelism degree (matches the legacy `hash_pass` setting).
+pub const ARGON_PARALLELISM: u32 = 1;
+
+/// Argon2id output key length, in bytes.
+pub const ARGON_OUTPUT_LEN: usize = 32;
 
 /// Generates random encryption parameters (key and nonce)
 pub fn generate_encryption_params() -> EncryptionParams {
@@ -60,119 +81,179 @@ pub fn encrypt_data(data: &[u8], params: &EncryptionParams) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-/// Hash a password using Argon2id
-pub async fn hash_pass(password: String) -> [u8; 32] {
-    // 96000 KiB (96 MB) memory size - balanced security and performance
-    let memory = 96000;
-    // 4 iterations - balanced security and performance for local device
-    let iterations = 4;
-    let params = Params::new(memory, iterations, 1, Some(32)).unwrap();
+/// Build Argon2id parameters with the project-chosen cost settings.
+fn argon2_params() -> Params {
+    Params::new(
+        ARGON_MEMORY_KIB,
+        ARGON_ITERATIONS,
+        ARGON_PARALLELISM,
+        Some(ARGON_OUTPUT_LEN),
+    )
+    .expect("valid Argon2 params")
+}
 
-    // TODO: create a random on-disk salt at first init
-    // However, with the nature of this being local software, it won't help a user whom has their system compromised in the first place
-    let salt = "vectovectvecvevpacto".as_bytes();
-
-    // Prepare derivation
-    let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, params);
-    let mut key: [u8; 32] = [0; 32];
+/// Derive a 32-byte encryption key from a password and a salt using Argon2id.
+pub fn derive_key_from_salt(password: &str, salt: &[u8]) -> [u8; 32] {
+    let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, argon2_params());
+    let mut key = [0u8; 32];
     argon
         .hash_password_into(password.as_bytes(), salt, &mut key)
-        .unwrap();
-
+        .expect("Argon2 key derivation should succeed");
     key
 }
 
-/// Internal function for encryption logic using ChaCha20Poly1305
-pub async fn internal_encrypt(input: String, password: Option<String>) -> String {
-    // Hash our password with Argon2 and use it as the key
-    let key = if password.is_none() { 
-        crate::ENCRYPTION_KEY.get().unwrap() 
-    } else { 
-        &hash_pass(password.unwrap()).await 
-    };
+/// Derive the legacy key for an account still using the hard-coded salt.
+pub fn derive_legacy_key(password: &str) -> [u8; 32] {
+    derive_key_from_salt(password, LEGACY_SALT)
+}
 
-    // Generate a random 12-byte nonce
+/// Generate a fresh random 32-byte salt for key derivation.
+pub fn generate_salt() -> [u8; SALT_LENGTH] {
+    let mut salt = [0u8; SALT_LENGTH];
+    rand::thread_rng().fill(&mut salt);
+    salt
+}
+
+/// Return the path to the redundant per-account salt file cache.
+/// The file lives next to the SQLite database in the profile directory.
+pub fn salt_file_path<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<PathBuf, String> {
+    let profile_dir = crate::account_manager::get_profile_directory(handle, npub)?;
+    Ok(profile_dir.join("salt.bin"))
+}
+
+/// Read the redundant salt file cache, if it exists and is well-formed.
+pub fn read_salt_file<R: Runtime>(
+    handle: &AppHandle<R>,
+    npub: &str,
+) -> Result<Option<[u8; SALT_LENGTH]>, String> {
+    let path = salt_file_path(handle, npub)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let bytes = std::fs::read(&path).map_err(|e| format!("Failed to read salt file: {}", e))?;
+    if bytes.len() != SALT_LENGTH {
+        return Ok(None);
+    }
+
+    let mut salt = [0u8; SALT_LENGTH];
+    salt.copy_from_slice(&bytes);
+    Ok(Some(salt))
+}
+
+/// Write the redundant salt file cache with restricted permissions.
+/// Failures are logged as warnings but are not fatal; the settings table is
+/// the authoritative source of truth.
+pub fn write_salt_file<R: Runtime>(
+    handle: &AppHandle<R>,
+    npub: &str,
+    salt: &[u8; SALT_LENGTH],
+) -> Result<(), String> {
+    let path = salt_file_path(handle, npub)?;
+
+    std::fs::write(&path, salt).map_err(|e| format!("Failed to write salt file: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)
+            .map_err(|e| format!("Failed to read salt file metadata: {}", e))?
+            .permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&path, perms)
+            .map_err(|e| format!("Failed to set salt file permissions: {}", e))?;
+    }
+
+    #[cfg(windows)]
+    {
+        // Best-effort hidden attribute via the Windows `attrib` utility.
+        let path_str = path.to_string_lossy();
+        let _ = std::process::Command::new("attrib")
+            .arg("+h")
+            .arg(path_str.as_ref())
+            .output();
+    }
+
+    Ok(())
+}
+
+/// Low-level ChaCha20-Poly1305 encryption using a 32-byte key.
+/// Returns nonce (12 bytes) + ciphertext + tag as a hex string.
+pub fn encrypt_with_key(input: &str, key: &[u8; 32]) -> String {
     let mut rng = rand::thread_rng();
     let nonce_bytes: [u8; 12] = rng.gen();
-    
-    // Create the cipher instance
+
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .expect("Key should be valid");
-    
-    // Create the nonce
     let nonce = Nonce::from_slice(&nonce_bytes);
-    
-    // Encrypt the input
+
     let ciphertext = cipher
         .encrypt(nonce, input.as_bytes())
         .expect("Encryption should not fail");
-    
-    // Prepend the nonce to our ciphertext
+
     let mut buffer = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
     buffer.extend_from_slice(&nonce_bytes);
     buffer.extend_from_slice(&ciphertext);
 
-    // Save the Encryption Key locally so that we can continually encrypt data post-login
-    if crate::ENCRYPTION_KEY.get().is_none() {
-        crate::ENCRYPTION_KEY.set(*key).unwrap();
+    bytes_to_hex_string(&buffer)
+}
+
+/// Low-level ChaCha20-Poly1305 decryption using a 32-byte key.
+pub fn decrypt_with_key(ciphertext: &str, key: &[u8; 32]) -> Result<String, ()> {
+    let encrypted_data = hex_string_to_bytes(ciphertext);
+    if encrypted_data.len() < 12 {
+        return Err(());
     }
 
-    // Convert the encrypted bytes to a hex string for safe storage/transmission
-    bytes_to_hex_string(&buffer)
+    let (nonce_bytes, actual_ciphertext) = encrypted_data.split_at(12);
+
+    let cipher = match ChaCha20Poly1305::new_from_slice(key) {
+        Ok(c) => c,
+        Err(_) => return Err(()),
+    };
+
+    let plaintext = match cipher.decrypt(Nonce::from_slice(nonce_bytes), actual_ciphertext) {
+        Ok(pt) => pt,
+        Err(_) => return Err(()),
+    };
+
+    // SAFETY: plaintext originates from a valid UTF-8 string that was encrypted.
+    unsafe { Ok(String::from_utf8_unchecked(plaintext)) }
+}
+
+/// Internal function for encryption logic using ChaCha20Poly1305
+pub async fn internal_encrypt(input: String, password: Option<String>) -> String {
+    let key = if let Some(pass) = password {
+        derive_legacy_key(&pass)
+    } else {
+        crate::current_encryption_key().expect("Encryption key should be set")
+    };
+
+    // Preserve the legacy caching behaviour: if no session key is present yet,
+    // store the key we just derived so subsequent no-password calls succeed.
+    if crate::current_encryption_key().is_none() {
+        crate::set_encryption_key(key);
+    }
+
+    encrypt_with_key(&input, &key)
 }
 
 /// Internal function for decryption logic using ChaCha20Poly1305
 pub async fn internal_decrypt(ciphertext: String, password: Option<String>) -> Result<String, ()> {
-    // Check if we're using a password before we potentially move it
     let has_password = password.is_some();
-
-    // Fast path: If we already have an encryption key and no password is provided, avoid unnecessary work
     let key = if let Some(pass) = password {
-        // Only hash the password if we actually have one
-        &hash_pass(pass).await
-    } else if let Some(cached_key) = crate::ENCRYPTION_KEY.get() {
-        // Use cached key
-        cached_key
+        derive_legacy_key(&pass)
     } else {
-        // No key available
-        return Err(());
+        crate::current_encryption_key().ok_or(())?
     };
 
-    // Convert hex to bytes - use reference to avoid copying the string
-    let encrypted_data = match hex_string_to_bytes(ciphertext.as_str()) {
-        bytes if bytes.len() >= 12 => bytes,
-        _ => return Err(())
-    };
-    
-    // Extract nonce and encrypted data - use slices to avoid copying data
-    let (nonce_bytes, actual_ciphertext) = encrypted_data.split_at(12);
-    
-    // Create the cipher instance
-    let cipher = match ChaCha20Poly1305::new_from_slice(key) {
-        Ok(c) => c,
-        Err(_) => return Err(())
-    };
-    
-    // Create the nonce and decrypt
-    let plaintext = match cipher.decrypt(Nonce::from_slice(nonce_bytes), actual_ciphertext) {
-        Ok(pt) => pt,
-        Err(_) => return Err(())
-    };
+    let plaintext = decrypt_with_key(&ciphertext, &key)?;
 
-    // Cache the key if needed - only set if we came from password path
-    if has_password && crate::ENCRYPTION_KEY.get().is_none() {
-        // This only happens once after login with password
-        let _ = crate::ENCRYPTION_KEY.set(*key); // Ignore result as this is non-critical
+    if has_password && crate::current_encryption_key().is_none() {
+        crate::set_encryption_key(key);
     }
 
-    // Convert decrypted bytes to string using unsafe version, because SPEED!
-    // SAFETY: The plaintext bytes are guaranteed to be valid UTF-8, making this safe, because:
-    // 1. They were originally created from a valid UTF-8 string (typically JSON or plaintext)
-    // 2. ChaCha20-Poly1305 authenticated decryption ensures the data is intact
-    // 3. The decryption process preserves the exact byte patterns
-    unsafe {
-        Ok(String::from_utf8_unchecked(plaintext))
-    }
+    Ok(plaintext)
 }
 
 pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Result<Vec<u8>, String> {
@@ -215,6 +296,7 @@ pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argon2::{Argon2, Version};
 
     fn rt() -> tokio::runtime::Runtime {
         tokio::runtime::Runtime::new().expect("tokio runtime")
@@ -266,10 +348,43 @@ mod tests {
     }
 
     #[test]
-    fn hash_pass_is_deterministic() {
-        let first = rt().block_on(hash_pass("pacto-secret".to_string()));
-        let second = rt().block_on(hash_pass("pacto-secret".to_string()));
+    fn derive_legacy_key_is_deterministic() {
+        let first = derive_legacy_key("pacto-secret");
+        let second = derive_legacy_key("pacto-secret");
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn derive_key_is_deterministic() {
+        let salt = generate_salt();
+        let first = derive_key_from_salt("pacto-secret", &salt);
+        let second = derive_key_from_salt("pacto-secret", &salt);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn derive_legacy_key_matches_old_hash_pass() {
+        let expected = rt().block_on(hash_pass("pacto-secret".to_string()));
+        let actual = derive_legacy_key("pacto-secret");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn different_salts_produce_different_keys() {
+        let salt1 = generate_salt();
+        let salt2 = generate_salt();
+        assert_ne!(salt1, salt2);
+
+        let key1 = derive_key_from_salt("pacto-secret", &salt1);
+        let key2 = derive_key_from_salt("pacto-secret", &salt2);
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn generate_salt_is_random() {
+        let salt1 = generate_salt();
+        let salt2 = generate_salt();
+        assert_ne!(salt1, salt2);
     }
 
     #[test]
@@ -303,5 +418,17 @@ mod tests {
     fn chacha_decrypt_rejects_malformed_hex() {
         let decrypted = rt().block_on(internal_decrypt("not-hex".to_string(), Some("password".to_string())));
         assert!(decrypted.is_err());
+    }
+
+    // Legacy `hash_pass` retained as a private golden vector for the hard-coded
+    // salt path. It is intentionally not used outside this test module.
+    async fn hash_pass(password: String) -> [u8; 32] {
+        let salt = LEGACY_SALT;
+        let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, argon2_params());
+        let mut key = [0u8; 32];
+        argon
+            .hash_password_into(password.as_bytes(), salt, &mut key)
+            .unwrap();
+        key
     }
 }
