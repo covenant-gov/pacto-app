@@ -111,12 +111,15 @@ export async function depositSquadSponsor(params: {
   parentId: string;
   amountWei: string;
   sponsorAddress?: string | null;
+  /** Default signer (Settings wallet); use squad for roster-bound key only. */
+  signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<SquadSponsorDepositResultDto> {
   return (await invoke('deposit_squad_sponsor', {
     network: params.network,
     parentId: params.parentId,
     amountWei: params.amountWei.trim(),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    signerWallet: params.signerWallet ?? 'default',
   })) as SquadSponsorDepositResultDto;
 }
 
@@ -140,11 +143,29 @@ export async function deploySquadSponsorForParent(params: {
   network: string;
   parentId: string;
   initialDepositWei?: string | null;
+  /** Prefer Default for Ext ala carte; roster remains addressOwner on-chain. */
   signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<SquadSponsorDeployResultDto> {
   return (await invoke('deploy_squad_sponsor_for_parent', {
     network: params.network,
     parentId: params.parentId,
+    initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
+    signerWallet: params.signerWallet ?? 'default',
+  })) as SquadSponsorDeployResultDto;
+}
+
+/** Backend: `deploy_squad_sponsor_hats_for_parent` (hat-first SquadSponsor). */
+export async function deploySquadSponsorHatsForParent(params: {
+  network: string;
+  parentId: string;
+  topHatId: string;
+  initialDepositWei?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
+}): Promise<SquadSponsorDeployResultDto> {
+  return (await invoke('deploy_squad_sponsor_hats_for_parent', {
+    network: params.network,
+    parentId: params.parentId,
+    topHatId: params.topHatId.trim(),
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
     signerWallet: params.signerWallet ?? 'squad',
   })) as SquadSponsorDeployResultDto;
@@ -175,6 +196,63 @@ export async function getSquadSponsorSummary(params: {
     parentId: params.parentId,
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
   })) as SquadSponsorSummaryDto;
+}
+
+/** Mirrors `SquadSponsorExtStatus` from Tauri. */
+export interface SquadSponsorExtMemberPermitDto {
+  address: string;
+  permitted: boolean;
+}
+
+export interface SquadSponsorExtStatusDto {
+  chain: string;
+  chainId: number;
+  parentId: string;
+  sponsorAddress: string;
+  addressOwner: string;
+  hatsWired: boolean;
+  memberPermits: SquadSponsorExtMemberPermitDto[];
+}
+
+/** Backend: `get_squad_sponsor_ext_status`. */
+export async function getSquadSponsorExtStatus(params: {
+  network: string;
+  parentId: string;
+  memberAddresses: string[];
+  sponsorAddress?: string | null;
+}): Promise<SquadSponsorExtStatusDto> {
+  return (await invoke('get_squad_sponsor_ext_status', {
+    network: params.network,
+    parentId: params.parentId,
+    memberAddresses: params.memberAddresses.map((a) => a.trim()).filter(Boolean),
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as SquadSponsorExtStatusDto;
+}
+
+export interface SquadSponsorSetPermittedResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  sponsorAddress: string;
+  memberAddress: string;
+  permitted: boolean;
+}
+
+/** Backend: `squad_sponsor_set_permitted_address`. */
+export async function squadSponsorSetPermittedAddress(params: {
+  network: string;
+  parentId: string;
+  memberAddress: string;
+  permitted: boolean;
+  sponsorAddress?: string | null;
+}): Promise<SquadSponsorSetPermittedResultDto> {
+  return (await invoke('squad_sponsor_set_permitted_address', {
+    network: params.network,
+    parentId: params.parentId,
+    memberAddress: params.memberAddress.trim(),
+    permitted: params.permitted,
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as SquadSponsorSetPermittedResultDto;
 }
 
 /** Wire payload for `governance_updated` when squad sponsor infra is deployed or refreshed. */
@@ -281,6 +359,7 @@ export async function deployNavePirataForParent(params: {
   captain: string;
   metadataUri?: string | null;
   saltNonce?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<NavePirataDeployResultDto> {
   return (await invoke('deploy_nave_pirata_for_parent', {
     network: params.network,
@@ -288,6 +367,7 @@ export async function deployNavePirataForParent(params: {
     captain: params.captain,
     metadataUri: params.metadataUri?.trim() ?? '',
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
+    signerWallet: params.signerWallet ?? 'squad',
   })) as NavePirataDeployResultDto;
 }
 

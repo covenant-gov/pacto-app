@@ -5,12 +5,14 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../../lib/wallet/chains';
   import {
+    loadDeployPactoGovAndSponsorModal,
     loadDeployPactoGovModal,
     loadDeploySafeModal,
     loadDeploySquadAdminModal,
-    loadDeploySquadSponsorModal,
+    loadDeploySquadSponsorExtModal,
   } from '../../../lib/parent/deploy-wizard-components';
   import type { PactoGovCaptainOption, PactoGovDeployComplete } from '../../../lib/governance/start-pacto-gov-deploy';
+  import type { CombinedGovSponsorDeployComplete } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
 
   export let parentId: string;
   export let announcementsGroupId: string | null = null;
@@ -32,10 +34,14 @@
   export let showDeploySafeModal = false;
   export let showLaunchpad = false;
   export let showPactoGovDeploy = false;
-  export let showSponsorDeploy = false;
+  export let showGovAndSponsorDeploy = false;
+  export let showExtSponsorDeploy = false;
   export let showSquadAdminDeploy = false;
   export let showSquadRolesModal = false;
   export let showSetSafeModal = false;
+  /** When set, combined wizard finishes hats sponsor only. */
+  export let existingTopHatId = '';
+  export let quartermaster = '';
 
   export let setSafeInput = '';
   export let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
@@ -51,13 +57,16 @@
     txHash?: string;
   }) => Promise<void> = async () => {};
   export let onPactoGovComplete: (out: PactoGovDeployComplete) => Promise<void> = async () => {};
+  export let onGovAndSponsorComplete: (out: CombinedGovSponsorDeployComplete) => Promise<void> =
+    async () => {};
   export let onSquadAdminComplete: (out: {
     chain: string;
     squadAdminProxy: string;
     providerPayload: string;
     infraRowId: string;
   }) => Promise<void> = async () => {};
-  export let onSponsorComplete: (out: {
+  export let onExtSponsorComplete: (out: {
+    txHash: string;
     chain: string;
     sponsorAddress: string;
     providerPayload: string;
@@ -68,19 +77,25 @@
   export let onCloseDeploySafe: () => void = () => {};
   export let onCloseLaunchpad: () => void = () => {};
   export let onClosePactoGovDeploy: () => void = () => {};
-  export let onCloseSponsorDeploy: () => void = () => {};
+  export let onCloseGovAndSponsorDeploy: () => void = () => {};
+  export let onCloseExtSponsorDeploy: () => void = () => {};
   export let onCloseSquadAdminDeploy: () => void = () => {};
   export let onCloseSquadRolesModal: () => void = () => {};
-  export let onDeploySponsor: () => void = () => {};
   export let onDeploySquadAdmin: () => void = () => {};
   export let onDeployPactoGov: () => void = () => {};
+  export let onDeployGovAndSponsor: () => void = () => {};
+  export let onDeployExtSponsor: () => void = () => {};
   export let onDeploySafe: () => void = () => {};
   export let onImportSafe: () => void = () => {};
 
   let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
-  let DeploySquadSponsorComponent: Awaited<ReturnType<typeof loadDeploySquadSponsorModal>> | null = null;
   let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;
   let DeployPactoGovModalComponent: Awaited<ReturnType<typeof loadDeployPactoGovModal>> | null = null;
+  let DeployGovAndSponsorComponent: Awaited<
+    ReturnType<typeof loadDeployPactoGovAndSponsorModal>
+  > | null = null;
+  let DeployExtSponsorComponent: Awaited<ReturnType<typeof loadDeploySquadSponsorExtModal>> | null =
+    null;
 
   $: if (showDeploySafeModal && !DeploySafeModalComponent) {
     void loadDeploySafeModal().then((c) => {
@@ -92,14 +107,19 @@
       DeployPactoGovModalComponent = c;
     });
   }
-  $: if (showSponsorDeploy && !DeploySquadSponsorComponent) {
-    void loadDeploySquadSponsorModal().then((c) => {
-      DeploySquadSponsorComponent = c;
+  $: if (showGovAndSponsorDeploy && !DeployGovAndSponsorComponent) {
+    void loadDeployPactoGovAndSponsorModal().then((c) => {
+      DeployGovAndSponsorComponent = c;
     });
   }
   $: if (showSquadAdminDeploy && !DeploySquadAdminComponent) {
     void loadDeploySquadAdminModal().then((c) => {
       DeploySquadAdminComponent = c;
+    });
+  }
+  $: if (showExtSponsorDeploy && !DeployExtSponsorComponent) {
+    void loadDeploySquadSponsorExtModal().then((c) => {
+      DeployExtSponsorComponent = c;
     });
   }
 </script>
@@ -137,6 +157,24 @@
   {/if}
 {/if}
 
+{#if showGovAndSponsorDeploy && parentId.trim()}
+  {#if DeployGovAndSponsorComponent}
+    <DeployGovAndSponsorComponent
+      parentId={parentId.trim()}
+      {squadNetwork}
+      {captainMemberOptions}
+      {existingTopHatId}
+      {quartermaster}
+      onClose={onCloseGovAndSponsorDeploy}
+      onComplete={onGovAndSponsorComplete}
+    />
+  {:else}
+    <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
+      <p class="wizard-loading-text">Loading deploy modal…</p>
+    </div>
+  {/if}
+{/if}
+
 {#if showLaunchpad && parentId}
   <LaunchpadModal
     {hasSponsor}
@@ -147,10 +185,26 @@
     squadAdminAddress={squadAdminProxy}
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
-    onDeploySponsor={onDeploySponsor}
-    onDeploySquadAdmin={onDeploySquadAdmin}
+    onDeployGovAndSponsor={onDeployGovAndSponsor}
     onDeployPactoGov={onDeployPactoGov}
+    onDeployExtSponsor={onDeployExtSponsor}
+    onDeploySquadAdmin={onDeploySquadAdmin}
   />
+{/if}
+
+{#if showExtSponsorDeploy && parentId.trim()}
+  {#if DeployExtSponsorComponent}
+    <DeployExtSponsorComponent
+      parentId={parentId.trim()}
+      {squadNetwork}
+      onClose={onCloseExtSponsorDeploy}
+      onComplete={onExtSponsorComplete}
+    />
+  {:else}
+    <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
+      <p class="wizard-loading-text">Loading deploy wizard…</p>
+    </div>
+  {/if}
 {/if}
 
 {#if showSquadAdminDeploy && parentId.trim()}
@@ -160,21 +214,6 @@
       {squadNetwork}
       onClose={onCloseSquadAdminDeploy}
       onComplete={onSquadAdminComplete}
-    />
-  {:else}
-    <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy wizard…</p>
-    </div>
-  {/if}
-{/if}
-
-{#if showSponsorDeploy && parentId.trim()}
-  {#if DeploySquadSponsorComponent}
-    <DeploySquadSponsorComponent
-      parentId={parentId.trim()}
-      {squadNetwork}
-      onClose={onCloseSponsorDeploy}
-      onComplete={onSponsorComplete}
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">

@@ -1839,6 +1839,31 @@ pub fn pacto_gov_treasury_row_id(parent_id: &str) -> String {
     }
 }
 
+/// Stored top hat id (`canonical_ref`) for the parent's `pacto_gov` row, if any.
+pub fn pacto_gov_top_hat_id_for_parent<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<Option<String>, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(None);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT trim(canonical_ref) FROM squad_infra \
+             WHERE parent_id = ?1 AND infra_type = 'pacto_gov' \
+             AND canonical_ref IS NOT NULL AND trim(canonical_ref) != '' \
+             ORDER BY updated_at_ms DESC LIMIT 1",
+            rusqlite::params![pid],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("pacto_gov top hat lookup: {e}"))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(row)
+}
+
 /// Persist or refresh the pacto-gov infra row after deploy (and for announce ingest).
 /// `canonical_ref` is the top hat id string.
 pub fn persist_pacto_gov_infra<R: Runtime>(

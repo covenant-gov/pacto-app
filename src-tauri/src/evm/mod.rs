@@ -1,6 +1,7 @@
 //! Blockchain / EVM layer: key derivation, RPC, contract bindings, wallet, governance deploy.
 //! Kept separate from core messaging, MLS, and Nostr sync logic in the crate root.
 
+pub mod access_control;
 pub mod advanced_contract_call;
 pub mod contract_call_params;
 pub mod contracts;
@@ -17,9 +18,12 @@ pub mod pacto_chain_config;
 pub mod quartermaster_ops;
 pub mod rpc;
 pub mod safe_deploy;
+pub mod sponsor_paymaster;
+pub mod sponsor_userop;
 pub mod squad_sponsor_common;
 pub mod squad_sponsor_deploy;
 pub mod squad_sponsor_deposit;
+pub mod squad_sponsor_ext;
 pub mod squad_sponsor_read;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;

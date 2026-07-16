@@ -11,7 +11,6 @@
   } from '../../../lib/governance/hats-tree-read';
 
   export let squadInfraRows: unknown[] | undefined = undefined;
-  export let hasSponsor = false;
   export let structureSummary: DashboardStructureSummary | null | undefined = undefined;
   export let hatsTree: HatTreeNodeDto | null = null;
   export let hatsTreeLoading = false;
@@ -26,14 +25,17 @@
   export let rolesTreeAnnotationsError = '';
   export let onRefreshRolesTree: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
+  /** Lowercase address → protocol module label for wearer chips. */
+  export let knownWearerLabels: Record<string, string> = {};
 
   $: rolesTreeRefreshing = hatsTreeRefreshing || rolesTreeAnnotationsRefreshing;
   $: rolesTreeLoading = hatsTreeLoading || rolesTreeAnnotationsLoading;
+  $: chainKey = structureSummary?.chainKey ?? null;
 </script>
 
-{#if squadInfraRows !== undefined && !hasSponsor}
+{#if squadInfraRows !== undefined && !structureSummary}
   <div class="sponsor-empty-banner" role="status">
-    <p class="sponsor-empty-banner-text">Deploy squad sponsor first using the Deploy button below.</p>
+    <p class="sponsor-empty-banner-text">Deploy Pacto Gov + squad sponsor from Launchpad for a hats tree.</p>
     <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
   </div>
 {/if}
@@ -101,6 +103,8 @@
         {wearerAddressesByHatId}
         {executorRolesByAddress}
         {squadMemberEvmByNpub}
+        {knownWearerLabels}
+        {chainKey}
       />
     {/if}
   {/if}

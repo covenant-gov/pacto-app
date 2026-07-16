@@ -16,6 +16,7 @@ These files are **tracked in git** and are intended for references from **source
 | [HD_DERIVATION_V1.md](./HD_DERIVATION_V1.md) | BIP-44 path, address hash rule, legacy cutover, golden vector. |
 | [ONCHAIN_READ_PATTERN.md](./ONCHAIN_READ_PATTERN.md) | Shared pattern: persist / hydrate / background refresh for WalletBar + Safe-style reads. |
 | [PACTO_GOV.md](./PACTO_GOV.md) | Upstream [covenant-gov/pacto-gov](https://github.com/covenant-gov/pacto-gov); Alloy bindings and env deploy addresses. |
+| [../governance/ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) | Roster ↔ Hats / Squad Admin ACL: capabilities, fail-closed signing preflight, UI snapshot. |
 | [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md) | Upstream [covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor); deploy, summary read, `squad_infra`. |
 | [PROTOCOL_ADDRESS_BOOK.md](./PROTOCOL_ADDRESS_BOOK.md) | Tracked JSON: sponsor / gov / Safe deploy addresses per network (`pacto-protocol-addresses.json`). |
 | [OPERATOR_SMOKE.md](./OPERATOR_SMOKE.md) | **Single** Sepolia operator checklist: sponsor, gov, Safe, announce sync, advanced, allowlist, inbox/roster. |
@@ -33,7 +34,7 @@ Accepting a request opens the send form pre-filled and may attach **`request_id`
 
 ### Squad vs Advanced keys
 
-- **Squad accounts** (`purpose: squad`): DM WalletBar Send, squad roster shares, treasury deploy, and governance commands. Only squad-purpose keys may be the active signer or profile receiving address.
+- **Squad accounts** (`purpose: squad`): DM WalletBar Send, squad roster shares, treasury deploy, and governance commands. Only squad-purpose keys may be the active signer or profile receiving address. Squad-scoped gov / Squad Admin / tracked-token writes require a **roster binding** for the parent and pass ACL preflight ([ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)).
 - **Advanced accounts** (`purpose: advanced`): imported keys or derived advanced-only addresses. Used only from **Settings → Advanced** contract call (`WalletAdvancedPanel.svelte`). Backend command **`evm_send_advanced_contract_call`** refuses squad signers; squad paths refuse advanced addresses.
 - **Generic reads** (token/module observation): viem via **`src/lib/evm/read-plane.ts`** — no private key. Does not replace curated pacto-gov dashboard reads in Rust.
 - **Squad allowlisted calls:** Dashboard → Settings → **Smart contract security** — squad keys may call explicit allowlist targets + implicit deploy infra only (`evm_send_squad_allowlisted_contract_call`).

@@ -1,10 +1,54 @@
 import type { HatTreeNodeDto, MemberHatAssignmentDto, NavePirataDeploymentDto } from './api';
-import { hatChecksFromNaveDeployment } from './pacto-gov-payload';
+import {
+  hatChecksFromNaveDeployment,
+  type PactoGovProviderPayloadV1,
+} from './pacto-gov-payload';
 
 export function shortEvmAddress(addr: string): string {
   const a = addr.trim();
   if (a.length < 10) return a;
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
+
+/** Pacto Gov module addresses that may wear role hats (not just squad roster EOAs). */
+export function protocolWearerCandidateAddresses(
+  payload: PactoGovProviderPayloadV1 | null | undefined,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [
+    payload?.safe,
+    payload?.treasuryAuthority,
+    payload?.mutinyModule,
+    payload?.quartermaster,
+    payload?.squadAdminProxy,
+  ]) {
+    const a = raw?.trim();
+    if (!a || !/^0x[a-fA-F0-9]{40}$/.test(a)) continue;
+    const key = a.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(a);
+  }
+  return out;
+}
+
+/** Friendly labels for protocol module wearers on the Roles tree. */
+export function protocolWearerLabelByAddress(
+  payload: PactoGovProviderPayloadV1 | null | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (raw: string | undefined, label: string) => {
+    const a = raw?.trim();
+    if (!a || !/^0x[a-fA-F0-9]{40}$/.test(a)) return;
+    out[a.toLowerCase()] = label;
+  };
+  put(payload?.safe, 'Treasury Safe');
+  put(payload?.treasuryAuthority, 'Treasury Authority');
+  put(payload?.mutinyModule, 'Mutiny module');
+  put(payload?.quartermaster, 'Quartermaster');
+  put(payload?.squadAdminProxy, 'Squad Admin');
+  return out;
 }
 
 /** Nave Pirata role label keyed by on-chain hat id. */
@@ -43,12 +87,16 @@ export function formatWearerDisplayLabel(
   address: string,
   npubByAddress: Record<string, string>,
   displayNameForNpub: (npub: string) => string,
+  knownLabels?: Record<string, string>,
 ): string {
-  const npub = npubByAddress[address.trim().toLowerCase()];
+  const key = address.trim().toLowerCase();
+  const npub = npubByAddress[key];
   if (npub) {
     const name = displayNameForNpub(npub)?.trim();
     if (name && name !== 'Unknown') return name;
   }
+  const known = knownLabels?.[key]?.trim();
+  if (known) return known;
   return shortEvmAddress(address);
 }
 
@@ -101,11 +149,30 @@ export function mergeRolesTreeAnnotationMaps(
     | 'treasuryAuthorityRoleHatId'
   >,
   assignments: MemberHatAssignmentDto[],
+  topHatId?: string,
 ): RolesTreeAnnotationMaps {
+  const roleLabelByHatId = roleLabelByHatIdFromNaveDeployment(deployment);
+  const top = topHatId?.trim();
+  if (top && !roleLabelByHatId[top]) {
+    roleLabelByHatId[top] = 'Top hat';
+  }
   return {
-    roleLabelByHatId: roleLabelByHatIdFromNaveDeployment(deployment),
+    roleLabelByHatId,
     wearerAddressesByHatId: wearerAddressesByHatIdFromAssignments(assignments),
   };
+}
+
+/** Role hat checks plus top hat so tree supply rows can resolve wearers. */
+export function hatChecksForRolesTree(
+  deployment: Parameters<typeof hatChecksFromNaveDeployment>[0],
+  topHatId?: string,
+): { hatId: string; label: string }[] {
+  const checks = hatChecksFromNaveDeployment(deployment);
+  const top = topHatId?.trim();
+  if (top && !checks.some((c) => c.hatId.trim() === top)) {
+    checks.unshift({ hatId: top, label: 'Top hat' });
+  }
+  return checks;
 }
 
 export type AnnotatedRolesTreeNode = {

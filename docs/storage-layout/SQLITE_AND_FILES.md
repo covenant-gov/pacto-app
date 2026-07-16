@@ -30,6 +30,9 @@ The **authoritative CREATE TABLE** statements live in **`SQL_SCHEMA`** in `src-t
 | **mls_keypackages** | Key package cache |
 | **mls_event_cursors** | Sync cursors per group |
 | **squad_safe** | Squad/network id → Safe address |
+| **squad_infra** | On-chain deploy pointers (`pacto_gov`, sponsor, Safe, …) + `provider_payload` |
+| **squad_member_evm** / **squad_member_evm_account** | Roster address / local signing-account binding per parent |
+| **squad_tracked_tokens** | Squad-shared ERC-20 watchlist for Treasury Safe balance UI (MLS announce sync) |
 
 Indexes are defined next to each table in **`SQL_SCHEMA`**; duplicate definitions may appear inside **`run_migrations`** when a table was introduced in a migration block.
 

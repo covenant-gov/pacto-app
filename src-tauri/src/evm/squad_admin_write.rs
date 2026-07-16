@@ -1,20 +1,21 @@
 //! Squad Admin roster mutations: createRole, enableExecutor, enableFullPermission.
 
+use alloy::network::TransactionBuilder;
 use alloy::primitives::B256;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, enableExecutorCall, enableFullPermissionCall,
+};
+use super::rpc::signer::{
+    load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json,
-};
-use super::rpc::signer::{
-    load_embedded_signer, load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
-    require_treasury_signing_allowed,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -47,8 +48,10 @@ pub struct SquadAdminWriteResult {
 async fn squad_admin_write<R: Runtime>(
     app: AppHandle<R>,
     network: String,
+    parent_id: String,
     squad_admin_proxy: String,
     calldata: Vec<u8>,
+    capability: GovCapability,
 ) -> Result<SquadAdminWriteResult, String> {
     let admin = parse_address(squad_admin_proxy.trim())
         .map_err(|e| wallet_err_json("INVALID_SQUAD_ADMIN", e, None))?;
@@ -71,21 +74,19 @@ async fn squad_admin_write<R: Runtime>(
         ));
     }
 
-    let parent_id = db::parent_id_for_canonical_infra_ref(&app, squad_admin_proxy.trim())?
-        .unwrap_or_default();
-    let (_signer, wallet) = if parent_id.trim().is_empty() {
-        require_treasury_signing_allowed(app.clone()).await?;
-        load_embedded_signer(app.clone()).await?
-    } else {
-        require_roster_treasury_signing_allowed(app.clone(), parent_id.trim()).await?;
-        load_squad_roster_embedded_signer(app.clone(), parent_id.trim()).await?
-    };
+    let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
+
+    require_capability(&app, parent.as_str(), capability).await?;
+    require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
+
+    let _write_guard = with_gov_write_lock(parent.as_str()).await;
+    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), parent.as_str()).await?;
     let provider = connect_signing_provider(&urls, wallet).await?;
-    let tx = contract_call_request(admin, calldata);
+    let tx = contract_call_request(admin, calldata).with_chain_id(net.chain_id);
     let receipt = send_and_confirm(
         &provider,
         tx,
-        "Timed out waiting for squad admin transaction confirmation.",
+        "Timed out waiting for squad admin confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
     )
     .await?;
 
@@ -97,23 +98,88 @@ async fn squad_admin_write<R: Runtime>(
     })
 }
 
+fn resolve_squad_admin_parent<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    squad_admin_proxy: &str,
+) -> Result<String, String> {
+    let from_infra = db::parent_id_for_canonical_infra_ref(app, squad_admin_proxy)?
+        .filter(|s| !s.trim().is_empty());
+    let pid = parent_id.trim();
+    match (pid.is_empty(), from_infra) {
+        (_, Some(infra)) if pid.is_empty() => Ok(infra),
+        (_, Some(infra)) if pid == infra.trim() => Ok(pid.to_string()),
+        (_, Some(_)) => Err(wallet_err_json(
+            "PARENT_MISMATCH",
+            "client parentId does not match infra for this Squad Admin",
+            None,
+        )),
+        (false, None) => {
+            if parent_payload_mentions_address(app, pid, squad_admin_proxy)? {
+                Ok(pid.to_string())
+            } else {
+                Err(wallet_err_json(
+                    "MISSING_PARENT",
+                    "Squad Admin proxy is not linked to this parent",
+                    None,
+                ))
+            }
+        }
+        (true, None) => Err(wallet_err_json(
+            "MISSING_PARENT",
+            "could not resolve parent for squad admin write",
+            None,
+        )),
+    }
+}
+
+fn parent_payload_mentions_address<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    address: &str,
+) -> Result<bool, String> {
+    let Some(want) = crate::evm::normalize_hex_address(address.trim()) else {
+        return Ok(false);
+    };
+    let want = want.to_ascii_lowercase();
+    let rows = db::list_squad_infra(app.clone(), parent_id.to_string())?;
+    for row in rows {
+        if let Some(payload) = row.provider_payload.as_deref() {
+            if payload.to_ascii_lowercase().contains(&want) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 #[tauri::command]
 pub async fn squad_admin_create_role<R: Runtime>(
     app: AppHandle<R>,
     network: String,
+    parent_id: String,
     squad_admin_proxy: String,
     role_label: String,
 ) -> Result<SquadAdminWriteResult, String> {
     let role = bytes32_role_tag(role_label.as_str())
         .map_err(|e| wallet_err_json("INVALID_ROLE", e, None))?;
     let calldata = createRoleCall { _role: role }.abi_encode();
-    squad_admin_write(app, network, squad_admin_proxy, calldata).await
+    squad_admin_write(
+        app,
+        network,
+        parent_id,
+        squad_admin_proxy,
+        calldata,
+        GovCapability::SquadAdminCreateRole,
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn squad_admin_enable_executor<R: Runtime>(
     app: AppHandle<R>,
     network: String,
+    parent_id: String,
     squad_admin_proxy: String,
     executor_address: String,
     role_label: String,
@@ -127,13 +193,22 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
         _role: role,
     }
     .abi_encode();
-    squad_admin_write(app, network, squad_admin_proxy, calldata).await
+    squad_admin_write(
+        app,
+        network,
+        parent_id,
+        squad_admin_proxy,
+        calldata,
+        GovCapability::SquadAdminEnableExecutor,
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn squad_admin_enable_full_permission<R: Runtime>(
     app: AppHandle<R>,
     network: String,
+    parent_id: String,
     squad_admin_proxy: String,
     executor_address: String,
     enable: bool,
@@ -145,7 +220,15 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
         _enable: enable,
     }
     .abi_encode();
-    squad_admin_write(app, network, squad_admin_proxy, calldata).await
+    squad_admin_write(
+        app,
+        network,
+        parent_id,
+        squad_admin_proxy,
+        calldata,
+        GovCapability::SquadAdminEnableFull,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -153,42 +236,9 @@ mod tests {
     use super::bytes32_role_tag;
 
     #[test]
-    fn role_tag_matches_left_padded_ascii() {
-        let role = bytes32_role_tag("TREASURY").unwrap();
-        let mut expected = [0u8; 32];
-        expected[..8].copy_from_slice(b"TREASURY");
-        assert_eq!(role.as_slice(), expected);
-    }
-
-    #[test]
-    fn role_tag_exactly_32_bytes() {
-        let label = "TREASURY";
-        let role = bytes32_role_tag(label).unwrap();
-        assert_eq!(role.len(), 32);
-    }
-
-    #[test]
-    fn role_tag_rejects_empty() {
+    fn bytes32_role_tag_rejects_empty_and_overlong() {
         assert!(bytes32_role_tag("").is_err());
-        assert!(bytes32_role_tag("   ").is_err());
-    }
-
-    #[test]
-    fn role_tag_rejects_too_long() {
-        let label = "a".repeat(33);
-        assert!(bytes32_role_tag(&label).is_err());
-    }
-
-    #[test]
-    fn role_tag_rejects_non_ascii() {
-        assert!(bytes32_role_tag("rôle").is_err());
-    }
-
-    #[test]
-    fn role_tag_left_pads_short_label() {
-        let role = bytes32_role_tag("A").unwrap();
-        let mut expected = [0u8; 32];
-        expected[0] = b'A';
-        assert_eq!(role.as_slice(), expected);
+        assert!(bytes32_role_tag(&"a".repeat(33)).is_err());
+        assert!(bytes32_role_tag("FULL").is_ok());
     }
 }

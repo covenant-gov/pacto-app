@@ -10,6 +10,13 @@
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
+  import {
+    allMembersShareEvmState,
+    binaryInfraState,
+    checklistGlyph,
+    mintCrewHatsState,
+    type ChecklistItemState,
+  } from '../../../lib/governance/squad-sponsor-crew';
 
   export let squad: Squad;
   export let permissionsCtx: DashboardPermissionsContext;
@@ -22,10 +29,12 @@
   export let squadNetwork: SupportedChainId | null = null;
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
-  export let hasSponsor = false;
   export let hasGovernance = false;
   export let hasSquadAdmin = false;
+  export let captainWearers: string[] = [];
+  export let crewWearers: string[] = [];
   export let onOpenDeploy: () => void = () => {};
+  export let onOpenCrewBootstrap: () => void = () => {};
 
   const squadNetworkOptions = listSquadDeployNetworkOptions();
   let editingNetwork = false;
@@ -36,6 +45,22 @@
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : 'Not set';
   $: networkHint = squadNetworkFromInfra ? 'Locked to deployed infra' : '';
+  $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
+  $: govState = binaryInfraState(hasGovernance);
+  $: adminState = binaryInfraState(hasSquadAdmin);
+  $: crewMintState = mintCrewHatsState({
+    hasGovernance,
+    channelMembers,
+    squadMemberEvmByNpub,
+    captainWearers,
+    crewWearers,
+  });
+
+  function glyphClass(state: ChecklistItemState): string {
+    if (state === 'done') return 'check-mark';
+    if (state === 'pending') return 'check-pending';
+    return 'check-todo';
+  }
 
   function applySquadNetwork() {
     if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
@@ -53,31 +78,55 @@
 <section class="status-checklist" aria-label="Setup checklist">
   <span class="meta-label">Checklist</span>
   <ul class="checklist" role="list">
-    <li class="checklist-item" class:done={hasSponsor}>
-      {#if hasSponsor}
-        <span class="check-mark" aria-hidden="true">✓</span>
-        <span>Squad sponsor</span>
+    <li class="checklist-item" class:done={!!squadNetwork}>
+      <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
+        >{checklistGlyph(squadNetwork ? 'done' : 'not_started')}</span
+      >
+      {#if squadNetwork}
+        <span>{getWalletNetworkDisplayName(squadNetwork)} selected</span>
       {:else}
-        <span class="check-todo" aria-hidden="true">○</span>
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy squad sponsor</button>
+        <button
+          type="button"
+          class="checklist-action"
+          on:click={() => {
+            editingNetwork = true;
+            document.getElementById('squad-status-network')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }}
+        >
+          Select network
+        </button>
       {/if}
     </li>
-    <li class="checklist-item" class:done={hasGovernance}>
+    <li class="checklist-item" class:done={shareEvmState === 'done'}>
+      <span class={glyphClass(shareEvmState)} aria-hidden="true">{checklistGlyph(shareEvmState)}</span>
+      <span>All members share EVM address</span>
+    </li>
+    <li class="checklist-item" class:done={govState === 'done'}>
+      <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
       {#if hasGovernance}
-        <span class="check-mark" aria-hidden="true">✓</span>
         <span>Squad governance</span>
       {:else}
-        <span class="check-todo" aria-hidden="true">○</span>
         <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad governance</button>
       {/if}
     </li>
-    <li class="checklist-item" class:done={hasSquadAdmin}>
+    <li class="checklist-item" class:done={adminState === 'done'}>
+      <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
       {#if hasSquadAdmin}
-        <span class="check-mark" aria-hidden="true">✓</span>
         <span>Squad admin</span>
       {:else}
-        <span class="check-todo" aria-hidden="true">○</span>
         <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad admin</button>
+      {/if}
+    </li>
+    <li class="checklist-item" class:done={crewMintState === 'done'}>
+      <span class={glyphClass(crewMintState)} aria-hidden="true">{checklistGlyph(crewMintState)}</span>
+      {#if crewMintState === 'done'}
+        <span>Mint all members a Crew hat</span>
+      {:else if hasGovernance}
+        <button type="button" class="checklist-action" on:click={onOpenCrewBootstrap}
+          >Mint all members a Crew hat</button
+        >
+      {:else}
+        <span>Mint all members a Crew hat</span>
       {/if}
     </li>
   </ul>
@@ -190,6 +239,13 @@
     color: var(--text-muted);
     width: 1.1rem;
     text-align: center;
+  }
+
+  .check-pending {
+    width: 1.1rem;
+    text-align: center;
+    font-size: 0.75rem;
+    line-height: 1.1rem;
   }
 
   .checklist-item.done span:last-child {

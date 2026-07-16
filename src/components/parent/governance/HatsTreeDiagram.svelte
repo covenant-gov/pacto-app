@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { HatTreeNodeDto } from '$lib/governance/api';
+  import type { SupportedChainId } from '$lib/wallet/chains';
   import HatsTreeNode from './HatsTreeNode.svelte';
 
   export let root: HatTreeNodeDto;
@@ -7,6 +8,8 @@
   export let wearerAddressesByHatId: Record<string, string[]> = {};
   export let executorRolesByAddress: Record<string, string> = {};
   export let squadMemberEvmByNpub: Record<string, string> = {};
+  export let knownWearerLabels: Record<string, string> = {};
+  export let chainKey: SupportedChainId | null = null;
 </script>
 
 <div class="hats-tree-scroll" role="tree" aria-label="Hats tree">
@@ -16,6 +19,8 @@
     {wearerAddressesByHatId}
     {executorRolesByAddress}
     {squadMemberEvmByNpub}
+    {knownWearerLabels}
+    {chainKey}
   />
 </div>
 

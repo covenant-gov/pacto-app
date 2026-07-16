@@ -6,9 +6,12 @@ export const loadDeploySafeModal = createLazyComponent(
 export const loadDeployPactoGovModal = createLazyComponent(
   () => import('../../components/parent/governance/DeployPactoGovModal.svelte'),
 );
-export const loadDeploySquadSponsorModal = createLazyComponent(
-  () => import('../../components/parent/governance/DeploySquadSponsorModal.svelte'),
+export const loadDeployPactoGovAndSponsorModal = createLazyComponent(
+  () => import('../../components/parent/governance/DeployPactoGovAndSponsorModal.svelte'),
 );
 export const loadDeploySquadAdminModal = createLazyComponent(
   () => import('../../components/parent/governance/DeploySquadAdminModal.svelte'),
+);
+export const loadDeploySquadSponsorExtModal = createLazyComponent(
+  () => import('../../components/parent/governance/DeploySquadSponsorExtModal.svelte'),
 );

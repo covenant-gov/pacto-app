@@ -96,7 +96,9 @@ flowchart LR
 - **Frontend reads** (wallet balances, general contract observation, Safe reads, receipt polling) happen in the frontend via viem.
 - **Curated governance reads** (e.g., pacto-gov dashboard and squad sponsor registry lookups) happen in Rust using Alloy, alongside all writes.
 - **Writes** (WalletBar sends, treasury deployments, governance transactions) happen in Rust using Alloy.
+- **Squad access control** resolves the current account’s roster EVM for a parent, then checks Hats / Squad Admin on-chain before signing (`require_capability`). UI disable reasons come from the same predicates via `get_squad_capabilities`. Normative detail: [`docs/governance/ACCESS_CONTROL.md`](./governance/ACCESS_CONTROL.md).
 - Signer purpose matters: `squad` keys can act on treasury and governance; `advanced` keys are restricted to the Advanced panel.
+- Concurrent Pacto Gov / Squad Admin writes for a parent are serialized (write lock) and set an explicit `chain_id` on the transaction request.
 
 ### 3. Storage
 
@@ -134,6 +136,7 @@ flowchart TB
 | `src/components/` | Svelte UI components grouped by domain |
 | `src-tauri/src/` | Rust backend crate |
 | `src-tauri/src/evm/` | Wallet, key derivation, RPC, contract bindings, governance |
+| `src-tauri/src/evm/access_control/` | Roster identity → Hats / Squad Admin → capability preflight + UI snapshot |
 | `src-tauri/src/evm/contracts/` | `alloy::sol!` bindings for pacto-gov, sponsor, Safe, ERC-20, Hats |
 | `static/` | Static assets (twemoji SVGs, etc.) |
 | `docs/` | Authoritative tracked architecture and operational docs |
@@ -154,11 +157,13 @@ flowchart TB
 - `src-tauri/src/rumor.rs` is the protocol-agnostic processor: DM and MLS decrypted events produce `RumorProcessingResult` and are stored as flat `StoredEvent` rows.
 - `src-tauri/src/db.rs` implements most `#[tauri::command]` database entry points using pooled connections from `account_manager.rs`.
 - `src-tauri/src/evm/mod.rs` is the EVM module root; `evm/rpc/` handles providers, signers, and structured errors.
+- `src-tauri/src/evm/access_control/` enforces squad-scoped write capabilities before Alloy send; `gov_module_write` / `squad_admin_write` / tracked-token mutations call into it.
 
 ## Security and trust model
 
 - No KYC; identity is cryptographic (npub / nsec).
 - The EVM private key is decrypted in Rust only for approved operations and is not exposed to the frontend.
+- Squad governance / Squad Admin / tracked-token mutations fail closed without a roster EVM binding; UI gates are advisory. See [`docs/governance/ACCESS_CONTROL.md`](./governance/ACCESS_CONTROL.md).
 - Message content and secrets are stored encrypted; profile and indexing metadata is plaintext for search and performance.
 - There is no independent third-party security audit yet. See `docs/audits/README.md`.
 
@@ -177,6 +182,7 @@ flowchart TB
 - `docs/mls/ARCHITECTURE.md` — MLS engine and storage split
 - `docs/communities/DESIGN.md` — squads, networks, and stable ids
 - `docs/wallet/README.md` — embedded EVM wallet
+- `docs/governance/ACCESS_CONTROL.md` — Nostr↔roster↔Hats/SquadAdmin write preflight
 - `docs/storage-layout/SQLITE_AND_FILES.md` — per-account SQLite layout
 - `STRATEGY.md` — product strategy
 - `CONCEPTS.md` — shared vocabulary

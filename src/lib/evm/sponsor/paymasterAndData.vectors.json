@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "description": "Golden vectors for pacto-app / client tests of PactoSponsorPaymaster paymasterAndData encoding and expected validation outcomes. No fork required.",
+  "sourceIssue": "https://github.com/covenant-gov/pacto-squad-sponsor/issues/5",
+  "doc": "docs/DESKTOP_CLIENT_INTEGRATION.md",
+  "constants": {
+    "PAYMASTER_DATA_VERSION": 1,
+    "PAYMASTER_DATA_OFFSET": 52,
+    "BALANCE_HEADROOM_BPS": 11500,
+    "SIG_VALIDATION_FAILED": 1,
+    "entryPointV07": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    "defaultVerificationGasLimit": 100000,
+    "defaultPostOpGasLimit": 50000
+  },
+  "sepolia": {
+    "chainId": 11155111,
+    "deploymentArtifact": "deployments/11155111/full-system.json",
+    "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+    "squadSponsorFactory": "0x032e84cff3b32c221f8F93e4839Fa5715638ae08",
+    "pactoSponsorPaymaster": "0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8",
+    "sponsorImplementation": "0x712b49AC221Df7b445eCDd25B681c3BD92Fcb2E8",
+    "extImplementation": "0x143c0a014CBF9Bfab5aFF886A004B8b393Bc878a",
+    "navePirataRegistry": "0x45127C1c92741C0dA38e1A73fbb97a8a2C46770f",
+    "hats": "0x3bc1A0Ad72417f2d411118085256fC53CBdDd137"
+  },
+  "fixtureAddresses": {
+    "paymaster": "0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8",
+    "squadId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "sponsor": "0x2222222222222222222222222222222222222222",
+    "member": "0x3333333333333333333333333333333333333333",
+    "quartermaster": "0x5555555555555555555555555555555555555555",
+    "crewMember": "0x4444444444444444444444444444444444444444"
+  },
+  "encoding": {
+    "name": "hats_or_ext_member_paymasterAndData_v1",
+    "inputs": {
+      "paymaster": "0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8",
+      "verificationGasLimit": 100000,
+      "postOpGasLimit": 50000,
+      "version": 1,
+      "squadId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+      "sponsor": "0x2222222222222222222222222222222222222222",
+      "member": "0x3333333333333333333333333333333333333333"
+    },
+    "header": "0xf7f557a9443671eb0f5a3f1b233ac44a9eda24b8000000000000000000000000000186a00000000000000000000000000000c350",
+    "payload": "0x0000000000000000000000000000000000000000000000000000000000000001111111111111111111111111111111111111111111111111111111111111111100000000000000000000000022222222222222222222222222222222222222220000000000000000000000003333333333333333333333333333333333333333",
+    "paymasterAndData": "0xf7f557a9443671eb0f5a3f1b233ac44a9eda24b8000000000000000000000000000186a00000000000000000000000000000c3500000000000000000000000000000000000000000000000000000000000000001111111111111111111111111111111111111111111111111111111111111111100000000000000000000000022222222222222222222222222222222222222220000000000000000000000003333333333333333333333333333333333333333",
+    "paymasterAndDataLengthBytes": 180,
+    "successContext": "0x0000000000000000000000002222222222222222222222222222222222222222",
+    "notes": "header = paymaster || uint128(100000) || uint128(50000); payload = abi.encode(uint8(1), squadId, sponsor, member)"
+  },
+  "headroom": {
+    "maxCostWei": "1000000000000000000",
+    "requiredBalanceWei": "1150000000000000000",
+    "formula": "requiredBalance = maxCost * 11500 / 10000"
+  },
+  "postOp": {
+    "modeSucceeded": {
+      "description": "On PostOpMode.opSucceeded, sponsor.spendGas(actualGasCost) transfers exact wei from pool to paymaster",
+      "actualGasCostWei": "1000000000000000000",
+      "poolDeltaWei": "-1000000000000000000",
+      "paymasterDeltaWei": "1000000000000000000"
+    },
+    "modeReverted": {
+      "description": "On PostOpMode.opReverted, pool balance is unchanged",
+      "actualGasCostWei": "1000000000000000000",
+      "poolDeltaWei": "0"
+    }
+  },
+  "eligibilityCases": [
+    {
+      "id": "ext_permitted_eoa",
+      "variant": "EXT",
+      "hatsWired": false,
+      "sender": "member",
+      "member": "permitted Ext address",
+      "senderIsContract": false,
+      "expected": "validationData=0"
+    },
+    {
+      "id": "ext_non_permitted",
+      "variant": "EXT",
+      "hatsWired": false,
+      "sender": "stranger",
+      "member": "stranger",
+      "senderIsContract": false,
+      "expected": "validationData=1"
+    },
+    {
+      "id": "hat_captain_or_crew_wearer",
+      "variant": "SPONSOR_or_EXT_after_postInitialize",
+      "hatsWired": true,
+      "sender": "wearer",
+      "member": "wearer of captainHatId or crewHatId",
+      "senderIsContract": false,
+      "expected": "validationData=0"
+    },
+    {
+      "id": "hat_non_wearer",
+      "variant": "SPONSOR_or_EXT_after_postInitialize",
+      "hatsWired": true,
+      "sender": "nonWearer",
+      "member": "nonWearer",
+      "senderIsContract": false,
+      "expected": "validationData=1"
+    },
+    {
+      "id": "empty_or_tight_pool",
+      "variant": "any",
+      "note": "pool.balance < maxCost * 11500 / 10000 even if eligible",
+      "expected": "validationData=1"
+    },
+    {
+      "id": "zero_member",
+      "member": "0x0000000000000000000000000000000000000000",
+      "expected": "validationData=1"
+    },
+    {
+      "id": "eoa_binding_mismatch",
+      "senderIsContract": false,
+      "sender": "0x3333333333333333333333333333333333333333",
+      "member": "0x9999999999999999999999999999999999999999",
+      "expected": "revert SS_InvalidMemberBinding"
+    },
+    {
+      "id": "smart_account_sender_eligible_member",
+      "senderIsContract": true,
+      "sender": "smartAccount",
+      "member": "eligible hat/Ext member",
+      "expected": "validationData=0 (binding skipped)"
+    },
+    {
+      "id": "clone_mismatch",
+      "sponsor": "not factory.squads(squadId).sponsor",
+      "expected": "revert SS_CloneMismatch"
+    },
+    {
+      "id": "invalid_version",
+      "version": 99,
+      "expected": "revert SS_InvalidVersion"
+    }
+  ],
+  "sample_external_call_bootstrapCrew": {
+    "description": "EOA/7702 or SimpleAccount-style execute wrapping Quartermaster.bootstrapCrew(address[])",
+    "bootstrapCrewSelector": "0xc2af273a",
+    "executeSelector": "0xb61d27f6",
+    "quartermaster": "0x5555555555555555555555555555555555555555",
+    "crew": ["0x4444444444444444444444444444444444444444"],
+    "bootstrapCrewCalldata": "0xc2af273a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000004444444444444444444444444444444444444444",
+    "accountExecuteCalldata": "0xb61d27f60000000000000000000000005555555555555555555555555555555555555555000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000064c2af273a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000444444444444444444444444444444444444444400000000000000000000000000000000000000000000000000000000",
+    "userOpShape": {
+      "sender": "roster EOA (after EIP-7702) or smart account",
+      "callData": "accountExecuteCalldata",
+      "paymasterAndData": "encoding.paymasterAndData with member = eligible captain/crew",
+      "note": "For EOA path set member == sender (roster key). Pool must cover maxCost with 115% headroom."
+    }
+  }
+}

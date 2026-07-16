@@ -1,13 +1,11 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import {
-    deploySquadSponsorForParent,
-    type SquadSponsorDeploySignerWallet,
-  } from '../../../lib/governance/api';
+  import { deploySquadSponsorForParent, type SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
   import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
-  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { parseEther, getAddress, isAddress } from 'viem';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
@@ -25,8 +23,8 @@
     infraRowId: string;
   }) => Promise<void>;
 
-  const titleId = 'deploy-sponsor-title';
-  const descId = 'deploy-sponsor-desc';
+  const titleId = 'deploy-sponsor-ext-title';
+  const descId = 'deploy-sponsor-ext-desc';
 
   type SignerBalance = {
     balanceRaw: string;
@@ -37,15 +35,17 @@
   };
 
   let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
-  let signerWallet: SquadSponsorDeploySignerWallet = 'squad';
   let initialDepositEth = '';
   let deployError = '';
+  let deploying = false;
+  let closed = false;
 
+  let signerWallet: SquadSponsorDeploySignerWallet = 'default';
   let defaultSignerAddress: string | null = null;
   let squadSignerAddress: string | null = null;
   let addressesLoading = true;
   let refreshSeq = 0;
-
+  let preferredPayerOnce = false;
   let defaultBalance: SignerBalance = emptyBalance();
   let squadBalance: SignerBalance = emptyBalance();
 
@@ -88,39 +88,6 @@
     }
   }
 
-  async function refreshAll() {
-    const seq = ++refreshSeq;
-    addressesLoading = true;
-    try {
-      const [defaultAddr, squadAddr] = await Promise.all([
-        getActiveSquadEvmSignerAddress(),
-        resolveSquadRosterEvmAddress(parentId.trim()),
-      ]);
-      if (seq !== refreshSeq) return;
-      defaultSignerAddress = defaultAddr?.trim() || null;
-      squadSignerAddress = squadAddr?.trim() || null;
-      const defaultCanon = canonicalAddress(defaultSignerAddress);
-      const squadCanon = canonicalAddress(squadSignerAddress);
-      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
-        signerWallet = 'default';
-      }
-    } finally {
-      if (seq === refreshSeq) addressesLoading = false;
-    }
-    if (seq !== refreshSeq) return;
-    const [defaultBal, squadBal] = await Promise.all([
-      fetchBalance(defaultSignerAddress),
-      fetchBalance(squadSignerAddress),
-    ]);
-    if (seq !== refreshSeq) return;
-    defaultBalance = defaultBal;
-    squadBalance = squadBal;
-  }
-
   async function fetchBalance(address: string | null): Promise<SignerBalance> {
     if (!address || !deployNetwork) return emptyBalance();
     const result = await getEvmNativeBalance(deployNetwork, address);
@@ -136,21 +103,76 @@
     return { ...emptyBalance(), loading: false, error: result.message };
   }
 
+  function preferFundedDefaultWhenRosterEmpty() {
+    if (preferredPayerOnce) return;
+    const def = canonicalAddress(defaultSignerAddress);
+    const squad = canonicalAddress(squadSignerAddress);
+    if (!def || !squad || def === squad) return;
+    try {
+      const squadWei = BigInt(squadBalance.balanceRaw || '0');
+      const defaultWei = BigInt(defaultBalance.balanceRaw || '0');
+      if (squadWei === 0n && defaultWei > 0n) {
+        signerWallet = 'default';
+        preferredPayerOnce = true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function refreshAll() {
+    const seq = ++refreshSeq;
+    addressesLoading = true;
+    try {
+      const [defaultAddr, squadAddr] = await Promise.all([
+        getActiveSquadEvmSignerAddress(),
+        resolveSquadRosterEvmAddress(parentId.trim()),
+      ]);
+      if (closed || seq !== refreshSeq) return;
+      defaultSignerAddress = defaultAddr?.trim() || null;
+      squadSignerAddress = squadAddr?.trim() || null;
+      const defaultCanon = canonicalAddress(defaultSignerAddress);
+      const squadCanon = canonicalAddress(squadSignerAddress);
+      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
+        signerWallet = 'squad';
+      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
+        signerWallet = 'squad';
+      } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
+        signerWallet = 'default';
+      }
+    } finally {
+      if (!closed && seq === refreshSeq) addressesLoading = false;
+    }
+    if (closed || seq !== refreshSeq) return;
+    const [defaultBal, squadBal] = await Promise.all([
+      fetchBalance(defaultSignerAddress),
+      fetchBalance(squadSignerAddress),
+    ]);
+    if (closed || seq !== refreshSeq) return;
+    defaultBalance = defaultBal;
+    squadBalance = squadBal;
+    preferFundedDefaultWhenRosterEmpty();
+  }
+
+  onMount(() => {
+    void refreshAll();
+  });
+
+  onDestroy(() => {
+    closed = true;
+    refreshSeq += 1;
+  });
+
   $: parentId, deployNetwork, void refreshAll();
 
   $: defaultCanonical = canonicalAddress(defaultSignerAddress);
   $: squadCanonical = canonicalAddress(squadSignerAddress);
   $: signersAreSame =
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
-
-  $: selectedAddress = signersAreSame
-    ? squadCanonical
-    : signerWallet === 'default'
-      ? defaultSignerAddress
-      : squadSignerAddress;
+  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
   $: selectedBalance = signersAreSame
     ? squadBalance
-    : signerWallet === 'default'
+    : payFromEffective === 'default'
       ? defaultBalance
       : squadBalance;
 
@@ -169,21 +191,23 @@
 
   $: depositExceedsBalance =
     depositWei !== null &&
-    selectedAddress != null &&
     !selectedBalance.loading &&
     !selectedBalance.error &&
     amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
 
-  $: signerUnavailable = signersAreSame
+  $: ownerUnavailable = !squadCanonical;
+  $: payerUnavailable = signersAreSame
     ? !squadCanonical
-    : signerWallet === 'default'
-      ? !defaultSignerAddress
-      : !squadSignerAddress;
+    : payFromEffective === 'default'
+      ? !defaultCanonical
+      : !squadCanonical;
 
   $: canDeploy =
     deployNetwork !== '' &&
     !addressesLoading &&
-    !signerUnavailable &&
+    !ownerUnavailable &&
+    !payerUnavailable &&
+    !deploying &&
     depositWei !== null &&
     !depositInvalidFormat &&
     !depositExceedsBalance &&
@@ -194,17 +218,20 @@
     initialDepositEth = normalizeLeadingDotDecimalInput(el.value);
   }
 
-  async function confirmDeploy() {
+  function confirmDeploy() {
+    if (deploying) return;
     deployError = '';
     if (!deployNetwork) {
       deployError = 'Select a network for this squad.';
       return;
     }
-    if (signerUnavailable) {
+    if (ownerUnavailable) {
       deployError =
-        signerWallet === 'default'
-          ? 'Set a default signer under Settings → Default wallet config.'
-          : 'No squad-assigned signer for this squad. Bind one from Settings or Inbox.';
+        'No squad-assigned EVM for this squad. Bind one from Settings or Inbox — that address becomes Ext allowlist owner.';
+      return;
+    }
+    if (payerUnavailable) {
+      deployError = 'Selected payer wallet is unavailable.';
       return;
     }
     const initialDepositWei = depositWei?.toString();
@@ -216,16 +243,16 @@
       deployError = `Deposit must stay below your ${selectedBalance.symbol} balance (${selectedBalance.balanceDecimal}) so this wallet can pay gas.`;
       return;
     }
+    deploying = true;
     const jobParams = {
       network: deployNetwork,
       parentId: parentId.trim(),
       initialDepositWei,
-      signerWallet,
+      signerWallet: payFromEffective,
     };
-    onClose();
     runOnChainInBackground({
-      startedToast: 'Squad sponsor deploy submitted. Confirmation continues in the background.',
-      subject: 'Squad sponsor deploy',
+      startedToast: 'Squad sponsor Ext deploy submitted. Confirmation continues in the background.',
+      subject: 'Squad sponsor Ext deploy',
       job: () => deploySquadSponsorForParent(jobParams),
       onSuccess: async (result) => {
         await onComplete({
@@ -235,26 +262,26 @@
           providerPayload: result.providerPayload,
           infraRowId: result.infraRowId,
         });
+        onClose();
+      },
+      onError: (message) => {
+        deploying = false;
+        deployError = message;
       },
     });
   }
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-sponsor-modal-panel">
-  <h2 id={titleId}>Deploy squad sponsor</h2>
+<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-sponsor-modal-panel">
+  <h2 id={titleId}>Deploy squad sponsor (Ext)</h2>
   <p id={descId} class="sponsor-deploy-desc">
-    Creates a per-squad sponsor clone from the factory.
-    {#if signersAreSame}
-      Gas and the initial deposit use your squad signer (same as your default wallet).
-    {:else}
-      Gas is paid from the signer you choose below.
-    {/if}
-    An initial deposit seeds the sponsorship pool in the same transaction.
+    You deploy and fund; your squad-assigned EVM owns the allowlist. Gas and the initial deposit may come from
+    Default (DM) or the roster key — ownership stays on the roster address.
   </p>
 
   <div class="sponsor-deploy-field">
     <SquadDeployNetworkField
-      id="sponsor-deploy-network"
+      id="sponsor-ext-deploy-network"
       {squadNetwork}
       bind:value={deployNetwork}
       labelClass="sponsor-deploy-label"
@@ -262,71 +289,65 @@
     />
   </div>
 
+  <div class="sponsor-owner-block" aria-live="polite">
+    <span class="sponsor-deploy-label">Allowlist owner (addressOwner)</span>
+    <p class="sponsor-signer-single-addr">
+      <code>{shortAddress(squadCanonical)}</code>
+      <span class="sponsor-signer-single-sub">Squad-assigned roster EVM</span>
+    </p>
+  </div>
+
   {#if signersAreSame}
     <div class="sponsor-signer-single" aria-live="polite">
       <span class="sponsor-deploy-label">Pay gas and deposit from</span>
       <p class="sponsor-signer-single-addr">
         <code>{shortAddress(squadCanonical)}</code>
-        <span class="sponsor-signer-single-sub">Squad signer</span>
+        <span class="sponsor-signer-single-sub">Squad signer (same as Default)</span>
       </p>
       <p class="sponsor-signer-balance">
         {#if addressesLoading || squadBalance.loading}
           Balance: …
         {:else if squadBalance.error}
           Balance unavailable
-        {:else}
+        {:else if squadCanonical}
           Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+        {:else}
+          Not assigned — bind a squad EVM address first
         {/if}
       </p>
     </div>
   {:else}
-  <fieldset class="sponsor-signer-fieldset" disabled={addressesLoading}>
-    <legend class="sponsor-deploy-label">Pay gas and deposit from</legend>
-    <div class="sponsor-signer-options">
-      <label class="sponsor-signer-option" class:selected={signerWallet === 'default'}>
-        <input
-          type="radio"
-          name="sponsor-deploy-signer"
-          value="default"
-          bind:group={signerWallet}
-          disabled={!defaultSignerAddress}
-        />
-        <span class="sponsor-signer-option-body">
-          <span class="sponsor-signer-option-title">Default signer</span>
-          <span class="sponsor-signer-option-sub">Same as DM wallet</span>
-          <code class="sponsor-signer-addr">{shortAddress(defaultSignerAddress)}</code>
+    <fieldset class="sponsor-payer-fieldset" disabled={addressesLoading || deploying}>
+      <legend class="sponsor-deploy-label">Pay gas and deposit from</legend>
+      <label class="sponsor-payer-option">
+        <input type="radio" bind:group={signerWallet} value="default" />
+        <span>
+          Default signer
+          <code class="sponsor-payer-code">{shortAddress(defaultCanonical)}</code>
           <span class="sponsor-signer-balance">
             {#if addressesLoading || defaultBalance.loading}
               Balance: …
             {:else if defaultBalance.error}
               Balance unavailable
-            {:else if defaultSignerAddress}
+            {:else if defaultCanonical}
               Balance: {defaultBalance.balanceDecimal} {defaultBalance.symbol}
             {:else}
-              Not configured
+              Not set
             {/if}
           </span>
         </span>
       </label>
-
-      <label class="sponsor-signer-option" class:selected={signerWallet === 'squad'}>
-        <input
-          type="radio"
-          name="sponsor-deploy-signer"
-          value="squad"
-          bind:group={signerWallet}
-          disabled={!squadSignerAddress}
-        />
-        <span class="sponsor-signer-option-body">
-          <span class="sponsor-signer-option-title">Squad-assigned signer</span>
-          <span class="sponsor-signer-option-sub">Bound to this squad roster</span>
-          <code class="sponsor-signer-addr">{shortAddress(squadSignerAddress)}</code>
+      <label class="sponsor-payer-option">
+        <input type="radio" bind:group={signerWallet} value="squad" />
+        <span>
+          Squad-assigned
+          <code class="sponsor-payer-code">{shortAddress(squadCanonical)}</code>
           <span class="sponsor-signer-balance">
             {#if addressesLoading || squadBalance.loading}
               Balance: …
             {:else if squadBalance.error}
               Balance unavailable
-            {:else if squadSignerAddress}
+            {:else if squadCanonical}
               Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
             {:else}
               Not assigned
@@ -334,21 +355,20 @@
           </span>
         </span>
       </label>
-    </div>
-  </fieldset>
+    </fieldset>
   {/if}
 
   <div class="sponsor-deploy-field">
-    <label class="sponsor-deploy-label" for="sponsor-initial-deposit">Initial deposit (ETH)</label>
+    <label class="sponsor-deploy-label" for="sponsor-ext-initial-deposit">Initial deposit (ETH)</label>
     <input
-      id="sponsor-initial-deposit"
+      id="sponsor-ext-initial-deposit"
       type="text"
       class="sponsor-deploy-input"
       class:input-invalid={depositInvalidFormat || depositExceedsBalance}
       placeholder="e.g. 0.01"
       value={initialDepositEth}
       on:input={onDepositInput}
-      disabled={signerUnavailable}
+      disabled={ownerUnavailable || payerUnavailable || deploying}
       autocomplete="off"
       required
       aria-invalid={depositInvalidFormat || depositExceedsBalance ? 'true' : undefined}
@@ -360,9 +380,10 @@
         Deposit must stay below {selectedBalance.balanceDecimal}
         {selectedBalance.symbol} on {deployNetwork} so this wallet can pay gas.
       </p>
-    {:else if selectedAddress && depositWei !== null}
+    {:else if depositWei !== null}
       <p class="sponsor-deploy-hint">
-        Depositing from {shortAddress(selectedAddress)}.
+        Depositing from {shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical)};
+        owner remains {shortAddress(squadCanonical)}.
       </p>
     {/if}
   </div>
@@ -372,9 +393,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
     <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={!canDeploy}>
-      Deploy on-chain
+      {deploying ? 'Deploying…' : 'Deploy on-chain'}
     </button>
   </div>
 </Modal>
@@ -392,19 +413,36 @@
     margin-bottom: 14px;
   }
 
-  .sponsor-signer-fieldset {
-    margin: 0 0 14px;
-    padding: 0;
-    border: none;
-    min-width: 0;
-  }
-
+  .sponsor-owner-block,
   .sponsor-signer-single {
     margin: 0 0 14px;
     padding: 10px 12px;
     border-radius: 8px;
     border: 1px solid var(--border-subtle);
     background: var(--bg-panel);
+  }
+
+  .sponsor-payer-fieldset {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+  }
+
+  .sponsor-payer-option {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-top: 8px;
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .sponsor-payer-code {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 0.8125rem;
   }
 
   .sponsor-signer-single-addr {
@@ -429,62 +467,8 @@
     margin-bottom: 6px;
   }
 
-  .sponsor-signer-options {
-    display: grid;
-    gap: 8px;
-  }
-
-  .sponsor-signer-option {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    cursor: pointer;
-  }
-
-  .sponsor-signer-option.selected {
-    border-color: var(--accent, #6ea8fe);
-    background: color-mix(in srgb, var(--accent, #6ea8fe) 8%, var(--bg-panel));
-  }
-
-  .sponsor-signer-option:has(input:disabled) {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .sponsor-signer-option input {
-    margin-top: 3px;
-    flex-shrink: 0;
-  }
-
-  .sponsor-signer-option-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .sponsor-signer-option-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .sponsor-signer-option-sub {
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .sponsor-signer-addr {
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    margin-top: 2px;
-  }
-
   .sponsor-signer-balance {
+    display: block;
     font-size: 0.8125rem;
     color: var(--text-secondary);
     margin-top: 2px;

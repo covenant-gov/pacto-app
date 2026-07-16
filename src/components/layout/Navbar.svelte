@@ -116,7 +116,7 @@
   let organizeSquadVisibility: SquadVisibility = 'private';
   let organizeSquadTags: string[] = [];
   let organizeSquadTagError = '';
-  let organizeSquadNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
+  let organizeSquadNetwork: SupportedChainId | '' = DEFAULT_CHAIN_ID;
   let commonsFields: SquadCommonsVisibilityFields;
 
   const squadNetworkOptions = listSquadDeployNetworkOptions();
@@ -314,7 +314,7 @@
       iconUrl: organizeSquadIconUrl.trim() || undefined,
       visibility: commons.visibility,
       commonsTags: commons.commonsTags,
-      network: organizeSquadNetwork,
+      network: organizeSquadNetwork || undefined,
     });
   }
 
@@ -469,9 +469,14 @@
         {#each squadNetworkOptions as opt (opt.id)}
           <option value={opt.id}>{opt.label}</option>
         {/each}
+        <option value="">none (choose later)</option>
       </select>
       <p class="organize-network-hint">
-        Network for this squad's on-chain deployments. Defaults to {squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label}; change it later in the squad's Settings.
+        {#if organizeSquadNetwork}
+          Network for this squad's on-chain deployments. Defaults to {squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label}; change it later in the squad's Settings.
+        {:else}
+          No network yet — pick one later in the squad's Settings before deploying on-chain infra.
+        {/if}
       </p>
       <SquadCommonsVisibilityFields
         bind:this={commonsFields}
