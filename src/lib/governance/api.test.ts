@@ -173,6 +173,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       amountWei: '1000',
       sponsorAddress: '0xabc',
+      signerWallet: 'default',
     });
   });
 
@@ -184,6 +185,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       amountWei: '1000',
       sponsorAddress: null,
+      signerWallet: 'default',
     });
   });
 

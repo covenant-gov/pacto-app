@@ -111,12 +111,15 @@ export async function depositSquadSponsor(params: {
   parentId: string;
   amountWei: string;
   sponsorAddress?: string | null;
+  /** Default signer (Settings wallet); use squad for roster-bound key only. */
+  signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<SquadSponsorDepositResultDto> {
   return (await invoke('deposit_squad_sponsor', {
     network: params.network,
     parentId: params.parentId,
     amountWei: params.amountWei.trim(),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    signerWallet: params.signerWallet ?? 'default',
   })) as SquadSponsorDepositResultDto;
 }
 

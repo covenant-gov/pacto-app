@@ -14,6 +14,18 @@ pub fn squad_id_from_parent_id(parent_id: &str) -> B256 {
     B256::from(keccak256(parent_id.trim().as_bytes()))
 }
 
+pub fn parse_signer_wallet(raw: Option<&str>, default: &'static str) -> Result<&'static str, String> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(default).to_ascii_lowercase().as_str() {
+        "squad" => Ok("squad"),
+        "default" => Ok("default"),
+        other => Err(wallet_err_json(
+            "INVALID_SIGNER",
+            format!("Unknown signer wallet: {other}"),
+            None,
+        )),
+    }
+}
+
 pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
     let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
         return Err("amount must be non-empty".to_string());
