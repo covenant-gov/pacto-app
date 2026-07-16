@@ -10,33 +10,45 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
 
-**Deploy order:** sponsor → Pacto Gov / vault Safe → announce sync. Advanced panel and allowlist tests need squad infra where noted.
+**Deploy order (default):** Pacto Gov + hats squad sponsor (combined Launchpad CTA; optional crew bootstrap) → announce sync. **Advanced:** Squad Admin alone without Pacto Gov. If gov exists and sponsor is missing, the same combined wizard finishes hats sponsor only.
 
 ---
 
-## 1. Squad sponsor
+## 1. Pacto Gov + squad sponsor (default)
 
-- [ ] **#dashboard** → **Deploy** → **Deploy squad sponsor** (Sepolia).
-- [ ] **Treasury** shows pool balance; optional deposit.
-- [ ] Reload — `sponsor` infra row persists (`listSquadInfra`).
+- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; pick captain, deposit, optional bootstrap crew.
+- [ ] **Governance** / **Roles** / **Treasury** (sponsor + gov Safe) look healthy after both txs.
+- [ ] Optional: Status checklist **Mint all members a Crew hat** completes after bootstrap (or Captain bootstrap later).
+
+| Symptom | Likely cause |
+|---------|----------------|
+| `SPONSOR_CONFIG` / `NAVE_PIRATA_CONFIG` | Missing factory / registry / paymaster in address book |
+| `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
+| Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
+
+See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+
+---
+
+## 2. Advanced: Squad Admin alone
+
+- [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
+- [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).
 
 | Symptom | Likely cause |
 |---------|----------------|
 | `SPONSOR_CONFIG` | Missing `PACTO_SQUAD_SPONSOR_FACTORY` / paymaster / entry point |
 | `SS_SquadAlreadyExists` | Same `parentId` already has a sponsor — new parent |
-| `SPONSOR_REQUIRED` on later deploys | Run sponsor first |
-
-See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
 ---
 
-## 2. Pacto Gov / Nave Pirata
+## 3. Pacto Gov / Nave Pirata (gov-only recovery)
 
-Requires **sponsor** for same `parentId`.
+Prefer the combined CTA. Gov-only remains available from older flows / recovery.
 
-- [ ] **Deploy** → **Set up Pacto Gov**; pick captain from squad members with shared EVM.
+- [ ] Pick captain from squad members with shared EVM.
 - [ ] **Governance** tab shows **Pacto Gov deployment** infra (labeled contract links); **Treasury proposals** section below.
-- [ ] **Treasury** tab does **not** list the governance treasury Safe (vault Safes + sponsor only).
+- [ ] **Treasury** tab does **not** list the governance treasury Safe under other vaults only (gov Safe under governance treasury).
 - [ ] **#announcements** shows deploy card with module addresses, top hat (Hats tree link), and deploy tx link.
 - [ ] **Roles Tree** tab loads on-chain tree after deploy.
 - [ ] **Roles Tree** shows **Captain** / **Crew** badges on registry hat nodes when wears exist.
@@ -48,7 +60,6 @@ Requires **sponsor** for same `parentId`.
 
 | Symptom | Likely cause |
 |---------|----------------|
-| `SPONSOR_REQUIRED` | Sponsor not deployed |
 | `NAVE_PIRATA_CONFIG` | Missing `PACTO_NAVE_PIRATA_*` / master copies |
 | Wizard blocked | No `#announcements` on parent |
 | `ACL_UNBOUND` / `ACL_DENIED` | No roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
@@ -59,7 +70,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [ACCESS_CONTROL.md](../governance/ACCESS_
 
 ---
 
-## 3. Standalone Safe
+## 4. Standalone Safe
 
 Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance treasury Safe must not duplicate as `standalone_safe`.
 
@@ -75,7 +86,7 @@ Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance 
 
 ---
 
-## 4. Governance announce sync
+## 5. Governance announce sync
 
 After deploy: **`governance_updated`** → **`squad_infra`** on reload or second client. Pacto Gov uses **`#announcements`** (not `#personal-alerts`). No separate **`squad_safe_updated`** for the governance treasury Safe.
 
@@ -95,7 +106,7 @@ Payload shape tests: `src/lib/governance/governance-announce-payload.test.ts`, `
 
 ---
 
-## 5. Advanced contract call
+## 6. Advanced contract call
 
 Settings → Profile → Wallet → **Advanced contract call**. Requires **advanced-purpose** signer (import or **Add advanced account**).
 
@@ -109,7 +120,7 @@ See [RPC_AND_VIEM_ARCHITECTURE.md](./RPC_AND_VIEM_ARCHITECTURE.md).
 
 ---
 
-## 6. Squad contract allowlist
+## 7. Squad contract allowlist
 
 Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **squad-purpose** active signer.
 
@@ -119,7 +130,7 @@ Dashboard → Settings → **Smart contract security**. Pacto Gov deployed; **sq
 
 ---
 
-## 7. Personal alerts & per-squad roster keys
+## 8. Personal alerts & per-squad roster keys
 
 Requires **squad-purpose** vs **advanced-purpose** signers. Two test accounts helpful.
 
@@ -143,7 +154,7 @@ See **Personal alerts & per-squad roster keys** above.
 
 ---
 
-## 8. Squad bot join inbox (Commons)
+## 9. Squad bot join inbox (Commons)
 
 Two accounts helpful: **requester** (not in squad) and **holder** (creator or added holder with local bot secret).
 

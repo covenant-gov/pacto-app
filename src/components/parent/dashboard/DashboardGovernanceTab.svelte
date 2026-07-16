@@ -8,7 +8,6 @@
   import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
 
   export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
-  export let hasSponsor = false;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
   export let pactoGovTopHatId = '';
   export let pactoGovChain: string | undefined = undefined;
@@ -28,15 +27,6 @@
   $: network = pactoGovChain ?? 'sepolia';
   $: openCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
 </script>
-
-{#if squadInfraRows !== undefined && !hasSponsor}
-  <div class="sponsor-empty-banner" role="status">
-    <p class="sponsor-empty-banner-text">
-      Deploy squad sponsor first — it funds gas sponsorship and unlocks Pacto Gov and Safe deploy paths.
-    </p>
-    <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
-  </div>
-{/if}
 
 <section class="governance-section" aria-labelledby="governance-heading">
   <div class="governance-heading-row">
@@ -86,26 +76,6 @@
 </section>
 
 <style>
-  .sponsor-empty-banner {
-    margin: 0 0 16px;
-    padding: 14px 16px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-elevated);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 12px 16px;
-  }
-
-  .sponsor-empty-banner-text {
-    margin: 0;
-    flex: 1;
-    min-width: 200px;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
-
   .governance-section {
     min-width: 0;
   }

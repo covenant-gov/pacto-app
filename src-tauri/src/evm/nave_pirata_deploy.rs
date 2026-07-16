@@ -23,7 +23,6 @@ use super::rpc::{
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::rpc::signer::{load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed};
-use super::squad_sponsor_common::require_sponsor_infra_for_parent;
 use super::wallet_chain_config;
 
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
@@ -150,7 +149,6 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
             None,
         ));
     }
-    require_sponsor_infra_for_parent(&app, pid)?;
 
     if db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false) {
         return Err(wallet_err_json(
