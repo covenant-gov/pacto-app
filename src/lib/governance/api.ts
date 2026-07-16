@@ -150,6 +150,23 @@ export async function deploySquadSponsorForParent(params: {
   })) as SquadSponsorDeployResultDto;
 }
 
+/** Backend: `deploy_squad_sponsor_hats_for_parent` (hat-first SquadSponsor). */
+export async function deploySquadSponsorHatsForParent(params: {
+  network: string;
+  parentId: string;
+  topHatId: string;
+  initialDepositWei?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
+}): Promise<SquadSponsorDeployResultDto> {
+  return (await invoke('deploy_squad_sponsor_hats_for_parent', {
+    network: params.network,
+    parentId: params.parentId,
+    topHatId: params.topHatId.trim(),
+    initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
+    signerWallet: params.signerWallet ?? 'squad',
+  })) as SquadSponsorDeployResultDto;
+}
+
 /** Mirrors `SquadSponsorSummary` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorSummaryDto {
   chain: string;

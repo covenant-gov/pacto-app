@@ -8,6 +8,7 @@ import {
   deployNavePirataForParent,
   deploySquadAdminForParent,
   deploySquadSponsorForParent,
+  deploySquadSponsorHatsForParent,
   depositSquadSponsor,
   getHatsTree,
   getMemberHatWearers,
@@ -183,6 +184,23 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       amountWei: '1000',
       sponsorAddress: null,
+    });
+  });
+
+  it('deploySquadSponsorHatsForParent sends deploy_squad_sponsor_hats_for_parent', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deploySquadSponsorHatsForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: ' 42 ',
+      initialDepositWei: '1000',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_squad_sponsor_hats_for_parent', {
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: '42',
+      initialDepositWei: '1000',
+      signerWallet: 'squad',
     });
   });
 

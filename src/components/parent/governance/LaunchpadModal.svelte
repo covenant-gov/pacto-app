@@ -12,21 +12,23 @@
   /** Squad Admin proxy when deployed. */
   export let squadAdminAddress = '';
   export let onClose: () => void;
-  export let onDeploySponsor: () => void;
+  export let onDeployGovAndSponsor: () => void;
   export let onDeploySquadAdmin: () => void;
-  export let onDeployPactoGov: () => void;
 
   const titleId = 'deploy-governance-modal-title';
   const descId = 'deploy-governance-modal-desc';
 
-  $: otherInfraLocked = !hasSponsor;
   $: channelBlocked = !hasAnnouncementsChannel;
+  $: combinedDone = hasPactoGov && hasSponsor;
+  $: combinedAvailable = !hasPactoGov && !hasSponsor;
+  $: finishSponsor = hasPactoGov && !hasSponsor;
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} contentClass="launchpad-modal-panel">
   <h2 id={titleId}>Deploy Governance</h2>
   <p id={descId} class="launchpad-desc">
-    Squad sponsor funds gas sponsorship and must be deployed first. Then set up Pacto Gov and Squad Admin.
+    Recommended: deploy Pacto Gov and a hats-linked squad sponsor together so gas sponsorship follows
+    captain and crew hats.
   </p>
 
   {#if channelBlocked}
@@ -35,70 +37,71 @@
     </p>
   {/if}
 
-  <ul class="launchpad-grid" role="list">
-    <li class="launchpad-card" class:launchpad-card--primary={!hasSponsor}>
-      <h3 class="launchpad-card-title">Squad sponsor</h3>
-      {#if hasSponsor}
+  <ul class="launchpad-primary" role="list">
+    <li class="launchpad-card" class:launchpad-card--primary={combinedAvailable || finishSponsor}>
+      <h3 class="launchpad-card-title">Pacto Gov + squad sponsor</h3>
+      {#if combinedDone}
         <div class="launchpad-deployed-status" role="status">
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
             <p class="launchpad-deployed-label">Deployed</p>
+            {#if pactoGovAddress}
+              <code class="launchpad-deployed-addr">Gov {pactoGovAddress}</code>
+            {/if}
             {#if sponsorAddress}
-              <code class="launchpad-deployed-addr">{sponsorAddress}</code>
+              <code class="launchpad-deployed-addr">Sponsor {sponsorAddress}</code>
             {/if}
           </div>
         </div>
-      {:else}
-        <p class="launchpad-card-desc">Required first deploy — ERC-4337 gas pool for this squad.</p>
+      {:else if finishSponsor}
+        <p class="launchpad-card-desc">
+          Governance is live. Finish with a hats-linked sponsor (same wizard as combined deploy).
+        </p>
         <button
           type="button"
           class="btn-primary launchpad-card-btn"
           disabled={channelBlocked}
           on:click={() => {
             onClose();
-            onDeploySponsor();
+            onDeployGovAndSponsor();
           }}
         >
           Deploy squad sponsor
         </button>
-      {/if}
-    </li>
-
-    <li class="launchpad-card" class:launchpad-card--locked={otherInfraLocked}>
-      <h3 class="launchpad-card-title">Pacto Gov</h3>
-      {#if hasPactoGov}
-        <div class="launchpad-deployed-status" role="status">
-          <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
-          <div class="launchpad-deployed-body">
-            <p class="launchpad-deployed-label">Deployed</p>
-            {#if pactoGovAddress}
-              <code class="launchpad-deployed-addr">{pactoGovAddress}</code>
-            {/if}
-          </div>
-        </div>
+      {:else if hasSponsor && !hasPactoGov}
+        <p class="launchpad-card-desc">
+          Sponsor already exists. Combined deploy needs a fresh parent without sponsor infra.
+        </p>
       {:else}
         <p class="launchpad-card-desc">
-          {#if otherInfraLocked}
-            Deploy squad sponsor first.
-          {:else}
-            Nave Pirata factory bundle (Hats tree, treasury authority, Safe module).
-          {/if}
+          One flow: Nave Pirata (Hats tree + Safe) then hats-based gas sponsorship. Optional crew
+          bootstrap.
         </p>
         <button
           type="button"
           class="btn-primary launchpad-card-btn"
-          disabled={otherInfraLocked || channelBlocked}
+          disabled={channelBlocked}
           on:click={() => {
             onClose();
-            onDeployPactoGov();
+            onDeployGovAndSponsor();
           }}
         >
-          Set up Pacto Gov
+          Deploy Pacto Gov + squad sponsor
         </button>
       {/if}
     </li>
+  </ul>
 
-    <li class="launchpad-card" class:launchpad-card--locked={otherInfraLocked}>
+  <div class="launchpad-divider" role="separator">
+    <span class="launchpad-divider-line" aria-hidden="true"></span>
+    <p class="launchpad-advanced-blurb muted">
+      Advanced: deploy Squad Admin alone without full Nave Pirata (another governance protocol or
+      executor roster only).
+    </p>
+  </div>
+
+  <ul class="launchpad-grid" role="list">
+    <li class="launchpad-card">
       <h3 class="launchpad-card-title">Squad Admin</h3>
       {#if hasSquadAdmin}
         <div class="launchpad-deployed-status" role="status">
@@ -112,16 +115,12 @@
         </div>
       {:else}
         <p class="launchpad-card-desc">
-          {#if otherInfraLocked}
-            Deploy squad sponsor first.
-          {:else}
-            Standalone executor roster (address-gated) without full Nave Pirata ceremony.
-          {/if}
+          Standalone executor roster without full Nave Pirata ceremony.
         </p>
         <button
           type="button"
           class="btn-primary launchpad-card-btn"
-          disabled={otherInfraLocked || channelBlocked}
+          disabled={channelBlocked}
           on:click={() => {
             onClose();
             onDeploySquadAdmin();
@@ -153,6 +152,32 @@
     max-width: 52ch;
   }
 
+  .launchpad-primary {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+
+  .launchpad-divider {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 4px 0 16px;
+  }
+
+  .launchpad-divider-line {
+    display: block;
+    height: 1px;
+    background: var(--border-subtle);
+  }
+
+  .launchpad-advanced-blurb {
+    margin: 0;
+    max-width: 52ch;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
   .launchpad-grid {
     list-style: none;
     margin: 0 0 16px;
@@ -175,10 +200,6 @@
 
   .launchpad-card--primary {
     border-color: var(--border-strong, var(--border-subtle));
-  }
-
-  .launchpad-card--locked {
-    opacity: 0.88;
   }
 
   .launchpad-card-title {

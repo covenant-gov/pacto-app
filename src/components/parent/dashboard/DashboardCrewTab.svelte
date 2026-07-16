@@ -5,7 +5,10 @@
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
-  import { permittedByAddressFromExtStatus } from '../../../lib/governance/squad-sponsor-crew';
+  import {
+    isHatsSponsoredAddress,
+    permittedByAddressFromExtStatus,
+  } from '../../../lib/governance/squad-sponsor-crew';
   import {
     squadSponsorSetPermittedAddress,
     type SquadSponsorExtStatusDto,
@@ -27,13 +30,18 @@
   export let showManagePrivileges = false;
   export let pactoGovRevision = '';
 
-  /** Sponsor Ext eligibility (null when no sponsor / not loaded). */
+  /** Sponsor Ext eligibility (null when no Ext sponsor / not loaded). */
   export let sponsorExtStatus: SquadSponsorExtStatusDto | null = null;
   export let sponsorExtLoading = false;
   export let sponsorExtError = '';
   export let sponsorNetwork = '';
   export let parentId = '';
   export let onRefreshSponsorExt: () => void = () => {};
+  /** Hats-linked sponsor: eligibility from captain/crew wear. */
+  export let sponsorHatsMode = false;
+  export let hasSponsor = false;
+  export let captainWearers: string[] = [];
+  export let crewWearers: string[] = [];
 
   let sponsoringAddress = '';
 
@@ -47,6 +55,7 @@
     !!addressOwner && !!myRosterEvm && myRosterEvm.toLowerCase() === addressOwner;
   $: hatsWired = sponsorExtStatus?.hatsWired === true;
   $: canManagePermits = iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId;
+  $: showSponsoredCol = hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError);
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -83,7 +92,13 @@
   }
 </script>
 
-{#if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
+{#if sponsorHatsMode && hasSponsor}
+  <section class="sponsor-owner-banner" aria-label="Squad sponsor">
+    <span class="meta-label">Sponsor</span>
+    <span class="sponsor-owner-value">Hats-linked</span>
+    <span class="muted sponsor-owner-hint">Captain and crew hat wearers are eligible</span>
+  </section>
+{:else if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
   <section class="sponsor-owner-banner" aria-label="Squad sponsor owner">
     <span class="meta-label">Sponsor owner</span>
     {#if sponsorExtLoading && !sponsorExtStatus}
@@ -122,8 +137,12 @@
           {@const rosterEvm = squadMemberEvmByNpub[npub]}
           {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
-          {@const isSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
-          {@const showSponsorBtn = !!sponsorExtStatus && !hatsWired && !!rosterEvm && !isSponsored}
+          {@const isHatsSponsored =
+            sponsorHatsMode && isHatsSponsoredAddress(rosterEvm, captainWearers, crewWearers)}
+          {@const isExtSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
+          {@const isSponsored = sponsorHatsMode ? isHatsSponsored : isExtSponsored}
+          {@const showSponsorBtn =
+            !sponsorHatsMode && !!sponsorExtStatus && !hatsWired && !!rosterEvm && !isSponsored}
           <li class="roles-member-row">
             {#if avatarSrc}
               <img src={avatarSrc} alt="" class="roles-member-avatar" />
@@ -164,11 +183,11 @@
                     ? memberRolesByAddress[rosterEvm.toLowerCase()] || '—'
                     : 'Not shared'}</span
               >
-              {#if sponsorExtStatus}
+              {#if showSponsoredCol}
                 <span class="roles-col-label">Sponsored</span>
                 {#if !rosterEvm}
                   <span class="roles-col-value muted">Not shared</span>
-                {:else if sponsorExtLoading && permittedByAddress[rosterKey] === undefined}
+                {:else if !sponsorHatsMode && sponsorExtLoading && permittedByAddress[rosterKey] === undefined}
                   <span class="roles-col-value muted">Loading…</span>
                 {:else if isSponsored}
                   <span class="roles-col-value">Yes</span>
