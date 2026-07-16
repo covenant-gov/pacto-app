@@ -21,26 +21,35 @@ describe('toast', () => {
   it('shows a toast and auto-clears after the default duration', () => {
     showToast('Hello');
     expect(get(toastMessage)).toEqual({ text: 'Hello' });
-    vi.advanceTimersByTime(3999);
+    vi.advanceTimersByTime(7999);
     expect(get(toastMessage)).toEqual({ text: 'Hello' });
     vi.advanceTimersByTime(2);
     expect(get(toastMessage)).toBeNull();
   });
 
+  it('keeps error toasts longer', () => {
+    showToast('Failed', undefined, undefined, { error: true });
+    expect(get(toastMessage)?.error).toBe(true);
+    vi.advanceTimersByTime(8001);
+    expect(get(toastMessage)).not.toBeNull();
+    vi.advanceTimersByTime(12_000);
+    expect(get(toastMessage)).toBeNull();
+  });
+
   it('extends duration for goTo toasts', () => {
     showToast('Ready', { type: 'squad', name: 'Alpha', id: 's1', channelId: 'c1' });
-    vi.advanceTimersByTime(4001);
+    vi.advanceTimersByTime(8001);
     expect(get(toastMessage)).not.toBeNull();
-    vi.advanceTimersByTime(8000);
+    vi.advanceTimersByTime(4000);
     expect(get(toastMessage)).toBeNull();
   });
 
   it('extends duration for retry toasts', () => {
     const retry = { label: 'Retry', action: vi.fn() };
     showToast('Failed', undefined, retry);
-    vi.advanceTimersByTime(4001);
+    vi.advanceTimersByTime(8001);
     expect(get(toastMessage)).not.toBeNull();
-    vi.advanceTimersByTime(8000);
+    vi.advanceTimersByTime(4000);
     expect(get(toastMessage)).toBeNull();
   });
 

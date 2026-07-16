@@ -53,6 +53,20 @@ export function bootstrapCrewCandidates(
   return out;
 }
 
+/** True when address is one of the squad-assigned roster EVMs (hat recipients). */
+export function isRosterHatRecipientAddress(
+  address: string,
+  memberOptions: { address: string }[],
+): boolean {
+  const target = normalizeAddress(address)?.toLowerCase();
+  if (!target) return false;
+  for (const m of memberOptions) {
+    const addr = normalizeAddress(m.address)?.toLowerCase();
+    if (addr && addr === target) return true;
+  }
+  return false;
+}
+
 /** Sequential Nave Pirata → hats sponsor → optional bootstrapCrew. */
 export function startPactoGovAndSponsorDeploy(params: {
   parentId: string;
@@ -86,6 +100,13 @@ export function startPactoGovAndSponsorDeploy(params: {
     return false;
   }
 
+  if (!isRosterHatRecipientAddress(captain, params.memberOptions)) {
+    const message = 'Captain must be a squad-assigned EVM of an existing member.';
+    if (params.onReject) params.onReject(message);
+    else showToast(message);
+    return false;
+  }
+
   const depositWei = params.initialDepositWei.trim();
   if (!depositWei || !/^\d+$/.test(depositWei) || depositWei === '0') {
     const message = 'Enter a positive initial sponsor deposit.';
@@ -94,6 +115,7 @@ export function startPactoGovAndSponsorDeploy(params: {
     return false;
   }
 
+  const signerWallet = params.signerWallet ?? 'squad';
   const crewCandidates = params.bootstrapCrew
     ? bootstrapCrewCandidates(params.memberOptions, captain)
     : [];
@@ -115,6 +137,7 @@ export function startPactoGovAndSponsorDeploy(params: {
         parentId,
         captain,
         metadataUri: `pacto://squad/${parentId}`,
+        signerWallet,
       });
 
       params.onProgress?.('sponsor');
@@ -123,7 +146,7 @@ export function startPactoGovAndSponsorDeploy(params: {
         parentId,
         topHatId: govResult.topHatId,
         initialDepositWei: depositWei,
-        signerWallet: params.signerWallet ?? 'squad',
+        signerWallet,
       });
 
       let bootstrapped = false;

@@ -16,7 +16,8 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 
 ## 1. Pacto Gov + squad sponsor (default)
 
-- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; pick captain, deposit, optional bootstrap crew.
+- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; pick captain (any member’s squad-assigned EVM), deposit, optional bootstrap crew.
+- [ ] **Privacy + funded Default:** bind a **new squad key** (empty), keep Default (DM) funded → wizard **Pay gas and deposit from → Default signer** → captain = your (or another member’s) **squad-assigned** EVM → confirm Default has **no** captain hat; roster key wears captain/crew and can use the sponsor.
 - [ ] **Governance** / **Roles** / **Treasury** (sponsor + gov Safe) look healthy after both txs.
 - [ ] Optional: Status checklist **Mint all members a Crew hat** completes after bootstrap (or Captain bootstrap later).
 
@@ -25,6 +26,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 | `SPONSOR_CONFIG` / `NAVE_PIRATA_CONFIG` | Missing factory / registry / paymaster in address book |
 | `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
+| Roster key has 0 ETH | Pay from **Default signer**; hats stay on the squad-assigned captain |
 
 See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 
