@@ -47,6 +47,8 @@ sol! {
 
         function depositFor(address sponsor) external payable;
 
+        function withdraw() external;
+
         function squadId() external view returns (bytes32 squadId);
 
         function paymaster() external view returns (address paymaster);
@@ -54,6 +56,8 @@ sol! {
         function totalShares() external view returns (uint256 totalShares);
 
         function sponsorShares(address sponsor) external view returns (uint256 shares);
+
+        function withdrawable(address sponsor) external view returns (uint256 amount);
 
         function isEligible(address member) external view returns (bool eligible);
     }

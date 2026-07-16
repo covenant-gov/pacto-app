@@ -6531,6 +6531,8 @@ pub fn run() {
             evm::squad_sponsor_deploy::deploy_squad_sponsor_for_parent,
             evm::squad_sponsor_deploy::deploy_squad_sponsor_hats_for_parent,
             evm::squad_sponsor_deposit::deposit_squad_sponsor,
+            evm::squad_sponsor_withdraw::withdraw_squad_sponsor,
+            evm::squad_sponsor_withdraw::get_squad_sponsor_withdrawable,
             evm::squad_sponsor_read::get_squad_sponsor_summary,
             evm::squad_sponsor_ext::get_squad_sponsor_ext_status,
             evm::squad_sponsor_ext::squad_sponsor_set_permitted_address,

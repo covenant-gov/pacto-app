@@ -25,6 +25,7 @@ pub mod squad_sponsor_deploy;
 pub mod squad_sponsor_deposit;
 pub mod squad_sponsor_ext;
 pub mod squad_sponsor_read;
+pub mod squad_sponsor_withdraw;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;
 pub mod squad_allowlist;

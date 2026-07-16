@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import {
     SPONSOR_LOW_BALANCE_WEI,
@@ -37,6 +38,7 @@
   let depositing = false;
   let depositError = '';
   let showDepositForm = false;
+  let showWithdrawModal = false;
   let periodicRefreshTimer: ReturnType<typeof setInterval> | null = null;
   let hydratedSponsorKey = '';
   let signerWallet: SquadSponsorDeploySignerWallet = 'default';
@@ -478,12 +480,32 @@
         </div>
       </div>
     {:else}
-      <button type="button" class="btn-primary sponsor-deposit-btn" on:click={openDepositForm}>
-        Deposit
-      </button>
+      <div class="sponsor-pool-actions">
+        <button type="button" class="btn-primary sponsor-deposit-btn" on:click={openDepositForm}>
+          Deposit
+        </button>
+        <button
+          type="button"
+          class="btn-secondary sponsor-withdraw-btn"
+          on:click={() => (showWithdrawModal = true)}
+        >
+          Withdraw
+        </button>
+      </div>
     {/if}
   {/if}
 </section>
+
+<SquadSponsorWithdrawModal
+  open={showWithdrawModal}
+  network={network}
+  parentId={parentId}
+  sponsorAddress={sponsorRow?.canonicalRef ?? summary?.sponsorAddress ?? ''}
+  onClose={() => (showWithdrawModal = false)}
+  onSubmitted={() => {
+    void refreshSummary(true);
+  }}
+/>
 
 <style>
   .dashboard-section {
@@ -735,7 +757,15 @@
     flex-wrap: wrap;
   }
 
-  .sponsor-deposit-btn {
+  .sponsor-pool-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-top: 4px;
+  }
+
+  .sponsor-deposit-btn,
+  .sponsor-withdraw-btn {
+    margin-top: 0;
   }
 </style>

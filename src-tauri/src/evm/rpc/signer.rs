@@ -62,6 +62,22 @@ async fn private_key_signer_from_account_id<R: Runtime>(
     Ok((signer, wallet))
 }
 
+/// Load a local EVM account by id (user-selected depositor for sponsor withdraw).
+pub async fn load_embedded_signer_for_account_id<R: Runtime>(
+    app: AppHandle<R>,
+    account_id: &str,
+) -> Result<(PrivateKeySigner, EthereumWallet), String> {
+    let id = account_id.trim();
+    if id.is_empty() {
+        return Err(wallet_err_json(
+            "MISSING_ACCOUNT",
+            "accountId is required",
+            None,
+        ));
+    }
+    private_key_signer_from_account_id(&app, id).await
+}
+
 /// Default DM / settings signer (`active_evm_account_id`).
 pub async fn load_active_squad_embedded_signer<R: Runtime>(
     app: AppHandle<R>,

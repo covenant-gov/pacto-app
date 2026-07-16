@@ -10,6 +10,8 @@ import {
   deploySquadSponsorForParent,
   deploySquadSponsorHatsForParent,
   depositSquadSponsor,
+  getSquadSponsorWithdrawable,
+  withdrawSquadSponsor,
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
@@ -186,6 +188,37 @@ describe('api command wrappers', () => {
       amountWei: '1000',
       sponsorAddress: null,
       signerWallet: 'default',
+    });
+  });
+
+  it('withdrawSquadSponsor sends withdraw_squad_sponsor with account id', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await withdrawSquadSponsor({
+      network: NETWORK,
+      parentId: PARENT,
+      accountId: '  acc-1 ',
+      sponsorAddress: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('withdraw_squad_sponsor', {
+      network: NETWORK,
+      parentId: PARENT,
+      accountId: 'acc-1',
+      sponsorAddress: '0xabc',
+    });
+  });
+
+  it('getSquadSponsorWithdrawable trims address args', async () => {
+    mockedInvoke.mockResolvedValueOnce('1000');
+    await getSquadSponsorWithdrawable({
+      network: NETWORK,
+      parentId: PARENT,
+      accountAddress: ' 0xdef ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_squad_sponsor_withdrawable', {
+      network: NETWORK,
+      parentId: PARENT,
+      accountAddress: '0xdef',
+      sponsorAddress: null,
     });
   });
 

@@ -123,6 +123,45 @@ export async function depositSquadSponsor(params: {
   })) as SquadSponsorDepositResultDto;
 }
 
+export interface SquadSponsorWithdrawResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  sponsorAddress: string;
+  signerAddress: string;
+  poolBalanceWei: string;
+}
+
+/** Backend: `withdraw_squad_sponsor` — burns shares for the chosen local account. */
+export async function withdrawSquadSponsor(params: {
+  network: string;
+  parentId: string;
+  accountId: string;
+  sponsorAddress?: string | null;
+}): Promise<SquadSponsorWithdrawResultDto> {
+  return (await invoke('withdraw_squad_sponsor', {
+    network: params.network,
+    parentId: params.parentId,
+    accountId: params.accountId.trim(),
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as SquadSponsorWithdrawResultDto;
+}
+
+/** Backend: `get_squad_sponsor_withdrawable` — pro-rata wei for an address. */
+export async function getSquadSponsorWithdrawable(params: {
+  network: string;
+  parentId: string;
+  accountAddress: string;
+  sponsorAddress?: string | null;
+}): Promise<string> {
+  return (await invoke('get_squad_sponsor_withdrawable', {
+    network: params.network,
+    parentId: params.parentId,
+    accountAddress: params.accountAddress.trim(),
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as string;
+}
+
 /** Mirrors `SquadSponsorDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorDeployResultDto {
   txHash: string;
