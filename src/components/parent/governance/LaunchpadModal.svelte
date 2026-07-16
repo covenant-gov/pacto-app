@@ -13,6 +13,7 @@
   export let squadAdminAddress = '';
   export let onClose: () => void;
   export let onDeployGovAndSponsor: () => void;
+  export let onDeployExtSponsor: () => void;
   export let onDeploySquadAdmin: () => void;
 
   const titleId = 'deploy-governance-modal-title';
@@ -95,12 +96,41 @@
   <div class="launchpad-divider" role="separator">
     <span class="launchpad-divider-line" aria-hidden="true"></span>
     <p class="launchpad-advanced-blurb muted">
-      Advanced: deploy Squad Admin alone without full Nave Pirata (another governance protocol or
-      executor roster only).
+      Advanced: deploy a standalone Ext sponsor or Squad Admin without full Nave Pirata.
     </p>
   </div>
 
   <ul class="launchpad-grid" role="list">
+    <li class="launchpad-card">
+      <h3 class="launchpad-card-title">Squad sponsor (Ext)</h3>
+      {#if hasSponsor}
+        <div class="launchpad-deployed-status" role="status">
+          <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
+          <div class="launchpad-deployed-body">
+            <p class="launchpad-deployed-label">Deployed</p>
+            {#if sponsorAddress}
+              <code class="launchpad-deployed-addr">{sponsorAddress}</code>
+            {/if}
+          </div>
+        </div>
+      {:else}
+        <p class="launchpad-card-desc">
+          Address-list sponsor where you are owner. Requires a funded squad-assigned EVM wallet for gas
+          and the initial deposit.
+        </p>
+        <button
+          type="button"
+          class="btn-primary launchpad-card-btn"
+          disabled={channelBlocked}
+          on:click={() => {
+            onClose();
+            onDeployExtSponsor();
+          }}
+        >
+          Deploy squad sponsor (Ext)
+        </button>
+      {/if}
+    </li>
     <li class="launchpad-card">
       <h3 class="launchpad-card-title">Squad Admin</h3>
       {#if hasSquadAdmin}
