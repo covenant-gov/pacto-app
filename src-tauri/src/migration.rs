@@ -508,14 +508,6 @@ pub fn migrate_key_derivation<R: Runtime>(
     Ok(())
 }
 
-fn get_session_idle_timeout_ms(conn: &rusqlite::Connection) -> u64 {
-    get_setting(conn, "session_idle_timeout_ms")
-        .ok()
-        .flatten()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(900_000)
-}
-
 /// Encrypt `input` with a password-derived key for a new account. Generates a
 /// random salt, stores it and version 2 in settings, mirrors the salt to the
 /// file cache, and stores the ciphertext as the migration sentinel. Sets the
@@ -559,8 +551,6 @@ pub async fn encrypt_with_password<R: Runtime>(
     };
 
     let key = derive_key_from_salt(password, &salt);
-    let timeout_ms = get_session_idle_timeout_ms(&conn);
-    crate::session::set_timeout_ms(timeout_ms);
     crate::set_encryption_key(key);
     let ciphertext = encrypt_with_key(input, &key);
 
@@ -730,8 +720,6 @@ fn decrypt_with_password_on_conn(
     let salt = get_key_derivation_salt(conn)?
         .ok_or_else(|| "No key derivation salt found".to_string())?;
     let key = derive_key_from_salt(password, &salt);
-    let timeout_ms = get_session_idle_timeout_ms(conn);
-    crate::session::set_timeout_ms(timeout_ms);
     crate::set_encryption_key(key);
 
     // After migrating a legacy account, the input `ciphertext` (which was the
@@ -1155,7 +1143,7 @@ mod tests {
         crate::account_manager::return_db_connection(conn);
 
         // Restore global state.
-        crate::session::clear_encryption_key();
+        crate::clear_encryption_key();
         crate::account_manager::close_db_connection();
         if let Some(prev) = previous_account {
             let _ = crate::account_manager::set_current_account(prev);

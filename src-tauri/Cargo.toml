@@ -102,3 +102,6 @@ libc = "0.2"
 
 # MCP bridge for AI-assisted debugging (only included in debug builds via cfg)
 tauri-plugin-mcp-bridge = "0.7"
+
+[dev-dependencies]
+tauri = { version = "2.9.1", features = ["test"] }

@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          node-version: 24.18.0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          node-version: 24.18.0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          node-version: 24.18.0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -103,7 +103,7 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          node-version: 24.18.0
 
       - uses: pnpm/action-setup@v6
         with:
@@ -126,7 +126,7 @@ jobs:
 
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version: lts/*
+          node-version: 24.18.0
 
       - name: Run release manifest generator tests
         run: node --test scripts/generate-release-manifest.test.mjs
