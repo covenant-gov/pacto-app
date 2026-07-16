@@ -6,6 +6,9 @@ use crate::crypto::{
     write_salt_file, SALT_LENGTH,
 };
 use crate::stored_event::event_kind;
+use nostr_sdk::nips::nip06::FromMnemonic;
+use nostr_sdk::ToBech32;
+use nostr_sdk::Keys;
 
 /// Settings key for the hex-encoded per-device Argon2 salt.
 pub const KEY_DERIVATION_SALT: &str = "key_derivation_salt";
@@ -411,14 +414,18 @@ pub fn migrate_account_encryption(
     // an "Incorrect PIN" error.
     let sentinel_plaintext = decrypt_sentinel_for_migration(sentinel_ciphertext, legacy_key, new_key)?;
 
-    // Mark migration as in progress and commit the version marker before any
-    // destructive re-encryption. This ordering ensures a retry can distinguish
-    // a partially migrated account from an unmigrated one and that the sentinel
-    // is always updated under the new version.
+    // Mark migration as in progress. Version is only bumped to 2 after the scan
+    // completes successfully so that a crash mid-migration leaves the account in
+    // a version-1 state and the next unlock will retry the whole migration.
     set_key_derivation_migration_in_progress(conn, true)?;
-    set_key_derivation_version(conn, 2)?;
 
     let reencrypted = migrate_all_tables(conn, legacy_key, new_key)?;
+
+    // Only commit the new version once every row has been re-encrypted. This
+    // ordering makes the migration idempotent and retry-safe: a failed or
+    // interrupted migration does not advance the version, so the next unlock
+    // re-runs the migration from the beginning.
+    set_key_derivation_version(conn, 2)?;
 
     // After the scan, re-encrypt the sentinel with the new key so the legacy
     // ciphertext is no longer needed for future PIN validation.
@@ -563,34 +570,94 @@ pub async fn encrypt_with_password<R: Runtime>(
     Ok(ciphertext)
 }
 
+/// Derive the Nostr nsec (bech32-encoded secret key) from a BIP-39 seed phrase.
+fn derive_nsec_from_seed_phrase(seed_phrase: &str) -> Result<String, String> {
+    let keys = Keys::from_mnemonic(seed_phrase.trim(), None)
+        .map_err(|e| format!("Failed to derive key from seed: {}", e))?;
+    keys.secret_key()
+        .to_bech32()
+        .map_err(|e| format!("Failed to encode nsec: {}", e))
+}
+
+/// Attempt to recover the nsec from the encrypted recovery seed.
+/// Tries the current salt-derived key first, then the legacy key.
+fn decrypt_seed_fallback(
+    conn: &rusqlite::Connection,
+    password: &str,
+    salt: &[u8; SALT_LENGTH],
+) -> Result<String, String> {
+    let encrypted_seed = get_setting(conn, "seed")?
+        .ok_or_else(|| "Incorrect PIN".to_string())?;
+
+    let current_key = derive_key_from_salt(password, salt);
+    if let Ok(seed_phrase) = decrypt_with_key(&encrypted_seed, &current_key) {
+        return derive_nsec_from_seed_phrase(&seed_phrase);
+    }
+
+    let legacy_key = derive_legacy_key(password);
+    if let Ok(seed_phrase) = decrypt_with_key(&encrypted_seed, &legacy_key) {
+        return derive_nsec_from_seed_phrase(&seed_phrase);
+    }
+
+    Err("Incorrect PIN".to_string())
+}
+
 /// Decrypt `ciphertext` with a password-derived key. If the account is still on
 /// version 1, transparently migrate it before decrypting. On success the
 /// in-memory session key is set to the new salt-derived key.
+///
+/// If the encrypted pkey cannot be decrypted, the routine automatically falls
+/// back to the stored recovery seed (settings.seed), trying both the current
+/// salt-derived key and the legacy key. When the seed can be decrypted, the
+/// Nostr nsec is derived from it and returned so the user can still unlock.
 pub async fn decrypt_with_password<R: Runtime>(
     handle: &AppHandle<R>,
     ciphertext: &str,
     password: &str,
 ) -> Result<String, String> {
-    let version = {
+    let (version, migration_in_progress) = {
         let conn = crate::account_manager::get_db_connection(handle)
             .map_err(|e| format!("Failed to open database for decryption: {}", e))?;
         let v = get_key_derivation_version(&conn).unwrap_or(1);
+        let p = get_key_derivation_migration_in_progress(&conn).unwrap_or(false);
         crate::account_manager::return_db_connection(conn);
-        v
+        (v, p)
     };
 
-    if version == 1 {
+    // Repair partially migrated accounts. A previous version of this code set
+    // version=2 before the table scan, so a crash could leave version=2 with
+    // in_progress=true and some rows still encrypted with the legacy key. If the
+    // account is not fully migrated (version != 2 or in_progress flag set), rerun
+    // migration before attempting to decrypt.
+    let migration_ran = if version != 2 || migration_in_progress {
         migrate_key_derivation(handle, password)
             .map_err(|e| format!("Migration failed: {}", e))?;
-    }
+        true
+    } else {
+        false
+    };
 
     let conn = crate::account_manager::get_db_connection(handle)
         .map_err(|e| format!("Failed to open database for decryption: {}", e))?;
+    let result = decrypt_with_password_on_conn(&conn,
+        ciphertext,
+        password,
+        migration_ran,
+    );
+    crate::account_manager::return_db_connection(conn);
+    result
+}
 
-    let salt = get_key_derivation_salt(&conn)?
+fn decrypt_with_password_on_conn(
+    conn: &rusqlite::Connection,
+    ciphertext: &str,
+    password: &str,
+    migration_ran: bool,
+) -> Result<String, String> {
+    let salt = get_key_derivation_salt(conn)?
         .ok_or_else(|| "No key derivation salt found".to_string())?;
     let key = derive_key_from_salt(password, &salt);
-    let timeout_ms = get_session_idle_timeout_ms(&conn);
+    let timeout_ms = get_session_idle_timeout_ms(conn);
     crate::session::set_timeout_ms(timeout_ms);
     crate::set_encryption_key(key);
 
@@ -598,18 +665,31 @@ pub async fn decrypt_with_password<R: Runtime>(
     // legacy pkey) is no longer valid because the DB pkey has been re-encrypted
     // with the new salt-derived key. Re-read the current ciphertext from the
     // DB before decrypting.
-    let ciphertext_to_decrypt = if version == 1 {
-        get_setting(&conn, "pkey")?
+    let ciphertext_to_decrypt = if migration_ran {
+        get_setting(conn, "pkey")?
             .ok_or_else(|| "No pkey found after migration".to_string())?
     } else {
         ciphertext.to_string()
     };
 
-    let plaintext = decrypt_with_key(&ciphertext_to_decrypt, &key)
-        .map_err(|_| "Incorrect PIN".to_string())?;
-
-    crate::account_manager::return_db_connection(conn);
-    Ok(plaintext)
+    match decrypt_with_key(&ciphertext_to_decrypt, &key) {
+        Ok(text) => Ok(text),
+        Err(_) => {
+            // Try the legacy key on the pkey in case the migration marker is
+            // ahead of the row data (should not happen after a successful
+            // repair, but acts as a safety net).
+            let legacy_key = derive_legacy_key(password);
+            match decrypt_with_key(&ciphertext_to_decrypt, &legacy_key) {
+                Ok(text) => Ok(text),
+                Err(_) => {
+                    // Final fallback: derive the nsec from the encrypted
+                    // recovery seed if the seed can be decrypted with either
+                    // the current or the legacy key.
+                    decrypt_seed_fallback(conn, password, &salt)
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1033,5 +1113,137 @@ mod tests {
             err.contains("exceeding the automatic migration limit"),
             "unexpected error: {err}"
         );
+    }
+
+    #[test]
+    fn migration_repairs_half_migrated_account_with_version_2_flag() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let salt = generate_salt();
+        let new_key = derive_key_from_salt(password, &salt);
+
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+        let evm_pkey = encrypt_with_key("0xdeadbeef", &legacy_key);
+        let seed = encrypt_with_key("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", &legacy_key);
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_setting(&conn, "evm_pkey", &evm_pkey).unwrap();
+        set_setting(&conn, "seed", &seed).unwrap();
+        set_key_derivation_version(&conn, 2).unwrap();
+        set_key_derivation_migration_in_progress(&conn, true).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        let reencrypted =
+            migrate_account_encryption(&mut conn, &legacy_key, &new_key, &pkey,
+            )
+            .unwrap();
+        assert_eq!(reencrypted, 3, "all legacy rows should be re-encrypted");
+
+        let version = get_key_derivation_version(&conn).unwrap();
+        assert_eq!(version, 2, "version should remain 2 after successful repair");
+        let in_progress = get_key_derivation_migration_in_progress(&conn).unwrap();
+        assert!(!in_progress, "in_progress flag should be cleared");
+
+        for (key, expected) in [
+            ("pkey", "nsec1secret"),
+            ("evm_pkey", "0xdeadbeef"),
+            ("seed", "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"),
+        ] {
+            let ciphertext = get_setting(&conn, key).unwrap().unwrap();
+            assert_eq!(
+                decrypt_with_key(&ciphertext, &new_key).unwrap(),
+                expected,
+                "{} should decrypt with new key",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn migration_does_not_advance_version_until_success() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let salt = generate_salt();
+        let new_key = derive_key_from_salt(password, &salt);
+
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        // Insert too many rows for automatic migration, causing the scan to fail.
+        for i in 0..MIGRATION_ROW_LIMIT + 1 {
+            conn.execute(
+                "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    format!("ev-{}", i),
+                    event_kind::PRIVATE_DIRECT_MESSAGE as i64,
+                    1,
+                    encrypt_with_key("hello", &legacy_key),
+                    "[]",
+                    i as i64,
+                    i as i64,
+                    0,
+                ],
+            )
+            .unwrap();
+        }
+
+        let result = migrate_account_encryption(&mut conn, &legacy_key, &new_key, &pkey,
+        );
+        assert!(result.is_err(), "migration should fail");
+        let version = get_key_derivation_version(&conn).unwrap();
+        assert_eq!(
+            version, 1,
+            "version should not advance to 2 when migration fails"
+        );
+    }
+
+    #[test]
+    fn decrypt_seed_fallback_returns_nsec_with_current_key() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "123456";
+        let salt = generate_salt();
+        let key = derive_key_from_salt(password, &salt);
+        let seed_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let encrypted_seed = encrypt_with_key(seed_phrase, &key);
+        set_setting(&conn, "seed", &encrypted_seed).unwrap();
+
+        let nsec = decrypt_seed_fallback(&conn, password, &salt).unwrap();
+        assert!(nsec.starts_with("nsec1"), "fallback should return a bech32 nsec");
+    }
+
+    #[test]
+    fn decrypt_seed_fallback_falls_back_to_legacy_key() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "123456";
+        let salt = generate_salt();
+        let legacy_key = derive_legacy_key(password);
+        let seed_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let encrypted_seed = encrypt_with_key(seed_phrase, &legacy_key);
+        set_setting(&conn, "seed", &encrypted_seed).unwrap();
+
+        let nsec = decrypt_seed_fallback(&conn, password, &salt).unwrap();
+        assert!(nsec.starts_with("nsec1"), "fallback should decode seed with legacy key");
+    }
+
+    #[test]
+    fn decrypt_seed_fallback_fails_when_seed_missing() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+
+        let salt = generate_salt();
+        let result = decrypt_seed_fallback(&conn, "123456", &salt);
+        assert!(result.is_err(), "fallback should fail when no seed is stored");
     }
 }
