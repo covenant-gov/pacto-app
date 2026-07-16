@@ -10,6 +10,7 @@
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
+  import { allMembersShareEvmAddress } from '../../../lib/governance/squad-sponsor-crew';
 
   export let squad: Squad;
   export let permissionsCtx: DashboardPermissionsContext;
@@ -36,6 +37,7 @@
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : 'Not set';
   $: networkHint = squadNetworkFromInfra ? 'Locked to deployed infra' : '';
+  $: allMembersShareEvm = allMembersShareEvmAddress(channelMembers, squadMemberEvmByNpub);
 
   function applySquadNetwork() {
     if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
@@ -53,6 +55,15 @@
 <section class="status-checklist" aria-label="Setup checklist">
   <span class="meta-label">Checklist</span>
   <ul class="checklist" role="list">
+    <li class="checklist-item" class:done={allMembersShareEvm}>
+      {#if allMembersShareEvm}
+        <span class="check-mark" aria-hidden="true">✓</span>
+        <span>All members share EVM address</span>
+      {:else}
+        <span class="check-todo" aria-hidden="true">○</span>
+        <span>All members share EVM address</span>
+      {/if}
+    </li>
     <li class="checklist-item" class:done={hasSponsor}>
       {#if hasSponsor}
         <span class="check-mark" aria-hidden="true">✓</span>

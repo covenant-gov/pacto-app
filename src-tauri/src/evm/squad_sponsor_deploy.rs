@@ -9,8 +9,10 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
+use super::contracts::pacto_sponsor::ISquadSponsorExt::addressOwnerCall;
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::createSquadSponsorExtCall;
 use super::pacto_chain_config;
+use super::rpc::call::eth_call_decode;
 use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
@@ -146,6 +148,10 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     let paymaster = addrs.pacto_sponsor_paymaster;
     let variant_str = squad_variant_label(variant).to_string();
     let sponsor_hex = format!("{:#x}", sponsor);
+    let address_owner: alloy::primitives::Address =
+        eth_call_decode(&read_provider, sponsor, &addressOwnerCall {})
+            .await
+            .unwrap_or(alloy::primitives::Address::ZERO);
     let payload = json!({
         "v": 1,
         "parentId": pid,
@@ -154,6 +160,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         "paymaster": format!("{:#x}", paymaster),
         "entryPoint": format!("{:#x}", addrs.entry_point),
         "variant": variant_str,
+        "addressOwner": format!("{:#x}", address_owner),
         "txHash": format!("0x{:x}", receipt.transaction_hash),
     })
     .to_string();

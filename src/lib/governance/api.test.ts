@@ -13,6 +13,7 @@ import {
   getMemberHatWearers,
   getNavePirataDeployment,
   getSquadAdminExecutorRoles,
+  getSquadSponsorExtStatus,
   getSquadSponsorSummary,
   hasSponsorInfra,
   infraTypeFromLegacyProvider,
@@ -23,6 +24,7 @@ import {
   pactoGovTreasuryEntryId,
   primaryGovernanceView,
   squadAdminCreateRole,
+  squadSponsorSetPermittedAddress,
   squadAdminEnableExecutor,
   squadAdminEnableFullPermission,
   squadAdminInfraId,
@@ -217,6 +219,39 @@ describe('api command wrappers', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('get_squad_sponsor_summary', {
       network: NETWORK,
       parentId: PARENT,
+      sponsorAddress: null,
+    });
+  });
+
+  it('getSquadSponsorExtStatus sends member addresses trimmed', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await getSquadSponsorExtStatus({
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddresses: [' 0xabc ', '', '0xdef'],
+      sponsorAddress: ' 0xsponsor ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_squad_sponsor_ext_status', {
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddresses: ['0xabc', '0xdef'],
+      sponsorAddress: '0xsponsor',
+    });
+  });
+
+  it('squadSponsorSetPermittedAddress sends squad_sponsor_set_permitted_address', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await squadSponsorSetPermittedAddress({
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddress: ' 0xabc ',
+      permitted: true,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('squad_sponsor_set_permitted_address', {
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddress: '0xabc',
+      permitted: true,
       sponsorAddress: null,
     });
   });

@@ -177,6 +177,63 @@ export async function getSquadSponsorSummary(params: {
   })) as SquadSponsorSummaryDto;
 }
 
+/** Mirrors `SquadSponsorExtStatus` from Tauri. */
+export interface SquadSponsorExtMemberPermitDto {
+  address: string;
+  permitted: boolean;
+}
+
+export interface SquadSponsorExtStatusDto {
+  chain: string;
+  chainId: number;
+  parentId: string;
+  sponsorAddress: string;
+  addressOwner: string;
+  hatsWired: boolean;
+  memberPermits: SquadSponsorExtMemberPermitDto[];
+}
+
+/** Backend: `get_squad_sponsor_ext_status`. */
+export async function getSquadSponsorExtStatus(params: {
+  network: string;
+  parentId: string;
+  memberAddresses: string[];
+  sponsorAddress?: string | null;
+}): Promise<SquadSponsorExtStatusDto> {
+  return (await invoke('get_squad_sponsor_ext_status', {
+    network: params.network,
+    parentId: params.parentId,
+    memberAddresses: params.memberAddresses.map((a) => a.trim()).filter(Boolean),
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as SquadSponsorExtStatusDto;
+}
+
+export interface SquadSponsorSetPermittedResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  sponsorAddress: string;
+  memberAddress: string;
+  permitted: boolean;
+}
+
+/** Backend: `squad_sponsor_set_permitted_address`. */
+export async function squadSponsorSetPermittedAddress(params: {
+  network: string;
+  parentId: string;
+  memberAddress: string;
+  permitted: boolean;
+  sponsorAddress?: string | null;
+}): Promise<SquadSponsorSetPermittedResultDto> {
+  return (await invoke('squad_sponsor_set_permitted_address', {
+    network: params.network,
+    parentId: params.parentId,
+    memberAddress: params.memberAddress.trim(),
+    permitted: params.permitted,
+    sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+  })) as SquadSponsorSetPermittedResultDto;
+}
+
 /** Wire payload for `governance_updated` when squad sponsor infra is deployed or refreshed. */
 export function buildSponsorGovernanceAnnouncePayload(params: {
   parentId: string;
