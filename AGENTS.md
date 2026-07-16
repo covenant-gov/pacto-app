@@ -46,9 +46,10 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 1. `wallet_chain_config` loads `src/lib/wallet/wallet-assets.json` at compile time; `pacto_chain_config` loads `src/lib/evm/pacto-protocol-addresses.json`.
 2. `wallet_rpc_providers` builds operator-provider URLs from `ALCHEMY_RPC_KEY`, falling back to public RPCs.
 3. `evm_accounts` resolves phrase-derived (`bip44_v1`) and imported keys, enforcing `squad` vs `advanced` purpose.
-4. `rpc::signer` loads the appropriate `PrivateKeySigner` + `EthereumWallet`; `rpc::provider` connects via `alloy` and sends/confirms transactions.
-5. Contract bindings under `evm/contracts/` use `alloy::sol!` and are called from deploy/read/governance modules.
-6. Deployment results are persisted in the `squad_infra` table and announced over MLS as `governance_updated` events.
+4. Squad-scoped gov / Squad Admin / tracked-token writes resolve roster EVM and call `access_control::require_capability` before signing (see `docs/governance/ACCESS_CONTROL.md`).
+5. `rpc::signer` loads the appropriate `PrivateKeySigner` + `EthereumWallet`; `rpc::provider` connects via `alloy` and sends/confirms transactions.
+6. Contract bindings under `evm/contracts/` use `alloy::sol!` and are called from deploy/read/governance modules.
+7. Deployment results are persisted in the `squad_infra` table and announced over MLS as `governance_updated` events.
 
 ### State management
 - **Frontend:** Svelte `writable`/`derived` stores, auto-subscribed with `$`. A barrel store `src/stores/app.ts` re-exports domain slices. Persistence is **npub-scoped** via `persistenceKey(prefix)` in `src/stores/persistence-context.ts`.
@@ -66,6 +67,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `src-tauri/` | Tauri v2 Rust backend and app configuration. |
 | `src-tauri/src/` | Rust crate source. |
 | `src-tauri/src/evm/` | EVM wallet, key derivation, RPC, contract bindings, governance deployments. |
+| `src-tauri/src/evm/access_control/` | Roster → Hats / Squad Admin capability preflight + UI snapshot. |
 | `src-tauri/src/evm/contracts/` | `alloy::sol!` bindings for `pacto_gov`, `pacto_sponsor`, `safe`, `erc20`, `hats`. |
 | `static/` | Static assets, including twemoji SVGs. |
 | `docs/` | Authoritative tracked docs for architecture, wallet, MLS, storage, build, governance. |

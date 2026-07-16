@@ -75,8 +75,12 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
-Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew`).  
+Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew`).
 My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
+
+**Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and module-panel state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
+
+Governance CTAs use ACL snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts` + `PactoGovGovernanceShell`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 

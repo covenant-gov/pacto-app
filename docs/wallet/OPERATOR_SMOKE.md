@@ -43,14 +43,17 @@ Requires **sponsor** for same `parentId`.
 - [ ] **Roles Tree** lists wearers under labeled nodes (profile name when squad EVM is shared, else short address).
 - [ ] **Roles Tree** refresh icon re-fetches tree + role/wearer maps without reload.
 - [ ] Reload — `pacto_gov` row present; `provider_payload` includes `txHash`.
+- [ ] With roster EVM + Captain/Crew hat, Governance CTAs enable with correct reasons; without roster binding, CTAs stay disabled (“Link a squad EVM…”).
+- [ ] Backend rejects hat-gated writes without the matching hat (`ACL_DENIED` / clear reason), even if UI were bypassed.
 
 | Symptom | Likely cause |
 |---------|----------------|
 | `SPONSOR_REQUIRED` | Sponsor not deployed |
 | `NAVE_PIRATA_CONFIG` | Missing `PACTO_NAVE_PIRATA_*` / master copies |
 | Wizard blocked | No `#announcements` on parent |
+| `ACL_UNBOUND` / `ACL_DENIED` | No roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
 
-See [PACTO_GOV.md](./PACTO_GOV.md).
+See [PACTO_GOV.md](./PACTO_GOV.md) and [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md).
 
 **Roles Tree unit tests:** `src/lib/governance/roles-tree-annotations.test.ts`, `src/lib/governance/hats-tree-annotations.test.ts`, `src/lib/dashboard/parent-dashboard-loaders.test.ts`.
 
