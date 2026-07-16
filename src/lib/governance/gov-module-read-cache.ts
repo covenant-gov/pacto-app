@@ -24,7 +24,7 @@ export function mutinyReadCacheKey(
 }
 
 export function quartermasterReadCacheKey(network: string, quartermaster: string): string {
-  return `qm:${network.trim().toLowerCase()}:${quartermaster.trim().toLowerCase()}`;
+  return `qm:v2:${network.trim().toLowerCase()}:${quartermaster.trim().toLowerCase()}`;
 }
 
 export function safeBalancesCacheKey(

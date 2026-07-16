@@ -588,6 +588,8 @@ export async function mutinyCaptainResign(params: {
 export interface QuartermasterStatusDto {
   crewChangeDelaySecs: string;
   mutinyActive: boolean;
+  crewHatSupply?: number;
+  bootstrapAvailable?: boolean;
 }
 
 export interface QuartermasterPendingDto {
@@ -657,6 +659,20 @@ export async function quartermasterExecuteAddCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     candidate: params.candidate.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterBootstrapCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  candidates: string[];
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_bootstrap_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
   })) as GovernanceWriteResultDto;
 }
 

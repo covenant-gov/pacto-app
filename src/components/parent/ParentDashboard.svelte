@@ -765,6 +765,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               myAddress={myGovernanceAddress || myVoterAddress}
               {captainWearers}
               {crewWearers}
+              memberEvmOptions={memberEvmOptionsForRoles}
               {treasuryProposals}
               {treasuryProposalsLoading}
               treasuryProposalsRefreshing={treasuryProposalsRefreshing}

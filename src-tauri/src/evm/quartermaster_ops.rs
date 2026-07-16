@@ -5,13 +5,15 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::GovCapability;
+use super::contracts::hats::IHats::hatSupplyCall;
 use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
-    cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall, executeAddCrewCall,
-    executeRemoveCrewCall, mutinyActiveCall, pendingCrewAddAtCall, pendingCrewRemoveAtCall,
-    requestAddCrewCall, requestRemoveCrewCall,
+    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall,
+    crewHatIdCall, executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall,
+    pendingCrewAddAtCall, pendingCrewRemoveAtCall, requestAddCrewCall, requestRemoveCrewCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
+use super::pacto_chain_config;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
 #[derive(Serialize)]
@@ -19,6 +21,8 @@ use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 pub struct QuartermasterStatusDto {
     pub crew_change_delay_secs: String,
     pub mutiny_active: bool,
+    pub crew_hat_supply: Option<u32>,
+    pub bootstrap_available: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -53,9 +57,35 @@ pub async fn get_quartermaster_status<R: Runtime>(
     let mutiny_active = eth_call_decode(&provider, qm, &mutinyActiveCall {})
         .await
         .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+
+    let crew_hat_id = eth_call_decode(&provider, qm, &crewHatIdCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let net_key = network.to_lowercase();
+    let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net_key)
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+    let hats = addrs.hats.ok_or_else(|| {
+        wallet_err_json(
+            "HATS_CONFIG",
+            "PACTO_HATS is not configured for this network",
+            None,
+        )
+    })?;
+    let supply: u32 = eth_call_decode(
+        &provider,
+        hats,
+        &hatSupplyCall {
+            _hatId: crew_hat_id,
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+
     Ok(QuartermasterStatusDto {
         crew_change_delay_secs: delay.to_string(),
         mutiny_active,
+        crew_hat_supply: Some(supply),
+        bootstrap_available: Some(supply == 0 && !mutiny_active),
     })
 }
 
@@ -175,6 +205,42 @@ pub async fn quartermaster_execute_add_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterExecute,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn quartermaster_bootstrap_crew<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    candidates: Vec<String>,
+) -> Result<QuartermasterWriteResult, String> {
+    if candidates.is_empty() {
+        return Err(wallet_err_json(
+            "INVALID_CANDIDATES",
+            "Select at least one squad member to bootstrap as crew.",
+            None,
+        ));
+    }
+    let mut addrs = Vec::with_capacity(candidates.len());
+    for raw in candidates {
+        let addr = parse_address(raw.trim())
+            .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+        addrs.push(addr);
+    }
+    let calldata = bootstrapCrewCall {
+        _candidates: addrs,
+    }
+    .abi_encode();
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterMutateCrew,
     )
     .await
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import GovCtaButton from './GovCtaButton.svelte';
   import GovProposeForm from './GovProposeForm.svelte';
+  import GovBootstrapCrewModal from './GovBootstrapCrewModal.svelte';
   import {
     getQuartermasterPending,
     mutinyCaptainResign,
@@ -42,6 +43,8 @@
   export let proposals: TreasuryProposalDto[] = [];
   export let mutinyStatus: MutinyStatusDto | null = null;
   export let qmStatus: QuartermasterStatusDto | null = null;
+  export let memberEvmOptions: { address: string; label: string }[] = [];
+  export let captainWearers: string[] = [];
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
   export let onRefreshQm: () => void = () => {};
@@ -52,6 +55,7 @@
   let resignTo = '';
   let qmAddress = '';
   let qmPending: QuartermasterPendingDto | null = null;
+  let showBootstrapModal = false;
 
   $: captainGate = gateRequiresCaptain(privilege);
   $: qmGate = gateBlockedByMutinyMode(privilege, !!qmStatus?.mutinyActive);
@@ -59,6 +63,7 @@
   $: votable = captainVotableProposals(proposals);
   $: executable = executableTreasuryProposals(proposals);
   $: mutinyActive = isMutinyActive(mutinyStatus);
+  $: bootstrapAvailable = qmStatus?.bootstrapAvailable === true;
   $: if (votable.length && !votable.some((p) => p.proposalId === voteProposalId)) {
     voteProposalId = votable[0]?.proposalId ?? '';
   }
@@ -158,6 +163,23 @@
   </div>
 
   {#if quartermaster}
+    {#if bootstrapAvailable}
+      <div class="action-block bootstrap-block">
+        <h5 class="subhead">Bootstrap initial crew</h5>
+        <p class="muted">
+          Crew roster is still empty. Mint hats for members who have shared squad EVM addresses in one transaction.
+        </p>
+        <GovCtaButton
+          label="Bootstrap crew…"
+          variant="primary"
+          contractHint="Quartermaster"
+          gate={captainGate}
+          {acting}
+          onClick={() => (showBootstrapModal = true)}
+        />
+      </div>
+    {/if}
+
     <div class="action-block">
       <h5 class="subhead">Quartermaster roster</h5>
       {#if qmStatus?.mutinyActive}
@@ -357,6 +379,18 @@
     </div>
   {/if}
 </div>
+
+<GovBootstrapCrewModal
+  open={showBootstrapModal}
+  onClose={() => (showBootstrapModal = false)}
+  {network}
+  {parentId}
+  quartermaster={quartermaster}
+  {privilege}
+  memberOptions={memberEvmOptions}
+  captainAddresses={captainWearers}
+  onSubmitted={onRefreshQm}
+/>
 
 <style>
   .captain-actions {

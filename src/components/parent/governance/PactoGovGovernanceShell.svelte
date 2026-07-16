@@ -35,6 +35,7 @@
   export let myAddress = '';
   export let captainWearers: string[] = [];
   export let crewWearers: string[] = [];
+  export let memberEvmOptions: { address: string; label: string }[] = [];
   export let treasuryProposals: TreasuryProposalDto[] = [];
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsError = '';
@@ -292,6 +293,8 @@
         proposals={treasuryProposals}
         {mutinyStatus}
         {qmStatus}
+        {memberEvmOptions}
+        {captainWearers}
         {onRefreshProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => reloadQm(true)}

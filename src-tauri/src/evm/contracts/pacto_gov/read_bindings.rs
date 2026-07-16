@@ -103,6 +103,7 @@ sol! {
         function requestAddCrew(address _candidate) external;
         function cancelAddCrew(address _candidate) external;
         function executeAddCrew(address _candidate) external;
+        function bootstrapCrew(address[] calldata _candidates) external;
         function requestRemoveCrew(address _crew) external;
         function cancelRemoveCrew(address _crew) external;
         function executeRemoveCrew(address _crew) external;
@@ -110,6 +111,7 @@ sol! {
         function mutinyActive() external view returns (bool _active);
         function pendingCrewAddAt(address _candidate) external view returns (uint256 _executableAt);
         function pendingCrewRemoveAt(address _crew) external view returns (uint256 _executableAt);
+        function crewHatId() external view returns (uint256 _crewHatId);
     }
 
     interface ISquadAdminBase {

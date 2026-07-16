@@ -6557,6 +6557,7 @@ pub fn run() {
             evm::quartermaster_ops::quartermaster_request_add_crew,
             evm::quartermaster_ops::quartermaster_cancel_add_crew,
             evm::quartermaster_ops::quartermaster_execute_add_crew,
+            evm::quartermaster_ops::quartermaster_bootstrap_crew,
             evm::quartermaster_ops::quartermaster_request_remove_crew,
             evm::quartermaster_ops::quartermaster_cancel_remove_crew,
             evm::quartermaster_ops::quartermaster_execute_remove_crew,

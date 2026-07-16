@@ -16,6 +16,7 @@
   export let myAddress = '';
   export let captainWearers: string[] = [];
   export let crewWearers: string[] = [];
+  export let memberEvmOptions: { address: string; label: string }[] = [];
   export let treasuryProposals: TreasuryProposalDto[] = [];
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsRefreshing = false;
@@ -71,6 +72,7 @@
       {myAddress}
       {captainWearers}
       {crewWearers}
+      {memberEvmOptions}
       {treasuryProposals}
       {treasuryProposalsLoading}
       {treasuryProposalsError}
