@@ -673,4 +673,44 @@ mod tests {
         let err = require_key_derivation_version_2(&conn).unwrap_err();
         assert!(err.contains("Account security must be updated"), "unexpected error: {err}");
     }
+
+    #[test]
+    fn version_set_and_get_round_trip() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+        set_key_derivation_version(&conn, 2).unwrap();
+        assert_eq!(get_key_derivation_version(&conn).unwrap(), 2);
+        set_key_derivation_version(&conn, 1).unwrap();
+        assert_eq!(get_key_derivation_version(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn sentinel_is_created_during_migration() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let plaintext = "nsec1secret";
+        let pkey = encrypt_with_key(plaintext, &legacy_key);
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+
+        assert!(
+            get_key_derivation_sentinel(&conn).unwrap().is_none(),
+            "sentinel should be absent before migration"
+        );
+
+        migrate_key_derivation_on_conn(&mut conn, password).unwrap();
+
+        let sentinel = get_key_derivation_sentinel(&conn)
+            .unwrap()
+            .expect("sentinel should exist after migration");
+        let salt = get_key_derivation_salt(&conn)
+            .unwrap()
+            .expect("salt should exist after migration");
+        let new_key = derive_key_from_salt(password, &salt);
+        assert_eq!(decrypt_with_key(&sentinel, &new_key).unwrap(), plaintext);
+    }
 }

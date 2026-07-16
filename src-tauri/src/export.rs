@@ -662,4 +662,172 @@ mod tests {
         assert!(writer.was_written());
         assert_eq!(writer.last_written(), Some("".to_string()));
     }
+
+    fn setup_migrated_test_account<R: tauri::Runtime>(
+        handle: &tauri::AppHandle<R>,
+        npub: &str,
+        password: &str,
+    ) -> [u8; 32] {
+        crate::account_manager::set_current_account(npub.to_string()).unwrap();
+
+        // Ensure a fresh database so repeated test runs do not reuse stale rows.
+        let profile_dir = crate::account_manager::get_profile_directory(handle, npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(handle, npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(crate::account_manager::SQL_SCHEMA).unwrap();
+
+        let salt = crate::crypto::generate_salt();
+        let legacy_key = crate::crypto::derive_legacy_key(password);
+        let pkey_plaintext = "nsec1secret";
+        let pkey = crate::crypto::encrypt_with_key(pkey_plaintext, &legacy_key);
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('pkey', ?1)",
+            [pkey],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('key_derivation_salt', ?1)",
+            [hex::encode(salt)],
+        )
+        .unwrap();
+        crate::migration::set_key_derivation_version(&conn, 1).unwrap();
+
+        crate::migration::migrate_key_derivation_on_conn(&mut conn, password).unwrap();
+
+        let new_key = crate::crypto::derive_key_from_salt(password, &salt);
+        crate::session::set_encryption_key(new_key);
+
+        new_key
+    }
+
+    fn restore_account_or_clear(previous_account: Option<String>) {
+        crate::session::clear_encryption_key();
+        if let Some(prev) = previous_account {
+            let _ = crate::account_manager::set_current_account(prev);
+        } else {
+            let _ = crate::account_manager::clear_current_account();
+        }
+    }
+
+    #[tokio::test]
+    async fn export_happy_path_writes_secret_to_clipboard() {
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exporthappy";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+        let metadata = result.unwrap();
+        assert_eq!(metadata.export_type, "nostr_nsec");
+        assert_eq!(metadata.account_id, npub);
+        assert_eq!(writer.last_written(), Some("nsec1secret".to_string()));
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn export_rejects_incorrect_pin() {
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportbadpin";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            "wrongpin".to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "incorrect PIN should reject export");
+        let err = result.unwrap_err();
+        assert!(err.contains("Incorrect PIN"), "unexpected error: {err}");
+        assert!(
+            !writer.was_written(),
+            "clipboard should not be written with bad PIN"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn export_rejects_empty_pin() {
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportemptypin";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            "".to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "empty PIN should reject export");
+        let err = result.unwrap_err();
+        assert!(err.contains("Incorrect PIN"), "unexpected error: {err}");
+        assert!(
+            !writer.was_written(),
+            "clipboard should not be written with empty PIN"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn export_rejects_no_account_selected() {
+        crate::session::clear_encryption_key();
+        crate::session::set_encryption_key([0u8; 32]);
+        crate::account_manager::clear_current_account().unwrap();
+
+        let app = tauri::test::mock_app();
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            "123456".to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "no account should reject export");
+        let err = result.unwrap_err();
+        assert!(err.contains("No account selected"), "unexpected error: {err}");
+        assert!(
+            !writer.was_written(),
+            "clipboard should not be written without account"
+        );
+
+        crate::session::clear_encryption_key();
+    }
 }

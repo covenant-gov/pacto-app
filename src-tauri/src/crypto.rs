@@ -399,6 +399,24 @@ mod tests {
         assert!(decrypted.is_err());
     }
 
+    #[test]
+    fn salt_file_round_trip() {
+        let app = tauri::test::mock_app();
+        let npub = "npub1saltroundtrip";
+        let salt = generate_salt();
+        write_salt_file(app.handle(), npub, &salt).unwrap();
+        let read = read_salt_file(app.handle(), npub).unwrap();
+        assert_eq!(read, Some(salt));
+    }
+
+    #[test]
+    fn salt_file_returns_none_when_missing() {
+        let app = tauri::test::mock_app();
+        let npub = "npub1saltmissing";
+        let read = read_salt_file(app.handle(), npub).unwrap();
+        assert_eq!(read, None);
+    }
+
     // Legacy `hash_pass` retained as a private golden vector for the hard-coded
     // salt path. It is intentionally not used outside this test module.
     async fn hash_pass(password: String) -> [u8; 32] {

@@ -324,4 +324,23 @@ mod tests {
         assert!(manager.current_key().is_none());
         assert!(manager.locked_at_epoch_ms().is_some());
     }
+
+    #[test]
+    fn check_session_reports_locked_and_unlocked() {
+        // Operate on the global session manager like the command does.
+        clear_encryption_key();
+        let locked = check_session();
+        assert!(!locked.unlocked);
+        assert!(locked.locked_at.is_some());
+
+        set_encryption_key([7u8; 32]);
+        let unlocked = check_session();
+        assert!(unlocked.unlocked);
+        assert!(unlocked.locked_at.is_none());
+
+        clear_encryption_key();
+        let locked = check_session();
+        assert!(!locked.unlocked);
+        assert!(locked.locked_at.is_some());
+    }
 }
