@@ -104,6 +104,7 @@ pub async fn squad_admin_create_role<R: Runtime>(
     squad_admin_proxy: String,
     role_label: String,
 ) -> Result<SquadAdminWriteResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let role = bytes32_role_tag(role_label.as_str())
         .map_err(|e| wallet_err_json("INVALID_ROLE", e, None))?;
     let calldata = createRoleCall { _role: role }.abi_encode();
@@ -118,6 +119,7 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
     executor_address: String,
     role_label: String,
 ) -> Result<SquadAdminWriteResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
         .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))?;
     let role = bytes32_role_tag(role_label.as_str())
@@ -138,6 +140,7 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
     executor_address: String,
     enable: bool,
 ) -> Result<SquadAdminWriteResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
         .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))?;
     let calldata = enableFullPermissionCall {

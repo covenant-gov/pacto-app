@@ -104,6 +104,10 @@ pub async fn export_sensitive_to_clipboard<R: Runtime>(
     account_id: Option<String>,
     pin: String,
 ) -> Result<SensitiveExportResult, String> {
+    let conn = account_manager::get_db_connection(&handle)?;
+    crate::migration::require_key_derivation_version_2(&conn)?;
+    account_manager::return_db_connection(conn);
+
     let writer = TauriClipboardWriter {
         handle: handle.clone(),
     };
@@ -217,14 +221,7 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
 /// Validate the PIN by deriving the salt-based key and decrypting the sentinel.
 fn validate_pin<R: Runtime>(handle: &AppHandle<R>, pin: &str) -> Result<(), String> {
     let conn = account_manager::get_db_connection(handle)?;
-
-    let version = crate::migration::get_key_derivation_version(&conn)
-        .map_err(|_| "Account security must be updated before exporting. Unlock to continue.".to_string())?;
-    if version != 2 {
-        return Err(
-            "Account security must be updated before exporting. Unlock to continue.".to_string(),
-        );
-    }
+    crate::migration::require_key_derivation_version_2(&conn)?;
 
     let salt = crate::migration::get_key_derivation_salt(&conn)?
         .ok_or_else(|| "No key derivation salt found".to_string())?;
@@ -553,6 +550,59 @@ mod tests {
             !writer.was_written(),
             "clipboard should not be written when session is locked"
         );
+    }
+
+    #[tokio::test]
+    async fn export_rejects_when_key_derivation_version_not_2() {
+        // Ensure the session is unlocked so the migration gate is the first failure.
+        crate::session::clear_encryption_key();
+        crate::session::set_encryption_key([0u8; 32]);
+
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let test_npub = "npub1exportgatedoesnotmatter000000000000000000000000000000000000";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+
+        // Create the full schema before opening the account database; migrations
+        // only add columns/tables and assume the base schema already exists.
+        let db_path = crate::account_manager::get_database_path(handle, test_npub).unwrap();
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(crate::account_manager::SQL_SCHEMA).unwrap();
+        }
+
+        // Open the account database so migrations run and record version=1.
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        let result = export_sensitive_to_clipboard(
+            handle.clone(),
+            SensitiveExportType::NostrNsec,
+            None,
+            "1234".to_string(),
+        )
+        .await;
+
+        assert!(result.is_err(), "export should be rejected when version is not 2");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Account security must be updated"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("Unlock the app to migrate"),
+            "unexpected error: {err}"
+        );
+
+        // Restore previous account state so other tests are not affected.
+        if let Some(prev) = previous_account {
+            let _ = crate::account_manager::set_current_account(prev);
+        } else {
+            let _ = crate::account_manager::clear_current_account();
+        }
+        crate::session::clear_encryption_key();
     }
 
     #[tokio::test]

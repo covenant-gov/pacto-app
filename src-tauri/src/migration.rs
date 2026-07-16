@@ -84,6 +84,29 @@ pub fn get_key_derivation_version(conn: &rusqlite::Connection) -> Result<u32, St
         .ok_or_else(|| "key_derivation_version not set".to_string())
 }
 
+/// Return an error unless the account attached to `conn` has migrated to
+/// key-derivation version 2.
+pub fn require_key_derivation_version_2(conn: &rusqlite::Connection) -> Result<(), String> {
+    let version = get_key_derivation_version(conn)?;
+    if version != 2 {
+        return Err(
+            "Account security must be updated. Unlock the app to migrate.".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Convenience guard that borrows a pooled DB connection from `handle`, checks
+/// the key-derivation version, and returns the connection for reuse.
+pub fn require_key_derivation_version_2_on_handle<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = require_key_derivation_version_2(&conn);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
 /// Read the stored salt, if any.
 pub fn get_key_derivation_salt(conn: &rusqlite::Connection) -> Result<Option<[u8; SALT_LENGTH]>, String> {
     let Some(hex) = get_setting(conn, KEY_DERIVATION_SALT)? else {
@@ -622,5 +645,32 @@ mod tests {
             let ciphertext = get_setting(&conn, key).unwrap().unwrap();
             assert_eq!(decrypt_with_key(&ciphertext, &new_key).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn require_key_derivation_version_2_passes_when_version_2() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+        set_key_derivation_version(&conn, 2).unwrap();
+        assert!(require_key_derivation_version_2(&conn).is_ok());
+    }
+
+    #[test]
+    fn require_key_derivation_version_2_fails_when_version_1() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+        set_key_derivation_version(&conn, 1).unwrap();
+        let err = require_key_derivation_version_2(&conn).unwrap_err();
+        assert!(err.contains("Account security must be updated"), "unexpected error: {err}");
+        assert!(err.contains("Unlock the app to migrate"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn require_key_derivation_version_2_fails_when_version_0() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+        set_key_derivation_version(&conn, 0).unwrap();
+        let err = require_key_derivation_version_2(&conn).unwrap_err();
+        assert!(err.contains("Account security must be updated"), "unexpected error: {err}");
     }
 }

@@ -465,6 +465,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
     handle: AppHandle<R>,
     input: CommonsPublishBroadcastInput,
 ) -> Result<CommonsBroadcastDto, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let subject = input.subject.trim();
     if subject != "user" && subject != "squad" {
         return Err("subject must be user or squad".into());

@@ -300,6 +300,10 @@ pub async fn message(
     virtual_bucket: Option<String>,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
+    {
+        let handle = TAURI_APP.get().ok_or("App handle not available")?;
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    }
     // Immediately add the message to our state as "Pending" with an ID derived from the current nanosecond, we'll update it as either Sent (non-pending) or Failed in the future
     let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

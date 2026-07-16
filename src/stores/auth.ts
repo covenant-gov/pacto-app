@@ -8,6 +8,7 @@ import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
+import { isMigrationGateError } from '../lib/utils/tauri-errors';
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
@@ -271,5 +272,19 @@ export async function logout(): Promise<void> {
  */
 export function clearAuthError(): void {
   authError.set(null);
+}
+
+/**
+ * If `error` is the backend migration-gate error, drop the frontend session
+ * so the user is returned to the unlock screen. The next successful unlock
+ * will run the migration engine and bring the account to version 2.
+ */
+export function handleMigrationGateError(error: unknown): boolean {
+  if (isMigrationGateError(error)) {
+    dropSessionState();
+    authError.set('Please unlock to update account security.');
+    return true;
+  }
+  return false;
 }
 

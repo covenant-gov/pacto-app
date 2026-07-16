@@ -142,6 +142,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     metadata_uri: String,
     salt_nonce: Option<String>,
 ) -> Result<NavePirataDeployResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Err(wallet_err_json(

@@ -603,6 +603,7 @@ pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<O
 /// Replace all treasury Safes for this parent with a single Sepolia entry (legacy Set Safe / migration).
 #[command]
 pub fn set_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String, safe_address: String) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Err("parent_id is empty".to_string());
@@ -639,6 +640,7 @@ pub fn add_parent_treasury_safe<R: Runtime>(
     label: Option<String>,
     entry_id: Option<String>,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let norm = crate::evm::normalize_hex_address(safe_address.trim())
         .ok_or_else(|| "Invalid EVM address".to_string())?;
     let ch = normalize_treasury_chain(chain.as_deref());
@@ -1066,6 +1068,7 @@ pub fn upsert_squad_contract_allowlist<R: Runtime>(
     abi_ref: Option<String>,
     notes: Option<String>,
 ) -> Result<SquadContractAllowlistRow, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let pid = parent_id.trim();
     let chain_norm = normalize_allowlist_chain(&chain)?;
     let addr_norm = normalize_allowlist_address(&contract_address)?;
@@ -1134,6 +1137,7 @@ pub fn remove_squad_contract_allowlist<R: Runtime>(
     parent_id: String,
     id: String,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let pid = parent_id.trim();
     let row_id = id.trim();
     if pid.is_empty() || row_id.is_empty() {
@@ -1631,6 +1635,7 @@ pub fn upsert_squad_infra<R: Runtime>(
     pacto_gov_revision: Option<String>,
     provider_payload: Option<String>,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     upsert_squad_infra_inner(
         &handle,
         id.as_str(),
@@ -1796,6 +1801,7 @@ pub fn upsert_squad_member_evm<R: Runtime>(
     parent_id: String,
     evm_address: String,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let member_npub = crate::account_manager::get_current_account()?;
     let parent = parent_id.trim();
     if parent.is_empty() {
@@ -1908,6 +1914,7 @@ pub fn upsert_squad_member_evm_account<R: Runtime>(
     parent_id: String,
     evm_account_id: String,
 ) -> Result<SquadMemberEvmRow, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let member_npub = crate::account_manager::get_current_account()?;
     let parent = parent_id.trim();
     if parent.is_empty() {

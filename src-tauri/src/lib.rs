@@ -4621,6 +4621,7 @@ async fn create_account() -> Result<LoginKeyPair, String> {
 #[tauri::command]
 async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Result<String, String> {
     session::heartbeat();
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     // Decode hash (32 bytes).
     let trimmed = hash_hex.trim();
     let s = trimmed.strip_prefix("0x").unwrap_or(trimmed);
@@ -5274,6 +5275,7 @@ async fn load_mls_keypackages() -> Result<Vec<serde_json::Value>, String> {
 async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, String> {
     // Access handle and client
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
 
     // Ensure a persistent device_id exists
@@ -5427,6 +5429,11 @@ async fn create_mls_group(
     initial_member_devices: Vec<(String, String)>,
 ) -> Result<String, String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Use tokio::task::spawn_blocking to run the non-Send MlsService in a blocking context
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
@@ -5460,6 +5467,11 @@ async fn create_mls_group(
 #[tauri::command]
 async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Result<String, String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Input validation
     /*
     Error mapping for UI (Create Group)
@@ -5552,6 +5564,11 @@ async fn add_mls_member_device(
     device_id: String,
 ) -> Result<(), String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Run non-Send MLS engine work on a blocking thread; drive async via current runtime
     tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
@@ -5575,6 +5592,11 @@ async fn invite_member_to_group(
     member_npub: String,
 ) -> Result<(), String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Refresh keypackages for the new member
     let devices = refresh_keypackages_for_contact(member_npub.clone()).await.map_err(|e| {
         format!("Failed to refresh device keypackage for {}: {}", member_npub, e)
@@ -5615,6 +5637,11 @@ async fn remove_mls_member_device(
     device_id: String,
 ) -> Result<(), String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Run non-Send MLS engine work on a blocking thread; drive async via current runtime
     let group_id_clone = group_id.clone();
     tokio::task::spawn_blocking(move || {
@@ -5986,6 +6013,11 @@ async fn do_accept_mls_welcome<R: Runtime>(
 #[tauri::command]
 async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String> {
     session::heartbeat();
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     let accepted = tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
         let rt = tokio::runtime::Handle::current();
@@ -6156,6 +6188,11 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
 /// TODO: Implement MLS leave operation
 #[tauri::command]
 async fn leave_mls_group(group_id: String) -> Result<(), String> {
+    if let Some(handle) = TAURI_APP.get() {
+        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+    } else {
+        return Err("App handle not initialized".to_string());
+    }
     // Run non-Send MLS engine work on a blocking thread
     tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();

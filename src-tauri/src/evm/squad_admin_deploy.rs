@@ -125,6 +125,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
     owner: Option<String>,
     captain_hat_id: Option<String>,
 ) -> Result<SquadAdminDeployResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Err(wallet_err_json(
