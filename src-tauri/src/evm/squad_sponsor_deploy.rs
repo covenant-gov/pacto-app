@@ -103,10 +103,6 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     let deposit = parse_required_deposit_wei(initial_deposit_wei.as_deref())?;
 
     let squad_id = squad_id_from_parent_id(pid);
-    let calldata = createSquadSponsorExtCall {
-        squadId: squad_id,
-    }
-    .abi_encode();
     let factory = addrs.squad_sponsor_factory;
 
     let urls = wallet_chain_config::rpc_urls_for(net);
@@ -118,13 +114,24 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         ));
     }
 
+    // Ext addressOwner is always the squad roster EVM; tx may be funded by Default.
+    let (roster_signer, roster_wallet) =
+        load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let address_owner = roster_signer.address();
+
+    let calldata = createSquadSponsorExtCall {
+        squadId: squad_id,
+        addressOwner: address_owner,
+    }
+    .abi_encode();
+
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
     } else {
         require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-        load_squad_roster_embedded_signer(app.clone(), pid).await?
+        (roster_signer, roster_wallet)
     };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
@@ -356,13 +363,27 @@ mod tests {
     use super::squad_id_from_parent_id;
     use alloy::primitives::{Address, U256};
     use alloy::sol_types::SolCall;
-    use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::createSquadSponsorCall;
+    use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
+        createSquadSponsorCall, createSquadSponsorExtCall,
+    };
 
     #[test]
     fn squad_id_matches_solidity_keccak256_string_bytes() {
         let id = squad_id_from_parent_id("squad-alpha");
         let expected = alloy::primitives::keccak256("squad-alpha".as_bytes());
         assert_eq!(id, expected);
+    }
+
+    #[test]
+    fn encode_create_squad_sponsor_ext_includes_address_owner() {
+        let owner = Address::repeat_byte(0x11);
+        let encoded = createSquadSponsorExtCall {
+            squadId: squad_id_from_parent_id("squad-alpha"),
+            addressOwner: owner,
+        }
+        .abi_encode();
+        assert!(!encoded.is_empty());
+        assert_eq!(&encoded[..4], &createSquadSponsorExtCall::SELECTOR[..]);
     }
 
     #[test]

@@ -18,7 +18,10 @@ sol! {
             uint256 topHatId;
         }
 
-        function createSquadSponsorExt(bytes32 squadId) external payable returns (address sponsor);
+        function createSquadSponsorExt(bytes32 squadId, address addressOwner)
+            external
+            payable
+            returns (address sponsor);
 
         function createSquadSponsor(
             bytes32 squadId,
