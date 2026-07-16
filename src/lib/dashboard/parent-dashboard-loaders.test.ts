@@ -420,13 +420,31 @@ describe('fetchRolesTreeAnnotations', () => {
       topHatId: '3519',
       squadMemberEvmByNpub: {},
     });
-    expect(result).toEqual({
-      roleLabelByHatId: {},
-      wearerAddressesByHatId: {},
-      executorRolesByAddress: {},
-      error: '',
+    expect(result.error).toBe('');
+    expect(result.roleLabelByHatId[rolesTreeDeployment.captainHatId]).toBe('Captain');
+    expect(result.wearerAddressesByHatId).toEqual({});
+    expect(mockedGetNavePirataDeployment).toHaveBeenCalled();
+    expect(mockedGetMemberHatWearers).not.toHaveBeenCalled();
+  });
+
+  it('checks protocol module addresses even without roster members', async () => {
+    mockedGetMemberHatWearers.mockResolvedValue([
+      {
+        address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        hats: [{ hatId: rolesTreeDeployment.treasuryAuthorityRoleHatId, label: 'Treasury Authority Role' }],
+      },
+    ]);
+    const result = await fetchRolesTreeAnnotations({
+      network: 'sepolia',
+      topHatId: '3519',
+      squadMemberEvmByNpub: {},
+      protocolWearerCandidates: ['0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa'],
     });
-    expect(mockedGetNavePirataDeployment).not.toHaveBeenCalled();
+    expect(result.error).toBe('');
+    expect(result.wearerAddressesByHatId[rolesTreeDeployment.treasuryAuthorityRoleHatId]).toEqual([
+      '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ]);
+    expect(mockedGetMemberHatWearers).toHaveBeenCalled();
   });
 });
 

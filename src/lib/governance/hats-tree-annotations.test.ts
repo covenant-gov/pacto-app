@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatWearerDisplayLabel,
+  hatChecksForRolesTree,
   memberHatByAddressFromAssignments,
   npubByEvmAddressFromSquadRoster,
+  protocolWearerCandidateAddresses,
+  protocolWearerLabelByAddress,
   roleLabelByHatIdFromNaveDeployment,
   wearerAddressesByHatIdFromAssignments,
 } from './hats-tree-annotations';
@@ -26,6 +29,40 @@ describe('roleLabelByHatIdFromNaveDeployment', () => {
       '104': 'Quartermaster Role',
       '105': 'Treasury Authority Role',
     });
+  });
+});
+
+describe('protocolWearerCandidateAddresses', () => {
+  it('dedupes valid module addresses from payload', () => {
+    expect(
+      protocolWearerCandidateAddresses({
+        safe: '0x1111111111111111111111111111111111111111',
+        treasuryAuthority: '0x2222222222222222222222222222222222222222',
+        mutinyModule: '0x1111111111111111111111111111111111111111',
+        quartermaster: 'not-an-address',
+      }),
+    ).toEqual([
+      '0x1111111111111111111111111111111111111111',
+      '0x2222222222222222222222222222222222222222',
+    ]);
+  });
+});
+
+describe('protocolWearerLabelByAddress', () => {
+  it('labels known protocol modules', () => {
+    expect(
+      protocolWearerLabelByAddress({
+        treasuryAuthority: '0xAbCdEf1234567890AbCdEf1234567890AbCdEf12',
+      })['0xabcdef1234567890abcdef1234567890abcdef12'],
+    ).toBe('Treasury Authority');
+  });
+});
+
+describe('hatChecksForRolesTree', () => {
+  it('prepends top hat when missing from role checks', () => {
+    const checks = hatChecksForRolesTree(deployment, '99');
+    expect(checks[0]).toEqual({ hatId: '99', label: 'Top hat' });
+    expect(checks.some((c) => c.hatId === '100')).toBe(true);
   });
 });
 
@@ -79,6 +116,17 @@ describe('formatWearerDisplayLabel', () => {
         () => 'Captain Ada',
       ),
     ).toBe('Captain Ada');
+  });
+
+  it('uses known protocol labels before short address', () => {
+    expect(
+      formatWearerDisplayLabel(
+        '0x9999999999999999999999999999999999999999',
+        npubByAddress,
+        () => '',
+        { '0x9999999999999999999999999999999999999999': 'Treasury Authority' },
+      ),
+    ).toBe('Treasury Authority');
   });
 
   it('falls back to short address when no roster match', () => {

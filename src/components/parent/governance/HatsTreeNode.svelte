@@ -6,6 +6,8 @@
   } from '../../../lib/governance/hats-tree-annotations';
   import { prettyHatId } from '../../../lib/governance/pretty-hat-id';
   import { getProfileDisplayName } from '../../../lib/utils/profile';
+  import { openExternalUrl } from '../../../lib/utils/open-external';
+  import { explorerAddressUrl, type SupportedChainId } from '../../../lib/wallet/chains';
   import { profiles } from '../../../stores/profiles';
 
   export let node: HatTreeNodeDto;
@@ -13,6 +15,9 @@
   export let wearerAddressesByHatId: Record<string, string[]> = {};
   export let executorRolesByAddress: Record<string, string> = {};
   export let squadMemberEvmByNpub: Record<string, string> = {};
+  /** Known protocol module labels keyed by lowercase address. */
+  export let knownWearerLabels: Record<string, string> = {};
+  export let chainKey: SupportedChainId | null = null;
 
   $: roleLabel = roleLabelByHatId[node.hatId] ?? '';
   $: wearerAddresses = wearerAddressesByHatId[node.hatId] ?? [];
@@ -22,10 +27,15 @@
   $: hasWearers = wearerAddresses.length > 0 || node.supply > 0;
   $: children = node.children ?? [];
   $: childCount = children.length;
+  $: primaryWearer = wearerAddresses[0] ?? '';
+  $: primaryWearerRoles = primaryWearer ? executorRolesLabel(primaryWearer) : '';
 
   function wearerLabel(address: string): string {
-    return formatWearerDisplayLabel(address, npubByAddress, (npub) =>
-      getProfileDisplayName($profiles[npub]),
+    return formatWearerDisplayLabel(
+      address,
+      npubByAddress,
+      (npub) => getProfileDisplayName($profiles[npub]),
+      knownWearerLabels,
     );
   }
 
@@ -33,20 +43,20 @@
     return executorRolesByAddress[address.trim().toLowerCase()] ?? '';
   }
 
-  function footerPrimary(): string {
-    if (wearerAddresses.length > 0) {
-      const first = wearerLabel(wearerAddresses[0]);
-      const roles = executorRolesLabel(wearerAddresses[0]);
-      return roles ? `${first} · ${roles}` : first;
-    }
-    if (node.supply > 0) return `${node.supply} wearer${node.supply === 1 ? '' : 's'}`;
-    return '0 Wearers';
-  }
-
   function footerSupply(): string {
     if (node.maxSupply >= 0xffffffff) return hasWearers ? `${node.supply}` : '';
     if (hasWearers) return `${node.supply} of ${node.maxSupply}`;
     return `of ${node.maxSupply}`;
+  }
+
+  function openWearerExplorer(address: string) {
+    if (!chainKey) return;
+    const url = explorerAddressUrl(chainKey, address);
+    if (url) void openExternalUrl(url);
+  }
+
+  function wearerExplorerTitle(address: string): string {
+    return `Open ${address.trim()} on block explorer`;
   }
 </script>
 
@@ -60,7 +70,25 @@
       {/if}
     </div>
     <div class="hats-tree-node-footer">
-      <span class="hats-tree-footer-primary">{footerPrimary()}</span>
+      <span class="hats-tree-footer-primary">
+        {#if primaryWearer}
+          <button
+            type="button"
+            class="wearer-link"
+            title={wearerExplorerTitle(primaryWearer)}
+            on:click={() => openWearerExplorer(primaryWearer)}
+          >
+            {wearerLabel(primaryWearer)}
+          </button>
+          {#if primaryWearerRoles}
+            <span class="wearer-roles"> · {primaryWearerRoles}</span>
+          {/if}
+        {:else if node.supply > 0}
+          {node.supply} wearer{node.supply === 1 ? '' : 's'}
+        {:else}
+          0 Wearers
+        {/if}
+      </span>
       {#if footerSupply()}
         <span class="hats-tree-footer-supply">{footerSupply()}</span>
       {/if}
@@ -69,7 +97,15 @@
       <div class="hats-tree-extra-wearers muted">
         +{wearerAddresses.length - 1} more:
         {#each wearerAddresses.slice(1) as address, i (address)}
-          {#if i > 0}, {/if}{wearerLabel(address)}
+          {#if i > 0}, {/if}
+          <button
+            type="button"
+            class="wearer-link"
+            title={wearerExplorerTitle(address)}
+            on:click={() => openWearerExplorer(address)}
+          >
+            {wearerLabel(address)}
+          </button>
         {/each}
       </div>
     {/if}
@@ -89,6 +125,8 @@
             {wearerAddressesByHatId}
             {executorRolesByAddress}
             {squadMemberEvmByNpub}
+            {knownWearerLabels}
+            {chainKey}
           />
         </div>
       {/each}
@@ -175,6 +213,27 @@
   .hats-tree-footer-supply {
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
+  }
+
+  .wearer-link {
+    display: inline;
+    max-width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  .wearer-link:hover {
+    color: var(--accent);
+  }
+
+  .wearer-roles {
+    color: inherit;
   }
 
   .hats-tree-extra-wearers {

@@ -22,6 +22,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   } from '../../lib/governance/api';
   import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
+  import {
+    protocolWearerCandidateAddresses,
+    protocolWearerLabelByAddress,
+  } from '../../lib/governance/hats-tree-annotations';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -158,6 +162,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
+  $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
   );
@@ -357,7 +362,12 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       .sort()
       .join(',');
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? '';
-    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}`;
+    const protocolCandidates = protocolWearerCandidateAddresses(pactoPayload);
+    const protocolKey = protocolCandidates
+      .map((a) => a.toLowerCase())
+      .sort()
+      .join(',');
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
     const hadData = Object.keys(roleLabelByHatId).length > 0;
@@ -375,6 +385,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       squadMemberEvmByNpub,
       squadAdminProxy: squadAdminCtx?.proxy ?? null,
       squadAdminChain: squadAdminCtx?.chain ?? null,
+      protocolWearerCandidates: protocolCandidates,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
@@ -764,6 +775,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {wearerAddressesByHatId}
               {executorRolesByAddress}
               {squadMemberEvmByNpub}
+              {knownWearerLabels}
               rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
               rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
               {rolesTreeAnnotationsError}

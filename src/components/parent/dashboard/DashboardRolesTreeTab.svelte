@@ -26,9 +26,12 @@
   export let rolesTreeAnnotationsError = '';
   export let onRefreshRolesTree: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
+  /** Lowercase address → protocol module label for wearer chips. */
+  export let knownWearerLabels: Record<string, string> = {};
 
   $: rolesTreeRefreshing = hatsTreeRefreshing || rolesTreeAnnotationsRefreshing;
   $: rolesTreeLoading = hatsTreeLoading || rolesTreeAnnotationsLoading;
+  $: chainKey = structureSummary?.chainKey ?? null;
 </script>
 
 {#if squadInfraRows !== undefined && !hasSponsor}
@@ -101,6 +104,8 @@
         {wearerAddressesByHatId}
         {executorRolesByAddress}
         {squadMemberEvmByNpub}
+        {knownWearerLabels}
+        {chainKey}
       />
     {/if}
   {/if}
