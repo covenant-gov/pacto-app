@@ -313,7 +313,7 @@ pub(crate) async fn resolve_private_key_hex_for_account_id<R: Runtime>(
         }
         SCHEME_IMPORTED => {
             let enc = imported_enc.ok_or_else(|| "Imported account missing ciphertext.".to_string())?;
-            let key_hex = crypto::internal_decrypt(enc, None)
+            let key_hex = crypto::internal_decrypt(enc)
                 .await
                 .map_err(|_| "Could not decrypt imported EVM key.".to_string())?;
             let trimmed = key_hex.trim();
@@ -362,7 +362,7 @@ async fn persist_signing_material<R: Runtime>(
     key_hex: &str,
     address: &str,
 ) -> Result<(), String> {
-    let enc = crypto::internal_encrypt(key_hex.to_string(), None).await;
+    let enc = crypto::internal_encrypt(key_hex.to_string()).await;
     db::set_evm_pkey(handle.clone(), enc).await?;
     db::set_wallet_signing_evm_address(handle.clone(), address.to_string()).await?;
     Ok(())
@@ -688,7 +688,7 @@ pub async fn import_evm_account<R: Runtime>(
         return Err("This Ethereum account is already in your wallet.".to_string());
     }
     let key_plain = format!("0x{}", hex::encode(sk));
-    let enc = crypto::internal_encrypt(key_plain, None).await;
+    let enc = crypto::internal_encrypt(key_plain).await;
     let id = new_import_id();
     conn.execute(
         "INSERT INTO evm_accounts (id, scheme, hd_index, address, label, imported_enc, purpose) VALUES (?1, ?2, NULL, ?3, '', ?4, ?5)",

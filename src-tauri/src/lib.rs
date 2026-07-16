@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use lazy_static::lazy_static;
 use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
+use secrecy::{ExposeSecret, SecretBox};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::NotificationExt;
@@ -76,6 +78,9 @@ mod image_cache;
 // Audio processing: resampling (all platforms) + notification playback (desktop only)
 mod audio;
 
+// Salt/key-derivation migration engine (U2)
+mod migration;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -111,7 +116,61 @@ pub(crate) fn get_blossom_servers() -> Vec<String> {
 }
 
 
-static ENCRYPTION_KEY: OnceCell<[u8; 32]> = OnceCell::new();
+static ENCRYPTION_KEY: LazyLock<std::sync::Mutex<Option<SecretBox<[u8; 32]>>>> =
+    LazyLock::new(|| std::sync::Mutex::new(None));
+
+/// Store the encryption key in the secret session container.
+/// On Unix desktops, attempts to lock the key pages into memory; failures are
+/// logged once and ignored.
+pub fn set_encryption_key(key: [u8; 32]) {
+    let secret = SecretBox::new(Box::new(key));
+
+    #[cfg(all(desktop, unix))]
+    {
+        let bytes = secret.expose_secret();
+        let ptr = bytes.as_ptr();
+        let len = bytes.len();
+        // SAFETY: ptr/len describe the in-heap SecretBox allocation.
+        unsafe {
+            if libc::mlock(ptr as *const libc::c_void, len) != 0 {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static HAS_LOGGED: AtomicBool = AtomicBool::new(false);
+                if !HAS_LOGGED.swap(true, Ordering::Relaxed) {
+                    eprintln!("[Session] Failed to mlock encryption key pages; continuing without memory locking");
+                }
+            }
+        }
+    }
+
+    let mut guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
+    *guard = Some(secret);
+}
+
+/// Clear the encryption key from the session container. The SecretBox zeroizes
+/// the bytes on drop. On Unix desktops, best-effort `munlock` is attempted
+/// before the key is dropped.
+pub fn clear_encryption_key() {
+    let mut guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
+    if let Some(secret) = guard.take() {
+        #[cfg(all(desktop, unix))]
+        {
+            let bytes = secret.expose_secret();
+            let ptr = bytes.as_ptr();
+            let len = bytes.len();
+            // SAFETY: ptr/len describe the same in-heap allocation passed to mlock.
+            unsafe {
+                let _ = libc::munlock(ptr as *const libc::c_void, len);
+            }
+        }
+        // SecretBox is dropped here and zeroizes the bytes.
+    }
+}
+
+/// Return a copy of the current encryption key, if one is loaded.
+pub fn current_encryption_key() -> Option<[u8; 32]> {
+    let guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
+    guard.as_ref().map(|secret| *secret.expose_secret())
+}
 
 // In-memory recovery phrase until `encrypt` persists it via `set_seed`; cleared on logout; replaced on each successful import/create.
 lazy_static! {
@@ -4334,12 +4393,15 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
 
 // Tauri command that uses the crypto module
 #[tauri::command]
-async fn encrypt(input: String, password: Option<String>) -> String {
-    let res = crypto::internal_encrypt(input, password).await;
+async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Option<String>) -> Result<String, String> {
+    let res = if let Some(pass) = password {
+        crate::migration::encrypt_with_password(&handle, &input, &pass).await?
+    } else {
+        crypto::internal_encrypt(input).await
+    };
 
     // If we have one; save the in-memory seed phrase in an encrypted at-rest format
     if let Some(seed) = mnemonic_seed_get() {
-        let handle = TAURI_APP.get().unwrap();
         let _ = db::set_seed(handle.clone(), seed).await;
     }
 
@@ -4397,41 +4459,44 @@ async fn encrypt(input: String, password: Option<String>) -> String {
         }
     });
 
-    res
+    Ok(res)
 }
 
 // Tauri command that uses the crypto module
 #[tauri::command]
-async fn decrypt(ciphertext: String, password: Option<String>) -> Result<String, ()> {
+async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password: Option<String>) -> Result<String, String> {
     // Perform decryption
-    let res = crypto::internal_decrypt(ciphertext, password).await;
+    let res = if let Some(pass) = password {
+        crate::migration::decrypt_with_password(&handle, &ciphertext, &pass).await?
+    } else {
+        crypto::internal_decrypt(ciphertext).await
+            .map_err(|_| "Decryption failed".to_string())?
+    };
 
     // On success, ensure persistent device KeyPackage and run non-blocking smoke test
-    if res.is_ok() {
-        // Best-effort persistent device KeyPackage bootstrap (non-blocking)
-        tokio::spawn(async move {
-            // brief delay to allow any post-login setup to settle
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            
-            // Skip if no account selected (e.g. setup pending)
-            if crate::account_manager::get_current_account().is_err() {
-                println!("[MLS] Skipping KeyPackage bootstrap - no account selected");
-                return;
+    // Best-effort persistent device KeyPackage bootstrap (non-blocking)
+    tokio::spawn(async move {
+        // brief delay to allow any post-login setup to settle
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        
+        // Skip if no account selected (e.g. setup pending)
+        if crate::account_manager::get_current_account().is_err() {
+            println!("[MLS] Skipping KeyPackage bootstrap - no account selected");
+            return;
+        }
+        
+        println!("[MLS] Ensuring persistent device KeyPackage...");
+        match regenerate_device_keypackage(true).await {
+            Ok(info) => {
+                let device_id = info.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
+                let cached = info.get("cached").and_then(|v| v.as_bool()).unwrap_or(false);
+                println!("[MLS] Device KeyPackage ready: device_id={}, cached={}", device_id, cached);
             }
-            
-            println!("[MLS] Ensuring persistent device KeyPackage...");
-            match regenerate_device_keypackage(true).await {
-                Ok(info) => {
-                    let device_id = info.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-                    let cached = info.get("cached").and_then(|v| v.as_bool()).unwrap_or(false);
-                    println!("[MLS] Device KeyPackage ready: device_id={}, cached={}", device_id, cached);
-                }
-                Err(e) => eprintln!("[MLS] Device KeyPackage bootstrap failed: {}", e),
-            }
-        });
-    }
+            Err(e) => eprintln!("[MLS] Device KeyPackage bootstrap failed: {}", e),
+        }
+    });
 
-    res
+    Ok(res)
 }
 
 #[tauri::command]
@@ -4542,6 +4607,7 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
     clear_nostr_client();
     let _ = account_manager::clear_current_account();
     mnemonic_seed_clear();
+    clear_encryption_key();
     // `state` guard dropped here
 }
 

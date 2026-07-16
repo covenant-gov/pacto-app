@@ -248,7 +248,7 @@ fn store_secret_encrypted(
 }
 
 async fn encrypt_nsec(nsec: &str) -> String {
-    internal_encrypt(nsec.to_string(), None).await
+    internal_encrypt(nsec.to_string()).await
 }
 
 fn read_secret_row(
@@ -265,7 +265,7 @@ fn read_secret_row(
 }
 
 async fn decrypt_nsec(encrypted: String) -> Result<String, String> {
-    internal_decrypt(encrypted, None)
+    internal_decrypt(encrypted)
         .await
         .map_err(|_| "Failed to decrypt squad bot secret".to_string())
 }

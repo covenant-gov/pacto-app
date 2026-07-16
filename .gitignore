@@ -18,3 +18,4 @@ landing/.astro
 landing/dist
 landing/pnpm-lock.yaml
 landing/public/pacto-release.json
+.worktrees/
