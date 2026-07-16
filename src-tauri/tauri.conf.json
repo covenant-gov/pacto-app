@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pacto",
+  "productName": "pacto-demo",
   "version": "0.2.0",
-  "identifier": "io.pacto",
+  "identifier": "io.pacto-demo",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1430",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../build"
   },
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pacto",
+        "title": "pacto-demo",
         "minWidth": 400,
         "width": 1000,
         "minHeight": 400,
