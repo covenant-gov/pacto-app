@@ -594,7 +594,18 @@ pub async fn decrypt_with_password<R: Runtime>(
     crate::session::set_timeout_ms(timeout_ms);
     crate::set_encryption_key(key);
 
-    let plaintext = decrypt_with_key(ciphertext, &key)
+    // After migrating a legacy account, the input `ciphertext` (which was the
+    // legacy pkey) is no longer valid because the DB pkey has been re-encrypted
+    // with the new salt-derived key. Re-read the current ciphertext from the
+    // DB before decrypting.
+    let ciphertext_to_decrypt = if version == 1 {
+        get_setting(&conn, "pkey")?
+            .ok_or_else(|| "No pkey found after migration".to_string())?
+    } else {
+        ciphertext.to_string()
+    };
+
+    let plaintext = decrypt_with_key(&ciphertext_to_decrypt, &key)
         .map_err(|_| "Incorrect PIN".to_string())?;
 
     crate::account_manager::return_db_connection(conn);
@@ -917,6 +928,70 @@ mod tests {
             get_key_derivation_migration_in_progress(&conn).unwrap(),
             "marker should remain set so the next unlock can resume"
         );
+    }
+
+    #[tokio::test]
+    async fn decrypt_with_password_migrates_legacy_account() {
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let test_npub = "npub1decryptlegacytest";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        // Ensure a fresh database for this test account.
+        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(crate::account_manager::SQL_SCHEMA).unwrap();
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let plaintext = "nsec1secret";
+        let pkey = encrypt_with_key(plaintext, &legacy_key);
+        let salt = generate_salt();
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+
+        crate::account_manager::return_db_connection(conn);
+
+        let result = decrypt_with_password(app.handle(), &pkey, password).await;
+        assert!(
+            result.is_ok(),
+            "legacy account should unlock and migrate: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap(), plaintext);
+
+        // The pkey in the DB should now be re-encrypted with the new key.
+        let conn = crate::account_manager::get_db_connection(app.handle()).unwrap();
+        let version = get_key_derivation_version(&conn).unwrap();
+        assert_eq!(version, 2, "version should be 2 after migration");
+        let migrated_pkey = get_setting(&conn, "pkey").unwrap().unwrap();
+        assert_ne!(
+            migrated_pkey, pkey,
+            "ciphertext should have changed after migration"
+        );
+        let new_key = derive_key_from_salt(password, &salt);
+        assert_eq!(
+            decrypt_with_key(&migrated_pkey, &new_key).unwrap(),
+            plaintext,
+            "migrated pkey should decrypt with the new key"
+        );
+        crate::account_manager::return_db_connection(conn);
+
+        // Restore global state.
+        crate::session::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+        if let Some(prev) = previous_account {
+            let _ = crate::account_manager::set_current_account(prev);
+        } else {
+            let _ = crate::account_manager::clear_current_account();
+        }
     }
 
     #[test]
