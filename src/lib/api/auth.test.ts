@@ -111,13 +111,13 @@ describe('auth command wrappers', () => {
 
   it('exportSensitiveToClipboard sends export_sensitive_to_clipboard with exportType, accountId, and pin', async () => {
     mockedInvoke.mockResolvedValueOnce({
-      exportType: 'evm',
+      exportType: 'evm_account',
       accountId: 'acc-1',
       clearedAt: 1234567890,
     });
     const result = await exportSensitiveToClipboard('evm', 'acc-1', '123456');
     expect(mockedInvoke).toHaveBeenCalledWith('export_sensitive_to_clipboard', {
-      exportType: 'evm',
+      exportType: 'evm_account',
       accountId: 'acc-1',
       pin: '123456',
     });
@@ -126,13 +126,13 @@ describe('auth command wrappers', () => {
 
   it('exportSensitiveToClipboard omits accountId for seed export', async () => {
     mockedInvoke.mockResolvedValueOnce({
-      exportType: 'seed',
+      exportType: 'seed_phrase',
       accountId: '',
       clearedAt: 1234567890,
     });
     const result = await exportSensitiveToClipboard('seed', undefined, '654321');
     expect(mockedInvoke).toHaveBeenCalledWith('export_sensitive_to_clipboard', {
-      exportType: 'seed',
+      exportType: 'seed_phrase',
       accountId: undefined,
       pin: '654321',
     });

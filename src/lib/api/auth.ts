@@ -131,11 +131,39 @@ export async function exportSensitiveToClipboard(
   accountId: string | undefined,
   pin: string
 ): Promise<SensitiveExportResult> {
-  return await invoke<SensitiveExportResult>('export_sensitive_to_clipboard', {
-    exportType,
+  const backendExportType = frontendToBackendExportType(exportType);
+  const result = await invoke<SensitiveExportResult>('export_sensitive_to_clipboard', {
+    exportType: backendExportType,
     accountId,
     pin,
   });
+  return { ...result, exportType: backendToFrontendExportType(result.exportType) };
+}
+
+function frontendToBackendExportType(exportType: 'evm' | 'nostr' | 'seed'): string {
+  switch (exportType) {
+    case 'evm':
+      return 'evm_account';
+    case 'nostr':
+      return 'nostr_nsec';
+    case 'seed':
+      return 'seed_phrase';
+    default:
+      return exportType;
+  }
+}
+
+function backendToFrontendExportType(exportType: string): 'evm' | 'nostr' | 'seed' {
+  switch (exportType) {
+    case 'evm_account':
+      return 'evm';
+    case 'nostr_nsec':
+      return 'nostr';
+    case 'seed_phrase':
+      return 'seed';
+    default:
+      return exportType as 'evm' | 'nostr' | 'seed';
+  }
 }
 
 /**
