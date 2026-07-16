@@ -1,5 +1,4 @@
 import type { MutinyStatusDto, TreasuryProposalDto } from './api';
-import { isTreasuryProposalActive } from './treasury-proposal-ui';
 
 /** Proposals in crew voting phase. */
 export function crewVotableProposals(proposals: TreasuryProposalDto[]): TreasuryProposalDto[] {

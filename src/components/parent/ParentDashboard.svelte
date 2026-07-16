@@ -53,7 +53,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     fetchRolesTreeAnnotations,
     fetchSettingsChainMemberMaps,
     fetchSquadMemberEvmByNpub,
-    fetchTreasuryProposalVoteMap,
     fetchTreasuryProposals,
     isSupersededLoaderKey,
   } from '../../lib/dashboard/parent-dashboard-loaders';
@@ -224,8 +223,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let treasuryProposalsRefreshing = false;
   let treasuryProposalsError = '';
   let treasuryProposalsKey = '';
-  let proposalHasVotedById: Record<string, boolean> = {};
-  let myVoterAddress = '';
 
   let hatsTree: HatTreeNodeDto | null = null;
   let hatsTreeLoading = false;
@@ -247,32 +244,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let settingsChainRefreshing = false;
   let settingsChainError = '';
   let settingsChainKey = '';
-
-  async function loadTreasuryProposalVotes() {
-    const ta = pactoPayload?.treasuryAuthority?.trim();
-    if (!ta || treasuryProposals.length === 0) {
-      proposalHasVotedById = {};
-      myVoterAddress = '';
-      return;
-    }
-    const me = $currentUser?.npub;
-    const voter = me ? squadMemberEvmByNpub[me]?.trim() : '';
-    myVoterAddress = voter;
-    if (!voter) {
-      proposalHasVotedById = {};
-      return;
-    }
-    try {
-      proposalHasVotedById = await fetchTreasuryProposalVoteMap({
-        network: pactoNetwork,
-        treasuryAuthority: ta,
-        proposals: treasuryProposals,
-        voterAddress: voter,
-      });
-    } catch {
-      proposalHasVotedById = {};
-    }
-  }
 
   async function loadTreasuryProposals() {
     const ta = pactoPayload?.treasuryAuthority?.trim();
@@ -297,15 +268,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     if (!result.error) {
       treasuryProposals = result.proposals;
       if (npub) persistTreasuryProposalsSnapshot(npub, key, result.proposals);
-      if (!isSupersededLoaderKey(treasuryProposalsKey, key)) {
-        await loadTreasuryProposalVotes();
-      }
     } else if (cached) {
       treasuryProposalsError = result.error;
     } else {
       treasuryProposals = result.proposals;
       treasuryProposalsError = result.error;
-      proposalHasVotedById = {};
     }
   }
 
@@ -762,7 +729,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
               parentId={parentId ?? ''}
-              myAddress={myGovernanceAddress || myVoterAddress}
+              myAddress={myGovernanceAddress}
               {captainWearers}
               {crewWearers}
               memberEvmOptions={memberEvmOptionsForRoles}
@@ -817,7 +784,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {governanceTreasurySafe}
               {pactoPayload}
               {announcementsGroupId}
-              myAddress={myGovernanceAddress || myVoterAddress}
+              myAddress={myGovernanceAddress}
               {captainWearers}
               {crewWearers}
               onOpenSponsorDeploy={openSponsorDeploy}

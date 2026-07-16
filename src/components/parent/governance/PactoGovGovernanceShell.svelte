@@ -55,7 +55,6 @@
   let mutinyHydrateKey = '';
 
   let qmStatus: QuartermasterStatusDto | null = null;
-  let qmLoading = false;
   let qmHydrateKey = '';
 
   $: captainList = (() => {
@@ -169,11 +168,9 @@
 
     const needFetch = force || !peeked || isGovModuleReadStale(key);
     if (!needFetch) {
-      qmLoading = false;
       return;
     }
 
-    if (!peeked) qmLoading = true;
     try {
       const next = await fetchGovModuleReadCached(
         key,
@@ -186,10 +183,6 @@
     } catch {
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
       if (!peeked) qmStatus = null;
-    } finally {
-      if (hydrateKey === `${parentId}|${network}|${quartermaster}`) {
-        qmLoading = false;
-      }
     }
   }
 
