@@ -1,0 +1,4 @@
+- [ ] Add user tracking for basic info (versions, location, os, hardware)
+- [ ] Add ability for user to opt out of detailed user tracking when it is not neccessary to the app
+- [ ] Go through code review list and fix items
+- [ ] Add ability to customize the UI in a new squad channel

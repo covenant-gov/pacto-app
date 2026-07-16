@@ -420,6 +420,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     to_address_evm: Option<String>,
     wait_for_confirmation: Option<bool>,
 ) -> Result<WalletSendResult, String> {
+    crate::session::heartbeat();
     let wait_for_confirmation = wait_for_confirmation.unwrap_or(false);
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {

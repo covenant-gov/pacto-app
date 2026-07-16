@@ -299,6 +299,7 @@ pub async fn message(
     file: Option<AttachmentFile>,
     virtual_bucket: Option<String>,
 ) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Immediately add the message to our state as "Pending" with an ID derived from the current nanosecond, we'll update it as either Sent (non-pending) or Failed in the future
     let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -917,6 +918,7 @@ pub async fn message(
 
 #[tauri::command]
 pub async fn paste_message<R: Runtime>(handle: AppHandle<R>, receiver: String, replied_to: String, transparent: bool) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Platform-specific clipboard reading
     #[cfg(target_os = "android")]
     let img = {
@@ -1022,6 +1024,7 @@ pub async fn paste_message<R: Runtime>(handle: AppHandle<R>, receiver: String, r
 
 #[tauri::command]
 pub async fn voice_message(receiver: String, replied_to: String, bytes: Vec<u8>) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Generate an Attachment File
     let attachment_file = AttachmentFile {
         bytes,
@@ -1217,6 +1220,7 @@ pub async fn get_cached_bytes_compression_status() -> Result<Option<CompressionE
 /// Send cached file (with optional compression)
 #[tauri::command]
 pub async fn send_cached_file(receiver: String, replied_to: String, use_compression: bool) -> Result<bool, String> {
+    crate::session::heartbeat();
     const MIN_SAVINGS_PERCENT: u64 = 10;
     
     if use_compression {
@@ -1384,6 +1388,7 @@ pub async fn send_file_bytes(
     file_name: String,
     use_compression: bool
 ) -> Result<bool, String> {
+    crate::session::heartbeat();
     const MIN_SAVINGS_PERCENT: u64 = 10;
     
     // Extract extension from filename
@@ -1573,6 +1578,7 @@ fn compress_bytes_internal(bytes: &[u8], extension: &str) -> Result<CachedCompre
 
 #[tauri::command]
 pub async fn file_message(receiver: String, replied_to: String, file_path: String) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Load the file as AttachmentFile
     let mut attachment_file = {
         #[cfg(not(target_os = "android"))]
@@ -2050,6 +2056,7 @@ pub fn get_image_preview_base64(file_path: String, quality: u32) -> Result<Strin
 /// Send a file with compression (for images)
 #[tauri::command]
 pub async fn file_message_compressed(receiver: String, replied_to: String, file_path: String) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Load the file as AttachmentFile
     let mut attachment_file = {
         #[cfg(not(target_os = "android"))]
@@ -2288,6 +2295,7 @@ pub async fn clear_compression_cache(file_path: String) -> Result<(), String> {
 /// Send a file using the cached compressed version if available
 #[tauri::command]
 pub async fn send_cached_compressed_file(receiver: String, replied_to: String, file_path: String) -> Result<bool, String> {
+    crate::session::heartbeat();
     // Minimum savings threshold (10%) - if compression doesn't save at least this much, send original
     const MIN_SAVINGS_PERCENT: u64 = 10;
     
@@ -2648,6 +2656,7 @@ fn compress_image_internal(file_path: &str) -> Result<CachedCompressedImage, Str
 /// Protocol-agnostic reaction function that works for both DMs and Group Chats
 #[tauri::command]
 pub async fn react_to_message(reference_id: String, chat_id: String, emoji: String) -> Result<bool, String> {
+    crate::session::heartbeat();
     use crate::chat::ChatType;
     
     let client = get_nostr_client().expect("Nostr client not initialized");
@@ -2838,6 +2847,7 @@ pub async fn forward_attachment(
     source_attachment_id: String,
     target_chat_id: String,
 ) -> Result<String, String> {
+    crate::session::heartbeat();
     // Find the source message and attachment
     let attachment_path = {
         let state = STATE.lock().await;
@@ -2880,6 +2890,7 @@ pub async fn edit_message(
     chat_id: String,
     new_content: String,
 ) -> Result<String, String> {
+    crate::session::heartbeat();
     use crate::chat::ChatType;
     use crate::stored_event::event_kind;
 

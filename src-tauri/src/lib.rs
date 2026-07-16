@@ -1,10 +1,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
-use std::sync::LazyLock;
 use lazy_static::lazy_static;
 use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
-use secrecy::{ExposeSecret, SecretBox};
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_notification::NotificationExt;
@@ -81,6 +79,9 @@ mod audio;
 // Salt/key-derivation migration engine (U2)
 mod migration;
 
+// Backend session manager and idle auto-lock (U4)
+mod session;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -115,63 +116,12 @@ pub(crate) fn get_blossom_servers() -> Vec<String> {
         .clone()
 }
 
-
-static ENCRYPTION_KEY: LazyLock<std::sync::Mutex<Option<SecretBox<[u8; 32]>>>> =
-    LazyLock::new(|| std::sync::Mutex::new(None));
-
-/// Store the encryption key in the secret session container.
-/// On Unix desktops, attempts to lock the key pages into memory; failures are
-/// logged once and ignored.
-pub fn set_encryption_key(key: [u8; 32]) {
-    let secret = SecretBox::new(Box::new(key));
-
-    #[cfg(all(desktop, unix))]
-    {
-        let bytes = secret.expose_secret();
-        let ptr = bytes.as_ptr();
-        let len = bytes.len();
-        // SAFETY: ptr/len describe the in-heap SecretBox allocation.
-        unsafe {
-            if libc::mlock(ptr as *const libc::c_void, len) != 0 {
-                use std::sync::atomic::{AtomicBool, Ordering};
-                static HAS_LOGGED: AtomicBool = AtomicBool::new(false);
-                if !HAS_LOGGED.swap(true, Ordering::Relaxed) {
-                    eprintln!("[Session] Failed to mlock encryption key pages; continuing without memory locking");
-                }
-            }
-        }
-    }
-
-    let mut guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
-    *guard = Some(secret);
-}
-
-/// Clear the encryption key from the session container. The SecretBox zeroizes
-/// the bytes on drop. On Unix desktops, best-effort `munlock` is attempted
-/// before the key is dropped.
-pub fn clear_encryption_key() {
-    let mut guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
-    if let Some(secret) = guard.take() {
-        #[cfg(all(desktop, unix))]
-        {
-            let bytes = secret.expose_secret();
-            let ptr = bytes.as_ptr();
-            let len = bytes.len();
-            // SAFETY: ptr/len describe the same in-heap allocation passed to mlock.
-            unsafe {
-                let _ = libc::munlock(ptr as *const libc::c_void, len);
-            }
-        }
-        // SecretBox is dropped here and zeroizes the bytes.
-    }
-}
-
-/// Return a copy of the current encryption key, if one is loaded.
-pub fn current_encryption_key() -> Option<[u8; 32]> {
-    let guard = ENCRYPTION_KEY.lock().expect("encryption key mutex poisoned");
-    guard.as_ref().map(|secret| *secret.expose_secret())
-}
-
+/// Session-management helpers re-exported from `session.rs`. The encryption
+/// key container, idle timer, and heartbeat live in the session manager.
+pub use session::{
+    check_session, clear_encryption_key, current_encryption_key, heartbeat, session_heartbeat,
+    set_encryption_key, set_timeout_ms, SESSION_MANAGER,
+};
 // In-memory recovery phrase until `encrypt` persists it via `set_seed`; cleared on logout; replaced on each successful import/create.
 lazy_static! {
     static ref MNEMONIC_SEED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -4394,6 +4344,7 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
 // Tauri command that uses the crypto module
 #[tauri::command]
 async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Option<String>) -> Result<String, String> {
+    session::heartbeat();
     let res = if let Some(pass) = password {
         crate::migration::encrypt_with_password(&handle, &input, &pass).await?
     } else {
@@ -4465,6 +4416,7 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
 // Tauri command that uses the crypto module
 #[tauri::command]
 async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password: Option<String>) -> Result<String, String> {
+    session::heartbeat();
     // Perform decryption
     let res = if let Some(pass) = password {
         crate::migration::decrypt_with_password(&handle, &ciphertext, &pass).await?
@@ -4614,6 +4566,7 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
 /// Creates a new Nostr keypair derived from a BIP39 Seed Phrase
 #[tauri::command]
 async fn create_account() -> Result<LoginKeyPair, String> {
+    session::heartbeat();
     // Generate a BIP39 Mnemonic Seed Phrase
     let mnemonic = bip39::Mnemonic::generate(12).map_err(|e| e.to_string())?;
     let mnemonic_string = mnemonic.to_string();
@@ -4664,6 +4617,7 @@ async fn create_account() -> Result<LoginKeyPair, String> {
 /// Returns a 65-byte signature as 0x-prefixed hex (r || s || v) where v is 27 or 28.
 #[tauri::command]
 async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Result<String, String> {
+    session::heartbeat();
     // Decode hash (32 bytes).
     let trimmed = hash_hex.trim();
     let s = trimmed.strip_prefix("0x").unwrap_or(trimmed);
@@ -4865,6 +4819,7 @@ fn generate_invite_code() -> String {
 /// Generate or retrieve existing invite code for the current user
 #[tauri::command]
 async fn get_or_create_invite_code() -> Result<String, String> {
+    session::heartbeat();
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
     
     // Check if we already have a stored invite code
@@ -4930,6 +4885,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
 /// Accept an invite code from another user (deferred until after encryption setup)
 #[tauri::command]
 async fn accept_invite_code(invite_code: String) -> Result<String, String> {
+    session::heartbeat();
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
     
     // Validate invite code format (8 alphanumeric characters)
@@ -5467,6 +5423,7 @@ async fn create_mls_group(
     avatar_ref: Option<String>,
     initial_member_devices: Vec<(String, String)>,
 ) -> Result<String, String> {
+    session::heartbeat();
     // Use tokio::task::spawn_blocking to run the non-Send MlsService in a blocking context
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
@@ -5499,6 +5456,7 @@ async fn create_mls_group(
 /// Frontend will invoke this command via: invoke('create_group_chat', { groupName, memberIds })
 #[tauri::command]
 async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Result<String, String> {
+    session::heartbeat();
     // Input validation
     /*
     Error mapping for UI (Create Group)
@@ -5590,6 +5548,7 @@ async fn add_mls_member_device(
     member_npub: String,
     device_id: String,
 ) -> Result<(), String> {
+    session::heartbeat();
     // Run non-Send MLS engine work on a blocking thread; drive async via current runtime
     tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
@@ -5612,6 +5571,7 @@ async fn invite_member_to_group(
     group_id: String,
     member_npub: String,
 ) -> Result<(), String> {
+    session::heartbeat();
     // Refresh keypackages for the new member
     let devices = refresh_keypackages_for_contact(member_npub.clone()).await.map_err(|e| {
         format!("Failed to refresh device keypackage for {}: {}", member_npub, e)
@@ -5651,6 +5611,7 @@ async fn remove_mls_member_device(
     member_npub: String,
     device_id: String,
 ) -> Result<(), String> {
+    session::heartbeat();
     // Run non-Send MLS engine work on a blocking thread; drive async via current runtime
     let group_id_clone = group_id.clone();
     tokio::task::spawn_blocking(move || {
@@ -5679,6 +5640,7 @@ async fn remove_mls_member_device(
 async fn sync_mls_groups_now(
     group_id: Option<String>,
 ) -> Result<(u32, u32), String> {
+    session::heartbeat();
     // Run non-Send MLS engine work on blocking thread; drive async via current runtime
     tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
@@ -6020,6 +5982,7 @@ async fn do_accept_mls_welcome<R: Runtime>(
 /// Accept an MLS welcome by its welcome (rumor) event id hex
 #[tauri::command]
 async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String> {
+    session::heartbeat();
     let accepted = tokio::task::spawn_blocking(move || {
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
         let rt = tokio::runtime::Handle::current();
@@ -6633,6 +6596,9 @@ pub fn run() {
             account_manager::list_all_accounts,
             account_manager::check_any_account_exists,
             account_manager::switch_account,
+            // Session management commands (U4)
+            session::check_session,
+            session::session_heartbeat,
             // Image cache commands
             image_cache::get_or_cache_image,
             image_cache::clear_image_cache,

@@ -1178,6 +1178,27 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to set key_derivation_version: {}", e))?;
     }
 
+    // Migration: ensure every account has a session idle timeout setting.
+    // Default is 15 minutes (900000 ms). The session manager reads this value
+    // when the encryption key is loaded.
+    let session_timeout_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'session_idle_timeout_ms'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !session_timeout_exists {
+        println!("[Migration] Recording session_idle_timeout_ms=900000 for existing account");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('session_idle_timeout_ms', '900000')",
+            [],
+        )
+        .map_err(|e| format!("Failed to set session_idle_timeout_ms: {}", e))?;
+    }
+
     Ok(())
 }
 
