@@ -12,3 +12,6 @@ export const loadDeployPactoGovAndSponsorModal = createLazyComponent(
 export const loadDeploySquadAdminModal = createLazyComponent(
   () => import('../../components/parent/governance/DeploySquadAdminModal.svelte'),
 );
+export const loadDeploySquadSponsorExtModal = createLazyComponent(
+  () => import('../../components/parent/governance/DeploySquadSponsorExtModal.svelte'),
+);

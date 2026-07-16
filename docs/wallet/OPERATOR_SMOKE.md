@@ -10,7 +10,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
 
-**Deploy order (default):** Pacto Gov + hats squad sponsor (combined Launchpad CTA; optional crew bootstrap) → announce sync. **Advanced:** Squad Admin alone without Pacto Gov. If gov exists and sponsor is missing, the same combined wizard finishes hats sponsor only.
+**Deploy order (default):** Pacto Gov + hats squad sponsor (combined Launchpad CTA; optional crew bootstrap) → announce sync. **Advanced:** Squad sponsor **Ext** (owner allowlist; squad-assigned wallet must fund gas + deposit) or Squad Admin alone without Pacto Gov. If gov exists and sponsor is missing, the same combined wizard finishes hats sponsor only. **Treasury** and **Governance** **Deploy** / **Deploy Sponsor** open the same **Deploy Governance** launchpad (not the combined wizard directly).
 
 ---
 
@@ -34,9 +34,11 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 
 ---
 
-## 2. Advanced: Squad Admin alone
+## 2. Advanced: Squad sponsor Ext or Squad Admin alone
 
+- [ ] **Deploy** → Advanced → **Deploy squad sponsor (Ext)** when you want an address-list sponsor (deployer is owner). Gas and deposit must come from the **squad-assigned** EVM (generated or default-bound on roster) — not the DM Default wallet unless that address is the roster binding.
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
+- [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).
 
 | Symptom | Likely cause |
@@ -76,7 +78,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [ACCESS_CONTROL.md](../governance/ACCESS_
 
 ## 4. Standalone Safe
 
-Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance treasury Safe must not duplicate as `standalone_safe`.
+Independent of sponsor or Pacto Gov. Extra vault Safes allowed alongside pacto-gov; governance treasury Safe must not duplicate as `standalone_safe`.
 
 - [ ] **Deploy Safe** or **Import Safe** from launchpad / Treasury.
 - [ ] Vault card shows **`Vault: <label>`** (not governance treasury unless intentional).
@@ -84,7 +86,6 @@ Requires **sponsor**. Extra vault Safes allowed alongside pacto-gov; governance 
 
 | Symptom | Likely cause |
 |---------|----------------|
-| `SPONSOR_REQUIRED` | Sponsor first |
 | `SAFE_CONFIG` | Missing `PACTO_SAFE_*` for chain |
 | No roster in deploy UI | Members have not shared squad EVM on announcements |
 

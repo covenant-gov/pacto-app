@@ -143,6 +143,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let showLaunchpad = false;
   let showPactoGovDeploy = false;
   let showGovAndSponsorDeploy = false;
+  let showExtSponsorDeploy = false;
   let showSquadAdminDeploy = false;
   let showSquadRolesModal = false;
 
@@ -638,9 +639,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   function openDeploySafe() {
-    requireSponsorForInfra(() => {
+    if (parentId?.trim()) {
       showDeploySafeModal = true;
-    });
+    }
   }
 
   function openPactoGovDeploy() {
@@ -668,6 +669,16 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       void loadSquadMemberEvm();
       if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
       showGovAndSponsorDeploy = true;
+    }
+  }
+
+  function openExtSponsorDeploy() {
+    if (hasSponsor) {
+      showToast('Squad sponsor is already deployed for this parent.');
+      return;
+    }
+    if (parentId?.trim()) {
+      showExtSponsorDeploy = true;
     }
   }
 
@@ -871,7 +882,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               myAddress={myGovernanceAddress}
               {captainWearers}
               {crewWearers}
-              onOpenSponsorDeploy={openGovAndSponsorDeploy}
+              onOpenSponsorDeploy={openLaunchpad}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
             />
@@ -952,6 +963,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   bind:showLaunchpad
   bind:showPactoGovDeploy
   bind:showGovAndSponsorDeploy
+  bind:showExtSponsorDeploy
   bind:showSquadAdminDeploy
   bind:showSquadRolesModal
   bind:showSetSafeModal
@@ -966,6 +978,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   onCloseLaunchpad={() => (showLaunchpad = false)}
   onClosePactoGovDeploy={() => (showPactoGovDeploy = false)}
   onCloseGovAndSponsorDeploy={() => (showGovAndSponsorDeploy = false)}
+  onCloseExtSponsorDeploy={() => (showExtSponsorDeploy = false)}
   onCloseSquadAdminDeploy={() => (showSquadAdminDeploy = false)}
   onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
   onCloseSetSafe={closeSetSafeModal}
@@ -973,6 +986,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   onDeploySquadAdmin={openSquadAdminDeploy}
   onDeployPactoGov={openPactoGovDeploy}
   onDeployGovAndSponsor={openGovAndSponsorDeploy}
+  onDeployExtSponsor={openExtSponsorDeploy}
   onDeploySafe={openDeploySafe}
   onImportSafe={openSetSafe}
   onDeploySafeSuccess={async (params) => {
@@ -1049,6 +1063,19 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           : 'Hats sponsor deployed. Bootstrap crew hats later from Captain if needed.',
       );
     }
+  }}
+  onExtSponsorComplete={async (out) => {
+    await onSponsorDeployComplete?.({
+      parentId: parentId!.trim(),
+      announcementsGroupId: announcementsGroupId?.trim() ?? '',
+      chain: out.chain,
+      sponsorAddress: out.sponsorAddress,
+      providerPayload: out.providerPayload,
+      infraRowId: out.infraRowId,
+    });
+    showExtSponsorDeploy = false;
+    selectDashboardView('treasury');
+    showToast('Squad sponsor Ext deployed — manage allowlist from Treasury.');
   }}
   onSquadAdminComplete={async (out) => {
     await onSquadAdminDeployComplete?.({
