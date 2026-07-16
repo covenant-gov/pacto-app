@@ -21,6 +21,7 @@ pub mod safe_deploy;
 pub mod squad_sponsor_common;
 pub mod squad_sponsor_deploy;
 pub mod squad_sponsor_deposit;
+pub mod squad_sponsor_ext;
 pub mod squad_sponsor_read;
 pub mod squad_admin_deploy;
 pub mod squad_admin_write;

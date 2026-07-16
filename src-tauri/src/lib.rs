@@ -6531,6 +6531,8 @@ pub fn run() {
             evm::squad_sponsor_deploy::deploy_squad_sponsor_for_parent,
             evm::squad_sponsor_deposit::deposit_squad_sponsor,
             evm::squad_sponsor_read::get_squad_sponsor_summary,
+            evm::squad_sponsor_ext::get_squad_sponsor_ext_status,
+            evm::squad_sponsor_ext::squad_sponsor_set_permitted_address,
             evm::squad_admin_deploy::deploy_squad_admin_for_parent,
             evm::squad_admin_write::squad_admin_create_role,
             evm::squad_admin_write::squad_admin_enable_executor,

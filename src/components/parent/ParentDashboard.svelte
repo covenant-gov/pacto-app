@@ -12,15 +12,16 @@ import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
 import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
-  import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto } from '../../lib/governance/api';
+  import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto, SquadSponsorExtStatusDto } from '../../lib/governance/api';
   import {
+    getSquadSponsorExtStatus,
     hasSponsorInfra,
     pactoGovInfraRow,
     pactoGovTreasuryEntryId,
     sponsorInfraRow,
     withLegacyProvider,
   } from '../../lib/governance/api';
-  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
+  import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
     protocolWearerCandidateAddresses,
@@ -245,6 +246,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let settingsChainError = '';
   let settingsChainKey = '';
 
+  let sponsorExtStatus: SquadSponsorExtStatusDto | null = null;
+  let sponsorExtLoading = false;
+  let sponsorExtError = '';
+  let sponsorExtKey = '';
+
   async function loadTreasuryProposals() {
     const ta = pactoPayload?.treasuryAuthority?.trim();
     const key = `${pactoNetwork}:${ta ?? ''}`;
@@ -430,6 +436,45 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
+  async function loadSponsorExtStatus() {
+    if (!hasSponsor || !parentId) {
+      sponsorExtStatus = null;
+      sponsorExtError = '';
+      sponsorExtKey = '';
+      return;
+    }
+    const network =
+      sponsorRow?.chain?.trim() || squadNetwork || pactoNetwork || DEFAULT_CHAIN_ID;
+    const memberAddresses = Object.values(squadMemberEvmByNpub)
+      .map((a) => a.trim())
+      .filter(Boolean)
+      .sort();
+    const key = `${network}:${parentId}:${sponsorRow?.canonicalRef ?? ''}:${memberAddresses.join(',')}`;
+    if (sponsorExtKey === key) return;
+    sponsorExtKey = key;
+    sponsorExtLoading = true;
+    sponsorExtError = '';
+    try {
+      sponsorExtStatus = await getSquadSponsorExtStatus({
+        network,
+        parentId,
+        memberAddresses,
+        sponsorAddress: sponsorRow?.canonicalRef ?? null,
+      });
+    } catch (e) {
+      if (isSupersededLoaderKey(sponsorExtKey, key)) return;
+      sponsorExtError = getInvokeErrorMessage(e, 'Could not load sponsor eligibility.');
+      if (!sponsorExtStatus) sponsorExtStatus = null;
+    } finally {
+      if (!isSupersededLoaderKey(sponsorExtKey, key)) sponsorExtLoading = false;
+    }
+  }
+
+  function refreshSponsorExtStatus() {
+    sponsorExtKey = '';
+    void loadSponsorExtStatus();
+  }
+
   $: if (dashboardView === 'governance' && pactoPayload?.treasuryAuthority) {
     void loadTreasuryProposals();
   }
@@ -506,6 +551,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   $: if ((dashboardView === 'status' || dashboardView === 'crew') && parentId) {
     loadSquadMemberEvm();
+  }
+
+  $: if (dashboardView === 'crew' && hasSponsor && parentId) {
+    void squadMemberEvmByNpub;
+    void loadSponsorExtStatus();
   }
 
   function openDashboardMembersPanel() {
@@ -813,6 +863,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               showManagePrivileges={!!squadAdminCtx}
               pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
               onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
+              {sponsorExtStatus}
+              {sponsorExtLoading}
+              {sponsorExtError}
+              sponsorNetwork={sponsorRow?.chain?.trim() || squadNetwork || pactoNetwork || DEFAULT_CHAIN_ID}
+              parentId={parentId ?? ''}
+              onRefreshSponsorExt={refreshSponsorExtStatus}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Crew tab.</p>

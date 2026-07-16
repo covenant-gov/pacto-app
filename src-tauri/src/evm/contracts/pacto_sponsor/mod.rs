@@ -52,4 +52,17 @@ sol! {
 
         function sponsorShares(address sponsor) external view returns (uint256 shares);
     }
+
+    /// Ext clone: address-list eligibility until hats are wired.
+    interface ISquadSponsorExt {
+        function addressOwner() external view returns (address owner);
+
+        function hatsWired() external view returns (bool wired);
+
+        function permittedAddress(address member) external view returns (bool permitted);
+
+        function setPermittedAddress(address member, bool permitted) external;
+
+        function transferAddressOwner(address newOwner) external;
+    }
 }

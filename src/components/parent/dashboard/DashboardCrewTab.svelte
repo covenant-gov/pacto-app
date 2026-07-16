@@ -3,6 +3,15 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
   import type { Squad } from '../../../stores/squads';
+  import { currentUser } from '../../../stores/auth';
+  import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
+  import { permittedByAddressFromExtStatus } from '../../../lib/governance/squad-sponsor-crew';
+  import {
+    squadSponsorSetPermittedAddress,
+    type SquadSponsorExtStatusDto,
+  } from '../../../lib/governance/api';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { showToast } from '../../../stores/toast';
 
   export let squad: Squad;
   export let announcementsGroupId: string | null = null;
@@ -18,11 +27,79 @@
   export let showManagePrivileges = false;
   export let pactoGovRevision = '';
 
+  /** Sponsor Ext eligibility (null when no sponsor / not loaded). */
+  export let sponsorExtStatus: SquadSponsorExtStatusDto | null = null;
+  export let sponsorExtLoading = false;
+  export let sponsorExtError = '';
+  export let sponsorNetwork = '';
+  export let parentId = '';
+  export let onRefreshSponsorExt: () => void = () => {};
+
+  let sponsoringAddress = '';
+
+  $: myNpub = $currentUser?.npub ?? '';
+  $: myRosterEvm = (myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '') || '';
+  $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
+  $: permittedByAddress = permittedByAddressFromExtStatus(sponsorExtStatus?.memberPermits ?? []);
+  $: addressOwner = sponsorExtStatus?.addressOwner?.trim().toLowerCase() ?? '';
+  $: ownerNpub = addressOwner ? npubByAddress[addressOwner] : undefined;
+  $: iAmSponsorOwner =
+    !!addressOwner && !!myRosterEvm && myRosterEvm.toLowerCase() === addressOwner;
+  $: hatsWired = sponsorExtStatus?.hatsWired === true;
+  $: canManagePermits = iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId;
+
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
     return addr.slice(0, 6) + '…' + addr.slice(-4);
   }
+
+  function ownerLabel(): string {
+    if (!addressOwner) return 'Unknown';
+    if (ownerNpub) {
+      const name = getProfileDisplayName($profiles[ownerNpub]);
+      if (name) return `${name} (${shortAddress(addressOwner)})`;
+    }
+    return shortAddress(addressOwner);
+  }
+
+  async function sponsorMember(memberAddress: string) {
+    if (!canManagePermits || sponsoringAddress || !parentId || !sponsorNetwork) return;
+    sponsoringAddress = memberAddress.toLowerCase();
+    try {
+      await squadSponsorSetPermittedAddress({
+        network: sponsorNetwork,
+        parentId,
+        memberAddress,
+        permitted: true,
+        sponsorAddress: sponsorExtStatus?.sponsorAddress ?? null,
+      });
+      showToast('Member sponsored.');
+      onRefreshSponsorExt();
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, 'Sponsor failed.'));
+    } finally {
+      sponsoringAddress = '';
+    }
+  }
 </script>
+
+{#if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
+  <section class="sponsor-owner-banner" aria-label="Squad sponsor owner">
+    <span class="meta-label">Sponsor owner</span>
+    {#if sponsorExtLoading && !sponsorExtStatus}
+      <span class="muted">Loading…</span>
+    {:else if sponsorExtError && !sponsorExtStatus}
+      <span class="chain-read-error" role="alert">{sponsorExtError}</span>
+    {:else if sponsorExtStatus}
+      <span class="sponsor-owner-value">{ownerLabel()}</span>
+      {#if hatsWired}
+        <span class="muted sponsor-owner-hint">Hats wired — address list closed</span>
+      {:else if iAmSponsorOwner}
+        <span class="muted sponsor-owner-hint">You can permit members</span>
+      {/if}
+    {/if}
+  </section>
+{/if}
 
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
   <h3 id="crew-roster-heading" class="section-heading">Crew</h3>
@@ -43,7 +120,10 @@
         {#each channelMembers as memberNpub (memberNpub)}
           {@const npub = memberNpub as string}
           {@const rosterEvm = squadMemberEvmByNpub[npub]}
+          {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
+          {@const isSponsored = rosterKey ? permittedByAddress[rosterKey] === true : false}
+          {@const showSponsorBtn = !!sponsorExtStatus && !hatsWired && !!rosterEvm && !isSponsored}
           <li class="roles-member-row">
             {#if avatarSrc}
               <img src={avatarSrc} alt="" class="roles-member-avatar" />
@@ -84,6 +164,34 @@
                     ? memberRolesByAddress[rosterEvm.toLowerCase()] || '—'
                     : 'Not shared'}</span
               >
+              {#if sponsorExtStatus}
+                <span class="roles-col-label">Sponsored</span>
+                {#if !rosterEvm}
+                  <span class="roles-col-value muted">Not shared</span>
+                {:else if sponsorExtLoading && permittedByAddress[rosterKey] === undefined}
+                  <span class="roles-col-value muted">Loading…</span>
+                {:else if isSponsored}
+                  <span class="roles-col-value">Yes</span>
+                {:else if showSponsorBtn}
+                  <span class="roles-col-value roles-col-sponsored">
+                    <button
+                      type="button"
+                      class="sponsor-btn"
+                      disabled={!canManagePermits || sponsoringAddress === rosterKey}
+                      title={!canManagePermits
+                        ? hatsWired
+                          ? 'Hats wired'
+                          : 'Only the sponsor owner can permit addresses'
+                        : 'Permit this address for gas sponsorship'}
+                      on:click={() => void sponsorMember(rosterEvm)}
+                    >
+                      {sponsoringAddress === rosterKey ? 'Sponsoring…' : 'Sponsor'}
+                    </button>
+                  </span>
+                {:else}
+                  <span class="roles-col-value">No</span>
+                {/if}
+              {/if}
             </div>
           </li>
         {/each}
@@ -115,6 +223,23 @@
 {/if}
 
 <style>
+  .sponsor-owner-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 8px 0 12px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.875rem;
+  }
+  .sponsor-owner-value {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+  .sponsor-owner-hint {
+    font-size: 0.75rem;
+  }
   .dashboard-section {
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
@@ -200,6 +325,24 @@
     font-family: ui-monospace, monospace;
     font-size: 0.75rem;
     color: var(--text-secondary);
+  }
+  .roles-col-sponsored {
+    display: flex;
+    align-items: center;
+  }
+  .sponsor-btn {
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+  .sponsor-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
   .privileges-row {
     display: flex;

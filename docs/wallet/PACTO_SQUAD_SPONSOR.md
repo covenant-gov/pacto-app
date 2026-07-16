@@ -15,7 +15,7 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
-**First-ship path:** `ISquadSponsorFactory.createSquadSponsorExt(squadId)` (address-list Ext clone; no hat tree required yet).
+**First-ship path:** `ISquadSponsorFactory.createSquadSponsorExt(squadId)` (address-list Ext clone; no hat tree required yet). Eligibility uses `setPermittedAddress` — only `addressOwner` (deployer / list admin) may permit roster EVMs. Crew tab shows owner + per-member Sponsored; Status checklist requires all members to share an EVM before sponsor deploy.
 
 ## Manual smoke (Sepolia)
 
