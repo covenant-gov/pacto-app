@@ -5,7 +5,6 @@
   export let gate: CtaGate;
   export let acting = false;
   export let variant: 'primary' | 'secondary' | 'danger' | 'execute' = 'secondary';
-  export let contractHint = '';
   export let onClick: () => void = () => {};
 
   $: disabled = acting || !gate.enabled;
@@ -28,9 +27,6 @@
   >
     {label}
   </button>
-  {#if contractHint}
-    <span class="gov-cta-hint muted">{contractHint}</span>
-  {/if}
   {#if !gate.enabled && gate.reason}
     <p class="gov-cta-reason muted">{gate.reason}</p>
   {/if}
@@ -68,10 +64,6 @@
   .gov-cta:disabled {
     opacity: 0.45;
     cursor: not-allowed;
-  }
-  .gov-cta-hint {
-    font-size: 0.6875rem;
-    line-height: 1.3;
   }
   .gov-cta-reason {
     margin: 0;

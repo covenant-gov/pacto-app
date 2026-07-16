@@ -42,8 +42,8 @@
   }
 </script>
 
-<div class="action-block">
-  <h5 class="subhead">Submit proposal</h5>
+<div class="propose-section">
+  <h6 class="section-label">Submit proposal</h6>
   <div class="form-grid">
     <label>To<input bind:value={proposeTo} placeholder="0x…" disabled={!proposeGate.enabled || acting} /></label>
     <label>Value (wei)<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
@@ -56,31 +56,22 @@
       </select>
     </label>
   </div>
-  <GovCtaButton
-    label="Submit proposal"
-    variant="primary"
-    contractHint="Treasury Authority"
-    gate={proposeGate}
-    {acting}
-    onClick={submit}
-  />
+  <GovCtaButton label="Submit proposal" variant="primary" gate={proposeGate} {acting} onClick={submit} />
 </div>
 
 <style>
-  .action-block {
+  .propose-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 10px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
   }
-  .subhead {
+  .section-label {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
   .form-grid {
     display: grid;

@@ -90,169 +90,165 @@
 
 <div class="crew-actions">
   {#if treasuryAuthority}
-    <GovProposeForm
-      {network}
-      {parentId}
-      {treasuryAuthority}
-      {privilege}
-      onSubmitted={onRefreshProposals}
-    />
-  {/if}
+    <section class="contract-box" aria-labelledby="crew-ta-heading">
+      <h5 id="crew-ta-heading" class="contract-title">Treasury Authority</h5>
 
-  <div class="action-block">
-    <h5 class="subhead">Crew vote</h5>
-    {#if votable.length === 0}
-      <p class="muted">No proposals in crew voting phase.</p>
-    {:else}
-      <label class="field-label">
-        Proposal
-        <select bind:value={voteProposalId} disabled={acting}>
-          {#each votable as p (p.proposalId)}
-            <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
-          {/each}
-        </select>
-      </label>
-      <div class="row">
-        <GovCtaButton
-          label="Vote yea"
-          variant="primary"
-          contractHint="Treasury Authority"
-          gate={crewGate}
-          {acting}
-          onClick={() =>
-            void run('Crew yea', () =>
-              treasuryAuthorityCrewVote({
-                network,
-                parentId,
-                treasuryAuthority,
-                proposalId: voteProposalId,
-                support: true,
-              }),
-            onRefreshProposals)}
-        />
-        <GovCtaButton
-          label="Vote nay"
-          contractHint="Treasury Authority"
-          gate={crewGate}
-          {acting}
-          onClick={() =>
-            void run('Crew nay', () =>
-              treasuryAuthorityCrewVote({
-                network,
-                parentId,
-                treasuryAuthority,
-                proposalId: voteProposalId,
-                support: false,
-              }),
-            onRefreshProposals)}
-        />
+      <GovProposeForm
+        {network}
+        {parentId}
+        {treasuryAuthority}
+        {privilege}
+        onSubmitted={onRefreshProposals}
+      />
+
+      <div class="section">
+        <h6 class="section-label">Crew vote</h6>
+        {#if votable.length === 0}
+          <p class="muted">No proposals in crew voting phase.</p>
+        {:else}
+          <label class="field-label">
+            Proposal
+            <select bind:value={voteProposalId} disabled={acting}>
+              {#each votable as p (p.proposalId)}
+                <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
+              {/each}
+            </select>
+          </label>
+          <div class="row">
+            <GovCtaButton
+              label="Vote yea"
+              variant="primary"
+              gate={crewGate}
+              {acting}
+              onClick={() =>
+                void run('Crew yea', () =>
+                  treasuryAuthorityCrewVote({
+                    network,
+                    parentId,
+                    treasuryAuthority,
+                    proposalId: voteProposalId,
+                    support: true,
+                  }),
+                onRefreshProposals)}
+            />
+            <GovCtaButton
+              label="Vote nay"
+              gate={crewGate}
+              {acting}
+              onClick={() =>
+                void run('Crew nay', () =>
+                  treasuryAuthorityCrewVote({
+                    network,
+                    parentId,
+                    treasuryAuthority,
+                    proposalId: voteProposalId,
+                    support: false,
+                  }),
+                onRefreshProposals)}
+            />
+          </div>
+        {/if}
       </div>
-    {/if}
-  </div>
 
-  {#if mutinyModule}
-    {#if mutinyActive && mutinyStatus}
-      <div class="action-block">
-        <h5 class="subhead">Active mutiny</h5>
-        <p class="muted">
-          Toward <code>{mutinyStatus.proposedNewCaptain}</code> · yeas {mutinyStatus.yeas} / snapshot
-          {mutinyStatus.snapshot}
-        </p>
-        <div class="row">
+      <div class="section">
+        <h6 class="section-label">Execute proposal</h6>
+        {#if executable.length === 0}
+          <p class="muted">No proposals ready to execute.</p>
+        {:else}
+          <label class="field-label">
+            Proposal
+            <select bind:value={execProposalId} disabled={acting}>
+              {#each executable as p (p.proposalId)}
+                <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
+              {/each}
+            </select>
+          </label>
           <GovCtaButton
-            label={mutinyHasVotedFlag ? 'Already voted' : 'Cast mutiny vote'}
-            variant="primary"
-            contractHint="Mutiny"
-            gate={mutinyHasVotedFlag ? { enabled: false, reason: 'You already voted in this mutiny.' } : crewGate}
-            {acting}
-            onClick={() =>
-              void run('Mutiny vote', () =>
-                mutinyCastVote({
-                  network,
-                  parentId,
-                  mutinyModule,
-                  mutinyId: mutinyStatus.activeMutinyId,
-                }),
-              onRefreshMutiny)}
-          />
-          <GovCtaButton
-            label="Execute mutiny"
+            label="Execute"
             variant="execute"
-            contractHint="Mutiny"
             gate={execGate}
             {acting}
             onClick={() =>
-              void run('Execute mutiny', () =>
-                mutinyExecute({
+              void run('Execute', () =>
+                treasuryAuthorityExecute({
                   network,
                   parentId,
-                  mutinyModule,
-                  mutinyId: mutinyStatus.activeMutinyId,
+                  treasuryAuthority,
+                  proposalId: execProposalId,
                 }),
-              onRefreshMutiny)}
-          />
-        </div>
-      </div>
-    {:else}
-      <div class="action-block">
-        <h5 class="subhead">Start mutiny</h5>
-        <select bind:value={startKind} disabled={!crewGate.enabled || acting}>
-          <option value="crew">To crew member</option>
-          <option value="committee">To committee (Safe-style)</option>
-          <option value="eoa">To arbitrary EOA</option>
-          <option value="contract">To arbitrary contract</option>
-          <option value="pause">Pause captain (hat → Safe)</option>
-        </select>
-        {#if startKind !== 'pause'}
-          <input
-            bind:value={proposed}
-            placeholder="Proposed address 0x…"
-            disabled={!crewGate.enabled || acting}
+              onRefreshProposals)}
           />
         {/if}
-        <GovCtaButton
-          label="Start mutiny"
-          variant="primary"
-          contractHint="Mutiny"
-          gate={crewGate}
-          {acting}
-          onClick={startMutiny}
-        />
       </div>
-    {/if}
+    </section>
   {/if}
 
-  <div class="action-block">
-    <h5 class="subhead">Execute treasury proposal</h5>
-    {#if executable.length === 0}
-      <p class="muted">No proposals ready to execute.</p>
-    {:else}
-      <label class="field-label">
-        Proposal
-        <select bind:value={execProposalId} disabled={acting}>
-          {#each executable as p (p.proposalId)}
-            <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
-          {/each}
-        </select>
-      </label>
-      <GovCtaButton
-        label="Execute"
-        variant="execute"
-        contractHint="Treasury Authority"
-        gate={execGate}
-        {acting}
-        onClick={() =>
-          void run('Execute', () =>
-            treasuryAuthorityExecute({
-              network,
-              parentId,
-              treasuryAuthority,
-              proposalId: execProposalId,
-            }),
-          onRefreshProposals)}
-      />
-    {/if}
-  </div>
+  {#if mutinyModule}
+    <section class="contract-box" aria-labelledby="crew-mutiny-heading">
+      <h5 id="crew-mutiny-heading" class="contract-title">Mutiny</h5>
+
+      {#if mutinyActive && mutinyStatus}
+        <div class="section">
+          <h6 class="section-label">Active mutiny</h6>
+          <p class="muted">
+            Toward <code>{mutinyStatus.proposedNewCaptain}</code> · yeas {mutinyStatus.yeas} / snapshot
+            {mutinyStatus.snapshot}
+          </p>
+          <div class="row">
+            <GovCtaButton
+              label={mutinyHasVotedFlag ? 'Already voted' : 'Cast mutiny vote'}
+              variant="primary"
+              gate={mutinyHasVotedFlag ? { enabled: false, reason: 'You already voted in this mutiny.' } : crewGate}
+              {acting}
+              onClick={() =>
+                void run('Mutiny vote', () =>
+                  mutinyCastVote({
+                    network,
+                    parentId,
+                    mutinyModule,
+                    mutinyId: mutinyStatus.activeMutinyId,
+                  }),
+                onRefreshMutiny)}
+            />
+            <GovCtaButton
+              label="Execute mutiny"
+              variant="execute"
+              gate={execGate}
+              {acting}
+              onClick={() =>
+                void run('Execute mutiny', () =>
+                  mutinyExecute({
+                    network,
+                    parentId,
+                    mutinyModule,
+                    mutinyId: mutinyStatus.activeMutinyId,
+                  }),
+                onRefreshMutiny)}
+            />
+          </div>
+        </div>
+      {:else}
+        <div class="section">
+          <h6 class="section-label">Start mutiny</h6>
+          <select bind:value={startKind} disabled={!crewGate.enabled || acting}>
+            <option value="crew">To crew member</option>
+            <option value="committee">To committee (Safe-style)</option>
+            <option value="eoa">To arbitrary EOA</option>
+            <option value="contract">To arbitrary contract</option>
+            <option value="pause">Pause captain (hat → Safe)</option>
+          </select>
+          {#if startKind !== 'pause'}
+            <input
+              bind:value={proposed}
+              placeholder="Proposed address 0x…"
+              disabled={!crewGate.enabled || acting}
+            />
+          {/if}
+          <GovCtaButton label="Start mutiny" variant="primary" gate={crewGate} {acting} onClick={startMutiny} />
+        </div>
+      {/if}
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -261,20 +257,33 @@
     flex-direction: column;
     gap: 12px;
   }
-  .action-block {
+  .contract-box {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: 14px;
+    padding: 12px 14px;
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     background: var(--bg-elevated);
   }
-  .subhead {
+  .contract-title {
     margin: 0;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 600;
-    color: var(--text-secondary);
+    color: var(--text-primary);
+  }
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .section-label {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
   .row {
     display: flex;
