@@ -122,6 +122,9 @@ mod relay_cert;
 // Machine-readable record of where this sandbox landed (ports, root, endpoints).
 mod sandbox_handle;
 
+// Backend-mediated clipboard export for sensitive secrets.
+mod export;
+
 // Debug-only headless login used by agents and the e2e harness.
 #[cfg(debug_assertions)]
 mod dev_login;
@@ -10397,6 +10400,9 @@ pub fn run() {
                             let _ = handle_for_window_state.save_window_state(StateFlags::all());
                         }
 
+                        // Clear the clipboard if a sensitive export is still pending.
+                        crate::export::shutdown_clipboard_cleanup(&handle_for_window_state);
+
                         // Cleanly shutdown our Nostr client
                         if let Ok(nostr_client) = get_nostr_client() {
                             tauri::async_runtime::block_on(async {
@@ -10433,6 +10439,9 @@ pub fn run() {
             // Set as our accessible static app handle
             TAURI_APP.set(handle.clone()).unwrap();
 
+            // Startup cleanup: clear the clipboard if a previous run left a secret pending.
+            crate::export::startup_clipboard_cleanup(&handle);
+            
             // Start the profile sync background processor
             tauri::async_runtime::spawn(async {
                 profile_sync::start_profile_sync_processor().await;
@@ -10711,6 +10720,9 @@ pub fn run() {
             session::session_heartbeat,
             session::get_session_timeout,
             session::set_session_timeout,
+            // Sensitive export commands.
+            export::export_sensitive_to_clipboard,
+            export::clear_clipboard,
             // Image cache commands
             image_cache::get_or_cache_image,
             image_cache::clear_image_cache,

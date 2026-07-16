@@ -155,3 +155,58 @@ export async function exportEvmAccountKeyPlaintext(accountId: string): Promise<s
   return await invoke<string>('export_evm_account_key_plaintext', { accountId });
 }
 
+
+/**
+ * Result returned by `export_sensitive_to_clipboard`.
+ * The raw secret never leaves the backend; only metadata crosses the IPC boundary.
+ */
+export interface SensitiveExportResult {
+  exportType: string;
+  accountId: string;
+  clearedAt: number;
+}
+
+/**
+ * Export a sensitive secret to the system clipboard without exposing it to the webview.
+ * The backend writes the secret directly to the clipboard and clears it after 90 seconds.
+ */
+export async function exportSensitiveToClipboard(
+  exportType: 'evm' | 'nostr' | 'seed',
+  accountId: string | undefined,
+  pin: string
+): Promise<SensitiveExportResult> {
+  const backendExportType = frontendToBackendExportType(exportType);
+  const result = await invoke<SensitiveExportResult>('export_sensitive_to_clipboard', {
+    exportType: backendExportType,
+    accountId,
+    pin,
+  });
+  return { ...result, exportType: backendToFrontendExportType(result.exportType) };
+}
+
+function frontendToBackendExportType(exportType: 'evm' | 'nostr' | 'seed'): string {
+  switch (exportType) {
+    case 'evm':
+      return 'evm_account';
+    case 'nostr':
+      return 'nostr_nsec';
+    case 'seed':
+      return 'seed_phrase';
+    default:
+      return exportType;
+  }
+}
+
+function backendToFrontendExportType(exportType: string): 'evm' | 'nostr' | 'seed' {
+  switch (exportType) {
+    case 'evm_account':
+      return 'evm';
+    case 'nostr_nsec':
+      return 'nostr';
+    case 'seed_phrase':
+      return 'seed';
+    default:
+      return exportType as 'evm' | 'nostr' | 'seed';
+  }
+}
+
