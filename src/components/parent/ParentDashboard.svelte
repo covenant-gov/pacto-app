@@ -1027,7 +1027,16 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     });
     showGovAndSponsorDeploy = false;
     selectDashboardView('governance');
-    if (out.gov) {
+    if (out.bootstrapError) {
+      showToast(
+        out.gov
+          ? `Pacto Gov + sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`
+          : `Hats sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`,
+        undefined,
+        undefined,
+        { error: true },
+      );
+    } else if (out.gov) {
       showToast(
         out.bootstrapped
           ? 'Pacto Gov + sponsor deployed; crew hats bootstrapped.'

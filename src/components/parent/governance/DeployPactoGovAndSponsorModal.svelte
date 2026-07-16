@@ -10,6 +10,7 @@
   import type { SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
   import {
     bootstrapCrewCandidates,
+    canBootstrapCrewDuringDeploy,
     startHatsSponsorOnlyDeploy,
     startPactoGovAndSponsorDeploy,
     type CombinedGovSponsorDeployComplete,
@@ -190,6 +191,17 @@
     !selectedBalance.error &&
     amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
 
+  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
+  $: bootstrapAllowed = canBootstrapCrewDuringDeploy({
+    signerWallet: payFromEffective,
+    signersAreSame,
+    captainAddress,
+    squadRosterAddress: squadSignerAddress,
+  });
+  $: if (!bootstrapAllowed && bootstrapCrew) {
+    bootstrapCrew = false;
+  }
+
   $: crewPreview = bootstrapCrewCandidates(captainMemberOptions, captainAddress).map((addr) => {
     const key = addr.toLowerCase();
     const opt = captainMemberOptions.find((o) => o.address.toLowerCase() === key);
@@ -234,6 +246,14 @@
     }
 
     const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
+    const doBootstrap =
+      bootstrapCrew &&
+      canBootstrapCrewDuringDeploy({
+        signerWallet: payFrom,
+        signersAreSame,
+        captainAddress,
+        squadRosterAddress: squadSignerAddress,
+      });
 
     const onProgress = (step: 'gov' | 'sponsor' | 'bootstrap') => {
       progressStep = step;
@@ -256,7 +276,7 @@
           squadNetwork,
           topHatId: existingTopHatId.trim(),
           initialDepositWei: depositWei,
-          bootstrapCrew,
+          bootstrapCrew: doBootstrap,
           memberOptions: captainMemberOptions,
           quartermaster: quartermaster.trim() || undefined,
           captainAddress: captainAddress || undefined,
@@ -271,7 +291,7 @@
           squadNetwork,
           captain: captainAddress,
           initialDepositWei: depositWei,
-          bootstrapCrew,
+          bootstrapCrew: doBootstrap,
           memberOptions: captainMemberOptions,
           signerWallet: payFrom,
           onProgress,
@@ -453,20 +473,27 @@
   </div>
 
   <div class="field bootstrap-field">
-    <label class="bootstrap-label">
-      <input type="checkbox" bind:checked={bootstrapCrew} />
+    <label class="bootstrap-label" class:bootstrap-disabled={!bootstrapAllowed}>
+      <input type="checkbox" bind:checked={bootstrapCrew} disabled={!bootstrapAllowed} />
       Bootstrap crew hats now
     </label>
-    <p class="hint muted">
-      Optional. Only squad-assigned EVMs (except the captain) are minted. Skip if keys are incomplete —
-      mint later from Governance → Captain.
-    </p>
+    {#if !bootstrapAllowed}
+      <p class="hint muted">
+        Available when you pay gas from your squad-assigned key and assign yourself as captain (same
+        funded address signs the mint). Otherwise mint later from Governance → Captain.
+      </p>
+    {:else}
+      <p class="hint muted">
+        Optional. Only squad-assigned EVMs (except the captain) are minted. Signed by your squad key.
+        Skip if keys are incomplete — mint later from Governance → Captain.
+      </p>
+    {/if}
     {#if bootstrapCrew && sponsorOnly && !quartermaster.trim()}
       <p class="hint warn-hint">
         Quartermaster address missing from gov payload — bootstrap will fail until it is present.
       </p>
     {/if}
-    {#if bootstrapCrew}
+    {#if bootstrapCrew && bootstrapAllowed}
       {#if crewPreview.length === 0}
         <p class="hint muted">No non-captain shared addresses to include yet.</p>
       {:else}
@@ -573,6 +600,10 @@
     font-size: 0.875rem;
     color: var(--text-primary);
     cursor: pointer;
+  }
+  .bootstrap-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
   .preview-list {
     list-style: none;
