@@ -26,8 +26,14 @@ pub const LEGACY_SALT: &[u8] = b"vectovectvecvevpacto";
 /// Length of a random key-derivation salt, in bytes.
 pub const SALT_LENGTH: usize = 32;
 
-/// Argon2id memory cost in KiB (matches the legacy `hash_pass` setting).
+/// Argon2id memory cost in KiB for new accounts. The legacy `hash_pass` used
+/// 96000 KiB, so this constant is intentionally not reused for legacy key
+/// derivation.
 pub const ARGON_MEMORY_KIB: u32 = 96 * 1024;
+
+/// Argon2id memory cost in KiB for legacy accounts (must match the original
+/// `hash_pass` setting of 96000 KiB).
+const LEGACY_ARGON_MEMORY_KIB: u32 = 96000;
 
 /// Argon2id iteration count for legacy accounts (kept at 4 to match the
 /// original `hash_pass` setting and unlock pre-migration data).
@@ -102,7 +108,7 @@ fn argon2_params() -> Params {
 /// Build Argon2id parameters for legacy accounts (pre-migration).
 fn legacy_argon2_params() -> Params {
     Params::new(
-        ARGON_MEMORY_KIB,
+        LEGACY_ARGON_MEMORY_KIB,
         LEGACY_ARGON_ITERATIONS,
         ARGON_PARALLELISM,
         Some(ARGON_OUTPUT_LEN),
@@ -487,10 +493,13 @@ mod tests {
     }
 
     // Legacy `hash_pass` retained as a private golden vector for the hard-coded
-    // salt path. It is intentionally not used outside this test module.
+    // salt path. It intentionally replicates the original v0.2.0 parameters
+    // (96000 KiB, 4 iterations) rather than delegating to legacy_argon2_params(),
+    // so it acts as a regression test against the real historical derivation.
     async fn hash_pass(password: String) -> [u8; 32] {
         let salt = LEGACY_SALT;
-        let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, legacy_argon2_params());
+        let params = Params::new(96000, 4, 1, Some(32)).expect("valid params");
+        let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, params);
         let mut key = [0u8; 32];
         argon
             .hash_password_into(password.as_bytes(), salt, &mut key)
