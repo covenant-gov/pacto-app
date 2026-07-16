@@ -1713,7 +1713,8 @@ impl MlsService {
             .await
             .map_err(|e| MlsError::StorageError(e))
     }
-    
+
+    #[cfg(test)]
     /// Run an in-memory MLS smoke test with the provided Nostr client
     ///
     /// This is a network-only smoke test that validates basic MLS operations
@@ -2123,4 +2124,38 @@ pub fn metadata_to_frontend(meta: &MlsGroupMetadata) -> serde_json::Value {
         "updated_at": seconds_to_millis(meta.updated_at),
         "evicted": meta.evicted,
     })
+}
+
+#[cfg(test)]
+mod mls_smoke_tests {
+    use super::MlsService;
+    use nostr_sdk::{Client, ClientOptions, Keys};
+    use std::time::Duration;
+
+    #[tokio::test]
+    #[ignore = "requires a running Nostr relay (e.g., ws://localhost:7000)"]
+    async fn run_mls_smoke_test_with_local_relay() {
+        let relay = std::env::var("MLS_SMOKE_RELAY")
+            .unwrap_or_else(|_| "ws://localhost:7000".to_string());
+
+        let signer = Keys::generate();
+        let client = Client::builder()
+            .signer(signer)
+            .opts(ClientOptions::new().gossip(false))
+            .build();
+
+        client
+            .add_relay(&relay)
+            .await
+            .expect("failed to add smoke-test relay");
+        client.connect().await;
+
+        MlsService::run_mls_smoke_test_with_client(
+            &client,
+            &relay,
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("MLS smoke test failed");
+    }
 }

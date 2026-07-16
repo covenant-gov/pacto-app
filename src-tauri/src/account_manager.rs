@@ -83,7 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_time ON messages(at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_messages_wrapper ON messages(wrapper_event_id);
 
--- Settings table (key-value pairs)
+-- Settings table (key-value pairs).
+-- Key-derivation settings:
+--   key_derivation_salt: hex-encoded 32-byte per-device Argon2 salt
+--   key_derivation_version: 1 = legacy hard-coded salt, 2 = per-device random salt
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -1195,6 +1198,27 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_squads_updated ON squads(updated_at_ms DESC);"#,
         )
         .map_err(|e| format!("Failed to create squads table: {}", e))?;
+    }
+
+    // Migration: existing accounts that predate per-device salt support are
+    // marked as version 1 (legacy hard-coded salt). New accounts will set
+    // version 2 at creation time in U2.
+    let kdf_version_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'key_derivation_version'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !kdf_version_exists {
+        println!("[Migration] Recording key_derivation_version=1 for existing account");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('key_derivation_version', '1')",
+            [],
+        )
+        .map_err(|e| format!("Failed to set key_derivation_version: {}", e))?;
     }
 
     Ok(())

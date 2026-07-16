@@ -1,0 +1,5 @@
+[env]
+# Many tests touch globals (session key, current account, DB connection pool).
+# Run the libtest harness serially to avoid flaky cross-test interference.
+RUST_TEST_THREADS = "1"
+

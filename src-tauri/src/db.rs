@@ -363,7 +363,7 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
         Some(e) => e,
         None => return Ok(()),
     };
-    let decrypted = match internal_decrypt(enc, None).await {
+    let decrypted = match internal_decrypt(enc).await {
         Ok(d) => d,
         Err(_) => return Ok(()),
     };
@@ -2922,7 +2922,7 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
 
 #[command]
 pub async fn set_seed<R: Runtime>(handle: AppHandle<R>, seed: String) -> Result<(), String> {
-    let encrypted_seed = internal_encrypt(seed, None).await;
+    let encrypted_seed = internal_encrypt(seed).await;
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
@@ -2948,7 +2948,7 @@ pub async fn get_seed<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>
     crate::account_manager::return_db_connection(conn);
 
     if let Some(encrypted) = encrypted_seed {
-        match internal_decrypt(encrypted, None).await {
+        match internal_decrypt(encrypted).await {
             Ok(decrypted) => return Ok(Some(decrypted)),
             Err(_) => return Err("Failed to decrypt seed phrase".to_string()),
         }
@@ -4279,7 +4279,7 @@ pub async fn save_event<R: Runtime>(
     let content = if event.kind == event_kind::PRIVATE_DIRECT_MESSAGE
         || event.kind == event_kind::MESSAGE_EDIT
     {
-        internal_encrypt(event.content.clone(), None).await
+        internal_encrypt(event.content.clone()).await
     } else {
         event.content.clone()
     };
@@ -4643,7 +4643,7 @@ pub async fn get_events<R: Runtime>(
     let mut decrypted_events = Vec::with_capacity(events.len());
     for mut event in events {
         if event.kind == event_kind::PRIVATE_DIRECT_MESSAGE {
-            event.content = internal_decrypt(event.content, None)
+            event.content = internal_decrypt(event.content)
                 .await
                 .unwrap_or_else(|_| "[Decryption failed]".to_string());
         }
@@ -4854,7 +4854,7 @@ async fn get_reply_contexts<R: Runtime>(
 
         // Decrypt content for text messages
         let decrypted_content = if kind == event_kind::PRIVATE_DIRECT_MESSAGE as i32 {
-            internal_decrypt(content_to_decrypt, None).await
+            internal_decrypt(content_to_decrypt).await
                 .unwrap_or_else(|_| "[Decryption failed]".to_string())
         } else {
             // File attachments don't have displayable content
@@ -4955,7 +4955,7 @@ pub async fn get_message_views<R: Runtime>(
                 }
                 k if k == event_kind::MESSAGE_EDIT => {
                     // Edit content is encrypted, decrypt it here
-                    let decrypted_content = internal_decrypt(event.content.clone(), None).await
+                    let decrypted_content = internal_decrypt(event.content.clone()).await
                         .unwrap_or_else(|_| event.content.clone());
                     let timestamp_ms = event.created_at * 1000; // Convert to ms
                     edits_by_msg.entry(ref_id.clone()).or_default().push((timestamp_ms, decrypted_content));
