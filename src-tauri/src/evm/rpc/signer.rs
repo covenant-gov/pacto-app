@@ -36,7 +36,7 @@ pub async fn load_embedded_signer<R: Runtime>(
         .map_err(|e| wallet_err_json("DB_ERROR", e, None))?
         .ok_or_else(|| wallet_err_json("NO_EVM_KEY", "EVM key not set for this account", None))?;
 
-    let evm_private_key = crypto::internal_decrypt(enc, None)
+    let evm_private_key = crypto::internal_decrypt(enc)
         .await
         .map_err(|_| wallet_err_json("DECRYPT_FAILED", "Could not decrypt EVM key", None))?;
 

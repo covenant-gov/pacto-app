@@ -221,39 +221,19 @@ pub fn decrypt_with_key(ciphertext: &str, key: &[u8; 32]) -> Result<String, ()> 
     unsafe { Ok(String::from_utf8_unchecked(plaintext)) }
 }
 
-/// Internal function for encryption logic using ChaCha20Poly1305
-pub async fn internal_encrypt(input: String, password: Option<String>) -> String {
-    let key = if let Some(pass) = password {
-        derive_legacy_key(&pass)
-    } else {
-        crate::current_encryption_key().expect("Encryption key should be set")
-    };
-
-    // Preserve the legacy caching behaviour: if no session key is present yet,
-    // store the key we just derived so subsequent no-password calls succeed.
-    if crate::current_encryption_key().is_none() {
-        crate::set_encryption_key(key);
-    }
-
+/// Internal function for encryption logic using ChaCha20Poly1305.
+/// Uses the session encryption key; callers must set the key first via
+/// `set_encryption_key` or the password-based encrypt helpers.
+pub async fn internal_encrypt(input: String) -> String {
+    let key = crate::current_encryption_key().expect("Encryption key should be set");
     encrypt_with_key(&input, &key)
 }
 
-/// Internal function for decryption logic using ChaCha20Poly1305
-pub async fn internal_decrypt(ciphertext: String, password: Option<String>) -> Result<String, ()> {
-    let has_password = password.is_some();
-    let key = if let Some(pass) = password {
-        derive_legacy_key(&pass)
-    } else {
-        crate::current_encryption_key().ok_or(())?
-    };
-
-    let plaintext = decrypt_with_key(&ciphertext, &key)?;
-
-    if has_password && crate::current_encryption_key().is_none() {
-        crate::set_encryption_key(key);
-    }
-
-    Ok(plaintext)
+/// Internal function for decryption logic using ChaCha20Poly1305.
+/// Uses the session encryption key; callers must set the key first.
+pub async fn internal_decrypt(ciphertext: String) -> Result<String, ()> {
+    let key = crate::current_encryption_key().ok_or(())?;
+    decrypt_with_key(&ciphertext, &key)
 }
 
 pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Result<Vec<u8>, String> {
@@ -388,35 +368,34 @@ mod tests {
     }
 
     #[test]
-    fn chacha_round_trip_with_password() {
-        let ciphertext = rt().block_on(internal_encrypt(
-            "plaintext message".to_string(),
-            Some("password".to_string()),
-        ));
+    fn chacha_round_trip_with_key() {
+        let key = derive_legacy_key("password");
+        let ciphertext = encrypt_with_key("plaintext message", &key);
         assert!(!ciphertext.is_empty());
-        let decrypted = rt().block_on(internal_decrypt(ciphertext, Some("password".to_string())));
+        let decrypted = decrypt_with_key(&ciphertext, &key);
         assert_eq!(decrypted.expect("decrypt"), "plaintext message");
     }
 
     #[test]
-    fn chacha_decrypt_rejects_wrong_password() {
-        let ciphertext = rt().block_on(internal_encrypt(
-            "plaintext message".to_string(),
-            Some("password".to_string()),
-        ));
-        let decrypted = rt().block_on(internal_decrypt(ciphertext, Some("wrong".to_string())));
+    fn chacha_decrypt_rejects_wrong_key() {
+        let key = derive_legacy_key("password");
+        let ciphertext = encrypt_with_key("plaintext message", &key);
+        let wrong_key = derive_legacy_key("wrong");
+        let decrypted = decrypt_with_key(&ciphertext, &wrong_key);
         assert!(decrypted.is_err());
     }
 
     #[test]
     fn chacha_decrypt_rejects_short_ciphertext() {
-        let decrypted = rt().block_on(internal_decrypt("0x00".to_string(), Some("password".to_string())));
+        let key = derive_legacy_key("password");
+        let decrypted = decrypt_with_key("0x00", &key);
         assert!(decrypted.is_err());
     }
 
     #[test]
     fn chacha_decrypt_rejects_malformed_hex() {
-        let decrypted = rt().block_on(internal_decrypt("not-hex".to_string(), Some("password".to_string())));
+        let key = derive_legacy_key("password");
+        let decrypted = decrypt_with_key("not-hex", &key);
         assert!(decrypted.is_err());
     }
 
