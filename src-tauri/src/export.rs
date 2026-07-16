@@ -50,6 +50,20 @@ impl SensitiveExportType {
             Self::SeedPhrase => "seed_phrase",
         }
     }
+
+    /// Key used for audit logging and backoff calculation. Includes the account
+    /// ID for EVM accounts so that exporting multiple distinct EVM accounts in
+    /// a single "Export all" flow does not trigger cross-account backoff.
+    fn log_key(&self, account_id: Option<&str>) -> String {
+        match self {
+            Self::EvmAccount => match account_id {
+                Some(id) => format!("evm_account:{}", id),
+                None => "evm_account".to_string(),
+            },
+            Self::NostrNsec => "nostr_nsec".to_string(),
+            Self::SeedPhrase => "seed_phrase".to_string(),
+        }
+    }
 }
 
 /// Metadata returned by a successful sensitive export. Never contains the secret.
@@ -216,10 +230,12 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
     let npub = account_manager::get_current_account()
         .map_err(|_| "No account selected".to_string())?;
 
+    let log_key = export_type.log_key(account_id.as_deref());
+
     crate::db::prune_export_log(handle)?;
     let recent =
         crate::db::list_recent_export_attempts(handle, &npub, EXPORT_BACKOFF_WINDOW_SECONDS)?;
-    let backoff = compute_backoff_seconds(&recent);
+    let backoff = compute_backoff_seconds(&log_key, &recent);
     if !recent.is_empty() {
         let elapsed = epoch_seconds().saturating_sub(recent[0].attempted_at);
         if elapsed < backoff {
@@ -231,14 +247,14 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
     }
 
     if let Err(e) = validate_pin(handle, &pin) {
-        log_export_failure(handle, &npub, export_type.as_str(), &e);
+        log_export_failure(handle, &npub, &log_key, &e);
         return Err(e);
     }
 
     let secret = match fetch_secret(handle, &export_type, account_id.as_deref()).await {
         Ok(s) => s,
         Err(e) => {
-            log_export_failure(handle, &npub, export_type.as_str(), &e);
+            log_export_failure(handle, &npub, &log_key, &e);
             return Err(e);
         }
     };
@@ -249,26 +265,26 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
     maybe_lock_session_for_test();
 
     if let Err(e) = set_pending_export_flag(handle, true) {
-        log_export_failure(handle, &npub, export_type.as_str(), &e);
+        log_export_failure(handle, &npub, &log_key, &e);
         return Err(e);
     }
 
     if !crate::session::SESSION_MANAGER.is_unlocked() || !session_unlocked_at_entry {
         let err = "Session locked during export".to_string();
-        log_export_failure(handle, &npub, export_type.as_str(), &err);
+        log_export_failure(handle, &npub, &log_key, &err);
         let _ = set_pending_export_flag(handle, false);
         return Err(err);
     }
 
     if let Err(e) = writer.write_text(&secret) {
         let err = format!("Failed to write to clipboard: {}", e);
-        log_export_failure(handle, &npub, export_type.as_str(), &err);
+        log_export_failure(handle, &npub, &log_key, &err);
         let _ = set_pending_export_flag(handle, false);
         return Err(err);
     }
 
     let cleared_at = epoch_seconds().saturating_add(EXPORT_CLEAR_DELAY_SECONDS);
-    crate::db::log_sensitive_export(handle, &npub, export_type.as_str(), true, None)?;
+    crate::db::log_sensitive_export(handle, &npub, &log_key, true, None)?;
 
     Ok(SensitiveExportResult {
         export_type: export_type.as_str().to_string(),
@@ -345,27 +361,25 @@ async fn fetch_secret<R: Runtime>(
 }
 
 /// Compute the exponential backoff for the next export attempt based on recent
-/// attempts recorded in the audit log.
+/// attempts recorded in the audit log for the same logical secret.
 ///
 /// Policy: base 1 second, doubled for each consecutive attempt in the rolling
 /// 10-minute window, capped at 5 minutes. If the most recent attempt is older
 /// than 10 minutes, the backoff resets to 0.
-pub fn compute_backoff_seconds(recent_attempts: &[ExportLogRow]) -> u64 {
-    if recent_attempts.is_empty() {
-        return 0;
-    }
-
+pub fn compute_backoff_seconds(log_key: &str, recent_attempts: &[ExportLogRow]) -> u64 {
     let now = epoch_seconds();
     let window_start = now.saturating_sub(EXPORT_BACKOFF_WINDOW_SECONDS);
-    let last_attempt = recent_attempts[0].attempted_at;
-    if last_attempt < window_start {
+
+    let matching_attempts: Vec<&ExportLogRow> = recent_attempts
+        .iter()
+        .filter(|row| row.export_type == log_key && row.attempted_at >= window_start)
+        .collect();
+
+    if matching_attempts.is_empty() {
         return 0;
     }
 
-    let attempts_in_window = recent_attempts
-        .iter()
-        .take_while(|row| row.attempted_at >= window_start)
-        .count();
+    let attempts_in_window = matching_attempts.len();
     let shift = attempts_in_window.saturating_sub(1).min(30) as u32;
     // Cap the shift before the bit shift to prevent overflow on 32-bit shift
     // amounts and to keep the exponential backoff within the policy maximum.
@@ -552,7 +566,7 @@ mod tests {
     #[test]
     fn backoff_zero_with_no_attempts() {
         let _guard = EXPORT_TEST_MUTEX.lock();
-        assert_eq!(compute_backoff_seconds(&[]), 0);
+        assert_eq!(compute_backoff_seconds("evm_account", &[]), 0);
     }
 
     #[test]
@@ -563,11 +577,11 @@ mod tests {
             .map(|i| test_row_at(now - i, true))
             .collect();
 
-        assert_eq!(compute_backoff_seconds(&attempts[0..1]), 1);
-        assert_eq!(compute_backoff_seconds(&attempts[0..2]), 2);
-        assert_eq!(compute_backoff_seconds(&attempts[0..3]), 4);
-        assert_eq!(compute_backoff_seconds(&attempts[0..4]), 8);
-        assert_eq!(compute_backoff_seconds(&attempts[0..5]), 16);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..1]), 1);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..2]), 2);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..3]), 4);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..4]), 8);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts[0..5]), 16);
     }
 
     #[test]
@@ -578,7 +592,7 @@ mod tests {
             .map(|i| test_row_at(now - i, true))
             .collect();
         assert_eq!(
-            compute_backoff_seconds(&attempts),
+            compute_backoff_seconds("evm_account", &attempts),
             EXPORT_BACKOFF_MAX_SECONDS
         );
     }
@@ -589,7 +603,43 @@ mod tests {
         let now = epoch_seconds();
         let old = now - EXPORT_BACKOFF_WINDOW_SECONDS - 1;
         let attempts = vec![test_row_at(old, true)];
-        assert_eq!(compute_backoff_seconds(&attempts), 0);
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts), 0);
+    }
+
+    #[test]
+    fn backoff_is_per_log_key() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let now = epoch_seconds();
+        let attempts: Vec<ExportLogRow> = (0..5)
+            .map(|i| ExportLogRow {
+                id: "test".to_string(),
+                account_npub: "npub1test".to_string(),
+                export_type: "nostr_nsec".to_string(),
+                attempted_at: now - i,
+                success: true,
+                error_code: None,
+            })
+            .collect();
+        // Many nsec attempts should not back off a different EVM export.
+        assert_eq!(compute_backoff_seconds("evm_account", &attempts), 0);
+    }
+
+    #[test]
+    fn backoff_is_per_evm_account_id() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let now = epoch_seconds();
+        let attempts: Vec<ExportLogRow> = (0..5)
+            .map(|i| ExportLogRow {
+                id: "test".to_string(),
+                account_npub: "npub1test".to_string(),
+                export_type: "evm_account:acc-1".to_string(),
+                attempted_at: now - i,
+                success: true,
+                error_code: None,
+            })
+            .collect();
+        // Many exports of acc-1 should not back off acc-2.
+        assert_eq!(compute_backoff_seconds("evm_account:acc-2", &attempts), 0);
     }
 
     #[test]
@@ -1017,7 +1067,7 @@ mod tests {
             .map(|i| test_row_at(now - i, true))
             .collect();
         assert_eq!(
-            compute_backoff_seconds(&attempts),
+            compute_backoff_seconds("evm_account", &attempts),
             EXPORT_BACKOFF_MAX_SECONDS,
             "shift should be capped before overflow"
         );
