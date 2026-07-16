@@ -558,6 +558,12 @@ pub async fn list_evm_accounts<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<E
         .collect())
 }
 
+/// Deprecated: plaintext EVM key export is no longer exposed to the webview.
+/// Use `crate::export::export_sensitive_to_clipboard` instead.
+#[deprecated(
+    since = "0.3.0",
+    note = "Use export::export_sensitive_to_clipboard for backend-mediated clipboard export"
+)]
 #[tauri::command]
 pub async fn export_evm_account_key_plaintext<R: Runtime>(
     handle: AppHandle<R>,

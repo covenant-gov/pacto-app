@@ -2,3 +2,7 @@
 - [ ] Add ability for user to opt out of detailed user tracking when it is not neccessary to the app
 - [ ] Go through code review list and fix items
 - [ ] Add ability to customize the UI in a new squad channel
+- [ ] UPdate mdk to latest 
+- [ ] Update nostra libs to match with mdk
+- [ ] pacto-bot-api shows unknow comit version pacto-bot-api 0.7.0 (unknown)
+- [ ] pacto-app user needs to test in app upgrade and have check 

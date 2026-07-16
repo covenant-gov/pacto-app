@@ -5815,6 +5815,7 @@ dependencies = [
  "nostr-sdk",
  "once_cell",
  "openssl",
+ "parking_lot",
  "rand 0.8.5",
  "reqwest",
  "rubato",

@@ -2471,6 +2471,131 @@ pub fn remove_setting<R: Runtime>(handle: AppHandle<R>, key: String) -> Result<b
     Ok(rows_affected > 0)
 }
 
+/// Number of days to retain successful export log entries.
+const EXPORT_SUCCESS_RETENTION_DAYS: u64 = 90;
+
+/// Number of days to retain failed export log entries.
+const EXPORT_FAILURE_RETENTION_DAYS: u64 = 30;
+
+/// Row in the sensitive export audit log.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct ExportLogRow {
+    pub id: String,
+    pub account_npub: String,
+    pub export_type: String,
+    pub attempted_at: u64,
+    pub success: bool,
+    pub error_code: Option<String>,
+}
+
+/// Log a sensitive export attempt to the account's database.
+pub fn log_sensitive_export<R: Runtime>(
+    handle: &AppHandle<R>,
+    account_npub: &str,
+    export_type: &str,
+    success: bool,
+    error_code: Option<&str>,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    log_sensitive_export_on_conn(&conn, account_npub, export_type, success, error_code)?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+pub(crate) fn log_sensitive_export_on_conn(
+    conn: &rusqlite::Connection,
+    account_npub: &str,
+    export_type: &str,
+    success: bool,
+    error_code: Option<&str>,
+) -> Result<(), String> {
+    let id = format!("{}-{}-{:x}", export_type, export_epoch_seconds(), rand::random::<u64>());
+    let attempted_at = export_epoch_seconds();
+    conn.execute(
+        "INSERT INTO sensitive_export_log (id, account_npub, export_type, attempted_at, success, error_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![id, account_npub, export_type, attempted_at, success as i64, error_code],
+    )
+    .map_err(|e| format!("Failed to log sensitive export: {}", e))?;
+    Ok(())
+}
+
+/// List recent export attempts within the rolling `window_seconds` window.
+pub fn list_recent_export_attempts<R: Runtime>(
+    handle: &AppHandle<R>,
+    account_npub: &str,
+    window_seconds: u64,
+) -> Result<Vec<ExportLogRow>, String> {
+    prune_export_log(handle)?;
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let rows = list_recent_export_attempts_on_conn(&conn, account_npub, window_seconds)?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(rows)
+}
+
+pub(crate) fn list_recent_export_attempts_on_conn(
+    conn: &rusqlite::Connection,
+    account_npub: &str,
+    window_seconds: u64,
+) -> Result<Vec<ExportLogRow>, String> {
+    let since = export_epoch_seconds().saturating_sub(window_seconds);
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, account_npub, export_type, attempted_at, success, error_code
+             FROM sensitive_export_log
+             WHERE account_npub = ?1 AND attempted_at >= ?2
+             ORDER BY attempted_at DESC",
+        )
+        .map_err(|e| format!("Failed to prepare export log query: {}", e))?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![account_npub, since],
+            |row| {
+                Ok(ExportLogRow {
+                    id: row.get(0)?,
+                    account_npub: row.get(1)?,
+                    export_type: row.get(2)?,
+                    attempted_at: row.get(3)?,
+                    success: row.get::<_, i64>(4)? != 0,
+                    error_code: row.get(5)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Failed to query export log: {}", e))?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row.map_err(|e| format!("Failed to read export log row: {}", e))?);
+    }
+    Ok(result)
+}
+
+/// Prune old export log entries: 90 days for successes, 30 days for failures.
+pub fn prune_export_log<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    prune_export_log_on_conn(&conn)?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(())
+}
+
+pub(crate) fn prune_export_log_on_conn(conn: &rusqlite::Connection) -> Result<(), String> {
+    let now = export_epoch_seconds();
+    let success_cutoff = now.saturating_sub(EXPORT_SUCCESS_RETENTION_DAYS * 24 * 60 * 60);
+    let failure_cutoff = now.saturating_sub(EXPORT_FAILURE_RETENTION_DAYS * 24 * 60 * 60);
+    conn.execute(
+        "DELETE FROM sensitive_export_log WHERE (success = 1 AND attempted_at < ?1) OR (success = 0 AND attempted_at < ?2)",
+        rusqlite::params![success_cutoff, failure_cutoff],
+    )
+    .map_err(|e| format!("Failed to prune export log: {}", e))?;
+    Ok(())
+}
+
+fn export_epoch_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 /// Slim version of Chat for database storage
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SlimChatDB {

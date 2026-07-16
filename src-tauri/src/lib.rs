@@ -82,6 +82,9 @@ mod migration;
 // Backend session manager and idle auto-lock (U4)
 mod session;
 
+// Backend-mediated clipboard export for sensitive secrets (U6)
+mod export;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -6349,7 +6352,10 @@ pub fn run() {
                             use tauri_plugin_window_state::{AppHandleExt, StateFlags};
                             let _ = handle_for_window_state.save_window_state(StateFlags::all());
                         }
-                        
+
+                        // Clear the clipboard if a sensitive export is still pending.
+                        crate::export::shutdown_clipboard_cleanup(&handle_for_window_state);
+
                         // Cleanly shutdown our Nostr client
                         if let Ok(nostr_client) = get_nostr_client() {
                             tauri::async_runtime::block_on(async {
@@ -6380,6 +6386,9 @@ pub fn run() {
 
             // Set as our accessible static app handle
             TAURI_APP.set(handle.clone()).unwrap();
+
+            // Startup cleanup: clear the clipboard if a previous run left a secret pending.
+            crate::export::startup_clipboard_cleanup(&handle);
             
             // Start the profile sync background processor
             tauri::async_runtime::spawn(async {
@@ -6542,7 +6551,6 @@ pub fn run() {
             evm::wallet_ops::wallet_build_and_send_transaction,
             evm::wallet_ops::wallet_wait_for_transaction,
             evm::evm_accounts::list_evm_accounts,
-            evm::evm_accounts::export_evm_account_key_plaintext,
             evm::evm_accounts::add_evm_account,
             evm::evm_accounts::import_evm_account,
             evm::evm_accounts::update_evm_account,
@@ -6599,6 +6607,9 @@ pub fn run() {
             // Session management commands (U4)
             session::check_session,
             session::session_heartbeat,
+            // Sensitive export commands (U6)
+            export::export_sensitive_to_clipboard,
+            export::clear_clipboard,
             // Image cache commands
             image_cache::get_or_cache_image,
             image_cache::clear_image_cache,

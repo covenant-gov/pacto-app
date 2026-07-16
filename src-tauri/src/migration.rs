@@ -106,7 +106,7 @@ pub fn set_key_derivation_version(conn: &rusqlite::Connection, version: u32) -> 
     set_setting(conn, KEY_DERIVATION_VERSION, &version.to_string())
 }
 
-fn get_key_derivation_sentinel(conn: &rusqlite::Connection) -> Result<Option<String>, String> {
+pub fn get_key_derivation_sentinel(conn: &rusqlite::Connection) -> Result<Option<String>, String> {
     get_setting(conn, KEY_DERIVATION_SENTINEL)
 }
 
