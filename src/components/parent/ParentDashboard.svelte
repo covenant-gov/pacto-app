@@ -9,7 +9,7 @@
     type SquadDashboardChannelMode,
   } from '../../stores/app';
 import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
-import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
+import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto } from '../../lib/governance/api';
@@ -182,6 +182,15 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   }
   /** Established squad network (override → infra chain), or null until the first deploy picks one. */
   $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+  $: governanceTreasurySafe = governanceTreasurySafeForParent(
+    treasurySafes ?? [],
+    parentId ?? '',
+    pactoGovTreasuryEntryId,
+    {
+      safeAddress: pactoPayload?.safe,
+      chain: pactoGovRow?.chain ?? squadNetwork ?? undefined,
+    },
+  );
 
   function setSquadNetwork(chain: SupportedChainId): void {
     const npub = $currentUser?.npub;
@@ -753,7 +762,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
               parentId={parentId ?? ''}
-              {announcementsGroupId}
               myAddress={myGovernanceAddress || myVoterAddress}
               {captainWearers}
               {crewWearers}
@@ -761,10 +769,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {treasuryProposalsLoading}
               treasuryProposalsRefreshing={treasuryProposalsRefreshing}
               {treasuryProposalsError}
-              {proposalHasVotedById}
               onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
-              onOpenCrew={() => selectDashboardView('crew')}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>
@@ -803,10 +809,16 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {#await loadDashboardTreasuryTab() then TreasuryTab}
             <TreasuryTab
               parentId={parentId ?? ''}
+              network={pactoGovRow?.chain ?? squadNetwork ?? 'sepolia'}
               {sponsorRow}
               {treasurySafes}
               {displayedTreasurySafes}
+              {governanceTreasurySafe}
               {pactoPayload}
+              {announcementsGroupId}
+              myAddress={myGovernanceAddress || myVoterAddress}
+              {captainWearers}
+              {crewWearers}
               onOpenSponsorDeploy={openSponsorDeploy}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}

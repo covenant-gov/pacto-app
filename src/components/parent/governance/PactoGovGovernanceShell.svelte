@@ -1,57 +1,61 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import TreasuryAuthorityModulePanel from './TreasuryAuthorityModulePanel.svelte';
-  import MutinyModulePanel from './MutinyModulePanel.svelte';
-  import QuartermasterModulePanel from './QuartermasterModulePanel.svelte';
-  import TreasurySafeModulePanel from './TreasurySafeModulePanel.svelte';
+  import GovProposalsBoard from './GovProposalsBoard.svelte';
+  import GovCrewActions from './GovCrewActions.svelte';
+  import GovCaptainActions from './GovCaptainActions.svelte';
   import {
-    pactoGovModuleDescriptors,
-    type PactoGovModuleId,
-  } from '../../../lib/governance/governance-provider';
+    getMutinyStatus,
+    getQuartermasterStatus,
+    mutinyExecute,
+    mutinyHasVoted,
+    getSquadCapabilities,
+    type SquadCapabilitiesDto,
+    type MutinyStatusDto,
+    type QuartermasterStatusDto,
+    type TreasuryProposalDto,
+  } from '../../../lib/governance/api';
+  import {
+    fetchGovModuleReadCached,
+    isGovModuleReadStale,
+    mutinyReadCacheKey,
+    peekGovModuleRead,
+    quartermasterReadCacheKey,
+  } from '../../../lib/governance/gov-module-read-cache';
   import {
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import {
-    getSquadCapabilities,
-    type SquadCapabilitiesDto,
-    type TreasuryProposalDto,
-  } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
-  import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
-  import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
-  import { openExternalUrl } from '../../../lib/utils/open-external';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { showToast } from '../../../stores/toast';
 
   export let payload: PactoGovProviderPayloadV1;
   export let network: string;
   export let parentId: string;
-  export let announcementsGroupId = '';
   export let myAddress = '';
   export let captainWearers: string[] = [];
   export let crewWearers: string[] = [];
   export let treasuryProposals: TreasuryProposalDto[] = [];
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsError = '';
-  export let proposalHasVotedById: Record<string, boolean> = {};
   export let onRefreshProposals: () => void = () => {};
-  export let onOpenCrew: () => void = () => {};
 
-  let selected: PactoGovModuleId | null = 'treasury_authority';
-  let mutinyActive = false;
-  let mutinyModeQm = false;
+  type GovSubMode = 'proposals' | 'crew' | 'captain';
+  type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
+
+  let govSubMode: GovSubMode = 'proposals';
   let mutinyCaptain = '';
   let capabilities: SquadCapabilitiesDto | null = null;
   let capabilitiesLoadKey = '';
 
-  $: openProposalCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
-  $: modules = pactoGovModuleDescriptors(payload, {
-    openProposalCount,
-    mutinyActive,
-    mutinyModeQm,
-  });
-  $: if (selected && !modules.some((m) => m.id === selected)) {
-    selected = modules[0]?.id ?? null;
-  }
+  let mutinyStatus: MutinyStatusDto | null = null;
+  let mutinyHasVotedFlag = false;
+  let mutinyLoading = false;
+  let mutinyHydrateKey = '';
+
+  let qmStatus: QuartermasterStatusDto | null = null;
+  let qmLoading = false;
+  let qmHydrateKey = '';
 
   $: captainList = (() => {
     const set = new Set(captainWearers.map((a) => a.trim().toLowerCase()).filter(Boolean));
@@ -67,11 +71,25 @@
     capabilities,
   }) as GovernancePrivilege;
 
-  $: chainId = parseSupportedChainId(network);
-
   $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
     capabilitiesLoadKey = parentId.trim();
     void loadCapabilities(parentId.trim());
+  }
+
+  $: {
+    const key = `${parentId}|${network}|${payload.mutinyModule ?? ''}|${privilege.myAddress}`;
+    if (key !== mutinyHydrateKey && parentId.trim() && payload.mutinyModule?.trim()) {
+      mutinyHydrateKey = key;
+      void reloadMutiny(false);
+    }
+  }
+
+  $: {
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}`;
+    if (key !== qmHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
+      qmHydrateKey = key;
+      void reloadQm(false);
+    }
   }
 
   async function loadCapabilities(pid: string) {
@@ -82,6 +100,112 @@
     } catch {
       if (pid !== capabilitiesLoadKey) return;
       capabilities = null;
+    }
+  }
+
+  function applyMutinySnapshot(snap: MutinySnapshot) {
+    mutinyStatus = snap.status;
+    mutinyHasVotedFlag = snap.hasVoted;
+    mutinyCaptain = snap.status.captain ?? '';
+  }
+
+  async function reloadMutiny(force = false) {
+    const mutinyModule = payload.mutinyModule?.trim();
+    if (!mutinyModule) return;
+    const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
+    const key = mutinyReadCacheKey(network, mutinyModule, privilege.myAddress);
+    const peeked = peekGovModuleRead<MutinySnapshot>(key);
+    if (peeked) applyMutinySnapshot(peeked);
+
+    const needFetch = force || !peeked || isGovModuleReadStale(key);
+    if (!needFetch) {
+      mutinyLoading = false;
+      return;
+    }
+
+    if (!peeked) mutinyLoading = true;
+    try {
+      const snap = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        async () => {
+          const next = await getMutinyStatus({ network, mutinyModule });
+          let voted = false;
+          if (next.activeMutinyId !== '0' && privilege.myAddress) {
+            voted = await mutinyHasVoted({
+              network,
+              mutinyModule,
+              mutinyId: next.activeMutinyId,
+              voter: privilege.myAddress,
+            });
+          }
+          return { status: next, hasVoted: voted };
+        },
+        { force: force || !!peeked },
+      );
+      if (hydrateKey !== `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) return;
+      applyMutinySnapshot(snap);
+    } catch {
+      if (hydrateKey !== `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) return;
+      if (!peeked) {
+        mutinyStatus = null;
+        mutinyCaptain = '';
+      }
+    } finally {
+      if (hydrateKey === `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) {
+        mutinyLoading = false;
+      }
+    }
+  }
+
+  async function reloadQm(force = false) {
+    const quartermaster = payload.quartermaster?.trim();
+    if (!quartermaster) return;
+    const hydrateKey = `${parentId}|${network}|${quartermaster}`;
+    const key = quartermasterReadCacheKey(network, quartermaster);
+    const peeked = peekGovModuleRead<QuartermasterStatusDto>(key);
+    if (peeked) qmStatus = peeked;
+
+    const needFetch = force || !peeked || isGovModuleReadStale(key);
+    if (!needFetch) {
+      qmLoading = false;
+      return;
+    }
+
+    if (!peeked) qmLoading = true;
+    try {
+      const next = await fetchGovModuleReadCached(
+        key,
+        parentId,
+        () => getQuartermasterStatus({ network, quartermaster }),
+        { force: force || !!peeked },
+      );
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      qmStatus = next;
+    } catch {
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
+      if (!peeked) qmStatus = null;
+    } finally {
+      if (hydrateKey === `${parentId}|${network}|${quartermaster}`) {
+        qmLoading = false;
+      }
+    }
+  }
+
+  async function executeMutinyFromBoard() {
+    const mutinyModule = payload.mutinyModule?.trim();
+    if (!mutinyModule || !mutinyStatus) return;
+    try {
+      await mutinyExecute({
+        network,
+        parentId,
+        mutinyModule,
+        mutinyId: mutinyStatus.activeMutinyId,
+      });
+      showToast('Execute mutiny submitted.');
+      await reloadMutiny(true);
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, 'Execute mutiny failed.'));
     }
   }
 
@@ -98,9 +222,11 @@
     return `${a.slice(0, 8)}…${a.slice(-6)}`;
   }
 
-  function select(id: PactoGovModuleId) {
-    selected = selected === id ? null : id;
-  }
+  const subModes: { id: GovSubMode; label: string }[] = [
+    { id: 'proposals', label: 'Proposals' },
+    { id: 'crew', label: 'Crew' },
+    { id: 'captain', label: 'Captain' },
+  ];
 </script>
 
 <div class="gov-shell">
@@ -111,93 +237,67 @@
     {/if}
   </div>
 
-  <div class="module-grid" role="list">
-    {#each modules as mod (mod.id)}
+  <div class="submode-tabs" role="tablist" aria-label="Governance sub-modes">
+    {#each subModes as mode (mode.id)}
       <button
         type="button"
-        class="module-card"
-        class:selected={selected === mod.id}
-        role="listitem"
-        aria-pressed={selected === mod.id}
-        on:click={() => select(mod.id)}
+        role="tab"
+        class="submode-tab"
+        class:selected={govSubMode === mode.id}
+        aria-selected={govSubMode === mode.id}
+        on:click={() => (govSubMode = mode.id)}
       >
-        <span class="module-label">{mod.label}</span>
-        {#if mod.address}
-          <code class="module-addr">{shortAddr(mod.address)}</code>
-        {/if}
-        <span class="module-summary muted">{mod.summary}</span>
+        {mode.label}
       </button>
     {/each}
   </div>
 
-  {#if selected}
-    {@const active = modules.find((m) => m.id === selected)}
-    <section class="module-panel" aria-label={active?.label ?? 'Module'}>
-      <div class="module-panel-head">
-        <h4 class="module-panel-title">{active?.label}</h4>
-        {#if active?.address}
-          {@const url = explorerAddressUrl(chainId, active.address)}
-          <code class="module-panel-addr" title={active.address}>{active.address}</code>
-          {#if url}
-            <button type="button" class="btn-link" on:click={() => openExternalUrl(url)}>Explorer</button>
-          {/if}
-        {/if}
-        <button type="button" class="btn-link" on:click={() => (selected = null)}>Close</button>
-      </div>
-
-      {#if selected === 'treasury_authority' && payload.treasuryAuthority}
-        <TreasuryAuthorityModulePanel
-          {network}
-          {parentId}
-          treasuryAuthority={payload.treasuryAuthority}
-          {privilege}
-          proposals={treasuryProposals}
-          proposalsLoading={treasuryProposalsLoading}
-          proposalsError={treasuryProposalsError}
-          {proposalHasVotedById}
-          onRefresh={onRefreshProposals}
-        />
-      {:else if selected === 'mutiny' && payload.mutinyModule}
-        <MutinyModulePanel
-          {network}
-          {parentId}
-          mutinyModule={payload.mutinyModule}
-          {privilege}
-          onStatus={(info) => {
-            mutinyActive = info.active;
-            mutinyCaptain = info.captain;
-          }}
-        />
-      {:else if selected === 'quartermaster' && payload.quartermaster}
-        <QuartermasterModulePanel
-          {network}
-          {parentId}
-          quartermaster={payload.quartermaster}
-          {privilege}
-          onMutinyMode={(active) => {
-            mutinyModeQm = active;
-          }}
-        />
-      {:else if selected === 'squad_admin'}
-        <p class="muted">
-          Squad Admin executor roles are managed under Crew. Captain-gated role writes stay visible there.
-        </p>
-        <button type="button" class="btn-primary" on:click={onOpenCrew}>Open Crew</button>
-      {:else if selected === 'safe' && payload.safe}
-        <TreasurySafeModulePanel
-          {network}
-          {parentId}
-          safeAddress={payload.safe}
-          {announcementsGroupId}
-          {privilege}
-        />
-        {@const url = explorerAddressUrl(chainId, payload.safe)}
-        {#if url}
-          <button type="button" class="btn-link" on:click={() => openExternalUrl(url)}>View Safe on explorer</button>
-        {/if}
-      {/if}
-    </section>
-  {/if}
+  <section class="submode-panel" role="tabpanel" aria-label={govSubMode}>
+    {#if govSubMode === 'proposals'}
+      <GovProposalsBoard
+        {network}
+        {parentId}
+        treasuryAuthority={payload.treasuryAuthority ?? ''}
+        mutinyModule={payload.mutinyModule ?? ''}
+        {privilege}
+        proposals={treasuryProposals}
+        proposalsLoading={treasuryProposalsLoading}
+        proposalsError={treasuryProposalsError}
+        {mutinyStatus}
+        {mutinyLoading}
+        {onRefreshProposals}
+        onExecuteMutiny={executeMutinyFromBoard}
+      />
+    {:else if govSubMode === 'crew'}
+      <GovCrewActions
+        {network}
+        {parentId}
+        treasuryAuthority={payload.treasuryAuthority ?? ''}
+        mutinyModule={payload.mutinyModule ?? ''}
+        {privilege}
+        proposals={treasuryProposals}
+        {mutinyStatus}
+        mutinyHasVotedFlag={mutinyHasVotedFlag}
+        {onRefreshProposals}
+        onRefreshMutiny={() => reloadMutiny(true)}
+      />
+    {:else}
+      <GovCaptainActions
+        {network}
+        {parentId}
+        treasuryAuthority={payload.treasuryAuthority ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
+        mutinyModule={payload.mutinyModule ?? ''}
+        {privilege}
+        proposals={treasuryProposals}
+        {mutinyStatus}
+        {qmStatus}
+        {onRefreshProposals}
+        onRefreshMutiny={() => reloadMutiny(true)}
+        onRefreshQm={() => reloadQm(true)}
+      />
+    {/if}
+  </section>
 </div>
 
 <style>
@@ -218,93 +318,26 @@
     font-size: 0.75rem;
     color: var(--text-muted);
   }
-  .module-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-    gap: 10px;
-  }
-  .module-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    text-align: left;
-    padding: 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    cursor: pointer;
-    color: inherit;
-  }
-  .module-card:hover {
-    border-color: var(--text-muted);
-  }
-  .module-card.selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-  .module-label {
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: var(--text-primary);
-  }
-  .module-addr {
-    font-size: 0.6875rem;
-    color: var(--text-muted);
-  }
-  .module-summary {
-    font-size: 0.75rem;
-    line-height: 1.3;
-  }
-  .module-panel {
-    padding: 14px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    background: var(--bg-panel);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .module-panel-head {
+  .submode-tabs {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 8px 12px;
+    gap: 8px;
   }
-  .module-panel-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
+  .submode-tab {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
   }
-  .module-panel-addr {
-    flex: 1 1 12rem;
+  .submode-tab.selected {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .submode-panel {
     min-width: 0;
-    font-size: 0.75rem;
-    word-break: break-all;
-    color: var(--text-muted);
-  }
-  .muted {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-  .btn-primary {
-    align-self: flex-start;
-    padding: 8px 14px;
-    border-radius: 6px;
-    border: none;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    font-size: 0.8125rem;
-    cursor: pointer;
-  }
-  .btn-link {
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--accent);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    text-decoration: underline;
   }
 </style>

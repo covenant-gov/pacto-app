@@ -13,7 +13,6 @@
   export let pactoGovTopHatId = '';
   export let pactoGovChain: string | undefined = undefined;
   export let parentId = '';
-  export let announcementsGroupId = '';
   export let myAddress = '';
   export let captainWearers: string[] = [];
   export let crewWearers: string[] = [];
@@ -21,10 +20,8 @@
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsRefreshing = false;
   export let treasuryProposalsError = '';
-  export let proposalHasVotedById: Record<string, boolean> = {};
   export let onRefreshProposals: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
-  export let onOpenCrew: () => void = () => {};
 
   $: provider = resolveGovernanceProvider(squadInfraRows);
   $: network = pactoGovChain ?? 'sepolia';
@@ -71,16 +68,13 @@
       payload={pactoPayload}
       {network}
       {parentId}
-      {announcementsGroupId}
       {myAddress}
       {captainWearers}
       {crewWearers}
       {treasuryProposals}
       {treasuryProposalsLoading}
       {treasuryProposalsError}
-      {proposalHasVotedById}
       {onRefreshProposals}
-      {onOpenCrew}
     />
   {:else}
     <p class="dashboard-placeholder-text muted">

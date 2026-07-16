@@ -8,7 +8,11 @@ alwaysApply: true
 When the user asks for a Git commit subject line (or message subject only), always include:
 
 1. **Category** — one of: `feature`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `security` (pick the best fit; use `fix` for bug/reliability remediations, `feature` for new user-facing capability, etc.)
-2. **Subject** — concise imperative summary of *why* / outcome (same style as normal commit subjects)
+2. **Subject** — concise imperative summary of *why* / outcome
+
+**Subject style:**
+- Entire subject is **lowercase** (including the first word).
+- Multi-word identifiers that would normally be camelCase or PascalCase use **dashes** instead (e.g. `access-control`, `squad-admin`, `pacto-gov`), not spaces that imply Title Case or camelCase tokens.
 
 Format the reply like:
 

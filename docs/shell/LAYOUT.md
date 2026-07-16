@@ -66,9 +66,9 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Broadcast, bot, network, permissions overview |
-| `components/parent/dashboard/DashboardGovernanceTab.svelte` | Treasury proposals + infra CTAs |
+| `components/parent/dashboard/DashboardGovernanceTab.svelte` | Pacto Gov role sub-modes (Proposals / Crew / Captain) |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree |
-| `components/parent/dashboard/DashboardTreasuryTab.svelte` | Vaults + sponsor panel |
+| `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
 | `components/parent/dashboard/DashboardCrewTab.svelte` | MLS member roster (EVM / Hats / Privileges) + join requests |
 | `components/parent/dashboard/MyDashboardStatusTab.svelte` | Member checklist + roster EVM |
 | `components/parent/dashboard/MyDashboardAlertsTab.svelte` | Roster-key prompts (former personal-alerts) |
@@ -78,9 +78,9 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew`).
 My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
 
-**Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and module-panel state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
+**Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
 
-Governance CTAs use ACL snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts` + `PactoGovGovernanceShell`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+Governance uses role sub-modes inside `PactoGovGovernanceShell` (Proposals read board + Crew/Captain action panes). CTAs use ACL snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 
