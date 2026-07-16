@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideation: Friendly Governance UX for Pacto</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --text: #1a1a1a;
+      --text-secondary: #4a4a4a;
+      --text-muted: #737373;
+      --border: #e5e5e5;
+      --card-bg: #ffffff;
+      --accent: #0066cc;
+      --accent-soft: #eff6ff;
+      --success: #10b981;
+      --success-soft: #ecfdf5;
+      --warn: #f59e0b;
+      --warn-soft: #fffbeb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin: 0 0 0.5rem 0;
+      color: var(--text);
+    }
+    .meta {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      margin: 0.25rem 0;
+    }
+    .meta strong {
+      color: var(--text-secondary);
+    }
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 2rem 0 1rem 0;
+      color: var(--text);
+    }
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 1.5rem 0 0.75rem 0;
+      color: var(--text);
+    }
+    p {
+      margin: 0.75rem 0;
+      max-width: 70ch;
+    }
+    ul, ol {
+      margin: 0.75rem 0;
+      padding-left: 1.5rem;
+    }
+    li {
+      margin: 0.4rem 0;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover { text-decoration: underline; }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin: 1.25rem 0;
+    }
+    .card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
+      color: var(--text);
+    }
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .pill-axis { background: #f0f0f0; color: #525252; }
+    .pill-high { background: var(--success-soft); color: #065f46; }
+    .pill-med { background: var(--warn-soft); color: #92400e; }
+    .pill-low { background: #eff6ff; color: #1e40af; }
+    .metadata-row {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: 0.5rem 0;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    .label {
+      font-weight: 600;
+      color: var(--text-secondary);
+      display: inline-block;
+      min-width: 80px;
+    }
+    .basis {
+      background: var(--accent-soft);
+      border-left: 3px solid var(--accent);
+      padding: 0.75rem 1rem;
+      margin: 0.75rem 0;
+      border-radius: 0 4px 4px 0;
+      font-size: 0.875rem;
+    }
+    .downsides {
+      background: var(--warn-soft);
+      border-left: 3px solid var(--warn);
+      padding: 0.75rem 1rem;
+      margin: 0.75rem 0;
+      border-radius: 0 4px 4px 0;
+      font-size: 0.875rem;
+    }
+    .visual {
+      margin: 1rem 0;
+      padding: 1rem;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    .visual svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .jump-list {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      margin: 1rem 0 2rem 0;
+    }
+    .jump-list ul {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 0 0;
+    }
+    .jump-list li {
+      margin: 0.35rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: #f5f5f5;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85em;
+      background: #f0f0f0;
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+    }
+    .grounding {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    .axes-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0;
+    }
+    .axes-list li {
+      padding: 0.4rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .axes-list li:last-child { border-bottom: none; }
+    .axes-list strong {
+      color: var(--text);
+      display: inline-block;
+      min-width: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Ideation: Friendly Governance UX for Pacto</h1>
+      <p class="meta"><strong>Date:</strong> 2026-07-02</p>
+      <p class="meta"><strong>Topic:</strong> governance-ux</p>
+      <p class="meta"><strong>Mode:</strong> repo-grounded</p>
+      <p class="meta"><strong>Focus:</strong> Build a UX for governance that is easy and friendly for everyone to use without knowing the technical bits behind the smart contracts.</p>
+    </header>
+
+    <section id="grounding">
+      <h2>Grounding Context</h2>
+      <div class="grounding">
+        <p>Pacto is a Tauri v2 desktop app with a Svelte/TypeScript frontend and Rust backend. Governance is exposed inside a Squad/Network Dashboard via four tabs—Governance, Roles Tree, Treasury, Settings—plus a Deploy Launchpad. On-chain features require a Squad Sponsor first, then Pacto Gov (Nave Pirata: Hats + Safe), Squad Admin, or Safe.</p>
+        <p>The current UI surfaces dense contract jargon ("ERC-4337 gas pool," "Nave Pirata factory bundle," "Hats tree," "bytes32 role identifiers," "FULL vs PAUSE executor scopes") and lacks create-proposal, role-assignment, and plain-language onboarding UX. The product strategy is to combine Nostr/MLS private messaging with EVM/Aztec enforceable governance using a single Nostr-derived key, no KYC, and the Nave Pirata two-body democracy metaphor.</p>
+        <p>Key prior art includes Snapshot (gasless voting), Safe (shared-account multisig UX), Aragon App (no-code permissions), Loomio (cooperative deliberation), and credit-union digital voting (quorum meters, secret ballots). Persistent DAO problems include &lt;10% voter turnout and friction between off-chain signaling and on-chain execution.</p>
+      </div>
+    </section>
+
+    <section id="axes">
+      <h2>Topic Axes</h2>
+      <ol class="axes-list">
+        <li><strong>Deployment &amp; setup</strong> — How to get from zero to a governable squad without expert knowledge.</li>
+        <li><strong>Proposal lifecycle</strong> — Create, vote, approve, and execute treasury decisions in plain language.</li>
+        <li><strong>Roles &amp; permissions</strong> — Understand who is captain, crew, and who can do what.</li>
+        <li><strong>Treasury UX</strong> — View balances, propose spending, and understand approvals without Safe/multisig jargon.</li>
+        <li><strong>Dispute &amp; mutiny</strong> — Replace a captain, handle conflicts, and recover from deadlock.</li>
+      </ol>
+    </section>
+
+    <section id="ideas">
+      <h2>Ranked Ideas</h2>
+      <div class="jump-list">
+        <p><strong>Jump to an idea:</strong></p>
+        <ul>
+          <li><a href="#idea-1">1. One-Click Default Deploy with Reversible Defaults</a> · <span class="pill pill-axis">Deployment &amp; setup</span></li>
+          <li><a href="#idea-2">2. Poll-to-Proposal Pipeline with Plain-Language Cards</a> · <span class="pill pill-axis">Proposal lifecycle</span></li>
+          <li><a href="#idea-3">3. Pirate Metaphor + Roster-as-Roles</a> · <span class="pill pill-axis">Roles &amp; permissions</span></li>
+          <li><a href="#idea-4">4. Unified Squad Wallet with Spend Composer and Safe-to-Spend Balance</a> · <span class="pill pill-axis">Treasury UX</span></li>
+          <li><a href="#idea-5">5. Mutiny as No-Confidence Chat Poll + Graceful Handoff</a> · <span class="pill pill-axis">Dispute &amp; mutiny</span></li>
+          <li><a href="#idea-6">6. Private-by-Default Treasury Votes via Aztec</a> · <span class="pill pill-axis">Treasury UX</span></li>
+        </ul>
+      </div>
+      <article class="card" id="idea-1">
+        <div class="card-header">
+          <h3 class="card-title">1. One-Click Default Deploy with Reversible Defaults</h3>
+          <span class="pill pill-axis">Deployment &amp; setup</span>
+          <span class="pill pill-high">Conf 90%</span>
+          <span class="pill pill-low">Cx Low</span>
+        </div>
+        <p><strong>Description:</strong> Collapse the sponsor → Pacto Gov → Safe deploy chain into a single &#x27;Start this squad&#x27; action. The app autofills the captain from the embedded wallet, generates the metadata URI from the squad profile, and picks a random salt nonce. A visual progress checklist replaces the locked Launchpad cards, and an &#x27;Advanced&#x27; toggle reveals all current inputs for review or editing. Every choice remains reversible later.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: DeployNavePirataWizard already defaults the captain from the embedded wallet but still exposes network, metadata URI, and salt nonce (src/components/parent/governance/DeployNavePirataWizard.svelte:2-109); LaunchpadModal enforces sponsor-before-gov order with ERC-4337 / Nave Pirata factory jargon (src/components/parent/governance/LaunchpadModal.svelte:36-54); PACTO_GOV.md describes the factory as an &#x27;atomic one-shot deployment of Safe + hat tree + clones + wiring&#x27;. reasoned: Manual inputs that can be derived are user-hostile; the existence of a default means the wizard should be able to run without asking.</div>
+        <p><strong>Rationale:</strong> Deployment is the top-of-funnel gate to every governance feature. One smooth setup unlocks proposals, roles, treasury, and mutiny forever after, matching the product&#x27;s no-KYC, one-key premise.</p>
+        <div class="downsides"><span class="label">Downsides:</span> Hides chain and salt choices by default; advanced users must expand to verify. Requires robust error handling so a failed background step surfaces clearly rather than silently stalling.</div>
+        <div class="visual">
+<svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Before: three locked deploy cards. After: one start button and a progress checklist.">
+  <text x="20" y="24" font-size="14" font-weight="600" fill="#666">Before</text>
+  <rect x="20" y="40" width="280" height="48" rx="6" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="40" y="70" font-size="13" fill="#333">🔒 Squad sponsor — ERC-4337 gas pool</text>
+  <rect x="20" y="100" width="280" height="48" rx="6" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="40" y="130" font-size="13" fill="#333">🔒 Pacto Gov — Nave Pirata factory</text>
+  <rect x="20" y="160" width="280" height="48" rx="6" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="40" y="190" font-size="13" fill="#333">🔒 Gnosis Safe — multisig vault</text>
+  
+  <text x="340" y="24" font-size="14" font-weight="600" fill="#666">After</text>
+  <rect x="340" y="50" width="280" height="44" rx="6" fill="#10b981" stroke="#059669"/>
+  <text x="480" y="78" font-size="14" font-weight="600" fill="white" text-anchor="middle">Start this squad</text>
+  <rect x="340" y="110" width="280" height="24" rx="4" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="350" y="127" font-size="12" fill="#065f46">✓ Sponsor deployed</text>
+  <rect x="340" y="142" width="280" height="24" rx="4" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="350" y="159" font-size="12" fill="#065f46">✓ Pacto Gov deployed</text>
+  <rect x="340" y="174" width="280" height="24" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="350" y="191" font-size="12" fill="#666">○ Safe linked</text>
+</svg>        </div>
+      </article>
+      <article class="card" id="idea-2">
+        <div class="card-header">
+          <h3 class="card-title">2. Poll-to-Proposal Pipeline with Plain-Language Cards</h3>
+          <span class="pill pill-axis">Proposal lifecycle</span>
+          <span class="pill pill-high">Conf 85%</span>
+          <span class="pill pill-med">Cx Medium</span>
+        </div>
+        <p><strong>Description:</strong> Add a &#x27;Make it official&#x27; action on existing squad polls that converts the poll question and outcome into a treasury proposal with a human-readable title, purpose, amount, and recipient. The Governance tab renders proposals as payment slips—not &#x27;Proposal #N target 0x…&#x27;—showing a clear checklist: Crew vote → Captain sign → Executed. The poll pattern in #announcements becomes the social front door to enforceable decisions.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: DashboardGovernanceTab has no create-proposal CTA and only renders vote buttons on existing proposals (src/components/parent/dashboard/DashboardGovernanceTab.svelte:1-50); TreasuryProposalCard shows only proposalId, yeas/nays, snapshot, deadline, and raw target address (src/components/parent/governance/TreasuryProposalCard.svelte:42-51); past learnings note polls are created as visible cards in #announcements and replicated over MLS (docs/dashboard/POLLS.md). external: Snapshot and Loomio separate off-chain signaling from on-chain execution; the friction between them is a known DAO failure mode.</div>
+        <p><strong>Rationale:</strong> Users already vote in polls inside chat. Bridging that to enforceable treasury action removes the &#x27;where do I create a proposal?&#x27; dead end and closes the signal-to-execution gap.</p>
+        <div class="downsides"><span class="label">Downsides:</span> Needs a way to store human-readable metadata off-chain (Nostr event or IPFS) and link it to the on-chain proposal. Must avoid making every poll into a binding proposal accidentally.</div>
+        <div class="visual">
+<svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Poll in chat becomes a proposal payment slip, then moves through a checklist.">
+  <rect x="20" y="30" width="160" height="90" rx="6" fill="#eff6ff" stroke="#bfdbfe"/>
+  <text x="40" y="55" font-size="12" font-weight="600" fill="#1e40af">#announcements poll</text>
+  <text x="40" y="78" font-size="12" fill="#333">Should we buy</text>
+  <text x="40" y="96" font-size="12" fill="#333">new servers?</text>
+  <text x="40" y="120" font-size="12" fill="#666">👍 8  👎 2</text>
+  
+  <text x="200" y="75" font-size="20" fill="#666">→</text>
+  <text x="190" y="100" font-size="11" fill="#666">Make it official</text>
+  
+  <rect x="230" y="30" width="220" height="90" rx="6" fill="#f0fdf4" stroke="#86efac"/>
+  <text x="250" y="55" font-size="12" font-weight="600" fill="#166534">Proposal payment slip</text>
+  <text x="250" y="78" font-size="12" fill="#333">Pay vendor $500 for</text>
+  <text x="250" y="96" font-size="12" fill="#333">servers — because uptime.</text>
+  <text x="250" y="120" font-size="11" fill="#666">Crew vote → Captain sign</text>
+  
+  <text x="470" y="75" font-size="20" fill="#666">→</text>
+  
+  <rect x="500" y="30" width="200" height="90" rx="6" fill="#fafafa" stroke="#ddd"/>
+  <text x="520" y="55" font-size="12" font-weight="600" fill="#333">Status checklist</text>
+  <text x="520" y="78" font-size="12" fill="#333">☑ Crew vote</text>
+  <text x="520" y="96" font-size="12" fill="#333">☐ Captain sign</text>
+  <text x="520" y="114" font-size="12" fill="#333">☐ Executed</text>
+</svg>        </div>
+      </article>
+      <article class="card" id="idea-3">
+        <div class="card-header">
+          <h3 class="card-title">3. Pirate Metaphor + Roster-as-Roles</h3>
+          <span class="pill pill-axis">Roles &amp; permissions</span>
+          <span class="pill pill-high">Conf 90%</span>
+          <span class="pill pill-med">Cx Medium</span>
+        </div>
+        <p><strong>Description:</strong> Replace visible Hats/bytes32/Safe jargon with the canonical pirate-ship vocabulary: Captain, Crew, Quartermaster, Mutiny, Treasury. The primary role UI becomes the squad member roster: the captain taps a member and assigns a ship role, and the app translates that into the underlying Hats/bytes32 operations. The Hats tree becomes a secondary read-only &#x27;org chart&#x27; for advanced users.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: DashboardRolesTreeTab shows a Hats tree explorer link and &#x27;Untitled hat&#x27; fallback (src/components/parent/dashboard/DashboardRolesTreeTab.svelte:23-50); HatsTreeNode renders hat id and supply/maxSupply without explanation (src/components/parent/governance/HatsTreeNode.svelte:7-14); permissions-panel lists &#x27;On-chain role identifiers&#x27; and &#x27;FULL versus PAUSE executor scopes&#x27; (src/lib/dashboard/permissions-panel.ts:19-56); docs/pacto_ecosystem_research.md states the pirate-ship Captain/Crew model is canonical. external: Aragon App&#x27;s no-code permission grants show roles can be assigned without touching contract code.</div>
+        <p><strong>Rationale:</strong> The intended vocabulary already exists in the product docs; the UI should use it. One consistent metaphor makes every future screen—treasury, proposals, mutiny—self-explanatory without repeated onboarding.</p>
+        <div class="downsides"><span class="label">Downsides:</span> Engineers familiar with Hats Protocol may resist hiding contract terms. Must maintain a mapping table between UI terms and on-chain identifiers.</div>
+        <div class="visual">
+<svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Before: technical Hats tree. After: people roster with pirate roles.">
+  <text x="20" y="24" font-size="14" font-weight="600" fill="#666">Before</text>
+  <rect x="110" y="40" width="100" height="40" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="160" y="65" font-size="12" fill="#333" text-anchor="middle">Hat #1</text>
+  <line x1="160" y1="80" x2="80" y2="120" stroke="#999" stroke-width="2"/>
+  <line x1="160" y1="80" x2="160" y2="120" stroke="#999" stroke-width="2"/>
+  <line x1="160" y1="80" x2="240" y2="120" stroke="#999" stroke-width="2"/>
+  <rect x="40" y="120" width="80" height="40" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="80" y="145" font-size="11" fill="#333" text-anchor="middle">0xabc...</text>
+  <rect x="120" y="120" width="80" height="40" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="160" y="145" font-size="11" fill="#333" text-anchor="middle">Untitled</text>
+  <rect x="200" y="120" width="80" height="40" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="240" y="145" font-size="11" fill="#333" text-anchor="middle">0xdef...</text>
+  
+  <text x="340" y="24" font-size="14" font-weight="600" fill="#666">After</text>
+  <rect x="340" y="40" width="280" height="48" rx="6" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="360" y="62" font-size="13" font-weight="600" fill="#7c2d12">Captain</text>
+  <text x="450" y="62" font-size="13" fill="#333">Alice — can sign off</text>
+  <text x="450" y="78" font-size="12" fill="#666">on crew-passed proposals</text>
+  <rect x="340" y="100" width="280" height="48" rx="6" fill="#f0f9ff" stroke="#7dd3fc"/>
+  <text x="360" y="122" font-size="13" font-weight="600" fill="#0c4a6e">Quartermaster</text>
+  <text x="470" y="122" font-size="13" fill="#333">Bob — manages roster</text>
+  <text x="470" y="138" font-size="12" fill="#666">and timelocked changes</text>
+  <rect x="340" y="160" width="280" height="48" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="360" y="182" font-size="13" font-weight="600" fill="#334155">Crew</text>
+  <text x="430" y="182" font-size="13" fill="#333">Carol, Dan, Eve — vote</text>
+  <text x="430" y="198" font-size="12" fill="#666">on proposals and mutiny</text>
+</svg>        </div>
+      </article>
+      <article class="card" id="idea-4">
+        <div class="card-header">
+          <h3 class="card-title">4. Unified Squad Wallet with Spend Composer and Safe-to-Spend Balance</h3>
+          <span class="pill pill-axis">Treasury UX</span>
+          <span class="pill pill-high">Conf 90%</span>
+          <span class="pill pill-med">Cx Medium</span>
+        </div>
+        <p><strong>Description:</strong> Present all vaults as a single &#x27;Squad Wallet&#x27; with one balance and a feed of pending spending requests. A &#x27;Spend&#x27; button asks three questions: who gets it, how much, and why. The review screen shows the two-body approval chain (&#x27;Crew votes → Captain signs&#x27;) and a live &#x27;safe to spend&#x27; number that subtracts approved-but-not-yet-executed outflows. Raw Safe addresses and signer counts are available under an advanced disclosure.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: DashboardTreasuryTab lists vaults with raw addresses and external links (src/components/parent/dashboard/DashboardTreasuryTab.svelte:46-48); DeploySafeModal asks users to pick signers from members who have shared EVM addresses and warns about max signer counts (src/components/parent/governance/DeploySafeModal.svelte:10-272); PACTO_GOV.md states TreasuryAuthority enforces two-body democracy; proposal statuses include &#x27;active_passed_crew&#x27; meaning funds are committed but not yet moved. external: Safe&#x27;s queue-centric UX aims to hide M-of-N complexity; the ecosystem doc compares the treasury to a &#x27;shared safe&#x27; with a two-person rule.</div>
+        <p><strong>Rationale:</strong> Treasury is the most common governance action. Abstracting Safe/multisig mechanics into a shared account with a clear approval chain makes every future treasury interaction simpler and prevents accidental overcommitment.</p>
+        <div class="downsides"><span class="label">Downsides:</span> Aggregating balances across vaults must handle tokens and chains consistently. A unified balance could obscure which Safe holds which funds.</div>
+        <div class="visual">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Unified squad wallet balance, spend composer, and approval badges.">
+  <rect x="20" y="20" width="180" height="120" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+  <text x="40" y="50" font-size="12" font-weight="600" fill="#166534">Squad Wallet</text>
+  <text x="40" y="80" font-size="22" font-weight="600" fill="#166534">3.25 ETH</text>
+  <text x="40" y="105" font-size="12" fill="#666">Safe to spend: 2.80 ETH</text>
+  <text x="40" y="125" font-size="11" fill="#666">Pending: 0.45 ETH</text>
+  
+  <rect x="220" y="45" width="140" height="44" rx="6" fill="#10b981" stroke="#059669"/>
+  <text x="290" y="73" font-size="14" font-weight="600" fill="white" text-anchor="middle">Spend</text>
+  
+  <rect x="380" y="30" width="320" height="120" rx="6" fill="#fafafa" stroke="#ddd"/>
+  <text x="400" y="55" font-size="12" font-weight="600" fill="#333">New spending request</text>
+  <text x="400" y="80" font-size="12" fill="#333">Pay vendor $500 for servers</text>
+  <rect x="400" y="95" width="130" height="24" rx="4" fill="#fef3c7" stroke="#fcd34d"/>
+  <text x="410" y="112" font-size="11" fill="#92400e">Waiting for Crew</text>
+  <rect x="540" y="95" width="140" height="24" rx="4" fill="#f5f5f5" stroke="#ddd"/>
+  <text x="550" y="112" font-size="11" fill="#666">Then Captain signs</text>
+</svg>        </div>
+      </article>
+      <article class="card" id="idea-5">
+        <div class="card-header">
+          <h3 class="card-title">5. Mutiny as No-Confidence Chat Poll + Graceful Handoff</h3>
+          <span class="pill pill-axis">Dispute &amp; mutiny</span>
+          <span class="pill pill-high">Conf 85%</span>
+          <span class="pill pill-med">Cx Medium</span>
+        </div>
+        <p><strong>Description:</strong> Surface &#x27;Replace Captain&#x27; as a visible, stigma-free safety feature in the Governance tab and squad chat. Any crew member can start a structured poll with a required reason and a 7-day window; the UI shows current crew support, the 51% threshold, and the timelock countdown. The captain can also initiate a &#x27;Pass the torch&#x27; resignation plan that names a successor, with crew ratification. Mutiny becomes a responsible procedure, not a hidden escape hatch.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: PACTO_GOV.md describes MutinyModule as &#x27;51% crew vote can replace the captain (or captain can resign)&#x27; and the Quartermaster as a &#x27;timelocked crew roster; admin of the crew hat&#x27;; docs/pacto_ecosystem_research.md describes mutiny as a formal, on-chain process; DashboardGovernanceTab has no mutiny action and only surfaces conflict through the after-the-fact &#x27;captain_vetoed&#x27; status. external: Loomio&#x27;s structured decision threads show how deliberation can handle conflict; aviation emergency protocols provide a model for formal, high-stakes procedures.</div>
+        <p><strong>Rationale:</strong> Governance trust depends on credible recovery. If users cannot find mutiny until after a captain veto, the strongest safety mechanism is effectively absent. A normal handoff path also covers the common case of planned captain departure.</p>
+        <div class="downsides"><span class="label">Downsides:</span> Prominently surfacing mutiny could normalize conflict or create anxiety. Must ensure the poll cannot be gamed and that the reason is preserved for audit.</div>
+      </article>
+      <article class="card" id="idea-6">
+        <div class="card-header">
+          <h3 class="card-title">6. Private-by-Default Treasury Votes via Aztec</h3>
+          <span class="pill pill-axis">Treasury UX</span>
+          <span class="pill pill-med">Conf 75%</span>
+          <span class="pill pill-high">Cx High</span>
+        </div>
+        <p><strong>Description:</strong> Use the Aztec privacy layer to make treasury votes private by default: members see their own ballot as a sealed envelope until the result is revealed, and the app explains this in plain language. The status rail shows &#x27;Sealed votes&#x27; during the crew phase and &#x27;Result revealed&#x27; after the captain signs, without exposing individual positions on-chain.</p>
+        <div class="basis"><span class="label">Basis:</span> direct: docs/pacto_ecosystem_research.md states privacy is a core Pacto value, with Aztec/Noir for private voting and payments, and compares it to a sealed envelope the blockchain can verify without opening; the app already embeds Aztec in the integration architecture. reasoned: Public votes expose members&#x27; positions and treasury activity, which contradicts the product strategy for activists and dissidents.</div>
+        <p><strong>Rationale:</strong> Delivers on the central promise of Pacto: enforceable rules without surveillance. It also differentiates Pacto from Snapshot/Tally, where public voting is the default.</p>
+        <div class="downsides"><span class="label">Downsides:</span> High engineering complexity; Aztec integration may not be production-ready. UX must explain why a private vote matters without scaring users.</div>
+      </article>
+
+    </section>
+
+    <section id="rejected">
+      <h2>Rejection Summary</h2>
+      <p>These ideas were considered and cut during the adversarial filtering pass. The survivor set above covers all five axes.</p>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>"Start the Ship" One-Tap Squad Launch</td><td>Superseded by One-Click Default Deploy, which keeps the same intent but explicitly preserves reversible defaults.</td></tr>
+          <tr><td>2</td><td>One-Click Governance Blueprint</td><td>Same territory as One-Click Default Deploy; merged into the chosen survivor.</td></tr>
+          <tr><td>3</td><td>Squad-first deployment: chat group seeds on-chain squad</td><td>Strong but higher-risk; folded into One-Click Default Deploy as a future iteration rather than a separate top idea.</td></tr>
+          <tr><td>4</td><td>Universal shipyard: one pre-deployed Nave Pirata instance</td><td>Architecture pivot with uncertain security implications; confidence too low (60%) for the top set.</td></tr>
+          <tr><td>5</td><td>Spend-first governance</td><td>Interesting but would require a larger resequencing of the deploy flow; kept as a variant of the deploy idea.</td></tr>
+          <tr><td>6</td><td>Network-agnostic onboarding</td><td>Covered by One-Click Default Deploy's default network handling.</td></tr>
+          <tr><td>7</td><td>Deploy as a Conversation</td><td>High complexity and uncertain fit for the desktop app context; kept as a UX variant.</td></tr>
+          <tr><td>8</td><td>Gas Pool as a Wallet Tab</td><td>Smaller-scope; surfaced inside the deploy progress checklist instead.</td></tr>
+          <tr><td>9</td><td>Proposal Templates That Grow With the Squad</td><td>Overlaps with Poll-to-Proposal Pipeline; templates can be layered on later.</td></tr>
+          <tr><td>10</td><td>Natural-Language Proposal Composer</td><td>High complexity; folded into the Poll-to-Proposal Pipeline as the plain-language card layer.</td></tr>
+          <tr><td>11</td><td>Auto-execute once safe</td><td>Implementation detail that can follow the proposal pipeline; not a standalone top idea.</td></tr>
+          <tr><td>12</td><td>Vote-as-reaction</td><td>High complexity and security-risky; kept as a future optimization, not a top idea.</td></tr>
+          <tr><td>13</td><td>Governance agenda with quorum meter</td><td>Good polish; merged into the Poll-to-Proposal Pipeline's status checklist.</td></tr>
+          <tr><td>14</td><td>Proposal Status as a Checklist</td><td>Merged into Poll-to-Proposal Pipeline.</td></tr>
+          <tr><td>15</td><td>People-First Crew Roster</td><td>Merged into Pirate Metaphor + Roster-as-Roles.</td></tr>
+          <tr><td>16</td><td>Playbill, Not a Hats Tree</td><td>Merged into Pirate Metaphor + Roster-as-Roles.</td></tr>
+          <tr><td>17</td><td>Permissions as Questions</td><td>Nice but can be layered into the roster view; not a top idea.</td></tr>
+          <tr><td>18</td><td>Role Health Warnings</td><td>Good follow-on; not in the top set.</td></tr>
+          <tr><td>19</td><td>Member Roster as Role Assignment</td><td>Merged into Pirate Metaphor + Roster-as-Roles.</td></tr>
+          <tr><td>20</td><td>Captain-as-sub-group</td><td>High complexity and contract-uncertainty; confidence too low.</td></tr>
+          <tr><td>21</td><td>Role simulator</td><td>Good but narrower than the roster idea; can follow.</td></tr>
+          <tr><td>22</td><td>Activity-based role suggestions</td><td>High complexity and reputation-gaming risk; confidence too low.</td></tr>
+          <tr><td>23</td><td>Unified Squad Wallet with Plain-Language Approval Flow</td><td>Merged into Unified Squad Wallet with Spend Composer and Safe-to-Spend Balance.</td></tr>
+          <tr><td>24</td><td>Treasury Should Look Like a Shared Household Budget</td><td>Merged into Unified Squad Wallet with Spend Composer and Safe-to-Spend Balance.</td></tr>
+          <tr><td>25</td><td>One Squad Vault, Not a List of Safes</td><td>Merged into Unified Squad Wallet with Spend Composer and Safe-to-Spend Balance.</td></tr>
+          <tr><td>26</td><td>Available-to-Spend Balance</td><td>Merged into Unified Squad Wallet as safe-to-spend.</td></tr>
+          <tr><td>27</td><td>Deposit QR and shareable link</td><td>Small UX polish; not a top idea.</td></tr>
+          <tr><td>28</td><td>Mutiny as a First-Class Safety Flow</td><td>Merged into Mutiny as No-Confidence Chat Poll + Graceful Handoff.</td></tr>
+          <tr><td>29</td><td>Mutiny Should Work Like Declaring an Emergency in the Cockpit</td><td>Merged into Mutiny as No-Confidence Chat Poll + Graceful Handoff.</td></tr>
+          <tr><td>30</td><td>Captain Veto as a Checkpoint</td><td>Good follow-on; not in the top set.</td></tr>
+          <tr><td>31</td><td>Deadlock alarm</td><td>Good follow-on; not in the top set.</td></tr>
+          <tr><td>32</td><td>Mutiny threshold dial</td><td>Contract-config question; not a top idea.</td></tr>
+          <tr><td>33</td><td>Dispute escrow</td><td>High complexity and contract uncertainty; confidence too low.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Composed 2026-07-02 by ce-ideate from user request to build a friendly governance UX for Pacto, referencing docs/pacto_ecosystem_research.md and repo docs.
+    </footer>
+  </div>
+</body>
+</html>

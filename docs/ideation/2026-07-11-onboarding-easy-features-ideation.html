@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Onboarding Easy Features — Pacto</title>
+  <style>
+    :root {
+      --bg: #fafaf9;
+      --text: #1c1917;
+      --muted: #57534e;
+      --accent: #0f766e;
+      --accent-soft: #f0fdfa;
+      --border: #d6d3d1;
+      --card-bg: #ffffff;
+      --radius: 0.6rem;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0a09;
+        --text: #fafaf9;
+        --muted: #a8a29e;
+        --accent: #14b8a6;
+        --accent-soft: #134e4a;
+        --border: #44403c;
+        --card-bg: #1c1917;
+        --shadow: 0 1px 3px rgba(0,0,0,0.3);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+    header {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0 0 0.25rem;
+    }
+    h1 { font-size: 2.2rem; margin: 0 0 0.75rem; line-height: 1.2; }
+    h2 { font-size: 1.5rem; margin: 2.5rem 0 1rem; color: var(--text); }
+    h3 { font-size: 1.15rem; margin: 0; }
+    .meta p { margin: 0.15rem 0; color: var(--muted); font-size: 0.95rem; }
+    section { margin-bottom: 2.5rem; }
+    p, li { max-width: 72ch; }
+    p { margin: 0.75rem 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: "SF Mono", Monaco, Inconsolata, monospace;
+      font-size: 0.88em;
+      background: rgba(0,0,0,0.05);
+      padding: 0.1em 0.35em;
+      border-radius: 0.25rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      code { background: rgba(255,255,255,0.08); }
+    }
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin: 1rem 0 1.5rem;
+    }
+    .jump-list a {
+      display: inline-block;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      background: var(--card-bg);
+    }
+    .idea-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .idea-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .idea-rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.8rem;
+      height: 1.8rem;
+      background: var(--accent);
+      color: white;
+      font-weight: 700;
+      border-radius: 50%;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .idea-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--accent-soft);
+      color: var(--text);
+    }
+    .chip.confidence.high { background: #dcfce7; color: #14532d; border-color: #86efac; }
+    .chip.confidence.medium { background: #fef9c3; color: #713f12; border-color: #fde047; }
+    .chip.confidence.low { background: #fee2e2; color: #7f1d1d; border-color: #fca5a5; }
+    @media (prefers-color-scheme: dark) {
+      .chip.confidence.high { background: #14532d; color: #dcfce7; }
+      .chip.confidence.medium { background: #713f12; color: #fef9c3; }
+      .chip.confidence.low { background: #7f1d1d; color: #fee2e2; }
+    }
+    .idea-desc { font-size: 1rem; margin: 0.5rem 0 1rem; }
+    .field { margin: 0.6rem 0; font-size: 0.95rem; }
+    .field-label { font-weight: 700; color: var(--text); margin-right: 0.3rem; }
+    .flow-diagram {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      margin: 1rem 0 1.5rem;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    th, td { padding: 0.7rem 0.9rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { background: var(--accent-soft); font-weight: 700; }
+    tr:last-child td { border-bottom: none; }
+    ol, ul { margin: 0.75rem 0; padding-left: 1.5rem; }
+    li { margin: 0.3rem 0; }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>Onboarding Easy Features</h1>
+      <div class="meta">
+        <p>Date: <time datetime="2026-07-11">2026-07-11</time></p>
+        <p>Focus: new features to make onboarding to this app easy</p>
+        <p>Mode: repo-grounded</p>
+      </div>
+    </header>
+
+    <main>
+      <section id="grounding">
+        <h2>Grounding Context</h2>
+        <h1>Grounding Summary — Onboarding Improvements for Pacto</h1><h2>Codebase Context</h2><p>Pacto is a Tauri v2 desktop app: SvelteKit/Svelte 4 SPA frontend, Rust backend, Nostr/MLS messaging, EVM wallet from a single BIP-39 seed. Single root route <code>src/routes/+page.svelte</code> hosts the whole UI. Svelte 4 stores with per-npub <code>localStorage</code> persistence via <code>persistenceKey</code>. Backend uses global state (<code>STATE</code>, <code>NOSTR_CLIENT</code>, <code>MNEMONIC_SEED</code>, <code>TAURI_APP</code>, <code>ENCRYPTION_KEY</code>) and per-account SQLite. No public alpha shipped; greenfield posture favors breaking, minimal paths over legacy shims.</p><p>Notable patterns: <code>src/lib/api/*</code> typed Tauri <code>invoke</code> wrappers; <code>src/lib/app/tauri-subscriptions.ts</code> backend → UI event bridge; <code>src/stores/auth.ts</code> for create/import/unlock/logout; <code>src/stores/persistence.ts</code> for npub-scoped account state; strategy tracks in <code>STRATEGY.md</code>.</p><h2>Obvious Pain Points / Gaps</h2><ol><li>Single seed = single catastrophic loss point for both messages and money; no visible key-recovery path.</li><li>Squad creation requires deploying Safe + governance + Hats on-chain, needing gas and understanding before a user can chat.</li><li>Nostr/MLS concepts (npub, nsec, relays, keypackages, gift wraps, MLS welcome) leak to the user without a clear mental model.</li><li>Discovery is split between Commons feed and private invite flow; no progressive onboarding into first squad.</li><li>No guided first-run, empty-state education, or testnet/sandbox path.</li><li>Squad invite accept rate is a top metric, suggesting the invite/join flow is already recognized as fragile.</li><li>Wallet/EVM setup surfaces dense contract jargon (Hats tree, bytes32 roles, executor scopes) without plain-language UX.</li><li>Account setup uses a hard-coded Argon2 salt, sessionStorage unlock flag, plaintext EVM key export, and open TODOs (random salt, pre-alpha migrations).</li></ol><h2>Leverage Points</h2><ul><li>Add a first-run wizard gated by an onboarding store flag in <code>src/stores/auth.ts</code>/<code>persistence.ts</code>.</li><li>Seed the user with a default first squad or demo Commons content so the app is not empty after account creation.</li><li>Use <code>src/lib/api/nostr.ts</code> and invite-accept flows to wrap squad joining with better error messaging and progress.</li><li>Add a testnet toggle for squad infra so users can practice governance before spending real gas.</li><li>Surface the embedded wallet in stages (receive-only, then send, then deploy).</li><li>Reuse the existing <code>#personal-alerts</code> virtual bucket for an onboarding checklist or roster-binding nudges.</li><li>Capitalize on the <code>#new</code> user/squad broadcast tag in Commons to surface first-steps prompts.</li></ul><h2>Relevant Strategy Tracks</h2><ul><li>Discovery &amp; Commons (find first squads)</li><li>Private group coordination (make MLS Squad creation feel like Discord)</li><li>Trust &amp; safety (key loss, spam)</li><li>Embedded treasury &amp; governance (squad infra deployment is the biggest complexity cliff)</li></ul><h2>Additional Context</h2><ul><li><code>CONCEPTS.md</code>: shared vocabulary covering identity, messaging, governance, and architecture terms.</li><li><code>DEVELOPMENT.md</code>: repo-level agent skills for Vitest, Playwright, and Tauri/Rust testing.</li></ul><h2>Past Learnings</h2><ul><li>Onboarding is already a strategic metric: <code>STRATEGY.md</code> tracks Squad invite accept rate (signals onboarding simplicity and trust), 30-day retention of new squad members, and Commons follows → squad joins.</li><li>Pre-public-alpha / greenfield: prefer breaking, minimal paths; remove alpha-only repair code in <code>docs/legacy-fixes/</code> before beta.</li><li>Identity-first and cryptographic: one BIP-39 seed derives Nostr npub and all EVM accounts; users must understand npub, nsec, seed, squad-purpose vs advanced-purpose keys, and per-account SQLite isolation.</li><li>Governance UX ideation (2026-07-02) proposed the Nave Pirata pirate metaphor and one-click default deploy with reversible defaults to reduce contract jargon.</li><li>Commons auto-tags a user&#x27;s first broadcast with <code>#new</code> and shows new squads with <code>#new</code>; this is a hook for onboarding/discovery but has no equivalent first-run UX inside the app.</li><li>Hub-channel / virtual-bucket design reserves a <code>#personal-alerts</code> channel for prompts to action — a natural place for an onboarding checklist or roster-binding nudges.</li><li>Download acquisition funnel is being rebuilt: <code>docs/plans/2026-07-11-001-feat-download-site-landing-plan.md</code> collapses pacto-download into pacto-app.</li><li>Operator checklists (<code>docs/wallet/OPERATOR_SMOKE.md</code>, <code>MANUAL_E2E_CHECKLIST.md</code>) document real onboarding steps: enabling chains, adding RPCs, importing Anvil keys, funding Sepolia, deploying sponsor → gov → Safe in order, and sharing roster EVM addresses.</li></ul><h2>External Context</h2><ul><li>Progressive disclosure / staged setup: surface features gradually to reduce cognitive load, but self-custodial seed backup cannot be deferred forever. Sources: userpilot.com, uxpin.com.</li><li>Seed-phrase backup as a safety ritual: show → write down → verify, with calm copy and honest irreversibility. Sources: medium.com, 925studios.co.</li><li>Empty states that teach the next action: pre-populated starter content and direct CTAs reduce blank-canvas paralysis. Sources: uxpin.com, eleken.co, userpilot.com.</li><li>Contextual coaching inside the workspace: tooltips and coach marks reduce doc reliance; must be skippable and keyboard-accessible. Sources: toptal.com, userpilot.com, blakecrosley.com.</li><li>Trust framing and legible risk: no KYC/no central authority means the UI must signal honesty and local-first operation; do not hide irreversibility. Sources: blakecrosley.com, dev.to, element.io.</li><li>Intent-based / branched onboarding: route users to messaging or wallet first based on self-reported intent. Sources: userpilot.com, medium.com.</li><li>No-KYC caveat: irrecoverability is the central constraint. Any pattern that hides or delays seed-phrase backup must still verify the user has a backup.</li></ul><h2>User-Supplied Research</h2><p>None.</p><h2>Topic Axes</h2><ol><li><strong>Account setup &amp; key safety</strong> — create/import, seed backup, recovery, nsec handling, PIN/encryption.</li><li><strong>First-run feature orientation</strong> — mental model of Nostr/MLS/wallet, welcome wizard, tours, plain-language copy.</li><li><strong>First squad / social activation</strong> — joining or creating a first squad, invite acceptance, Commons discovery, #new tag.</li><li><strong>Wallet &amp; treasury activation</strong> — receive funds, faucet, testnet, staged access, sponsor/governance/Safe deploy.</li><li><strong>Contextual coaching &amp; empty states</strong> — checklists, #personal-alerts, empty-squad UX, tooltips, progress signals.</li></ol><h2>Evidence Dossiers</h2><p>Read these files before generating ideas. Each contains verbatim quotes and <code>file:line</code> pointers from the repo.</p><ul><li><code>/tmp/compound-engineering/ce-ideate/1a58a581/evidence-account-setup-key-safety.md</code> (33 entries; BIP-39 seed, nsec, PIN, encryption, storage, logout, key export, TODOs).</li><li><code>/tmp/compound-engineering/ce-ideate/1a58a581/evidence-first-run-orientation.md</code> (84 lines; WelcomeScreen, navigation, Commons, squad creation, governance dashboard, empty states, leverage points).</li><li><code>/tmp/compound-engineering/ce-ideate/1a58a581/evidence-first-squad-social-activation.md</code> (50 entries; squad creation, invites, MLS welcome, Commons #new, EVM roster binding, squad-bot).</li><li><code>/tmp/compound-engineering/ce-ideate/1a58a581/evidence-wallet-treasury-activation.md</code> (63 entries; wallet derivation, chains/RPCs, DM EVM exchange, sponsor/governance/Safe deploy, treasury proposals).</li><li><code>/tmp/compound-engineering/ce-ideate/1a58a581/evidence-coaching-empty-states.md</code> (57 entries; empty states, #personal-alerts, onboarding flow, progress signals, dashboard CTAs).</li></ul>
+      </section>
+
+      <section id="axes">
+        <h2>Topic Axes</h2>
+        <ol>
+          <li>Account setup &amp; key safety — create/import, seed backup, recovery, nsec handling, PIN/encryption.</li>
+<li>First-run feature orientation — mental model of Nostr/MLS/wallet, welcome wizard, tours, plain-language copy.</li>
+<li>First squad / social activation — joining or creating a first squad, invite acceptance, Commons discovery, #new tag.</li>
+<li>Wallet &amp; treasury activation — receive funds, faucet, testnet, staged access, sponsor/governance/Safe deploy.</li>
+<li>Contextual coaching &amp; empty states — checklists, #personal-alerts, empty-squad UX, tooltips, progress signals.</li>
+        </ol>
+      </section>
+
+      <section id="ideas">
+        <h2>Ranked Ideas</h2>
+        <p><strong>Top pick:</strong> <em>Intent-based first-run router</em> is the highest-confidence, highest-leverage move: it gives every new user a clear next step and creates the mental model that makes the other ideas (backup gate, sandbox, checklist) easier to discover.</p>
+        <div class="flow-diagram">
+          <svg viewBox="0 0 900 180" xmlns="http://www.w3.org/2000/svg" aria-label="Onboarding flow after the ranked ideas">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#0f766e" />
+    </marker>
+  </defs>
+  <text x="450" y="24" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text)">Coordinated first-run flow</text>
+  <rect x="20" y="60" width="120" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="80" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">1. PIN setup</text>
+  <text x="80" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">Unlock</text>
+  <rect x="170" y="60" width="120" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="230" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">2. Intent router</text>
+  <text x="230" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">M4</text>
+  <rect x="320" y="60" width="120" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="380" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">3. Backup gate</text>
+  <text x="380" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">M1</text>
+  <rect x="470" y="60" width="120" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="530" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">4. First squad</text>
+  <text x="530" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">M8 / M9</text>
+  <rect x="620" y="60" width="120" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="680" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">5. #alerts checklist</text>
+  <text x="680" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">M13</text>
+  <rect x="770" y="60" width="110" height="50" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="825" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text)">6. Testnet sandbox</text>
+  <text x="825" y="99" text-anchor="middle" font-size="10" fill="var(--muted)">M10</text>
+  <line x1="140" y1="85" x2="170" y2="85" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="290" y1="85" x2="320" y2="85" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="440" y1="85" x2="470" y2="85" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="590" y1="85" x2="620" y2="85" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="740" y1="85" x2="770" y2="85" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="450" y="150" text-anchor="middle" font-size="11" fill="var(--muted)">Empty-state coach cards (M15) appear at every step where the next action is unclear.</text>
+</svg>
+        </div>
+        <nav class="jump-list" aria-label="Jump to ideas">
+          <a href="#idea-1">1. Intent-based first-run router</a>
+<a href="#idea-2">2. Verified seed-backup gate with progressive enforcement</a>
+<a href="#idea-3">3. Unified onboarding checklist in #personal-alerts</a>
+<a href="#idea-4">4. Invite-accept guided onboarding funnel</a>
+<a href="#idea-5">5. Solo-first personal sandbox squad</a>
+<a href="#idea-6">6. One-click testnet treasury sandbox with faucet</a>
+<a href="#idea-7">7. Context-aware empty-state coach card</a>
+        </nav>
+        
+<article id="idea-1" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">1</span>
+    <h3>Intent-based first-run router</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">First-run feature orientation</span>
+    <span class="chip confidence high">85% confidence</span>
+    <span class="chip complexity medium">Medium complexity</span>
+  </div>
+  <p class="idea-desc">After PIN setup, ask a single question about the user’s intent—e.g., join a squad, message a friend, discover public squads, or move funds. Route to the matching tab and pre-open the relevant empty-state CTA. Persist the intent to drive later coaching and progressive disclosure.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>src/components/layout/TopNavbar.svelte:19</code> exposes Commons / DMs / Squads tabs with no onboarding labels; <code>src/routes/+page.svelte:1001</code> shows &quot;Select a squad channel&quot; as the empty state; <code>src/components/auth/WelcomeScreen.svelte:6</code> only offers Create or Import. external: intent-based onboarding reduces blank-canvas paralysis.</div>
+  <div class="field"><span class="field-label">Rationale:</span> Pacto bundles messaging, public discovery, and treasury; forcing every user through the same default tab hides the path they actually care about.</div>
+  <div class="field"><span class="field-label">Downsides:</span> Requires careful design to avoid a quiz-like experience; intent may be wrong and need correction later.</div>
+</article>
+
+
+<article id="idea-2" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">2</span>
+    <h3>Verified seed-backup gate with progressive enforcement</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">Account setup & key safety</span>
+    <span class="chip confidence high">80% confidence</span>
+    <span class="chip complexity medium">Medium complexity</span>
+  </div>
+  <p class="idea-desc">After account creation, require users to view, write down, and verify a random subset of their 12-word recovery phrase before the main shell unlocks. A lower-friction variant allows immediate exploration but blocks receiving funds, joining squads, and exporting keys until backup is verified.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>src/components/auth/KeyImport.svelte:111-113</code> already frames the recovery phrase as &quot;encrypted with a PIN and stored securely on this device&quot;; <code>src/components/auth/Login.svelte:9</code> ends the auth step machine at <code>pin-unlock</code> with no post-create backup step; <code>src-tauri/src/lib.rs:4549</code> generates a 12-word BIP-39 phrase on <code>create_account()</code>.</div>
+  <div class="field"><span class="field-label">Rationale:</span> Self-custody means no password reset; a verified backup is the precondition for all downstream risky actions (wallet, governance, squad ownership). The current flow silently trusts the user to back up later.</div>
+  <div class="field"><span class="field-label">Downsides:</span> Adds friction to first launch; must balance safety with activation; progressive-enforcement variant is more complex than a single gate.</div>
+</article>
+
+
+<article id="idea-3" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">3</span>
+    <h3>Unified onboarding checklist in #personal-alerts</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">Contextual coaching & empty states</span>
+    <span class="chip confidence high">85% confidence</span>
+    <span class="chip complexity medium">Medium complexity</span>
+  </div>
+  <p class="idea-desc">Convert the existing <code>#personal-alerts</code> virtual channel into a persistent per-user onboarding mission log: action cards for verified backup, default wallet, first squad join/create, roster signer binding, and testnet funding. Auto-advance as backend events fire; unresolved cards show badges in the sidebar.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>src/lib/squad/hub-channel-names.ts:8</code> defines <code>PERSONAL_ALERTS_CHANNEL_NAME</code>; <code>docs/communities/DESIGN.md:52</code> reserves it for prompts to action; <code>src/components/inbox/SquadRosterKeyInboxCard.svelte:59</code> already renders an action card there; <code>src/components/channel/Channel.svelte:8,19</code> renders badge counts for hub rows.</div>
+  <div class="field"><span class="field-label">Rationale:</span> The app has no centralized onboarding surface; <code>#personal-alerts</code> is already an action inbox, so setup cards feel native and scalable.</div>
+  <div class="field"><span class="field-label">Downsides:</span> Could overload the channel if too many cards are shown; needs careful dismiss/reset behavior.</div>
+</article>
+
+
+<article id="idea-4" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">4</span>
+    <h3>Invite-accept guided onboarding funnel</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">First squad / social activation</span>
+    <span class="chip confidence high">80% confidence</span>
+    <span class="chip complexity medium">Medium complexity</span>
+  </div>
+  <p class="idea-desc">Turn an incoming squad invite into a short, skippable wizard that explains what a squad is, auto-creates a default squad-purpose wallet if one is missing, binds the roster signer, and deposits the user into the squad channel only after the welcome is accepted.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>src/components/invites/InviteCard.svelte:87</code> already tells the user to &quot;Set your roster signer in the squad #personal-alerts channel&quot;; <code>src/lib/squad/accept-invite.ts:191-196</code> already calls <code>backfillSquadMemberEvmFromProfiles</code> after accept. STRATEGY.md tracks squad invite accept rate as a top metric.</div>
+  <div class="field"><span class="field-label">Rationale:</span> Squad invite accept rate is a top strategic metric; the current path is fragile and relies on the user knowing what a roster signer is.</div>
+  <div class="field"><span class="field-label">Downsides:</span> A wizard adds steps to an already complex flow; must be skippable for power users.</div>
+</article>
+
+
+<article id="idea-5" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">5</span>
+    <h3>Solo-first personal sandbox squad</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">First squad / social activation</span>
+    <span class="chip confidence medium">75% confidence</span>
+    <span class="chip complexity medium">Medium complexity</span>
+  </div>
+  <p class="idea-desc">Remove the at-least-one-member requirement for a user’s first squad by auto-creating a private, single-member “My Space” squad. The user can explore channels, send messages, create polls, and simulate treasury deploys before inviting real humans.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>src-tauri/src/lib.rs:5437-5448</code> returns &quot;Select at least one member to create a group&quot; when <code>member_ids.is_empty()</code>; <code>src/components/layout/Navbar.svelte:465</code> tells users &quot;Add friends in DMs first to create a squad with them.&quot;</div>
+  <div class="field"><span class="field-label">Rationale:</span> Requiring a friend to be present before a user can see the squad UI is a hard activation cliff; a solo sandbox keeps them in the app and builds momentum.</div>
+  <div class="field"><span class="field-label">Downsides:</span> Changes the social contract of squads; may confuse users if the space is empty; backend MLS group with one member may need special handling.</div>
+</article>
+
+
+<article id="idea-6" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">6</span>
+    <h3>One-click testnet treasury sandbox with faucet</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">Wallet & treasury activation</span>
+    <span class="chip confidence medium">70% confidence</span>
+    <span class="chip complexity high">High complexity</span>
+  </div>
+  <p class="idea-desc">Add a persistent “Practice mode” toggle that defaults all wallet and squad deploys to local/Sepolia testnet, provides one-tap faucet links, and guides the user through the Sponsor → Pacto Gov → Safe deploy order with mock funds.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: <code>docs/wallet/MANUAL_E2E_CHECKLIST.md:7-8</code> requires external Sepolia ETH/USDC faucets; <code>src/components/parent/dashboard/DashboardGovernanceTab.svelte:28-31</code> shows &quot;Deploy squad sponsor first&quot;; <code>src-tauri/src/evm/squad_sponsor_deploy.rs:44-48</code> rejects a zero initial deposit.</div>
+  <div class="field"><span class="field-label">Rationale:</span> Treasury/governance deployment is the biggest complexity cliff; a sandbox removes the fear of real loss and trains the deploy order.</div>
+  <div class="field"><span class="field-label">Downsides:</span> High implementation cost (faucet integration, testnet state, mock tokens); may create false confidence if testnet behavior diverges from mainnet.</div>
+</article>
+
+
+<article id="idea-7" class="idea-card">
+  <div class="idea-header">
+    <span class="idea-rank">7</span>
+    <h3>Context-aware empty-state coach card</h3>
+  </div>
+  <div class="idea-meta">
+    <span class="chip axis">Contextual coaching & empty states</span>
+    <span class="chip confidence high">80% confidence</span>
+    <span class="chip complexity lowmedium">Low-Medium complexity</span>
+  </div>
+  <p class="idea-desc">Replace passive “No X yet” / “Select a channel” placeholders across the app with a single smart coach card that detects the next missing onboarding step and surfaces a CTA, plus a one-line “why this matters” explanation.</p>
+  <div class="field"><span class="field-label">Basis:</span> direct: Evidence dossier notes “No shared EmptyState primitive; empty states are duplicated across empty-state, dashboard-placeholder-text, wallet-view-empty, commons-state” and “Empty states are present but passive.”</div>
+  <div class="field"><span class="field-label">Rationale:</span> Dozens of empty states currently say the same thing; a unified coach card reduces duplication and gives every screen a clear next action.</div>
+  <div class="field"><span class="field-label">Downsides:</span> Requires a robust source-of-truth for “next onboarding step”; needs design to avoid being intrusive.</div>
+</article>
+
+      </section>
+
+      <section id="rejected">
+        <h2>Rejection Summary</h2>
+        <table>
+          <thead>
+            <tr><th>ID</th><th>Idea</th><th>Reason Rejected</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>M2</td><td>Random per-device Argon2 salt with first-init migration</td><td>Security hardening, not a user-facing onboarding feature.</td></tr>
+<tr><td>M3</td><td>nsec-first onboarding</td><td>Weak basis; conflicts with the single-seed BIP-39 architecture.</td></tr>
+<tr><td>M5</td><td>Guest Commons preview before account creation</td><td>Weak basis; no evidence that a guest preview is the right onboarding lever.</td></tr>
+<tr><td>M6</td><td>Guided sandbox first run</td><td>Weak basis; speculative bot-coaching implementation not grounded in existing code.</td></tr>
+<tr><td>M7</td><td>Auto-join Pacto demo squad</td><td>Weak basis; auto-joining a curated demo squad is not directly supported by existing code paths.</td></tr>
+<tr><td>M11</td><td>Tasting-flight wallet progression</td><td>Overlaps with M10 (testnet sandbox) and is less impactful as a standalone idea.</td></tr>
+<tr><td>M12</td><td>Ordered governance deploy checklist</td><td>Covered in stronger form by M10 (sandbox) and M13 (unified checklist).</td></tr>
+<tr><td>M14</td><td>First-sync progress indicator</td><td>Small tactical improvement; best treated as an instance of M15 rather than a standalone survivor.</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="composition-signal">
+      Composed 2026-07-11T21:45Z by ce-ideate from prompt “come up with some new features to make onboarding to this app easy”
+    </footer>
+  </div>
+</body>
+</html>
