@@ -15,6 +15,44 @@ use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call
 use super::gov_read::connect_gov_read_provider;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
+fn parse_mutiny_id(raw: &str) -> Result<U256, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(wallet_err_json(
+            "INVALID_MUTINY_ID",
+            "mutiny id is required",
+            None,
+        ));
+    }
+    U256::from_str_radix(trimmed, 10)
+        .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))
+}
+
+fn encode_start_to_crew_member(proposed: &str) -> Result<Vec<u8>, String> {
+    let addr = parse_address(proposed.trim())
+        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    Ok(startMutinyToCrewMemberCall {
+        _proposedCrewMember: addr,
+    }
+    .abi_encode())
+}
+
+fn encode_cast_vote(mutiny_id: &str) -> Result<Vec<u8>, String> {
+    let mid = parse_mutiny_id(mutiny_id)?;
+    Ok(castVoteCall { _mutinyId: mid }.abi_encode())
+}
+
+fn encode_execute_mutiny(mutiny_id: &str) -> Result<Vec<u8>, String> {
+    let mid = parse_mutiny_id(mutiny_id)?;
+    Ok(executeMutinyCall { _mutinyId: mid }.abi_encode())
+}
+
+fn encode_captain_resign(new_captain: &str) -> Result<Vec<u8>, String> {
+    let addr = parse_address(new_captain.trim())
+        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    Ok(captainResignCall { _newCaptain: addr }.abi_encode())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MutinyStatusDto {
@@ -136,12 +174,7 @@ pub async fn mutiny_start_to_crew_member<R: Runtime>(
     mutiny_module: String,
     proposed: String,
 ) -> Result<MutinyWriteResult, String> {
-    let addr = parse_address(proposed.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
-    let calldata = startMutinyToCrewMemberCall {
-        _proposedCrewMember: addr,
-    }
-    .abi_encode();
+    let calldata = encode_start_to_crew_member(&proposed)?;
     mutiny_write(
         app,
         network,
@@ -255,9 +288,7 @@ pub async fn mutiny_cast_vote<R: Runtime>(
     mutiny_module: String,
     mutiny_id: String,
 ) -> Result<MutinyWriteResult, String> {
-    let mid = U256::from_str_radix(mutiny_id.trim(), 10)
-        .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))?;
-    let calldata = castVoteCall { _mutinyId: mid }.abi_encode();
+    let calldata = encode_cast_vote(&mutiny_id)?;
     mutiny_write(
         app,
         network,
@@ -277,9 +308,7 @@ pub async fn mutiny_execute<R: Runtime>(
     mutiny_module: String,
     mutiny_id: String,
 ) -> Result<MutinyWriteResult, String> {
-    let mid = U256::from_str_radix(mutiny_id.trim(), 10)
-        .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))?;
-    let calldata = executeMutinyCall { _mutinyId: mid }.abi_encode();
+    let calldata = encode_execute_mutiny(&mutiny_id)?;
     mutiny_write(
         app,
         network,
@@ -299,9 +328,7 @@ pub async fn mutiny_captain_resign<R: Runtime>(
     mutiny_module: String,
     new_captain: String,
 ) -> Result<MutinyWriteResult, String> {
-    let addr = parse_address(new_captain.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
-    let calldata = captainResignCall { _newCaptain: addr }.abi_encode();
+    let calldata = encode_captain_resign(&new_captain)?;
     mutiny_write(
         app,
         network,
@@ -311,4 +338,73 @@ pub async fn mutiny_captain_resign<R: Runtime>(
         GovCapability::CaptainResign,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        encode_captain_resign, encode_cast_vote, encode_execute_mutiny, encode_start_to_crew_member,
+        parse_mutiny_id,
+    };
+    use alloy::primitives::U256;
+    use alloy::sol_types::SolCall;
+    use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
+        captainResignCall, castVoteCall, executeMutinyCall, startMutinyToCrewMemberCall,
+    };
+    use crate::evm::rpc::parse_address;
+
+    const ADDR: &str = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn parse_mutiny_id_decimal_only() {
+        assert_eq!(parse_mutiny_id("42").unwrap(), U256::from(42u64));
+        assert_eq!(parse_mutiny_id(" 7 ").unwrap(), U256::from(7u64));
+        assert!(parse_mutiny_id("0x1").is_err());
+        assert!(parse_mutiny_id("").is_err());
+    }
+
+    #[test]
+    fn start_cast_execute_encode_selectors() {
+        let start = encode_start_to_crew_member(ADDR).expect("start");
+        assert_eq!(
+            start,
+            startMutinyToCrewMemberCall {
+                _proposedCrewMember: parse_address(ADDR).unwrap(),
+            }
+            .abi_encode()
+        );
+        assert!(encode_start_to_crew_member("bad").is_err());
+
+        let vote = encode_cast_vote("3").expect("vote");
+        assert_eq!(
+            vote,
+            castVoteCall {
+                _mutinyId: U256::from(3u64),
+            }
+            .abi_encode()
+        );
+        assert!(encode_cast_vote("nope").is_err());
+
+        let exec = encode_execute_mutiny("9").expect("exec");
+        assert_eq!(
+            exec,
+            executeMutinyCall {
+                _mutinyId: U256::from(9u64),
+            }
+            .abi_encode()
+        );
+    }
+
+    #[test]
+    fn captain_resign_encodes_new_captain() {
+        let encoded = encode_captain_resign(ADDR).expect("resign");
+        assert_eq!(
+            encoded,
+            captainResignCall {
+                _newCaptain: parse_address(ADDR).unwrap(),
+            }
+            .abi_encode()
+        );
+        assert!(encode_captain_resign("0xzz").is_err());
+    }
 }

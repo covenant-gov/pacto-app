@@ -1485,6 +1485,101 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum TrackedTokenAnnouncePlan {
+    Upsert {
+        parent_id: String,
+        chain: String,
+        token_address: String,
+        symbol: String,
+        decimals: u8,
+        entry_id: Option<String>,
+    },
+    Remove {
+        parent_id: String,
+        entry_id: String,
+    },
+}
+
+/// Pure announce gates (type / parent match / author claim / required fields).
+/// MLS-admin and DB writes stay in `try_apply_squad_tracked_tokens_announce`.
+fn plan_tracked_tokens_announce(
+    content: &str,
+    chat_id: &str,
+    author: &str,
+) -> Option<TrackedTokenAnnouncePlan> {
+    let parsed: serde_json::Value = serde_json::from_str(content).ok()?;
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_tracked_tokens_updated") {
+        return None;
+    }
+    let p = parsed.get("payload")?;
+    let parent_id = p
+        .get("parent_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    if !side_effect_parent_matches_chat(chat_id, parent_id) {
+        return None;
+    }
+    if let Some(claimed) = p
+        .get("added_by_npub")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        if claimed != author {
+            return None;
+        }
+    }
+    let action = p.get("action").and_then(|v| v.as_str()).unwrap_or("upsert");
+    let entry_id = p
+        .get("entry_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    if action == "remove" {
+        let id = entry_id?;
+        return Some(TrackedTokenAnnouncePlan::Remove {
+            parent_id: parent_id.to_string(),
+            entry_id: id,
+        });
+    }
+    let chain = p
+        .get("chain")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let token_address = p
+        .get("token_address")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    let symbol = p
+        .get("symbol")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if symbol.is_empty() {
+        return None;
+    }
+    let decimals = match p.get("decimals").and_then(|v| v.as_u64()) {
+        Some(d) if d <= 36 => d as u8,
+        _ => return None,
+    };
+    Some(TrackedTokenAnnouncePlan::Upsert {
+        parent_id: parent_id.to_string(),
+        chain,
+        token_address,
+        symbol,
+        decimals,
+        entry_id,
+    })
+}
+
 pub fn try_apply_squad_tracked_tokens_announce<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
@@ -1494,48 +1589,9 @@ pub fn try_apply_squad_tracked_tokens_announce<R: Runtime>(
     let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
         return;
     };
-    let parsed: serde_json::Value = match serde_json::from_str(content) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-    if parsed.get("type").and_then(|v| v.as_str()) != Some("squad_tracked_tokens_updated") {
+    let Some(plan) = plan_tracked_tokens_announce(content, chat_id, author) else {
         return;
-    }
-    let p = match parsed.get("payload") {
-        Some(v) => v,
-        None => {
-            eprintln!("[squad_tracked_tokens_announce] missing payload");
-            return;
-        }
     };
-    let parent_id = match p.get("parent_id").and_then(|v| v.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim(),
-        _ => {
-            eprintln!("[squad_tracked_tokens_announce] missing parent_id");
-            return;
-        }
-    };
-    if !side_effect_parent_matches_chat(chat_id, parent_id) {
-        eprintln!(
-            "[squad_tracked_tokens_announce] parent/chat mismatch parent={} chat={}",
-            parent_id, chat_id
-        );
-        return;
-    }
-    if let Some(claimed) = p
-        .get("added_by_npub")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        if claimed != author {
-            eprintln!(
-                "[squad_tracked_tokens_announce] author mismatch claimed={} author={}",
-                claimed, author
-            );
-            return;
-        }
-    }
     if !is_author_mls_admin_for_chat(handle, chat_id, author) {
         eprintln!(
             "[squad_tracked_tokens_announce] author not MLS admin author={} chat={}",
@@ -1543,96 +1599,79 @@ pub fn try_apply_squad_tracked_tokens_announce<R: Runtime>(
         );
         return;
     }
-    let action = p.get("action").and_then(|v| v.as_str()).unwrap_or("upsert");
-    let entry_id = p
-        .get("entry_id")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    if action == "remove" {
-        if let Some(id) = entry_id {
+    match plan {
+        TrackedTokenAnnouncePlan::Remove {
+            parent_id,
+            entry_id,
+        } => {
             let conn = match crate::account_manager::get_db_connection(handle) {
                 Ok(c) => c,
                 Err(_) => return,
             };
             let _ = conn.execute(
                 "DELETE FROM squad_tracked_tokens WHERE id = ?1 AND parent_id = ?2",
-                rusqlite::params![id, parent_id],
+                rusqlite::params![entry_id, parent_id],
             );
             crate::account_manager::return_db_connection(conn);
         }
-        return;
-    }
-    let chain = match p.get("chain").and_then(|v| v.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        _ => return,
-    };
-    let token_address = match p.get("token_address").and_then(|v| v.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-        _ => return,
-    };
-    let symbol = p
-        .get("symbol")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    if symbol.is_empty() {
-        return;
-    }
-    let decimals = match p.get("decimals").and_then(|v| v.as_u64()) {
-        Some(d) if d <= 36 => d as u8,
-        _ => return,
-    };
-    let conn = match crate::account_manager::get_db_connection(handle) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-    let chain_norm = match normalize_allowlist_chain(&chain) {
-        Ok(c) => c,
-        Err(_) => {
-            crate::account_manager::return_db_connection(conn);
-            return;
-        }
-    };
-    let addr_norm = match normalize_allowlist_address(&token_address) {
-        Ok(a) => a,
-        Err(_) => {
-            crate::account_manager::return_db_connection(conn);
-            return;
-        }
-    };
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
-    let id = entry_id
-        .map(str::to_string)
-        .unwrap_or_else(|| tracked_token_row_id(parent_id, &chain_norm, &addr_norm));
-    let created_at_ms: i64 = conn
-        .query_row(
-            "SELECT created_at_ms FROM squad_tracked_tokens WHERE id = ?1",
-            rusqlite::params![&id],
-            |r| r.get(0),
-        )
-        .unwrap_or(now);
-    let _ = conn.execute(
-        "INSERT INTO squad_tracked_tokens (id, parent_id, chain, token_address, symbol, decimals, added_by_npub, created_at_ms, updated_at_ms) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
-         ON CONFLICT(id) DO UPDATE SET symbol = excluded.symbol, decimals = excluded.decimals, updated_at_ms = excluded.updated_at_ms",
-        rusqlite::params![
-            &id,
+        TrackedTokenAnnouncePlan::Upsert {
             parent_id,
-            &chain_norm,
-            &addr_norm,
-            &symbol,
-            decimals as i64,
-            author,
-            created_at_ms,
-            now
-        ],
-    );
-    crate::account_manager::return_db_connection(conn);
+            chain,
+            token_address,
+            symbol,
+            decimals,
+            entry_id,
+        } => {
+            let conn = match crate::account_manager::get_db_connection(handle) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let chain_norm = match normalize_allowlist_chain(&chain) {
+                Ok(c) => c,
+                Err(_) => {
+                    crate::account_manager::return_db_connection(conn);
+                    return;
+                }
+            };
+            let addr_norm = match normalize_allowlist_address(&token_address) {
+                Ok(a) => a,
+                Err(_) => {
+                    crate::account_manager::return_db_connection(conn);
+                    return;
+                }
+            };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            let id = entry_id
+                .unwrap_or_else(|| tracked_token_row_id(&parent_id, &chain_norm, &addr_norm));
+            let created_at_ms: i64 = conn
+                .query_row(
+                    "SELECT created_at_ms FROM squad_tracked_tokens WHERE id = ?1",
+                    rusqlite::params![&id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(now);
+            let _ = conn.execute(
+                "INSERT INTO squad_tracked_tokens (id, parent_id, chain, token_address, symbol, decimals, added_by_npub, created_at_ms, updated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                 ON CONFLICT(id) DO UPDATE SET symbol = excluded.symbol, decimals = excluded.decimals, updated_at_ms = excluded.updated_at_ms",
+                rusqlite::params![
+                    &id,
+                    parent_id,
+                    &chain_norm,
+                    &addr_norm,
+                    &symbol,
+                    decimals as i64,
+                    author,
+                    created_at_ms,
+                    now
+                ],
+            );
+            crate::account_manager::return_db_connection(conn);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1666,7 +1705,7 @@ mod allowlist_tests {
 mod tracked_token_tests {
     use super::{
         normalize_allowlist_address, normalize_allowlist_chain, parent_has_pacto_gov_infra,
-        tracked_token_row_id,
+        plan_tracked_tokens_announce, tracked_token_row_id, TrackedTokenAnnouncePlan,
     };
 
     fn tracked_schema(conn: &rusqlite::Connection) {
@@ -1783,13 +1822,61 @@ mod tracked_token_tests {
     }
 
     #[test]
-    fn announce_payload_requires_matching_parent_and_author() {
-        assert!(super::side_effect_parent_matches_chat("parent-1", "parent-1"));
-        assert!(!super::side_effect_parent_matches_chat("parent-1", "parent-2"));
-        let claimed = Some("npub1author");
+    fn announce_plan_filters_auth_and_parent_mismatches() {
         let author = "npub1author";
-        assert_eq!(claimed, Some(author));
-        assert_ne!(Some("npub1other"), Some(author));
+        let chat = "parent-1";
+        let good = r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","action":"upsert","chain":"sepolia","token_address":"0x1111111111111111111111111111111111111111","symbol":"USDC","decimals":6,"added_by_npub":"npub1author"}}"#;
+        assert_eq!(
+            plan_tracked_tokens_announce(good, chat, author),
+            Some(TrackedTokenAnnouncePlan::Upsert {
+                parent_id: "parent-1".into(),
+                chain: "sepolia".into(),
+                token_address: "0x1111111111111111111111111111111111111111".into(),
+                symbol: "USDC".into(),
+                decimals: 6,
+                entry_id: None,
+            })
+        );
+        // wrong type
+        assert!(plan_tracked_tokens_announce(
+            r#"{"type":"other","payload":{"parent_id":"parent-1"}}"#,
+            chat,
+            author
+        )
+        .is_none());
+        // parent/chat mismatch
+        assert!(plan_tracked_tokens_announce(good, "parent-other", author).is_none());
+        // claimed author mismatch
+        let wrong_author = r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","action":"upsert","chain":"sepolia","token_address":"0x1111111111111111111111111111111111111111","symbol":"USDC","decimals":6,"added_by_npub":"npub1other"}}"#;
+        assert!(plan_tracked_tokens_announce(wrong_author, chat, author).is_none());
+        // remove requires entry_id
+        assert!(plan_tracked_tokens_announce(
+            r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","action":"remove"}}"#,
+            chat,
+            author
+        )
+        .is_none());
+        let remove = r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","action":"remove","entry_id":"tracked-1"}}"#;
+        assert_eq!(
+            plan_tracked_tokens_announce(remove, chat, author),
+            Some(TrackedTokenAnnouncePlan::Remove {
+                parent_id: "parent-1".into(),
+                entry_id: "tracked-1".into(),
+            })
+        );
+        // empty symbol / bad decimals
+        assert!(plan_tracked_tokens_announce(
+            r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","chain":"sepolia","token_address":"0x1111111111111111111111111111111111111111","symbol":"","decimals":6}}"#,
+            chat,
+            author
+        )
+        .is_none());
+        assert!(plan_tracked_tokens_announce(
+            r#"{"type":"squad_tracked_tokens_updated","payload":{"parent_id":"parent-1","chain":"sepolia","token_address":"0x1111111111111111111111111111111111111111","symbol":"USDC","decimals":99}}"#,
+            chat,
+            author
+        )
+        .is_none());
     }
 }
 
