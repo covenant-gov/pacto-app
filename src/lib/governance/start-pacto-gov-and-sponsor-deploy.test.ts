@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getAddress } from 'viem';
 import {
   bootstrapCrewCandidates,
+  canBootstrapCrewDuringDeploy,
   isRosterHatRecipientAddress,
 } from './start-pacto-gov-and-sponsor-deploy';
 
@@ -19,6 +20,49 @@ describe('isRosterHatRecipientAddress', () => {
 
   it('rejects Default (or any) address not on the roster map', () => {
     expect(isRosterHatRecipientAddress(defaultOnly, opts)).toBe(false);
+  });
+});
+
+describe('canBootstrapCrewDuringDeploy', () => {
+  it('allows squad payer who is also captain', () => {
+    expect(
+      canBootstrapCrewDuringDeploy({
+        signerWallet: 'squad',
+        captainAddress: rosterA,
+        squadRosterAddress: rosterA,
+      }),
+    ).toBe(true);
+  });
+
+  it('disallows Default payer even when captain is self', () => {
+    expect(
+      canBootstrapCrewDuringDeploy({
+        signerWallet: 'default',
+        captainAddress: rosterA,
+        squadRosterAddress: rosterA,
+      }),
+    ).toBe(false);
+  });
+
+  it('disallows squad payer who named someone else captain', () => {
+    expect(
+      canBootstrapCrewDuringDeploy({
+        signerWallet: 'squad',
+        captainAddress: rosterB,
+        squadRosterAddress: rosterA,
+      }),
+    ).toBe(false);
+  });
+
+  it('treats identical Default/squad addresses as squad payer', () => {
+    expect(
+      canBootstrapCrewDuringDeploy({
+        signerWallet: 'default',
+        signersAreSame: true,
+        captainAddress: rosterA,
+        squadRosterAddress: rosterA,
+      }),
+    ).toBe(true);
   });
 });
 

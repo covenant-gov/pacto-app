@@ -23,7 +23,11 @@
   let error = '';
   let wasOpen = false;
 
-  $: captainSet = new Set(captainAddresses.map((a) => a.trim().toLowerCase()).filter(Boolean));
+  $: captainSet = new Set(
+    [...captainAddresses, privilege?.myAddress ?? '']
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean),
+  );
   $: eligible = memberOptions.filter((m) => {
     const addr = m.address.trim().toLowerCase();
     return addr && !captainSet.has(addr);
@@ -94,7 +98,7 @@
     </p>
 
     {#if eligible.length === 0}
-      <p class="muted">No squad members have shared an EVM address yet (captain excluded).</p>
+      <p class="muted">No other squad members have a shared EVM yet (captain cannot receive a crew hat).</p>
     {:else}
       <div class="select-row">
         <button type="button" class="btn-link" disabled={acting} on:click={toggleAll}>
