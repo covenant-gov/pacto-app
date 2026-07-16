@@ -113,22 +113,28 @@ export async function listAllAccounts(): Promise<string[]> {
 }
 
 /**
- * Export the stored BIP-39 recovery phrase (requires PIN unlock / encryption key in memory).
+ * Result returned by `export_sensitive_to_clipboard`.
+ * The raw secret never leaves the backend; only metadata crosses the IPC boundary.
  */
-export async function exportRecoveryPhrase(): Promise<string> {
-  const seed = await invoke<string | null>('get_seed');
-  if (!seed?.trim()) {
-    throw new Error(
-      'No recovery phrase is stored for this account. If you unlocked with nsec only, export nsec from Nostr settings instead.'
-    );
-  }
-  return seed.trim();
+export interface SensitiveExportResult {
+  exportType: string;
+  accountId: string;
+  clearedAt: number;
 }
 
 /**
- * Export one EVM account private key (requires PIN unlock / encryption key in memory).
+ * Export a sensitive secret to the system clipboard without exposing it to the webview.
+ * The backend writes the secret directly to the clipboard and clears it after 90 seconds.
  */
-export async function exportEvmAccountKeyPlaintext(accountId: string): Promise<string> {
-  return await invoke<string>('export_evm_account_key_plaintext', { accountId });
+export async function exportSensitiveToClipboard(
+  exportType: 'evm' | 'nostr' | 'seed',
+  accountId: string | undefined,
+  pin: string
+): Promise<SensitiveExportResult> {
+  return await invoke<SensitiveExportResult>('export_sensitive_to_clipboard', {
+    exportType,
+    accountId,
+    pin,
+  });
 }
 

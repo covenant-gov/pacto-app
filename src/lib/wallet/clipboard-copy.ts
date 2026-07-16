@@ -1,5 +1,8 @@
 /**
  * Clipboard write for desktop (Tauri) and browser. Prefer the Tauri plugin when running inside the shell.
+ * 
+ * NOTE: This helper is for non-secret values (e.g. addresses). Sensitive secrets are copied to the clipboard
+ * by the backend via `export_sensitive_to_clipboard` and must never be passed through this function.
  */
 
 function isTauri(): boolean {

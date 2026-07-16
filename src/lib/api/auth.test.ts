@@ -11,9 +11,10 @@ import {
   setEvmAddress,
   signEvmHash,
   listAllAccounts,
-  exportRecoveryPhrase,
-  exportEvmAccountKeyPlaintext,
+  exportSensitiveToClipboard,
 } from './auth';
+
+import * as authModule from './auth';
 
 vi.mock('@tauri-apps/api/core');
 vi.mock('../utils/dm-debug', () => ({
@@ -108,26 +109,38 @@ describe('auth command wrappers', () => {
     expect(result).toEqual(['npub1', 'npub2']);
   });
 
-  it('exportRecoveryPhrase sends get_seed and returns trimmed seed', async () => {
-    mockedInvoke.mockResolvedValueOnce('  seed phrase  ');
-    const result = await exportRecoveryPhrase();
-    expect(mockedInvoke).toHaveBeenCalledWith('get_seed');
-    expect(result).toBe('seed phrase');
-  });
-
-  it('exportRecoveryPhrase throws when seed is empty', async () => {
-    mockedInvoke.mockResolvedValueOnce(null);
-    await expect(exportRecoveryPhrase()).rejects.toThrow(
-      'No recovery phrase is stored for this account'
-    );
-  });
-
-  it('exportEvmAccountKeyPlaintext sends export_evm_account_key_plaintext with accountId', async () => {
-    mockedInvoke.mockResolvedValueOnce('0xkey');
-    const result = await exportEvmAccountKeyPlaintext('acc-1');
-    expect(mockedInvoke).toHaveBeenCalledWith('export_evm_account_key_plaintext', {
+  it('exportSensitiveToClipboard sends export_sensitive_to_clipboard with exportType, accountId, and pin', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      exportType: 'evm',
       accountId: 'acc-1',
+      clearedAt: 1234567890,
     });
-    expect(result).toBe('0xkey');
+    const result = await exportSensitiveToClipboard('evm', 'acc-1', '123456');
+    expect(mockedInvoke).toHaveBeenCalledWith('export_sensitive_to_clipboard', {
+      exportType: 'evm',
+      accountId: 'acc-1',
+      pin: '123456',
+    });
+    expect(result).toEqual({ exportType: 'evm', accountId: 'acc-1', clearedAt: 1234567890 });
+  });
+
+  it('exportSensitiveToClipboard omits accountId for seed export', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      exportType: 'seed',
+      accountId: '',
+      clearedAt: 1234567890,
+    });
+    const result = await exportSensitiveToClipboard('seed', undefined, '654321');
+    expect(mockedInvoke).toHaveBeenCalledWith('export_sensitive_to_clipboard', {
+      exportType: 'seed',
+      accountId: undefined,
+      pin: '654321',
+    });
+    expect(result).toEqual({ exportType: 'seed', accountId: '', clearedAt: 1234567890 });
+  });
+
+  it('does not export plaintext secret wrappers', () => {
+    expect('exportEvmAccountKeyPlaintext' in authModule).toBe(false);
+    expect('exportRecoveryPhrase' in authModule).toBe(false);
   });
 });

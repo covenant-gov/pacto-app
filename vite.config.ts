@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { svelteTesting } from '@testing-library/svelte/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -7,7 +8,7 @@ const plugins = await sveltekit();
 
 // https://vite.dev/config/ — Vitest uses the same file (see `test` below).
 export default defineConfig({
-  plugins: Array.isArray(plugins) ? plugins : [plugins],
+  plugins: Array.isArray(plugins) ? [...plugins, svelteTesting()] : [plugins, svelteTesting()],
 
   /** Expose `ALCHEMY_RPC_KEY` to the client (same var the Tauri backend reads). */
   envPrefix: ['VITE_', 'ALCHEMY_'],
