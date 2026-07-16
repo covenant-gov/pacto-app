@@ -21,10 +21,13 @@ export type CombinedGovSponsorDeployComplete = {
     sponsorAddress: string;
     providerPayload: string;
     infraRowId: string;
-  };
+  } | null;
   bootstrapped: boolean;
   /** Set when gov+sponsor succeeded but crew mint failed (soft-fail). */
   bootstrapError?: string;
+  /** Gov mined but hats sponsor failed — open Finish sponsor from Launchpad. */
+  finishSponsorNeeded?: boolean;
+  sponsorError?: string;
 };
 
 function normalizeAddress(raw: string): string | null {
@@ -72,18 +75,20 @@ export function isRosterHatRecipientAddress(
 }
 
 /**
- * Bootstrap in the combined wizard only when gas + captain hat will be the same key:
- * pay from squad-assigned signer, and captain is that same roster address.
+ * Bootstrap in the combined wizard when this identity is captain (roster EVM).
+ * Deploy gas may come from Default; crew mint is signed by the roster key and may
+ * use sponsor UserOp when that key has no ETH.
  */
 export function canBootstrapCrewDuringDeploy(params: {
+  /** Retained for call-site compatibility; deploy payer no longer gates bootstrap. */
   signerWallet: SquadSponsorDeploySignerWallet;
   /** True when Default and squad-assigned resolve to the same address. */
   signersAreSame?: boolean;
   captainAddress: string;
   squadRosterAddress: string | null | undefined;
 }): boolean {
-  const payFromSquad = params.signersAreSame === true || params.signerWallet === 'squad';
-  if (!payFromSquad) return false;
+  void params.signerWallet;
+  void params.signersAreSame;
   const roster = normalizeAddress(params.squadRosterAddress ?? '');
   const captain = normalizeAddress(params.captainAddress);
   if (!roster || !captain) return false;
@@ -92,7 +97,7 @@ export function canBootstrapCrewDuringDeploy(params: {
 
 /**
  * Soft-fails so gov+sponsor still finalize. Caller must only invoke when
- * {@link canBootstrapCrewDuringDeploy} is true (squad payer + self as captain).
+ * {@link canBootstrapCrewDuringDeploy} is true (self as captain).
  */
 async function runBootstrapCrewStep(params: {
   network: SupportedChainId;
@@ -127,7 +132,6 @@ async function runBootstrapCrewStep(params: {
     return { bootstrapped: true };
   } catch (e) {
     const bootstrapError = getInvokeErrorMessage(e, 'Crew bootstrap failed.');
-    console.error('[bootstrap]', e, bootstrapError);
     return { bootstrapped: false, bootstrapError };
   }
 }
@@ -206,17 +210,25 @@ export function startPactoGovAndSponsorDeploy(params: {
       });
 
       params.onProgress?.('sponsor');
-      const sponsorResult: SquadSponsorDeployResultDto = await deploySquadSponsorHatsForParent({
-        network,
-        parentId,
-        topHatId: govResult.topHatId,
-        initialDepositWei: depositWei,
-        signerWallet,
-      });
+      let sponsorResult: SquadSponsorDeployResultDto | null = null;
+      let finishSponsorNeeded = false;
+      let sponsorError: string | undefined;
+      try {
+        sponsorResult = await deploySquadSponsorHatsForParent({
+          network,
+          parentId,
+          topHatId: govResult.topHatId,
+          initialDepositWei: depositWei,
+          signerWallet,
+        });
+      } catch (e) {
+        finishSponsorNeeded = true;
+        sponsorError = getInvokeErrorMessage(e, 'Sponsor deploy failed after Pacto Gov succeeded.');
+      }
 
       let bootstrapped = false;
       let bootstrapError: string | undefined;
-      if (params.bootstrapCrew && crewCandidates.length > 0) {
+      if (sponsorResult && params.bootstrapCrew && crewCandidates.length > 0) {
         const rosterRaw = await resolveSquadRosterEvmAddress(parentId);
         if (
           canBootstrapCrewDuringDeploy({
@@ -238,9 +250,23 @@ export function startPactoGovAndSponsorDeploy(params: {
         }
       }
 
-      return { govResult, sponsorResult, bootstrapped, bootstrapError };
+      return {
+        govResult,
+        sponsorResult,
+        bootstrapped,
+        bootstrapError,
+        finishSponsorNeeded,
+        sponsorError,
+      };
     },
-    onSuccess: async ({ govResult, sponsorResult, bootstrapped, bootstrapError }) => {
+    onSuccess: async ({
+      govResult,
+      sponsorResult,
+      bootstrapped,
+      bootstrapError,
+      finishSponsorNeeded,
+      sponsorError,
+    }) => {
       await params.onComplete({
         gov: {
           txHash: govResult.txHash,
@@ -250,15 +276,19 @@ export function startPactoGovAndSponsorDeploy(params: {
           providerPayload: govResult.providerPayload,
           infraRowId: govResult.infraRowId,
         },
-        sponsor: {
-          txHash: sponsorResult.txHash,
-          chain: sponsorResult.chain,
-          sponsorAddress: sponsorResult.sponsorAddress,
-          providerPayload: sponsorResult.providerPayload,
-          infraRowId: sponsorResult.infraRowId,
-        },
+        sponsor: sponsorResult
+          ? {
+              txHash: sponsorResult.txHash,
+              chain: sponsorResult.chain,
+              sponsorAddress: sponsorResult.sponsorAddress,
+              providerPayload: sponsorResult.providerPayload,
+              infraRowId: sponsorResult.infraRowId,
+            }
+          : null,
         bootstrapped,
         bootstrapError,
+        finishSponsorNeeded,
+        sponsorError,
       });
     },
     onError: params.onError,

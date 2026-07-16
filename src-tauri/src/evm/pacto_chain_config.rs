@@ -33,6 +33,14 @@ struct NetworkBook {
     squad_sponsor: Option<SquadSponsorBook>,
     pacto_gov: Option<PactoGovBook>,
     safe: Option<SafeBook>,
+    erc4337: Option<Erc4337Book>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Erc4337Book {
+    /// EIP-7702 / ERC-4337 account implementation for roster EOAs (optional).
+    account_implementation: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +214,16 @@ pub struct SquadSponsorDeployAddresses {
     pub pacto_sponsor_paymaster: Address,
     pub entry_point: Address,
     pub nave_pirata_registry: Option<Address>,
+}
+
+/// Optional ERC-4337 account implementation for EIP-7702 roster EOAs.
+pub fn erc4337_account_implementation(net_key: &str) -> Option<Address> {
+    let book = book_for(net_key).and_then(|n| n.erc4337.as_ref());
+    resolve_optional(
+        "PACTO_ERC4337_ACCOUNT_IMPL",
+        net_key,
+        book.and_then(|b| b.account_implementation.as_deref()),
+    )
 }
 
 pub fn squad_sponsor_deploy_addresses(net_key: &str) -> Result<SquadSponsorDeployAddresses, String> {

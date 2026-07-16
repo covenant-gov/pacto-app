@@ -1,6 +1,7 @@
 //! Shared squad sponsor helpers (squad id derivation, factory registry reads).
 
 use alloy::primitives::{keccak256, Address, B256, U256};
+use tauri::{AppHandle, Runtime};
 
 use super::rpc::wallet_err_json;
 use alloy::providers::Provider;
@@ -8,6 +9,50 @@ use alloy::providers::Provider;
 use super::contracts::pacto_sponsor::SquadVariant;
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
 use super::rpc::call::eth_call_decode;
+
+/// Current Nostr account must belong to the parent (MLS metadata or roster binding).
+pub async fn require_parent_member<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<(), String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Err(wallet_err_json(
+            "INVALID_PARENT",
+            "parent_id must be non-empty",
+            None,
+        ));
+    }
+
+    let groups = crate::db::load_mls_groups(app).await?;
+    let in_mls = groups
+        .iter()
+        .any(|g| !g.evicted && (g.group_id == pid || g.engine_group_id == pid));
+    if in_mls {
+        return Ok(());
+    }
+
+    if matches!(
+        crate::db::get_squad_member_evm_account_id(app, pid, None),
+        Ok(Some(_))
+    ) {
+        return Ok(());
+    }
+    if let Ok(member) = crate::account_manager::get_current_account() {
+        if matches!(
+            crate::db::roster_evm_address_for_member(app, pid, member.as_str()),
+            Ok(Some(_))
+        ) {
+            return Ok(());
+        }
+    }
+
+    Err(wallet_err_json(
+        "NOT_PARENT_MEMBER",
+        "You must be a member of this squad to deploy or fund its on-chain infrastructure.",
+        None,
+    ))
+}
 
 /// Deterministic on-chain squad key for a Pacto parent id (squad or network root).
 pub fn squad_id_from_parent_id(parent_id: &str) -> B256 {
@@ -38,19 +83,34 @@ pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
     }
 }
 
-pub fn require_sponsor_infra_for_parent<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
+/// Preflight: reject when SQLite or the factory already has a sponsor for this parent.
+pub async fn require_sponsor_not_already_deployed<R: Runtime, P: Provider>(
+    app: &AppHandle<R>,
+    provider: &P,
+    factory: Address,
     parent_id: &str,
+    squad_id: B256,
 ) -> Result<(), String> {
-    if crate::db::parent_has_sponsor_infra(app, parent_id)? {
-        Ok(())
-    } else {
-        Err(wallet_err_json(
-            "SPONSOR_REQUIRED",
-            "Deploy squad sponsor for this parent before other on-chain infra.",
+    if crate::db::parent_has_sponsor_infra(app, parent_id).unwrap_or(false) {
+        return Err(wallet_err_json(
+            "ALREADY_DEPLOYED",
+            "This parent already has squad sponsor infrastructure.",
             None,
-        ))
+        ));
     }
+    let call = squadsCall {
+        squadId: squad_id,
+    };
+    if let Ok(decoded) = eth_call_decode(provider, factory, &call).await {
+        if !decoded.sponsor.is_zero() {
+            return Err(wallet_err_json(
+                "ALREADY_DEPLOYED",
+                "A sponsor clone is already registered for this squad id.",
+                None,
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn squad_variant_label(v: SquadVariant) -> &'static str {
@@ -122,5 +182,14 @@ mod tests {
         assert_eq!(squad_variant_label(SquadVariant::SPONSOR), "sponsor");
         assert_eq!(squad_variant_label(SquadVariant::EXT), "ext");
         assert_eq!(squad_variant_label(SquadVariant::__Invalid), "unknown");
+    }
+
+    #[test]
+    fn parse_signer_wallet_defaults_and_rejects_unknown() {
+        assert_eq!(parse_signer_wallet(None, "squad").unwrap(), "squad");
+        assert_eq!(parse_signer_wallet(Some(""), "default").unwrap(), "default");
+        assert_eq!(parse_signer_wallet(Some("DEFAULT"), "squad").unwrap(), "default");
+        assert_eq!(parse_signer_wallet(Some("squad"), "default").unwrap(), "squad");
+        assert!(parse_signer_wallet(Some("hardware"), "squad").is_err());
     }
 }

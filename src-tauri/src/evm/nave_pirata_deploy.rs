@@ -26,19 +26,8 @@ use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
+use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
 use super::wallet_chain_config;
-
-fn parse_signer_wallet(raw: &str) -> Result<&'static str, String> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "" | "squad" => Ok("squad"),
-        "default" => Ok("default"),
-        other => Err(wallet_err_json(
-            "INVALID_SIGNER",
-            format!("Unknown signer wallet: {}", other.trim()),
-            None,
-        )),
-    }
-}
 
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
 const DEFAULT_CREW_CHANGE_DELAY_SEC: u64 = 7 * 24 * 3600;
@@ -165,6 +154,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
 
     if db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false) {
         return Err(wallet_err_json(
@@ -189,6 +179,19 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let captain_addr = parse_address(captain.trim())
         .map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
+    let roster = db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
+    let captain_on_roster = roster.iter().any(|row| {
+        parse_address(row.evm_address.as_str())
+            .map(|a| a == captain_addr)
+            .unwrap_or(false)
+    });
+    if !captain_on_roster {
+        return Err(wallet_err_json(
+            "INVALID_CAPTAIN",
+            "captain must be a squad-assigned roster EVM for a member of this parent",
+            None,
+        ));
+    }
 
     let meta = metadata_uri.trim().to_string();
     if meta.is_empty() {
@@ -232,7 +235,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         ));
     }
 
-    let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "squad")?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?

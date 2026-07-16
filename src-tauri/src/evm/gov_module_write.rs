@@ -9,8 +9,10 @@ use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::rpc::{
-    connect_signing_provider, contract_call_request, send_and_confirm, wallet_err_json,
+    connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
+    wallet_err_json,
 };
+use super::sponsor_userop::{roster_native_balance_wei, send_sponsored_gov_userop};
 use super::wallet_chain_config;
 use crate::db;
 
@@ -49,7 +51,32 @@ pub async fn send_gov_module_call<R: Runtime>(
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let _write_guard = with_gov_write_lock(pid).await;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+
+    // Prefer sponsored UserOp when roster has no ETH and sponsor infra exists.
+    let read_provider = connect_read_provider(&urls).await?;
+    let balance = roster_native_balance_wei(&read_provider, signer.address()).await?;
+    if balance.is_zero() && db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) {
+        match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await {
+            Ok(user_op_hash) => {
+                return Ok((user_op_hash, net.key.clone(), net.chain_id));
+            }
+            Err(e) => {
+                // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
+                if e.contains("BUNDLER_CONFIG") || e.contains("ERC4337_ACCOUNT_CONFIG") {
+                    return Err(wallet_err_json(
+                        "SPONSOR_PATH_UNAVAILABLE",
+                        format!(
+                            "Roster key has 0 ETH and sponsored UserOp is not fully configured ({e}). Fund the roster key or set BUNDLER_RPC_URL and PACTO_ERC4337_ACCOUNT_IMPL."
+                        ),
+                        None,
+                    ));
+                }
+                return Err(e);
+            }
+        }
+    }
+
     let provider = connect_signing_provider(&urls, wallet).await?;
     let tx = contract_call_request(to, calldata).with_chain_id(net.chain_id);
     let receipt = send_and_confirm(

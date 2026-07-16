@@ -186,6 +186,7 @@
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
     onDeployGovAndSponsor={onDeployGovAndSponsor}
+    onDeployPactoGov={onDeployPactoGov}
     onDeployExtSponsor={onDeployExtSponsor}
     onDeploySquadAdmin={onDeploySquadAdmin}
   />

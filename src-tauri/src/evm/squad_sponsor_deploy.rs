@@ -20,24 +20,14 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
+use super::access_control::{require_capability, GovCapability};
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
-
-fn parse_signer_wallet(raw: &str) -> Result<&'static str, String> {
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "" | "squad" => Ok("squad"),
-        "default" => Ok("default"),
-        other => Err(wallet_err_json(
-            "INVALID_SIGNER",
-            format!("Unknown signer wallet: {}", other.trim()),
-            None,
-        )),
-    }
-}
 use super::squad_sponsor_common::{
-    parse_deposit_wei, read_squad_record, squad_id_from_parent_id, squad_variant_label,
+    parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
+    require_sponsor_not_already_deployed, squad_id_from_parent_id, squad_variant_label,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -86,6 +76,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
 
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -114,6 +105,9 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         ));
     }
 
+    let read_provider = connect_read_provider(&urls).await?;
+    require_sponsor_not_already_deployed(&app, &read_provider, factory, pid, squad_id).await?;
+
     // Ext addressOwner is always the squad roster EVM; tx may be funded by Default.
     let (roster_signer, roster_wallet) =
         load_squad_roster_embedded_signer(app.clone(), pid).await?;
@@ -125,7 +119,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     }
     .abi_encode();
 
-    let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
@@ -144,7 +138,6 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     )
     .await?;
 
-    let read_provider = connect_read_provider(&urls).await?;
     let (sponsor, variant, _top_hat) =
         read_squad_record(&read_provider, factory, squad_id).await.map_err(|e| {
             wallet_err_json_with_tx_hash(
@@ -161,7 +154,14 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     let address_owner: alloy::primitives::Address =
         eth_call_decode(&read_provider, sponsor, &addressOwnerCall {})
             .await
-            .unwrap_or(alloy::primitives::Address::ZERO);
+            .map_err(|e| {
+                wallet_err_json_with_tx_hash(
+                    "SPONSOR_READ",
+                    e,
+                    None,
+                    format!("0x{:x}", receipt.transaction_hash),
+                )
+            })?;
     let payload = json!({
         "v": 1,
         "parentId": pid,
@@ -216,6 +216,8 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
+    require_capability(&app, pid, GovCapability::CaptainResign).await?;
 
     let top_hat = parse_top_hat_id(top_hat_id.as_str())
         .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
@@ -225,6 +227,17 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
             "top_hat_id must be non-zero",
             None,
         ));
+    }
+    if let Some(stored) = db::pacto_gov_top_hat_id_for_parent(&app, pid)? {
+        let expected = parse_top_hat_id(stored.as_str())
+            .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
+        if expected != top_hat {
+            return Err(wallet_err_json(
+                "TOP_HAT_MISMATCH",
+                "top_hat_id does not match this parent's Pacto Gov infra",
+                None,
+            ));
+        }
     }
 
     let net_key = network.to_lowercase();
@@ -249,14 +262,6 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
         )
     })?;
 
-    if db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) {
-        return Err(wallet_err_json(
-            "ALREADY_DEPLOYED",
-            "squad sponsor is already deployed for this parent",
-            None,
-        ));
-    }
-
     let deposit = parse_required_deposit_wei(initial_deposit_wei.as_deref())?;
     let squad_id = squad_id_from_parent_id(pid);
     let factory = addrs.squad_sponsor_factory;
@@ -271,15 +276,7 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
     }
 
     let read_provider = connect_read_provider(&urls).await?;
-    if let Ok((existing, _, _)) = read_squad_record(&read_provider, factory, squad_id).await {
-        if !existing.is_zero() {
-            return Err(wallet_err_json(
-                "ALREADY_DEPLOYED",
-                "factory already has a sponsor clone for this squad id",
-                None,
-            ));
-        }
-    }
+    require_sponsor_not_already_deployed(&app, &read_provider, factory, pid, squad_id).await?;
 
     let calldata = createSquadSponsorCall {
         squadId: squad_id,
@@ -289,7 +286,7 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
     }
     .abi_encode();
 
-    let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "squad")?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
@@ -307,7 +304,6 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
     )
     .await?;
 
-    let read_provider = connect_read_provider(&urls).await?;
     let (sponsor, variant, linked_hat) =
         read_squad_record(&read_provider, factory, squad_id).await.map_err(|e| {
             wallet_err_json_with_tx_hash(

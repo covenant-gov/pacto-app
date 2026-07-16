@@ -619,23 +619,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     showLaunchpad = true;
   }
 
-  function requireSponsorForInfra(action: () => void) {
-    if (!hasSponsor) {
-      showToast('Deploy squad sponsor first.');
-      showLaunchpad = true;
-      return;
-    }
-    action();
-  }
-
   function openSetSafe() {
-    requireSponsorForInfra(() => {
-      showSetSafeModal = true;
-      setSafeInput = '';
-      setSafeChain = squadNetwork ?? DEFAULT_CHAIN_ID;
-      setSafeLabel = '';
-      setSafeError = '';
-    });
+    if (!parentId?.trim()) return;
+    showSetSafeModal = true;
+    setSafeInput = '';
+    setSafeChain = squadNetwork ?? DEFAULT_CHAIN_ID;
+    setSafeLabel = '';
+    setSafeError = '';
   }
 
   function openDeploySafe() {
@@ -1031,23 +1021,32 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
         infraRowId: out.gov.infraRowId,
       });
     }
-    await onSponsorDeployComplete?.({
-      parentId: parentId!.trim(),
-      announcementsGroupId: announcementsGroupId?.trim() ?? '',
-      chain: out.sponsor.chain,
-      sponsorAddress: out.sponsor.sponsorAddress,
-      providerPayload: out.sponsor.providerPayload,
-      infraRowId: out.sponsor.infraRowId,
-    });
+    if (out.sponsor) {
+      await onSponsorDeployComplete?.({
+        parentId: parentId!.trim(),
+        announcementsGroupId: announcementsGroupId?.trim() ?? '',
+        chain: out.sponsor.chain,
+        sponsorAddress: out.sponsor.sponsorAddress,
+        providerPayload: out.sponsor.providerPayload,
+        infraRowId: out.sponsor.infraRowId,
+      });
+    }
     showGovAndSponsorDeploy = false;
     selectDashboardView('governance');
-    if (out.bootstrapError) {
+    if (out.finishSponsorNeeded) {
+      showToast(
+        `Pacto Gov deployed, but sponsor failed${out.sponsorError ? `: ${out.sponsorError}` : ''}. Finish sponsor from Deploy Governance.`,
+        undefined,
+        { label: 'Finish sponsor', action: () => openLaunchpad() },
+        { error: true },
+      );
+    } else if (out.bootstrapError) {
       showToast(
         out.gov
           ? `Pacto Gov + sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`
           : `Hats sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`,
         undefined,
-        undefined,
+        { label: 'Open governance', action: () => selectDashboardView('governance') },
         { error: true },
       );
     } else if (out.gov) {

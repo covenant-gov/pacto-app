@@ -15,7 +15,8 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::squad_sponsor_common::{
-    parse_deposit_wei, parse_signer_wallet, read_squad_record, squad_id_from_parent_id,
+    parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
+    squad_id_from_parent_id,
 };
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
@@ -49,6 +50,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
 
     let amount = parse_deposit_wei(Some(amount_wei.as_str()))
         .map_err(|e| wallet_err_json("INVALID_AMOUNT", e, None))?;

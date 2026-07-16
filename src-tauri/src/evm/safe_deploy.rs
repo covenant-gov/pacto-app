@@ -77,6 +77,7 @@ pub async fn safe_deploy_proxy<R: Runtime>(
 
     let roster_parent = parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let (_signer, wallet) = if let Some(pid) = roster_parent {
+        super::squad_sponsor_common::require_parent_member(&app, pid).await?;
         require_roster_treasury_signing_allowed(app.clone(), pid).await?;
         load_squad_roster_embedded_signer(app.clone(), pid).await?
     } else {

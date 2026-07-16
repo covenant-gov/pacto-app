@@ -75,7 +75,6 @@ export function runOnChainInBackground<T>(opts: RunOnChainInBackgroundOpts<T>): 
       if (parsed?.message) {
         raw = parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
       }
-      console.error('[on-chain]', opts.subject ?? 'job', e, raw);
       opts.onError?.(raw);
       toastOnChainFailed(raw);
     }

@@ -143,13 +143,14 @@ export async function deploySquadSponsorForParent(params: {
   network: string;
   parentId: string;
   initialDepositWei?: string | null;
+  /** Prefer Default for Ext ala carte; roster remains addressOwner on-chain. */
   signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<SquadSponsorDeployResultDto> {
   return (await invoke('deploy_squad_sponsor_for_parent', {
     network: params.network,
     parentId: params.parentId,
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
-    signerWallet: params.signerWallet ?? 'squad',
+    signerWallet: params.signerWallet ?? 'default',
   })) as SquadSponsorDeployResultDto;
 }
 

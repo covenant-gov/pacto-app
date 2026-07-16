@@ -1,6 +1,7 @@
 <script lang="ts">
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
+  import { govWriteFundingFallbackHint } from '../../../lib/governance/gov-write-funding';
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
@@ -94,7 +95,7 @@
     <h2 id={titleId} class="modal-title">Bootstrap initial crew</h2>
     <p id={descId} class="modal-lead muted">
       Mint crew hats immediately while the crew roster is still empty. After the first crew wearer exists, adds use the
-      Quartermaster delay.
+      Quartermaster delay. {govWriteFundingFallbackHint()}
     </p>
 
     {#if eligible.length === 0}

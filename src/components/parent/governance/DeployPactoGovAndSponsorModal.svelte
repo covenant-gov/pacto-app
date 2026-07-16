@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
@@ -52,6 +52,8 @@
   let squadBalance: SignerBalance = emptyBalance();
   let refreshSeq = 0;
   let preferredPayerOnce = false;
+  let deploying = false;
+  let closed = false;
 
   $: sponsorOnly = !!existingTopHatId.trim();
 
@@ -169,6 +171,11 @@
     void refreshSigners();
   });
 
+  onDestroy(() => {
+    closed = true;
+    refreshSeq += 1;
+  });
+
   $: if (!resolvingAddresses && !captainAddress && captainMemberOptions.length > 0) {
     pickDefaultCaptain(canonicalAddress(squadSignerAddress));
   }
@@ -214,6 +221,7 @@
   }
 
   function executeDeploy() {
+    if (deploying) return;
     deployError = '';
     progressStep = '';
     if (!squadNetwork) {
@@ -256,12 +264,14 @@
       });
 
     const onProgress = (step: 'gov' | 'sponsor' | 'bootstrap') => {
-      progressStep = step;
+      if (!closed) progressStep = step;
     };
     const onReject = (message: string) => {
+      deploying = false;
       deployError = message;
     };
     const onError = (message: string) => {
+      deploying = false;
       deployError = message;
       progressStep = '';
     };
@@ -270,6 +280,7 @@
       onClose();
     };
 
+    deploying = true;
     const ok = sponsorOnly
       ? startHatsSponsorOnlyDeploy({
           parentId: parentId.trim(),
@@ -299,12 +310,13 @@
           onError,
           onComplete: handleComplete,
         });
-    if (ok) {
-      onClose();
+    if (!ok) {
+      deploying = false;
     }
   }
 
   $: deployDisabled =
+    deploying ||
     !squadNetwork ||
     resolvingAddresses ||
     depositExceedsBalance ||
@@ -312,7 +324,7 @@
     (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical);
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-gov-sponsor-panel">
+<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-gov-sponsor-panel">
   <h2 id={titleId}>
     {sponsorOnly ? 'Deploy squad sponsor' : 'Deploy Pacto Gov + squad sponsor'}
   </h2>
@@ -479,13 +491,15 @@
     </label>
     {#if !bootstrapAllowed}
       <p class="hint muted">
-        Available when you pay gas from your squad-assigned key and assign yourself as captain (same
-        funded address signs the mint). Otherwise mint later from Governance → Captain.
+        Available when you assign yourself as captain (your squad-assigned EVM). Mint is signed by that
+        key — funded ETH or sponsored UserOp after the sponsor pool exists. Otherwise mint later from
+        Governance → Captain.
       </p>
     {:else}
       <p class="hint muted">
-        Optional. Only squad-assigned EVMs (except the captain) are minted. Signed by your squad key.
-        Skip if keys are incomplete — mint later from Governance → Captain.
+        Optional. Only squad-assigned EVMs (except the captain) are minted. Signed by your squad key
+        (self-funded when it has ETH; otherwise sponsored from the pool if eligible). Skip if keys are
+        incomplete — mint later from Governance → Captain.
       </p>
     {/if}
     {#if bootstrapCrew && sponsorOnly && !quartermaster.trim()}

@@ -86,6 +86,7 @@
     {#if privilege.captainIsSafe}
       <strong> Safe currently holds the captain hat.</strong>
     {/if}
+    Gas: squad-assigned key when funded; otherwise sponsored UserOp from the sponsor pool if eligible.
   </p>
 
   <div class="action-block">

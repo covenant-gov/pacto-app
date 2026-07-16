@@ -213,7 +213,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       parentId: PARENT,
       initialDepositWei: null,
-      signerWallet: 'squad',
+      signerWallet: 'default',
     });
   });
 

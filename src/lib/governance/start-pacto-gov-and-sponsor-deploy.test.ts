@@ -34,14 +34,14 @@ describe('canBootstrapCrewDuringDeploy', () => {
     ).toBe(true);
   });
 
-  it('disallows Default payer even when captain is self', () => {
+  it('allows Default payer when captain is self (sponsored mint path)', () => {
     expect(
       canBootstrapCrewDuringDeploy({
         signerWallet: 'default',
         captainAddress: rosterA,
         squadRosterAddress: rosterA,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('disallows squad payer who named someone else captain', () => {

@@ -13,6 +13,7 @@
   export let squadAdminAddress = '';
   export let onClose: () => void;
   export let onDeployGovAndSponsor: () => void;
+  export let onDeployPactoGov: () => void = () => {};
   export let onDeployExtSponsor: () => void;
   export let onDeploySquadAdmin: () => void;
 
@@ -71,8 +72,19 @@
         </button>
       {:else if hasSponsor && !hasPactoGov}
         <p class="launchpad-card-desc">
-          Sponsor already exists. Combined deploy needs a fresh parent without sponsor infra.
+          Sponsor is live without Pacto Gov. Deploy governance alone to finish setup.
         </p>
+        <button
+          type="button"
+          class="btn-primary launchpad-card-btn"
+          disabled={channelBlocked}
+          on:click={() => {
+            onClose();
+            onDeployPactoGov();
+          }}
+        >
+          Deploy Pacto Gov
+        </button>
       {:else}
         <p class="launchpad-card-desc">
           One flow: Nave Pirata (Hats tree + Safe) then hats-based gas sponsorship. Optional crew
@@ -115,8 +127,7 @@
         </div>
       {:else}
         <p class="launchpad-card-desc">
-          Address-list sponsor where you are owner. Requires a funded squad-assigned EVM wallet for gas
-          and the initial deposit.
+          Address-list sponsor: roster EVM owns the allowlist; Default may pay gas and the initial deposit.
         </p>
         <button
           type="button"

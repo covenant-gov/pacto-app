@@ -255,9 +255,29 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
         ));
     }
 
-    let calldata = encode_set_permitted_address(member_address.as_str(), permitted)?;
     let member = parse_address(member_address.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    if member.is_zero() {
+        return Err(wallet_err_json(
+            "INVALID_ADDRESS",
+            "member address must be non-zero",
+            None,
+        ));
+    }
+    let roster = crate::db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
+    let member_on_roster = roster.iter().any(|row| {
+        parse_address(row.evm_address.as_str())
+            .map(|a| a == member)
+            .unwrap_or(false)
+    });
+    if !member_on_roster {
+        return Err(wallet_err_json(
+            "INVALID_ADDRESS",
+            "permitted address must be a squad-assigned roster EVM for a member of this parent",
+            None,
+        ));
+    }
+    let calldata = encode_set_permitted_address(member_address.as_str(), permitted)?;
 
     let provider = connect_signing_provider(&urls, wallet).await?;
     let tx = contract_call_request(sponsor, calldata);

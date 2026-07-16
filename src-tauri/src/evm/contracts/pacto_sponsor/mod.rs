@@ -54,6 +54,8 @@ sol! {
         function totalShares() external view returns (uint256 totalShares);
 
         function sponsorShares(address sponsor) external view returns (uint256 shares);
+
+        function isEligible(address member) external view returns (bool eligible);
     }
 
     /// Ext clone: address-list eligibility until hats are wired.
