@@ -17,6 +17,9 @@ import {
   sessionHeartbeat,
   dropSessionState,
   maybeRequireSession,
+  initSessionFocusChecks,
+  migrationCompleteToast,
+  showMigrationCompleteToast,
 } from './auth';
 import {
   login,
@@ -370,6 +373,112 @@ describe('auth', () => {
       authError.set('oops');
       clearAuthError();
       expect(get(authError)).toBeNull();
+    });
+  });
+
+  describe('initSessionFocusChecks', () => {
+    let focusHandler: (() => void) | null = null;
+    let visibilityHandler: (() => void) | null = null;
+    const windowAddEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'focus') focusHandler = handler;
+    });
+    const windowRemoveEventListener = vi.fn();
+    const documentAddEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'visibilitychange') visibilityHandler = handler;
+    });
+    const documentRemoveEventListener = vi.fn();
+    let cleanup: (() => void) | undefined;
+    let docStub: {
+      visibilityState: string;
+      addEventListener: typeof documentAddEventListener;
+      removeEventListener: typeof documentRemoveEventListener;
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      vi.stubGlobal('window', {
+        addEventListener: windowAddEventListener,
+        removeEventListener: windowRemoveEventListener,
+      } as unknown as Window);
+      docStub = {
+        visibilityState: 'hidden',
+        addEventListener: documentAddEventListener,
+        removeEventListener: documentRemoveEventListener,
+      };
+      vi.stubGlobal('document', docStub as unknown as Document);
+    });
+
+    afterEach(() => {
+      cleanup?.();
+      cleanup = undefined;
+      focusHandler = null;
+      visibilityHandler = null;
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it('registers focus and visibilitychange listeners', () => {
+      cleanup = initSessionFocusChecks();
+      expect(windowAddEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(documentAddEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    });
+
+    it('calls checkSession on window focus', async () => {
+      cleanup = initSessionFocusChecks();
+      expect(focusHandler).toBeTruthy();
+      focusHandler?.();
+      expect(apiCheckSession).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls checkSession when document becomes visible', async () => {
+      cleanup = initSessionFocusChecks();
+      docStub.visibilityState = 'visible';
+      expect(visibilityHandler).toBeTruthy();
+      visibilityHandler?.();
+      expect(apiCheckSession).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call checkSession when document stays hidden', async () => {
+      cleanup = initSessionFocusChecks();
+      docStub.visibilityState = 'hidden';
+      expect(visibilityHandler).toBeTruthy();
+      visibilityHandler?.();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).not.toHaveBeenCalled();
+    });
+
+    it('removes listeners on cleanup', () => {
+      cleanup = initSessionFocusChecks();
+      cleanup();
+      expect(windowRemoveEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    });
+  });
+
+  describe('migrationCompleteToast', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      migrationCompleteToast.set(null);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows the migration-complete toast for 5 seconds', () => {
+      expect(get(migrationCompleteToast)).toBeNull();
+      showMigrationCompleteToast('Account security updated');
+      expect(get(migrationCompleteToast)).toEqual({
+        shown: true,
+        message: 'Account security updated',
+      });
+      vi.advanceTimersByTime(5000);
+      expect(get(migrationCompleteToast)).toBeNull();
     });
   });
 });

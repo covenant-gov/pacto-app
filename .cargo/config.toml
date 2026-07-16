@@ -1,0 +1,4 @@
+[test]
+# Many tests touch globals (session key, current account, DB connection pool).
+# Run serially to avoid flaky cross-test interference.
+test-threads = 1

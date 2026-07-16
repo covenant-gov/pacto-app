@@ -29,8 +29,13 @@ pub const SALT_LENGTH: usize = 32;
 /// Argon2id memory cost in KiB (matches the legacy `hash_pass` setting).
 pub const ARGON_MEMORY_KIB: u32 = 96 * 1024;
 
-/// Argon2id iteration count (matches the legacy `hash_pass` setting).
-pub const ARGON_ITERATIONS: u32 = 4;
+/// Argon2id iteration count for legacy accounts (kept at 4 to match the
+/// original `hash_pass` setting and unlock pre-migration data).
+const LEGACY_ARGON_ITERATIONS: u32 = 4;
+
+/// Argon2id iteration count for new accounts. Raised to 6 to meet OWASP's
+/// minimum recommended cost while keeping desktop unlock fast (~100ms).
+pub const ARGON_ITERATIONS: u32 = 6;
 
 /// Argon2id parallelism degree (matches the legacy `hash_pass` setting).
 pub const ARGON_PARALLELISM: u32 = 1;
@@ -56,8 +61,10 @@ pub fn generate_encryption_params() -> EncryptionParams {
 /// Encrypts data using AES-256-GCM with a 16-byte nonce
 pub fn encrypt_data(data: &[u8], params: &EncryptionParams) -> Result<Vec<u8>, String> {
     // Decode key and nonce from hex
-    let key_bytes = hex::decode(&params.key).unwrap();
-    let nonce_bytes = hex::decode(&params.nonce).unwrap();
+    let key_bytes = hex::decode(&params.key)
+        .map_err(|e| format!("Invalid key hex: {}", e))?;
+    let nonce_bytes = hex::decode(&params.nonce)
+        .map_err(|e| format!("Invalid nonce hex: {}", e))?;
 
     // Initialize AES-GCM cipher
     let cipher = AesGcm::<Aes256, U16>::new(
@@ -81,11 +88,22 @@ pub fn encrypt_data(data: &[u8], params: &EncryptionParams) -> Result<Vec<u8>, S
     Ok(buffer)
 }
 
-/// Build Argon2id parameters with the project-chosen cost settings.
+/// Build Argon2id parameters for new accounts.
 fn argon2_params() -> Params {
     Params::new(
         ARGON_MEMORY_KIB,
         ARGON_ITERATIONS,
+        ARGON_PARALLELISM,
+        Some(ARGON_OUTPUT_LEN),
+    )
+    .expect("valid Argon2 params")
+}
+
+/// Build Argon2id parameters for legacy accounts (pre-migration).
+fn legacy_argon2_params() -> Params {
+    Params::new(
+        ARGON_MEMORY_KIB,
+        LEGACY_ARGON_ITERATIONS,
         ARGON_PARALLELISM,
         Some(ARGON_OUTPUT_LEN),
     )
@@ -104,13 +122,18 @@ pub fn derive_key_from_salt(password: &str, salt: &[u8]) -> [u8; 32] {
 
 /// Derive the legacy key for an account still using the hard-coded salt.
 pub fn derive_legacy_key(password: &str) -> [u8; 32] {
-    derive_key_from_salt(password, LEGACY_SALT)
+    let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, legacy_argon2_params());
+    let mut key = [0u8; 32];
+    argon
+        .hash_password_into(password.as_bytes(), LEGACY_SALT, &mut key)
+        .expect("Argon2 legacy key derivation should succeed");
+    key
 }
 
-/// Generate a fresh random 32-byte salt for key derivation.
+/// Generate a fresh random 32-byte salt for key derivation using the OS CSPRNG.
 pub fn generate_salt() -> [u8; SALT_LENGTH] {
     let mut salt = [0u8; SALT_LENGTH];
-    rand::thread_rng().fill(&mut salt);
+    crate::rand::rngs::OsRng.fill(&mut salt);
     salt
 }
 
@@ -243,8 +266,10 @@ pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Re
     }
 
     // Decode key and nonce from hex
-    let key_bytes = hex::decode(key_hex).unwrap();
-    let nonce_bytes = hex::decode(nonce_hex).unwrap();
+    let key_bytes = hex::decode(key_hex)
+        .map_err(|e| format!("Invalid key hex: {}", e))?;
+    let nonce_bytes = hex::decode(nonce_hex)
+        .map_err(|e| format!("Invalid nonce hex: {}", e))?;
 
     // Split input into ciphertext and authentication tag
     let (ciphertext, tag_bytes) = encrypted_data.split_at(encrypted_data.len() - 16);
@@ -325,6 +350,50 @@ mod tests {
         encrypted[last] ^= 0xff;
         let result = decrypt_data(&encrypted, &params.key, &params.nonce);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_invalid_key_hex() {
+        let result = decrypt_data(
+            &[0u8; 32],
+            "not-hex",
+            &hex::encode([0u8; 16]),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid key hex"));
+    }
+
+    #[test]
+    fn decrypt_rejects_invalid_nonce_hex() {
+        let result = decrypt_data(
+            &[0u8; 32],
+            &hex::encode([0u8; 32]),
+            "not-hex",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid nonce hex"));
+    }
+
+    #[test]
+    fn encrypt_data_rejects_invalid_key_hex() {
+        let params = EncryptionParams {
+            key: "not-hex".to_string(),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let result = encrypt_data(b"hello", &params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid key hex"));
+    }
+
+    #[test]
+    fn encrypt_data_rejects_invalid_nonce_hex() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: "not-hex".to_string(),
+        };
+        let result = encrypt_data(b"hello", &params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid nonce hex"));
     }
 
     #[test]
@@ -421,7 +490,7 @@ mod tests {
     // salt path. It is intentionally not used outside this test module.
     async fn hash_pass(password: String) -> [u8; 32] {
         let salt = LEGACY_SALT;
-        let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, argon2_params());
+        let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, legacy_argon2_params());
         let mut key = [0u8; 32];
         argon
             .hash_password_into(password.as_bytes(), salt, &mut key)

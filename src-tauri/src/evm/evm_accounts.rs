@@ -22,7 +22,7 @@ const SETTING_ACTIVE: &str = "active_evm_account_id";
 const SETTING_DEFAULT_SHARED: &str = "default_shared_evm_account_id";
 const SETTING_ACTIVE_ADVANCED: &str = "active_advanced_evm_account_id";
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvmAccountRow {
     pub id: String,
@@ -516,6 +516,10 @@ pub async fn active_account_allows_treasury_signing<R: Runtime>(
 
 #[tauri::command]
 pub async fn list_evm_accounts<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<EvmAccountRow>, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
@@ -569,6 +573,9 @@ pub async fn export_evm_account_key_plaintext<R: Runtime>(
     handle: AppHandle<R>,
     account_id: String,
 ) -> Result<String, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
     crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let id = account_id.trim();
@@ -587,6 +594,10 @@ pub async fn add_evm_account<R: Runtime>(
     set_default_shared: bool,
     purpose: Option<String>,
 ) -> Result<EvmAccountRow, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let purpose_norm = normalize_purpose(purpose.as_deref().unwrap_or(PURPOSE_SQUAD))?;
     if purpose_norm == PURPOSE_ADVANCED && set_default_shared {
@@ -665,6 +676,10 @@ pub async fn import_evm_account<R: Runtime>(
     private_key_hex: String,
     set_active_signer: bool,
 ) -> Result<EvmAccountRow, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let trimmed = private_key_hex.trim();
     let h = trimmed
@@ -739,6 +754,10 @@ pub async fn update_evm_account<R: Runtime>(
     set_active_signer: bool,
     set_default_shared: bool,
 ) -> Result<EvmAccountRow, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let label_trimmed = label.trim().to_string();
     let conn = account_manager::get_db_connection(&handle)?;
@@ -817,6 +836,10 @@ pub async fn set_active_evm_account<R: Runtime>(
     handle: AppHandle<R>,
     account_id: String,
 ) -> Result<(), String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let n: i64 = conn
@@ -841,6 +864,10 @@ pub async fn set_default_shared_evm_account<R: Runtime>(
     handle: AppHandle<R>,
     account_id: String,
 ) -> Result<(), String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let n: i64 = conn
@@ -864,6 +891,10 @@ pub async fn set_active_advanced_evm_account<R: Runtime>(
     handle: AppHandle<R>,
     account_id: String,
 ) -> Result<(), String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let n: i64 = conn
@@ -886,7 +917,11 @@ pub async fn set_active_advanced_evm_account<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_purpose, PURPOSE_ADVANCED, PURPOSE_SQUAD};
+    use super::{list_evm_accounts, normalize_purpose, PURPOSE_ADVANCED, PURPOSE_SQUAD};
+
+    // Global-state tests that touch the session key and current account must run
+    // serially to avoid cross-test interference.
+    static EVM_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     #[test]
     fn normalize_purpose_accepts_squad_and_advanced() {
@@ -898,5 +933,67 @@ mod tests {
     #[test]
     fn normalize_purpose_rejects_unknown() {
         assert!(normalize_purpose("experimental").is_err());
+    }
+
+    #[tokio::test]
+    async fn evm_accounts_rejects_and_recovers_locked_session() {
+        let _guard = EVM_TEST_MUTEX.lock();
+        // Isolate global state from other tests.
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let test_npub = "npub1evmaccountslocked";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+
+        // Prime an in-memory connection for the test account so commands do not
+        // touch on-disk test databases.
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(crate::account_manager::SQL_SCHEMA)
+            .expect("schema");
+
+        // Seed must be encrypted before being stored. Encrypt synchronously
+        // with the same test key so the test does not depend on the global
+        // session key during the async parts of the command.
+        let test_key = [0u8; 32];
+        let seed = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let encrypted_seed = crate::crypto::encrypt_with_key(seed, &test_key);
+        crate::session::clear_encryption_key();
+        crate::session::set_encryption_key(test_key);
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('seed', ?1)",
+            rusqlite::params![encrypted_seed],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        // With the session unlocked, the command should derive the default account and list it.
+        let rows = list_evm_accounts(handle.clone()).await;
+        assert!(rows.is_ok(), "first list should succeed: {:?}", rows.err());
+        assert!(
+            !rows.unwrap().is_empty(),
+            "default account should be created"
+        );
+
+        // Locking the session must short-circuit the command before any decrypt/mutation work.
+        crate::session::clear_encryption_key();
+        let result = list_evm_accounts(handle.clone()).await;
+        assert!(result.is_err(), "locked session should reject");
+        assert_eq!(result.unwrap_err(), "Session locked");
+
+        // Re-unlocking with the same key should restore access to the existing account.
+        crate::session::set_encryption_key([0u8; 32]);
+        let result = list_evm_accounts(handle.clone()).await;
+        assert!(result.is_ok(), "re-unlocked session should succeed: {:?}", result.err());
+
+        // Restore global state.
+        crate::session::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+        if let Some(prev) = previous_account {
+            let _ = crate::account_manager::set_current_account(prev);
+        } else {
+            let _ = crate::account_manager::clear_current_account();
+        }
     }
 }

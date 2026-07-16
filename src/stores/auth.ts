@@ -29,6 +29,32 @@ export interface CurrentUser {
 
 export const currentUser = writable<CurrentUser | null>(null);
 
+/** Toast state shown when the backend finishes a key-derivation migration. */
+export interface MigrationCompleteToast {
+  shown: boolean;
+  message: string;
+}
+
+export const migrationCompleteToast = writable<MigrationCompleteToast | null>(null);
+
+/** Timer handle returned by setTimeout; alias keeps the variable type local. */
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+let migrationToastTimer: TimerHandle | null = null;
+
+/** Show the migration-complete toast for five seconds, then clear it. */
+export function showMigrationCompleteToast(message = 'Account security updated'): void {
+  if (migrationToastTimer !== null) {
+    clearTimeout(migrationToastTimer);
+    migrationToastTimer = null;
+  }
+  migrationToastTimer = globalThis.setTimeout(() => {
+    migrationCompleteToast.set(null);
+    migrationToastTimer = null;
+  }, 5000);
+  migrationCompleteToast.set({ shown: true, message });
+}
+
 /** Drop frontend auth state. Called when the backend reports the session is locked. */
 export function dropSessionState(): void {
   isAuthenticated.set(false);
@@ -57,6 +83,58 @@ export async function sessionHeartbeat(): Promise<void> {
   } catch (error: unknown) {
     console.error('sessionHeartbeat failed:', error);
   }
+}
+
+let focusCheckTimer: TimerHandle | null = null;
+let sessionFocusCleanup: (() => void) | null = null;
+let sessionFocusListenersInstalled = false;
+
+const FOCUS_CHECK_DEBOUNCE_MS = 50;
+
+function debouncedCheckSession(): void {
+  if (focusCheckTimer !== null) {
+    clearTimeout(focusCheckTimer);
+    focusCheckTimer = null;
+  }
+  focusCheckTimer = globalThis.setTimeout(() => {
+    focusCheckTimer = null;
+    void checkSession();
+  }, FOCUS_CHECK_DEBOUNCE_MS);
+}
+
+/**
+ * Register lightweight focus/resume listeners that verify the backend session
+ * is still unlocked when the app regains focus or becomes visible again.
+ * Returns a cleanup function that removes the listeners and any pending timer.
+ */
+export function initSessionFocusChecks(): () => void {
+  if (sessionFocusListenersInstalled) {
+    return sessionFocusCleanup ?? (() => {});
+  }
+
+  sessionFocusListenersInstalled = true;
+
+  const onFocus = () => debouncedCheckSession();
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      debouncedCheckSession();
+    }
+  };
+
+  window.addEventListener('focus', onFocus);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+
+  sessionFocusCleanup = () => {
+    window.removeEventListener('focus', onFocus);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    sessionFocusListenersInstalled = false;
+    if (focusCheckTimer !== null) {
+      clearTimeout(focusCheckTimer);
+      focusCheckTimer = null;
+    }
+  };
+
+  return sessionFocusCleanup;
 }
 
 /**

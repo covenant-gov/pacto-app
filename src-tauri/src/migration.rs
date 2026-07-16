@@ -18,13 +18,14 @@ pub const KEY_DERIVATION_VERSION: &str = "key_derivation_version";
 /// migration. If absent, `settings.pkey` is used as the sentinel.
 pub const KEY_DERIVATION_SENTINEL: &str = "key_derivation_sentinel";
 
-/// A single encrypted row that needs to be considered for migration.
-#[derive(Debug)]
-struct EncryptedRow {
-    table: &'static str,
-    id: String,
-    ciphertext: String,
-}
+/// Settings key marking whether a key-derivation migration is currently in
+/// progress. `1` = in progress, `0` or absent = not in progress.
+pub const KEY_DERIVATION_MIGRATION_IN_PROGRESS: &str = "key_derivation_migration_in_progress";
+
+/// Maximum number of encrypted rows allowed to migrate automatically before the
+/// user is asked to migrate manually. Prevents memory exhaustion from accounts
+/// with extremely large event histories.
+pub const MIGRATION_ROW_LIMIT: usize = 10_000;
 
 fn get_setting(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, String> {
     let result: Option<String> = conn
@@ -137,6 +138,26 @@ fn set_key_derivation_sentinel(conn: &rusqlite::Connection, sentinel: &str) -> R
     set_setting(conn, KEY_DERIVATION_SENTINEL, sentinel)
 }
 
+fn get_key_derivation_migration_in_progress(
+    conn: &rusqlite::Connection,
+) -> Result<bool, String> {
+    Ok(get_setting(conn, KEY_DERIVATION_MIGRATION_IN_PROGRESS)?
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0)
+        != 0)
+}
+
+fn set_key_derivation_migration_in_progress(
+    conn: &rusqlite::Connection,
+    in_progress: bool,
+) -> Result<(), String> {
+    set_setting(
+        conn,
+        KEY_DERIVATION_MIGRATION_IN_PROGRESS,
+        if in_progress { "1" } else { "0" },
+    )
+}
+
 /// Create a new salt for a new account, persist it in settings, set version to
 /// 2, and mirror it to the salt file cache.
 pub fn create_new_account_salt<R: Runtime>(
@@ -152,177 +173,252 @@ pub fn create_new_account_salt<R: Runtime>(
     Ok(salt)
 }
 
-/// Collect every encrypted row that may need re-encryption during migration.
-fn collect_encrypted_rows(conn: &rusqlite::Connection) -> Result<Vec<EncryptedRow>, String> {
-    let mut rows = Vec::new();
+/// Count every encrypted row that may need re-encryption during migration.
+fn count_encrypted_rows(conn: &rusqlite::Connection) -> Result<usize, String> {
+    let mut count: usize = 0;
 
-    // settings: pkey, evm_pkey, seed
-    let mut stmt = conn
-        .prepare(
-            "SELECT key, value FROM settings WHERE key IN ('pkey', 'evm_pkey', 'seed') AND value IS NOT NULL AND value != ''",
+    let settings_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key IN ('pkey', 'evm_pkey', 'seed') AND value IS NOT NULL AND value != ''",
+            [],
+            |row| row.get(0),
         )
-        .map_err(|e| format!("Failed to prepare settings query: {}", e))?;
-    let settings_rows = stmt
-        .query_map([], |row| {
-            Ok(EncryptedRow { table: "settings", id: row.get::<_, String>(0)?, ciphertext: row.get::<_, String>(1)? })
-        })
-        .map_err(|e| format!("Failed to query settings: {}", e))?;
-    for row in settings_rows {
-        rows.push(row.map_err(|e| format!("Failed to read settings row: {}", e))?);
-    }
+        .map_err(|e| format!("Failed to count settings rows: {}", e))?;
+    count += settings_count as usize;
 
-    // evm_accounts.imported_enc
     if table_exists(conn, "evm_accounts")? {
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, imported_enc FROM evm_accounts WHERE imported_enc IS NOT NULL AND imported_enc != ''",
+        let evm_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM evm_accounts WHERE imported_enc IS NOT NULL AND imported_enc != ''",
+                [],
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to prepare evm_accounts query: {}", e))?;
-        let evm_rows = stmt
-            .query_map([], |row| {
-                Ok(EncryptedRow { table: "evm_accounts", id: row.get::<_, String>(0)?, ciphertext: row.get::<_, String>(1)? })
-            })
-            .map_err(|e| format!("Failed to query evm_accounts: {}", e))?;
-        for row in evm_rows {
-            rows.push(row.map_err(|e| format!("Failed to read evm_accounts row: {}", e))?);
-        }
+            .map_err(|e| format!("Failed to count evm_accounts rows: {}", e))?;
+        count += evm_count as usize;
     }
 
-    // squad_bot_secret.encrypted_nsec (only if the table exists)
     if table_exists(conn, "squad_bot_secret")? {
-        let mut stmt = conn
-            .prepare("SELECT parent_id, encrypted_nsec FROM squad_bot_secret")
-            .map_err(|e| format!("Failed to prepare squad_bot_secret query: {}", e))?;
-        let squad_rows = stmt
-            .query_map([], |row| {
-                Ok(EncryptedRow { table: "squad_bot_secret", id: row.get::<_, String>(0)?, ciphertext: row.get::<_, String>(1)? })
-            })
-            .map_err(|e| format!("Failed to query squad_bot_secret: {}", e))?;
-        for row in squad_rows {
-            rows.push(row.map_err(|e| format!("Failed to read squad_bot_secret row: {}", e))?);
-        }
+        let squad_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM squad_bot_secret", [], |row| row.get(0))
+            .map_err(|e| format!("Failed to count squad_bot_secret rows: {}", e))?;
+        count += squad_count as usize;
     }
 
-    // events.content for encrypted kinds (14 = DM, 16 = message edit)
     if table_exists(conn, "events")? {
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, content FROM events WHERE kind IN (?1, ?2) AND content IS NOT NULL AND content != ''",
-            )
-            .map_err(|e| format!("Failed to prepare events query: {}", e))?;
-        let event_rows = stmt
-            .query_map(
+        let event_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE kind IN (?1, ?2) AND content IS NOT NULL AND content != ''",
                 rusqlite::params![event_kind::PRIVATE_DIRECT_MESSAGE, event_kind::MESSAGE_EDIT],
-                |row| {
-                    Ok(EncryptedRow { table: "events", id: row.get::<_, String>(0)?, ciphertext: row.get::<_, String>(1)? })
-                },
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to query events: {}", e))?;
-        for row in event_rows {
-            rows.push(row.map_err(|e| format!("Failed to read events row: {}", e))?);
-        }
+            .map_err(|e| format!("Failed to count events rows: {}", e))?;
+        count += event_count as usize;
     }
 
-    // messages.content_encrypted legacy rows
     if table_exists(conn, "messages")? {
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, content_encrypted FROM messages WHERE content_encrypted IS NOT NULL AND content_encrypted != ''",
+        let message_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE content_encrypted IS NOT NULL AND content_encrypted != ''",
+                [],
+                |row| row.get(0),
             )
-            .map_err(|e| format!("Failed to prepare messages query: {}", e))?;
-        let message_rows = stmt
-            .query_map([], |row| {
-                Ok(EncryptedRow { table: "messages", id: row.get::<_, String>(0)?, ciphertext: row.get::<_, String>(1)? })
-            })
-            .map_err(|e| format!("Failed to query messages: {}", e))?;
-        for row in message_rows {
-            rows.push(row.map_err(|e| format!("Failed to read messages row: {}", e))?);
-        }
+            .map_err(|e| format!("Failed to count messages rows: {}", e))?;
+        count += message_count as usize;
     }
 
-    Ok(rows)
+    Ok(count)
 }
 
-/// Update a single encrypted row with a new ciphertext inside a dedicated
-/// transaction.
-fn update_row(conn: &mut rusqlite::Connection, row: &EncryptedRow, new_ciphertext: &str) -> Result<(), String> {
+/// Execute a single UPDATE for one encrypted column during migration.
+fn update_single_row(
+    conn: &mut rusqlite::Connection,
+    table: &str,
+    id_column: &str,
+    value_column: &str,
+    id: &str,
+    value: &str,
+) -> Result<(), String> {
+    let sql = format!(
+        "UPDATE {} SET {} = ?1 WHERE {} = ?2",
+        table, value_column, id_column
+    );
     let tx = conn
         .transaction()
-        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
-    match row.table {
-        "settings" => {
-            tx.execute(
-                "UPDATE settings SET value = ?1 WHERE key = ?2",
-                rusqlite::params![new_ciphertext, &row.id],
-            )
-            .map_err(|e| format!("Failed to update settings: {}", e))?;
-        }
-        "evm_accounts" => {
-            tx.execute(
-                "UPDATE evm_accounts SET imported_enc = ?1 WHERE id = ?2",
-                rusqlite::params![new_ciphertext, &row.id],
-            )
-            .map_err(|e| format!("Failed to update evm_accounts: {}", e))?;
-        }
-        "squad_bot_secret" => {
-            tx.execute(
-                "UPDATE squad_bot_secret SET encrypted_nsec = ?1 WHERE parent_id = ?2",
-                rusqlite::params![new_ciphertext, &row.id],
-            )
-            .map_err(|e| format!("Failed to update squad_bot_secret: {}", e))?;
-        }
-        "events" => {
-            tx.execute(
-                "UPDATE events SET content = ?1 WHERE id = ?2",
-                rusqlite::params![new_ciphertext, &row.id],
-            )
-            .map_err(|e| format!("Failed to update events: {}", e))?;
-        }
-        "messages" => {
-            tx.execute(
-                "UPDATE messages SET content_encrypted = ?1 WHERE id = ?2",
-                rusqlite::params![new_ciphertext, &row.id],
-            )
-            .map_err(|e| format!("Failed to update messages: {}", e))?;
-        }
-        _ => return Err(format!("Unknown table: {}", row.table)),
-    }
+        .map_err(|e| format!("Failed to begin transaction for {}: {}", table, e))?;
+    tx.execute(&sql, rusqlite::params![value, id])
+        .map_err(|e| format!("Failed to update {} row {}: {}", table, id, e))?;
     tx.commit()
-        .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+        .map_err(|e| format!("Failed to commit transaction for {}: {}", table, e))?;
     Ok(())
+}
+
+/// Migrate one encrypted table in a streaming fashion. Each row is processed in
+/// its own transaction, so memory usage stays bounded and an interruption is
+/// recoverable.
+fn migrate_table_rows(
+    conn: &mut rusqlite::Connection,
+    table: &str,
+    id_column: &str,
+    value_column: &str,
+    select_sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+    legacy_key: &[u8; 32],
+    new_key: &[u8; 32],
+) -> Result<usize, String> {
+    let mut stmt = conn
+        .prepare(select_sql)
+        .map_err(|e| format!("Failed to prepare query for {}: {}", table, e))?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map(params, |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("Failed to query {}: {}", table, e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read {} row: {}", table, e))?;
+    drop(stmt);
+
+    let mut reencrypted = 0;
+    for (id, ciphertext) in rows {
+        if decrypt_with_key(&ciphertext, new_key).is_ok() {
+            continue;
+        }
+        let plaintext = decrypt_with_key(&ciphertext, legacy_key).map_err(|_| {
+            format!("Failed to decrypt {} row {}", table, id)
+        })?;
+        let new_ciphertext = encrypt_with_key(&plaintext, new_key);
+        update_single_row(conn, table, id_column, value_column, &id, &new_ciphertext)?;
+        reencrypted += 1;
+    }
+
+    Ok(reencrypted)
+}
+
+/// Migrate all encrypted tables. This is the streaming replacement for the old
+/// `collect_encrypted_rows` / `update_row` flow.
+fn migrate_all_tables(
+    conn: &mut rusqlite::Connection,
+    legacy_key: &[u8; 32],
+    new_key: &[u8; 32],
+) -> Result<usize, String> {
+    let total = count_encrypted_rows(conn)?;
+    if total > MIGRATION_ROW_LIMIT {
+        return Err(format!(
+            "Account has {} encrypted rows, exceeding the automatic migration limit of {}. Please contact support.",
+            total, MIGRATION_ROW_LIMIT
+        ));
+    }
+
+    let mut reencrypted = 0;
+
+    reencrypted += migrate_table_rows(
+        conn,
+        "settings",
+        "key",
+        "value",
+        "SELECT key, value FROM settings WHERE key IN ('pkey', 'evm_pkey', 'seed') AND value IS NOT NULL AND value != ''",
+        &[],
+        legacy_key,
+        new_key,
+    )?;
+
+    if table_exists(conn, "evm_accounts")? {
+        reencrypted += migrate_table_rows(
+            conn,
+            "evm_accounts",
+            "id",
+            "imported_enc",
+            "SELECT id, imported_enc FROM evm_accounts WHERE imported_enc IS NOT NULL AND imported_enc != ''",
+            &[],
+            legacy_key,
+            new_key,
+        )?;
+    }
+
+    if table_exists(conn, "squad_bot_secret")? {
+        reencrypted += migrate_table_rows(
+            conn,
+            "squad_bot_secret",
+            "parent_id",
+            "encrypted_nsec",
+            "SELECT parent_id, encrypted_nsec FROM squad_bot_secret",
+            &[],
+            legacy_key,
+            new_key,
+        )?;
+    }
+
+    if table_exists(conn, "events")? {
+        reencrypted += migrate_table_rows(
+            conn,
+            "events",
+            "id",
+            "content",
+            "SELECT id, content FROM events WHERE kind IN (?1, ?2) AND content IS NOT NULL AND content != ''",
+            &[
+                &event_kind::PRIVATE_DIRECT_MESSAGE,
+                &event_kind::MESSAGE_EDIT,
+            ],
+            legacy_key,
+            new_key,
+        )?;
+    }
+
+    if table_exists(conn, "messages")? {
+        reencrypted += migrate_table_rows(
+            conn,
+            "messages",
+            "id",
+            "content_encrypted",
+            "SELECT id, content_encrypted FROM messages WHERE content_encrypted IS NOT NULL AND content_encrypted != ''",
+            &[],
+            legacy_key,
+            new_key,
+        )?;
+    }
+
+    Ok(reencrypted)
+}
+
+/// Decrypt the migration sentinel, trying the new key first (so a retry after
+/// a partial migration that already updated the sentinel does not fail), then
+/// falling back to the legacy key.
+fn decrypt_sentinel_for_migration(
+    sentinel_ciphertext: &str,
+    legacy_key: &[u8; 32],
+    new_key: &[u8; 32],
+) -> Result<String, String> {
+    if let Ok(plaintext) = decrypt_with_key(sentinel_ciphertext, new_key) {
+        return Ok(plaintext);
+    }
+    decrypt_with_key(sentinel_ciphertext, legacy_key)
+        .map_err(|_| "Incorrect PIN".to_string())
 }
 
 /// Core migration routine: re-encrypt every encrypted row from the legacy key
 /// to the new key. If a row already decrypts with the new key it is skipped.
 /// The sentinel is validated with both keys before and after the scan. All
 /// mutations are executed one row per transaction so an interruption leaves
-/// the account recoverable on the next unlock.
+/// the account recoverable on the next unlock. A per-account row limit
+/// prevents memory exhaustion from accounts with extremely large histories.
 pub fn migrate_account_encryption(
     conn: &mut rusqlite::Connection,
     legacy_key: &[u8; 32],
     new_key: &[u8; 32],
     sentinel_ciphertext: &str,
 ) -> Result<usize, String> {
-    // Validate the PIN by decrypting the sentinel with the legacy key.
-    let sentinel_plaintext = decrypt_with_key(sentinel_ciphertext, legacy_key)
-        .map_err(|_| "Incorrect PIN".to_string())?;
+    // Validate the PIN by decrypting the sentinel. Try the new key first so a
+    // retry after a crash that already updated the sentinel does not fail with
+    // an "Incorrect PIN" error.
+    let sentinel_plaintext = decrypt_sentinel_for_migration(sentinel_ciphertext, legacy_key, new_key)?;
 
-    let rows = collect_encrypted_rows(conn)?;
-    let mut reencrypted = 0;
+    // Mark migration as in progress and commit the version marker before any
+    // destructive re-encryption. This ordering ensures a retry can distinguish
+    // a partially migrated account from an unmigrated one and that the sentinel
+    // is always updated under the new version.
+    set_key_derivation_migration_in_progress(conn, true)?;
+    set_key_derivation_version(conn, 2)?;
 
-    for row in rows {
-        // Already migrated?
-        if decrypt_with_key(&row.ciphertext, new_key).is_ok() {
-            continue;
-        }
-        // Otherwise decrypt with the legacy key and re-encrypt with the new key.
-        let plaintext = decrypt_with_key(&row.ciphertext, legacy_key).map_err(|_| {
-            format!("Failed to decrypt row {} in {}", row.id, row.table)
-        })?;
-        let new_ciphertext = encrypt_with_key(&plaintext, new_key);
-        update_row(conn, &row, &new_ciphertext)?;
-        reencrypted += 1;
-    }
+    let reencrypted = migrate_all_tables(conn, legacy_key, new_key)?;
 
     // After the scan, re-encrypt the sentinel with the new key so the legacy
     // ciphertext is no longer needed for future PIN validation.
@@ -333,6 +429,8 @@ pub fn migrate_account_encryption(
     // Validate the sentinel decrypts with the new key.
     decrypt_with_key(&new_sentinel_ciphertext, new_key)
         .map_err(|_| "Migration failed: sentinel does not decrypt with new key".to_string())?;
+
+    set_key_derivation_migration_in_progress(conn, false)?;
 
     Ok(reencrypted)
 }
@@ -362,9 +460,14 @@ pub fn migrate_key_derivation_on_conn(
 
     let new_key = derive_key_from_salt(password, &salt);
 
-    let _count = migrate_account_encryption(conn, &legacy_key, &new_key, &sentinel)?;
+    // If a previous migration was interrupted, resume from the beginning. The
+    // per-row skip logic makes the scan idempotent for already-migrated rows.
+    if get_key_derivation_migration_in_progress(conn)? {
+        // Sentinel may already be new-key encrypted; migrate_account_encryption
+        // handles both old and new sentinel ciphertexts.
+    }
 
-    set_key_derivation_version(conn, 2)?;
+    let _count = migrate_account_encryption(conn, &legacy_key, &new_key, &sentinel)?;
     Ok(())
 }
 
@@ -377,8 +480,10 @@ pub fn migrate_key_derivation<R: Runtime>(
 ) -> Result<(), String> {
     let mut conn = crate::account_manager::get_db_connection(handle)
         .map_err(|e| format!("Failed to open database for migration: {}", e))?;
-    migrate_key_derivation_on_conn(&mut conn, password)?;
 
+    let result = migrate_key_derivation_on_conn(&mut conn, password);
+
+    // Always return the connection to the pool, even if migration failed.
     if let Ok(Some(salt)) = get_key_derivation_salt(&conn) {
         if let Ok(npub) = current_or_pending_npub() {
             let _ = write_salt_file(handle, &npub, &salt);
@@ -386,6 +491,8 @@ pub fn migrate_key_derivation<R: Runtime>(
     }
 
     crate::account_manager::return_db_connection(conn);
+
+    result?;
 
     if let Some(app) = crate::TAURI_APP.get() {
         let _ = app.emit("migration_complete", ());
@@ -712,5 +819,144 @@ mod tests {
             .expect("salt should exist after migration");
         let new_key = derive_key_from_salt(password, &salt);
         assert_eq!(decrypt_with_key(&sentinel, &new_key).unwrap(), plaintext);
+    }
+
+    #[test]
+    fn migration_sets_and_clears_in_progress_marker() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+        let salt = generate_salt();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        assert!(
+            !get_key_derivation_migration_in_progress(&conn).unwrap(),
+            "marker should be clear before migration"
+        );
+
+        migrate_key_derivation_on_conn(&mut conn, password).unwrap();
+
+        assert!(
+            !get_key_derivation_migration_in_progress(&conn).unwrap(),
+            "marker should be cleared after successful migration"
+        );
+        assert_eq!(get_key_derivation_version(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn migration_retries_with_new_key_sentinel() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let salt = generate_salt();
+        let new_key = derive_key_from_salt(password, &salt);
+
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+        let evm_pkey = encrypt_with_key("0xdeadbeef", &legacy_key);
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_setting(&conn, "evm_pkey", &evm_pkey).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        // First migration attempt: encrypts rows and updates sentinel to new key.
+        migrate_account_encryption(&mut conn, &legacy_key, &new_key, &pkey).unwrap();
+
+        let sentinel = get_key_derivation_sentinel(&conn)
+            .unwrap()
+            .expect("sentinel should exist");
+        assert!(
+            decrypt_with_key(&sentinel, &new_key).is_ok(),
+            "sentinel should decrypt with new key"
+        );
+
+        // Simulate a crash that left the sentinel new-key encrypted but reset the
+        // version marker. The next retry must still accept the PIN.
+        set_key_derivation_version(&conn, 1).unwrap();
+
+        let reencrypted = migrate_account_encryption(&mut conn, &legacy_key, &new_key, &sentinel)
+            .unwrap();
+        assert_eq!(reencrypted, 0, "already migrated rows should be skipped");
+        assert_eq!(get_key_derivation_version(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn migration_aborts_on_corrupted_row() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let salt = generate_salt();
+        let new_key = derive_key_from_salt(password, &salt);
+
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+        let bad_evm_pkey = "not-valid-ciphertext";
+
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_setting(&conn, "evm_pkey", bad_evm_pkey).unwrap();
+        set_key_derivation_version(&conn, 1).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        let result = migrate_account_encryption(&mut conn, &legacy_key, &new_key, &pkey);
+        assert!(result.is_err(), "migration should abort on corrupted row");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to decrypt"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            get_key_derivation_migration_in_progress(&conn).unwrap(),
+            "marker should remain set so the next unlock can resume"
+        );
+    }
+
+    #[test]
+    fn migration_refuses_accounts_with_too_many_rows() {
+        let mut conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "1234";
+        let legacy_key = derive_legacy_key(password);
+        let salt = generate_salt();
+        let new_key = derive_key_from_salt(password, &salt);
+
+        let pkey = encrypt_with_key("nsec1secret", &legacy_key);
+        set_setting(&conn, "pkey", &pkey).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+
+        // Insert enough events to exceed the automatic migration limit.
+        for i in 0..MIGRATION_ROW_LIMIT + 1 {
+            conn.execute(
+                "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    format!("ev-{}", i),
+                    event_kind::PRIVATE_DIRECT_MESSAGE as i64,
+                    1,
+                    encrypt_with_key("hello", &legacy_key),
+                    "[]",
+                    i as i64,
+                    i as i64,
+                    0,
+                ],
+            )
+            .unwrap();
+        }
+
+        let result = migrate_account_encryption(&mut conn, &legacy_key, &new_key, &pkey);
+        assert!(result.is_err(), "migration should refuse over-large accounts");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("exceeding the automatic migration limit"),
+            "unexpected error: {err}"
+        );
     }
 }

@@ -120,27 +120,11 @@ pub async fn export_sensitive_to_clipboard<R: Runtime>(
     )
     .await;
 
-    match &result {
-        Ok(_) => {
-            start_clear_timer(handle);
-        }
-        Err(err) => {
-            // If we set the pending-export flag before writing, clear the
-            // clipboard and the flag so a secret is not left behind.
-            if has_pending_export_flag(&handle) {
-                let _ = writer.clear();
-                let _ = set_pending_export_flag(&handle, false);
-            }
-            if let Ok(npub) = account_manager::get_current_account() {
-                let _ = crate::db::log_sensitive_export(
-                    &handle,
-                    &npub,
-                    export_type.as_str(),
-                    false,
-                    Some(err),
-                );
-            }
-        }
+    if result.is_ok() {
+        start_clear_timer(handle);
+    } else if has_pending_export_flag(&handle) {
+        let _ = writer.clear();
+        let _ = set_pending_export_flag(&handle, false);
     }
 
     result
@@ -164,10 +148,54 @@ fn clear_clipboard_with_writer<R: Runtime>(
     writer: &dyn ClipboardWriter,
     handle: &AppHandle<R>,
 ) -> Result<(), String> {
-    writer.clear()?;
-    set_pending_export_flag(handle, false)?;
-    cancel_active_timer();
+    let mut last_error = None;
+    for attempt in 1..=3 {
+        match writer.clear() {
+            Ok(()) => {
+                set_pending_export_flag(handle, false)?;
+                cancel_active_timer();
+                return Ok(());
+            }
+            Err(e) => {
+                last_error = Some(e);
+                if attempt < 3 {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "Failed to clear clipboard".to_string()))
+}
+
+fn validate_export_request(
+    export_type: &SensitiveExportType,
+    account_id: &Option<String>,
+) -> Result<(), String> {
+    match export_type {
+        SensitiveExportType::EvmAccount => {
+            let id = account_id
+                .as_deref()
+                .ok_or_else(|| "EVM account ID is required".to_string())?;
+            if id.trim().is_empty() {
+                return Err("EVM account ID cannot be empty".to_string());
+            }
+        }
+        SensitiveExportType::NostrNsec | SensitiveExportType::SeedPhrase => {
+            if account_id.is_some() {
+                return Err("account_id must not be provided for this export type".to_string());
+            }
+        }
+    }
     Ok(())
+}
+
+fn log_export_failure<R: Runtime>(
+    handle: &AppHandle<R>,
+    account_npub: &str,
+    export_type: &str,
+    err: &str,
+) {
+    let _ = crate::db::log_sensitive_export(handle, account_npub, export_type, false, Some(err));
 }
 
 async fn export_sensitive_to_clipboard_core<R: Runtime>(
@@ -177,10 +205,13 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
     pin: String,
     writer: &dyn ClipboardWriter,
 ) -> Result<SensitiveExportResult, String> {
-    if !crate::session::SESSION_MANAGER.is_unlocked() {
+    let session_unlocked_at_entry = crate::session::SESSION_MANAGER.is_unlocked();
+    if !session_unlocked_at_entry {
         return Err("Session is locked. Unlock to continue.".to_string());
     }
     crate::session::heartbeat();
+
+    validate_export_request(export_type, &account_id)?;
 
     let npub = account_manager::get_current_account()
         .map_err(|_| "No account selected".to_string())?;
@@ -199,13 +230,41 @@ async fn export_sensitive_to_clipboard_core<R: Runtime>(
         }
     }
 
-    validate_pin(handle, &pin)?;
-    let secret = fetch_secret(handle, &export_type, account_id.as_deref()).await?;
+    if let Err(e) = validate_pin(handle, &pin) {
+        log_export_failure(handle, &npub, export_type.as_str(), &e);
+        return Err(e);
+    }
+
+    let secret = match fetch_secret(handle, &export_type, account_id.as_deref()).await {
+        Ok(s) => s,
+        Err(e) => {
+            log_export_failure(handle, &npub, export_type.as_str(), &e);
+            return Err(e);
+        }
+    };
+
     let account_id_out = account_id.unwrap_or_else(|| npub.clone());
 
-    set_pending_export_flag(handle, true)?;
+    #[cfg(test)]
+    maybe_lock_session_for_test();
+
+    if let Err(e) = set_pending_export_flag(handle, true) {
+        log_export_failure(handle, &npub, export_type.as_str(), &e);
+        return Err(e);
+    }
+
+    if !crate::session::SESSION_MANAGER.is_unlocked() || !session_unlocked_at_entry {
+        let err = "Session locked during export".to_string();
+        log_export_failure(handle, &npub, export_type.as_str(), &err);
+        let _ = set_pending_export_flag(handle, false);
+        return Err(err);
+    }
+
     if let Err(e) = writer.write_text(&secret) {
-        return Err(format!("Failed to write to clipboard: {}", e));
+        let err = format!("Failed to write to clipboard: {}", e);
+        log_export_failure(handle, &npub, export_type.as_str(), &err);
+        let _ = set_pending_export_flag(handle, false);
+        return Err(err);
     }
 
     let cleared_at = epoch_seconds().saturating_add(EXPORT_CLEAR_DELAY_SECONDS);
@@ -307,7 +366,9 @@ pub fn compute_backoff_seconds(recent_attempts: &[ExportLogRow]) -> u64 {
         .iter()
         .take_while(|row| row.attempted_at >= window_start)
         .count();
-    let shift = attempts_in_window.saturating_sub(1) as u32;
+    let shift = attempts_in_window.saturating_sub(1).min(30) as u32;
+    // Cap the shift before the bit shift to prevent overflow on 32-bit shift
+    // amounts and to keep the exponential backoff within the policy maximum.
     let delay = EXPORT_BACKOFF_BASE_SECONDS << shift;
     delay.min(EXPORT_BACKOFF_MAX_SECONDS)
 }
@@ -348,6 +409,17 @@ fn set_pending_export_flag<R: Runtime>(handle: &AppHandle<R>, pending: bool) -> 
         let _ = std::fs::remove_file(&path);
     }
     Ok(())
+}
+
+#[cfg(test)]
+static TEST_LOCK_SESSION_BEFORE_WRITE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+fn maybe_lock_session_for_test() {
+    if TEST_LOCK_SESSION_BEFORE_WRITE.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        crate::session::clear_encryption_key();
+    }
 }
 
 fn cancel_active_timer() {
@@ -400,18 +472,38 @@ pub fn shutdown_clipboard_cleanup<R: Runtime>(handle: &AppHandle<R>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
+
+    static EXPORT_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
     struct MockClipboardWriter {
         written: Mutex<Vec<String>>,
+        fail_next_write: AtomicBool,
+        clear_fail_count: AtomicUsize,
+        clear_attempts: AtomicUsize,
     }
 
     impl MockClipboardWriter {
         fn new() -> Self {
             Self {
                 written: Mutex::new(Vec::new()),
+                fail_next_write: AtomicBool::new(false),
+                clear_fail_count: AtomicUsize::new(0),
+                clear_attempts: AtomicUsize::new(0),
             }
+        }
+
+        fn with_write_failure() -> Self {
+            let writer = Self::new();
+            writer.fail_next_write.store(true, Ordering::SeqCst);
+            writer
+        }
+
+        fn with_clear_failures(count: usize) -> Self {
+            let writer = Self::new();
+            writer.clear_fail_count.store(count, Ordering::SeqCst);
+            writer
         }
 
         fn was_written(&self) -> bool {
@@ -421,15 +513,26 @@ mod tests {
         fn last_written(&self) -> Option<String> {
             self.written.lock().last().cloned()
         }
+
+        fn clear_attempt_count(&self) -> usize {
+            self.clear_attempts.load(Ordering::SeqCst)
+        }
     }
 
     impl ClipboardWriter for MockClipboardWriter {
         fn write_text(&self, text: &str) -> Result<(), String> {
+            if self.fail_next_write.swap(false, Ordering::SeqCst) {
+                return Err("mock write failure".to_string());
+            }
             self.written.lock().push(text.to_string());
             Ok(())
         }
 
         fn clear(&self) -> Result<(), String> {
+            self.clear_attempts.fetch_add(1, Ordering::SeqCst);
+            if self.clear_fail_count.fetch_sub(1, Ordering::SeqCst) > 0 {
+                return Err("mock clear failure".to_string());
+            }
             self.written.lock().push(String::new());
             Ok(())
         }
@@ -448,11 +551,13 @@ mod tests {
 
     #[test]
     fn backoff_zero_with_no_attempts() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         assert_eq!(compute_backoff_seconds(&[]), 0);
     }
 
     #[test]
     fn backoff_grows_exponentially() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
         let attempts: Vec<ExportLogRow> = (0..5)
             .map(|i| test_row_at(now - i, true))
@@ -467,6 +572,7 @@ mod tests {
 
     #[test]
     fn backoff_caps_at_max() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
         let attempts: Vec<ExportLogRow> = (0..12)
             .map(|i| test_row_at(now - i, true))
@@ -479,6 +585,7 @@ mod tests {
 
     #[test]
     fn backoff_resets_after_quiet_window() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let now = epoch_seconds();
         let old = now - EXPORT_BACKOFF_WINDOW_SECONDS - 1;
         let attempts = vec![test_row_at(old, true)];
@@ -487,6 +594,7 @@ mod tests {
 
     #[test]
     fn prune_export_log_by_age() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch(
             r#"CREATE TABLE sensitive_export_log (
@@ -531,6 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn locked_session_does_not_touch_clipboard() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         // Ensure no session key is loaded so the command fails before the clipboard.
         crate::session::clear_encryption_key();
 
@@ -554,6 +663,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_rejects_when_key_derivation_version_not_2() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         // Ensure the session is unlocked so the migration gate is the first failure.
         crate::session::clear_encryption_key();
         crate::session::set_encryption_key([0u8; 32]);
@@ -607,6 +717,7 @@ mod tests {
 
     #[tokio::test]
     async fn timer_cancellation_prevents_callback() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         cancel_active_timer();
         let fired = Arc::new(AtomicBool::new(false));
         let fired_clone = fired.clone();
@@ -627,6 +738,7 @@ mod tests {
 
     #[tokio::test]
     async fn second_timer_cancels_first() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         cancel_active_timer();
         let first_fired = Arc::new(AtomicBool::new(false));
         let second_fired = Arc::new(AtomicBool::new(false));
@@ -655,6 +767,7 @@ mod tests {
 
     #[test]
     fn mock_writer_records_writes_and_clears() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let writer = MockClipboardWriter::new();
         writer.write_text("secret").unwrap();
         writer.clear().unwrap();
@@ -669,6 +782,9 @@ mod tests {
         password: &str,
     ) -> [u8; 32] {
         crate::account_manager::set_current_account(npub.to_string()).unwrap();
+        // Close any cached connection before deleting the profile directory so
+        // the next open sees a fresh database.
+        crate::account_manager::close_db_connection();
 
         // Ensure a fresh database so repeated test runs do not reuse stale rows.
         let profile_dir = crate::account_manager::get_profile_directory(handle, npub).unwrap();
@@ -705,6 +821,7 @@ mod tests {
 
     fn restore_account_or_clear(previous_account: Option<String>) {
         crate::session::clear_encryption_key();
+        crate::account_manager::close_db_connection();
         if let Some(prev) = previous_account {
             let _ = crate::account_manager::set_current_account(prev);
         } else {
@@ -714,6 +831,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_happy_path_writes_secret_to_clipboard() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let previous_account = crate::account_manager::get_current_account().ok();
         let npub = "npub1exporthappy";
         let password = "123456";
@@ -743,6 +861,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_rejects_incorrect_pin() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let previous_account = crate::account_manager::get_current_account().ok();
         let npub = "npub1exportbadpin";
         let password = "123456";
@@ -774,6 +893,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_rejects_empty_pin() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         let previous_account = crate::account_manager::get_current_account().ok();
         let npub = "npub1exportemptypin";
         let password = "123456";
@@ -805,6 +925,7 @@ mod tests {
 
     #[tokio::test]
     async fn export_rejects_no_account_selected() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
         crate::session::clear_encryption_key();
         crate::session::set_encryption_key([0u8; 32]);
         crate::account_manager::clear_current_account().unwrap();
@@ -829,5 +950,398 @@ mod tests {
         );
 
         crate::session::clear_encryption_key();
+    }
+
+    #[tokio::test]
+    async fn session_lock_between_pin_and_write_rejects_export() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exporttoctou";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        TEST_LOCK_SESSION_BEFORE_WRITE.store(true, Ordering::SeqCst);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "TOCTOU lock should reject export");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Session locked during export"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !writer.was_written(),
+            "clipboard should not be written after TOCTOU lock"
+        );
+        assert!(
+            !has_pending_export_flag(app.handle()),
+            "pending flag should be cleared after TOCTOU failure"
+        );
+
+        let conn = crate::account_manager::get_db_connection(app.handle()).unwrap();
+        let rows = crate::db::list_recent_export_attempts_on_conn(
+            &conn,
+            npub,
+            EXPORT_BACKOFF_WINDOW_SECONDS,
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        let failures: Vec<_> = rows.iter().filter(|r| !r.success).collect();
+        assert_eq!(failures.len(), 1, "expected one failed audit log entry");
+        assert!(failures[0]
+            .error_code
+            .as_deref()
+            .unwrap_or("")
+            .contains("Session locked during export"));
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[test]
+    fn backoff_no_overflow_with_many_attempts() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let now = epoch_seconds();
+        let attempts: Vec<ExportLogRow> = (0..40)
+            .map(|i| test_row_at(now - i, true))
+            .collect();
+        assert_eq!(
+            compute_backoff_seconds(&attempts),
+            EXPORT_BACKOFF_MAX_SECONDS,
+            "shift should be capped before overflow"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_flag_set_before_write_and_cleared_on_failure() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportflagorder";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+        assert!(
+            has_pending_export_flag(app.handle()),
+            "pending flag should be set after successful export"
+        );
+        assert_eq!(
+            writer.last_written(),
+            Some("nsec1secret".to_string()),
+            "secret should be written to clipboard"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn clipboard_write_failure_clears_pending_flag() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportwritefail";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::with_write_failure();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "clipboard write failure should reject export");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Failed to write to clipboard"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !writer.was_written(),
+            "secret should not be recorded when write fails"
+        );
+        assert!(
+            !has_pending_export_flag(app.handle()),
+            "pending flag should be cleared on write failure"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn malformed_account_id_rejected_for_each_export_type() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportmalformed";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let cases = vec![
+            (
+                SensitiveExportType::EvmAccount,
+                None,
+                "EVM account ID is required",
+            ),
+            (
+                SensitiveExportType::EvmAccount,
+                Some("".to_string()),
+                "EVM account ID cannot be empty",
+            ),
+            (
+                SensitiveExportType::NostrNsec,
+                Some("unexpected".to_string()),
+                "account_id must not be provided",
+            ),
+            (
+                SensitiveExportType::SeedPhrase,
+                Some("unexpected".to_string()),
+                "account_id must not be provided",
+            ),
+        ];
+
+        for (export_type, account_id, expected) in cases {
+            let writer = MockClipboardWriter::new();
+            let result = export_sensitive_to_clipboard_core(
+                app.handle(),
+                &export_type,
+                account_id,
+                password.to_string(),
+                &writer,
+            )
+            .await;
+
+            assert!(result.is_err(), "{export_type:?} should reject malformed account_id");
+            let err = result.unwrap_err();
+            assert!(
+                err.contains(expected),
+                "expected error containing '{expected}', got: {err}"
+            );
+            assert!(
+                !writer.was_written(),
+                "clipboard should not be written for malformed request"
+            );
+        }
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn evm_account_export_accepts_non_empty_account_id() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportevmvalid";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::EvmAccount,
+            Some("evm1nonexistent".to_string()),
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            !err.contains("EVM account ID is required")
+                && !err.contains("EVM account ID cannot be empty"),
+            "non-empty EVM account_id should pass validation, got: {err}"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn clipboard_clear_retries_and_succeeds() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let app = tauri::test::mock_app();
+        set_pending_export_flag(app.handle(), true).unwrap();
+
+        let writer = MockClipboardWriter::with_clear_failures(2);
+        let result = clear_clipboard_with_writer(&writer, app.handle());
+
+        assert!(result.is_ok(), "clear should succeed after retries: {:?}", result.err());
+        assert_eq!(
+            writer.clear_attempt_count(),
+            3,
+            "clear should be attempted three times"
+        );
+        assert!(
+            !has_pending_export_flag(app.handle()),
+            "pending flag should be cleared after successful clear"
+        );
+    }
+
+    #[tokio::test]
+    async fn clipboard_clear_failure_leaves_flag_and_returns_error() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let app = tauri::test::mock_app();
+        set_pending_export_flag(app.handle(), true).unwrap();
+
+        let writer = MockClipboardWriter::with_clear_failures(3);
+        let result = clear_clipboard_with_writer(&writer, app.handle());
+
+        assert!(result.is_err(), "clear should fail after exhausting retries");
+        assert_eq!(
+            writer.clear_attempt_count(),
+            3,
+            "clear should be attempted three times"
+        );
+        assert!(
+            has_pending_export_flag(app.handle()),
+            "pending flag should remain set when clear fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn export_cancellation_before_pin_entry_logs_nothing() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportcancel";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        // Simulate cancellation by locking the session before PIN entry.
+        crate::session::clear_encryption_key();
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+
+        assert!(result.is_err(), "cancelled export should be rejected");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Session is locked"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !writer.was_written(),
+            "clipboard should not be written for cancelled export"
+        );
+
+        let conn = crate::account_manager::get_db_connection(app.handle()).unwrap();
+        let rows = crate::db::list_recent_export_attempts_on_conn(
+            &conn,
+            npub,
+            EXPORT_BACKOFF_WINDOW_SECONDS,
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        assert!(
+            rows.is_empty(),
+            "no audit log entry should be created for cancellation before PIN entry"
+        );
+
+        restore_account_or_clear(previous_account);
+    }
+
+    #[tokio::test]
+    async fn audit_log_entry_on_success_and_failure() {
+        let _guard = EXPORT_TEST_MUTEX.lock();
+        let previous_account = crate::account_manager::get_current_account().ok();
+        let npub = "npub1exportauditlog";
+        let password = "123456";
+
+        crate::session::clear_encryption_key();
+        let app = tauri::test::mock_app();
+        setup_migrated_test_account(app.handle(), npub, password);
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            password.to_string(),
+            &writer,
+        )
+        .await;
+        assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let writer = MockClipboardWriter::new();
+        let result = export_sensitive_to_clipboard_core(
+            app.handle(),
+            &SensitiveExportType::NostrNsec,
+            None,
+            "wrongpin".to_string(),
+            &writer,
+        )
+        .await;
+        assert!(result.is_err(), "bad PIN should fail");
+        let pin_err = result.unwrap_err();
+        assert!(pin_err.contains("Incorrect PIN"));
+
+        let conn = crate::account_manager::get_db_connection(app.handle()).unwrap();
+        let rows = crate::db::list_recent_export_attempts_on_conn(
+            &conn,
+            npub,
+            EXPORT_BACKOFF_WINDOW_SECONDS,
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        assert_eq!(rows.len(), 2, "expected success and failure audit entries");
+        let success_row = rows.iter().find(|r| r.success).expect("success row missing");
+        let failure_row = rows.iter().find(|r| !r.success).expect("failure row missing");
+        assert_eq!(success_row.export_type, "nostr_nsec");
+        assert_eq!(success_row.account_npub, npub);
+        assert!(success_row.error_code.is_none());
+        assert_eq!(failure_row.export_type, "nostr_nsec");
+        assert_eq!(failure_row.account_npub, npub);
+        assert!(failure_row
+            .error_code
+            .as_deref()
+            .unwrap_or("")
+            .contains("Incorrect PIN"));
+
+        restore_account_or_clear(previous_account);
     }
 }
