@@ -22,8 +22,23 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, parse_salt_nonce, parse_address,
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::rpc::signer::{load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed};
+use super::rpc::signer::{
+    load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
+    require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
+};
 use super::wallet_chain_config;
+
+fn parse_signer_wallet(raw: &str) -> Result<&'static str, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "squad" => Ok("squad"),
+        "default" => Ok("default"),
+        other => Err(wallet_err_json(
+            "INVALID_SIGNER",
+            format!("Unknown signer wallet: {}", other.trim()),
+            None,
+        )),
+    }
+}
 
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
 const DEFAULT_CREW_CHANGE_DELAY_SEC: u64 = 7 * 24 * 3600;
@@ -140,6 +155,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     captain: String,
     metadata_uri: String,
     salt_nonce: Option<String>,
+    signer_wallet: Option<String>,
 ) -> Result<NavePirataDeployResult, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -216,8 +232,14 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         ));
     }
 
-    require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref().unwrap_or("squad"))?;
+    let (_signer, wallet) = if signer_mode == "default" {
+        require_treasury_signing_allowed(app.clone()).await?;
+        load_active_squad_embedded_signer(app.clone()).await?
+    } else {
+        require_roster_treasury_signing_allowed(app.clone(), pid).await?;
+        load_squad_roster_embedded_signer(app.clone(), pid).await?
+    };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let rpc_chain_id = provider.get_chain_id().await.map_err(|e| {

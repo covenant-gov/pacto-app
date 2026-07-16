@@ -4,7 +4,10 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
+  import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
+  import type { SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
   import {
     bootstrapCrewCandidates,
     startHatsSponsorOnlyDeploy,
@@ -27,25 +30,65 @@
   const titleId = 'deploy-gov-sponsor-title';
   const descId = 'deploy-gov-sponsor-desc';
 
+  type SignerBalance = {
+    balanceRaw: string;
+    balanceDecimal: string;
+    symbol: string;
+    loading: boolean;
+    error: string;
+  };
+
   let captainAddress = '';
-  let resolvingDeployer = true;
+  let resolvingAddresses = true;
   let deployError = '';
   let initialDepositEth = '';
   let bootstrapCrew = false;
   let progressStep: '' | 'gov' | 'sponsor' | 'bootstrap' = '';
+  let signerWallet: SquadSponsorDeploySignerWallet = 'squad';
+  let defaultSignerAddress: string | null = null;
+  let squadSignerAddress: string | null = null;
+  let defaultBalance: SignerBalance = emptyBalance();
+  let squadBalance: SignerBalance = emptyBalance();
+  let refreshSeq = 0;
+  let preferredPayerOnce = false;
 
   $: sponsorOnly = !!existingTopHatId.trim();
 
-  function shortAddress(addr: string): string {
+  function emptyBalance(): SignerBalance {
+    return { balanceRaw: '0', balanceDecimal: '0', symbol: 'ETH', loading: false, error: '' };
+  }
+
+  function shortAddress(addr: string | null | undefined): string {
+    if (!addr) return 'Not set';
     if (addr.length < 18) return addr;
     return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
   }
 
-  function pickDefaultCaptain(deployer: string | null) {
+  function canonicalAddress(addr: string | null): string | null {
+    if (!addr?.trim() || !isAddress(addr.trim() as `0x${string}`)) return null;
+    try {
+      return getAddress(addr.trim() as `0x${string}`);
+    } catch {
+      return null;
+    }
+  }
+
+  function amountExceedsBalance(amountTrimmed: string, balanceRaw: string): boolean {
+    try {
+      if (!/^\d+$/.test(balanceRaw.trim())) return false;
+      const amt = parseEther(amountTrimmed.replace(/,/g, ''));
+      return amt >= BigInt(balanceRaw.trim());
+    } catch {
+      return false;
+    }
+  }
+
+  /** Captain defaults to roster EVM only — never the Default wallet unless it is the roster binding. */
+  function pickDefaultCaptain(rosterAddress: string | null) {
     if (captainAddress) return;
     const opts = captainMemberOptions;
-    if (deployer) {
-      const match = opts.find((o) => o.address.toLowerCase() === deployer.toLowerCase());
+    if (rosterAddress) {
+      const match = opts.find((o) => o.address.toLowerCase() === rosterAddress.toLowerCase());
       if (match) {
         captainAddress = match.address;
         return;
@@ -54,27 +97,104 @@
     if (opts.length > 0) captainAddress = opts[0].address;
   }
 
-  onMount(async () => {
-    resolvingDeployer = true;
-    let deployer: string | null = null;
-    try {
-      const raw = await resolveSquadRosterEvmAddress(parentId.trim());
-      if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
-        deployer = getAddress(raw.trim() as `0x${string}`);
-      }
-    } catch {
-      // fall through
-    } finally {
-      resolvingDeployer = false;
+  async function fetchBalance(address: string | null): Promise<SignerBalance> {
+    if (!address || !squadNetwork) return emptyBalance();
+    const result = await getEvmNativeBalance(squadNetwork, address);
+    if (result.ok) {
+      return {
+        balanceRaw: result.balance.balanceRaw,
+        balanceDecimal: result.balance.balanceDecimal,
+        symbol: result.balance.symbol,
+        loading: false,
+        error: '',
+      };
     }
-    pickDefaultCaptain(deployer);
-  });
-
-  $: if (!resolvingDeployer && !captainAddress && captainMemberOptions.length > 0) {
-    pickDefaultCaptain(null);
+    return { ...emptyBalance(), loading: false, error: result.message };
   }
 
-  $: crewPreview = bootstrapCrewCandidates(captainMemberOptions, captainAddress);
+  function preferFundedDefaultWhenRosterEmpty() {
+    if (preferredPayerOnce) return;
+    const def = canonicalAddress(defaultSignerAddress);
+    const squad = canonicalAddress(squadSignerAddress);
+    if (!def || !squad || def === squad) return;
+    try {
+      const squadWei = BigInt(squadBalance.balanceRaw || '0');
+      const defaultWei = BigInt(defaultBalance.balanceRaw || '0');
+      if (squadWei === 0n && defaultWei > 0n) {
+        signerWallet = 'default';
+        preferredPayerOnce = true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function refreshSigners() {
+    const seq = ++refreshSeq;
+    resolvingAddresses = true;
+    try {
+      const [defaultAddr, squadAddr] = await Promise.all([
+        getActiveSquadEvmSignerAddress(),
+        resolveSquadRosterEvmAddress(parentId.trim()),
+      ]);
+      if (seq !== refreshSeq) return;
+      defaultSignerAddress = defaultAddr?.trim() || null;
+      squadSignerAddress = squadAddr?.trim() || null;
+      const defaultCanon = canonicalAddress(defaultSignerAddress);
+      const squadCanon = canonicalAddress(squadSignerAddress);
+      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
+        signerWallet = 'squad';
+      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
+        signerWallet = 'squad';
+      } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
+        signerWallet = 'default';
+      }
+      pickDefaultCaptain(squadCanon);
+    } finally {
+      if (seq === refreshSeq) resolvingAddresses = false;
+    }
+    if (seq !== refreshSeq) return;
+    const [defaultBal, squadBal] = await Promise.all([
+      fetchBalance(defaultSignerAddress),
+      fetchBalance(squadSignerAddress),
+    ]);
+    if (seq !== refreshSeq) return;
+    defaultBalance = defaultBal;
+    squadBalance = squadBal;
+    preferFundedDefaultWhenRosterEmpty();
+  }
+
+  onMount(() => {
+    void refreshSigners();
+  });
+
+  $: if (!resolvingAddresses && !captainAddress && captainMemberOptions.length > 0) {
+    pickDefaultCaptain(canonicalAddress(squadSignerAddress));
+  }
+
+  $: defaultCanonical = canonicalAddress(defaultSignerAddress);
+  $: squadCanonical = canonicalAddress(squadSignerAddress);
+  $: signersAreSame =
+    defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
+
+  $: selectedBalance = signersAreSame
+    ? squadBalance
+    : signerWallet === 'default'
+      ? defaultBalance
+      : squadBalance;
+
+  $: depositTrimmed = initialDepositEth.trim();
+  $: depositExceedsBalance =
+    depositTrimmed.length > 0 &&
+    !selectedBalance.loading &&
+    !selectedBalance.error &&
+    amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
+
+  $: crewPreview = bootstrapCrewCandidates(captainMemberOptions, captainAddress).map((addr) => {
+    const key = addr.toLowerCase();
+    const opt = captainMemberOptions.find((o) => o.address.toLowerCase() === key);
+    return { address: addr, label: opt?.label?.trim() || '' };
+  });
 
   function onDepositInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
@@ -88,12 +208,12 @@
       deployError = 'Set the squad network in Settings before deploying.';
       return;
     }
-    if (resolvingDeployer) {
-      deployError = 'Loading your squad EVM address…';
+    if (resolvingAddresses) {
+      deployError = 'Loading signer addresses…';
       return;
     }
     if (!sponsorOnly && !captainAddress) {
-      deployError = 'Pick a captain with a shared squad EVM address.';
+      deployError = 'Pick a captain with a squad-assigned EVM address.';
       return;
     }
     let depositWei: string;
@@ -108,6 +228,12 @@
       deployError = 'Invalid deposit amount.';
       return;
     }
+    if (depositExceedsBalance) {
+      deployError = 'Deposit must leave room for gas on the selected payer.';
+      return;
+    }
+
+    const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
 
     const onProgress = (step: 'gov' | 'sponsor' | 'bootstrap') => {
       progressStep = step;
@@ -134,6 +260,7 @@
           memberOptions: captainMemberOptions,
           quartermaster: quartermaster.trim() || undefined,
           captainAddress: captainAddress || undefined,
+          signerWallet: payFrom,
           onProgress,
           onReject,
           onError,
@@ -146,6 +273,7 @@
           initialDepositWei: depositWei,
           bootstrapCrew,
           memberOptions: captainMemberOptions,
+          signerWallet: payFrom,
           onProgress,
           onReject,
           onError,
@@ -158,8 +286,10 @@
 
   $: deployDisabled =
     !squadNetwork ||
-    resolvingDeployer ||
-    (!sponsorOnly && (captainMemberOptions.length === 0 || !captainAddress));
+    resolvingAddresses ||
+    depositExceedsBalance ||
+    (!sponsorOnly && (captainMemberOptions.length === 0 || !captainAddress)) ||
+    (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical);
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-gov-sponsor-panel">
@@ -168,11 +298,13 @@
   </h2>
   <p id={descId} class="deploy-desc">
     {#if sponsorOnly}
-      Governance is live. Deploys a hats-linked sponsor for this squad’s top hat. Optional crew bootstrap
-      mints via quartermaster.
+      Governance is live. Deploys a hats-linked sponsor for this squad’s top hat. Anyone may deposit;
+      sponsorship follows captain and crew hats. Gas and deposit come from the payer below — not from hat
+      identity.
     {:else}
-      Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. Gas sponsorship follows captain and crew
-      hats. If you pick someone else as captain, you only get a crew hat when bootstrap runs.
+      Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. Pay gas and the sponsor deposit from
+      Default or your squad-assigned key; captain must be a squad-assigned EVM of an existing member. Paying
+      does not grant hats.
     {/if}
   </p>
 
@@ -188,22 +320,99 @@
     {/if}
   </div>
 
+  {#if signersAreSame}
+    <div class="signer-single" aria-live="polite">
+      <span class="label">Pay gas and deposit from</span>
+      <p class="signer-single-addr">
+        <code>{shortAddress(squadCanonical)}</code>
+        <span class="muted note">Squad signer</span>
+      </p>
+      <p class="signer-balance muted">
+        {#if resolvingAddresses || squadBalance.loading}
+          Balance: …
+        {:else if squadBalance.error}
+          Balance unavailable
+        {:else}
+          Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+        {/if}
+      </p>
+    </div>
+  {:else}
+    <fieldset class="signer-fieldset" disabled={resolvingAddresses}>
+      <legend class="label">Pay gas and deposit from</legend>
+      <div class="signer-options">
+        <label class="signer-option" class:selected={signerWallet === 'default'}>
+          <input
+            type="radio"
+            name="gov-sponsor-deploy-signer"
+            value="default"
+            bind:group={signerWallet}
+            disabled={!defaultSignerAddress}
+          />
+          <span class="signer-option-body">
+            <span class="signer-option-title">Default signer</span>
+            <span class="signer-option-sub">Same as DM wallet — pays only; no hats</span>
+            <code class="signer-addr">{shortAddress(defaultSignerAddress)}</code>
+            <span class="signer-balance">
+              {#if resolvingAddresses || defaultBalance.loading}
+                Balance: …
+              {:else if defaultBalance.error}
+                Balance unavailable
+              {:else if defaultSignerAddress}
+                Balance: {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+              {:else}
+                Not configured
+              {/if}
+            </span>
+          </span>
+        </label>
+
+        <label class="signer-option" class:selected={signerWallet === 'squad'}>
+          <input
+            type="radio"
+            name="gov-sponsor-deploy-signer"
+            value="squad"
+            bind:group={signerWallet}
+            disabled={!squadSignerAddress}
+          />
+          <span class="signer-option-body">
+            <span class="signer-option-title">Squad-assigned signer</span>
+            <span class="signer-option-sub">Bound to this squad roster</span>
+            <code class="signer-addr">{shortAddress(squadSignerAddress)}</code>
+            <span class="signer-balance">
+              {#if resolvingAddresses || squadBalance.loading}
+                Balance: …
+              {:else if squadBalance.error}
+                Balance unavailable
+              {:else if squadSignerAddress}
+                Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+              {:else}
+                Not assigned
+              {/if}
+            </span>
+          </span>
+        </label>
+      </div>
+    </fieldset>
+  {/if}
+
   {#if !sponsorOnly}
     <div class="field">
       <label class="label" for="gov-sponsor-captain">Captain</label>
       {#if captainMemberOptions.length === 0}
-        <p class="hint muted">No members have shared an EVM address yet.</p>
+        <p class="hint muted">No members have a squad-assigned EVM yet.</p>
       {:else}
         <select
           id="gov-sponsor-captain"
           class="select"
           bind:value={captainAddress}
-          disabled={resolvingDeployer}
+          disabled={resolvingAddresses}
         >
           {#each captainMemberOptions as opt (opt.npub)}
             <option value={opt.address}>{opt.label} — {shortAddress(opt.address)}</option>
           {/each}
         </select>
+        <p class="hint muted">Any member’s squad-assigned EVM. Hats go here — not to the fee payer.</p>
       {/if}
     </div>
   {:else if captainMemberOptions.length > 0}
@@ -213,7 +422,7 @@
         id="gov-sponsor-captain"
         class="select"
         bind:value={captainAddress}
-        disabled={resolvingDeployer}
+        disabled={resolvingAddresses}
       >
         {#each captainMemberOptions as opt (opt.npub)}
           <option value={opt.address}>{opt.label} — {shortAddress(opt.address)}</option>
@@ -228,12 +437,19 @@
     <input
       id="gov-sponsor-deposit"
       class="input"
+      class:input-invalid={depositExceedsBalance}
       type="text"
       inputmode="decimal"
       placeholder="0.01"
       value={initialDepositEth}
       on:input={onDepositInput}
     />
+    {#if depositExceedsBalance}
+      <p class="input-error" role="alert">
+        Deposit must stay below {selectedBalance.balanceDecimal}
+        {selectedBalance.symbol} so this wallet can pay gas.
+      </p>
+    {/if}
   </div>
 
   <div class="field bootstrap-field">
@@ -242,19 +458,27 @@
       Bootstrap crew hats now
     </label>
     <p class="hint muted">
-      Optional. Only members who already shared an EVM (except the captain) are minted. Skip if keys are
-      incomplete — mint later from Governance → Captain.
+      Optional. Only squad-assigned EVMs (except the captain) are minted. Skip if keys are incomplete —
+      mint later from Governance → Captain.
     </p>
     {#if bootstrapCrew && sponsorOnly && !quartermaster.trim()}
-      <p class="hint warn-hint">Quartermaster address missing from gov payload — bootstrap will fail until it is present.</p>
+      <p class="hint warn-hint">
+        Quartermaster address missing from gov payload — bootstrap will fail until it is present.
+      </p>
     {/if}
     {#if bootstrapCrew}
       {#if crewPreview.length === 0}
         <p class="hint muted">No non-captain shared addresses to include yet.</p>
       {:else}
         <ul class="preview-list">
-          {#each crewPreview as addr (addr)}
-            <li><code>{shortAddress(addr)}</code></li>
+          {#each crewPreview as row (row.address)}
+            <li>
+              {#if row.label}
+                <span class="preview-label">{row.label}</span>
+                <span class="preview-sep">—</span>
+              {/if}
+              <code>{shortAddress(row.address)}</code>
+            </li>
           {/each}
         </ul>
       {/if}
@@ -331,6 +555,9 @@
     color: var(--text-primary);
     font-size: 0.9375rem;
   }
+  .input-invalid {
+    border-color: var(--danger, #e53e3e);
+  }
   .hint {
     margin: 6px 0 0;
     font-size: 0.8125rem;
@@ -352,8 +579,22 @@
     margin: 8px 0 0;
     padding: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 6px;
+  }
+  .preview-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .preview-label {
+    color: var(--text-primary);
+  }
+  .preview-sep {
+    color: var(--text-muted);
   }
   .preview-list code {
     font-size: 0.75rem;
@@ -361,5 +602,73 @@
   }
   .muted {
     color: var(--text-muted);
+  }
+  .signer-fieldset {
+    margin: 0 0 14px;
+    padding: 0;
+    border: none;
+    min-width: 0;
+  }
+  .signer-single {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+  }
+  .signer-single-addr {
+    margin: 4px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.9375rem;
+  }
+  .signer-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .signer-option {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
+    cursor: pointer;
+  }
+  .signer-option.selected {
+    border-color: var(--accent, #2dd4bf);
+  }
+  .signer-option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .signer-option-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .signer-option-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .signer-addr {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+  }
+  .signer-balance {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .input-error {
+    margin: 6px 0 0;
+    font-size: 0.8125rem;
+    color: var(--danger, #e53e3e);
   }
 </style>

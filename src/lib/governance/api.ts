@@ -355,6 +355,7 @@ export async function deployNavePirataForParent(params: {
   captain: string;
   metadataUri?: string | null;
   saltNonce?: string | null;
+  signerWallet?: SquadSponsorDeploySignerWallet;
 }): Promise<NavePirataDeployResultDto> {
   return (await invoke('deploy_nave_pirata_for_parent', {
     network: params.network,
@@ -362,6 +363,7 @@ export async function deployNavePirataForParent(params: {
     captain: params.captain,
     metadataUri: params.metadataUri?.trim() ?? '',
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
+    signerWallet: params.signerWallet ?? 'squad',
   })) as NavePirataDeployResultDto;
 }
 

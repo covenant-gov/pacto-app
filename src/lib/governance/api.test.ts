@@ -288,6 +288,26 @@ describe('api command wrappers', () => {
       captain: '0xabc',
       metadataUri: 'https://example.com',
       saltNonce: null,
+      signerWallet: 'squad',
+    });
+  });
+
+  it('deployNavePirataForParent passes signerWallet when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployNavePirataForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      metadataUri: 'uri',
+      signerWallet: 'default',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_nave_pirata_for_parent', {
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      metadataUri: 'uri',
+      saltNonce: null,
+      signerWallet: 'default',
     });
   });
 

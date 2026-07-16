@@ -25,7 +25,7 @@ export function toastOnChainConfirmed(network: string, txHash: string, subject =
 }
 
 export function toastOnChainFailed(message: string): void {
-  showToast(message);
+  showToast(message, undefined, undefined, { error: true });
 }
 
 /** Poll receipt without blocking UI; optional hooks for follow-up work. */
@@ -72,7 +72,10 @@ export function runOnChainInBackground<T>(opts: RunOnChainInBackgroundOpts<T>): 
     } catch (e) {
       let raw = getInvokeErrorMessage(e, 'On-chain transaction failed.');
       const parsed = parseWalletOpError(raw);
-      if (parsed?.message) raw = parsed.message;
+      if (parsed?.message) {
+        raw = parsed.code ? `${parsed.code}: ${parsed.message}` : parsed.message;
+      }
+      console.error('[on-chain]', opts.subject ?? 'job', e, raw);
       opts.onError?.(raw);
       toastOnChainFailed(raw);
     }
