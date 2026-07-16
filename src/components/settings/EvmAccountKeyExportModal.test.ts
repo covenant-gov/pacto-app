@@ -1,88 +1,167 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
-
-vi.mock('../../lib/api/encryption', () => ({
-  loadAndDecryptKey: vi.fn(async () => 'decrypted-nsec-placeholder'),
-}));
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
+import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
+import { exportSensitiveToClipboard } from '../../lib/api/auth';
 
 vi.mock('../../lib/api/auth', () => ({
-  exportEvmAccountKeyPlaintext: vi.fn(async () => '0xsecretprivatekey'),
-  exportRecoveryPhrase: vi.fn(async () => 'seed words go here'),
+  exportSensitiveToClipboard: vi.fn(),
 }));
 
-import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
-import { loadAndDecryptKey } from '../../lib/api/encryption';
-import type { EvmAccountRow } from '../../lib/wallet/evm-accounts';
+const mockedExport = vi.mocked(exportSensitiveToClipboard);
 
-const account: EvmAccountRow = {
+beforeEach(() => {
+  mockedExport.mockReset();
+});
+
+afterEach(() => {
+  cleanup();
+});
+
+const evmAccount = {
   id: 'acc-1',
-  scheme: 'secp256k1',
+  scheme: 'bip44_v1',
   hdIndex: 0,
   address: '0xabc0000000000000000000000000000000abc',
-  label: 'Squad wallet',
-  purpose: 'squad',
-  isActive: true,
+  label: 'Main',
+  purpose: 'advanced' as const,
+  isActive: false,
   isDefaultShared: false,
   isActiveAdvanced: false,
 };
 
-async function submitPin() {
-  const boxes = screen.getAllByLabelText(/PIN digit/i);
-  for (let i = 0; i < boxes.length; i++) {
-    await fireEvent.input(boxes[i], { target: { value: String((i % 9) + 1) } });
+async function enterPin(pin = '123456') {
+  for (let i = 0; i < pin.length; i++) {
+    await fireEvent.input(screen.getByLabelText(`PIN digit ${i + 1}`), {
+      target: { value: pin[i] },
+    });
   }
 }
 
-describe('EvmAccountKeyExportModal reveal guard', () => {
-  beforeEach(() => {
-    vi.mocked(loadAndDecryptKey).mockClear();
-  });
+function copyButton(): HTMLButtonElement {
+  return screen.getByRole('button', { name: 'Copy to clipboard' }) as HTMLButtonElement;
+}
 
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('never renders the private key before the PIN step is confirmed', () => {
-    render(EvmAccountKeyExportModal, { props: { open: true, variant: 'evm', account } });
-
-    expect(screen.getByRole('heading', { name: 'Enter your PIN' })).toBeTruthy();
-    expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
-  });
-
-  it('reveals the secret only after PIN confirm, and it is masked until the reveal toggle is clicked', async () => {
-    render(EvmAccountKeyExportModal, { props: { open: true, variant: 'evm', account } });
-
-    await submitPin();
-
-    const revealButton = await screen.findByRole('button', { name: 'Reveal private key' });
-    expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
-
-    await fireEvent.click(revealButton);
-
-    expect(await screen.findByText('0xsecretprivatekey')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Hide private key' })).toBeTruthy();
-  });
-
-  it('re-masks the secret when the modal is closed and reopened, without re-revealing it', async () => {
-    const { rerender } = render(EvmAccountKeyExportModal, {
-      props: { open: true, variant: 'evm', account },
+describe('EvmAccountKeyExportModal', () => {
+  it('shows the warning and keeps the copy action off until the PIN is complete', () => {
+    render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
     });
 
-    await submitPin();
-    const revealButton = await screen.findByRole('button', { name: 'Reveal private key' });
-    await fireEvent.click(revealButton);
-    expect(await screen.findByText('0xsecretprivatekey')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Export private key' })).toBeTruthy();
+    expect(screen.getByText(/Anyone with this key controls the account/)).toBeTruthy();
+    expect(
+      screen.getByText(/Clipboard managers, OS clipboard history, and cross-device clipboard sync/)
+    ).toBeTruthy();
+    expect(copyButton().disabled).toBe(true);
+    expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
+    expect(mockedExport).not.toHaveBeenCalled();
+  });
 
-    await rerender({ open: false, variant: 'evm', account });
-    await rerender({ open: true, variant: 'evm', account });
+  it('copies through the backend and shows the 90 second clear, without rendering the secret', async () => {
+    mockedExport.mockResolvedValueOnce({
+      exportType: 'evm',
+      accountId: 'acc-1',
+      clearedAt: 1234567890,
+    });
 
-    expect(await screen.findByRole('heading', { name: 'Enter your PIN' })).toBeTruthy();
+    render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
+    });
+    await enterPin('123456');
+    expect(copyButton().disabled).toBe(false);
+    await fireEvent.click(copyButton());
+
+    await waitFor(() => expect(mockedExport).toHaveBeenCalledWith('evm', 'acc-1', '123456'));
+    expect(screen.getByText('Copied to clipboard')).toBeTruthy();
+    expect(screen.getByText(/It will be cleared in 90 seconds/)).toBeTruthy();
     expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
   });
 
-  it('never calls the key decryption API before the PIN is submitted', () => {
-    render(EvmAccountKeyExportModal, { props: { open: true, variant: 'evm', account } });
-    expect(loadAndDecryptKey).not.toHaveBeenCalled();
+  it('exports nsec and the seed phrase without an account id', async () => {
+    mockedExport.mockResolvedValue({
+      exportType: 'nostr',
+      accountId: '',
+      clearedAt: 1,
+    });
+
+    const { rerender } = render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'nostr', npub: 'npub1xyz' },
+    });
+    await enterPin('654321');
+    await fireEvent.click(copyButton());
+    await waitFor(() => expect(mockedExport).toHaveBeenCalledWith('nostr', undefined, '654321'));
+
+    mockedExport.mockResolvedValueOnce({ exportType: 'seed', accountId: '', clearedAt: 2 });
+    await rerender({ open: false, variant: 'seed' });
+    await rerender({ open: true, variant: 'seed' });
+    await enterPin('111111');
+    await fireEvent.click(copyButton());
+    await waitFor(() => expect(mockedExport).toHaveBeenCalledWith('seed', undefined, '111111'));
+  });
+
+  it('shows the backend error and does not reveal a secret', async () => {
+    mockedExport.mockRejectedValueOnce(new Error('Invalid PIN'));
+
+    render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
+    });
+    await enterPin('000000');
+    await fireEvent.click(copyButton());
+
+    expect(await screen.findByText('Invalid PIN')).toBeTruthy();
+    expect(screen.queryByText('Copied to clipboard')).toBeNull();
+    expect(screen.queryByText('0xsecretprivatekey')).toBeNull();
+  });
+
+  it('shows a backoff wait and blocks another copy until it expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    mockedExport.mockRejectedValueOnce(
+      new Error('Too many export attempts. Please wait 12 seconds.')
+    );
+
+    render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
+    });
+    await enterPin('123456');
+    await fireEvent.click(copyButton());
+
+    expect(await screen.findByText(/Try again in 12s/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Wait 12s' }) as HTMLButtonElement).disabled).toBe(
+      true
+    );
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(
+      (screen.getByRole('button', { name: 'Copy to clipboard' }) as HTMLButtonElement).disabled
+    ).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('returns to the warning when closed and reopened', async () => {
+    mockedExport.mockResolvedValueOnce({
+      exportType: 'evm',
+      accountId: 'acc-1',
+      clearedAt: 1,
+    });
+    const { rerender } = render(EvmAccountKeyExportModal, {
+      props: { open: true, variant: 'evm', account: evmAccount },
+    });
+    await enterPin();
+    await fireEvent.click(copyButton());
+    expect(await screen.findByText('Copied to clipboard')).toBeTruthy();
+
+    await rerender({ open: false, variant: 'evm', account: evmAccount });
+    await rerender({ open: true, variant: 'evm', account: evmAccount });
+
+    expect(screen.getByRole('heading', { name: 'Export private key' })).toBeTruthy();
+    expect(screen.queryByText('Copied to clipboard')).toBeNull();
+    expect(mockedExport).toHaveBeenCalledTimes(1);
+  });
+
+  it('explains an empty EVM export when no account is selected', () => {
+    render(EvmAccountKeyExportModal, { props: { open: true, variant: 'evm', account: null } });
+    expect(screen.getByText('No account selected.')).toBeTruthy();
+    expect(screen.queryByLabelText('PIN digit 1')).toBeNull();
   });
 });

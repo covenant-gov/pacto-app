@@ -33,6 +33,25 @@ describe('PinInput', () => {
     expect(onComplete).toHaveBeenCalledWith('1234');
   });
 
+  it('reports the current digits as they change, including a cleared box', async () => {
+    const onChange = vi.fn();
+    render(PinInput, {
+      title: 'Enter your PIN',
+      onComplete: vi.fn(),
+      onChange,
+      pinDigitCount: 4,
+    });
+
+    await fireEvent.input(digitInput(1), { target: { value: '9' } });
+    expect(onChange).toHaveBeenLastCalledWith('9');
+
+    await fireEvent.input(digitInput(2), { target: { value: '8' } });
+    expect(onChange).toHaveBeenLastCalledWith('98');
+
+    await fireEvent.keyDown(digitInput(2), { key: 'Backspace' });
+    expect(onChange).toHaveBeenLastCalledWith('9');
+  });
+
   it('clears every digit exactly once when a new incorrect-PIN error arrives, without looping', async () => {
     const onComplete = vi.fn();
     const { rerender } = render(PinInput, {
