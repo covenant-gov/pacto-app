@@ -138,3 +138,29 @@ export async function exportSensitiveToClipboard(
   });
 }
 
+/**
+ * Diagnostic snapshot of the local key-derivation state. Used to understand why
+ * a PIN unlock is failing without exposing plaintext secrets.
+ */
+export interface UnlockDiagnostic {
+  version: number;
+  migrationInProgress: boolean;
+  hasSalt: boolean;
+  hasPkey: boolean;
+  hasSeed: boolean;
+  hasSentinel: boolean;
+  pkeyDecryptsNew: boolean;
+  pkeyDecryptsLegacy: boolean;
+  seedDecryptsNew: boolean;
+  seedDecryptsLegacy: boolean;
+}
+
+/**
+ * Run a diagnostic check to understand why a PIN unlock is failing. Returns
+ * booleans indicating which key can decrypt which stored secret. The password
+ * is used to derive the candidate keys, but no plaintext is returned.
+ */
+export async function diagnoseUnlockState(pin: string): Promise<UnlockDiagnostic> {
+  return await invoke<UnlockDiagnostic>('diagnose_key_derivation_state', { password: pin });
+}
+

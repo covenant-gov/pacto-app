@@ -1,4 +1,5 @@
 use rusqlite;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::crypto::{
@@ -602,6 +603,78 @@ fn decrypt_seed_fallback(
     Err("Incorrect PIN".to_string())
 }
 
+/// Diagnostic snapshot used to understand why a PIN unlock failed without
+/// exposing the plaintext secrets. Returned by `diagnose_key_derivation_state`.
+#[derive(Serialize)]
+pub struct UnlockDiagnostic {
+    pub version: u32,
+    pub migration_in_progress: bool,
+    pub has_salt: bool,
+    pub has_pkey: bool,
+    pub has_seed: bool,
+    pub has_sentinel: bool,
+    pub pkey_decrypts_new: bool,
+    pub pkey_decrypts_legacy: bool,
+    pub seed_decrypts_new: bool,
+    pub seed_decrypts_legacy: bool,
+}
+
+/// Inspect the local key-derivation state to determine why a PIN unlock is
+/// failing. The password is used to derive the candidate keys and test
+/// decryption, but no plaintext secrets are returned.
+pub fn diagnose_key_derivation_state(
+    conn: &rusqlite::Connection,
+    password: &str,
+) -> Result<UnlockDiagnostic, String> {
+    let version = get_key_derivation_version(conn).unwrap_or(1);
+    let migration_in_progress = get_key_derivation_migration_in_progress(conn).unwrap_or(false);
+
+    let salt = get_key_derivation_salt(conn)?;
+    let has_salt = salt.is_some();
+    let key = salt.as_ref().map(|s| derive_key_from_salt(password, s));
+    let legacy_key = derive_legacy_key(password);
+
+    let pkey = get_setting(conn, "pkey")?;
+    let has_pkey = pkey.is_some();
+    let pkey_decrypts_new = pkey
+        .as_ref()
+        .zip(key.as_ref())
+        .map(|(p, k)| decrypt_with_key(p, k).is_ok())
+        .unwrap_or(false);
+    let pkey_decrypts_legacy = pkey
+        .as_ref()
+        .map(|p| decrypt_with_key(p, &legacy_key).is_ok())
+        .unwrap_or(false);
+
+    let seed = get_setting(conn, "seed")?;
+    let has_seed = seed.is_some();
+    let seed_decrypts_new = seed
+        .as_ref()
+        .zip(key.as_ref())
+        .map(|(s, k)| decrypt_with_key(s, k).is_ok())
+        .unwrap_or(false);
+    let seed_decrypts_legacy = seed
+        .as_ref()
+        .map(|s| decrypt_with_key(s, &legacy_key).is_ok())
+        .unwrap_or(false);
+
+    let sentinel = get_key_derivation_sentinel(conn)?;
+    let has_sentinel = sentinel.is_some();
+
+    Ok(UnlockDiagnostic {
+        version,
+        migration_in_progress,
+        has_salt,
+        has_pkey,
+        has_seed,
+        has_sentinel,
+        pkey_decrypts_new,
+        pkey_decrypts_legacy,
+        seed_decrypts_new,
+        seed_decrypts_legacy,
+    })
+}
+
 /// Decrypt `ciphertext` with a password-derived key. If the account is still on
 /// version 1, transparently migrate it before decrypting. On success the
 /// in-memory session key is set to the new salt-derived key.
@@ -685,7 +758,24 @@ fn decrypt_with_password_on_conn(
                     // Final fallback: derive the nsec from the encrypted
                     // recovery seed if the seed can be decrypted with either
                     // the current or the legacy key.
-                    decrypt_seed_fallback(conn, password, &salt)
+                    let result = decrypt_seed_fallback(conn, password, &salt);
+                    if result.is_err() {
+                        if let Ok(diag) = diagnose_key_derivation_state(conn, password) {
+                            eprintln!("[unlock] failed; diagnostic: version={} in_progress={} has_salt={} has_pkey={} has_seed={} has_sentinel={} pkey_new={} pkey_legacy={} seed_new={} seed_legacy={}",
+                                diag.version,
+                                diag.migration_in_progress,
+                                diag.has_salt,
+                                diag.has_pkey,
+                                diag.has_seed,
+                                diag.has_sentinel,
+                                diag.pkey_decrypts_new,
+                                diag.pkey_decrypts_legacy,
+                                diag.seed_decrypts_new,
+                                diag.seed_decrypts_legacy,
+                            );
+                        }
+                    }
+                    result
                 }
             }
         }
@@ -1245,5 +1335,34 @@ mod tests {
         let salt = generate_salt();
         let result = decrypt_seed_fallback(&conn, "123456", &salt);
         assert!(result.is_err(), "fallback should fail when no seed is stored");
+    }
+
+    #[test]
+    fn diagnose_key_derivation_state_reports_expected_decrypt_flags() {
+        let conn = in_memory_conn();
+        create_schema(&conn);
+
+        let password = "123456";
+        let salt = generate_salt();
+        let key = derive_key_from_salt(password, &salt);
+        let seed_phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let encrypted_seed = encrypt_with_key(seed_phrase, &key);
+        let encrypted_pkey = encrypt_with_key("nsec1secret", &key);
+
+        set_setting(&conn, "pkey", &encrypted_pkey).unwrap();
+        set_setting(&conn, "seed", &encrypted_seed).unwrap();
+        set_key_derivation_salt(&conn, &salt).unwrap();
+        set_key_derivation_version(&conn, 2).unwrap();
+
+        let diag = diagnose_key_derivation_state(&conn, password).unwrap();
+        assert_eq!(diag.version, 2);
+        assert!(!diag.migration_in_progress);
+        assert!(diag.has_salt);
+        assert!(diag.has_pkey);
+        assert!(diag.has_seed);
+        assert!(diag.pkey_decrypts_new);
+        assert!(!diag.pkey_decrypts_legacy);
+        assert!(diag.seed_decrypts_new);
+        assert!(!diag.seed_decrypts_legacy);
     }
 }

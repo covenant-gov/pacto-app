@@ -4454,6 +4454,22 @@ async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password:
     Ok(res)
 }
 
+/// Diagnostic command to understand why a PIN unlock is failing. Returns a
+/// boolean matrix of what can be decrypted with the current salt-derived key
+/// versus the legacy key. No plaintext secrets are exposed.
+#[tauri::command]
+async fn diagnose_key_derivation_state<R: Runtime>(
+    handle: AppHandle<R>,
+    password: String,
+) -> Result<crate::migration::UnlockDiagnostic, String> {
+    session::heartbeat();
+    let conn = crate::account_manager::get_db_connection(&handle)
+        .map_err(|e| format!("Failed to open database: {}", e))?;
+    let result = crate::migration::diagnose_key_derivation_state(&conn, &password);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
 #[tauri::command]
 async fn start_recording() -> Result<(), String> {
     #[cfg(target_os = "android")] 
@@ -6565,6 +6581,7 @@ pub fn run() {
             connect,
             encrypt,
             decrypt,
+            diagnose_key_derivation_state,
             start_recording,
             stop_recording,
             update_unread_counter,
