@@ -100,19 +100,49 @@
     if (opts.length > 0) captainAddress = opts[0].address;
   }
 
+  const SIGNER_LOOKUP_TIMEOUT_MS = 15_000;
+
+  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+      promise.then(
+        (v) => {
+          clearTimeout(t);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(t);
+          reject(e);
+        },
+      );
+    });
+  }
+
   async function fetchBalance(address: string | null): Promise<SignerBalance> {
     if (!address || !squadNetwork) return emptyBalance();
-    const result = await getEvmNativeBalance(squadNetwork, address);
-    if (result.ok) {
+    try {
+      const result = await withTimeout(
+        getEvmNativeBalance(squadNetwork, address),
+        SIGNER_LOOKUP_TIMEOUT_MS,
+        'Balance lookup',
+      );
+      if (result.ok) {
+        return {
+          balanceRaw: result.balance.balanceRaw,
+          balanceDecimal: result.balance.balanceDecimal,
+          symbol: result.balance.symbol,
+          loading: false,
+          error: '',
+        };
+      }
+      return { ...emptyBalance(), loading: false, error: result.message };
+    } catch (e) {
       return {
-        balanceRaw: result.balance.balanceRaw,
-        balanceDecimal: result.balance.balanceDecimal,
-        symbol: result.balance.symbol,
+        ...emptyBalance(),
         loading: false,
-        error: '',
+        error: e instanceof Error ? e.message : 'Balance lookup failed',
       };
     }
-    return { ...emptyBalance(), loading: false, error: result.message };
   }
 
   function preferFundedDefaultWhenRosterEmpty() {
@@ -135,11 +165,16 @@
   async function refreshSigners() {
     const seq = ++refreshSeq;
     resolvingAddresses = true;
+    deployError = '';
     try {
-      const [defaultAddr, squadAddr] = await Promise.all([
-        getActiveSquadEvmSignerAddress(),
-        resolveSquadRosterEvmAddress(parentId.trim()),
-      ]);
+      const [defaultAddr, squadAddr] = await withTimeout(
+        Promise.all([
+          getActiveSquadEvmSignerAddress(),
+          resolveSquadRosterEvmAddress(parentId.trim()),
+        ]),
+        SIGNER_LOOKUP_TIMEOUT_MS,
+        'Signer lookup',
+      );
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
@@ -153,6 +188,12 @@
         signerWallet = 'default';
       }
       pickDefaultCaptain(squadCanon);
+    } catch (e) {
+      if (seq === refreshSeq) {
+        deployError = e instanceof Error ? e.message : 'Could not load signer addresses.';
+        defaultSignerAddress = null;
+        squadSignerAddress = null;
+      }
     } finally {
       if (seq === refreshSeq) resolvingAddresses = false;
     }
@@ -543,9 +584,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
     <button type="button" class="btn-primary" disabled={deployDisabled} on:click={executeDeploy}>
-      Deploy
+      {deploying ? 'Deploying…' : 'Deploy'}
     </button>
   </div>
 </Modal>

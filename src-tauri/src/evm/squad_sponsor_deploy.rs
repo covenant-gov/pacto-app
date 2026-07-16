@@ -32,7 +32,7 @@ use super::squad_sponsor_common::{
 use super::wallet_chain_config;
 use crate::db;
 
-fn parse_required_deposit_wei(raw: Option<&str>) -> Result<alloy::primitives::U256, String> {
+pub(crate) fn parse_required_deposit_wei(raw: Option<&str>) -> Result<alloy::primitives::U256, String> {
     let deposit = parse_deposit_wei(raw).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
     if deposit.is_zero() {
         return Err(wallet_err_json(
@@ -356,18 +356,38 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::squad_id_from_parent_id;
+    use super::{parse_required_deposit_wei, squad_id_from_parent_id};
     use alloy::primitives::{Address, U256};
     use alloy::sol_types::SolCall;
     use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
         createSquadSponsorCall, createSquadSponsorExtCall,
     };
+    use crate::evm::squad_sponsor_common::parse_signer_wallet;
 
     #[test]
     fn squad_id_matches_solidity_keccak256_string_bytes() {
         let id = squad_id_from_parent_id("squad-alpha");
         let expected = alloy::primitives::keccak256("squad-alpha".as_bytes());
         assert_eq!(id, expected);
+    }
+
+    #[test]
+    fn parse_required_deposit_wei_rejects_empty_and_zero() {
+        assert!(parse_required_deposit_wei(None).is_err());
+        assert!(parse_required_deposit_wei(Some("")).is_err());
+        assert!(parse_required_deposit_wei(Some("0")).is_err());
+        assert!(parse_required_deposit_wei(Some("0x0")).is_err());
+        assert_eq!(
+            parse_required_deposit_wei(Some("1000")).unwrap(),
+            U256::from(1000u64)
+        );
+    }
+
+    #[test]
+    fn parse_signer_wallet_rejects_unknown_for_deploy() {
+        assert_eq!(parse_signer_wallet(None, "default").unwrap(), "default");
+        assert_eq!(parse_signer_wallet(Some("squad"), "default").unwrap(), "squad");
+        assert!(parse_signer_wallet(Some("imported"), "default").is_err());
     }
 
     #[test]
