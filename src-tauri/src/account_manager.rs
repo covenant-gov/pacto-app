@@ -169,6 +169,21 @@ CREATE TABLE IF NOT EXISTS squad_contract_allowlist (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_allowlist_unique ON squad_contract_allowlist(parent_id, chain, contract_address);
 CREATE INDEX IF NOT EXISTS idx_squad_allowlist_parent ON squad_contract_allowlist(parent_id, created_at_ms);
 
+-- Squad-tracked ERC-20s for Treasury Safe / shared balance reads (MLS sync).
+CREATE TABLE IF NOT EXISTS squad_tracked_tokens (
+    id TEXT PRIMARY KEY NOT NULL,
+    parent_id TEXT NOT NULL,
+    chain TEXT NOT NULL,
+    token_address TEXT NOT NULL,
+    symbol TEXT NOT NULL DEFAULT '',
+    decimals INTEGER NOT NULL DEFAULT 18,
+    added_by_npub TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL,
+    updated_at_ms INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_tracked_tokens_unique ON squad_tracked_tokens(parent_id, chain, token_address);
+CREATE INDEX IF NOT EXISTS idx_squad_tracked_tokens_parent ON squad_tracked_tokens(parent_id, created_at_ms);
+
 -- Squad/network parent id + member npub -> EVM payout address (from MLS squad_member_evm_share)
 CREATE TABLE IF NOT EXISTS squad_member_evm (
     parent_id TEXT NOT NULL,
@@ -1092,6 +1107,34 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
             CREATE INDEX IF NOT EXISTS idx_squad_allowlist_parent ON squad_contract_allowlist(parent_id, created_at_ms);"#,
         )
         .map_err(|e| format!("Failed to create squad_contract_allowlist table: {}", e))?;
+    }
+
+    let has_squad_tracked_tokens: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='squad_tracked_tokens'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+    if !has_squad_tracked_tokens {
+        println!("[Migration] Creating squad_tracked_tokens table…");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS squad_tracked_tokens (
+                id TEXT PRIMARY KEY NOT NULL,
+                parent_id TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                token_address TEXT NOT NULL,
+                symbol TEXT NOT NULL DEFAULT '',
+                decimals INTEGER NOT NULL DEFAULT 18,
+                added_by_npub TEXT NOT NULL,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_tracked_tokens_unique ON squad_tracked_tokens(parent_id, chain, token_address);
+            CREATE INDEX IF NOT EXISTS idx_squad_tracked_tokens_parent ON squad_tracked_tokens(parent_id, created_at_ms);"#,
+        )
+        .map_err(|e| format!("Failed to create squad_tracked_tokens table: {}", e))?;
     }
 
     // Dashboard polls replica (MLS sync; Tauri only)

@@ -1,31 +1,22 @@
 import type { SquadInfraDto } from '$lib/governance/api';
+import { hatsTreeDomain } from '$lib/governance/pretty-hat-id';
 import { SUPPORTED_CHAINS, parseSupportedChainId, type SupportedChainId } from '$lib/wallet/chains';
 
 const HATS_TREE_APP_ORIGIN = 'https://app.hatsprotocol.xyz';
 
-/** Hat id suitable for `/trees/{chainId}/{hatId}` (decimal segment). */
+/** Tree domain for `/trees/{chainId}/{treeId}` (bare domain or high 32 bits of a hat id). */
 export function normalizeHatIdPathSegment(raw: string): string | null {
-  const s = raw.trim();
-  if (!s) return null;
-  try {
-    if (/^0x[0-9a-fA-F]+$/.test(s)) {
-      return BigInt(s).toString(10);
-    }
-    if (/^[0-9]+$/.test(s)) return s;
-    return null;
-  } catch {
-    return null;
-  }
+  return hatsTreeDomain(raw);
 }
 
 /**
  * Official Hats Protocol tree explorer (`app.hatsprotocol.xyz`).
- * Returns null when the hat id cannot be normalized for the URL path.
+ * Path uses the tree domain (e.g. `950`), not the full top-hat uint256.
  */
 export function hatsTreeExplorerUrl(chainIdNumeric: number, hatIdRaw: string): string | null {
-  const hatSegment = normalizeHatIdPathSegment(hatIdRaw);
-  if (hatSegment == null || !Number.isFinite(chainIdNumeric)) return null;
-  return `${HATS_TREE_APP_ORIGIN}/trees/${chainIdNumeric}/${hatSegment}`;
+  const treeSegment = normalizeHatIdPathSegment(hatIdRaw);
+  if (treeSegment == null || !Number.isFinite(chainIdNumeric)) return null;
+  return `${HATS_TREE_APP_ORIGIN}/trees/${chainIdNumeric}/${treeSegment}`;
 }
 
 function governanceChainDisplayName(key: SupportedChainId): string {
@@ -47,6 +38,8 @@ export interface DashboardStructureSummary {
   chainDisplayName: string;
   /** Stored canonical ref for this deployment (`topHatId` for Pacto Gov). */
   treeIdRaw: string;
+  /** Hats tree domain used in explorer URLs (e.g. `950`). */
+  treeDomain: string | null;
   hatsExplorerUrl: string | null;
 }
 
@@ -63,12 +56,14 @@ export function resolveDashboardStructureSummary(
   if (!treeIdRaw) return null;
   const chainKey = parseSupportedChainId(governanceConfig.chain);
   const chainIdNumeric = SUPPORTED_CHAINS[chainKey].id;
+  const treeDomain = hatsTreeDomain(treeIdRaw);
   const hatsExplorerUrl = hatsTreeExplorerUrl(chainIdNumeric, treeIdRaw);
   return {
     chainKey,
     chainIdNumeric,
     chainDisplayName: governanceChainDisplayName(chainKey),
     treeIdRaw,
+    treeDomain,
     hatsExplorerUrl,
   };
 }

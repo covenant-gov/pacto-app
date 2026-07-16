@@ -13,8 +13,15 @@ import {
   lastHubChannelNameBySquadId,
   lastOpenedSquadId,
 } from '../stores/navigation';
-import { squads, DASHBOARD_CHANNEL_ID, JOIN_REQUESTS_CHANNEL_ID, type Squad } from '../stores/squads';
+import {
+  squads,
+  MY_DASHBOARD_CHANNEL_ID,
+  SQUAD_DASHBOARD_CHANNEL_ID,
+  type Squad,
+} from '../stores/squads';
 import { resolveHubChannelNameForGroupSelection } from './mls/virtual-channel-bucket';
+
+const VIRTUAL_HUB_CHANNEL_IDS = new Set([SQUAD_DASHBOARD_CHANNEL_ID, MY_DASHBOARD_CHANNEL_ID]);
 
 export function resolveHubParentSquad(allSquads: Squad[], squadId: string | null): Squad | undefined {
   if (!squadId) return undefined;
@@ -48,41 +55,35 @@ export function resolveHubChannelForSquad(
   const lastForSquad = lastChannelBySquad[squad.id];
   const lastValid =
     !!lastForSquad &&
-    (sorted.some((c) => c.groupId === lastForSquad) ||
-      lastForSquad === DASHBOARD_CHANNEL_ID ||
-      lastForSquad === JOIN_REQUESTS_CHANNEL_ID);
+    (sorted.some((c) => c.groupId === lastForSquad) || VIRTUAL_HUB_CHANNEL_IDS.has(lastForSquad));
 
   let channelId: string | null;
-  if (lastValid && lastForSquad === DASHBOARD_CHANNEL_ID) {
-    channelId = DASHBOARD_CHANNEL_ID;
-  } else if (lastValid && lastForSquad === JOIN_REQUESTS_CHANNEL_ID) {
-    channelId = JOIN_REQUESTS_CHANNEL_ID;
+  if (lastValid && lastForSquad === SQUAD_DASHBOARD_CHANNEL_ID) {
+    channelId = SQUAD_DASHBOARD_CHANNEL_ID;
+  } else if (lastValid && lastForSquad === MY_DASHBOARD_CHANNEL_ID) {
+    channelId = MY_DASHBOARD_CHANNEL_ID;
   } else if (lastValid) {
     channelId =
       sorted.find((c) => c.groupId === lastForSquad)?.groupId ?? firstCh?.groupId ?? null;
-  } else if (sorted.length > 0) {
-    channelId = DASHBOARD_CHANNEL_ID;
   } else {
-    channelId = DASHBOARD_CHANNEL_ID;
+    channelId = SQUAD_DASHBOARD_CHANNEL_ID;
   }
 
   const hubChannelName =
-    channelId && channelId !== DASHBOARD_CHANNEL_ID && channelId !== JOIN_REQUESTS_CHANNEL_ID
+    channelId && !VIRTUAL_HUB_CHANNEL_IDS.has(channelId)
       ? resolveHubChannelNameForGroupSelection(
           sorted,
           channelId,
           lastHubChannelNameBySquad[squad.id] ?? null
         )
-      : channelId === JOIN_REQUESTS_CHANNEL_ID
-        ? 'join-requests'
-        : null;
+      : null;
 
   return { channelId, hubChannelName };
 }
 
 function isActiveChannelValidForSquad(squad: Squad, channelId: string | null): boolean {
   if (!channelId || channelId.startsWith('creating-')) return false;
-  if (channelId === DASHBOARD_CHANNEL_ID || channelId === JOIN_REQUESTS_CHANNEL_ID) return true;
+  if (VIRTUAL_HUB_CHANNEL_IDS.has(channelId)) return true;
   return squad.channels.some((c) => c.groupId === channelId);
 }
 
@@ -96,22 +97,18 @@ export function resolveEffectiveHubChannel(
   if (!squad) return { channelId: activeChannelId, hubChannelName: null };
   if (isActiveChannelValidForSquad(squad, activeChannelId)) {
     const hub =
-      activeChannelId &&
-      activeChannelId !== DASHBOARD_CHANNEL_ID &&
-      activeChannelId !== JOIN_REQUESTS_CHANNEL_ID
+      activeChannelId && !VIRTUAL_HUB_CHANNEL_IDS.has(activeChannelId)
         ? resolveHubChannelNameForGroupSelection(
             squad.channels,
             activeChannelId,
             lastHubChannelNameBySquad[squad.id] ?? null,
           )
-        : activeChannelId === JOIN_REQUESTS_CHANNEL_ID
-          ? 'join-requests'
-          : null;
+        : null;
     return { channelId: activeChannelId, hubChannelName: hub };
   }
   const resolved = resolveHubChannelForSquad(squad, lastChannelBySquad, lastHubChannelNameBySquad);
   if (!resolved.channelId) {
-    return { channelId: DASHBOARD_CHANNEL_ID, hubChannelName: null };
+    return { channelId: SQUAD_DASHBOARD_CHANNEL_ID, hubChannelName: null };
   }
   return resolved;
 }

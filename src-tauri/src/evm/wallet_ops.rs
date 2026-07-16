@@ -73,7 +73,7 @@ pub struct Erc20TransferSpec {
     pub decimals: u8,
 }
 
-use super::rpc::{call::eth_call_u256, parse_address, wallet_err_json};
+use super::rpc::{call::{eth_call_decode, eth_call_u256}, parse_address, wallet_err_json};
 use super::rpc::{connect_read_provider, connect_signing_provider, send_and_confirm, send_transaction_only, wait_for_transaction_receipt};
 
 fn format_decimal(raw: U256, decimals: u8) -> String {
@@ -369,6 +369,115 @@ pub async fn get_evm_native_balance(network: String, address: String) -> Result<
         balance_decimal: format_decimal(eth_raw, net.native_decimals),
         symbol: net.native_symbol.clone(),
     })
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct EvmErc20Balance {
+    pub balance_raw: String,
+    pub balance_decimal: String,
+    pub symbol: String,
+    pub decimals: u8,
+}
+
+/// ERC-20 `balanceOf` + `symbol`/`decimals` for an arbitrary owner on one wallet network key.
+#[tauri::command]
+pub async fn get_evm_erc20_balance(
+    network: String,
+    token_address: String,
+    owner_address: String,
+) -> Result<EvmErc20Balance, String> {
+    let token = parse_address(token_address.trim())?;
+    let owner = parse_address(owner_address.trim())?;
+    let net_key = network.to_lowercase();
+    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
+        return Err(format!("Unknown network: {}", network));
+    };
+
+    let urls = wallet_chain_config::rpc_urls_for(net);
+    if urls.is_empty() {
+        return Err(format!("{}: no RPC URL configured", net.key));
+    }
+
+    let mut last_err = String::new();
+    let mut out: Option<EvmErc20Balance> = None;
+
+    'next_url: for url_s in &urls {
+        if url_s.parse::<url::Url>().is_err() {
+            last_err = "invalid RPC URL".to_string();
+            continue;
+        }
+
+        let provider = match ProviderBuilder::new().connect(url_s.as_str()).await {
+            Ok(p) => p,
+            Err(e) => {
+                last_err = wallet_security::redact_urls_in_text(&format!("{}", e));
+                if !is_retryable_wallet_rpc_error(&last_err) {
+                    return Err(format!("{}: RPC connect: {}", net.key, last_err));
+                }
+                continue;
+            }
+        };
+
+        let bal = match erc20_balance(&provider, token, owner).await {
+            Ok(v) => v,
+            Err(e) => {
+                if is_retryable_wallet_rpc_error(&e) {
+                    last_err = format!("{} balanceOf: {}", net.key, e);
+                    continue 'next_url;
+                }
+                return Err(format!("{} balanceOf: {}", net.key, e));
+            }
+        };
+
+        let decimals = match eth_call_decode(&provider, token, &IERC20::decimalsCall {}).await {
+            Ok(d) => d,
+            Err(e) => {
+                if is_retryable_wallet_rpc_error(&e) {
+                    last_err = format!("{} decimals: {}", net.key, e);
+                    continue 'next_url;
+                }
+                return Err(format!("{} decimals: {}", net.key, e));
+            }
+        };
+
+        let symbol = match eth_call_decode(&provider, token, &IERC20::symbolCall {}).await {
+            Ok(s) => s,
+            Err(e) => {
+                if is_retryable_wallet_rpc_error(&e) {
+                    last_err = format!("{} symbol: {}", net.key, e);
+                    continue 'next_url;
+                }
+                // Non-standard (bytes32) symbols — still return balance with a fallback ticker.
+                short_token_label(&token)
+            }
+        };
+
+        out = Some(EvmErc20Balance {
+            balance_raw: bal.to_string(),
+            balance_decimal: format_decimal(bal, decimals),
+            symbol,
+            decimals,
+        });
+        break 'next_url;
+    }
+
+    out.ok_or_else(|| {
+        format!(
+            "{}: all {} RPC endpoint(s) failed (last: {})",
+            net.key,
+            urls.len(),
+            last_err
+        )
+    })
+}
+
+fn short_token_label(token: &Address) -> String {
+    let s = format!("{:#x}", token);
+    if s.len() < 10 {
+        return s;
+    }
+    format!("{}…{}", &s[..6], &s[s.len() - 4..])
 }
 
 fn map_dm_peer_send_address(to_npub: &str, dm_peer: Option<&str>) -> Result<Address, String> {

@@ -1,24 +1,74 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import SquadSponsorTreasuryPanel from '../governance/SquadSponsorTreasuryPanel.svelte';
+  import TreasurySafeModulePanel from '../governance/TreasurySafeModulePanel.svelte';
   import type { TreasurySafeEntry } from '../../../lib/treasury/treasury-safes';
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
   import type { SquadInfraDto } from '../../../lib/governance/api';
+  import { getSquadCapabilities } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import {
+    resolveGovernancePrivilege,
+    type GovernancePrivilege,
+  } from '../../../lib/governance/governance-privilege';
   import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { treasuryVaultHeading } from '../../../lib/treasury/treasury-vault-labels';
+  import {
+    governanceTreasuryHeading,
+    treasuryVaultHeading,
+  } from '../../../lib/treasury/treasury-vault-labels';
   import { safeStateByTreasuryId } from '../../../stores/safe';
   import { treasurySafesFetchMetaByParentId } from '../../../lib/dashboard/dashboard-fetch-meta';
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
 
   export let parentId = '';
+  export let network = 'sepolia';
   export let sponsorRow: SquadInfraDto | null = null;
   export let treasurySafes: TreasurySafeEntry[] = [];
   export let displayedTreasurySafes: TreasurySafeEntry[] = [];
+  export let governanceTreasurySafe: TreasurySafeEntry | null = null;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
+  export let announcementsGroupId = '';
+  export let myAddress = '';
+  export let captainWearers: string[] = [];
+  export let crewWearers: string[] = [];
   export let onOpenSponsorDeploy: () => void = () => {};
   export let onOpenDeploySafe: () => void = () => {};
   export let onOpenImportSafe: () => void = () => {};
+
+  let capabilitiesLoadKey = '';
+  let capabilities: Awaited<ReturnType<typeof getSquadCapabilities>> | null = null;
+
+  $: privilege = resolveGovernancePrivilege({
+    myAddress,
+    safeAddress: pactoPayload?.safe ?? '',
+    captainWearers,
+    crewWearers,
+    capabilities,
+  }) as GovernancePrivilege;
+
+  $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
+    capabilitiesLoadKey = parentId.trim();
+    void loadCapabilities(parentId.trim());
+  }
+
+  async function loadCapabilities(pid: string) {
+    try {
+      const snap = await getSquadCapabilities(pid);
+      if (pid !== capabilitiesLoadKey) return;
+      capabilities = snap;
+    } catch {
+      if (pid !== capabilitiesLoadKey) return;
+      capabilities = null;
+    }
+  }
+
+  onMount(() => {
+    if (parentId.trim()) {
+      capabilitiesLoadKey = parentId.trim();
+      void loadCapabilities(parentId.trim());
+    }
+  });
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -40,12 +90,45 @@
   $: if (treasurySafeRefreshKey) {
     void refreshAllSafeStates(displayedTreasurySafes);
   }
+  $: govSafeAddress = governanceTreasurySafe?.safeAddress ?? pactoPayload?.safe ?? '';
+  $: showGovTreasury = !!govSafeAddress.trim();
+  $: govExUrl = showGovTreasury ? explorerAddressUrl(parseSupportedChainId(network), govSafeAddress) : null;
+  $: govSafeAppUrl = showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null;
 </script>
 
 <SquadSponsorTreasuryPanel {parentId} {sponsorRow} onOpenDeploy={onOpenSponsorDeploy} />
+
+{#if showGovTreasury}
+  <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">
+    <h3 id="gov-treasury-heading" class="section-heading">{governanceTreasuryHeading()}</h3>
+    <code class="treasury-card-address">{govSafeAddress}</code>
+    {#if govExUrl || govSafeAppUrl}
+      <div class="treasury-card-links">
+        {#if govExUrl}
+          <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govExUrl)}>
+            View on explorer
+          </button>
+        {/if}
+        {#if govSafeAppUrl}
+          <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govSafeAppUrl)}>
+            Open in Safe
+          </button>
+        {/if}
+      </div>
+    {/if}
+    <TreasurySafeModulePanel
+      {network}
+      {parentId}
+      safeAddress={govSafeAddress}
+      {announcementsGroupId}
+      {privilege}
+    />
+  </section>
+{/if}
+
 <section class="dashboard-section" aria-labelledby="safe-heading">
   <div class="treasury-section-head">
-    <h3 id="safe-heading" class="section-heading">Vaults</h3>
+    <h3 id="safe-heading" class="section-heading">Other vaults</h3>
     {#if treasuryFetchMeta?.loading && (treasurySafes?.length ?? 0) > 0}
       <span class="treasury-refresh-note muted" role="status">Refreshing…</span>
     {/if}
@@ -65,7 +148,7 @@
     </p>
   {/if}
   {#if displayedTreasurySafes.length === 0}
-    <p class="no-safe">No Safe linked yet.</p>
+    <p class="no-safe">No additional vault Safes linked yet.</p>
   {:else}
     <ul class="treasury-safe-card-list" role="list">
       {#each displayedTreasurySafes as entry (entry.id)}
@@ -73,7 +156,7 @@
         {@const exUrl = explorerAddressUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
         {@const safeAppUrl = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
         <li class="treasury-safe-card">
-          <h4 class="treasury-vault-title">{treasuryVaultHeading(entry, pactoPayload)}</h4>
+          <h4 class="treasury-vault-title">{treasuryVaultHeading(entry)}</h4>
           <div class="treasury-card-top">
             <span class="treasury-pill treasury-pill-chain">{entry.chain}</span>
             {#if entry.label}
@@ -141,6 +224,11 @@
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     padding: 16px;
+    margin-top: 16px;
+  }
+
+  .gov-treasury-section {
+    margin-top: 16px;
   }
 
   .section-heading {

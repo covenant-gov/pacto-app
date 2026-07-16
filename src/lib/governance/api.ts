@@ -365,6 +365,359 @@ export async function treasuryProposalHasVoted(params: {
   })) as boolean;
 }
 
+export interface GovernanceWriteResultDto {
+  txHash: string;
+  chain: string;
+  chainId: number;
+  /** Module address echoed by Rust when present. */
+  treasuryAuthority?: string;
+  mutinyModule?: string;
+  quartermaster?: string;
+}
+
+export async function treasuryAuthorityPropose(params: {
+  network: string;
+  parentId: string;
+  treasuryAuthority: string;
+  to: string;
+  valueWei?: string;
+  dataHex?: string;
+  operation?: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('treasury_authority_propose', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    to: params.to.trim(),
+    valueWei: params.valueWei?.trim() || '0',
+    dataHex: params.dataHex?.trim() || '0x',
+    operation: params.operation?.trim() || 'call',
+  })) as GovernanceWriteResultDto;
+}
+
+export async function treasuryAuthorityCrewVote(params: {
+  network: string;
+  parentId: string;
+  treasuryAuthority: string;
+  proposalId: string;
+  support: boolean;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('treasury_authority_crew_vote', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    proposalId: params.proposalId.trim(),
+    support: params.support,
+  })) as GovernanceWriteResultDto;
+}
+
+export async function treasuryAuthorityCaptainVote(params: {
+  network: string;
+  parentId: string;
+  treasuryAuthority: string;
+  proposalId: string;
+  support: boolean;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('treasury_authority_captain_vote', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    proposalId: params.proposalId.trim(),
+    support: params.support,
+  })) as GovernanceWriteResultDto;
+}
+
+export async function treasuryAuthorityExecute(params: {
+  network: string;
+  parentId: string;
+  treasuryAuthority: string;
+  proposalId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('treasury_authority_execute', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    treasuryAuthority: params.treasuryAuthority.trim(),
+    proposalId: params.proposalId.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export interface MutinyStatusDto {
+  activeMutinyId: string;
+  proposedNewCaptain: string;
+  startedAt: number;
+  snapshot: number;
+  yeas: number;
+  executed: boolean;
+  captain: string;
+}
+
+export async function getMutinyStatus(params: {
+  network: string;
+  mutinyModule: string;
+}): Promise<MutinyStatusDto> {
+  return (await invoke('get_mutiny_status', {
+    network: params.network,
+    mutinyModule: params.mutinyModule.trim(),
+  })) as MutinyStatusDto;
+}
+
+export async function mutinyHasVoted(params: {
+  network: string;
+  mutinyModule: string;
+  mutinyId: string;
+  voter: string;
+}): Promise<boolean> {
+  return (await invoke('mutiny_has_voted', {
+    network: params.network,
+    mutinyModule: params.mutinyModule.trim(),
+    mutinyId: params.mutinyId.trim(),
+    voter: params.voter.trim(),
+  })) as boolean;
+}
+
+export async function mutinyStartToCrewMember(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  proposed: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_start_to_crew_member', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    proposed: params.proposed.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyStartToCommittee(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  proposed: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_start_to_committee', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    proposed: params.proposed.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyStartToArbitraryEoa(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  proposed: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_start_to_arbitrary_eoa', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    proposed: params.proposed.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyStartToArbitraryContract(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  proposed: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_start_to_arbitrary_contract', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    proposed: params.proposed.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyStartToPauseCaptain(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_start_to_pause_captain', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyCastVote(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  mutinyId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_cast_vote', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    mutinyId: params.mutinyId.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyExecute(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  mutinyId: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_execute', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    mutinyId: params.mutinyId.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function mutinyCaptainResign(params: {
+  network: string;
+  parentId: string;
+  mutinyModule: string;
+  newCaptain: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('mutiny_captain_resign', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    mutinyModule: params.mutinyModule.trim(),
+    newCaptain: params.newCaptain.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export interface QuartermasterStatusDto {
+  crewChangeDelaySecs: string;
+  mutinyActive: boolean;
+  crewHatSupply?: number;
+  bootstrapAvailable?: boolean;
+}
+
+export interface QuartermasterPendingDto {
+  address: string;
+  pendingAddAt: string;
+  pendingRemoveAt: string;
+}
+
+export async function getQuartermasterStatus(params: {
+  network: string;
+  quartermaster: string;
+}): Promise<QuartermasterStatusDto> {
+  return (await invoke('get_quartermaster_status', {
+    network: params.network,
+    quartermaster: params.quartermaster.trim(),
+  })) as QuartermasterStatusDto;
+}
+
+export async function getQuartermasterPending(params: {
+  network: string;
+  quartermaster: string;
+  address: string;
+}): Promise<QuartermasterPendingDto> {
+  return (await invoke('get_quartermaster_pending', {
+    network: params.network,
+    quartermaster: params.quartermaster.trim(),
+    address: params.address.trim(),
+  })) as QuartermasterPendingDto;
+}
+
+export async function quartermasterRequestAddCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  candidate: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_request_add_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    candidate: params.candidate.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterCancelAddCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  candidate: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_cancel_add_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    candidate: params.candidate.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterExecuteAddCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  candidate: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_execute_add_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    candidate: params.candidate.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterBootstrapCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  candidates: string[];
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_bootstrap_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterRequestRemoveCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  crew: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_request_remove_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    crew: params.crew.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterCancelRemoveCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  crew: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_cancel_remove_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    crew: params.crew.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
+export async function quartermasterExecuteRemoveCrew(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  crew: string;
+}): Promise<GovernanceWriteResultDto> {
+  return (await invoke('quartermaster_execute_remove_crew', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    crew: params.crew.trim(),
+  })) as GovernanceWriteResultDto;
+}
+
 /** Mirrors `HatTreeNodeDto` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface HatTreeNodeDto {
   hatId: string;
@@ -498,11 +851,13 @@ export interface SquadAdminWriteResultDto {
 
 export async function squadAdminCreateRole(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_create_role', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     roleLabel: params.roleLabel.trim(),
   })) as SquadAdminWriteResultDto;
@@ -510,12 +865,14 @@ export async function squadAdminCreateRole(params: {
 
 export async function squadAdminEnableExecutor(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   executorAddress: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_enable_executor', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     roleLabel: params.roleLabel.trim(),
@@ -524,16 +881,42 @@ export async function squadAdminEnableExecutor(params: {
 
 export async function squadAdminEnableFullPermission(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   executorAddress: string;
   enable: boolean;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_enable_full_permission', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     enable: params.enable,
   })) as SquadAdminWriteResultDto;
+}
+
+export interface CapabilityFlagDto {
+  allowed: boolean;
+  reason: string;
+}
+
+export interface SquadCapabilitiesDto {
+  parentId: string;
+  rosterAddress: string;
+  wearsCaptain: boolean;
+  wearsCrew: boolean;
+  captainIsSafe: boolean;
+  squadAdminFull: boolean;
+  squadAdminPaused: boolean;
+  roleLabel: string;
+  capabilities: Record<string, CapabilityFlagDto>;
+}
+
+/** Backend: `get_squad_capabilities`. */
+export async function getSquadCapabilities(parentId: string): Promise<SquadCapabilitiesDto> {
+  return (await invoke('get_squad_capabilities', {
+    parentId: parentId.trim(),
+  })) as SquadCapabilitiesDto;
 }
 
 /** Pacto-gov infra row for a parent, if any. */

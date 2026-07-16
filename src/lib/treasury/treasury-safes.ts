@@ -24,3 +24,27 @@ export function vaultTreasurySafesForParent(
   const excludeId = govTreasuryEntryId(pid);
   return safes.filter((e) => e.id !== excludeId);
 }
+
+/** Pacto Gov governance treasury Safe — first-class Treasury section, not a generic vault card. */
+export function governanceTreasurySafeForParent(
+  safes: TreasurySafeEntry[],
+  parentId: string,
+  govTreasuryEntryId: (parentId: string) => string,
+  opts?: { safeAddress?: string; chain?: string },
+): TreasurySafeEntry | null {
+  const pid = parentId.trim();
+  if (!pid) return null;
+  const id = govTreasuryEntryId(pid);
+  const found = safes.find((e) => e.id === id);
+  if (found) return found;
+  const addr = opts?.safeAddress?.trim();
+  if (!addr) return null;
+  return {
+    id,
+    parentId: pid,
+    safeAddress: addr,
+    chain: opts?.chain?.trim() || 'sepolia',
+    label: '',
+    createdAtMs: 0,
+  };
+}

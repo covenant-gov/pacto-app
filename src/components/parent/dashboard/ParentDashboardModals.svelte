@@ -18,13 +18,14 @@
   export let hasSponsor = false;
   export let hasPactoGov = false;
   export let hasSquadAdmin = false;
-  export let vaultSafeCount = 0;
   export let squadAdminProxy = '';
   export let squadAdminNetwork: SupportedChainId = DEFAULT_CHAIN_ID;
   /** Established squad network; deploy modals pin to it, or prompt a pick when null. */
   export let squadNetwork: SupportedChainId | null = null;
   /** Sponsor clone address when sponsor infra is deployed. */
   export let sponsorAddress = '';
+  /** Pacto Gov reference (Safe / proxy / top hat) when deployed. */
+  export let pactoGovAddress = '';
   export let memberEvmOptions: { address: string; label: string }[] = [];
   export let captainMemberOptions: PactoGovCaptainOption[] = [];
 
@@ -141,16 +142,14 @@
     {hasSponsor}
     {hasPactoGov}
     {hasSquadAdmin}
-    {vaultSafeCount}
-    {squadNetwork}
     {sponsorAddress}
+    {pactoGovAddress}
+    squadAdminAddress={squadAdminProxy}
     hasAnnouncementsChannel={!!announcementsGroupId}
     onClose={onCloseLaunchpad}
     onDeploySponsor={onDeploySponsor}
     onDeploySquadAdmin={onDeploySquadAdmin}
     onDeployPactoGov={onDeployPactoGov}
-    onDeploySafe={onDeploySafe}
-    onImportSafe={onImportSafe}
   />
 {/if}
 
@@ -189,7 +188,7 @@
     <div class="modal-content">
       <h3 id="set-safe-title">Import Safe</h3>
       <p class="modal-desc">
-        Add a Safe to this squad treasury. Members see automated treasury notices in #personal-alerts.
+        Add a Safe to this squad treasury. Members see automated treasury notices in #my-dashboard Alerts.
       </p>
       <label class="modal-field-label" for="import-safe-addr">Contract address</label>
       <input
@@ -227,6 +226,7 @@
 <SquadRolesModal
   open={showSquadRolesModal}
   onClose={onCloseSquadRolesModal}
+  {parentId}
   {squadAdminProxy}
   network={squadAdminNetwork}
   {memberEvmOptions}

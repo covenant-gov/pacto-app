@@ -2,14 +2,14 @@
   import type { Squad } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
-    DASHBOARD_CHANNEL_NAME,
+    SQUAD_DASHBOARD_CHANNEL_NAME,
     showMembersPanel,
     membershipVersionByGroupId,
-    parentDashboardChannelMode,
-    type ParentDashboardChannelMode,
+    squadDashboardChannelMode,
+    type SquadDashboardChannelMode,
   } from '../../stores/app';
 import type { TreasurySafeEntry } from '../../lib/treasury/treasury-safes';
-import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
+import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySafesForParent } from '../../lib/treasury/treasury-safes';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto } from '../../lib/governance/api';
@@ -22,8 +22,11 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   } from '../../lib/governance/api';
   import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
+  import {
+    protocolWearerCandidateAddresses,
+    protocolWearerLabelByAddress,
+  } from '../../lib/governance/hats-tree-annotations';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
-  import { standaloneSafeInfraRows } from '../../lib/governance/standalone-safe-payload';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
     loadSquadNetworkOverride,
@@ -36,9 +39,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
   import ParentDashboardModals from './dashboard/ParentDashboardModals.svelte';
   import {
+    loadDashboardCrewTab,
     loadDashboardGovernanceTab,
     loadDashboardRolesTreeTab,
-    loadDashboardSettingsTab,
+    loadDashboardStatusTab,
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
   import { showToast } from '../../stores/toast';
@@ -49,7 +53,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     fetchRolesTreeAnnotations,
     fetchSettingsChainMemberMaps,
     fetchSquadMemberEvmByNpub,
-    fetchTreasuryProposalVoteMap,
     fetchTreasuryProposals,
     isSupersededLoaderKey,
   } from '../../lib/dashboard/parent-dashboard-loaders';
@@ -73,15 +76,20 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   } from '../../lib/dashboard/settings-chain-cache';
   import { squadMemberEvmByParentId } from '../../stores/squads';
 
-  type ParentDashboardView = ParentDashboardChannelMode;
+  type ParentDashboardView = SquadDashboardChannelMode;
   const DASHBOARD_VIEWS: { id: ParentDashboardView; label: string }[] = [
+    { id: 'status', label: 'Status' },
     { id: 'governance', label: 'Governance' },
-    { id: 'roles_tree', label: 'Roles Tree' },
     { id: 'treasury', label: 'Treasury' },
-    { id: 'settings', label: 'Settings' },
+    { id: 'roles', label: 'Roles' },
+    { id: 'crew', label: 'Crew' },
   ];
 
-  $: dashboardView = $parentDashboardChannelMode;
+  $: dashboardView = $squadDashboardChannelMode;
+  let visitedDashboardViews: Set<ParentDashboardView> = new Set();
+  $: if (!visitedDashboardViews.has(dashboardView)) {
+    visitedDashboardViews = new Set([...visitedDashboardViews, dashboardView]);
+  }
 
   export let parent: Squad;
   export let treasurySafes: TreasurySafeEntry[] = [];
@@ -156,8 +164,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   $: hasPactoGov = pactoGovRow != null;
   $: squadAdminCtx = resolveSquadAdminContext(squadInfraRows);
   $: hasSquadAdmin = hasSquadAdminInfra(squadInfraRows);
-  $: vaultSafeCount = standaloneSafeInfraRows(squadInfraRows).length;
   $: pactoPayload = parsePactoGovProviderPayload(pactoGovRow?.providerPayload);
+  $: knownWearerLabels = protocolWearerLabelByAddress(pactoPayload);
   $: pactoNetwork = parseSupportedChainId(
     pactoGovRow?.chain?.trim() || squadAdminCtx?.chain || DEFAULT_CHAIN_ID,
   );
@@ -173,6 +181,15 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   }
   /** Established squad network (override → infra chain), or null until the first deploy picks one. */
   $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+  $: governanceTreasurySafe = governanceTreasurySafeForParent(
+    treasurySafes ?? [],
+    parentId ?? '',
+    pactoGovTreasuryEntryId,
+    {
+      safeAddress: pactoPayload?.safe,
+      chain: pactoGovRow?.chain ?? squadNetwork ?? undefined,
+    },
+  );
 
   function setSquadNetwork(chain: SupportedChainId): void {
     const npub = $currentUser?.npub;
@@ -206,9 +223,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   let treasuryProposalsRefreshing = false;
   let treasuryProposalsError = '';
   let treasuryProposalsKey = '';
-  let proposalHasVotedById: Record<string, boolean> = {};
-  let proposalVotesLoading = false;
-  let myVoterAddress = '';
 
   let hatsTree: HatTreeNodeDto | null = null;
   let hatsTreeLoading = false;
@@ -230,35 +244,6 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   let settingsChainRefreshing = false;
   let settingsChainError = '';
   let settingsChainKey = '';
-
-  async function loadTreasuryProposalVotes() {
-    const ta = pactoPayload?.treasuryAuthority?.trim();
-    if (!ta || treasuryProposals.length === 0) {
-      proposalHasVotedById = {};
-      myVoterAddress = '';
-      return;
-    }
-    const me = $currentUser?.npub;
-    const voter = me ? squadMemberEvmByNpub[me]?.trim() : '';
-    myVoterAddress = voter;
-    if (!voter) {
-      proposalHasVotedById = {};
-      return;
-    }
-    proposalVotesLoading = true;
-    try {
-      proposalHasVotedById = await fetchTreasuryProposalVoteMap({
-        network: pactoNetwork,
-        treasuryAuthority: ta,
-        proposals: treasuryProposals,
-        voterAddress: voter,
-      });
-    } catch {
-      proposalHasVotedById = {};
-    } finally {
-      proposalVotesLoading = false;
-    }
-  }
 
   async function loadTreasuryProposals() {
     const ta = pactoPayload?.treasuryAuthority?.trim();
@@ -283,22 +268,31 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     if (!result.error) {
       treasuryProposals = result.proposals;
       if (npub) persistTreasuryProposalsSnapshot(npub, key, result.proposals);
-      if (!isSupersededLoaderKey(treasuryProposalsKey, key)) {
-        await loadTreasuryProposalVotes();
-      }
     } else if (cached) {
       treasuryProposalsError = result.error;
     } else {
       treasuryProposals = result.proposals;
       treasuryProposalsError = result.error;
-      proposalHasVotedById = {};
     }
   }
 
-  function onTreasuryVoteClick() {
-    showToast(
-      'On-chain vote signing is not wired yet — your vote status is loaded from Treasury Authority.',
-    );
+  function wearersForRoleLabel(label: string): string[] {
+    const hatId = Object.entries(roleLabelByHatId).find(([, l]) => l === label)?.[0];
+    if (!hatId) return [];
+    return wearerAddressesByHatId[hatId] ?? [];
+  }
+
+  $: captainWearers = wearersForRoleLabel('Captain');
+  $: crewWearers = wearersForRoleLabel('Crew');
+  $: myGovernanceAddress = (() => {
+    const npub = $currentUser?.npub;
+    if (!npub) return '';
+    return squadMemberEvmByNpub[npub]?.trim() ?? '';
+  })();
+
+  function refreshTreasuryProposals() {
+    treasuryProposalsKey = '';
+    void loadTreasuryProposals();
   }
 
   async function loadHatsTree() {
@@ -348,7 +342,12 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       .sort()
       .join(',');
     const squadAdmin = squadAdminCtx?.proxy?.trim() ?? '';
-    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}`;
+    const protocolCandidates = protocolWearerCandidateAddresses(pactoPayload);
+    const protocolKey = protocolCandidates
+      .map((a) => a.toLowerCase())
+      .sort()
+      .join(',');
+    const key = `${pactoNetwork}:${topHat ?? ''}:${evmKey}:${squadAdmin}:${protocolKey}`;
     if (!topHat || rolesTreeAnnotationsKey === key) return;
     rolesTreeAnnotationsKey = key;
     const hadData = Object.keys(roleLabelByHatId).length > 0;
@@ -366,6 +365,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       squadMemberEvmByNpub,
       squadAdminProxy: squadAdminCtx?.proxy ?? null,
       squadAdminChain: squadAdminCtx?.chain ?? null,
+      protocolWearerCandidates: protocolCandidates,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
     rolesTreeAnnotationsLoading = false;
@@ -438,20 +438,27 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     void loadSquadMemberEvm();
   }
 
-  $: if (dashboardView === 'roles_tree' && pactoGovRow?.canonicalRef) {
+  $: if (dashboardView === 'governance' && pactoGovRow?.canonicalRef && parentId) {
+    void loadRolesTreeAnnotations();
+  }
+
+  $: if (dashboardView === 'roles' && pactoGovRow?.canonicalRef) {
     void loadHatsTree();
   }
 
-  $: if (dashboardView === 'roles_tree' && pactoGovRow?.canonicalRef && parentId) {
+  $: if (dashboardView === 'roles' && pactoGovRow?.canonicalRef && parentId) {
     void squadMemberEvmByNpub;
     void loadRolesTreeAnnotations();
   }
 
-  $: if (dashboardView === 'roles_tree' && parentId) {
+  $: if (dashboardView === 'roles' && parentId) {
     void loadSquadMemberEvm();
   }
 
-  $: if (dashboardView === 'settings' && (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)) {
+  $: if (
+    (dashboardView === 'status' || dashboardView === 'crew') &&
+    (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)
+  ) {
     void loadSettingsChainContext();
   }
 
@@ -480,22 +487,24 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   }
 
   function selectDashboardView(id: ParentDashboardView) {
-    parentDashboardChannelMode.set(id);
-    if (id === 'settings' && announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
+    squadDashboardChannelMode.set(id);
+    if ((id === 'status' || id === 'crew') && announcementsGroupId) {
+      void ensureMlsGroupMembers(announcementsGroupId);
+    }
   }
 
   function prefetchDashboardTabIntent(id: ParentDashboardView) {
     if (id === 'governance') {
       if (pactoPayload?.treasuryAuthority) void loadTreasuryProposals();
       void loadSquadMemberEvm();
-    } else if (id === 'roles_tree' && pactoGovRow?.canonicalRef) {
+    } else if (id === 'roles' && pactoGovRow?.canonicalRef) {
       void loadHatsTree();
       void loadRolesTreeAnnotations();
       void loadSquadMemberEvm();
     }
   }
 
-  $: if (dashboardView === 'settings' && parentId) {
+  $: if ((dashboardView === 'status' || dashboardView === 'crew') && parentId) {
     loadSquadMemberEvm();
   }
 
@@ -579,7 +588,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   function openSquadAdminDeploy() {
     requireSponsorForInfra(() => {
       if (hasSquadAdmin) {
-        selectDashboardView('settings');
+        selectDashboardView('crew');
         showSquadRolesModal = true;
         return;
       }
@@ -641,7 +650,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     <div class="dashboard-channel-header">
       <div class="dashboard-channel-info">
         <span class="dashboard-channel-icon">#</span>
-        <h3 class="dashboard-channel-name">{DASHBOARD_CHANNEL_NAME}</h3>
+        <h3 class="dashboard-channel-name">{SQUAD_DASHBOARD_CHANNEL_NAME}</h3>
       </div>
       <div class="dashboard-header-actions">
         <button
@@ -676,7 +685,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       </div>
     </div>
     <div class="parent-dashboard-body">
-      <div class="parent-dashboard">
+      <div class="parent-dashboard" class:parent-dashboard-wide={dashboardView === 'roles' || dashboardView === 'governance'}>
         {#if parent.kind === 'squad-pair' && parent.pairedSquads?.length}
           <div class="dashboard-header">
             <p class="dashboard-subtitle">
@@ -685,7 +694,33 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           </div>
         {/if}
 
-        {#if dashboardView === 'governance'}
+        {#if visitedDashboardViews.has('status')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'status'} hidden={dashboardView !== 'status'}>
+          {#await loadDashboardStatusTab() then StatusTab}
+            <StatusTab
+              squad={parent}
+              {permissionsCtx}
+              {squadAdminCtx}
+              {announcementsGroupId}
+              parentId={parentId ?? ''}
+              {channelMembers}
+              {squadMemberEvmByNpub}
+              {memberRolesByAddress}
+              {squadNetwork}
+              squadNetworkFromInfra={infraSquadChain != null}
+              onSetSquadNetwork={setSquadNetwork}
+              {hasSponsor}
+              hasGovernance={hasPactoGov}
+              {hasSquadAdmin}
+              onOpenDeploy={openLaunchpad}
+            />
+          {:catch}
+            <p class="dashboard-tab-load-error" role="alert">Could not load Status tab.</p>
+          {/await}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('governance')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'governance'} hidden={dashboardView !== 'governance'}>
           {#await loadDashboardGovernanceTab() then GovernanceTab}
             <GovernanceTab
               {squadInfraRows}
@@ -693,21 +728,25 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {pactoPayload}
               pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
-              pactoGovProviderPayload={pactoGovRow?.providerPayload}
+              parentId={parentId ?? ''}
+              myAddress={myGovernanceAddress}
+              {captainWearers}
+              {crewWearers}
+              memberEvmOptions={memberEvmOptionsForRoles}
               {treasuryProposals}
               {treasuryProposalsLoading}
               treasuryProposalsRefreshing={treasuryProposalsRefreshing}
               {treasuryProposalsError}
-              {myVoterAddress}
-              {proposalHasVotedById}
-              {proposalVotesLoading}
-              onTreasuryVoteClick={onTreasuryVoteClick}
+              onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>
           {/await}
-        {:else if dashboardView === 'roles_tree'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('roles')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'roles'} hidden={dashboardView !== 'roles'}>
           {#await loadDashboardRolesTreeTab() then RolesTreeTab}
             <RolesTreeTab
               {squadInfraRows}
@@ -721,6 +760,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               {wearerAddressesByHatId}
               {executorRolesByAddress}
               {squadMemberEvmByNpub}
+              {knownWearerLabels}
               rolesTreeAnnotationsLoading={rolesTreeAnnotationsLoading}
               rolesTreeAnnotationsRefreshing={rolesTreeAnnotationsRefreshing}
               {rolesTreeAnnotationsError}
@@ -728,16 +768,25 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
               onOpenLaunchpad={openLaunchpad}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Roles Tree tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">Could not load Roles tab.</p>
           {/await}
-        {:else if dashboardView === 'treasury'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('treasury')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'treasury'} hidden={dashboardView !== 'treasury'}>
           {#await loadDashboardTreasuryTab() then TreasuryTab}
             <TreasuryTab
               parentId={parentId ?? ''}
+              network={pactoGovRow?.chain ?? squadNetwork ?? 'sepolia'}
               {sponsorRow}
               {treasurySafes}
               {displayedTreasurySafes}
+              {governanceTreasurySafe}
               {pactoPayload}
+              {announcementsGroupId}
+              myAddress={myGovernanceAddress}
+              {captainWearers}
+              {crewWearers}
               onOpenSponsorDeploy={openSponsorDeploy}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
@@ -745,35 +794,32 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Treasury tab.</p>
           {/await}
-        {:else if dashboardView === 'settings'}
-          {#await loadDashboardSettingsTab() then SettingsTab}
-            <SettingsTab
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('crew')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'crew'} hidden={dashboardView !== 'crew'}>
+          {#await loadDashboardCrewTab() then CrewTab}
+            <CrewTab
               squad={parent}
-              {permissionsCtx}
-              {squadAdminCtx}
-            {settingsChainError}
-            {settingsChainLoading}
-            settingsChainRefreshing={settingsChainRefreshing}
-            {announcementsGroupId}
-              parentId={parentId ?? ''}
+              {announcementsGroupId}
               {channelMembers}
               {loadingMembers}
+              {settingsChainError}
+              {settingsChainLoading}
+              settingsChainRefreshing={settingsChainRefreshing}
               {squadMemberEvmByNpub}
               {memberHatByAddress}
               {memberRolesByAddress}
-              {squadNetwork}
-              squadNetworkFromInfra={infraSquadChain != null}
-              onSetSquadNetwork={setSquadNetwork}
+              showManagePrivileges={!!squadAdminCtx}
+              pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
               onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Settings tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">Could not load Crew tab.</p>
           {/await}
+          </div>
         {/if}
       </div>
-    </div>
-    <div class="dashboard-deploy-bar">
-      <button type="button" class="btn-primary dashboard-deploy-btn" on:click={openLaunchpad}>Deploy</button>
     </div>
   </div>
   <ParentDashboardMembersPanel
@@ -790,11 +836,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   {hasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
-  {vaultSafeCount}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   squadAdminNetwork={squadAdminNetwork}
   {squadNetwork}
   sponsorAddress={sponsorRow?.canonicalRef ?? ''}
+  pactoGovAddress={pactoPayload?.safe?.trim() ||
+    pactoPayload?.squadAdminProxy?.trim() ||
+    pactoGovRow?.canonicalRef?.trim() ||
+    ''}
   {captainMemberOptions}
   memberEvmOptions={memberEvmOptionsForRoles}
   bind:showDeploySafeModal
@@ -849,7 +898,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     });
     showPactoGovDeploy = false;
     selectDashboardView('governance');
-    showToast('Pacto Gov deployed — Governance and Roles Tree tabs are live.');
+    showToast('Pacto Gov deployed — Governance and Roles tabs are live.');
   }}
   onSquadAdminComplete={async (out) => {
     await onSquadAdminDeployComplete?.({
@@ -860,8 +909,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
       providerPayload: out.providerPayload,
       infraRowId: out.infraRowId,
     });
-    showToast('Squad Admin deployed — open Settings to manage roles.');
-    selectDashboardView('settings');
+    showToast('Squad Admin deployed — open Crew to manage privileges.');
+    selectDashboardView('crew');
   }}
   onSponsorComplete={async (out) => {
     await onSponsorDeployComplete?.({
@@ -896,21 +945,9 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
 
   .parent-dashboard-body {
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
     min-height: 0;
-  }
-
-  .dashboard-deploy-bar {
-    flex-shrink: 0;
-    display: flex;
-    justify-content: flex-end;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-  }
-
-  .dashboard-deploy-btn {
-    min-width: 120px;
+    min-width: 0;
   }
 
   .dashboard-view-nav {
@@ -1036,6 +1073,14 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     max-width: 560px;
   }
 
+  /* Roles org-chart and Governance module grid need the full mode width. */
+  .parent-dashboard-wide {
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
   .dashboard-header {
     margin-bottom: 16px;
   }
@@ -1060,5 +1105,9 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     margin: 16px;
     font-size: 0.875rem;
     color: var(--danger, #e53e3e);
+  }
+
+  .dashboard-tab-pane[hidden] {
+    display: none !important;
   }
 </style>

@@ -1,6 +1,6 @@
 ---
 name: Pacto Concepts
-last_updated: 2026-07-07
+last_updated: 2026-07-15
 ---
 
 # Pacto Concepts
@@ -43,6 +43,9 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **Squad infra** | On-chain artifacts deployed for a squad: Safe treasury, governance module, and Hats tree. Persisted in SQLite (`squad_infra`). |
 | **Safe** | Gnosis Safe multi-signature contract used as the squad treasury. |
 | **Hats Protocol** | On-chain role management. Hats define roles that can be granted, revoked, and checked by contracts. |
+| **Roster EVM** | Per-squad binding of `(parent_id, member_npub) → EVM address`. Required for governance signing and ACL. See `docs/communities/DESIGN.md` and `docs/governance/ACCESS_CONTROL.md`. |
+| **Squad ACL** | App-layer preflight: roster address → Hats / Squad Admin → capabilities before Rust signs. UI gates are advisory. See `docs/governance/ACCESS_CONTROL.md`. |
+| **Gov capability** | Named action the ACL authorizes (e.g. `proposeTreasury`, `startMutiny`, `mutateTrackedTokens`). |
 | **Proposal** | A pacto-gov governance action (spend, role change, etc.) voted on by squad members. |
 | **WalletBar** | The in-thread wallet UI for sending tokens, requesting payments, and announcing transactions. |
 
@@ -57,6 +60,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **per-account SQLite** | Two databases per npub: `vector.db` (app data) and `vector-mls.db` (engine state). |
 | **read-plane** | Frontend viem read-only chain access: balances, contract observation, receipt polling. |
 | **Rust send** | WalletBar and governance writes are signed and broadcast from the Rust backend using Alloy. |
+| **require_capability** | Rust ACL gate on squad-scoped writes; denies unbound roster or missing hat/role before broadcast. |
 | **Greenfield** | Repo posture: no public alpha shipped yet; prefer breaking, minimal paths over compatibility shims. |
 
 ## See also

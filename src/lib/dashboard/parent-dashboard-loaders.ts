@@ -10,13 +10,14 @@ import {
   treasuryProposalHasVoted,
 } from '../governance/api';
 import {
-  formatSquadAdminExecutorRoles,
-  hatChecksFromNaveDeployment,
-} from '../governance/pacto-gov-payload';
-import {
+  hatChecksForRolesTree,
   memberHatByAddressFromAssignments,
   mergeRolesTreeAnnotationMaps,
 } from '../governance/hats-tree-annotations';
+import {
+  formatSquadAdminExecutorRoles,
+  hatChecksFromNaveDeployment,
+} from '../governance/pacto-gov-payload';
 import { isTreasuryProposalActive } from '../governance/treasury-proposal-ui';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import { listSquadMemberEvmInvokeArgs } from '../squad/squad-member-evm-share';
@@ -158,20 +159,27 @@ export async function fetchRolesTreeAnnotations(params: {
   squadMemberEvmByNpub: Record<string, string>;
   squadAdminProxy?: string | null;
   squadAdminChain?: string | null;
+  /** Pacto Gov module addresses that may wear role hats. */
+  protocolWearerCandidates?: string[];
 }): Promise<{
   roleLabelByHatId: Record<string, string>;
   wearerAddressesByHatId: Record<string, string[]>;
   executorRolesByAddress: Record<string, string>;
   error: string;
 }> {
-  const memberAddresses = Object.values(params.squadMemberEvmByNpub).filter(Boolean);
-  if (memberAddresses.length === 0) {
-    return {
-      roleLabelByHatId: {},
-      wearerAddressesByHatId: {},
-      executorRolesByAddress: {},
-      error: '',
-    };
+  const memberAddresses = Object.values(params.squadMemberEvmByNpub)
+    .map((a) => a?.trim())
+    .filter(Boolean) as string[];
+  const protocolCandidates = (params.protocolWearerCandidates ?? [])
+    .map((a) => a?.trim())
+    .filter(Boolean) as string[];
+  const seen = new Set<string>();
+  const wearerCandidates: string[] = [];
+  for (const a of [...memberAddresses, ...protocolCandidates]) {
+    const key = a.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    wearerCandidates.push(a);
   }
 
   try {
@@ -179,14 +187,17 @@ export async function fetchRolesTreeAnnotations(params: {
       network: params.network,
       topHatId: params.topHatId,
     });
-    const assignments = await getMemberHatWearers({
-      network: params.network,
-      memberAddresses,
-      hatChecks: hatChecksFromNaveDeployment(deployment),
-    });
+    let assignments: Awaited<ReturnType<typeof getMemberHatWearers>> = [];
+    if (wearerCandidates.length > 0) {
+      assignments = await getMemberHatWearers({
+        network: params.network,
+        memberAddresses: wearerCandidates,
+        hatChecks: hatChecksForRolesTree(deployment, params.topHatId),
+      });
+    }
     let executorRolesByAddress: Record<string, string> = {};
     const squadAdminProxy = params.squadAdminProxy?.trim();
-    if (squadAdminProxy) {
+    if (squadAdminProxy && memberAddresses.length > 0) {
       executorRolesByAddress = await fetchExecutorRolesByAddress({
         network: params.network,
         squadAdminProxy,
@@ -194,7 +205,7 @@ export async function fetchRolesTreeAnnotations(params: {
         evmAddresses: memberAddresses,
       });
     }
-    const maps = mergeRolesTreeAnnotationMaps(deployment, assignments);
+    const maps = mergeRolesTreeAnnotationMaps(deployment, assignments, params.topHatId);
     return {
       roleLabelByHatId: maps.roleLabelByHatId,
       wearerAddressesByHatId: maps.wearerAddressesByHatId,

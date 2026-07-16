@@ -13,6 +13,7 @@
   export let hasVoted: boolean | undefined = undefined;
   export let voterAddress = '';
   export let votePending = false;
+  export let voteDisabledReason = '';
   export let onVoteYea: (() => void) | undefined = undefined;
   export let onVoteNay: (() => void) | undefined = undefined;
 
@@ -20,6 +21,7 @@
   $: isActive = isTreasuryProposalActive(proposal.status);
   $: isPast = isTreasuryProposalPast(proposal.status);
   $: outcome = treasuryProposalOutcomeLabel(proposal.status);
+  $: voteLocked = !!voteDisabledReason;
 
   function voteStateLabel(state: ProposalVoteUiState): string {
     switch (state) {
@@ -60,20 +62,29 @@
         <button
           type="button"
           class="btn-primary proposal-vote-btn"
-          disabled={votePending || !onVoteYea}
-          on:click={() => onVoteYea?.()}
+          disabled={votePending || voteLocked || !onVoteYea}
+          title={voteLocked ? voteDisabledReason : 'Vote yea'}
+          on:click={() => {
+            if (!voteLocked) onVoteYea?.();
+          }}
         >
           Vote yea
         </button>
         <button
           type="button"
           class="btn-secondary proposal-vote-btn"
-          disabled={votePending || !onVoteNay}
-          on:click={() => onVoteNay?.()}
+          disabled={votePending || voteLocked || !onVoteNay}
+          title={voteLocked ? voteDisabledReason : 'Vote nay'}
+          on:click={() => {
+            if (!voteLocked) onVoteNay?.();
+          }}
         >
           Vote nay
         </button>
       </div>
+      {#if voteLocked}
+        <p class="proposal-vote-state muted">{voteDisabledReason}</p>
+      {/if}
     {/if}
   {/if}
 </li>

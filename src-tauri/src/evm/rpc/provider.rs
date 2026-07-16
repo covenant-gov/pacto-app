@@ -97,7 +97,9 @@ pub async fn send_and_confirm<P: Provider>(
         .map_err(|_| {
             wallet_err_json_with_tx_hash(
                 "RECEIPT_TIMEOUT",
-                receipt_timeout_message,
+                format!(
+                    "{receipt_timeout_message} Do not resubmit the same calldata; look up tx {submitted_tx_hash} on the explorer."
+                ),
                 None,
                 submitted_tx_hash,
             )

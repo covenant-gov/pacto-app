@@ -389,11 +389,13 @@ describe('api command wrappers', () => {
     mockedInvoke.mockResolvedValueOnce({});
     await squadAdminCreateRole({
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       roleLabel: ' Treasurer ',
     });
     expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_create_role', {
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       roleLabel: 'Treasurer',
     });
@@ -403,12 +405,14 @@ describe('api command wrappers', () => {
     mockedInvoke.mockResolvedValueOnce({});
     await squadAdminEnableExecutor({
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       roleLabel: ' Treasurer ',
     });
     expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_enable_executor', {
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       roleLabel: 'Treasurer',
@@ -419,12 +423,14 @@ describe('api command wrappers', () => {
     mockedInvoke.mockResolvedValueOnce({});
     await squadAdminEnableFullPermission({
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       enable: true,
     });
     expect(mockedInvoke).toHaveBeenCalledWith('squad_admin_enable_full_permission', {
       network: NETWORK,
+      parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       enable: true,
