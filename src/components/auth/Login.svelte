@@ -3,7 +3,8 @@
   import WelcomeScreen from './WelcomeScreen.svelte';
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
-  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError } from '../../stores/auth';
+  import { get } from 'svelte/store';
+  import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
@@ -14,10 +15,15 @@
   let error: string | null = null;
   let unlockInFlight = false;
 
-  // Check if user has stored encrypted key on mount
+  // Check if user has stored encrypted key on mount, and confirm backend session state.
   onMount(async () => {
     try {
       const status = await checkAuthStatus();
+      const session = await checkSession();
+      if (status === 'needs-pin' && session.unlocked && get(currentUser)) {
+        // Backend session is alive and we already have user state (e.g. HMR). Stay authenticated.
+        isAuthenticated.set(true);
+      }
       currentStep = status === 'needs-pin' ? 'pin-unlock' : 'welcome';
     } catch {
       currentStep = 'welcome';

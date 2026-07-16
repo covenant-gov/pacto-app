@@ -13,6 +13,10 @@ import {
   unlockWithPin,
   logout,
   clearAuthError,
+  checkSession,
+  sessionHeartbeat,
+  dropSessionState,
+  maybeRequireSession,
 } from './auth';
 import {
   login,
@@ -21,6 +25,8 @@ import {
   connect,
   checkAnyAccountExists,
   getCurrentAccount,
+  checkSession as apiCheckSession,
+  sessionHeartbeat as apiSessionHeartbeat,
 } from '../lib/api/auth';
 import {
   hasStoredKey,
@@ -46,6 +52,8 @@ vi.mock('../lib/api/auth', () => ({
   connect: vi.fn(),
   checkAnyAccountExists: vi.fn(),
   getCurrentAccount: vi.fn(),
+  checkSession: vi.fn(),
+  sessionHeartbeat: vi.fn(),
 }));
 
 vi.mock('../lib/api/encryption', () => ({
@@ -98,7 +106,8 @@ describe('auth', () => {
     vi.mocked(runPostLoginNetworkSync).mockReset();
     vi.mocked(loadAccountState).mockReset();
     vi.mocked(clearAccountState).mockReset();
-    vi.mocked(invoke).mockReset();
+    vi.mocked(apiCheckSession).mockReset();
+    vi.mocked(apiSessionHeartbeat).mockReset();
   });
 
   afterEach(() => {
@@ -134,6 +143,106 @@ describe('auth', () => {
     it('is false when user is missing', () => {
       isAuthenticated.set(true);
       expect(get(isLoggedIn)).toBe(false);
+    });
+  });
+
+  describe('checkSession', () => {
+    it('returns unlocked=true when the backend session is open', async () => {
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      const status = await checkSession();
+      expect(status).toEqual({ unlocked: true });
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns unlocked=false and drops auth state when the backend reports locked', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: false, lockedAt: 1234567890 });
+
+      const status = await checkSession();
+
+      expect(status).toEqual({ unlocked: false, lockedAt: 1234567890 });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+
+    it('treats an error as locked and drops auth state', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockRejectedValue(new Error('ipc failed'));
+
+      const status = await checkSession();
+
+      expect(status).toEqual({ unlocked: false });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('sessionHeartbeat', () => {
+    it('calls the backend heartbeat', async () => {
+      vi.mocked(apiSessionHeartbeat).mockResolvedValue(undefined);
+      await sessionHeartbeat();
+      expect(apiSessionHeartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when the backend call fails', async () => {
+      vi.mocked(apiSessionHeartbeat).mockRejectedValue(new Error('ipc failed'));
+      await expect(sessionHeartbeat()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('dropSessionState', () => {
+    it('clears auth state', () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      dropSessionState();
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('maybeRequireSession', () => {
+    it('returns true when the session is unlocked', async () => {
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      await expect(maybeRequireSession()).resolves.toBe(true);
+    });
+
+    it('returns false and drops auth state when the session is locked', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: false });
+      const ok = await maybeRequireSession();
+      expect(ok).toBe(false);
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('sessionStorage unlock flag', () => {
+    it('is not set after createAccount', async () => {
+      const setItem = vi.fn();
+      vi.stubGlobal('sessionStorage', { setItem, removeItem: vi.fn(), getItem: vi.fn() });
+      vi.mocked(apiCreateAccount).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await createAccount('123456');
+
+      expect(setItem).not.toHaveBeenCalledWith('pacto_session_unlocked', expect.any(String));
+      vi.unstubAllGlobals();
+    });
+
+    it('is not set after unlockWithPin', async () => {
+      const setItem = vi.fn();
+      vi.stubGlobal('sessionStorage', { setItem, removeItem: vi.fn(), getItem: vi.fn() });
+      vi.mocked(loadAndDecryptKey).mockResolvedValue(keys.private);
+      vi.mocked(login).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await unlockWithPin('123456');
+
+      expect(setItem).not.toHaveBeenCalledWith('pacto_session_unlocked', expect.any(String));
+      vi.unstubAllGlobals();
     });
   });
 

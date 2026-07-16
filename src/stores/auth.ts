@@ -1,6 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
+import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount, checkSession as apiCheckSession, sessionHeartbeat as apiSessionHeartbeat } from '../lib/api/auth';
 import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validateRecoveryPhraseForImport } from '../lib/api/encryption';
 import { dmLog } from '../lib/utils/dm-debug';
 import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
@@ -8,32 +8,6 @@ import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
-
-const SESSION_UNLOCKED_KEY = 'pacto_session_unlocked';
-
-function markSessionUnlocked(): void {
-  try {
-    sessionStorage.setItem(SESSION_UNLOCKED_KEY, '1');
-  } catch {
-    // ignore
-  }
-}
-
-function clearSessionUnlocked(): void {
-  try {
-    sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-function hasSessionUnlockedFlag(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
@@ -54,12 +28,47 @@ export interface CurrentUser {
 
 export const currentUser = writable<CurrentUser | null>(null);
 
-/** Drop frontend auth when the tab lost its unlock marker (e.g. partial unlock or HMR). */
-export function clearStaleAuthSession(): void {
-  if (get(isAuthenticated) && !hasSessionUnlockedFlag()) {
-    isAuthenticated.set(false);
-    currentUser.set(null);
+/** Drop frontend auth state. Called when the backend reports the session is locked. */
+export function dropSessionState(): void {
+  isAuthenticated.set(false);
+  currentUser.set(null);
+}
+
+/** Query the backend for the current session state. Fail-secure: errors are treated as locked. */
+export async function checkSession(): Promise<{ unlocked: boolean; lockedAt?: number }> {
+  try {
+    const status = await apiCheckSession();
+    if (!status.unlocked) {
+      dropSessionState();
+    }
+    return status;
+  } catch (error: unknown) {
+    console.error('checkSession failed:', error);
+    dropSessionState();
+    return { unlocked: false };
   }
+}
+
+/** Reset the backend idle timer. Lightweight no-op if the session is already locked. */
+export async function sessionHeartbeat(): Promise<void> {
+  try {
+    await apiSessionHeartbeat();
+  } catch (error: unknown) {
+    console.error('sessionHeartbeat failed:', error);
+  }
+}
+
+/**
+ * Verify the session is still unlocked before a sensitive operation.
+ * Returns true if unlocked; otherwise drops auth state and returns false.
+ */
+export async function maybeRequireSession(): Promise<boolean> {
+  const status = await checkSession();
+  if (!status.unlocked) {
+    dropSessionState();
+    return false;
+  }
+  return true;
 }
 
 // Derived: Is user logged in with valid data
@@ -128,7 +137,6 @@ export async function createAccount(pin: string): Promise<void> {
     loadAccountState(npub);
     closeWalletSidebar();
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
@@ -179,7 +187,6 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
     loadAccountState(npub);
     closeWalletSidebar();
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
@@ -216,7 +223,6 @@ export async function unlockWithPin(pin: string): Promise<void> {
     closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
@@ -247,7 +253,6 @@ export async function logout(): Promise<void> {
   try {
     isAuthenticated.set(false);
     currentUser.set(null);
-    clearSessionUnlocked();
     clearAccountState(npub);
     await invoke('logout');
   } catch (error: unknown) {

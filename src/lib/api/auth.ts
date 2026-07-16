@@ -56,6 +56,27 @@ export async function getCurrentAccount(): Promise<string> {
   return await invoke('get_current_account');
 }
 
+/** Backend session state. */
+export interface SessionStatus {
+  unlocked: boolean;
+  lockedAt?: number;
+}
+
+/**
+ * Ask the backend whether the encryption key is present in memory.
+ * @returns Unlocked status and optional Unix epoch seconds when the session locked.
+ */
+export async function checkSession(): Promise<SessionStatus> {
+  return await invoke<SessionStatus>('check_session');
+}
+
+/**
+ * Reset the backend idle timer. Lightweight; safe to call often.
+ */
+export async function sessionHeartbeat(): Promise<void> {
+  await invoke('session_heartbeat');
+}
+
 /**
  * Get the stored EVM address for the current account (no PIN required; address is public).
  */

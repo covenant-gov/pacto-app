@@ -2,14 +2,18 @@
   import { onMount } from 'svelte';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
-  import { isAuthenticated, currentUser, clearStaleAuthSession } from '../stores/auth';
+  import { isAuthenticated, currentUser, checkSession } from '../stores/auth';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
   import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
 
-  // Before first paint: drop auth state left over from a partial unlock or HMR.
-  clearStaleAuthSession();
+  // Before first paint: clear any leftover auth state. The backend session check on mount
+  // is the authoritative source of truth, so never assume the session is still valid.
+  isAuthenticated.set(false);
+  currentUser.set(null);
 
   onMount(() => {
+    // Confirm the backend session on every layout mount; drop auth state if locked.
+    void checkSession();
     scheduleCommonsStartupPrefetch();
     const stored = getStoredTheme();
     setTheme(stored ?? DEFAULT_THEME);

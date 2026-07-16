@@ -10,6 +10,7 @@ import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { get } from 'svelte/store';
+import { dropSessionState } from '../../stores/auth';
 import {
   backendDmMessages,
   backendGroupMessages,
@@ -320,6 +321,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     const pid = typeof pidRaw === 'string' ? pidRaw.trim() : '';
     if (!pid) return;
     dashboardPollReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
+  });
+
+  register(unsubs, 'session_locked', () => {
+    dmLog('session_locked: dropping frontend auth state');
+    dropSessionState();
   });
 
   return () => {
