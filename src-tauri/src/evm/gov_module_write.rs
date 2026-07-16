@@ -1,13 +1,15 @@
 //! Shared squad-key contract call helper for Pacto Gov module writes.
 
+use alloy::network::TransactionBuilder;
 use alloy::primitives::Address;
 use tauri::{AppHandle, Runtime};
 
-use super::rpc::{
-    connect_signing_provider, contract_call_request, send_and_confirm, wallet_err_json,
-};
+use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
+};
+use super::rpc::{
+    connect_signing_provider, contract_call_request, send_and_confirm, wallet_err_json,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -18,6 +20,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     parent_id: String,
     to: Address,
     calldata: Vec<u8>,
+    capability: GovCapability,
 ) -> Result<(String, String, u64), String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -35,7 +38,6 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     let pid = parent_id.trim();
     if pid.is_empty() {
-        // Fall back: resolve parent from any known infra canonical ref is caller's job.
         return Err(wallet_err_json(
             "MISSING_PARENT",
             "parentId is required for squad-key governance writes",
@@ -43,14 +45,17 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
+    require_capability(&app, pid, capability).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
+
+    let _write_guard = with_gov_write_lock(pid).await;
     let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
     let provider = connect_signing_provider(&urls, wallet).await?;
-    let tx = contract_call_request(to, calldata);
+    let tx = contract_call_request(to, calldata).with_chain_id(net.chain_id);
     let receipt = send_and_confirm(
         &provider,
         tx,
-        "Timed out waiting for governance transaction confirmation.",
+        "Timed out waiting for governance confirmation. The transaction may still confirm — do not resubmit the same calldata; check the explorer with the returned tx hash.",
     )
     .await?;
 
@@ -67,8 +72,19 @@ pub fn resolve_parent_id_for_module<R: Runtime>(
     parent_id: &str,
     module_address: &str,
 ) -> Result<String, String> {
-    let trimmed = parent_id.trim();
-    if !trimmed.is_empty() {
+    if let Some(trimmed) = explicit_parent_id(parent_id) {
+        if let Some(from_infra) =
+            db::parent_id_for_canonical_infra_ref(app, module_address.trim())?
+                .filter(|s| !s.trim().is_empty())
+        {
+            if from_infra.trim() != trimmed {
+                return Err(wallet_err_json(
+                    "PARENT_MISMATCH",
+                    "client parentId does not match infra for this module",
+                    None,
+                ));
+            }
+        }
         return Ok(trimmed.to_string());
     }
     db::parent_id_for_canonical_infra_ref(app, module_address.trim())?
@@ -80,4 +96,26 @@ pub fn resolve_parent_id_for_module<R: Runtime>(
                 None,
             )
         })
+}
+
+/// Non-empty trimmed parent id, if the caller supplied one.
+pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
+    let trimmed = parent_id.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explicit_parent_id;
+
+    #[test]
+    fn explicit_parent_id_trims_and_rejects_empty() {
+        assert_eq!(explicit_parent_id(" parent-1 "), Some("parent-1"));
+        assert_eq!(explicit_parent_id(""), None);
+        assert_eq!(explicit_parent_id("   "), None);
+    }
 }

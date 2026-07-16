@@ -8,6 +8,7 @@ use tauri::{AppHandle, Runtime};
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
     captainVoteCall, crewVoteCall, executeCall, proposeCall, Operation,
 };
+use super::access_control::GovCapability;
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::rpc::{parse_address, wallet_err_json};
 
@@ -68,8 +69,15 @@ pub async fn treasury_authority_propose<R: Runtime>(
         _op: op,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, pid, ta, calldata).await?;
+    let (tx_hash, chain, chain_id) = send_gov_module_call(
+        app,
+        network,
+        pid,
+        ta,
+        calldata,
+        GovCapability::ProposeTreasury,
+    )
+    .await?;
     Ok(TreasuryAuthorityWriteResult {
         tx_hash,
         chain,
@@ -97,8 +105,15 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
         _support: support,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, ta, calldata).await?;
+    let (tx_hash, chain, chain_id) = send_gov_module_call(
+        app,
+        network,
+        parent,
+        ta,
+        calldata,
+        GovCapability::CrewVote,
+    )
+    .await?;
     Ok(TreasuryAuthorityWriteResult {
         tx_hash,
         chain,
@@ -126,8 +141,15 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
         _support: support,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, ta, calldata).await?;
+    let (tx_hash, chain, chain_id) = send_gov_module_call(
+        app,
+        network,
+        parent,
+        ta,
+        calldata,
+        GovCapability::CaptainVote,
+    )
+    .await?;
     Ok(TreasuryAuthorityWriteResult {
         tx_hash,
         chain,
@@ -153,12 +175,40 @@ pub async fn treasury_authority_execute<R: Runtime>(
         _proposalId: pid_u,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, ta, calldata).await?;
+    let (tx_hash, chain, chain_id) = send_gov_module_call(
+        app,
+        network,
+        parent,
+        ta,
+        calldata,
+        GovCapability::ExecuteTreasury,
+    )
+    .await?;
     Ok(TreasuryAuthorityWriteResult {
         tx_hash,
         chain,
         chain_id,
         treasury_authority: format!("{:#x}", ta),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_data_hex, parse_operation};
+
+    #[test]
+    fn parse_operation_accepts_call_and_delegatecall() {
+        assert!(parse_operation("call").is_ok());
+        assert!(parse_operation("").is_ok());
+        assert!(parse_operation("DELEGATECALL").is_ok());
+        assert!(parse_operation("create").is_err());
+    }
+
+    #[test]
+    fn parse_data_hex_empty_and_valid() {
+        assert!(parse_data_hex("0x").unwrap().is_empty());
+        assert!(parse_data_hex("").unwrap().is_empty());
+        assert_eq!(parse_data_hex("0xabcd").unwrap().as_ref(), &[0xab, 0xcd]);
+        assert!(parse_data_hex("0xzz").is_err());
+    }
 }

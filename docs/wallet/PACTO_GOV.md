@@ -42,5 +42,6 @@ Governance → **Treasury Safe** shows native coin balance for the deployed Safe
 
 ## Related
 
+- Access control (roster + Hats / Squad Admin): [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md)
 - Squad sponsor contracts: [github.com/covenant-gov/pacto-squad-sponsor](https://github.com/covenant-gov/pacto-squad-sponsor) (same pattern — external repo, env addresses, in-app bindings).
 - Virtual channel routing for deploy announces: [VIRTUAL_CHANNEL_ROUTING_ADR.md](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).

@@ -226,6 +226,7 @@
 <SquadRolesModal
   open={showSquadRolesModal}
   onClose={onCloseSquadRolesModal}
+  {parentId}
   {squadAdminProxy}
   network={squadAdminNetwork}
   {memberEvmOptions}

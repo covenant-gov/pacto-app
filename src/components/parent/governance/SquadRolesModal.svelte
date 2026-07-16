@@ -2,19 +2,27 @@
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import {
+    getSquadCapabilities,
     squadAdminCreateRole,
     squadAdminEnableExecutor,
     squadAdminEnableFullPermission,
   } from '../../../lib/governance/api';
+  import {
+    gateSquadAdminWrite,
+    resolveGovernancePrivilege,
+    type GovernancePrivilege,
+  } from '../../../lib/governance/governance-privilege';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
 
   export let open = false;
   export let onClose: () => void;
+  export let parentId = '';
   export let squadAdminProxy: string;
   export let network: SupportedChainId = 'sepolia';
   /** EVM address → display label for executor picker. */
   export let memberEvmOptions: { address: string; label: string }[] = [];
+  export let privilege: GovernancePrivilege | null = null;
 
   const titleId = 'squad-roles-modal-title';
   const descId = 'squad-roles-modal-desc';
@@ -23,9 +31,38 @@
   let executorAddress = '';
   let grantFullPermission = false;
   let actionError = '';
+  let loadedPrivilege: GovernancePrivilege | null = null;
+  let privilegeLoadKey = '';
+
+  $: effectivePrivilege = privilege ?? loadedPrivilege;
+  $: saGate = effectivePrivilege
+    ? gateSquadAdminWrite(effectivePrivilege)
+    : ({ enabled: true, reason: '' } as const);
 
   $: if (open && !executorAddress && memberEvmOptions.length > 0) {
     executorAddress = memberEvmOptions[0].address;
+  }
+
+  $: if (open && parentId.trim() && parentId.trim() !== privilegeLoadKey) {
+    privilegeLoadKey = parentId.trim();
+    void loadPrivilege(parentId.trim());
+  }
+
+  async function loadPrivilege(pid: string) {
+    try {
+      const snap = await getSquadCapabilities(pid);
+      if (!open || pid !== privilegeLoadKey) return;
+      loadedPrivilege = resolveGovernancePrivilege({
+        myAddress: snap.rosterAddress,
+        safeAddress: null,
+        captainWearers: [],
+        crewWearers: [],
+        capabilities: snap,
+      });
+    } catch {
+      if (!open || pid !== privilegeLoadKey) return;
+      loadedPrivilege = null;
+    }
   }
 
   function resetForm() {
@@ -55,10 +92,15 @@
       actionError = 'Enter a role label (max 32 ASCII characters).';
       return;
     }
+    if (!saGate.enabled) {
+      actionError = saGate.reason;
+      return;
+    }
     await runAction(
       () =>
         squadAdminCreateRole({
           network,
+          parentId,
           squadAdminProxy,
           roleLabel: label,
         }),
@@ -77,10 +119,15 @@
       actionError = 'Pick or enter a valid executor address.';
       return;
     }
+    if (!saGate.enabled) {
+      actionError = saGate.reason;
+      return;
+    }
     await runAction(
       () =>
         squadAdminEnableExecutor({
           network,
+          parentId,
           squadAdminProxy,
           executorAddress: exec,
           roleLabel: label,
@@ -95,10 +142,15 @@
       actionError = 'Pick or enter a valid executor address.';
       return;
     }
+    if (!saGate.enabled) {
+      actionError = saGate.reason;
+      return;
+    }
     await runAction(
       () =>
         squadAdminEnableFullPermission({
           network,
+          parentId,
           squadAdminProxy,
           executorAddress: exec,
           enable: grantFullPermission,
@@ -115,6 +167,9 @@
       Register app roles and assign executors on <code>{squadAdminProxy}</code>. Role labels are left-padded bytes32
       keys (for example <code>TREASURY</code> or <code>SETTINGS</code>).
     </p>
+    {#if !saGate.enabled}
+      <p class="input-error" role="status">{saGate.reason}</p>
+    {/if}
 
     <div class="squad-roles-field">
       <label class="squad-roles-label" for="squad-role-label">Role label</label>
@@ -158,20 +213,20 @@
     {/if}
 
     <div class="squad-roles-actions">
-      <button type="button" class="btn-secondary" on:click={createRole}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={createRole}>
         Create role
       </button>
-      <button type="button" class="btn-secondary" on:click={enableExecutor}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableExecutor}>
         Enable executor
       </button>
     </div>
 
     <div class="squad-roles-full-row">
       <label class="squad-roles-check">
-        <input type="checkbox" bind:checked={grantFullPermission} />
+        <input type="checkbox" bind:checked={grantFullPermission} disabled={!saGate.enabled} />
         Grant FULL sentinel (all roles)
       </label>
-      <button type="button" class="btn-secondary" on:click={enableFull}>
+      <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableFull}>
         Apply FULL
       </button>
     </div>

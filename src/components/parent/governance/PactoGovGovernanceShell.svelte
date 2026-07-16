@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import TreasuryAuthorityModulePanel from './TreasuryAuthorityModulePanel.svelte';
   import MutinyModulePanel from './MutinyModulePanel.svelte';
   import QuartermasterModulePanel from './QuartermasterModulePanel.svelte';
@@ -11,7 +12,11 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import type { TreasuryProposalDto } from '../../../lib/governance/api';
+  import {
+    getSquadCapabilities,
+    type SquadCapabilitiesDto,
+    type TreasuryProposalDto,
+  } from '../../../lib/governance/api';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
   import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
@@ -35,6 +40,8 @@
   let mutinyActive = false;
   let mutinyModeQm = false;
   let mutinyCaptain = '';
+  let capabilities: SquadCapabilitiesDto | null = null;
+  let capabilitiesLoadKey = '';
 
   $: openProposalCount = treasuryProposals.filter((p) => isTreasuryProposalActive(p.status)).length;
   $: modules = pactoGovModuleDescriptors(payload, {
@@ -57,9 +64,33 @@
     safeAddress: payload.safe,
     captainWearers: captainList,
     crewWearers,
+    capabilities,
   }) as GovernancePrivilege;
 
   $: chainId = parseSupportedChainId(network);
+
+  $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
+    capabilitiesLoadKey = parentId.trim();
+    void loadCapabilities(parentId.trim());
+  }
+
+  async function loadCapabilities(pid: string) {
+    try {
+      const snap = await getSquadCapabilities(pid);
+      if (pid !== capabilitiesLoadKey) return;
+      capabilities = snap;
+    } catch {
+      if (pid !== capabilitiesLoadKey) return;
+      capabilities = null;
+    }
+  }
+
+  onMount(() => {
+    if (parentId.trim()) {
+      capabilitiesLoadKey = parentId.trim();
+      void loadCapabilities(parentId.trim());
+    }
+  });
 
   function shortAddr(addr: string): string {
     const a = addr.trim();

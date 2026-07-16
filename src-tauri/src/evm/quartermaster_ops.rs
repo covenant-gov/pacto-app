@@ -4,6 +4,7 @@ use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
     cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall, executeAddCrewCall,
     executeRemoveCrewCall, mutinyActiveCall, pendingCrewAddAtCall, pendingCrewRemoveAtCall,
@@ -97,12 +98,13 @@ async fn qm_write<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     calldata: Vec<u8>,
+    capability: GovCapability,
 ) -> Result<QuartermasterWriteResult, String> {
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
     let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, qm, calldata).await?;
+        send_gov_module_call(app, network, parent, qm, calldata, capability).await?;
     Ok(QuartermasterWriteResult {
         tx_hash,
         chain,
@@ -122,7 +124,15 @@ pub async fn quartermaster_request_add_crew<R: Runtime>(
     let addr = parse_address(candidate.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = requestAddCrewCall { _candidate: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterMutateCrew,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -136,7 +146,15 @@ pub async fn quartermaster_cancel_add_crew<R: Runtime>(
     let addr = parse_address(candidate.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = cancelAddCrewCall { _candidate: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterMutateCrew,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -150,7 +168,15 @@ pub async fn quartermaster_execute_add_crew<R: Runtime>(
     let addr = parse_address(candidate.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = executeAddCrewCall { _candidate: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterExecute,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -164,7 +190,15 @@ pub async fn quartermaster_request_remove_crew<R: Runtime>(
     let addr =
         parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = requestRemoveCrewCall { _crew: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterMutateCrew,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -178,7 +212,15 @@ pub async fn quartermaster_cancel_remove_crew<R: Runtime>(
     let addr =
         parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = cancelRemoveCrewCall { _crew: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterMutateCrew,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -192,5 +234,13 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
     let addr =
         parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = executeRemoveCrewCall { _crew: addr }.abi_encode();
-    qm_write(app, network, parent_id, quartermaster, calldata).await
+    qm_write(
+        app,
+        network,
+        parent_id,
+        quartermaster,
+        calldata,
+        GovCapability::QuartermasterExecute,
+    )
+    .await
 }

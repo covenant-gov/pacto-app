@@ -61,4 +61,54 @@ describe('gov-module-read-cache', () => {
     expect(peekGovModuleRead(mutinyReadCacheKey('sepolia', '0x1'))).toBeNull();
     expect(peekGovModuleRead(mutinyReadCacheKey('sepolia', '0x2'))).toEqual({ b: 2 });
   });
+
+  it('rejects fetcher and clears inflight so a retry can run', async () => {
+    const key = mutinyReadCacheKey('sepolia', '0xfail', '');
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('rpc down'))
+      .mockResolvedValueOnce({ ok: true });
+    await expect(fetchGovModuleReadCached(key, 'p1', fetcher, { force: true })).rejects.toThrow(
+      'rpc down',
+    );
+    expect(peekGovModuleRead(key)).toBeNull();
+    await expect(fetchGovModuleReadCached(key, 'p1', fetcher, { force: true })).resolves.toEqual({
+      ok: true,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('force refetch while stale replaces peeked value', async () => {
+    vi.useFakeTimers();
+    const key = quartermasterReadCacheKey('sepolia', '0xqm');
+    setGovModuleRead(key, 'parent-1', { mutinyActive: false, crewChangeDelaySecs: '1' });
+    vi.advanceTimersByTime(GOV_MODULE_READ_TTL_MS + 1);
+    expect(isGovModuleReadStale(key)).toBe(true);
+    expect(peekGovModuleRead(key)).toEqual({ mutinyActive: false, crewChangeDelaySecs: '1' });
+
+    const fetcher = vi.fn(async () => ({ mutinyActive: true, crewChangeDelaySecs: '42' }));
+    const out = await fetchGovModuleReadCached(key, 'parent-1', fetcher, { force: true });
+    expect(out).toEqual({ mutinyActive: true, crewChangeDelaySecs: '42' });
+    expect(peekGovModuleRead(key)).toEqual(out);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent force while pending still dedupes', async () => {
+    const key = safeBalancesCacheKey('p1', 'sepolia', '0xsafe2');
+    let release!: (v: { nativeDecimal: string }) => void;
+    const fetcher = vi.fn(
+      () =>
+        new Promise<{ nativeDecimal: string }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const a = fetchGovModuleReadCached(key, 'p1', fetcher, { force: true });
+    const b = fetchGovModuleReadCached(key, 'p1', fetcher, { force: true });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    release({ nativeDecimal: '9' });
+    await expect(Promise.all([a, b])).resolves.toEqual([
+      { nativeDecimal: '9' },
+      { nativeDecimal: '9' },
+    ]);
+  });
 });

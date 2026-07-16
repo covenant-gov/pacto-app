@@ -66,6 +66,7 @@
   }
 
   async function reload(force = false) {
+    const hydrateKey = `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`;
     const key = cacheKey();
     const peeked = peekGovModuleRead<MutinySnapshot>(key);
     if (peeked) applySnapshot(peeked);
@@ -99,16 +100,20 @@
         },
         { force: force || !!peeked },
       );
+      if (hydrateKey !== `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) return;
       applySnapshot(snap);
     } catch (e) {
+      if (hydrateKey !== `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) return;
       error = getInvokeErrorMessage(e, 'Could not load mutiny status.');
       if (!peeked) {
         status = null;
         onStatus({ active: false, captain: '' });
       }
     } finally {
-      loading = false;
-      refreshing = false;
+      if (hydrateKey === `${parentId}|${network}|${mutinyModule}|${privilege.myAddress}`) {
+        loading = false;
+        refreshing = false;
+      }
     }
   }
 

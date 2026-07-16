@@ -369,6 +369,10 @@ export interface GovernanceWriteResultDto {
   txHash: string;
   chain: string;
   chainId: number;
+  /** Module address echoed by Rust when present. */
+  treasuryAuthority?: string;
+  mutinyModule?: string;
+  quartermaster?: string;
 }
 
 export async function treasuryAuthorityPropose(params: {
@@ -831,11 +835,13 @@ export interface SquadAdminWriteResultDto {
 
 export async function squadAdminCreateRole(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_create_role', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     roleLabel: params.roleLabel.trim(),
   })) as SquadAdminWriteResultDto;
@@ -843,12 +849,14 @@ export async function squadAdminCreateRole(params: {
 
 export async function squadAdminEnableExecutor(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   executorAddress: string;
   roleLabel: string;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_enable_executor', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     roleLabel: params.roleLabel.trim(),
@@ -857,16 +865,42 @@ export async function squadAdminEnableExecutor(params: {
 
 export async function squadAdminEnableFullPermission(params: {
   network: string;
+  parentId: string;
   squadAdminProxy: string;
   executorAddress: string;
   enable: boolean;
 }): Promise<SquadAdminWriteResultDto> {
   return (await invoke('squad_admin_enable_full_permission', {
     network: params.network,
+    parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     enable: params.enable,
   })) as SquadAdminWriteResultDto;
+}
+
+export interface CapabilityFlagDto {
+  allowed: boolean;
+  reason: string;
+}
+
+export interface SquadCapabilitiesDto {
+  parentId: string;
+  rosterAddress: string;
+  wearsCaptain: boolean;
+  wearsCrew: boolean;
+  captainIsSafe: boolean;
+  squadAdminFull: boolean;
+  squadAdminPaused: boolean;
+  roleLabel: string;
+  capabilities: Record<string, CapabilityFlagDto>;
+}
+
+/** Backend: `get_squad_capabilities`. */
+export async function getSquadCapabilities(parentId: string): Promise<SquadCapabilitiesDto> {
+  return (await invoke('get_squad_capabilities', {
+    parentId: parentId.trim(),
+  })) as SquadCapabilitiesDto;
 }
 
 /** Pacto-gov infra row for a parent, if any. */

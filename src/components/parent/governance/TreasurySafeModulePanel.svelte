@@ -25,6 +25,7 @@
   import { showToast } from '../../../stores/toast';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
+  import { withReadPlaneLimit } from '../../../lib/evm/read-plane-limiter';
 
   export let network: string;
   export let parentId: string;
@@ -64,6 +65,7 @@
   }
 
   async function refreshAll(force = false) {
+    const hydrateKey = `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`;
     const pid = parentId.trim();
     if (!pid || !safe) {
       rows = [];
@@ -107,10 +109,12 @@
           );
           const nextBalances: Record<string, string> = {};
           await Promise.all(
-            onChain.map(async (r) => {
-              const res = await getEvmErc20Balance(String(chainKey), r.tokenAddress, safe);
-              nextBalances[r.id] = res.ok ? res.balance.balanceDecimal : '—';
-            }),
+            onChain.map((r) =>
+              withReadPlaneLimit(async () => {
+                const res = await getEvmErc20Balance(String(chainKey), r.tokenAddress, safe);
+                nextBalances[r.id] = res.ok ? res.balance.balanceDecimal : '—';
+              }),
+            ),
           );
           return {
             nativeDecimal: nextNativeDecimal,
@@ -122,8 +126,10 @@
         },
         { force: force || !!peeked },
       );
+      if (hydrateKey !== `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`) return;
       applySnapshot(snap);
     } catch (e) {
+      if (hydrateKey !== `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`) return;
       const msg = getInvokeErrorMessage(e, 'Could not load Safe balances.');
       if (!peeked) {
         loadError = msg;
@@ -133,8 +139,10 @@
         tokenBalances = {};
       }
     } finally {
-      loading = false;
-      refreshing = false;
+      if (hydrateKey === `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`) {
+        loading = false;
+        refreshing = false;
+      }
     }
   }
 

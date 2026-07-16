@@ -5,6 +5,7 @@ use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
     activeMutinyIdCall, captainCall, captainResignCall, castVoteCall, executeMutinyCall,
     hasVotedCall, mutinyCall, startMutinyToArbitraryContractCall, startMutinyToArbitraryEoaCall,
@@ -112,12 +113,13 @@ async fn mutiny_write<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     calldata: Vec<u8>,
+    capability: GovCapability,
 ) -> Result<MutinyWriteResult, String> {
     let module = parse_address(mutiny_module.trim())
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", module))?;
     let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, module, calldata).await?;
+        send_gov_module_call(app, network, parent, module, calldata, capability).await?;
     Ok(MutinyWriteResult {
         tx_hash,
         chain,
@@ -140,7 +142,15 @@ pub async fn mutiny_start_to_crew_member<R: Runtime>(
         _proposedCrewMember: addr,
     }
     .abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::StartMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -157,7 +167,15 @@ pub async fn mutiny_start_to_committee<R: Runtime>(
         _proposedMultisigCommittee: addr,
     }
     .abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::StartMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -174,7 +192,15 @@ pub async fn mutiny_start_to_arbitrary_eoa<R: Runtime>(
         _proposedArbitraryEoa: addr,
     }
     .abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::StartMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -191,7 +217,15 @@ pub async fn mutiny_start_to_arbitrary_contract<R: Runtime>(
         _proposedArbitraryContract: addr,
     }
     .abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::StartMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -202,7 +236,15 @@ pub async fn mutiny_start_to_pause_captain<R: Runtime>(
     mutiny_module: String,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = startMutinyToPauseCaptainCall {}.abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::StartMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -216,7 +258,15 @@ pub async fn mutiny_cast_vote<R: Runtime>(
     let mid = U256::from_str_radix(mutiny_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))?;
     let calldata = castVoteCall { _mutinyId: mid }.abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::CastMutinyVote,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -230,7 +280,15 @@ pub async fn mutiny_execute<R: Runtime>(
     let mid = U256::from_str_radix(mutiny_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))?;
     let calldata = executeMutinyCall { _mutinyId: mid }.abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::ExecuteMutiny,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -244,5 +302,13 @@ pub async fn mutiny_captain_resign<R: Runtime>(
     let addr = parse_address(new_captain.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = captainResignCall { _newCaptain: addr }.abi_encode();
-    mutiny_write(app, network, parent_id, mutiny_module, calldata).await
+    mutiny_write(
+        app,
+        network,
+        parent_id,
+        mutiny_module,
+        calldata,
+        GovCapability::CaptainResign,
+    )
+    .await
 }

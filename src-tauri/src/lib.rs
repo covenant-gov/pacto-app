@@ -6563,6 +6563,7 @@ pub fn run() {
             evm::hats_read::get_hats_tree,
             evm::member_governance_read::get_member_hat_wearers,
             evm::member_governance_read::get_squad_admin_executor_roles,
+            evm::access_control::get_squad_capabilities,
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,

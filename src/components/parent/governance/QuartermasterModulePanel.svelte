@@ -54,6 +54,7 @@
   }
 
   async function reload(force = false) {
+    const hydrateKey = `${parentId}|${network}|${quartermaster}`;
     const key = cacheKey();
     const peeked = peekGovModuleRead<QuartermasterStatusDto>(key);
     if (peeked) applyStatus(peeked);
@@ -86,6 +87,7 @@
         () => getQuartermasterStatus({ network, quartermaster }),
         { force: force || !!peeked },
       );
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
       applyStatus(next);
       if (address.trim()) {
         pending = await getQuartermasterPending({
@@ -97,14 +99,17 @@
         pending = null;
       }
     } catch (e) {
+      if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
       error = getInvokeErrorMessage(e, 'Could not load quartermaster.');
       if (!peeked) {
         status = null;
         onMutinyMode(false);
       }
     } finally {
-      loading = false;
-      refreshing = false;
+      if (hydrateKey === `${parentId}|${network}|${quartermaster}`) {
+        loading = false;
+        refreshing = false;
+      }
     }
   }
 

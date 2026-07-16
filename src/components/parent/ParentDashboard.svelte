@@ -87,6 +87,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
   ];
 
   $: dashboardView = $squadDashboardChannelMode;
+  let visitedDashboardViews: Set<ParentDashboardView> = new Set();
+  $: if (!visitedDashboardViews.has(dashboardView)) {
+    visitedDashboardViews = new Set([...visitedDashboardViews, dashboardView]);
+  }
 
   export let parent: Squad;
   export let treasurySafes: TreasurySafeEntry[] = [];
@@ -714,7 +718,8 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           </div>
         {/if}
 
-        {#if dashboardView === 'status'}
+        {#if visitedDashboardViews.has('status')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'status'} hidden={dashboardView !== 'status'}>
           {#await loadDashboardStatusTab() then StatusTab}
             <StatusTab
               squad={parent}
@@ -736,7 +741,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Status tab.</p>
           {/await}
-        {:else if dashboardView === 'governance'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('governance')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'governance'} hidden={dashboardView !== 'governance'}>
           {#await loadDashboardGovernanceTab() then GovernanceTab}
             <GovernanceTab
               {squadInfraRows}
@@ -761,7 +769,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>
           {/await}
-        {:else if dashboardView === 'roles'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('roles')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'roles'} hidden={dashboardView !== 'roles'}>
           {#await loadDashboardRolesTreeTab() then RolesTreeTab}
             <RolesTreeTab
               {squadInfraRows}
@@ -785,7 +796,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Roles tab.</p>
           {/await}
-        {:else if dashboardView === 'treasury'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('treasury')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'treasury'} hidden={dashboardView !== 'treasury'}>
           {#await loadDashboardTreasuryTab() then TreasuryTab}
             <TreasuryTab
               parentId={parentId ?? ''}
@@ -800,7 +814,10 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Treasury tab.</p>
           {/await}
-        {:else if dashboardView === 'crew'}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('crew')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'crew'} hidden={dashboardView !== 'crew'}>
           {#await loadDashboardCrewTab() then CrewTab}
             <CrewTab
               squad={parent}
@@ -820,6 +837,7 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Crew tab.</p>
           {/await}
+          </div>
         {/if}
       </div>
     </div>
@@ -1107,5 +1125,9 @@ import { TREASURY_SAFE_UI_CAP, vaultTreasurySafesForParent } from '../../lib/tre
     margin: 16px;
     font-size: 0.875rem;
     color: var(--danger, #e53e3e);
+  }
+
+  .dashboard-tab-pane[hidden] {
+    display: none !important;
   }
 </style>
