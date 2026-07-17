@@ -23,7 +23,11 @@
   $: wearerAddresses = wearerAddressesByHatId[node.hatId] ?? [];
   $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
   $: prettyId = prettyHatId(node.hatId) ?? node.hatId;
-  $: title = roleLabel || node.details?.trim() || 'Untitled hat';
+  $: humanDetails = humanHatDetails(node.details);
+  $: title = roleLabel || humanDetails || 'Untitled hat';
+  /** Extra line only when role label and a distinct human details string both exist. */
+  $: detailsSubtitle =
+    roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '';
   $: hasWearers = wearerAddresses.length > 0 || node.supply > 0;
   $: children = node.children ?? [];
   $: childCount = children.length;
@@ -58,6 +62,12 @@
   function wearerExplorerTitle(address: string): string {
     return `Open ${address.trim()} on block explorer`;
   }
+
+  function humanHatDetails(raw: string | null | undefined): string {
+    const t = raw?.trim() ?? '';
+    if (!t || t.includes('://')) return '';
+    return t;
+  }
 </script>
 
 <div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined}>
@@ -65,8 +75,8 @@
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
       <span class="hats-tree-node-title">{title}</span>
-      {#if roleLabel && node.details?.trim() && node.details.trim() !== roleLabel}
-        <span class="hats-tree-node-details muted">{node.details.trim()}</span>
+      {#if detailsSubtitle}
+        <span class="hats-tree-node-details muted">{detailsSubtitle}</span>
       {/if}
     </div>
     <div class="hats-tree-node-footer">

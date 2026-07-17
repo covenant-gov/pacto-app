@@ -37,8 +37,13 @@
 </script>
 
 {#if $toastMessage}
-  <div class="toast" role="status" aria-live="polite">
-    <span class="toast-icon" aria-hidden="true">✓</span>
+  <div
+    class="toast"
+    class:toast-error={!!$toastMessage.error}
+    role={$toastMessage.error ? 'alert' : 'status'}
+    aria-live={$toastMessage.error ? 'assertive' : 'polite'}
+  >
+    <span class="toast-icon" aria-hidden="true">{$toastMessage.error ? '!' : '✓'}</span>
     <div class="toast-body">
       <span class="toast-text">{$toastMessage.text}</span>
       {#if $toastMessage.goTo}
@@ -62,6 +67,9 @@
         </button>
       {/if}
     </div>
+    <button type="button" class="toast-dismiss" on:click={clearToast} aria-label="Dismiss">
+      ×
+    </button>
   </div>
 {/if}
 
@@ -72,9 +80,10 @@
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
-    padding: 12px 20px;
+    padding: 12px 16px 12px 20px;
+    max-width: min(560px, calc(100vw - 32px));
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -87,10 +96,15 @@
     pointer-events: auto;
   }
 
+  .toast-error {
+    border-color: color-mix(in srgb, var(--danger, #e53e3e) 55%, var(--border));
+  }
+
   .toast-icon {
     flex-shrink: 0;
     width: 22px;
     height: 22px;
+    margin-top: 1px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -101,15 +115,22 @@
     font-weight: 700;
   }
 
+  .toast-error .toast-icon {
+    background: var(--danger, #e53e3e);
+  }
+
   .toast-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
     min-width: 0;
+    flex: 1;
   }
 
   .toast-text {
     line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .toast-go-btn {
@@ -125,6 +146,24 @@
   }
 
   .toast-go-btn:hover {
+    background: var(--bg-hover);
+  }
+
+  .toast-dismiss {
+    flex-shrink: 0;
+    margin: -4px -4px 0 0;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  .toast-dismiss:hover {
+    color: var(--text-primary);
     background: var(--bg-hover);
   }
 

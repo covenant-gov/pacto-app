@@ -71,6 +71,24 @@ Hat IDs and Safe / Squad Admin addresses come from the Nave Pirata registry depl
 
 Squad Admin executor flags (`FULL`, `PAUSE`, custom tags) appear on the capability snapshot for UI; granting those roles is captain-gated today.
 
+## Funding deploy / deposit vs roster ownership
+
+| Concern | Rule |
+|---------|------|
+| Who may deploy sponsor / deposit | Nostr **parent member** (MLS group or roster binding) |
+| Who pays deploy gas / deposit | **Default** (DM) wallet or any phrase-derived key for that identity |
+| Ext `addressOwner` / hat wearers | Squad **roster** EVM only |
+
+Do not require deployer EVM == roster owner. Default may fund; hats and Ext ownership stay on the roster address.
+
+## Sponsored gov writes (ERC-4337)
+
+When the roster key has **0 ETH** and sponsor infra exists, `send_gov_module_call` prefers a **UserOp** via `PactoSponsorPaymaster` (bundler + EIP-7702 account implementation for empty-code EOAs). When the roster key is funded, the legacy EOA `eth_sendTransaction` path is used.
+
+Operator env: `BUNDLER_RPC_URL`, `PACTO_ERC4337_ACCOUNT_IMPL` (optional book key `networks.sepolia.erc4337.accountImplementation`). Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`.
+
+Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
+
 ## Write reliability (adjacent)
 
 - Concurrent gov / Squad Admin sends for a parent share a write lock (nonce safety under rapid clicks).

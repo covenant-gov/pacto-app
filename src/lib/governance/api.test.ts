@@ -8,11 +8,15 @@ import {
   deployNavePirataForParent,
   deploySquadAdminForParent,
   deploySquadSponsorForParent,
+  deploySquadSponsorHatsForParent,
   depositSquadSponsor,
+  getSquadSponsorWithdrawable,
+  withdrawSquadSponsor,
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
   getSquadAdminExecutorRoles,
+  getSquadSponsorExtStatus,
   getSquadSponsorSummary,
   hasSponsorInfra,
   infraTypeFromLegacyProvider,
@@ -23,6 +27,7 @@ import {
   pactoGovTreasuryEntryId,
   primaryGovernanceView,
   squadAdminCreateRole,
+  squadSponsorSetPermittedAddress,
   squadAdminEnableExecutor,
   squadAdminEnableFullPermission,
   squadAdminInfraId,
@@ -170,6 +175,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       amountWei: '1000',
       sponsorAddress: '0xabc',
+      signerWallet: 'default',
     });
   });
 
@@ -181,6 +187,55 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       amountWei: '1000',
       sponsorAddress: null,
+      signerWallet: 'default',
+    });
+  });
+
+  it('withdrawSquadSponsor sends withdraw_squad_sponsor with account id', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await withdrawSquadSponsor({
+      network: NETWORK,
+      parentId: PARENT,
+      accountId: '  acc-1 ',
+      sponsorAddress: ' 0xabc ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('withdraw_squad_sponsor', {
+      network: NETWORK,
+      parentId: PARENT,
+      accountId: 'acc-1',
+      sponsorAddress: '0xabc',
+    });
+  });
+
+  it('getSquadSponsorWithdrawable trims address args', async () => {
+    mockedInvoke.mockResolvedValueOnce('1000');
+    await getSquadSponsorWithdrawable({
+      network: NETWORK,
+      parentId: PARENT,
+      accountAddress: ' 0xdef ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_squad_sponsor_withdrawable', {
+      network: NETWORK,
+      parentId: PARENT,
+      accountAddress: '0xdef',
+      sponsorAddress: null,
+    });
+  });
+
+  it('deploySquadSponsorHatsForParent sends deploy_squad_sponsor_hats_for_parent', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deploySquadSponsorHatsForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: ' 42 ',
+      initialDepositWei: '1000',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_squad_sponsor_hats_for_parent', {
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: '42',
+      initialDepositWei: '1000',
+      signerWallet: 'squad',
     });
   });
 
@@ -191,7 +246,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       parentId: PARENT,
       initialDepositWei: null,
-      signerWallet: 'squad',
+      signerWallet: 'default',
     });
   });
 
@@ -221,6 +276,39 @@ describe('api command wrappers', () => {
     });
   });
 
+  it('getSquadSponsorExtStatus sends member addresses trimmed', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await getSquadSponsorExtStatus({
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddresses: [' 0xabc ', '', '0xdef'],
+      sponsorAddress: ' 0xsponsor ',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('get_squad_sponsor_ext_status', {
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddresses: ['0xabc', '0xdef'],
+      sponsorAddress: '0xsponsor',
+    });
+  });
+
+  it('squadSponsorSetPermittedAddress sends squad_sponsor_set_permitted_address', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await squadSponsorSetPermittedAddress({
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddress: ' 0xabc ',
+      permitted: true,
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('squad_sponsor_set_permitted_address', {
+      network: NETWORK,
+      parentId: PARENT,
+      memberAddress: '0xabc',
+      permitted: true,
+      sponsorAddress: null,
+    });
+  });
+
   it('deployNavePirataForParent sends deploy_nave_pirata_for_parent', async () => {
     mockedInvoke.mockResolvedValueOnce({});
     await deployNavePirataForParent({
@@ -235,6 +323,26 @@ describe('api command wrappers', () => {
       captain: '0xabc',
       metadataUri: 'https://example.com',
       saltNonce: null,
+      signerWallet: 'squad',
+    });
+  });
+
+  it('deployNavePirataForParent passes signerWallet when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deployNavePirataForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      metadataUri: 'uri',
+      signerWallet: 'default',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_nave_pirata_for_parent', {
+      network: NETWORK,
+      parentId: PARENT,
+      captain: '0xabc',
+      metadataUri: 'uri',
+      saltNonce: null,
+      signerWallet: 'default',
     });
   });
 

@@ -16,10 +16,11 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
+use super::access_control::{require_capability, GovCapability};
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
-use super::squad_sponsor_common::require_sponsor_infra_for_parent;
+use super::squad_sponsor_common::require_parent_member;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -133,7 +134,10 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
             None,
         ));
     }
-    require_sponsor_infra_for_parent(&app, pid)?;
+    require_parent_member(&app, pid).await?;
+    if db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false) {
+        require_capability(&app, pid, GovCapability::CaptainResign).await?;
+    }
 
     let variant_key = parse_variant(variant.as_str())
         .map_err(|e| wallet_err_json("INVALID_VARIANT", e, None))?;
@@ -170,6 +174,19 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
                     .map_err(|e| wallet_err_json("INVALID_OWNER", e, None))?,
                 None => signer.address(),
             };
+            let roster = db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
+            let owner_on_roster = roster.iter().any(|row| {
+                parse_address(row.evm_address.as_str())
+                    .map(|a| a == owner_addr)
+                    .unwrap_or(false)
+            });
+            if !owner_on_roster {
+                return Err(wallet_err_json(
+                    "INVALID_OWNER",
+                    "owner must be a squad-assigned roster EVM for a member of this parent",
+                    None,
+                ));
+            }
             deploySquadAdminExtStandaloneCall {
                 squadAdminExtImplementation: addrs.master_squad_admin_ext_impl,
                 owner: owner_addr,

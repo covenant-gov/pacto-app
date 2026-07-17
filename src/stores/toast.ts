@@ -1,6 +1,8 @@
 import { writable } from 'svelte/store';
 
-const TOAST_DURATION_MS = 4000;
+const TOAST_DURATION_MS = 8_000;
+const TOAST_ERROR_DURATION_MS = 20_000;
+const TOAST_ACTION_DURATION_MS = 12_000;
 
 export interface ToastGoTo {
   type: 'squad';
@@ -15,6 +17,8 @@ export interface ToastState {
   text: string;
   goTo?: ToastGoTo;
   retryLabel?: string;
+  /** When true, toast stays longer and uses error styling. */
+  error?: boolean;
 }
 
 export interface ToastRetryAction {
@@ -22,7 +26,12 @@ export interface ToastRetryAction {
   action: () => void | Promise<void>;
 }
 
-/** Current toast; when set, Toast component shows it and auto-clears after TOAST_DURATION_MS. */
+export interface ShowToastOptions {
+  durationMs?: number;
+  error?: boolean;
+}
+
+/** Current toast; when set, Toast component shows it and auto-clears after the duration. */
 export const toastMessage = writable<ToastState | null>(null);
 
 let clearTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -44,16 +53,29 @@ export function runToastRetryAction(): void {
   void action();
 }
 
-/** Show a short-lived toast (e.g. "[Squad name] is ready!"). Optionally pass goTo so the toast shows a "Go to [name]" button that navigates and closes. */
-export function showToast(text: string, goTo?: ToastGoTo, retry?: ToastRetryAction): void {
+/** Show a toast. Errors stay longer so they can be read/copied. */
+export function showToast(
+  text: string,
+  goTo?: ToastGoTo,
+  retry?: ToastRetryAction,
+  opts?: ShowToastOptions,
+): void {
   clearToast();
   toastRetryAction = retry ?? null;
+  const error = opts?.error === true;
   toastMessage.set({
     text,
     goTo,
     retryLabel: retry?.label,
+    error: error || undefined,
   });
-  const ms = goTo || retry ? Math.max(TOAST_DURATION_MS, 12_000) : TOAST_DURATION_MS;
+  const ms =
+    opts?.durationMs ??
+    (error
+      ? TOAST_ERROR_DURATION_MS
+      : goTo || retry
+        ? Math.max(TOAST_DURATION_MS, TOAST_ACTION_DURATION_MS)
+        : TOAST_DURATION_MS);
   clearTimeoutId = setTimeout(() => {
     toastMessage.set(null);
     toastRetryAction = null;

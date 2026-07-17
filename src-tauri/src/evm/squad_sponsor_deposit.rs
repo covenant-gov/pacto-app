@@ -10,8 +10,14 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::rpc::signer::{load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed};
-use super::squad_sponsor_common::{parse_deposit_wei, read_squad_record, squad_id_from_parent_id};
+use super::rpc::signer::{
+    load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
+    require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
+};
+use super::squad_sponsor_common::{
+    parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
+    squad_id_from_parent_id,
+};
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
 use super::pacto_chain_config;
@@ -34,6 +40,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     parent_id: String,
     amount_wei: String,
     sponsor_address: Option<String>,
+    signer_wallet: Option<String>,
 ) -> Result<SquadSponsorDepositResult, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -43,6 +50,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
 
     let amount = parse_deposit_wei(Some(amount_wei.as_str()))
         .map_err(|e| wallet_err_json("INVALID_AMOUNT", e, None))?;
@@ -101,8 +109,14 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
             .0
     };
 
-    require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
+    let (_signer, wallet) = if signer_mode == "default" {
+        require_treasury_signing_allowed(app.clone()).await?;
+        load_active_squad_embedded_signer(app.clone()).await?
+    } else {
+        require_roster_treasury_signing_allowed(app.clone(), pid).await?;
+        load_squad_roster_embedded_signer(app.clone(), pid).await?
+    };
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let calldata = depositCall {}.abi_encode();
