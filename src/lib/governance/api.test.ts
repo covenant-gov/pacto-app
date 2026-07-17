@@ -18,6 +18,7 @@ import {
   getSquadAdminExecutorRoles,
   getSquadSponsorExtStatus,
   getSquadSponsorSummary,
+  getSquadSponsorVariant,
   hasSponsorInfra,
   infraTypeFromLegacyProvider,
   listSquadInfra,
@@ -126,6 +127,39 @@ describe('squad infra helpers', () => {
     expect(hasSponsorInfra([pacto])).toBe(false);
     expect(pactoGovInfraRow([])).toBeNull();
     expect(pactoGovInfraRow(undefined)).toBeNull();
+  });
+});
+
+describe('getSquadSponsorVariant', () => {
+  it('prefers the top-level variant over the payload', () => {
+    expect(
+      getSquadSponsorVariant({ variant: 'ext', providerPayload: '{"variant":"hats"}' }),
+    ).toBe('ext');
+  });
+
+  it('falls back to the providerPayload variant', () => {
+    expect(getSquadSponsorVariant({ providerPayload: '{"variant":"hats"}' })).toBe('hats');
+  });
+
+  it('falls back to the payload when the top-level variant is unrecognized', () => {
+    expect(
+      getSquadSponsorVariant({ variant: 'weird', providerPayload: '{"variant":"ext"}' }),
+    ).toBe('ext');
+  });
+
+  it('normalizes case and surrounding whitespace', () => {
+    expect(getSquadSponsorVariant({ variant: ' HATS ' })).toBe('hats');
+  });
+
+  it('returns null for unrecognized or missing values', () => {
+    expect(getSquadSponsorVariant(null)).toBeNull();
+    expect(getSquadSponsorVariant(undefined)).toBeNull();
+    expect(getSquadSponsorVariant({})).toBeNull();
+    expect(getSquadSponsorVariant({ variant: 'nope' })).toBeNull();
+    expect(getSquadSponsorVariant({ providerPayload: 'not json' })).toBeNull();
+    expect(getSquadSponsorVariant({ providerPayload: '{"variant":"nope"}' })).toBeNull();
+    expect(getSquadSponsorVariant({ providerPayload: '{"variant":3}' })).toBeNull();
+    expect(getSquadSponsorVariant({ providerPayload: '42' })).toBeNull();
   });
 });
 

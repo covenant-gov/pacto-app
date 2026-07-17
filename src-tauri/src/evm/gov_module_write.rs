@@ -1,7 +1,8 @@
 //! Shared squad-key contract call helper for Pacto Gov module writes.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
+use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
@@ -12,7 +13,10 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
     wallet_err_json,
 };
-use super::sponsor_userop::{roster_native_balance_wei, send_sponsored_gov_userop};
+use super::sponsor_userop::{
+    bundler_rpc_url, roster_native_balance_wei, send_sponsored_gov_userop,
+    wait_for_user_operation_tx_hash,
+};
 use super::wallet_chain_config;
 use crate::db;
 
@@ -55,15 +59,42 @@ pub async fn send_gov_module_call<R: Runtime>(
 
     // Prefer sponsored UserOp when roster has no ETH and sponsor infra exists.
     let read_provider = connect_read_provider(&urls).await?;
-    let balance = roster_native_balance_wei(&read_provider, signer.address()).await?;
-    if balance.is_zero() && db::parent_has_sponsor_infra(&app, pid).unwrap_or(false) {
+    let has_sponsor_infra = db::parent_has_sponsor_infra(&app, pid).unwrap_or(false);
+    // A failed balance lookup must not block writes: the sponsored path needs no roster
+    // balance, but without sponsor infra there is no route for the write at all.
+    let balance = match roster_native_balance_wei(&read_provider, signer.address()).await {
+        Ok(balance) => balance,
+        Err(e) if has_sponsor_infra => {
+            log::warn!(target: "pacto_wallet", "roster balance lookup failed; trying sponsored path: {e}");
+            U256::ZERO
+        }
+        Err(e) => {
+            return Err(wallet_err_json(
+                "BALANCE_LOOKUP",
+                format!("roster balance check failed and no sponsor infra is configured, so the write can't be routed: {e}"),
+                None,
+            ));
+        }
+    };
+    if balance.is_zero() && has_sponsor_infra {
         match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await {
             Ok(user_op_hash) => {
-                return Ok((user_op_hash, net.key.clone(), net.chain_id));
+                // The write guard must stay held through inclusion: returning now would let
+                // the next write reuse the same EntryPoint nonce. Callers expect a real L1
+                // transaction hash, not the bundler userOp hash.
+                let bundler = bundler_rpc_url().ok_or_else(|| {
+                    wallet_err_json(
+                        "BUNDLER_CONFIG",
+                        "Set BUNDLER_RPC_URL for sponsored governance writes when the roster key has no ETH.",
+                        None,
+                    )
+                })?;
+                let tx_hash = wait_for_user_operation_tx_hash(&bundler, &user_op_hash).await?;
+                return Ok((tx_hash, net.key.clone(), net.chain_id));
             }
             Err(e) => {
                 // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
-                if e.contains("BUNDLER_CONFIG") || e.contains("ERC4337_ACCOUNT_CONFIG") {
+                if is_soft_sponsor_config_error(&e) {
                     return Err(wallet_err_json(
                         "SPONSOR_PATH_UNAVAILABLE",
                         format!(
@@ -91,6 +122,22 @@ pub async fn send_gov_module_call<R: Runtime>(
         net.key.clone(),
         net.chain_id,
     ))
+}
+
+/// Stable `code` of a structured wallet error JSON; unparseable errors have no code and
+/// are treated as hard failures by callers.
+fn wallet_error_code(err: &str) -> Option<String> {
+    let parsed: Value = serde_json::from_str(err).ok()?;
+    parsed.get("code")?.as_str().map(str::to_string)
+}
+
+/// Soft sponsor-path config gaps the user can fix by funding the roster key or completing
+/// bundler/account config.
+fn is_soft_sponsor_config_error(err: &str) -> bool {
+    matches!(
+        wallet_error_code(err).as_deref(),
+        Some("BUNDLER_CONFIG" | "ERC4337_ACCOUNT_CONFIG")
+    )
 }
 
 /// Prefer explicit parent_id; else look up from an infra address stored as canonical_ref.

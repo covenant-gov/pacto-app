@@ -42,6 +42,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 
 - [ ] **Deploy** → Advanced → **Deploy squad sponsor (Ext)** for an address-list sponsor. Confirm **allowlist owner** is the squad-assigned roster EVM and **Pay gas and deposit from** defaults to **Default signer** when Default is funded and the roster key is empty.
 - [ ] On explorer: `addressOwner()` on the new clone equals the roster EVM; when Default paid, deployer ≠ owner.
+- [ ] Devtools: `deploy_squad_sponsor_for_parent` (Ext) now defaults `signerWallet` to `'default'` (Default pays gas + deposit; roster EVM stays allowlist owner) — pass `signerWallet: 'squad'` to fund from the squad roster key instead.
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
 - [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).

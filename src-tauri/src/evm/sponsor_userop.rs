@@ -285,26 +285,67 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         .await
         .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
 
-    let user_op = json!({
-        "sender": format!("{member:#x}"),
-        "nonce": format!("{nonce:#x}"),
-        "factory": Value::Null,
-        "factoryData": "0x",
-        "callData": format!("0x{}", hex::encode(&execute_calldata)),
-        "callGasLimit": format!("{call_gas_limit:#x}"),
-        "verificationGasLimit": format!("{verification_gas_limit:#x}"),
-        "preVerificationGas": format!("{pre_verification_gas:#x}"),
-        "maxFeePerGas": format!("{max_fee:#x}"),
-        "maxPriorityFeePerGas": format!("{max_priority:#x}"),
-        "paymaster": format!("{:#x}", addrs.pacto_sponsor_paymaster),
-        "paymasterVerificationGasLimit": format!("{DEFAULT_VERIFICATION_GAS_LIMIT:#x}"),
-        "paymasterPostOpGasLimit": format!("{DEFAULT_POST_OP_GAS_LIMIT:#x}"),
-        "paymasterData": format!("0x{}", hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..])),
-        "signature": format!("0x{}", hex::encode(sig.as_bytes())),
-        "eip7702Auth": eip7702_auth,
-    });
+    let user_op = user_op_json(UserOpParams {
+        sender: member,
+        nonce,
+        call_data: &execute_calldata,
+        call_gas_limit,
+        verification_gas_limit,
+        pre_verification_gas,
+        max_fee_per_gas: max_fee,
+        max_priority_fee_per_gas: max_priority,
+        paymaster: addrs.pacto_sponsor_paymaster,
+        paymaster_and_data: &paymaster_and_data,
+        signature: &sig.as_bytes(),
+        eip7702_auth,
+    })?;
 
     bundler_send_user_operation(&bundler, &user_op, addrs.entry_point).await
+}
+
+/// Fields of the ERC-4337 v0.7 UserOperation JSON sent to the bundler.
+struct UserOpParams<'a> {
+    sender: Address,
+    nonce: U256,
+    call_data: &'a [u8],
+    call_gas_limit: u128,
+    verification_gas_limit: u128,
+    pre_verification_gas: u128,
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    paymaster: Address,
+    paymaster_and_data: &'a [u8],
+    signature: &'a [u8],
+    eip7702_auth: Option<Value>,
+}
+
+/// Serializes the UserOperation for `eth_sendUserOperation` (EntryPoint v0.7 shape).
+fn user_op_json(p: UserOpParams) -> Result<Value, String> {
+    Ok(json!({
+        "sender": format!("{:#x}", p.sender),
+        "nonce": format!("{:#x}", p.nonce),
+        "factory": Value::Null,
+        "factoryData": "0x",
+        "callData": format!("0x{}", hex::encode(p.call_data)),
+        "callGasLimit": format!("{:#x}", p.call_gas_limit),
+        "verificationGasLimit": format!("{:#x}", p.verification_gas_limit),
+        "preVerificationGas": format!("{:#x}", p.pre_verification_gas),
+        "maxFeePerGas": format!("{:#x}", p.max_fee_per_gas),
+        "maxPriorityFeePerGas": format!("{:#x}", p.max_priority_fee_per_gas),
+        "paymaster": format!("{:#x}", p.paymaster),
+        "paymasterVerificationGasLimit": format!("{DEFAULT_VERIFICATION_GAS_LIMIT:#x}"),
+        "paymasterPostOpGasLimit": format!("{DEFAULT_POST_OP_GAS_LIMIT:#x}"),
+        "paymasterData": format!("0x{}", hex::encode(paymaster_data(p.paymaster_and_data)?)),
+        "signature": format!("0x{}", hex::encode(p.signature)),
+        "eip7702Auth": p.eip7702_auth,
+    }))
+}
+
+/// `paymasterData` is `paymasterAndData` past its fixed header; short input is a bug, not a panic.
+fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
+    paymaster_and_data.get(PAYMASTER_DATA_OFFSET..).ok_or_else(|| {
+        wallet_err_json("PAYMASTER_DATA", "paymasterAndData shorter than 52-byte header", None)
+    })
 }
 
 fn pack_u128s(hi: u128, lo: u128) -> B256 {
@@ -430,6 +471,12 @@ async fn bundler_send_user_operation(
             None,
         )
     })?;
+    parse_send_user_op_response(&res)
+}
+
+/// Parses the `eth_sendUserOperation` response. A JSON-RPC error here is a bundler/
+/// paymaster validation reject, which is final and must not be retried.
+fn parse_send_user_op_response(res: &Value) -> Result<String, String> {
     if let Some(hash) = res.get("result").and_then(|v| v.as_str()) {
         return Ok(hash.to_string());
     }
@@ -440,6 +487,98 @@ async fn bundler_send_user_operation(
             .unwrap_or_else(|| "eth_sendUserOperation failed".into()),
         None,
     ))
+}
+
+/// Poll cadence and overall bound while waiting for UserOp inclusion on L1.
+const USEROP_RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const USEROP_RECEIPT_WAIT_BOUND: Duration = Duration::from_secs(90);
+
+/// `eth_getUserOperationReceipt`; `Ok(None)` while the bundler has no receipt yet.
+async fn bundler_get_user_operation_receipt(
+    bundler_url: &str,
+    user_op_hash: &str,
+) -> Result<Option<Value>, String> {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getUserOperationReceipt",
+        "params": [user_op_hash]
+    });
+    let mut attempt = 0u32;
+    let res = loop {
+        attempt += 1;
+        match bundler_rpc(bundler_url, &body).await {
+            Err(e) if e.retriable && attempt < BUNDLER_MAX_ATTEMPTS => {
+                tokio::time::sleep(bundler_retry_delay(attempt)).await;
+            }
+            result => break result,
+        }
+    };
+    let res = res.map_err(|e| {
+        wallet_err_json(
+            "BUNDLER_RPC",
+            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            None,
+        )
+    })?;
+    if let Some(error) = res.get("error") {
+        return Err(wallet_err_json(
+            "USEROP_RECEIPT",
+            crate::evm::wallet_security::redact_urls_in_text(&error.to_string()),
+            None,
+        ));
+    }
+    match res.get("result") {
+        None | Some(Value::Null) => Ok(None),
+        Some(receipt) => Ok(Some(receipt.clone())),
+    }
+}
+
+/// Real L1 transaction hash from an `eth_getUserOperationReceipt` result.
+fn receipt_transaction_hash(receipt: &Value) -> Option<String> {
+    receipt
+        .get("receipt")?
+        .get("transactionHash")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Polls `eth_getUserOperationReceipt` until the UserOp is included and returns the real L1
+/// transaction hash. Transient poll failures are logged and retried until the bound; on
+/// timeout the error carries the userOpHash so inclusion can be tracked manually.
+pub async fn wait_for_user_operation_tx_hash(
+    bundler_url: &str,
+    user_op_hash: &str,
+) -> Result<String, String> {
+    let deadline = std::time::Instant::now() + USEROP_RECEIPT_WAIT_BOUND;
+    loop {
+        match bundler_get_user_operation_receipt(bundler_url, user_op_hash).await {
+            Ok(Some(receipt)) => {
+                return receipt_transaction_hash(&receipt).ok_or_else(|| {
+                    wallet_err_json(
+                        "USEROP_RECEIPT",
+                        format!("bundler receipt for {user_op_hash} has no L1 transaction hash"),
+                        None,
+                    )
+                });
+            }
+            Ok(None) => {}
+            Err(e) => {
+                log::warn!(target: "pacto_wallet", "userop receipt poll failed; retrying: {e}");
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(wallet_err_json(
+                "USEROP_RECEIPT_TIMEOUT",
+                format!(
+                    "UserOp {user_op_hash} was not included within {}s. It may still be mined — track it by userOpHash on the bundler or explorer before resubmitting.",
+                    USEROP_RECEIPT_WAIT_BOUND.as_secs()
+                ),
+                None,
+            ));
+        }
+        tokio::time::sleep(USEROP_RECEIPT_POLL_INTERVAL).await;
+    }
 }
 
 /// Bundler JSON-RPC request timeout; a slow bundler must not hang the command.
@@ -520,9 +659,18 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        call_gas_with_margin, encode_eip7702_authorization, pack_u128s, userop_max_cost_wei,
+        bundler_retry_delay, call_gas_with_margin, encode_eip7702_authorization, pack_u128s,
+        parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, UserOpParams,
     };
-    use alloy::primitives::{address, B256, U256};
+    use crate::evm::sponsor_paymaster::{
+        encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT,
+        PAYMASTER_DATA_OFFSET,
+    };
+    use alloy::primitives::{address, b256, B256, U256};
+    use reqwest::StatusCode;
+    use serde_json::json;
+    use std::time::Duration;
 
     #[test]
     fn pack_u128s_puts_hi_lo() {
@@ -547,6 +695,122 @@ mod tests {
     fn call_gas_margin_adds_headroom() {
         assert_eq!(call_gas_with_margin(100_000), 120_000);
         assert_eq!(call_gas_with_margin(0), 0);
+    }
+
+    #[test]
+    fn user_op_json_serializes_erc4337_fields() {
+        let member = address!("0x3333333333333333333333333333333333333333");
+        let paymaster = address!("0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8");
+        let squad_id =
+            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let sponsor = address!("0x2222222222222222222222222222222222222222");
+        let paymaster_and_data = encode_paymaster_and_data(
+            paymaster,
+            squad_id,
+            sponsor,
+            member,
+            DEFAULT_VERIFICATION_GAS_LIMIT,
+            DEFAULT_POST_OP_GAS_LIMIT,
+        );
+        let op = user_op_json(UserOpParams {
+            sender: member,
+            nonce: U256::from(7),
+            call_data: &[0xde, 0xad],
+            call_gas_limit: 210_000,
+            verification_gas_limit: 100_000,
+            pre_verification_gas: 80_000,
+            max_fee_per_gas: 30_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+            paymaster,
+            paymaster_and_data: &paymaster_and_data,
+            signature: &[0xaa; 65],
+            eip7702_auth: None,
+        })
+        .unwrap();
+        assert_eq!(op["sender"], json!(format!("{member:#x}")));
+        assert_eq!(op["nonce"], json!("0x7"));
+        assert!(op["factory"].is_null());
+        assert_eq!(op["factoryData"], json!("0x"));
+        assert_eq!(op["callData"], json!("0xdead"));
+        assert_eq!(op["callGasLimit"], json!("0x33450"));
+        assert_eq!(op["verificationGasLimit"], json!("0x186a0"));
+        assert_eq!(op["preVerificationGas"], json!("0x13880"));
+        assert_eq!(op["maxFeePerGas"], json!("0x6fc23ac00"));
+        assert_eq!(op["maxPriorityFeePerGas"], json!("0x3b9aca00"));
+        assert_eq!(op["paymaster"], json!(format!("{paymaster:#x}")));
+        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x186a0"));
+        assert_eq!(op["paymasterPostOpGasLimit"], json!("0xc350"));
+        let expected_pmd = hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..]);
+        assert_eq!(op["paymasterData"], json!(format!("0x{expected_pmd}")));
+        assert_eq!(op["signature"], json!(format!("0x{}", "aa".repeat(65))));
+        assert!(op["eip7702Auth"].is_null());
+    }
+
+    #[test]
+    fn paymaster_data_slices_past_header_and_rejects_short_input() {
+        let pmd = paymaster_data(&[0u8; 180]).unwrap();
+        assert_eq!(pmd.len(), 180 - PAYMASTER_DATA_OFFSET);
+        assert_eq!(paymaster_data(&[0u8; 52]).unwrap(), &[] as &[u8]);
+        let err = paymaster_data(&[0u8; 51]).unwrap_err();
+        assert!(err.contains("PAYMASTER_DATA"));
+    }
+
+    #[test]
+    fn parse_send_user_op_response_returns_hash_on_success() {
+        let ok = json!({"jsonrpc": "2.0", "id": 1, "result": "0xabc"});
+        assert_eq!(parse_send_user_op_response(&ok).unwrap(), "0xabc");
+    }
+
+    #[test]
+    fn parse_send_user_op_response_codes_bundler_rejects() {
+        let rejected = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32500, "message": "paymaster stake too low"}
+        });
+        let err = parse_send_user_op_response(&rejected).unwrap_err();
+        assert!(err.contains("PAYMASTER_REJECTED"));
+        assert!(err.contains("paymaster stake too low"));
+
+        let missing = json!({"jsonrpc": "2.0", "id": 1});
+        let err = parse_send_user_op_response(&missing).unwrap_err();
+        assert!(err.contains("PAYMASTER_REJECTED"));
+        assert!(err.contains("eth_sendUserOperation failed"));
+    }
+
+    #[test]
+    fn receipt_transaction_hash_extracts_nested_l1_hash() {
+        let receipt = json!({
+            "userOpHash": "0xaaa",
+            "success": true,
+            "receipt": {"transactionHash": "0xbbb", "blockNumber": "0x1"}
+        });
+        assert_eq!(receipt_transaction_hash(&receipt), Some("0xbbb".to_string()));
+
+        let pending_shape = json!({"userOpHash": "0xaaa"});
+        assert_eq!(receipt_transaction_hash(&pending_shape), None);
+        let wrong_type = json!({"receipt": {"transactionHash": 7}});
+        assert_eq!(receipt_transaction_hash(&wrong_type), None);
+    }
+
+    #[test]
+    fn retry_classification_covers_only_transient_statuses() {
+        assert!(retriable_bundler_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(retriable_bundler_status(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(retriable_bundler_status(StatusCode::SERVICE_UNAVAILABLE));
+        assert!(!retriable_bundler_status(StatusCode::BAD_REQUEST));
+        assert!(!retriable_bundler_status(StatusCode::UNAUTHORIZED));
+        assert!(!retriable_bundler_status(StatusCode::OK));
+    }
+
+    #[test]
+    fn retry_delay_stays_within_backoff_caps() {
+        for _ in 0..64 {
+            assert!(bundler_retry_delay(1) <= Duration::from_millis(250));
+            assert!(bundler_retry_delay(2) <= Duration::from_millis(500));
+            assert!(bundler_retry_delay(3) <= Duration::from_millis(1_000));
+            assert!(bundler_retry_delay(30) <= Duration::from_secs(2));
+        }
     }
 
     #[test]

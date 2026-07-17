@@ -15,8 +15,37 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json,
 };
-use super::squad_sponsor_common::resolve_sponsor_for_parent;
+use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::wallet_chain_config;
+
+/// Ext exposes only a single-address `permittedAddress` view, so each member costs one
+/// eth_call; cap the fan-out per status call.
+const MAX_MEMBER_PERMIT_LOOKUPS: usize = 64;
+
+/// Valid, deduped member addresses to check, capped at the RPC fan-out limit.
+/// The bool flags whether valid addresses beyond the cap were skipped.
+fn member_lookup_list(member_addresses: &[String]) -> (Vec<Address>, bool) {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for raw in member_addresses {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let addr = match parse_address(trimmed) {
+            Ok(a) if !a.is_zero() => a,
+            _ => continue,
+        };
+        if !seen.insert(addr) {
+            continue;
+        }
+        if out.len() == MAX_MEMBER_PERMIT_LOOKUPS {
+            return (out, true);
+        }
+        out.push(addr);
+    }
+    (out, false)
+}
 
 fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>, String> {
     let addr = parse_address(member.trim())
@@ -52,10 +81,14 @@ pub struct SquadSponsorExtStatus {
     pub address_owner: String,
     pub hats_wired: bool,
     pub member_permits: Vec<SquadSponsorExtMemberPermit>,
+    pub member_permits_truncated: bool,
 }
 
+/// Ext has only a single-address permit view: member lookups stop at the fan-out cap and set
+/// `memberPermitsTruncated`; callers with larger rosters page `member_addresses` in chunks.
 #[tauri::command]
-pub async fn get_squad_sponsor_ext_status(
+pub async fn get_squad_sponsor_ext_status<R: Runtime>(
+    app: AppHandle<R>,
     network: String,
     parent_id: String,
     member_addresses: Vec<String>,
@@ -69,6 +102,7 @@ pub async fn get_squad_sponsor_ext_status(
             None,
         ));
     }
+    require_parent_member(&app, pid).await?;
 
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -106,21 +140,9 @@ pub async fn get_squad_sponsor_ext_status(
         .await
         .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
 
-    let mut seen = std::collections::HashSet::new();
-    let mut member_permits = Vec::new();
-    for raw in member_addresses {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let addr = match parse_address(trimmed) {
-            Ok(a) if !a.is_zero() => a,
-            _ => continue,
-        };
-        let key = format!("{:#x}", addr).to_ascii_lowercase();
-        if !seen.insert(key.clone()) {
-            continue;
-        }
+    let (members, member_permits_truncated) = member_lookup_list(&member_addresses);
+    let mut member_permits = Vec::with_capacity(members.len());
+    for addr in members {
         let permitted: bool =
             eth_call_decode(&provider, sponsor, &permittedAddressCall { member: addr })
                 .await
@@ -139,6 +161,7 @@ pub async fn get_squad_sponsor_ext_status(
         address_owner: format!("{:#x}", owner),
         hats_wired,
         member_permits,
+        member_permits_truncated,
     })
 }
 

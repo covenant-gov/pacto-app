@@ -162,6 +162,8 @@ export async function getSquadSponsorWithdrawable(params: {
   })) as string;
 }
 
+export type SquadSponsorVariant = 'ext' | 'hats';
+
 /** Mirrors `SquadSponsorDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorDeployResultDto {
   txHash: string;
@@ -170,7 +172,8 @@ export interface SquadSponsorDeployResultDto {
   squadId: string;
   sponsorAddress: string;
   paymasterAddress: string;
-  variant: string;
+  /** 'ext' or 'hats'; absent on results from older backends. */
+  variant?: SquadSponsorVariant;
   providerPayload: string;
   infraRowId: string;
 }
@@ -226,6 +229,17 @@ export async function deploySquadSponsorHatsForParent(params: {
     signerWallet: params.signerWallet ?? 'squad',
   })) as SquadSponsorDeployResultDto;
 }
+
+/**
+ * Combined deploy action: Nave Pirata gov + hats squad sponsor + optional crew bootstrap
+ * (sponsor-only variant finishes the hats sponsor when gov already exists). Single
+ * agent-callable entry point with the wizard's validation and soft-failure handling.
+ */
+export {
+  startHatsSponsorOnlyDeploy,
+  startPactoGovAndSponsorDeploy,
+} from './start-pacto-gov-and-sponsor-deploy';
+export type { CombinedGovSponsorDeployComplete } from './start-pacto-gov-and-sponsor-deploy';
 
 /** Mirrors `SquadSponsorSummary` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorSummaryDto {
