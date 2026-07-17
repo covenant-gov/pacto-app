@@ -164,6 +164,29 @@ export async function getSquadSponsorWithdrawable(params: {
 
 export type SquadSponsorVariant = 'ext' | 'hats';
 
+/** Normalizes a top-level or persisted payload variant into `'ext' | 'hats'`. */
+export function getSquadSponsorVariant(
+  source: { variant?: string | null; providerPayload?: string | null } | null | undefined,
+): SquadSponsorVariant | null {
+  const top = source?.variant?.trim().toLowerCase();
+  if (top === 'ext' || top === 'hats') return top;
+  const raw = source?.providerPayload?.trim();
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && 'variant' in parsed) {
+      const payloadVariant = parsed.variant;
+      if (typeof payloadVariant === 'string') {
+        const norm = payloadVariant.trim().toLowerCase();
+        if (norm === 'ext' || norm === 'hats') return norm;
+      }
+    }
+  } catch {
+    // ignore malformed payload
+  }
+  return null;
+}
+
 /** Mirrors `SquadSponsorDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorDeployResultDto {
   txHash: string;
@@ -213,22 +236,6 @@ export async function deploySquadSponsorHatsForParent(params: {
   })) as SquadSponsorDeployResultDto;
 }
 
-/** Backend: `deploy_squad_sponsor_hats_for_parent` (hat-first SquadSponsor). */
-export async function deploySquadSponsorHatsForParent(params: {
-  network: string;
-  parentId: string;
-  topHatId: string;
-  initialDepositWei?: string | null;
-  signerWallet?: SquadSponsorDeploySignerWallet;
-}): Promise<SquadSponsorDeployResultDto> {
-  return (await invoke('deploy_squad_sponsor_hats_for_parent', {
-    network: params.network,
-    parentId: params.parentId,
-    topHatId: params.topHatId.trim(),
-    initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
-    signerWallet: params.signerWallet ?? 'squad',
-  })) as SquadSponsorDeployResultDto;
-}
 
 /**
  * Combined deploy action: Nave Pirata gov + hats squad sponsor + optional crew bootstrap
