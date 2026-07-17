@@ -1,55 +1,36 @@
 # Local message encryption (SQLite)
 
-DM-related rows in **`events`** (and similar) store **content encrypted with the user’s PIN-derived key**, not raw NIP-44 ciphertext from the relay. This page explains the model so you can debug **`[Decryption failed]`** and logout/re-login edge cases.
+> **Superseded by** [`../security/CRYPTOGRAPHY.md`](../security/CRYPTOGRAPHY.md), which covers the PIN-derived key, per-device salt, v1→v2 migration, and how MLS encryption relates to at-rest storage.
+
+This page is kept as a short DM-focused reference.
 
 ---
 
-## 1. Write path
+## DM-related rows in `events`
 
-In **`db.rs`** (`save_event` and related), for kinds such as private direct messages and edits, content is passed through:
+For kinds `PRIVATE_DIRECT_MESSAGE` (14) and `MESSAGE_EDIT` (16), `db.rs::save_event` encrypts `content` with:
 
 ```rust
-internal_encrypt(event.content.clone(), None).await
+crypto::internal_encrypt(event.content.clone()).await
 ```
 
-**`internal_encrypt`** (`crypto.rs`) uses a global **`ENCRYPTION_KEY`** (32 bytes) derived from the PIN (Argon2). With `password: None`, it encrypts using the **cached** key.
-
----
-
-## 2. Read path
-
-When loading events for the UI, DM-like rows are decrypted with:
+and decrypts on read with:
 
 ```rust
-internal_decrypt(event.content, None).await
+crypto::internal_decrypt(event.content).await
 ```
 
-On failure, callers typically substitute the literal **`[Decryption failed]`** so the UI still renders a row.
+`internal_encrypt` / `internal_decrypt` use the in-memory session key set by `set_encryption_key` during login/account creation. The key is derived from the PIN with Argon2id and a per-device salt (v2 accounts) or the legacy hard-coded salt (v1 accounts, migrated on unlock).
 
-If **`ENCRYPTION_KEY`** is missing or wrong (e.g. user entered a different PIN, or key not re-set after a hot logout/login in the same process), decryption fails for **all** rows encrypted with the previous key.
+## What happens when the key is wrong
 
----
+If `ENCRYPTION_KEY` is missing or stale (e.g., after a hot logout/login without re-entering the PIN, or a wrong PIN), DM-like rows render as `[Decryption failed]`. See the full cryptography doc for the key lifecycle and migration details.
 
-## 3. Interaction with logout (same process)
-
-**`ENCRYPTION_KEY`** is stored in a **`OnceCell`** (see `lib.rs` / `crypto.rs`). Setting it **twice** in one process lifetime can fail or leave stale behavior.
-
-After **logout**, the profile directory (and thus encrypted payloads tied to that account) may be **gone**, but if the process stays alive and the user logs in again, ensure product flows **re-derive** or **reset** encryption state consistently with PIN entry. If you change logout/login behavior, re-test:
-
-1. Logout → login same npub + same PIN  
-2. Logout → login different npub  
-3. **`[Decryption failed]`** should only appear for genuinely corrupt rows or wrong PIN — not for a fresh account after a full wipe.
-
----
-
-## 4. Code index
+## Code index
 
 | Topic | Location |
-|-------|----------|
-| Encrypt/decrypt | `src-tauri/src/crypto.rs` — `internal_encrypt`, `internal_decrypt` |
-| Key cache | `ENCRYPTION_KEY` in `src-tauri/src/lib.rs` |
-| Event persistence | `src-tauri/src/db.rs` — `save_event`, `get_events_for_chat`, … |
-
----
-
-*Summarizes behavior described in former internal “legacy decryption” notes; verify against current `crypto.rs` if APIs change.*
+|---|---|
+| Encryption primitives | `src-tauri/src/crypto.rs` |
+| Salt / migration / PIN decrypt | `src-tauri/src/migration.rs` |
+| Session key cache | `src-tauri/src/lib.rs` — `ENCRYPTION_KEY`, `set_encryption_key`, `clear_encryption_key` |
+| Event persistence | `src-tauri/src/db.rs` — `save_event`, `get_events_for_chat` |
