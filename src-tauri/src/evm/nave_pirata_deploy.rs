@@ -119,6 +119,35 @@ fn nave_pirata_addresses_from_receipt(
     Err("no NavePirataDeployed or NavePirataRegistered log in receipt".into())
 }
 
+fn validate_metadata_uri(metadata_uri: &str) -> Result<String, String> {
+    let meta = metadata_uri.trim();
+    if meta.is_empty() {
+        return Err(wallet_err_json(
+            "INVALID_METADATA_URI",
+            "metadata_uri must be non-empty",
+            None,
+        ));
+    }
+    Ok(meta.to_string())
+}
+
+fn ensure_captain_on_roster<'a>(
+    captain: Address,
+    roster_evm_addresses: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let on_roster = roster_evm_addresses
+        .into_iter()
+        .any(|addr| parse_address(addr).map(|a| a == captain).unwrap_or(false));
+    if !on_roster {
+        return Err(wallet_err_json(
+            "INVALID_CAPTAIN",
+            "captain must be a squad-assigned roster EVM for a member of this parent",
+            None,
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NavePirataDeployResult {
@@ -180,27 +209,12 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     let captain_addr = parse_address(captain.trim())
         .map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
     let roster = db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
-    let captain_on_roster = roster.iter().any(|row| {
-        parse_address(row.evm_address.as_str())
-            .map(|a| a == captain_addr)
-            .unwrap_or(false)
-    });
-    if !captain_on_roster {
-        return Err(wallet_err_json(
-            "INVALID_CAPTAIN",
-            "captain must be a squad-assigned roster EVM for a member of this parent",
-            None,
-        ));
-    }
+    ensure_captain_on_roster(
+        captain_addr,
+        roster.iter().map(|row| row.evm_address.as_str()),
+    )?;
 
-    let meta = metadata_uri.trim().to_string();
-    if meta.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_METADATA_URI",
-            "metadata_uri must be non-empty",
-            None,
-        ));
-    }
+    let meta = validate_metadata_uri(&metadata_uri)?;
 
     let salt = parse_salt_nonce(salt_nonce)
         .map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
@@ -325,9 +339,77 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn wallet_err_code(err: String) -> String {
+        serde_json::from_str::<serde_json::Value>(&err)
+            .expect("wallet error must be JSON")
+            .get("code")
+            .and_then(|c| c.as_str())
+            .expect("wallet error must carry a code")
+            .to_string()
+    }
+
     #[test]
-    fn empty_metadata_uri_is_rejected_by_trim_check() {
-        let meta = "   ".trim();
-        assert!(meta.is_empty());
+    fn validate_metadata_uri_rejects_empty_and_whitespace() {
+        for input in ["", "   ", "\n\t "] {
+            let err = validate_metadata_uri(input).expect_err("blank metadata must fail");
+            assert_eq!(wallet_err_code(err), "INVALID_METADATA_URI");
+        }
+    }
+
+    #[test]
+    fn validate_metadata_uri_trims_and_keeps_value() {
+        assert_eq!(
+            validate_metadata_uri("  ipfs://bafy/metadata.json  ").unwrap(),
+            "ipfs://bafy/metadata.json"
+        );
+    }
+
+    #[test]
+    fn captain_on_roster_accepts_matching_member_address() {
+        let captain = parse_address("0x1111111111111111111111111111111111111111").unwrap();
+        let roster = [
+            "0x2222222222222222222222222222222222222222",
+            "0x1111111111111111111111111111111111111111",
+        ];
+        assert!(ensure_captain_on_roster(captain, roster).is_ok());
+    }
+
+    #[test]
+    fn captain_on_roster_matches_regardless_of_hex_case() {
+        let captain = parse_address("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        assert!(ensure_captain_on_roster(captain, ["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]).is_ok());
+    }
+
+    #[test]
+    fn captain_on_roster_rejects_absent_and_unparseable_addresses() {
+        let captain = parse_address("0x1111111111111111111111111111111111111111").unwrap();
+        let off_roster = [
+            "0x2222222222222222222222222222222222222222",
+            "not-an-address",
+        ];
+        let err = ensure_captain_on_roster(captain, off_roster)
+            .expect_err("off-roster captain must fail");
+        assert_eq!(wallet_err_code(err), "INVALID_CAPTAIN");
+
+        let err = ensure_captain_on_roster(captain, std::iter::empty())
+            .expect_err("empty roster must fail");
+        assert_eq!(wallet_err_code(err), "INVALID_CAPTAIN");
+    }
+
+    #[test]
+    fn signer_wallet_parsing_accepts_deploy_modes_and_defaults_to_squad() {
+        assert_eq!(parse_signer_wallet(None, "squad").unwrap(), "squad");
+        assert_eq!(parse_signer_wallet(Some("  "), "squad").unwrap(), "squad");
+        assert_eq!(parse_signer_wallet(Some("default"), "squad").unwrap(), "default");
+        assert_eq!(parse_signer_wallet(Some("SQUAD"), "squad").unwrap(), "squad");
+    }
+
+    #[test]
+    fn signer_wallet_parsing_rejects_unknown_modes() {
+        for bad in ["hardware", "defaultt", "0xabc"] {
+            assert!(parse_signer_wallet(Some(bad), "squad").is_err());
+        }
     }
 }
