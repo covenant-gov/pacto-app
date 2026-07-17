@@ -31,7 +31,7 @@
         "fallbackHandler": "0x017062a1dE2FE6b99BE3d9d37841FeD19F573804"
       },
       "erc4337": {
-        "accountImplementation": null
+        "accountImplementation": "0x69007702764179f14F51cdce752f4f775d74E139"
       }
     }
   }

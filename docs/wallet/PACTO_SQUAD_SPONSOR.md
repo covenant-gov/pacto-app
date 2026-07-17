@@ -24,7 +24,30 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 ## Sponsored UserOps (gov writes)
 
-When the roster EOA has no ETH, gov module writes build an EntryPoint v0.7 UserOp, EIP-7702 set-code (if code empty), and `paymasterAndData` for `PactoSponsorPaymaster`. Requires `BUNDLER_RPC_URL` and `PACTO_ERC4337_ACCOUNT_IMPL`. Self-funded EOA path remains when the roster key has balance.
+When the roster EOA has no ETH, gov module writes build an EntryPoint v0.7 UserOp, EIP-7702 set-code (if code empty), and `paymasterAndData` for `PactoSponsorPaymaster`. Self-funded EOA path remains when the roster key has balance.
+
+### Operator env
+
+| Variable | Role |
+|----------|------|
+| `BUNDLER_RPC_URL` | JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 |
+| `PACTO_ERC4337_ACCOUNT_IMPL` | Optional override of the EIP-7702 account implementation |
+
+**Bundler (Sepolia):** use the same Alchemy app as `ALCHEMY_RPC_KEY`:
+
+```bash
+BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>
+```
+
+Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not Alchemy Gas Manager); the bundler only submits UserOps.
+
+**EIP-7702 account implementation (Sepolia):** pinned in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) as `networks.sepolia.erc4337.accountImplementation`:
+
+| Address | Source | Notes |
+|---------|--------|--------|
+| `0x69007702764179f14F51cdce752f4f775d74E139` | Alchemy [SemiModularAccount7702](https://www.alchemy.com/docs/wallets/smart-contracts/deployed-addresses) (MAv2) | `entryPoint()` = EP v0.7; `execute(address,uint256,bytes)`; shared bytecode for roster EOA set-code (not a per-user deploy) |
+
+Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack.
 
 ## Manual smoke (Sepolia)
 

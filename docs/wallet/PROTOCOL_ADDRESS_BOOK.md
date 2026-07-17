@@ -11,6 +11,7 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 | `squadSponsor` | Squad sponsor deploy, deposit, summary reads |
 | `pactoGov` | Nave Pirata deploy, Hats reads, squad admin deploy |
 | `safe` | Standalone Safe deploy (pacto-gov 1.4.x bundle on Sepolia) |
+| `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
 **Sepolia** (`chainId` 11155111) is populated from the covenant-gov deploy bundle.
