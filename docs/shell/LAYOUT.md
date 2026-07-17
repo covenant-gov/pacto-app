@@ -80,7 +80,7 @@ My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
 
 **Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
 
-Governance uses role sub-modes inside `PactoGovGovernanceShell` (Proposals read board + Crew/Captain action panes). CTAs use ACL snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+Governance uses role sub-modes inside `PactoGovGovernanceShell` (Proposals read board + Crew/Captain action panes). CTAs use **ACL** (access control) snapshots from `get_squad_capabilities` (`src/lib/governance/governance-privilege.ts`). Normative rules: [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 

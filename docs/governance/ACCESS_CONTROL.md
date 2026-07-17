@@ -7,7 +7,7 @@ Normative rules for *who may perform action X on squad Y* in the desktop app. On
 1. One Nostr identity (npub) per unlocked account.
 2. Many EVM keys may derive from the same BIP-39 phrase (`bip44_v1`, squad purpose).
 3. Per-squad roster binds `(parent_id, member_npub) → EVM address` (`squad_member_evm` / `squad_member_evm_account`, MLS share).
-4. ACL checks use **that roster address only** (v1). Multi-key “any of my bip44 keys wears the hat” is out of scope.
+4. **ACL** (access control) checks use **that roster address only** (v1). Multi-key “any of my bip44 keys wears the hat” is out of scope.
 
 **Fail closed:** if the current npub has no roster EVM for `parent_id`, every capability is denied (including permissionless execute). Signing paths must not fall back to an unbound personal signer for squad-scoped writes.
 
@@ -30,6 +30,8 @@ flowchart TD
   acl --> uiGates[UI_gates]
   acl --> rustPreflight[require_capability]
 ```
+
+**ACL** = access control (classically *access control list*). In Pacto it names this layer: roster EVM + Hats / Squad Admin capability checks before signing (`require_capability`, UI snapshot). Error codes `ACL_DENIED` / `ACL_UNBOUND` use the same shorthand. It is not a separate on-chain contract.
 
 ## Enforcement
 
@@ -83,9 +85,11 @@ Do not require deployer EVM == roster owner. Default may fund; hats and Ext owne
 
 ## Sponsored gov writes (ERC-4337)
 
-When the roster key has **0 ETH** and sponsor infra exists, `send_gov_module_call` prefers a **UserOp** via `PactoSponsorPaymaster` (bundler + EIP-7702 account implementation for empty-code EOAs). When the roster key is funded, the legacy EOA `eth_sendTransaction` path is used.
+Plain rule: **roster can pay gas → EOA tx; roster cannot → sponsored UserOp** (if squad sponsor + bundler are configured). Implemented in `send_gov_module_call` / `gov_module_write`.
 
-Operator env: `BUNDLER_RPC_URL` (Alchemy Sepolia bundler URL). EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` in the address book; optional `PACTO_ERC4337_ACCOUNT_IMPL` override. See [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md). Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`.
+Signer is always the embedded **roster EOA** — not an external smart-contract wallet. EIP-7702 only applies on the sponsored path when that EOA has empty code (temporary set-code to the shared account impl). Details: [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md).
+
+Operator env: `BUNDLER_RPC_URL` (Alchemy Sepolia bundler URL). EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` in the address book; optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`.
 
 Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
 

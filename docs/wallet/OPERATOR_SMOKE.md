@@ -84,7 +84,7 @@ Prefer the combined CTA. Gov-only remains available from older flows / recovery.
 |---------|----------------|
 | `NAVE_PIRATA_CONFIG` | Missing `PACTO_NAVE_PIRATA_*` / master copies |
 | Wizard blocked | No `#announcements` on parent |
-| `ACL_UNBOUND` / `ACL_DENIED` | No roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
+| `ACL_UNBOUND` / `ACL_DENIED` | **ACL** = access control; no roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
 
 See [PACTO_GOV.md](./PACTO_GOV.md) and [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md).
 

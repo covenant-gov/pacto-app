@@ -54,7 +54,7 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 
 **Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts**. After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Only an explicit account binding satisfies the prompt.
 
-That bound address is the **only** EVM identity the squad ACL uses for Hats / Squad Admin checks and governance signing (fail closed if unbound). See [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+That bound address is the **only** EVM identity the squad **ACL** (access control) uses for Hats / Squad Admin checks and governance signing (fail closed if unbound). See [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 

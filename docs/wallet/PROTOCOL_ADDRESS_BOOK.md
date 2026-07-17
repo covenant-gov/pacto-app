@@ -14,6 +14,8 @@ Covenant / Pacto **deploy infra** (factories, paymaster, Safe bundle, Hats maste
 | `erc4337.accountImplementation` | EIP-7702 set-code target for sponsored gov UserOps (roster EOA); optional `PACTO_ERC4337_ACCOUNT_IMPL` override |
 | `meta.deployer` | Reference only (upstream deployer; not a runtime signer) |
 
+`erc4337.accountImplementation` / `PACTO_ERC4337_ACCOUNT_IMPL` is **not** pacto-gov or per-squad sponsor infra — it is the shared EIP-7702 account bytecode the roster EOA set-codes to for paymaster-sponsored UserOps (must match EntryPoint v0.7). Leave unset unless experimenting; details in [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+
 **Sepolia** (`chainId` 11155111) is populated from the covenant-gov deploy bundle.
 
 ## Rust (Alloy UX)
