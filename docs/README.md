@@ -5,6 +5,8 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | Area | Purpose |
 |------|---------|
 | **[CONCEPTS.md](../CONCEPTS.md)** | Shared vocabulary / acronyms (npub, MLS, roster EVM, ACL, …) |
+| **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |
+| **[user/UNDERSTANDING_ENCRYPTION.md](./user/UNDERSTANDING_ENCRYPTION.md)** | **User-facing explanation of PIN, salt, and group encryption** (non-technical) |
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
 | **[nostr/](./nostr/)** | Relay-facing behavior, rumor pipeline, module index |
