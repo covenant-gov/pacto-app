@@ -150,6 +150,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import {
     syncSquadInfraForParent as mergeSquadInfraForParent,
     syncTreasurySafesForParent as mergeTreasurySafesForParent,
+    syncSquadMemberEvmForAnnouncementsGroup as mergeSquadMemberEvmForAnnouncementsGroup,
   } from '../lib/dashboard/dashboard-data-sync';
   import {
     acceptSquadOrPairInvite,
@@ -901,6 +902,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     return subscribeAppEvents({
       mergeTreasurySafesForParent,
       mergeSquadInfraForParent,
+      mergeSquadMemberEvmForAnnouncementsGroup,
     });
   });
 </script>

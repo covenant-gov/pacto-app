@@ -2783,8 +2783,9 @@ pub async fn replay_automation_side_effects_for_chat<R: Runtime>(
 }
 
 /// Applies treasury (`squad_safe_updated`), governance (`governance_updated`), and roster EVM (`squad_member_evm_share`)
-/// side effects when the MLS chat row is classified into the **inbox** virtual bucket (routing ADR).
+/// side effects when the MLS chat row is classified into virtual buckets (routing ADR).
 /// Squad sponsor `governance_updated` announces also ingest from **announcements** so all members sync infra.
+/// Roster EVM shares are routed to **announcements** (ADR rule 6) and must upsert here — not only under `inbox`.
 /// `chat_id` is the MLS group id (squad announcements id); payload parent ids must match it.
 pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
     handle: &AppHandle<R>,
@@ -2807,12 +2808,19 @@ pub fn apply_inbox_virtual_bucket_side_effects<R: Runtime>(
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
 
+    // `squad_member_evm_share` is announcements-bucket traffic; apply regardless of inbox gate.
+    if effective_bucket == Some("announcements")
+        || effective_bucket == Some("inbox")
+        || effective_bucket.is_none()
+    {
+        try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
+    }
+
     if effective_bucket == Some("announcements") || effective_bucket.is_none() {
         try_apply_squad_bot_meta(handle, content, chat_id);
     }
 
     if effective_bucket == Some("inbox") {
-        try_apply_squad_member_evm_share(handle, content, chat_id, author_npub);
         apply_parent_safe_announce(handle, content, chat_id, author_npub);
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
         try_apply_squad_contract_allowlist_announce(handle, content, chat_id, author_npub);
