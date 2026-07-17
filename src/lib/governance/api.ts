@@ -282,8 +282,6 @@ export interface SquadSponsorExtStatusDto {
   addressOwner: string;
   hatsWired: boolean;
   memberPermits: SquadSponsorExtMemberPermitDto[];
-  /** True when member lookups hit the backend cap (64); page `memberAddresses` in chunks. */
-  memberPermitsTruncated: boolean;
 }
 
 /** Backend: `get_squad_sponsor_ext_status`. */
