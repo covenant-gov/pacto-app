@@ -27,6 +27,22 @@ fn require_parent_member_decision(
     }
 }
 
+/// Preflight: reject when this parent has no sponsor infra row in SQLite.
+pub fn require_sponsor_infra_for_parent<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<(), String> {
+    if crate::db::parent_has_sponsor_infra(app, parent_id)? {
+        Ok(())
+    } else {
+        Err(wallet_err_json(
+            "SPONSOR_REQUIRED",
+            "Deploy squad sponsor for this parent before other on-chain infra.",
+            None,
+        ))
+    }
+}
+
 /// Current Nostr account must belong to the parent (MLS metadata or roster binding).
 pub async fn require_parent_member<R: Runtime>(
     app: &AppHandle<R>,

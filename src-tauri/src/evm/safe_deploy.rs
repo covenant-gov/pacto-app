@@ -17,6 +17,7 @@ use super::rpc::signer::{
     load_embedded_signer, load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
     require_treasury_signing_allowed,
 };
+use super::squad_sponsor_common::require_sponsor_infra_for_parent;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
