@@ -90,6 +90,7 @@ vi.mock('../api/nostr', () => ({
 vi.mock('../announcements', () => ({
   parseAnnouncement: (...args: unknown[]) => mocks.mockFunctions.parseAnnouncement(...args),
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED: 'governance_updated',
+  ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE: 'squad_member_evm_share',
 }));
 
 vi.mock('../wallet/dm-messages', () => ({
@@ -169,6 +170,7 @@ function dmMessage(overrides: Partial<DmMessage> = {}) {
 const handlers: AppEventHandlers = {
   mergeTreasurySafesForParent: vi.fn(),
   mergeSquadInfraForParent: vi.fn(),
+  mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
 };
 
 describe('subscribeAppEvents', () => {
@@ -451,6 +453,18 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('mls_message_new', { group_id: 'g1', message: dmMessage() });
       expect(handlers.mergeSquadInfraForParent).toHaveBeenCalledWith('p1');
+    });
+
+    it('merges roster EVM on squad_member_evm_share', () => {
+      mocks.mockFunctions.parseAnnouncement.mockReturnValue({
+        type: 'squad_member_evm_share',
+        payload: { parent_id: 'announcements-mls', evm_address: '0xabc' },
+      });
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_message_new', { group_id: 'announcements-mls', message: dmMessage() });
+      expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith(
+        'announcements-mls',
+      );
     });
 
     it('updates channel name when group_name provided', () => {

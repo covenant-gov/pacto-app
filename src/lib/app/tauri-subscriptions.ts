@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
-import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../announcements';
+import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE } from '../announcements';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import {
   isPactoAppRoutableInviteContent,
@@ -33,6 +33,8 @@ const TYPING_EXPIRY_SEC = 15;
 export interface AppEventHandlers {
   mergeTreasurySafesForParent: (parentId: string) => void;
   mergeSquadInfraForParent: (parentId: string) => void;
+  /** Refresh Crew roster EVM maps after a peer `squad_member_evm_share` (announcements MLS group id). */
+  mergeSquadMemberEvmForAnnouncementsGroup: (announcementsGroupId: string) => void;
 }
 
 function normalizeDmPayload(message: DmMessage): DmMessage {
@@ -202,6 +204,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
         handlers.mergeSquadInfraForParent(announce.payload.parent_id);
       }
+      if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
+        handlers.mergeSquadMemberEvmForAnnouncementsGroup(
+          announce.payload.parent_id || chat_id,
+        );
+      }
     }
   });
 
@@ -272,6 +279,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     }
     if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
       handlers.mergeSquadInfraForParent(announce.payload.parent_id);
+    }
+    if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
+      handlers.mergeSquadMemberEvmForAnnouncementsGroup(
+        announce.payload.parent_id || group_id,
+      );
     }
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
   });
