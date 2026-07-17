@@ -3,7 +3,7 @@
 use alloy::primitives::{keccak256, Address, B256, U256};
 use tauri::{AppHandle, Runtime};
 
-use super::rpc::wallet_err_json;
+use super::rpc::{parse_address, wallet_err_json};
 use alloy::providers::Provider;
 
 use super::contracts::pacto_sponsor::SquadVariant;
@@ -24,11 +24,7 @@ pub async fn require_parent_member<R: Runtime>(
         ));
     }
 
-    let groups = crate::db::load_mls_groups(app).await?;
-    let in_mls = groups
-        .iter()
-        .any(|g| !g.evicted && (g.group_id == pid || g.engine_group_id == pid));
-    if in_mls {
+    if crate::db::parent_exists_in_groups(app, pid).await? {
         return Ok(());
     }
 
@@ -101,14 +97,16 @@ pub async fn require_sponsor_not_already_deployed<R: Runtime, P: Provider>(
     let call = squadsCall {
         squadId: squad_id,
     };
-    if let Ok(decoded) = eth_call_decode(provider, factory, &call).await {
-        if !decoded.sponsor.is_zero() {
-            return Err(wallet_err_json(
-                "ALREADY_DEPLOYED",
-                "A sponsor clone is already registered for this squad id.",
-                None,
-            ));
-        }
+    // Transient RPC failure must not fall through to a doomed deploy tx.
+    let decoded = eth_call_decode(provider, factory, &call)
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
+    if !decoded.sponsor.is_zero() {
+        return Err(wallet_err_json(
+            "ALREADY_DEPLOYED",
+            "A sponsor clone is already registered for this squad id.",
+            None,
+        ));
     }
     Ok(())
 }
@@ -136,6 +134,35 @@ pub async fn read_squad_record<P: Provider>(
         return Err("no sponsor clone registered for this squad id".to_string());
     }
     Ok((sponsor, decoded.variant, decoded.topHatId))
+}
+
+/// Sponsor clone address for a parent: an explicit address is validated against the factory
+/// registry; otherwise the registry-registered clone is returned.
+pub async fn resolve_sponsor_for_parent<P: Provider>(
+    provider: &P,
+    factory: Address,
+    parent_id: &str,
+    sponsor_address: Option<&str>,
+) -> Result<Address, String> {
+    let squad_id = squad_id_from_parent_id(parent_id);
+    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
+        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
+        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
+            .await
+            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
+        if reg != addr {
+            return Err(wallet_err_json(
+                "SPONSOR_REGISTRY",
+                "sponsor address does not match factory registry for parent id",
+                None,
+            ));
+        }
+        return Ok(addr);
+    }
+    read_squad_record(provider, factory, squad_id)
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))
+        .map(|(addr, _, _)| addr)
 }
 
 #[cfg(test)]

@@ -1,7 +1,6 @@
 //! SquadSponsorExt address-list eligibility: read owner/permits + `setPermittedAddress`.
 
 use alloy::primitives::Address;
-use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -16,7 +15,7 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json,
 };
-use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
+use super::squad_sponsor_common::resolve_sponsor_for_parent;
 use super::wallet_chain_config;
 
 fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>, String> {
@@ -34,35 +33,6 @@ fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>
         permitted,
     }
     .abi_encode())
-}
-
-async fn resolve_sponsor_for_parent<P: Provider>(
-    provider: &P,
-    factory: Address,
-    parent_id: &str,
-    sponsor_address: Option<&str>,
-) -> Result<Address, String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
-    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr =
-            parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        Ok(addr)
-    } else {
-        Ok(read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?
-            .0)
-    }
 }
 
 #[derive(Serialize)]

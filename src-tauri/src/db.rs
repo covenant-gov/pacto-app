@@ -3587,6 +3587,31 @@ pub async fn save_mls_group<R: Runtime>(
     Ok(())
 }
 
+/// True when a non-evicted MLS group row matches the parent id (`group_id` or `engine_group_id`).
+fn parent_exists_in_groups_conn(conn: &rusqlite::Connection, parent_id: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM mls_groups WHERE evicted = 0 AND (group_id = ?1 OR engine_group_id = ?1))",
+        rusqlite::params![parent_id],
+        |row| row.get::<_, bool>(0),
+    )
+    .map_err(|e| format!("Failed to check MLS group membership: {}", e))
+}
+
+/// Targeted membership check for a parent id against persisted MLS groups.
+pub async fn parent_exists_in_groups<R: Runtime>(
+    handle: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<bool, String> {
+    let pid = parent_id.trim();
+    if pid.is_empty() {
+        return Ok(false);
+    }
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let exists = parent_exists_in_groups_conn(&conn, pid);
+    crate::account_manager::return_db_connection(conn);
+    exists
+}
+
 /// Load MLS groups from SQL database (plaintext columns)
 pub async fn load_mls_groups<R: Runtime>(
     handle: &AppHandle<R>,

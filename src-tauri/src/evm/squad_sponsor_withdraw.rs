@@ -2,7 +2,7 @@
 //! Caller picks which local EVM account holds shares (msg.sender).
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, U256};
+use alloy::primitives::U256;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -15,9 +15,7 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::squad_sponsor_common::{
-    read_squad_record, require_parent_member, squad_id_from_parent_id,
-};
+use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
 
@@ -30,33 +28,6 @@ pub struct SquadSponsorWithdrawResult {
     pub sponsor_address: String,
     pub signer_address: String,
     pub pool_balance_wei: String,
-}
-
-async fn resolve_sponsor_for_parent<P: alloy::providers::Provider>(
-    provider: &P,
-    factory: Address,
-    parent_id: &str,
-    sponsor_address: Option<&str>,
-) -> Result<Address, String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
-    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        return Ok(addr);
-    }
-    read_squad_record(provider, factory, squad_id)
-        .await
-        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))
-        .map(|(addr, _, _)| addr)
 }
 
 #[tauri::command]

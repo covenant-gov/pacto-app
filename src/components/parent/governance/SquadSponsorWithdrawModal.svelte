@@ -55,7 +55,9 @@
       : '';
   $: if (withdrawableKey && withdrawableKey !== lastWithdrawableKey) {
     lastWithdrawableKey = withdrawableKey;
-    void loadWithdrawable(selected!.address);
+    if (selected) {
+      void loadWithdrawable(selected.address);
+    }
   }
 
   async function loadAccounts() {

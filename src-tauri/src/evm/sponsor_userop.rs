@@ -6,6 +6,8 @@ use alloy::providers::Provider;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use serde_json::{json, Value};
+use std::sync::LazyLock;
+use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_sponsor::ISquadSponsorBase::isEligibleCall;
@@ -15,7 +17,7 @@ use super::rpc::signer::load_squad_roster_embedded_signer;
 use super::rpc::{connect_read_provider, wallet_err_json};
 use super::sponsor_paymaster::{
     encode_paymaster_and_data, required_pool_balance, DEFAULT_POST_OP_GAS_LIMIT,
-    DEFAULT_VERIFICATION_GAS_LIMIT,
+    DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
 };
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
 use super::wallet_chain_config;
@@ -276,7 +278,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         "paymaster": format!("{:#x}", addrs.pacto_sponsor_paymaster),
         "paymasterVerificationGasLimit": format!("{DEFAULT_VERIFICATION_GAS_LIMIT:#x}"),
         "paymasterPostOpGasLimit": format!("{DEFAULT_POST_OP_GAS_LIMIT:#x}"),
-        "paymasterData": format!("0x{}", hex::encode(&paymaster_and_data[52..])),
+        "paymasterData": format!("0x{}", hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..])),
         "signature": format!("0x{}", hex::encode(sig.as_bytes())),
         "eip7702Auth": eip7702_auth,
     });
@@ -298,27 +300,10 @@ async fn sign_eip7702_authorization<S: Signer + Sync>(
     nonce: u64,
 ) -> Result<Value, String> {
     // EIP-7702 authorization hash: keccak256(0x05 || rlp([chain_id, address, nonce]))
-    let chain_bytes = trim_leading_zeros(&chain_id.to_be_bytes());
-    let addr_bytes = implementation.as_slice();
-    let nonce_bytes = if nonce == 0 {
-        Vec::new()
-    } else {
-        trim_leading_zeros(&nonce.to_be_bytes())
-    };
-
-    let mut list: Vec<u8> = Vec::new();
-    list.extend(rlp_bytes(&chain_bytes));
-    list.extend(rlp_bytes(addr_bytes));
-    list.extend(rlp_bytes(&nonce_bytes));
-    let mut enc = if list.len() <= 55 {
-        let mut o = vec![0xc0 + list.len() as u8];
-        o.extend_from_slice(&list);
-        o
-    } else {
-        return Err("rlp list too large".into());
-    };
-    let mut msg = vec![0x05u8];
-    msg.append(&mut enc);
+    let enc = encode_eip7702_authorization(chain_id, implementation, nonce);
+    let mut msg = Vec::with_capacity(1 + enc.len());
+    msg.push(0x05);
+    msg.extend_from_slice(&enc);
     let hash = alloy::primitives::keccak256(&msg);
     let sig = signer.sign_hash(&hash).await.map_err(|e| e.to_string())?;
     let sig_bytes = sig.as_bytes();
@@ -332,28 +317,18 @@ async fn sign_eip7702_authorization<S: Signer + Sync>(
     }))
 }
 
-fn trim_leading_zeros(bytes: &[u8]) -> Vec<u8> {
-    let mut v = bytes.to_vec();
-    while v.first() == Some(&0) && v.len() > 1 {
-        v.remove(0);
-    }
-    v
-}
-
-fn rlp_bytes(b: &[u8]) -> Vec<u8> {
-    if b.len() == 1 && b[0] < 0x80 {
-        return b.to_vec();
-    }
-    if b.is_empty() {
-        return vec![0x80];
-    }
-    if b.len() <= 55 {
-        let mut out = vec![0x80 + b.len() as u8];
-        out.extend_from_slice(b);
-        out
-    } else {
-        panic!("rlp item too large");
-    }
+/// RLP encoding of the EIP-7702 authorization tuple `[chain_id, address, nonce]`;
+/// integers use canonical minimal big-endian form, so any chain ID/nonce width is safe.
+fn encode_eip7702_authorization(chain_id: u64, implementation: Address, nonce: u64) -> Vec<u8> {
+    use alloy_rlp::{Encodable, Header};
+    let addr = implementation.as_slice();
+    let payload_length = chain_id.length() + addr.length() + nonce.length();
+    let mut out = Vec::with_capacity(payload_length + 9);
+    Header { list: true, payload_length }.encode(&mut out);
+    chain_id.encode(&mut out);
+    addr.encode(&mut out);
+    nonce.encode(&mut out);
+    out
 }
 
 async fn bundler_send_user_operation(
@@ -380,22 +355,40 @@ async fn bundler_send_user_operation(
     ))
 }
 
+/// Bundler JSON-RPC request timeout; a slow bundler must not hang the command.
+const BUNDLER_RPC_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Bundler JSON-RPC client; connection pool is reused across calls.
+static BUNDLER_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(BUNDLER_RPC_TIMEOUT)
+        .build()
+        .map_err(|e| e.to_string())
+});
+
+fn bundler_http_client() -> Result<&'static reqwest::Client, String> {
+    BUNDLER_HTTP_CLIENT
+        .as_ref()
+        .map_err(|e| wallet_err_json("BUNDLER_RPC", e.clone(), None))
+}
+
+/// Redacts transport errors; timeouts name the bound so callers can tell slow bundlers from failures.
+fn bundler_transport_error(e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        format!("bundler request timed out after {}s", BUNDLER_RPC_TIMEOUT.as_secs())
+    } else {
+        crate::evm::wallet_security::redact_urls_in_text(&e.to_string())
+    }
+}
+
 async fn bundler_rpc(url: &str, body: Value) -> Result<Value, String> {
-    let client = reqwest::Client::new();
+    let client = bundler_http_client()?;
     let res = client.post(url).json(&body).send().await.map_err(|e| {
-        wallet_err_json(
-            "BUNDLER_RPC",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_json("BUNDLER_RPC", bundler_transport_error(&e), None)
     })?;
     let status = res.status();
     let text = res.text().await.map_err(|e| {
-        wallet_err_json(
-            "BUNDLER_RPC",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
+        wallet_err_json("BUNDLER_RPC", bundler_transport_error(&e), None)
     })?;
     if !status.is_success() {
         return Err(wallet_err_json(
@@ -409,8 +402,8 @@ async fn bundler_rpc(url: &str, body: Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pack_u128s, rlp_bytes, trim_leading_zeros};
-    use alloy::primitives::B256;
+    use super::{encode_eip7702_authorization, pack_u128s};
+    use alloy::primitives::{address, B256};
 
     #[test]
     fn pack_u128s_puts_hi_lo() {
@@ -422,9 +415,21 @@ mod tests {
     }
 
     #[test]
-    fn rlp_empty_and_small() {
-        assert_eq!(rlp_bytes(&[]), vec![0x80]);
-        assert_eq!(rlp_bytes(&[0x7f]), vec![0x7f]);
-        assert_eq!(trim_leading_zeros(&[0, 0, 1]), vec![1]);
+    fn eip7702_authorization_encoding_matches_rlp_spec() {
+        let implementation = address!("0x0000000000000000000000000000000000000001");
+        let enc = encode_eip7702_authorization(1, implementation, 0);
+        let mut expected = vec![0xd7, 0x01, 0x94];
+        expected.extend_from_slice(implementation.as_slice());
+        expected.push(0x80);
+        assert_eq!(enc, expected);
+
+        // Larger chain IDs and nonces encode as minimal big-endian strings.
+        let enc = encode_eip7702_authorization(11_155_111, implementation, 0x0100);
+        let mut payload = vec![0x83, 0xaa, 0x36, 0xa7, 0x94];
+        payload.extend_from_slice(implementation.as_slice());
+        payload.extend_from_slice(&[0x82, 0x01, 0x00]);
+        let mut expected = vec![0xc0 + payload.len() as u8];
+        expected.extend_from_slice(&payload);
+        assert_eq!(enc, expected);
     }
 }

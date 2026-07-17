@@ -80,15 +80,9 @@ export function isRosterHatRecipientAddress(
  * use sponsor UserOp when that key has no ETH.
  */
 export function canBootstrapCrewDuringDeploy(params: {
-  /** Retained for call-site compatibility; deploy payer no longer gates bootstrap. */
-  signerWallet: SquadSponsorDeploySignerWallet;
-  /** True when Default and squad-assigned resolve to the same address. */
-  signersAreSame?: boolean;
   captainAddress: string;
   squadRosterAddress: string | null | undefined;
 }): boolean {
-  void params.signerWallet;
-  void params.signersAreSame;
   const roster = normalizeAddress(params.squadRosterAddress ?? '');
   const captain = normalizeAddress(params.captainAddress);
   if (!roster || !captain) return false;
@@ -232,7 +226,6 @@ export function startPactoGovAndSponsorDeploy(params: {
         const rosterRaw = await resolveSquadRosterEvmAddress(parentId);
         if (
           canBootstrapCrewDuringDeploy({
-            signerWallet,
             captainAddress: captain,
             squadRosterAddress: rosterRaw,
           })
@@ -382,7 +375,6 @@ export function startHatsSponsorOnlyDeploy(params: {
         const captainForGate = params.captainAddress?.trim() || rosterRaw || '';
         if (
           canBootstrapCrewDuringDeploy({
-            signerWallet,
             captainAddress: captainForGate,
             squadRosterAddress: rosterRaw,
           })

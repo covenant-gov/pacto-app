@@ -24,45 +24,40 @@ describe('isRosterHatRecipientAddress', () => {
 });
 
 describe('canBootstrapCrewDuringDeploy', () => {
-  it('allows squad payer who is also captain', () => {
+  it('allows when the captain is the squad roster signer', () => {
     expect(
       canBootstrapCrewDuringDeploy({
-        signerWallet: 'squad',
         captainAddress: rosterA,
         squadRosterAddress: rosterA,
       }),
     ).toBe(true);
   });
 
-  it('allows Default payer when captain is self (sponsored mint path)', () => {
+  it('matches roster and captain case-insensitively', () => {
     expect(
       canBootstrapCrewDuringDeploy({
-        signerWallet: 'default',
-        captainAddress: rosterA,
+        captainAddress: rosterA.toLowerCase(),
         squadRosterAddress: rosterA,
       }),
     ).toBe(true);
   });
 
-  it('disallows squad payer who named someone else captain', () => {
+  it('disallows when someone else is captain', () => {
     expect(
       canBootstrapCrewDuringDeploy({
-        signerWallet: 'squad',
         captainAddress: rosterB,
         squadRosterAddress: rosterA,
       }),
     ).toBe(false);
   });
 
-  it('treats identical Default/squad addresses as squad payer', () => {
+  it('disallows when the roster signer is unknown', () => {
     expect(
       canBootstrapCrewDuringDeploy({
-        signerWallet: 'default',
-        signersAreSame: true,
         captainAddress: rosterA,
-        squadRosterAddress: rosterA,
+        squadRosterAddress: null,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
