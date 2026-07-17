@@ -5789,6 +5789,7 @@ dependencies = [
  "aes",
  "aes-gcm",
  "alloy",
+ "alloy-rlp",
  "argon2",
  "base64 0.22.1",
  "bip32",

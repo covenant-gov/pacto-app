@@ -20,11 +20,19 @@
   import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
-  import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import {
+    amountExceedsBalance,
+    canonicalAddress,
+    emptyBalance,
+    fetchEvmBalance,
+    reconcileSignerWallet,
+    shortAddress,
+    type SignerBalance,
+  } from '../../../lib/wallet/signer-balance';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
-  import { formatEther, getAddress, isAddress, parseEther } from 'viem';
+  import { formatEther, parseEther } from 'viem';
   import { showToast } from '../../../stores/toast';
 
   export let parentId: string;
@@ -47,39 +55,8 @@
   let defaultSignerAddress: string | null = null;
   let squadSignerAddress: string | null = null;
 
-  type SignerBalance = {
-    balanceRaw: string;
-    balanceDecimal: string;
-    symbol: string;
-    loading: boolean;
-    error: string;
-  };
-
   let defaultBalance: SignerBalance = emptyBalance();
   let squadBalance: SignerBalance = emptyBalance();
-
-  function emptyBalance(): SignerBalance {
-    return { balanceRaw: '0', balanceDecimal: '0', symbol: 'ETH', loading: false, error: '' };
-  }
-
-  function canonicalAddress(addr: string | null): string | null {
-    if (!addr?.trim() || !isAddress(addr.trim() as `0x${string}`)) return null;
-    try {
-      return getAddress(addr.trim() as `0x${string}`);
-    } catch {
-      return null;
-    }
-  }
-
-  function amountExceedsBalance(amountTrimmed: string, balanceRaw: string): boolean {
-    try {
-      if (!/^\d+$/.test(balanceRaw.trim())) return false;
-      const amt = parseEther(amountTrimmed.replace(/,/g, ''));
-      return amt >= BigInt(balanceRaw.trim());
-    } catch {
-      return false;
-    }
-  }
 
   $: network = parseSupportedChainId(sponsorRow?.chain);
   $: poolBalanceWei = summary ? BigInt(summary.poolBalanceWei) : null;
@@ -167,28 +144,6 @@
     if (periodicRefreshTimer) clearInterval(periodicRefreshTimer);
   });
 
-  function shortAddress(addr: string | null): string {
-    if (!addr) return 'Not set';
-    const t = addr.trim();
-    if (t.length < 18) return t;
-    return `${t.slice(0, 10)}…${t.slice(-8)}`;
-  }
-
-  async function fetchBalance(address: string | null): Promise<SignerBalance> {
-    if (!address || !sponsorRow) return emptyBalance();
-    const result = await getEvmNativeBalance(network, address);
-    if (result.ok) {
-      return {
-        balanceRaw: result.balance.balanceRaw,
-        balanceDecimal: result.balance.balanceDecimal,
-        symbol: result.balance.symbol,
-        loading: false,
-        error: '',
-      };
-    }
-    return { ...emptyBalance(), loading: false, error: result.message };
-  }
-
   async function refreshSignerBalances() {
     if (!parentId?.trim() || !sponsorRow) return;
     const seq = ++refreshSeq;
@@ -201,22 +156,14 @@
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
-      const defaultCanon = canonicalAddress(defaultSignerAddress);
-      const squadCanon = canonicalAddress(squadSignerAddress);
-      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
-        signerWallet = 'default';
-      }
+      signerWallet = reconcileSignerWallet(signerWallet, defaultSignerAddress, squadSignerAddress);
     } finally {
       if (seq === refreshSeq) addressesLoading = false;
     }
     if (seq !== refreshSeq) return;
     const [defaultBal, squadBal] = await Promise.all([
-      fetchBalance(defaultSignerAddress),
-      fetchBalance(squadSignerAddress),
+      fetchEvmBalance(network, defaultSignerAddress),
+      fetchEvmBalance(network, squadSignerAddress),
     ]);
     if (seq !== refreshSeq) return;
     defaultBalance = defaultBal;

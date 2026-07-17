@@ -25,7 +25,10 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
+  import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import { parseSupportedChainId } from '../../../lib/wallet/chains';
+  import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
 
@@ -40,6 +43,7 @@
   export let treasuryProposalsLoading = false;
   export let treasuryProposalsError = '';
   export let onRefreshProposals: () => void = () => {};
+  export let hasSponsor = false;
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
@@ -57,6 +61,10 @@
   let qmStatus: QuartermasterStatusDto | null = null;
   let qmHydrateKey = '';
 
+  let rosterBalanceRaw = '0';
+  let rosterBalanceKnown = false;
+  let fundingBalanceKey = '';
+
   $: captainList = (() => {
     const set = new Set(captainWearers.map((a) => a.trim().toLowerCase()).filter(Boolean));
     if (mutinyCaptain.trim()) set.add(mutinyCaptain.trim().toLowerCase());
@@ -70,6 +78,25 @@
     crewWearers,
     capabilities,
   }) as GovernancePrivilege;
+
+  $: {
+    const addr = (privilege.myAddress || myAddress).trim();
+    const key = `${network}|${addr}|${hasSponsor}`;
+    if (key !== fundingBalanceKey) {
+      fundingBalanceKey = key;
+      if (addr) {
+        void loadRosterFundingBalance(network, addr);
+      } else {
+        rosterBalanceKnown = false;
+      }
+    }
+  }
+
+  $: fundingHint = displayGovWriteFundingHint({
+    balanceRaw: rosterBalanceRaw,
+    balanceKnown: rosterBalanceKnown,
+    hasSponsorInfra: hasSponsor,
+  });
 
   $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
     capabilitiesLoadKey = parentId.trim();
@@ -101,6 +128,22 @@
       if (pid !== capabilitiesLoadKey) return;
       capabilities = null;
     }
+  }
+
+  async function loadRosterFundingBalance(net: string, addr: string) {
+    const chain = parseSupportedChainId(net);
+    if (!chain) {
+      rosterBalanceKnown = false;
+      return;
+    }
+    const bal = await fetchEvmBalance(chain, addr, { timeoutMs: 12_000 });
+    if (`${net}|${addr}|${hasSponsor}` !== fundingBalanceKey) return;
+    if (bal.error) {
+      rosterBalanceKnown = false;
+      return;
+    }
+    rosterBalanceRaw = bal.balanceRaw;
+    rosterBalanceKnown = true;
   }
 
   function applyMutinySnapshot(snap: MutinySnapshot) {
@@ -261,6 +304,7 @@
         {mutinyLoading}
         {onRefreshProposals}
         onExecuteMutiny={executeMutinyFromBoard}
+        {fundingHint}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
@@ -274,6 +318,7 @@
         mutinyHasVotedFlag={mutinyHasVotedFlag}
         {onRefreshProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
+        {fundingHint}
       />
     {:else}
       <GovCaptainActions
@@ -291,6 +336,7 @@
         {onRefreshProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         onRefreshQm={() => reloadQm(true)}
+        {fundingHint}
       />
     {/if}
   </section>

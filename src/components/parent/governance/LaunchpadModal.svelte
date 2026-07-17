@@ -1,5 +1,9 @@
 <script lang="ts">
   import Modal from '../../ui/Modal.svelte';
+  import {
+    launchpadCtaDisabled,
+    launchpadPrimaryCardState,
+  } from '../../../lib/governance/launchpad-cta';
 
   export let hasSponsor: boolean;
   export let hasPactoGov: boolean;
@@ -20,10 +24,8 @@
   const titleId = 'deploy-governance-modal-title';
   const descId = 'deploy-governance-modal-desc';
 
-  $: channelBlocked = !hasAnnouncementsChannel;
-  $: combinedDone = hasPactoGov && hasSponsor;
-  $: combinedAvailable = !hasPactoGov && !hasSponsor;
-  $: finishSponsor = hasPactoGov && !hasSponsor;
+  $: channelBlocked = launchpadCtaDisabled({ hasAnnouncementsChannel });
+  $: primaryCard = launchpadPrimaryCardState({ hasSponsor, hasPactoGov });
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} contentClass="launchpad-modal-panel">
@@ -40,9 +42,9 @@
   {/if}
 
   <ul class="launchpad-primary" role="list">
-    <li class="launchpad-card" class:launchpad-card--primary={combinedAvailable || finishSponsor}>
+    <li class="launchpad-card" class:launchpad-card--primary={primaryCard !== 'deployed'}>
       <h3 class="launchpad-card-title">Pacto Gov + squad sponsor</h3>
-      {#if combinedDone}
+      {#if primaryCard === 'deployed'}
         <div class="launchpad-deployed-status" role="status">
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
@@ -55,7 +57,7 @@
             {/if}
           </div>
         </div>
-      {:else if finishSponsor}
+      {:else if primaryCard === 'finish-sponsor'}
         <p class="launchpad-card-desc">
           Governance is live. Finish with a hats-linked sponsor (same wizard as combined deploy).
         </p>
@@ -70,7 +72,7 @@
         >
           Deploy squad sponsor
         </button>
-      {:else if hasSponsor && !hasPactoGov}
+      {:else if primaryCard === 'deploy-gov'}
         <p class="launchpad-card-desc">
           Sponsor is live without Pacto Gov. Deploy governance alone to finish setup.
         </p>
@@ -120,8 +122,11 @@
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
             <p class="launchpad-deployed-label">Deployed</p>
+            {#if pactoGovAddress}
+              <code class="launchpad-deployed-addr">Gov {pactoGovAddress}</code>
+            {/if}
             {#if sponsorAddress}
-              <code class="launchpad-deployed-addr">{sponsorAddress}</code>
+              <code class="launchpad-deployed-addr">Sponsor {sponsorAddress}</code>
             {/if}
           </div>
         </div>

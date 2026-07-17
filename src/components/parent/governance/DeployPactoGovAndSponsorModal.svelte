@@ -5,7 +5,17 @@
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { resolveSquadRosterEvmAddress } from '../../../lib/squad/squad-roster-binding';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
-  import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
+  import {
+    amountExceedsBalance,
+    canonicalAddress,
+    emptyBalance,
+    fetchEvmBalance,
+    reconcileSignerWallet,
+    shortAddress,
+    shouldPreferFundedDefault,
+    withTimeout,
+    type SignerBalance,
+  } from '../../../lib/wallet/signer-balance';
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
   import type { SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
   import {
@@ -16,7 +26,7 @@
     type CombinedGovSponsorDeployComplete,
   } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
-  import { getAddress, isAddress, parseEther } from 'viem';
+  import { parseEther } from 'viem';
 
   export let parentId: string;
   export let squadNetwork: SupportedChainId | null = null;
@@ -30,14 +40,6 @@
 
   const titleId = 'deploy-gov-sponsor-title';
   const descId = 'deploy-gov-sponsor-desc';
-
-  type SignerBalance = {
-    balanceRaw: string;
-    balanceDecimal: string;
-    symbol: string;
-    loading: boolean;
-    error: string;
-  };
 
   let captainAddress = '';
   let resolvingAddresses = true;
@@ -57,35 +59,6 @@
 
   $: sponsorOnly = !!existingTopHatId.trim();
 
-  function emptyBalance(): SignerBalance {
-    return { balanceRaw: '0', balanceDecimal: '0', symbol: 'ETH', loading: false, error: '' };
-  }
-
-  function shortAddress(addr: string | null | undefined): string {
-    if (!addr) return 'Not set';
-    if (addr.length < 18) return addr;
-    return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
-  }
-
-  function canonicalAddress(addr: string | null): string | null {
-    if (!addr?.trim() || !isAddress(addr.trim() as `0x${string}`)) return null;
-    try {
-      return getAddress(addr.trim() as `0x${string}`);
-    } catch {
-      return null;
-    }
-  }
-
-  function amountExceedsBalance(amountTrimmed: string, balanceRaw: string): boolean {
-    try {
-      if (!/^\d+$/.test(balanceRaw.trim())) return false;
-      const amt = parseEther(amountTrimmed.replace(/,/g, ''));
-      return amt >= BigInt(balanceRaw.trim());
-    } catch {
-      return false;
-    }
-  }
-
   /** Captain defaults to roster EVM only — never the Default wallet unless it is the roster binding. */
   function pickDefaultCaptain(rosterAddress: string | null) {
     if (captainAddress) return;
@@ -101,66 +74,6 @@
   }
 
   const SIGNER_LOOKUP_TIMEOUT_MS = 15_000;
-
-  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
-      promise.then(
-        (v) => {
-          clearTimeout(t);
-          resolve(v);
-        },
-        (e) => {
-          clearTimeout(t);
-          reject(e);
-        },
-      );
-    });
-  }
-
-  async function fetchBalance(address: string | null): Promise<SignerBalance> {
-    if (!address || !squadNetwork) return emptyBalance();
-    try {
-      const result = await withTimeout(
-        getEvmNativeBalance(squadNetwork, address),
-        SIGNER_LOOKUP_TIMEOUT_MS,
-        'Balance lookup',
-      );
-      if (result.ok) {
-        return {
-          balanceRaw: result.balance.balanceRaw,
-          balanceDecimal: result.balance.balanceDecimal,
-          symbol: result.balance.symbol,
-          loading: false,
-          error: '',
-        };
-      }
-      return { ...emptyBalance(), loading: false, error: result.message };
-    } catch (e) {
-      return {
-        ...emptyBalance(),
-        loading: false,
-        error: e instanceof Error ? e.message : 'Balance lookup failed',
-      };
-    }
-  }
-
-  function preferFundedDefaultWhenRosterEmpty() {
-    if (preferredPayerOnce) return;
-    const def = canonicalAddress(defaultSignerAddress);
-    const squad = canonicalAddress(squadSignerAddress);
-    if (!def || !squad || def === squad) return;
-    try {
-      const squadWei = BigInt(squadBalance.balanceRaw || '0');
-      const defaultWei = BigInt(defaultBalance.balanceRaw || '0');
-      if (squadWei === 0n && defaultWei > 0n) {
-        signerWallet = 'default';
-        preferredPayerOnce = true;
-      }
-    } catch {
-      // ignore
-    }
-  }
 
   async function refreshSigners() {
     const seq = ++refreshSeq;
@@ -178,16 +91,8 @@
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
-      const defaultCanon = canonicalAddress(defaultSignerAddress);
-      const squadCanon = canonicalAddress(squadSignerAddress);
-      if (defaultCanon && squadCanon && defaultCanon === squadCanon) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'default' && !defaultSignerAddress && squadSignerAddress) {
-        signerWallet = 'squad';
-      } else if (signerWallet === 'squad' && !squadSignerAddress && defaultSignerAddress) {
-        signerWallet = 'default';
-      }
-      pickDefaultCaptain(squadCanon);
+      signerWallet = reconcileSignerWallet(signerWallet, defaultSignerAddress, squadSignerAddress);
+      pickDefaultCaptain(canonicalAddress(squadSignerAddress));
     } catch (e) {
       if (seq === refreshSeq) {
         deployError = e instanceof Error ? e.message : 'Could not load signer addresses.';
@@ -199,13 +104,26 @@
     }
     if (seq !== refreshSeq) return;
     const [defaultBal, squadBal] = await Promise.all([
-      fetchBalance(defaultSignerAddress),
-      fetchBalance(squadSignerAddress),
+      fetchEvmBalance(squadNetwork, defaultSignerAddress, {
+        timeoutMs: SIGNER_LOOKUP_TIMEOUT_MS,
+      }),
+      fetchEvmBalance(squadNetwork, squadSignerAddress, { timeoutMs: SIGNER_LOOKUP_TIMEOUT_MS }),
     ]);
     if (seq !== refreshSeq) return;
     defaultBalance = defaultBal;
     squadBalance = squadBal;
-    preferFundedDefaultWhenRosterEmpty();
+    if (
+      !preferredPayerOnce &&
+      shouldPreferFundedDefault({
+        defaultSignerAddress,
+        squadSignerAddress,
+        defaultBalanceRaw: defaultBalance.balanceRaw,
+        squadBalanceRaw: squadBalance.balanceRaw,
+      })
+    ) {
+      signerWallet = 'default';
+      preferredPayerOnce = true;
+    }
   }
 
   onMount(() => {
@@ -239,10 +157,7 @@
     !selectedBalance.error &&
     amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
 
-  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
   $: bootstrapAllowed = canBootstrapCrewDuringDeploy({
-    signerWallet: payFromEffective,
-    signersAreSame,
     captainAddress,
     squadRosterAddress: squadSignerAddress,
   });
@@ -298,8 +213,6 @@
     const doBootstrap =
       bootstrapCrew &&
       canBootstrapCrewDuringDeploy({
-        signerWallet: payFrom,
-        signersAreSame,
         captainAddress,
         squadRosterAddress: squadSignerAddress,
       });

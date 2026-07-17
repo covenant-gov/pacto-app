@@ -15,6 +15,7 @@
   export let memberOptions: { address: string; label: string }[] = [];
   export let captainAddresses: string[] = [];
   export let onSubmitted: () => void = () => {};
+  export let fundingHint = '';
 
   const titleId = 'gov-bootstrap-crew-title';
   const descId = 'gov-bootstrap-crew-desc';
@@ -23,6 +24,8 @@
   let acting = false;
   let error = '';
   let wasOpen = false;
+
+  $: gasLine = fundingHint.trim() || govWriteFundingFallbackHint();
 
   $: captainSet = new Set(
     [...captainAddresses, privilege?.myAddress ?? '']
@@ -95,7 +98,7 @@
     <h2 id={titleId} class="modal-title">Bootstrap initial crew</h2>
     <p id={descId} class="modal-lead muted">
       Mint crew hats immediately while the crew roster is still empty. After the first crew wearer exists, adds use the
-      Quartermaster delay. {govWriteFundingFallbackHint()}
+      Quartermaster delay. {gasLine}
     </p>
 
     {#if eligible.length === 0}

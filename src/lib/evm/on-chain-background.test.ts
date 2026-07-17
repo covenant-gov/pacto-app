@@ -79,7 +79,7 @@ describe('waitForOnChainConfirmationInBackground', () => {
     await vi.waitFor(() => expect(onConfirmed).toHaveBeenCalled());
   });
 
-  it('calls onFailed when wait fails without RECEIPT_TIMEOUT', async () => {
+  it('calls onFailed and error toast when wait fails without RECEIPT_TIMEOUT', async () => {
     vi.mocked(walletWaitForTransaction).mockResolvedValueOnce({
       ok: false,
       message: 'failed',
@@ -88,5 +88,22 @@ describe('waitForOnChainConfirmationInBackground', () => {
     const onFailed = vi.fn();
     waitForOnChainConfirmationInBackground('sepolia', '0xabc', { onFailed });
     await vi.waitFor(() => expect(onFailed).toHaveBeenCalledWith('failed'));
+    expect(showToast).toHaveBeenCalledWith('failed', undefined, undefined, { error: true });
+  });
+
+  it('suppresses RECEIPT_TIMEOUT: no onFailed, no error toast, chain settles', async () => {
+    vi.mocked(walletWaitForTransaction).mockResolvedValueOnce({
+      ok: false,
+      message: 'receipt not available before timeout',
+      parsed: { code: 'RECEIPT_TIMEOUT', message: 'receipt not available before timeout' },
+    } as never);
+    const onConfirmed = vi.fn();
+    const onFailed = vi.fn();
+    waitForOnChainConfirmationInBackground('sepolia', '0xabc', { onConfirmed, onFailed });
+    // Drain the detached promise chain via microtasks (no wall-clock waits).
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(onConfirmed).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

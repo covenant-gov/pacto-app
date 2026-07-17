@@ -5,6 +5,8 @@ use alloy::primitives::{Address, B256, Bytes, U256};
 use alloy::sol_types::SolValue;
 
 pub const PAYMASTER_DATA_VERSION: u8 = 1;
+/// Header length of `paymasterAndData` (paymaster + verificationGasLimit + postOpGasLimit); `paymasterData` starts here.
+pub const PAYMASTER_DATA_OFFSET: usize = 52;
 pub const BALANCE_HEADROOM_BPS: u64 = 11_500;
 pub const DEFAULT_VERIFICATION_GAS_LIMIT: u128 = 100_000;
 pub const DEFAULT_POST_OP_GAS_LIMIT: u128 = 50_000;

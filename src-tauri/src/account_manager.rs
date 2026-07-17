@@ -155,6 +155,8 @@ CREATE TABLE IF NOT EXISTS squad_infra (
     updated_at_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_squad_infra_parent ON squad_infra(parent_id, created_at_ms);
+-- One pacto_gov row per parent; other infra types stay multi-row.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_squad_infra_pacto_gov_singleton ON squad_infra(parent_id, infra_type) WHERE infra_type = 'pacto_gov';
 
 -- Explicit squad contract allowlist (Phase I). Unofficial protocol targets beyond implicit infra refs.
 CREATE TABLE IF NOT EXISTS squad_contract_allowlist (
@@ -564,6 +566,42 @@ pub async fn init_profile_database<R: Runtime>(
     Ok(())
 }
 
+/// One `pacto_gov` infra row per parent: drop older duplicates, then enforce at the schema level.
+/// Singleton writes use a deterministic row id (`pacto-gov-{parent}`), so `ON CONFLICT(id)` upserts
+/// keep working; a second `pacto_gov` row with a different id is rejected instead of silently forking state.
+fn enforce_pacto_gov_singleton_index(conn: &rusqlite::Connection) -> Result<(), String> {
+    let has_idx: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_squad_infra_pacto_gov_singleton'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+    if has_idx {
+        return Ok(());
+    }
+    println!("[Migration] Enforcing one pacto_gov squad_infra row per parent…");
+    // Keep the most recently updated row per parent (matches top-hat read semantics).
+    conn.execute(
+        "DELETE FROM squad_infra WHERE infra_type = 'pacto_gov' AND id NOT IN ( \
+            SELECT id FROM ( \
+                SELECT id, ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY updated_at_ms DESC, id ASC) AS rn \
+                FROM squad_infra WHERE infra_type = 'pacto_gov' \
+            ) ranked WHERE rn = 1 \
+        )",
+        [],
+    )
+    .map_err(|e| format!("Failed to dedupe pacto_gov squad_infra rows: {}", e))?;
+    conn.execute(
+        "CREATE UNIQUE INDEX idx_squad_infra_pacto_gov_singleton ON squad_infra(parent_id, infra_type) WHERE infra_type = 'pacto_gov'",
+        [],
+    )
+    .map_err(|e| format!("Failed to create pacto_gov singleton index: {}", e))?;
+    println!("[Migration] pacto_gov singleton index created");
+    Ok(())
+}
+
 /// Run database migrations for schema updates
 /// This handles adding new columns to existing tables
 fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -958,6 +996,8 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to create squad_infra table: {}", e))?;
         println!("[Migration] squad_infra table created");
     }
+
+    enforce_pacto_gov_singleton_index(conn)?;
 
     let has_dm_peer_evm: bool = conn
         .query_row(
@@ -1441,4 +1481,108 @@ pub async fn switch_account<R: Runtime>(
     // This will be done when we update the MLS module
 
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::enforce_pacto_gov_singleton_index;
+
+    fn squad_infra_schema(conn: &rusqlite::Connection) {
+        conn.execute_batch(
+            "CREATE TABLE squad_infra (
+                id TEXT PRIMARY KEY NOT NULL,
+                parent_id TEXT NOT NULL,
+                infra_type TEXT NOT NULL,
+                chain TEXT NOT NULL,
+                canonical_ref TEXT NOT NULL,
+                pacto_gov_revision TEXT,
+                provider_payload TEXT,
+                created_at_ms INTEGER NOT NULL,
+                updated_at_ms INTEGER NOT NULL
+            );",
+        )
+        .expect("schema");
+    }
+
+    fn insert_infra(
+        conn: &rusqlite::Connection,
+        id: &str,
+        parent: &str,
+        kind: &str,
+        cref: &str,
+        updated: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, created_at_ms, updated_at_ms)
+             VALUES (?1, ?2, ?3, 'sepolia', ?4, ?5, ?5)",
+            rusqlite::params![id, parent, kind, cref, updated],
+        )
+        .expect("insert");
+    }
+
+    fn pacto_gov_refs(conn: &rusqlite::Connection, parent: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT canonical_ref FROM squad_infra \
+                 WHERE parent_id = ?1 AND infra_type = 'pacto_gov' ORDER BY canonical_ref",
+            )
+            .expect("prepare");
+        stmt.query_map(rusqlite::params![parent], |r| r.get(0))
+            .expect("query")
+            .collect::<Result<Vec<String>, _>>()
+            .expect("collect")
+    }
+
+    #[test]
+    fn singleton_migration_keeps_newest_pacto_gov_row_per_parent() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        squad_infra_schema(&conn);
+        insert_infra(&conn, "pacto-gov-parent-1", "parent-1", "pacto_gov", "100", 10);
+        insert_infra(&conn, "si-stale", "parent-1", "pacto_gov", "200", 5);
+        insert_infra(&conn, "pacto-gov-parent-2", "parent-2", "pacto_gov", "300", 7);
+
+        enforce_pacto_gov_singleton_index(&conn).expect("migration");
+
+        assert_eq!(pacto_gov_refs(&conn, "parent-1"), vec!["100".to_string()]);
+        assert_eq!(pacto_gov_refs(&conn, "parent-2"), vec!["300".to_string()]);
+    }
+
+    #[test]
+    fn singleton_index_rejects_second_pacto_gov_row_but_allows_id_upsert() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        squad_infra_schema(&conn);
+        insert_infra(&conn, "pacto-gov-parent-1", "parent-1", "pacto_gov", "100", 10);
+        enforce_pacto_gov_singleton_index(&conn).expect("migration");
+
+        // Same-id upsert (ON CONFLICT(id) DO UPDATE) still works.
+        conn.execute(
+            "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, created_at_ms, updated_at_ms)
+             VALUES ('pacto-gov-parent-1', 'parent-1', 'pacto_gov', 'sepolia', '101', 10, 11)
+             ON CONFLICT(id) DO UPDATE SET canonical_ref = excluded.canonical_ref, updated_at_ms = excluded.updated_at_ms",
+            [],
+        )
+        .expect("same-id upsert");
+        assert_eq!(pacto_gov_refs(&conn, "parent-1"), vec!["101".to_string()]);
+
+        // A second pacto_gov row under a new id is rejected.
+        let dupe = conn.execute(
+            "INSERT INTO squad_infra (id, parent_id, infra_type, chain, canonical_ref, created_at_ms, updated_at_ms)
+             VALUES ('si-other', 'parent-1', 'pacto_gov', 'sepolia', '102', 12, 12)",
+            [],
+        );
+        assert!(dupe.is_err());
+
+        // Other infra types stay multi-row per parent.
+        insert_infra(&conn, "safe-1", "parent-1", "standalone_safe", "0xaaa", 1);
+        insert_infra(&conn, "safe-2", "parent-1", "standalone_safe", "0xbbb", 2);
+    }
+
+    #[test]
+    fn singleton_migration_is_idempotent() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        squad_infra_schema(&conn);
+        insert_infra(&conn, "pacto-gov-parent-1", "parent-1", "pacto_gov", "100", 10);
+        enforce_pacto_gov_singleton_index(&conn).expect("first run");
+        enforce_pacto_gov_singleton_index(&conn).expect("second run");
+        assert_eq!(pacto_gov_refs(&conn, "parent-1"), vec!["100".to_string()]);
+    }
 }

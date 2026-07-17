@@ -6,10 +6,19 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 
 - [ ] Copy [`.env.example`](../../.env.example) → `.env` (or export before `tauri dev`) for **RPC**.
 - [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically). Protocol factory addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md).
-- [ ] For **sponsored** gov writes (roster 0 ETH): set **`BUNDLER_RPC_URL`** and **`PACTO_ERC4337_ACCOUNT_IMPL`** (EIP-7702 account implementation for the roster EOA).
-- [ ] Logged-in profile with **Sepolia ETH** on Default and/or the sponsor pool; wallet unlocked.
+- [ ] For **sponsored** gov writes (roster 0 ETH): set **`BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>`** (same Alchemy app). EIP-7702 impl is pinned in the address book (`erc4337.accountImplementation`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+- [ ] Smoke identities: **funded Default (DM)** for deploy/deposit gas; **new empty roster key** (0 ETH) as captain after gov+sponsor; enough Sepolia ETH to **seed the sponsor pool**; throwaway `parentId`.
+- [ ] Logged-in profile; wallet unlocked.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
+
+### Bundler quick check (once per Alchemy key)
+
+```bash
+curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}'
+# expect …71727De22E5E9d8BAf0edAc6f37da032… (EntryPoint v0.7)
+```
 
 **Deploy order (default):** Pacto Gov + hats squad sponsor (combined Launchpad CTA; optional crew bootstrap) → announce sync. **Advanced:** Squad sponsor **Ext** (allowlist owner = squad roster EVM; gas + deposit may come from **Default**) or Squad Admin alone without Pacto Gov. If gov exists and sponsor is missing, the same combined wizard finishes hats sponsor only. **Treasury** and **Governance** **Deploy** / **Deploy Sponsor** open the same **Deploy Governance** launchpad (not the combined wizard directly).
 
@@ -30,7 +39,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 | `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
 | Roster key has 0 ETH | Pay deploy from **Default signer**; gov writes use sponsored UserOp when eligible |
-| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `BUNDLER_RPC_URL` + `PACTO_ERC4337_ACCOUNT_IMPL`, or fund the roster key |
+| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `BUNDLER_RPC_URL` + `erc4337.accountImplementation` in the address book, or fund the roster key |
 | `SPONSOR_INELIGIBLE` / `SPONSOR_POOL_LOW` | Missing hat/Ext permit, or deposit more ETH into the sponsor pool |
 | Bootstrap checkbox disabled | Need yourself as captain (roster EVM); otherwise mint from Governance → Captain |
 
@@ -42,6 +51,7 @@ See [PACTO_GOV.md](./PACTO_GOV.md) and [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SP
 
 - [ ] **Deploy** → Advanced → **Deploy squad sponsor (Ext)** for an address-list sponsor. Confirm **allowlist owner** is the squad-assigned roster EVM and **Pay gas and deposit from** defaults to **Default signer** when Default is funded and the roster key is empty.
 - [ ] On explorer: `addressOwner()` on the new clone equals the roster EVM; when Default paid, deployer ≠ owner.
+- [ ] Devtools: `deploy_squad_sponsor_for_parent` (Ext) now defaults `signerWallet` to `'default'` (Default pays gas + deposit; roster EVM stays allowlist owner) — pass `signerWallet: 'squad'` to fund from the squad roster key instead.
 - [ ] **Deploy** → Advanced → **Deploy Squad Admin** standalone for executor AC without Nave Pirata.
 - [ ] **Treasury** → **Deploy Sponsor** opens **Deploy Governance** launchpad (pick Ext or combined hats path from there).
 - [ ] When gov exists and sponsor missing: primary card **Deploy squad sponsor** (hats path via the same wizard).
@@ -74,7 +84,7 @@ Prefer the combined CTA. Gov-only remains available from older flows / recovery.
 |---------|----------------|
 | `NAVE_PIRATA_CONFIG` | Missing `PACTO_NAVE_PIRATA_*` / master copies |
 | Wizard blocked | No `#announcements` on parent |
-| `ACL_UNBOUND` / `ACL_DENIED` | No roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
+| `ACL_UNBOUND` / `ACL_DENIED` | **ACL** = access control; no roster EVM for parent, or missing Captain/Crew hat — see [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) |
 
 See [PACTO_GOV.md](./PACTO_GOV.md) and [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md).
 

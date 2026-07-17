@@ -1,7 +1,6 @@
 //! SquadSponsorExt address-list eligibility: read owner/permits + `setPermittedAddress`.
 
 use alloy::primitives::Address;
-use alloy::providers::Provider;
 use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
@@ -16,11 +15,66 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json,
 };
-use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
+use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
+use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::wallet_chain_config;
 
-fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>, String> {
-    let addr = parse_address(member.trim())
+/// Ext exposes only a single-address `permittedAddress` view, so each member costs one
+/// eth_call; cap the fan-out per status call.
+const MAX_MEMBER_PERMIT_LOOKUPS: usize = 64;
+
+/// Valid, deduped member addresses to check, capped at the RPC fan-out limit.
+/// The bool flags whether valid addresses beyond the cap were skipped.
+fn member_lookup_list(member_addresses: &[String]) -> (Vec<Address>, bool) {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for raw in member_addresses {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let addr = match parse_address(trimmed) {
+            Ok(a) if !a.is_zero() => a,
+            _ => continue,
+        };
+        if !seen.insert(addr) {
+            continue;
+        }
+        if out.len() == MAX_MEMBER_PERMIT_LOOKUPS {
+            return (out, true);
+        }
+        out.push(addr);
+    }
+    (out, false)
+}
+
+/// Permit edits close once hats eligibility is wired on-chain.
+fn ensure_hats_not_wired(hats_wired: bool) -> Result<(), String> {
+    if hats_wired {
+        return Err(wallet_err_json(
+            "SPONSOR_HATS_WIRED",
+            "address-list sponsorship is closed after hats wiring",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// Only the on-chain address owner may edit the permit list.
+fn ensure_signer_is_sponsor_owner(signer: Address, owner: Address) -> Result<(), String> {
+    if signer != owner {
+        return Err(wallet_err_json(
+            "NOT_SPONSOR_OWNER",
+            "only the squad sponsor address owner can update permitted addresses",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+/// Parsed member address; rejects malformed and zero addresses.
+fn parse_member_address(raw: &str) -> Result<Address, String> {
+    let addr = parse_address(raw.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     if addr.is_zero() {
         return Err(wallet_err_json(
@@ -29,40 +83,23 @@ fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>
             None,
         ));
     }
+    Ok(addr)
+}
+
+/// Permitted addresses must be squad-assigned roster EVMs; unparseable roster rows are ignored.
+fn roster_contains_member<'a>(roster: impl Iterator<Item = &'a str>, member: Address) -> bool {
+    roster
+        .filter_map(|raw| parse_address(raw).ok())
+        .any(|a| a == member)
+}
+
+fn encode_set_permitted_address(member: &str, permitted: bool) -> Result<Vec<u8>, String> {
+    let addr = parse_member_address(member)?;
     Ok(setPermittedAddressCall {
         member: addr,
         permitted,
     }
     .abi_encode())
-}
-
-async fn resolve_sponsor_for_parent<P: Provider>(
-    provider: &P,
-    factory: Address,
-    parent_id: &str,
-    sponsor_address: Option<&str>,
-) -> Result<Address, String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
-    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr =
-            parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        Ok(addr)
-    } else {
-        Ok(read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?
-            .0)
-    }
 }
 
 #[derive(Serialize)]
@@ -82,32 +119,23 @@ pub struct SquadSponsorExtStatus {
     pub address_owner: String,
     pub hats_wired: bool,
     pub member_permits: Vec<SquadSponsorExtMemberPermit>,
+    pub member_permits_truncated: bool,
 }
 
+/// Ext has only a single-address permit view: member lookups stop at the fan-out cap and set
+/// `memberPermitsTruncated`; callers with larger rosters page `member_addresses` in chunks.
 #[tauri::command]
-pub async fn get_squad_sponsor_ext_status(
+pub async fn get_squad_sponsor_ext_status<R: Runtime>(
+    app: AppHandle<R>,
     network: String,
     parent_id: String,
     member_addresses: Vec<String>,
     sponsor_address: Option<String>,
 ) -> Result<SquadSponsorExtStatus, String> {
-    let pid = parent_id.trim();
-    if pid.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_PARENT",
-            "parent_id must be non-empty",
-            None,
-        ));
-    }
+    let pid = require_non_empty_parent_id(&parent_id)?;
+    require_parent_member(&app, pid).await?;
 
-    let net_key = network.to_lowercase();
-    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
-        return Err(wallet_err_json(
-            "UNSUPPORTED_NETWORK",
-            format!("Unknown network: {}", network),
-            None,
-        ));
-    };
+    let net = require_network_config(&network)?;
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
@@ -136,21 +164,9 @@ pub async fn get_squad_sponsor_ext_status(
         .await
         .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
 
-    let mut seen = std::collections::HashSet::new();
-    let mut member_permits = Vec::new();
-    for raw in member_addresses {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let addr = match parse_address(trimmed) {
-            Ok(a) if !a.is_zero() => a,
-            _ => continue,
-        };
-        let key = format!("{:#x}", addr).to_ascii_lowercase();
-        if !seen.insert(key.clone()) {
-            continue;
-        }
+    let (members, member_permits_truncated) = member_lookup_list(&member_addresses);
+    let mut member_permits = Vec::with_capacity(members.len());
+    for addr in members {
         let permitted: bool =
             eth_call_decode(&provider, sponsor, &permittedAddressCall { member: addr })
                 .await
@@ -169,6 +185,7 @@ pub async fn get_squad_sponsor_ext_status(
         address_owner: format!("{:#x}", owner),
         hats_wired,
         member_permits,
+        member_permits_truncated,
     })
 }
 
@@ -192,23 +209,9 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
     permitted: bool,
     sponsor_address: Option<String>,
 ) -> Result<SquadSponsorSetPermittedResult, String> {
-    let pid = parent_id.trim();
-    if pid.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_PARENT",
-            "parent_id must be non-empty",
-            None,
-        ));
-    }
+    let pid = require_non_empty_parent_id(&parent_id)?;
 
-    let net_key = network.to_lowercase();
-    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
-        return Err(wallet_err_json(
-            "UNSUPPORTED_NETWORK",
-            format!("Unknown network: {}", network),
-            None,
-        ));
-    };
+    let net = require_network_config(&network)?;
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
@@ -233,13 +236,7 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
     let hats_wired: bool = eth_call_decode(&read_provider, sponsor, &hatsWiredCall {})
         .await
         .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
-    if hats_wired {
-        return Err(wallet_err_json(
-            "SPONSOR_HATS_WIRED",
-            "address-list sponsorship is closed after hats wiring",
-            None,
-        ));
-    }
+    ensure_hats_not_wired(hats_wired)?;
 
     let owner: Address = eth_call_decode(&read_provider, sponsor, &addressOwnerCall {})
         .await
@@ -247,30 +244,11 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
 
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
-    if signer.address() != owner {
-        return Err(wallet_err_json(
-            "NOT_SPONSOR_OWNER",
-            "only the squad sponsor address owner can update permitted addresses",
-            None,
-        ));
-    }
+    ensure_signer_is_sponsor_owner(signer.address(), owner)?;
 
-    let member = parse_address(member_address.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
-    if member.is_zero() {
-        return Err(wallet_err_json(
-            "INVALID_ADDRESS",
-            "member address must be non-zero",
-            None,
-        ));
-    }
+    let member = parse_member_address(&member_address)?;
     let roster = crate::db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
-    let member_on_roster = roster.iter().any(|row| {
-        parse_address(row.evm_address.as_str())
-            .map(|a| a == member)
-            .unwrap_or(false)
-    });
-    if !member_on_roster {
+    if !roster_contains_member(roster.iter().map(|row| row.evm_address.as_str()), member) {
         return Err(wallet_err_json(
             "INVALID_ADDRESS",
             "permitted address must be a squad-assigned roster EVM for a member of this parent",
@@ -300,29 +278,150 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::encode_set_permitted_address;
-    use alloy::sol_types::SolCall;
-    use crate::evm::contracts::pacto_sponsor::ISquadSponsorExt::setPermittedAddressCall;
-    use crate::evm::rpc::parse_address;
+    use super::*;
 
-    const ADDR: &str = "0x1111111111111111111111111111111111111111";
+    fn err_code(err: &str) -> String {
+        serde_json::from_str::<serde_json::Value>(err)
+            .ok()
+            .and_then(|v| v.get("code").and_then(|c| c.as_str()).map(String::from))
+            .unwrap_or_default()
+    }
+
+    const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
+    const ADDR_B: &str = "0x2222222222222222222222222222222222222222";
+    const ZERO: &str = "0x0000000000000000000000000000000000000000";
+
+    fn addr_str(byte: u8) -> String {
+        format!("0x{:0>40}", format!("{:02x}", byte).repeat(20))
+    }
 
     #[test]
     fn encode_set_permitted_address_matches_sol() {
-        let encoded = encode_set_permitted_address(ADDR, true).expect("encode");
+        let encoded = encode_set_permitted_address(ADDR_A, true).expect("encode");
         assert_eq!(
             encoded,
             setPermittedAddressCall {
-                member: parse_address(ADDR).unwrap(),
+                member: parse_address(ADDR_A).unwrap(),
                 permitted: true,
             }
             .abi_encode()
         );
-        assert!(encode_set_permitted_address("bad", true).is_err());
-        assert!(encode_set_permitted_address(
-            "0x0000000000000000000000000000000000000000",
-            true
-        )
-        .is_err());
+    }
+
+    #[test]
+    fn member_lookup_list_skips_empty_invalid_and_zero() {
+        let input = vec![
+            String::new(),
+            "   ".to_string(),
+            "not-an-address".to_string(),
+            ZERO.to_string(),
+            ADDR_A.to_string(),
+        ];
+        let (members, truncated) = member_lookup_list(&input);
+        assert_eq!(members, vec![parse_address(ADDR_A).unwrap()]);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn member_lookup_list_dedupes_case_insensitively() {
+        const HEXY: &str = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        let input = vec![
+            HEXY.to_string(),
+            HEXY.to_uppercase().replacen("0X", "0x", 1),
+            format!("  {HEXY}  "),
+        ];
+        let (members, truncated) = member_lookup_list(&input);
+        assert_eq!(members, vec![parse_address(HEXY).unwrap()]);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn member_lookup_list_caps_at_max_and_flags_truncation() {
+        let input: Vec<String> = (1u8..=65).map(addr_str).collect();
+        let (members, truncated) = member_lookup_list(&input);
+        assert_eq!(members.len(), MAX_MEMBER_PERMIT_LOOKUPS);
+        assert!(truncated);
+        assert_eq!(members[0], parse_address(&addr_str(1)).unwrap());
+
+        let exact: Vec<String> = (1u8..=64).map(addr_str).collect();
+        let (members, truncated) = member_lookup_list(&exact);
+        assert_eq!(members.len(), MAX_MEMBER_PERMIT_LOOKUPS);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn ensure_hats_not_wired_gates_permit_edits() {
+        assert!(ensure_hats_not_wired(false).is_ok());
+        let err = ensure_hats_not_wired(true).unwrap_err();
+        assert_eq!(err_code(&err), "SPONSOR_HATS_WIRED");
+    }
+
+    #[test]
+    fn ensure_signer_is_sponsor_owner_rejects_non_owner() {
+        let owner = parse_address(ADDR_A).unwrap();
+        assert!(ensure_signer_is_sponsor_owner(owner, owner).is_ok());
+        let err = ensure_signer_is_sponsor_owner(parse_address(ADDR_B).unwrap(), owner)
+            .unwrap_err();
+        assert_eq!(err_code(&err), "NOT_SPONSOR_OWNER");
+    }
+
+    #[test]
+    fn parse_member_address_rejects_malformed_and_zero() {
+        assert!(parse_member_address(ADDR_A).is_ok());
+        assert!(parse_member_address(&format!("  {ADDR_A}  ")).is_ok());
+        let err = parse_member_address("bad").unwrap_err();
+        assert_eq!(err_code(&err), "INVALID_ADDRESS");
+        let err = parse_member_address(ZERO).unwrap_err();
+        assert_eq!(err_code(&err), "INVALID_ADDRESS");
+    }
+
+    #[test]
+    fn roster_contains_member_matches_only_roster_evm_addresses() {
+        let member = parse_address(ADDR_A).unwrap();
+        let roster = vec!["garbage".to_string(), ADDR_B.to_string(), ADDR_A.to_string()];
+        assert!(roster_contains_member(
+            roster.iter().map(|s| s.as_str()),
+            member
+        ));
+        let other = vec![ADDR_B.to_string()];
+        assert!(!roster_contains_member(
+            other.iter().map(|s| s.as_str()),
+            member
+        ));
+        let empty: Vec<String> = vec![];
+        assert!(!roster_contains_member(
+            empty.iter().map(|s| s.as_str()),
+            member
+        ));
+    }
+
+    #[test]
+    fn ext_status_serializes_camel_case_with_truncation_flag() {
+        let status = SquadSponsorExtStatus {
+            chain: "sepolia".to_string(),
+            chain_id: 11155111,
+            parent_id: "squad-1".to_string(),
+            sponsor_address: ADDR_A.to_string(),
+            address_owner: ADDR_B.to_string(),
+            hats_wired: false,
+            member_permits: vec![SquadSponsorExtMemberPermit {
+                address: ADDR_A.to_string(),
+                permitted: true,
+            }],
+            member_permits_truncated: true,
+        };
+        let v = serde_json::to_value(&status).expect("serialize");
+        assert_eq!(v.get("hatsWired").and_then(|x| x.as_bool()), Some(false));
+        assert_eq!(
+            v.get("memberPermitsTruncated").and_then(|x| x.as_bool()),
+            Some(true)
+        );
+        assert!(v.get("member_permits_truncated").is_none());
+        assert_eq!(
+            v.get("memberPermits")
+                .and_then(|x| x.as_array())
+                .map(|a| a.len()),
+            Some(1)
+        );
     }
 }

@@ -15,9 +15,8 @@ use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::squad_sponsor_common::{
-    read_squad_record, require_parent_member, squad_id_from_parent_id,
-};
+use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
+use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::wallet_chain_config;
 
@@ -32,31 +31,21 @@ pub struct SquadSponsorWithdrawResult {
     pub pool_balance_wei: String,
 }
 
-async fn resolve_sponsor_for_parent<P: alloy::providers::Provider>(
-    provider: &P,
-    factory: Address,
-    parent_id: &str,
-    sponsor_address: Option<&str>,
-) -> Result<Address, String> {
-    let squad_id = squad_id_from_parent_id(parent_id);
-    if let Some(raw) = sponsor_address.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-        let (reg, _, _) = read_squad_record(provider, factory, squad_id)
-            .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-        if reg != addr {
-            return Err(wallet_err_json(
-                "SPONSOR_REGISTRY",
-                "sponsor address does not match factory registry for parent id",
-                None,
-            ));
-        }
-        return Ok(addr);
+/// Parsed depositor address for the withdrawable read.
+fn parse_depositor_address(raw: &str) -> Result<Address, String> {
+    parse_address(raw.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))
+}
+
+/// Withdraw requires a positive withdrawable balance for the signing key.
+fn ensure_withdrawable_shares(amount: U256) -> Result<(), String> {
+    if amount.is_zero() {
+        return Err(wallet_err_json(
+            "NO_SHARES",
+            "This EVM key does not have deposited funds to withdraw",
+            None,
+        ));
     }
-    read_squad_record(provider, factory, squad_id)
-        .await
-        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))
-        .map(|(addr, _, _)| addr)
+    Ok(())
 }
 
 #[tauri::command]
@@ -67,27 +56,12 @@ pub async fn get_squad_sponsor_withdrawable<R: Runtime>(
     account_address: String,
     sponsor_address: Option<String>,
 ) -> Result<String, String> {
-    let pid = parent_id.trim();
-    if pid.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_PARENT",
-            "parent_id must be non-empty",
-            None,
-        ));
-    }
+    let pid = require_non_empty_parent_id(&parent_id)?;
     require_parent_member(&app, pid).await?;
 
-    let depositor = parse_address(account_address.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let depositor = parse_depositor_address(&account_address)?;
 
-    let net_key = network.to_lowercase();
-    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
-        return Err(wallet_err_json(
-            "UNSUPPORTED_NETWORK",
-            format!("Unknown network: {}", network),
-            None,
-        ));
-    };
+    let net = require_network_config(&network)?;
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
     let urls = wallet_chain_config::rpc_urls_for(net);
@@ -122,24 +96,10 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
     account_id: String,
     sponsor_address: Option<String>,
 ) -> Result<SquadSponsorWithdrawResult, String> {
-    let pid = parent_id.trim();
-    if pid.is_empty() {
-        return Err(wallet_err_json(
-            "INVALID_PARENT",
-            "parent_id must be non-empty",
-            None,
-        ));
-    }
+    let pid = require_non_empty_parent_id(&parent_id)?;
     require_parent_member(&app, pid).await?;
 
-    let net_key = network.to_lowercase();
-    let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
-        return Err(wallet_err_json(
-            "UNSUPPORTED_NETWORK",
-            format!("Unknown network: {}", network),
-            None,
-        ));
-    };
+    let net = require_network_config(&network)?;
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
@@ -169,13 +129,7 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
-    if withdrawable.is_zero() {
-        return Err(wallet_err_json(
-            "NO_SHARES",
-            "This EVM key does not have deposited funds to withdraw",
-            None,
-        ));
-    }
+    ensure_withdrawable_shares(withdrawable)?;
 
     let provider = connect_signing_provider(&urls, wallet).await?;
     let calldata = withdrawCall {}.abi_encode();
@@ -207,4 +161,40 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
         signer_address: format!("{:#x}", signer_addr),
         pool_balance_wei: pool_balance.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn err_code(err: &str) -> String {
+        serde_json::from_str::<serde_json::Value>(err)
+            .ok()
+            .and_then(|v| v.get("code").and_then(|c| c.as_str()).map(String::from))
+            .unwrap_or_default()
+    }
+
+    const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
+
+    #[test]
+    fn parse_depositor_address_rejects_malformed() {
+        let err = parse_depositor_address("not-an-address").unwrap_err();
+        assert_eq!(err_code(&err), "INVALID_ADDRESS");
+        assert_eq!(
+            parse_depositor_address(&format!("  {ADDR_A}  ")).unwrap(),
+            parse_address(ADDR_A).unwrap()
+        );
+    }
+
+    #[test]
+    fn ensure_withdrawable_shares_requires_positive_balance() {
+        let err = ensure_withdrawable_shares(U256::ZERO).unwrap_err();
+        assert_eq!(err_code(&err), "NO_SHARES");
+        assert!(ensure_withdrawable_shares(U256::from(1u64)).is_ok());
+    }
+
+    #[test]
+    fn withdraw_calldata_is_bare_selector() {
+        assert_eq!(withdrawCall {}.abi_encode(), withdrawCall::SELECTOR);
+    }
 }

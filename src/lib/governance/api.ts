@@ -162,6 +162,31 @@ export async function getSquadSponsorWithdrawable(params: {
   })) as string;
 }
 
+export type SquadSponsorVariant = 'ext' | 'hats';
+
+/** Normalizes a top-level or persisted payload variant into `'ext' | 'hats'`. */
+export function getSquadSponsorVariant(
+  source: { variant?: string | null; providerPayload?: string | null } | null | undefined,
+): SquadSponsorVariant | null {
+  const top = source?.variant?.trim().toLowerCase();
+  if (top === 'ext' || top === 'hats') return top;
+  const raw = source?.providerPayload?.trim();
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && 'variant' in parsed) {
+      const payloadVariant = parsed.variant;
+      if (typeof payloadVariant === 'string') {
+        const norm = payloadVariant.trim().toLowerCase();
+        if (norm === 'ext' || norm === 'hats') return norm;
+      }
+    }
+  } catch {
+    // ignore malformed payload
+  }
+  return null;
+}
+
 /** Mirrors `SquadSponsorDeployResult` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorDeployResultDto {
   txHash: string;
@@ -170,7 +195,8 @@ export interface SquadSponsorDeployResultDto {
   squadId: string;
   sponsorAddress: string;
   paymasterAddress: string;
-  variant: string;
+  /** 'ext' or 'hats'; absent on results from older backends. */
+  variant?: SquadSponsorVariant;
   providerPayload: string;
   infraRowId: string;
 }
@@ -209,6 +235,18 @@ export async function deploySquadSponsorHatsForParent(params: {
     signerWallet: params.signerWallet ?? 'squad',
   })) as SquadSponsorDeployResultDto;
 }
+
+
+/**
+ * Combined deploy action: Nave Pirata gov + hats squad sponsor + optional crew bootstrap
+ * (sponsor-only variant finishes the hats sponsor when gov already exists). Single
+ * agent-callable entry point with the wizard's validation and soft-failure handling.
+ */
+export {
+  startHatsSponsorOnlyDeploy,
+  startPactoGovAndSponsorDeploy,
+} from './start-pacto-gov-and-sponsor-deploy';
+export type { CombinedGovSponsorDeployComplete } from './start-pacto-gov-and-sponsor-deploy';
 
 /** Mirrors `SquadSponsorSummary` from Tauri (`serde(rename_all = "camelCase")`). */
 export interface SquadSponsorSummaryDto {
@@ -251,6 +289,8 @@ export interface SquadSponsorExtStatusDto {
   addressOwner: string;
   hatsWired: boolean;
   memberPermits: SquadSponsorExtMemberPermitDto[];
+  /** True when member lookups hit the backend cap (64); page `memberAddresses` in chunks. */
+  memberPermitsTruncated: boolean;
 }
 
 /** Backend: `get_squad_sponsor_ext_status`. */

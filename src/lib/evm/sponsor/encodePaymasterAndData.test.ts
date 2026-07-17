@@ -39,6 +39,45 @@ const vectors = JSON.parse(
   };
 };
 
+describe('encodePaymasterAndData (input validation)', () => {
+  const valid = {
+    paymaster: `0x${'44'.repeat(20)}` as Address,
+    squadId: `0x${'11'.repeat(32)}` as Hex,
+    sponsor: `0x${'22'.repeat(20)}` as Address,
+    member: `0x${'33'.repeat(20)}` as Address,
+  };
+
+  it('rejects a 19-byte address', () => {
+    expect(() =>
+      encodePaymasterPayload({ ...valid, sponsor: `0x${'22'.repeat(19)}` as Address }),
+    ).toThrowError('address must be 20 bytes (got 19)');
+  });
+
+  it('rejects an address with non-hex characters', () => {
+    expect(() =>
+      encodePaymasterPayload({ ...valid, member: `0x${'zz'.repeat(20)}` as Address }),
+    ).toThrowError('address is not hex');
+  });
+
+  it('rejects verificationGasLimit above uint128 max', () => {
+    expect(() =>
+      encodePaymasterAndData({ ...valid, verificationGasLimit: 2n ** 128n }),
+    ).toThrowError('value out of uint128 range');
+  });
+
+  it('rejects version above uint8 max', () => {
+    expect(() => encodePaymasterPayload({ ...valid, version: 256 })).toThrowError(
+      'version out of uint8 range',
+    );
+  });
+
+  it('rejects a negative version', () => {
+    expect(() => encodePaymasterPayload({ ...valid, version: -1 })).toThrowError(
+      'version out of uint8 range',
+    );
+  });
+});
+
 describe('encodePaymasterAndData (golden vectors)', () => {
   it('matches sponsor-repo paymasterAndData encoding', () => {
     const { inputs, payload, paymasterAndData, paymasterAndDataLengthBytes } = vectors.encoding;

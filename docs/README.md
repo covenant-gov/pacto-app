@@ -4,6 +4,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 
 | Area | Purpose |
 |------|---------|
+| **[CONCEPTS.md](../CONCEPTS.md)** | Shared vocabulary / acronyms (npub, MLS, roster EVM, ACL, …) |
 | **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |
 | **[user/UNDERSTANDING_ENCRYPTION.md](./user/UNDERSTANDING_ENCRYPTION.md)** | **User-facing explanation of PIN, salt, and group encryption** (non-technical) |
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
@@ -17,7 +18,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[dashboard/POLLS.md](./dashboard/POLLS.md)** | Dashboard polls: MLS announcements transport, replica, vote rules |
 | **[legacy-fixes/](./legacy-fixes/)** | Alpha-only repair and migration paths to remove before beta or public v1 ([catalog](./legacy-fixes/CATALOG.md)) |
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
-| **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster ACL: Hats / Squad Admin capabilities, fail-closed signing preflight |
+| **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |

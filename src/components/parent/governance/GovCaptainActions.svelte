@@ -49,6 +49,7 @@
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
   export let onRefreshQm: () => void = () => {};
+  export let fundingHint = '';
 
   let acting = false;
   let voteProposalId = '';
@@ -112,6 +113,9 @@
 </script>
 
 <div class="captain-actions">
+  {#if fundingHint}
+    <p class="muted funding-hint">{fundingHint}</p>
+  {/if}
   {#if treasuryAuthority}
     <section class="contract-box" aria-labelledby="captain-ta-heading">
       <h5 id="captain-ta-heading" class="contract-title">Treasury Authority</h5>
@@ -405,6 +409,7 @@
   memberOptions={memberEvmOptions}
   captainAddresses={captainWearers}
   onSubmitted={onRefreshQm}
+  {fundingHint}
 />
 
 <style>
@@ -457,6 +462,9 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
+  }
+  .funding-hint {
+    margin: 0 0 4px;
   }
   .tiny {
     font-size: 0.6875rem;
