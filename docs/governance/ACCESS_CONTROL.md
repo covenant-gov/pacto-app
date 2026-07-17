@@ -85,7 +85,7 @@ Do not require deployer EVM == roster owner. Default may fund; hats and Ext owne
 
 When the roster key has **0 ETH** and sponsor infra exists, `send_gov_module_call` prefers a **UserOp** via `PactoSponsorPaymaster` (bundler + EIP-7702 account implementation for empty-code EOAs). When the roster key is funded, the legacy EOA `eth_sendTransaction` path is used.
 
-Operator env: `BUNDLER_RPC_URL`, `PACTO_ERC4337_ACCOUNT_IMPL` (optional book key `networks.sepolia.erc4337.accountImplementation`). Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`.
+Operator config: `BUNDLER_RPC_URL` env, plus `networks.sepolia.erc4337.accountImplementation` in the address book (`PACTO_ERC4337_ACCOUNT_IMPL` env override for local experiments). Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`.
 
 Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
 

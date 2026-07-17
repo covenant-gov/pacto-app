@@ -24,7 +24,7 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 
 ## Sponsored UserOps (gov writes)
 
-When the roster EOA has no ETH, gov module writes build an EntryPoint v0.7 UserOp, EIP-7702 set-code (if code empty), and `paymasterAndData` for `PactoSponsorPaymaster`. Requires `BUNDLER_RPC_URL` and `PACTO_ERC4337_ACCOUNT_IMPL`. Self-funded EOA path remains when the roster key has balance.
+When the roster EOA has no ETH, gov module writes build an EntryPoint v0.7 UserOp, EIP-7702 set-code (if code empty), and `paymasterAndData` for `PactoSponsorPaymaster`. Requires `BUNDLER_RPC_URL` and `networks.sepolia.erc4337.accountImplementation` in the address book. Self-funded EOA path remains when the roster key has balance.
 
 ## Manual smoke (Sepolia)
 

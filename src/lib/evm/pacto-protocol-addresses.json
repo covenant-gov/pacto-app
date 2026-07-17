@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia squadSponsor: pacto-squad-sponsor#6 factory (createSquadSponsorExt(squadId, addressOwner)).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia squadSponsor: upstream pacto-squad-sponsor factory (createSquadSponsorExt(squadId, addressOwner)).",
   "version": 1,
   "networks": {
     "sepolia": {

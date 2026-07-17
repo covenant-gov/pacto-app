@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "description": "Golden vectors for pacto-app / client tests of PactoSponsorPaymaster paymasterAndData encoding and expected validation outcomes. No fork required.",
-  "sourceIssue": "https://github.com/covenant-gov/pacto-squad-sponsor/issues/5",
+  "derivedFrom": "upstream pacto-squad-sponsor client fixtures",
   "doc": "docs/DESKTOP_CLIENT_INTEGRATION.md",
   "constants": {
     "PAYMASTER_DATA_VERSION": 1,
