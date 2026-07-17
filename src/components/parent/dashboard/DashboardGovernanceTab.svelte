@@ -22,6 +22,7 @@
   export let treasuryProposalsError = '';
   export let onRefreshProposals: () => void = () => {};
   export let onOpenLaunchpad: () => void = () => {};
+  export let hasSponsor = false;
 
   $: provider = resolveGovernanceProvider(squadInfraRows);
   $: network = pactoGovChain ?? 'sepolia';
@@ -67,6 +68,7 @@
       {treasuryProposalsLoading}
       {treasuryProposalsError}
       {onRefreshProposals}
+      {hasSponsor}
     />
   {:else}
     <p class="dashboard-placeholder-text muted">

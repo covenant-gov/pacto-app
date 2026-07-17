@@ -17,6 +17,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
+  import { govWriteFundingFallbackHint } from '../../../lib/governance/gov-write-funding';
   import { showToast } from '../../../stores/toast';
 
   export let network: string;
@@ -28,6 +29,7 @@
   export let proposalsError = '';
   export let proposalHasVotedById: Record<string, boolean> = {};
   export let onRefresh: () => void = () => {};
+  export let fundingHint = '';
 
   let acting = false;
   let proposeTo = '';
@@ -86,7 +88,7 @@
     {#if privilege.captainIsSafe}
       <strong> Safe currently holds the captain hat.</strong>
     {/if}
-    Gas: squad-assigned key when funded; otherwise sponsored UserOp from the sponsor pool if eligible.
+    {fundingHint.trim() || govWriteFundingFallbackHint()}
   </p>
 
   <div class="action-block">

@@ -27,6 +27,7 @@
   export let mutinyLoading = false;
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void = () => {};
+  export let fundingHint = '';
 
   let acting = false;
 
@@ -64,6 +65,9 @@
       on:click={onRefreshProposals}
     />
   </div>
+  {#if fundingHint}
+    <p class="muted funding-hint">{fundingHint}</p>
+  {/if}
 
   {#if mutinyLoading && !mutinyStatus}
     <p class="muted">Loading mutiny status…</p>
@@ -167,6 +171,9 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
+  }
+  .funding-hint {
+    margin: 0 0 4px;
   }
   code {
     font-family: ui-monospace, monospace;

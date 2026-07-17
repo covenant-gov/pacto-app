@@ -38,6 +38,7 @@
   export let mutinyHasVotedFlag = false;
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
+  export let fundingHint = '';
 
   let acting = false;
   let voteProposalId = '';
@@ -89,6 +90,9 @@
 </script>
 
 <div class="crew-actions">
+  {#if fundingHint}
+    <p class="muted funding-hint">{fundingHint}</p>
+  {/if}
   {#if treasuryAuthority}
     <section class="contract-box" aria-labelledby="crew-ta-heading">
       <h5 id="crew-ta-heading" class="contract-title">Treasury Authority</h5>
@@ -301,6 +305,9 @@
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
+  }
+  .funding-hint {
+    margin: 0 0 4px;
   }
   input,
   select {

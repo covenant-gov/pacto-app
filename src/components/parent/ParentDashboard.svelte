@@ -706,6 +706,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {treasuryProposalsError}
               onRefreshProposals={refreshTreasuryProposals}
               onOpenLaunchpad={openLaunchpad}
+              {hasSponsor}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>

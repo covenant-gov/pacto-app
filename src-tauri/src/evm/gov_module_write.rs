@@ -117,7 +117,7 @@ pub async fn send_gov_module_call<R: Runtime>(
             return Err(wallet_err_json(
                 "INSUFFICIENT_FUNDS",
                 format!(
-                    "roster key holds {balance} wei but this write needs ~{required} wei for gas; fund the roster key or use the sponsor path"
+                    "roster key holds {balance} wei but this write needs ~{required} wei for gas, and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first."
                 ),
                 None,
             ));
