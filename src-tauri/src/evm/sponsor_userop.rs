@@ -356,19 +356,19 @@ fn pack_u128s(hi: u128, lo: u128) -> B256 {
 }
 
 /// Fallback gas values when RPC estimation is unavailable.
-const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
+pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
 const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
-const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
+pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
 /// Headroom over `eth_estimateGas` to cover the account `execute` dispatch and state drift.
 const CALL_GAS_MARGIN_BPS: u128 = 12_000;
 
-fn call_gas_with_margin(estimate: u128) -> u128 {
+pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
     estimate * CALL_GAS_MARGIN_BPS / 10_000
 }
 
 /// `eth_estimateGas` for the governance call executed by the account. Estimates the inner
 /// call (not `execute` itself) so it stays valid before the EIP-7702 delegation exists.
-async fn estimate_call_gas<P: Provider>(
+pub(crate) async fn estimate_call_gas<P: Provider>(
     provider: &P,
     member: Address,
     to: Address,
