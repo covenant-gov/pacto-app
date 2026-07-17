@@ -239,6 +239,23 @@ describe('api command wrappers', () => {
     });
   });
 
+  it('deploySquadSponsorHatsForParent sends deploy_squad_sponsor_hats_for_parent', async () => {
+    mockedInvoke.mockResolvedValueOnce({});
+    await deploySquadSponsorHatsForParent({
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: ' 42 ',
+      initialDepositWei: '1000',
+    });
+    expect(mockedInvoke).toHaveBeenCalledWith('deploy_squad_sponsor_hats_for_parent', {
+      network: NETWORK,
+      parentId: PARENT,
+      topHatId: '42',
+      initialDepositWei: '1000',
+      signerWallet: 'squad',
+    });
+  });
+
   it('deploySquadSponsorForParent sends deploy_squad_sponsor_for_parent with defaults', async () => {
     mockedInvoke.mockResolvedValueOnce({});
     await deploySquadSponsorForParent({ network: NETWORK, parentId: PARENT });

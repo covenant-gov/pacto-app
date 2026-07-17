@@ -120,8 +120,11 @@
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
             <p class="launchpad-deployed-label">Deployed</p>
+            {#if pactoGovAddress}
+              <code class="launchpad-deployed-addr">Gov {pactoGovAddress}</code>
+            {/if}
             {#if sponsorAddress}
-              <code class="launchpad-deployed-addr">{sponsorAddress}</code>
+              <code class="launchpad-deployed-addr">Sponsor {sponsorAddress}</code>
             {/if}
           </div>
         </div>
