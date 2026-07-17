@@ -93,44 +93,6 @@ fn sponsor_lookup_err(e: String) -> String {
     wallet_err_json("SPONSOR_LOOKUP", e, None)
 }
 
-/// Reject when the factory registry already lists a sponsor clone for the squad id.
-fn ensure_registry_slot_free(sponsor: Address) -> Result<(), String> {
-    if sponsor.is_zero() {
-        Ok(())
-    } else {
-        Err(wallet_err_json(
-            "ALREADY_DEPLOYED",
-            "A sponsor clone is already registered for this squad id.",
-            None,
-        ))
-    }
-}
-
-/// Preflight: reject when SQLite or the factory already has a sponsor for this parent.
-pub async fn require_sponsor_not_already_deployed<R: Runtime, P: Provider>(
-    app: &AppHandle<R>,
-    provider: &P,
-    factory: Address,
-    parent_id: &str,
-    squad_id: B256,
-) -> Result<(), String> {
-    if crate::db::parent_has_sponsor_infra(app, parent_id).unwrap_or(false) {
-        return Err(wallet_err_json(
-            "ALREADY_DEPLOYED",
-            "This parent already has squad sponsor infrastructure.",
-            None,
-        ));
-    }
-    let call = squadsCall {
-        squadId: squad_id,
-    };
-    // Transient RPC failure must not fall through to a doomed deploy tx.
-    let decoded = eth_call_decode(provider, factory, &call)
-        .await
-        .map_err(sponsor_lookup_err)?;
-    ensure_registry_slot_free(decoded.sponsor)
-}
-
 pub fn squad_variant_label(v: SquadVariant) -> &'static str {
     match v {
         SquadVariant::NONE => "none",
@@ -207,13 +169,6 @@ mod tests {
     fn parent_member_decision_rejects_non_member() {
         let err = require_parent_member_decision(false, false, false).unwrap_err();
         assert_eq!(err_code(&err), "NOT_PARENT_MEMBER");
-    }
-
-    #[test]
-    fn registry_slot_free_accepts_zero_and_rejects_registered_sponsor() {
-        assert!(ensure_registry_slot_free(Address::ZERO).is_ok());
-        let err = ensure_registry_slot_free(Address::from([0x11u8; 20])).unwrap_err();
-        assert_eq!(err_code(&err), "ALREADY_DEPLOYED");
     }
 
     #[test]

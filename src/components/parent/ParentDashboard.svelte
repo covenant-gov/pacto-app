@@ -28,6 +28,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     protocolWearerLabelByAddress,
   } from '../../lib/governance/hats-tree-annotations';
   import { hasSquadAdminInfra, resolveSquadAdminContext } from '../../lib/governance/squad-admin-payload';
+  import { resolveSquadSponsorVariant } from '../../lib/governance/squad-sponsor-variant';
   import { DEFAULT_CHAIN_ID, parseSupportedChainId, type SupportedChainId } from '../../lib/wallet/chains';
   import {
     loadSquadNetworkOverride,
@@ -38,7 +39,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
-  import ParentDashboardModals from './dashboard/ParentDashboardModals.svelte';
+  import GovernanceDeployCoordinator from './dashboard/GovernanceDeployCoordinator.svelte';
   import {
     loadDashboardCrewTab,
     loadDashboardGovernanceTab,
@@ -46,7 +47,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     loadDashboardStatusTab,
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
-  import { showToast } from '../../stores/toast';
   import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
   import { resolveDashboardPermissionsContext } from '../../lib/dashboard/permissions-panel';
   import {
@@ -138,23 +138,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       }) => Promise<void>)
     | undefined = undefined;
 
-  let showSetSafeModal = false;
-  let showDeploySafeModal = false;
-  let showLaunchpad = false;
-  let showPactoGovDeploy = false;
-  let showGovAndSponsorDeploy = false;
-  let showExtSponsorDeploy = false;
-  let showSquadAdminDeploy = false;
-  let showSquadRolesModal = false;
-
-  let setSafeInput = '';
-  let setSafeChain: SupportedChainId = DEFAULT_CHAIN_ID;
-  let setSafeLabel = '';
-  let setSafeError = '';
-  let setSafeSaving = false;
+  let deployCoordinator: GovernanceDeployCoordinator | undefined;
 
   $: parentId = parent?.id;
   $: sponsorRow = sponsorInfraRow(squadInfraRows);
+  $: sponsorVariant = resolveSquadSponsorVariant(sponsorRow);
   $: hasSponsor = hasSponsorInfra(squadInfraRows);
   $: displayedTreasurySafes = vaultTreasurySafesForParent(
     treasurySafes ?? [],
@@ -444,18 +432,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       sponsorExtKey = '';
       return;
     }
-    let variant = '';
-    try {
-      const raw = sponsorRow?.providerPayload?.trim();
-      if (raw) {
-        const parsed = JSON.parse(raw) as { variant?: string };
-        variant = parsed.variant?.trim().toLowerCase() ?? '';
-      }
-    } catch {
-      variant = '';
-    }
     // Hats-linked SquadSponsor has no Ext permit list API.
-    if (variant === 'sponsor') {
+    if (sponsorVariant === 'hats') {
       sponsorExtStatus = null;
       sponsorExtError = '';
       sponsorExtKey = `hats:${parentId}`;
@@ -615,118 +593,21 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
+  function prefetchDeployContext() {
+    void loadSquadMemberEvm();
+    if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
+  }
+
   function openLaunchpad() {
-    showLaunchpad = true;
+    deployCoordinator?.openLaunchpad();
   }
 
   function openSetSafe() {
-    if (!parentId?.trim()) return;
-    showSetSafeModal = true;
-    setSafeInput = '';
-    setSafeChain = squadNetwork ?? DEFAULT_CHAIN_ID;
-    setSafeLabel = '';
-    setSafeError = '';
+    deployCoordinator?.openSetSafe();
   }
 
   function openDeploySafe() {
-    if (parentId?.trim()) {
-      showDeploySafeModal = true;
-    }
-  }
-
-  function openPactoGovDeploy() {
-    if (pactoGovRow) {
-      selectDashboardView('governance');
-      return;
-    }
-    if (parentId?.trim()) {
-      void loadSquadMemberEvm();
-      if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
-      showPactoGovDeploy = true;
-    }
-  }
-
-  function openGovAndSponsorDeploy() {
-    if (hasSponsor) {
-      showToast('Squad sponsor is already deployed for this parent.');
-      return;
-    }
-    if (hasPactoGov && !pactoGovRow?.canonicalRef?.trim()) {
-      showToast('Missing Pacto Gov top hat id — cannot finish hats sponsor.');
-      return;
-    }
-    if (parentId?.trim()) {
-      void loadSquadMemberEvm();
-      if (announcementsGroupId) void ensureMlsGroupMembers(announcementsGroupId);
-      showGovAndSponsorDeploy = true;
-    }
-  }
-
-  function openExtSponsorDeploy() {
-    if (hasSponsor) {
-      showToast('Squad sponsor is already deployed for this parent.');
-      return;
-    }
-    if (parentId?.trim()) {
-      showExtSponsorDeploy = true;
-    }
-  }
-
-  function openSquadAdminDeploy() {
-    if (hasSquadAdmin) {
-      selectDashboardView('crew');
-      showSquadRolesModal = true;
-      return;
-    }
-    if (parentId?.trim()) showSquadAdminDeploy = true;
-  }
-
-  function closeSetSafeModal() {
-    showSetSafeModal = false;
-    setSafeInput = '';
-    setSafeLabel = '';
-    setSafeError = '';
-  }
-
-  async function confirmSetSafe() {
-    const addr = setSafeInput.trim();
-    if (!addr) {
-      setSafeError = 'Enter a Safe address';
-      return;
-    }
-    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
-      setSafeError = 'Invalid address (expected 0x + 40 hex chars)';
-      return;
-    }
-    if (!onConfirmImportSafe) {
-      setSafeError = 'Import Safe is not available';
-      return;
-    }
-    if ((treasurySafes?.length ?? 0) >= TREASURY_SAFE_UI_CAP) {
-      setSafeError = `At most ${TREASURY_SAFE_UI_CAP} Safes are shown per squad. Remove one from another client or use a fresh parent.`;
-      return;
-    }
-    setSafeSaving = true;
-    setSafeError = '';
-    try {
-      const entryId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : `te-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      await onConfirmImportSafe({
-        safeAddress: addr,
-        chain: setSafeChain,
-        label: setSafeLabel.trim(),
-        entryId,
-      });
-      closeSetSafeModal();
-      selectDashboardView('treasury');
-      showToast('Safe imported and added to treasury.');
-    } catch (e) {
-      setSafeError = (e as Error)?.message ?? 'Failed to import Safe';
-    } finally {
-      setSafeSaving = false;
-    }
+    deployCoordinator?.openDeploySafe();
   }
 </script>
 
@@ -897,7 +778,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {memberRolesByAddress}
               showManagePrivileges={!!squadAdminCtx}
               pactoGovRevision={permissionsCtx.pactoGovRevision ?? ''}
-              onOpenSquadRolesModal={() => (showSquadRolesModal = true)}
+              onOpenSquadRolesModal={() => deployCoordinator?.openSquadRolesModal()}
               {sponsorExtStatus}
               {sponsorExtLoading}
               {sponsorExtError}
@@ -905,15 +786,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               parentId={parentId ?? ''}
               onRefreshSponsorExt={refreshSponsorExtStatus}
               hasSponsor={hasSponsor}
-              sponsorHatsMode={(() => {
-                try {
-                  const raw = sponsorRow?.providerPayload?.trim();
-                  if (!raw) return false;
-                  return (JSON.parse(raw) as { variant?: string }).variant?.toLowerCase() === 'sponsor';
-                } catch {
-                  return false;
-                }
-              })()}
+              sponsorHatsMode={sponsorVariant === 'hats'}
               {captainWearers}
               {crewWearers}
             />
@@ -932,7 +805,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   />
 </div>
 
-<ParentDashboardModals
+<GovernanceDeployCoordinator
+  bind:this={deployCoordinator}
   parentId={parentId ?? ''}
   {announcementsGroupId}
   treasurySafeCount={treasurySafes?.length ?? 0}
@@ -940,154 +814,23 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   {hasPactoGov}
   {hasSquadAdmin}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
-  squadAdminNetwork={squadAdminNetwork}
+  {squadAdminNetwork}
   {squadNetwork}
   sponsorAddress={sponsorRow?.canonicalRef ?? ''}
   pactoGovAddress={pactoPayload?.safe?.trim() ||
     pactoPayload?.squadAdminProxy?.trim() ||
     pactoGovRow?.canonicalRef?.trim() ||
     ''}
+  pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
+  quartermaster={pactoPayload?.quartermaster ?? ''}
   {captainMemberOptions}
   memberEvmOptions={memberEvmOptionsForRoles}
-  bind:showDeploySafeModal
-  bind:showLaunchpad
-  bind:showPactoGovDeploy
-  bind:showGovAndSponsorDeploy
-  bind:showExtSponsorDeploy
-  bind:showSquadAdminDeploy
-  bind:showSquadRolesModal
-  bind:showSetSafeModal
-  bind:setSafeInput
-  bind:setSafeChain
-  bind:setSafeLabel
-  bind:setSafeError
-  bind:setSafeSaving
-  existingTopHatId={hasPactoGov && !hasSponsor ? (pactoGovRow?.canonicalRef ?? '') : ''}
-  quartermaster={pactoPayload?.quartermaster ?? ''}
-  onCloseDeploySafe={() => (showDeploySafeModal = false)}
-  onCloseLaunchpad={() => (showLaunchpad = false)}
-  onClosePactoGovDeploy={() => (showPactoGovDeploy = false)}
-  onCloseGovAndSponsorDeploy={() => (showGovAndSponsorDeploy = false)}
-  onCloseExtSponsorDeploy={() => (showExtSponsorDeploy = false)}
-  onCloseSquadAdminDeploy={() => (showSquadAdminDeploy = false)}
-  onCloseSquadRolesModal={() => (showSquadRolesModal = false)}
-  onCloseSetSafe={closeSetSafeModal}
-  onConfirmSetSafe={confirmSetSafe}
-  onDeploySquadAdmin={openSquadAdminDeploy}
-  onDeployPactoGov={openPactoGovDeploy}
-  onDeployGovAndSponsor={openGovAndSponsorDeploy}
-  onDeployExtSponsor={openExtSponsorDeploy}
-  onDeploySafe={openDeploySafe}
-  onImportSafe={openSetSafe}
-  onDeploySafeSuccess={async (params) => {
-    if (!onConfirmImportSafe) {
-      throw new Error('Treasury save is not available in this context.');
-    }
-    await onConfirmImportSafe({
-      safeAddress: params.safeAddress,
-      chain: params.chain,
-      label: params.label.trim() || 'Deployed multisig',
-      entryId: params.entryId,
-      txHash: params.txHash,
-    });
-    showToast('Safe deployed and added to treasury.');
-    selectDashboardView('treasury');
-  }}
-  onPactoGovComplete={async (out) => {
-    await onPactoGovDeployComplete?.({
-      parentId: parentId!.trim(),
-      announcementsGroupId: announcementsGroupId?.trim() ?? '',
-      chain: out.chain,
-      topHatId: out.topHatId,
-      providerPayload: out.providerPayload,
-      safeAddress: out.safeAddress,
-      txHash: out.txHash,
-      infraRowId: out.infraRowId,
-    });
-    showPactoGovDeploy = false;
-    selectDashboardView('governance');
-    showToast('Pacto Gov deployed — Governance and Roles tabs are live.');
-  }}
-  onGovAndSponsorComplete={async (out) => {
-    if (out.gov) {
-      await onPactoGovDeployComplete?.({
-        parentId: parentId!.trim(),
-        announcementsGroupId: announcementsGroupId?.trim() ?? '',
-        chain: out.gov.chain,
-        topHatId: out.gov.topHatId,
-        providerPayload: out.gov.providerPayload,
-        safeAddress: out.gov.safeAddress,
-        txHash: out.gov.txHash,
-        infraRowId: out.gov.infraRowId,
-      });
-    }
-    if (out.sponsor) {
-      await onSponsorDeployComplete?.({
-        parentId: parentId!.trim(),
-        announcementsGroupId: announcementsGroupId?.trim() ?? '',
-        chain: out.sponsor.chain,
-        sponsorAddress: out.sponsor.sponsorAddress,
-        providerPayload: out.sponsor.providerPayload,
-        infraRowId: out.sponsor.infraRowId,
-      });
-    }
-    showGovAndSponsorDeploy = false;
-    selectDashboardView('governance');
-    if (out.finishSponsorNeeded) {
-      showToast(
-        `Pacto Gov deployed, but sponsor failed${out.sponsorError ? `: ${out.sponsorError}` : ''}. Finish sponsor from Deploy Governance.`,
-        undefined,
-        { label: 'Finish sponsor', action: () => openLaunchpad() },
-        { error: true },
-      );
-    } else if (out.bootstrapError) {
-      showToast(
-        out.gov
-          ? `Pacto Gov + sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`
-          : `Hats sponsor deployed, but crew bootstrap failed: ${out.bootstrapError}`,
-        undefined,
-        { label: 'Open governance', action: () => selectDashboardView('governance') },
-        { error: true },
-      );
-    } else if (out.gov) {
-      showToast(
-        out.bootstrapped
-          ? 'Pacto Gov + sponsor deployed; crew hats bootstrapped.'
-          : 'Pacto Gov + sponsor deployed. Bootstrap crew hats later from Captain if needed.',
-      );
-    } else {
-      showToast(
-        out.bootstrapped
-          ? 'Hats sponsor deployed; crew hats bootstrapped.'
-          : 'Hats sponsor deployed. Bootstrap crew hats later from Captain if needed.',
-      );
-    }
-  }}
-  onExtSponsorComplete={async (out) => {
-    await onSponsorDeployComplete?.({
-      parentId: parentId!.trim(),
-      announcementsGroupId: announcementsGroupId?.trim() ?? '',
-      chain: out.chain,
-      sponsorAddress: out.sponsorAddress,
-      providerPayload: out.providerPayload,
-      infraRowId: out.infraRowId,
-    });
-    showExtSponsorDeploy = false;
-    selectDashboardView('treasury');
-    showToast('Squad sponsor Ext deployed — manage allowlist from Treasury.');
-  }}
-  onSquadAdminComplete={async (out) => {
-    await onSquadAdminDeployComplete?.({
-      parentId: parentId!.trim(),
-      announcementsGroupId: announcementsGroupId?.trim() ?? '',
-      chain: out.chain,
-      squadAdminProxy: out.squadAdminProxy,
-      providerPayload: out.providerPayload,
-      infraRowId: out.infraRowId,
-    });
-    showToast('Squad Admin deployed — open Crew to manage privileges.');
-    selectDashboardView('crew');
-  }}
+  {onConfirmImportSafe}
+  {onPactoGovDeployComplete}
+  {onSponsorDeployComplete}
+  {onSquadAdminDeployComplete}
+  onNavigate={selectDashboardView}
+  onPrefetchDeployContext={prefetchDeployContext}
 />
 
 <style>
