@@ -10,6 +10,23 @@ use super::contracts::pacto_sponsor::SquadVariant;
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
 use super::rpc::call::eth_call_decode;
 
+/// Membership decision from the gathered signals (MLS group row, squad EVM binding, roster EVM address).
+fn require_parent_member_decision(
+    in_mls: bool,
+    has_evm_binding: bool,
+    has_roster_address: bool,
+) -> Result<(), String> {
+    if in_mls || has_evm_binding || has_roster_address {
+        Ok(())
+    } else {
+        Err(wallet_err_json(
+            "NOT_PARENT_MEMBER",
+            "You must be a member of this squad to deploy or fund its on-chain infrastructure.",
+            None,
+        ))
+    }
+}
+
 /// Current Nostr account must belong to the parent (MLS metadata or roster binding).
 pub async fn require_parent_member<R: Runtime>(
     app: &AppHandle<R>,
@@ -24,30 +41,22 @@ pub async fn require_parent_member<R: Runtime>(
         ));
     }
 
-    if crate::db::parent_exists_in_groups(app, pid).await? {
-        return Ok(());
-    }
-
-    if matches!(
-        crate::db::get_squad_member_evm_account_id(app, pid, None),
-        Ok(Some(_))
-    ) {
-        return Ok(());
-    }
-    if let Ok(member) = crate::account_manager::get_current_account() {
-        if matches!(
-            crate::db::roster_evm_address_for_member(app, pid, member.as_str()),
+    let in_mls = crate::db::parent_exists_in_groups(app, pid).await?;
+    let has_evm_binding = !in_mls
+        && matches!(
+            crate::db::get_squad_member_evm_account_id(app, pid, None),
             Ok(Some(_))
-        ) {
-            return Ok(());
-        }
-    }
-
-    Err(wallet_err_json(
-        "NOT_PARENT_MEMBER",
-        "You must be a member of this squad to deploy or fund its on-chain infrastructure.",
-        None,
-    ))
+        );
+    let has_roster_address = !in_mls
+        && !has_evm_binding
+        && (match crate::account_manager::get_current_account() {
+            Ok(member) => matches!(
+                crate::db::roster_evm_address_for_member(app, pid, member.as_str()),
+                Ok(Some(_))
+            ),
+            Err(_) => false,
+        });
+    require_parent_member_decision(in_mls, has_evm_binding, has_roster_address)
 }
 
 /// Deterministic on-chain squad key for a Pacto parent id (squad or network root).
@@ -79,6 +88,24 @@ pub fn parse_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
     }
 }
 
+/// Map a factory registry read failure to a retryable sponsor-lookup error.
+fn sponsor_lookup_err(e: String) -> String {
+    wallet_err_json("SPONSOR_LOOKUP", e, None)
+}
+
+/// Reject when the factory registry already lists a sponsor clone for the squad id.
+fn ensure_registry_slot_free(sponsor: Address) -> Result<(), String> {
+    if sponsor.is_zero() {
+        Ok(())
+    } else {
+        Err(wallet_err_json(
+            "ALREADY_DEPLOYED",
+            "A sponsor clone is already registered for this squad id.",
+            None,
+        ))
+    }
+}
+
 /// Preflight: reject when SQLite or the factory already has a sponsor for this parent.
 pub async fn require_sponsor_not_already_deployed<R: Runtime, P: Provider>(
     app: &AppHandle<R>,
@@ -100,15 +127,8 @@ pub async fn require_sponsor_not_already_deployed<R: Runtime, P: Provider>(
     // Transient RPC failure must not fall through to a doomed deploy tx.
     let decoded = eth_call_decode(provider, factory, &call)
         .await
-        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-    if !decoded.sponsor.is_zero() {
-        return Err(wallet_err_json(
-            "ALREADY_DEPLOYED",
-            "A sponsor clone is already registered for this squad id.",
-            None,
-        ));
-    }
-    Ok(())
+        .map_err(sponsor_lookup_err)?;
+    ensure_registry_slot_free(decoded.sponsor)
 }
 
 pub fn squad_variant_label(v: SquadVariant) -> &'static str {
@@ -149,7 +169,7 @@ pub async fn resolve_sponsor_for_parent<P: Provider>(
         let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
         let (reg, _, _) = read_squad_record(provider, factory, squad_id)
             .await
-            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
+            .map_err(sponsor_lookup_err)?;
         if reg != addr {
             return Err(wallet_err_json(
                 "SPONSOR_REGISTRY",
@@ -161,13 +181,51 @@ pub async fn resolve_sponsor_for_parent<P: Provider>(
     }
     read_squad_record(provider, factory, squad_id)
         .await
-        .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))
+        .map_err(sponsor_lookup_err)
         .map(|(addr, _, _)| addr)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn err_code(err: &str) -> String {
+        serde_json::from_str::<serde_json::Value>(err)
+            .ok()
+            .and_then(|v| v.get("code").and_then(|c| c.as_str()).map(String::from))
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn parent_member_decision_accepts_any_membership_signal() {
+        assert!(require_parent_member_decision(true, false, false).is_ok());
+        assert!(require_parent_member_decision(false, true, false).is_ok());
+        assert!(require_parent_member_decision(false, false, true).is_ok());
+    }
+
+    #[test]
+    fn parent_member_decision_rejects_non_member() {
+        let err = require_parent_member_decision(false, false, false).unwrap_err();
+        assert_eq!(err_code(&err), "NOT_PARENT_MEMBER");
+    }
+
+    #[test]
+    fn registry_slot_free_accepts_zero_and_rejects_registered_sponsor() {
+        assert!(ensure_registry_slot_free(Address::ZERO).is_ok());
+        let err = ensure_registry_slot_free(Address::from([0x11u8; 20])).unwrap_err();
+        assert_eq!(err_code(&err), "ALREADY_DEPLOYED");
+    }
+
+    #[test]
+    fn sponsor_lookup_err_maps_to_retryable_lookup_code() {
+        let err = sponsor_lookup_err("rpc timeout".to_string());
+        let v: serde_json::Value = serde_json::from_str(&err).expect("json");
+        assert_eq!(v.get("code").and_then(|c| c.as_str()), Some("SPONSOR_LOOKUP"));
+        assert_eq!(
+            v.get("message").and_then(|m| m.as_str()),
+            Some("rpc timeout")
+        );
+    }
 
     #[test]
     fn squad_id_from_parent_id_is_deterministic_and_trims() {

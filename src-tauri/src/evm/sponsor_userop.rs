@@ -1,8 +1,10 @@
 //! ERC-4337 sponsored governance writes via PactoSponsorPaymaster.
 //! See pacto-squad-sponsor `docs/DESKTOP_CLIENT_INTEGRATION.md`.
 
+use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, B256, Bytes, U256, Uint};
 use alloy::providers::Provider;
+use alloy::rpc::types::TransactionRequest;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
 use serde_json::{json, Value};
@@ -163,8 +165,35 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    // Conservative maxCost for preflight (0.05 ETH); bundler will re-estimate.
-    let estimated_max_cost = U256::from(50_000_000_000_000_000u64);
+    let verification_gas_limit = DEFAULT_VERIFICATION_GAS_LIMIT;
+    let pre_verification_gas: u128 = 80_000;
+
+    // Estimate from the RPC; fall back to conservative constants when estimation is unavailable.
+    let call_gas_limit = estimate_call_gas(&read_provider, member, to, &calldata)
+        .await
+        .map(call_gas_with_margin)
+        .unwrap_or_else(|| {
+            log::warn!(target: "pacto_wallet", "call gas estimation failed; using fallback");
+            FALLBACK_CALL_GAS_LIMIT
+        });
+    let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
+        Ok(fees) => (
+            fees.max_priority_fee_per_gas,
+            fees.max_fee_per_gas,
+        ),
+        Err(_) => {
+            log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
+            (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
+        }
+    };
+
+    // Preflight against the EntryPoint maxCost of this UserOp, not a fixed guess.
+    let estimated_max_cost = userop_max_cost_wei(
+        call_gas_limit,
+        verification_gas_limit,
+        pre_verification_gas,
+        max_fee,
+    );
     let (sponsor, squad_id) = sponsor_eligibility_preflight(
         &read_provider,
         addrs.squad_sponsor_factory,
@@ -201,12 +230,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
 
-    let call_gas_limit: u128 = 500_000;
-    let verification_gas_limit = DEFAULT_VERIFICATION_GAS_LIMIT;
-    let pre_verification_gas: u128 = 80_000;
-    let max_priority: u128 = 1_000_000_000;
-    let max_fee: u128 = 30_000_000_000;
-
     let account_gas_limits = pack_u128s(verification_gas_limit, call_gas_limit);
     let gas_fees = pack_u128s(max_priority, max_fee);
 
@@ -231,9 +254,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
                 )
             })?;
         eip7702_auth = Some(
-            sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce)
-                .await
-                .map_err(|e| wallet_err_json("EIP7702_SIGN", e, None))?,
+            sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?,
         );
     }
 
@@ -293,6 +314,52 @@ fn pack_u128s(hi: u128, lo: u128) -> B256 {
     B256::from(buf)
 }
 
+/// Fallback gas values when RPC estimation is unavailable.
+const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
+const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
+const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
+/// Headroom over `eth_estimateGas` to cover the account `execute` dispatch and state drift.
+const CALL_GAS_MARGIN_BPS: u128 = 12_000;
+
+fn call_gas_with_margin(estimate: u128) -> u128 {
+    estimate * CALL_GAS_MARGIN_BPS / 10_000
+}
+
+/// `eth_estimateGas` for the governance call executed by the account. Estimates the inner
+/// call (not `execute` itself) so it stays valid before the EIP-7702 delegation exists.
+async fn estimate_call_gas<P: Provider>(
+    provider: &P,
+    member: Address,
+    to: Address,
+    calldata: &[u8],
+) -> Option<u128> {
+    let tx = TransactionRequest::default()
+        .with_from(member)
+        .with_to(to)
+        .with_input(Bytes::copy_from_slice(calldata));
+    provider
+        .estimate_gas(tx)
+        .await
+        .ok()
+        .map(|gas| gas as u128)
+}
+
+/// EntryPoint v0.7 maxCost bound: maxFeePerGas × every gas limit charged for the UserOp
+/// (verification, call, preVerification, paymaster verification and postOp).
+fn userop_max_cost_wei(
+    call_gas_limit: u128,
+    verification_gas_limit: u128,
+    pre_verification_gas: u128,
+    max_fee_per_gas: u128,
+) -> U256 {
+    let total_gas = U256::from(call_gas_limit)
+        + U256::from(verification_gas_limit)
+        + U256::from(pre_verification_gas)
+        + U256::from(DEFAULT_VERIFICATION_GAS_LIMIT)
+        + U256::from(DEFAULT_POST_OP_GAS_LIMIT);
+    U256::from(max_fee_per_gas) * total_gas
+}
+
 async fn sign_eip7702_authorization<S: Signer + Sync>(
     signer: &S,
     chain_id: u64,
@@ -305,7 +372,10 @@ async fn sign_eip7702_authorization<S: Signer + Sync>(
     msg.push(0x05);
     msg.extend_from_slice(&enc);
     let hash = alloy::primitives::keccak256(&msg);
-    let sig = signer.sign_hash(&hash).await.map_err(|e| e.to_string())?;
+    let sig = signer
+        .sign_hash(&hash)
+        .await
+        .map_err(|e| wallet_err_json("EIP7702_SIGN", e.to_string(), None))?;
     let sig_bytes = sig.as_bytes();
     Ok(json!({
         "chainId": format!("{chain_id:#x}"),
@@ -342,7 +412,24 @@ async fn bundler_send_user_operation(
         "method": "eth_sendUserOperation",
         "params": [user_op, format!("{entry_point:#x}")]
     });
-    let res = bundler_rpc(bundler_url, body).await?;
+    // Retry only transient transport failures; bundler validation rejects are final.
+    let mut attempt = 0u32;
+    let res = loop {
+        attempt += 1;
+        match bundler_rpc(bundler_url, &body).await {
+            Err(e) if e.retriable && attempt < BUNDLER_MAX_ATTEMPTS => {
+                tokio::time::sleep(bundler_retry_delay(attempt)).await;
+            }
+            result => break result,
+        }
+    };
+    let res = res.map_err(|e| {
+        wallet_err_json(
+            "BUNDLER_RPC",
+            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            None,
+        )
+    })?;
     if let Some(hash) = res.get("result").and_then(|v| v.as_str()) {
         return Ok(hash.to_string());
     }
@@ -357,6 +444,9 @@ async fn bundler_send_user_operation(
 
 /// Bundler JSON-RPC request timeout; a slow bundler must not hang the command.
 const BUNDLER_RPC_TIMEOUT: Duration = Duration::from_secs(30);
+const BUNDLER_MAX_ATTEMPTS: u32 = 3;
+const BUNDLER_RETRY_BASE_DELAY: Duration = Duration::from_millis(250);
+const BUNDLER_RETRY_MAX_DELAY: Duration = Duration::from_secs(2);
 
 /// Bundler JSON-RPC client; connection pool is reused across calls.
 static BUNDLER_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
@@ -366,10 +456,33 @@ static BUNDLER_HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock
         .map_err(|e| e.to_string())
 });
 
-fn bundler_http_client() -> Result<&'static reqwest::Client, String> {
-    BUNDLER_HTTP_CLIENT
-        .as_ref()
-        .map_err(|e| wallet_err_json("BUNDLER_RPC", e.clone(), None))
+fn bundler_http_client() -> Result<&'static reqwest::Client, BundlerRpcError> {
+    BUNDLER_HTTP_CLIENT.as_ref().map_err(|e| BundlerRpcError {
+        retriable: false,
+        message: e.clone(),
+    })
+}
+
+/// Bundler call failure; `retriable` marks transient transport/HTTP conditions.
+#[derive(Debug)]
+struct BundlerRpcError {
+    retriable: bool,
+    message: String,
+}
+
+/// 429 and 5xx are transient; other non-success statuses are final.
+fn retriable_bundler_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Full-jitter exponential backoff, capped.
+fn bundler_retry_delay(attempt: u32) -> Duration {
+    let shift = attempt.saturating_sub(1).min(10);
+    let cap = BUNDLER_RETRY_BASE_DELAY
+        .as_millis()
+        .saturating_mul(1u128 << shift)
+        .min(BUNDLER_RETRY_MAX_DELAY.as_millis()) as u64;
+    Duration::from_millis(rand::random::<u64>() % cap.saturating_add(1))
 }
 
 /// Redacts transport errors; timeouts name the bound so callers can tell slow bundlers from failures.
@@ -381,29 +494,35 @@ fn bundler_transport_error(e: &reqwest::Error) -> String {
     }
 }
 
-async fn bundler_rpc(url: &str, body: Value) -> Result<Value, String> {
+async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> {
     let client = bundler_http_client()?;
-    let res = client.post(url).json(&body).send().await.map_err(|e| {
-        wallet_err_json("BUNDLER_RPC", bundler_transport_error(&e), None)
+    let res = client.post(url).json(body).send().await.map_err(|e| BundlerRpcError {
+        retriable: e.is_timeout() || e.is_connect(),
+        message: bundler_transport_error(&e),
     })?;
     let status = res.status();
-    let text = res.text().await.map_err(|e| {
-        wallet_err_json("BUNDLER_RPC", bundler_transport_error(&e), None)
+    let text = res.text().await.map_err(|e| BundlerRpcError {
+        retriable: e.is_timeout() || e.is_connect(),
+        message: bundler_transport_error(&e),
     })?;
     if !status.is_success() {
-        return Err(wallet_err_json(
-            "BUNDLER_RPC",
-            crate::evm::wallet_security::redact_urls_in_text(&text),
-            None,
-        ));
+        return Err(BundlerRpcError {
+            retriable: retriable_bundler_status(status),
+            message: crate::evm::wallet_security::redact_urls_in_text(&text),
+        });
     }
-    serde_json::from_str(&text).map_err(|e| wallet_err_json("BUNDLER_RPC", e.to_string(), None))
+    serde_json::from_str(&text).map_err(|e| BundlerRpcError {
+        retriable: false,
+        message: e.to_string(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_eip7702_authorization, pack_u128s};
-    use alloy::primitives::{address, B256};
+    use super::{
+        call_gas_with_margin, encode_eip7702_authorization, pack_u128s, userop_max_cost_wei,
+    };
+    use alloy::primitives::{address, B256, U256};
 
     #[test]
     fn pack_u128s_puts_hi_lo() {
@@ -412,6 +531,22 @@ mod tests {
         expected[..16].copy_from_slice(&100_000u128.to_be_bytes());
         expected[16..].copy_from_slice(&500_000u128.to_be_bytes());
         assert_eq!(packed, B256::from(expected));
+    }
+
+    #[test]
+    fn userop_max_cost_covers_all_gas_limits() {
+        let cost = userop_max_cost_wei(500_000, 100_000, 80_000, 30_000_000_000);
+        assert_eq!(
+            cost,
+            U256::from(30_000_000_000u128)
+                * U256::from(500_000u128 + 100_000 + 80_000 + 100_000 + 50_000)
+        );
+    }
+
+    #[test]
+    fn call_gas_margin_adds_headroom() {
+        assert_eq!(call_gas_with_margin(100_000), 120_000);
+        assert_eq!(call_gas_with_margin(0), 0);
     }
 
     #[test]
