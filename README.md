@@ -10,11 +10,33 @@ Privacy on these blockchains is achieved through Zero-Knowledge (ZK) proving sch
 
 ## Install
 
-Download the latest release for your platform from **[covenant-gov.github.io/pacto-app/](https://covenant-gov.github.io/pacto-app/)**.
+Download the latest release for your platform from **[covenant-gov.github.io/pacto-app/](https://covenant-gov.github.io/pacto-app/)** or use the commands below. Examples reference v0.3.0; check the [releases page](https://github.com/covenant-gov/pacto-app/releases/latest) for the current version.
 
 ### macOS
 
-Pacto is not currently signed by Apple. After installing the app, you may see a warning that says **"pacto is damaged and can't be opened. You should move it to the Trash."** (or similar):
+#### Homebrew
+
+```bash
+brew tap covenant-gov/pacto
+brew install --cask pacto
+```
+
+Or in one line:
+
+```bash
+brew install --cask covenant-gov/pacto/pacto
+```
+
+#### Manual install
+
+1. Download the DMG for your Mac from the [latest release](https://github.com/covenant-gov/pacto-app/releases/latest):
+   - Apple Silicon: `pacto_0.3.0_aarch64.dmg`
+   - Intel: `pacto_0.3.0_x64.dmg`
+2. Open the DMG and drag `pacto.app` to **Applications**.
+
+#### Unsigned app warning
+
+Pacto is not currently signed by Apple. After installing, you may see a warning that says **"pacto is damaged and can't be opened. You should move it to the Trash."** (or similar):
 
 ![macOS damaged app warning](docs/build/macos-damaged-warning.png)
 
@@ -25,6 +47,37 @@ xattr -r -d com.apple.quarantine /Applications/pacto.app
 ```
 
 Then launch Pacto from Applications.
+
+### Linux
+
+#### Debian / Ubuntu (AMD64)
+
+```bash
+curl -LO https://github.com/covenant-gov/pacto-app/releases/download/v0.3.0/pacto_0.3.0_amd64.deb
+sudo dpkg -i pacto_0.3.0_amd64.deb
+```
+
+#### Fedora / RHEL / openSUSE (x86_64)
+
+```bash
+curl -LO https://github.com/covenant-gov/pacto-app/releases/download/v0.3.0/pacto-0.3.0-1.x86_64.rpm
+sudo dnf install ./pacto-0.3.0-1.x86_64.rpm
+```
+
+#### AppImage
+
+```bash
+curl -LO https://github.com/covenant-gov/pacto-app/releases/download/v0.3.0/pacto_0.3.0_amd64.AppImage
+chmod +x pacto_0.3.0_amd64.AppImage
+./pacto_0.3.0_amd64.AppImage
+```
+
+### Windows
+
+1. Download `pacto_0.3.0_x64_en-US.msi` from the [latest release](https://github.com/covenant-gov/pacto-app/releases/latest).
+2. Run the installer and follow the prompts.
+
+Windows Defender SmartScreen may warn that the app is unsigned. Click **More info** → **Run anyway**.
 
 ## Feature Set
 
