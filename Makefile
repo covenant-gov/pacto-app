@@ -33,7 +33,9 @@ dev:
 	pnpm tauri dev
 
 build:
-	pnpm tauri build
+	# Tauri CLI 2.9.x misinterprets CI=1 as --ci=1 (boolean flags only accept
+	# true/false), so unset CI and pass --ci explicitly to skip prompts.
+	env -u CI pnpm tauri build --ci
 
 preview:
 	pnpm preview

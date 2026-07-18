@@ -88,7 +88,7 @@ describe('checkForUpdates', () => {
     expectStatus('available', { currentVersion: '0.2.0', availableVersion: '0.3.0' });
   });
 
-  it('sets error and shows a toast on network failures', async () => {
+  it('sets error on network failures', async () => {
     setIsDevBuildForTest(false);
     mockedGetVersion.mockResolvedValue('0.2.0');
     mockedCheck.mockRejectedValue(new Error('Network request failed'));
@@ -96,11 +96,10 @@ describe('checkForUpdates', () => {
     const state = get(updateStatus);
     expect(state.status).toBe('error');
     expect(state.error).toContain('internet connection');
-    expect(mockedShowToast).toHaveBeenCalledTimes(1);
-    expect(mockedShowToast.mock.calls[0][0]).toContain('internet connection');
+    expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
-  it('sets error and shows a toast on signature mismatch', async () => {
+  it('sets error on signature mismatch', async () => {
     setIsDevBuildForTest(false);
     mockedGetVersion.mockResolvedValue('0.2.0');
     mockedCheck.mockRejectedValue(new Error('invalid signature'));
@@ -108,10 +107,10 @@ describe('checkForUpdates', () => {
     const state = get(updateStatus);
     expect(state.status).toBe('error');
     expect(state.error).toContain('signature');
-    expect(mockedShowToast).toHaveBeenCalled();
+    expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
-  it('sets error and shows a toast on missing platform assets', async () => {
+  it('sets error on missing platform assets', async () => {
     setIsDevBuildForTest(false);
     mockedGetVersion.mockResolvedValue('0.2.0');
     mockedCheck.mockRejectedValue(new Error('no asset found for platform'));
@@ -119,7 +118,18 @@ describe('checkForUpdates', () => {
     const state = get(updateStatus);
     expect(state.status).toBe('error');
     expect(state.error).toContain('platform');
-    expect(mockedShowToast).toHaveBeenCalled();
+    expect(mockedShowToast).not.toHaveBeenCalled();
+  });
+
+  it('sets a clear error when the release endpoint is not found', async () => {
+    setIsDevBuildForTest(false);
+    mockedGetVersion.mockResolvedValue('0.2.0');
+    mockedCheck.mockRejectedValue(new Error('404 Not Found: latest.json'));
+    await checkForUpdates();
+    const state = get(updateStatus);
+    expect(state.status).toBe('error');
+    expect(state.error).toContain('No published release');
+    expect(mockedShowToast).not.toHaveBeenCalled();
   });
 });
 
@@ -155,7 +165,7 @@ describe('downloadAndInstallUpdate', () => {
     expect(downloadAndInstall).toHaveBeenCalled();
   });
 
-  it('sets error and shows a toast when install fails', async () => {
+  it('sets error when install fails', async () => {
     setIsDevBuildForTest(false);
     const downloadAndInstall = vi.fn().mockRejectedValue(new Error('network error'));
     mockedCheck.mockResolvedValue({ version: '0.3.0', downloadAndInstall } as unknown as UpdaterUpdate);
@@ -166,7 +176,7 @@ describe('downloadAndInstallUpdate', () => {
     const state = get(updateStatus);
     expect(state.status).toBe('error');
     expect(state.error).toContain('internet connection');
-    expect(mockedShowToast).toHaveBeenCalled();
+    expect(mockedShowToast).not.toHaveBeenCalled();
   });
 });
 

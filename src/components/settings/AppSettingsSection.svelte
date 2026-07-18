@@ -5,6 +5,7 @@
     checkForUpdates,
     updateStatus,
     buildCommitHash,
+    buildVersion,
   } from '../../lib/updater/update-check';
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
@@ -13,7 +14,7 @@
   $: isChecking = $updateStatus.status === 'checking';
 
   function versionLabel(): string {
-    const version = $updateStatus.currentVersion || 'v0.0.0';
+    const version = $updateStatus.currentVersion || buildVersion;
     if (import.meta.env.DEV) {
       return `${version} (dev ${buildCommitHash})`;
     }
@@ -31,9 +32,11 @@
       case 'available':
       case 'downloading':
       case 'installing':
-      case 'error':
-      case 'relaunchPending':
         return `Update ${$updateStatus.availableVersion ?? ''} available`;
+      case 'error':
+        return $updateStatus.error ?? 'Update check failed.';
+      case 'relaunchPending':
+        return 'Update installed — relaunch to apply.';
       case 'dev-disabled':
         return 'Updates are only available in release builds.';
     }

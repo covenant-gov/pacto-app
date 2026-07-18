@@ -3,7 +3,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { writable, get, type Readable } from 'svelte/store';
 
-import { showToast } from '../../stores/toast';
+
 
 declare const __APP_COMMIT_HASH__: string | undefined;
 declare const __APP_VERSION__: string | undefined;
@@ -51,7 +51,7 @@ export interface UpdateState {
 
 const initialState: UpdateState = {
   status: 'idle',
-  currentVersion: '',
+  currentVersion: buildVersion,
   availableVersion: null,
   downloadProgress: 0,
   error: null,
@@ -98,6 +98,14 @@ function friendlyErrorMessage(err: unknown): string {
   if (msg.includes('platform') || msg.includes('asset') || msg.includes('no asset')) {
     return 'No update is available for this platform yet.';
   }
+  if (
+    msg.includes('not found') ||
+    msg.includes('404') ||
+    msg.includes('latest.json') ||
+    msg.includes('no release')
+  ) {
+    return 'No published release was found. This is expected until the first release is shipped.';
+  }
   return err.message || 'Update check failed.';
 }
 
@@ -126,7 +134,6 @@ export async function checkForUpdates(): Promise<void> {
   } catch (err) {
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message });
-    showToast(message, undefined, undefined, { error: true });
   }
 }
 
@@ -174,7 +181,6 @@ export async function downloadAndInstallUpdate(): Promise<void> {
   } catch (err) {
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message, availableVersion: null });
-    showToast(message, undefined, undefined, { error: true });
   }
 }
 
