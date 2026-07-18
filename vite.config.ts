@@ -1,11 +1,14 @@
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 import packageJson from './package.json' with { type: 'json' };
 
 const host = process.env.TAURI_DEV_HOST;
 
 const plugins = await sveltekit();
+
+const tauriConf = JSON.parse(fs.readFileSync('./src-tauri/tauri.conf.json', 'utf8'));
 
 function getCommitHash(): string {
   if (process.env.VITE_COMMIT_HASH) {
@@ -19,8 +22,19 @@ function getCommitHash(): string {
 }
 
 function getAppVersion(): string {
-  const version = process.env.VITE_APP_VERSION ?? packageJson.version;
-  return version.startsWith('v') ? version : `v${version}`;
+  // Prefer the explicit build-time override, then the Tauri app version (the
+  // source of truth for the bundle), then package.json as a last resort.
+  const raw = process.env.VITE_APP_VERSION ?? tauriConf.version ?? packageJson.version;
+  const version = raw.startsWith('v') ? raw : `v${raw}`;
+
+  if (!/^v\d+\.\d+\.\d+/.test(version)) {
+    throw new Error(
+      `Invalid app version "${version}". Expected a semver like "v0.2.0". ` +
+        `Check VITE_APP_VERSION, src-tauri/tauri.conf.json, and package.json.`
+    );
+  }
+
+  return version;
 }
 
 // https://vite.dev/config/ — Vitest uses the same file (see `test` below).
