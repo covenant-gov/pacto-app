@@ -6,6 +6,7 @@
   import TopNavbar from '../components/layout/TopNavbar.svelte';
   import CommonsView from '../components/commons/CommonsView.svelte';
   import PersonalBroadcastModal from '../components/commons/PersonalBroadcastModal.svelte';
+  import UpdateAvailableModal from '../components/updater/UpdateAvailableModal.svelte';
   import ParentNavbar from '../components/layout/ParentNavbar.svelte';
   import ParentDashboard from '../components/parent/ParentDashboard.svelte';
 import MyDashboard from '../components/parent/MyDashboard.svelte';
@@ -1109,6 +1110,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       <PersonalBroadcastModal />
     </div>
   {/if}
+  <UpdateAvailableModal />
 </div>
 
 <style>

@@ -1,0 +1,186 @@
+import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
+import { getVersion } from '@tauri-apps/api/app';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { writable, get, type Readable } from 'svelte/store';
+
+import { showToast } from '../../stores/toast';
+
+declare const __APP_COMMIT_HASH__: string | undefined;
+declare const __APP_VERSION__: string | undefined;
+
+export let isDevBuild = (): boolean => import.meta.env.DEV;
+
+/** Git commit hash the bundle was built from, or 'unknown'. */
+export const buildCommitHash: string = typeof __APP_COMMIT_HASH__ === 'string' ? __APP_COMMIT_HASH__ : 'unknown';
+
+/** Package version the bundle was built from (e.g. v0.2.0), or 'v0.0.0'. */
+export const buildVersion: string = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'v0.0.0';
+
+/** Resolve the installed version, falling back to the package version. */
+export async function resolveInstalledVersion(): Promise<string> {
+  const installed = await getVersion().catch(() => '');
+  // Tauri returns '0.0.0' when it cannot read a real bundle version.
+  return installed && installed !== '0.0.0' ? installed : buildVersion;
+}
+
+/** Test-only hook to override the dev-build detector. */
+export function setIsDevBuildForTest(value: boolean): void {
+  isDevBuild = () => value;
+}
+
+export type UpdaterUpdate = Awaited<ReturnType<typeof check>>;
+
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'no-update'
+  | 'available'
+  | 'downloading'
+  | 'installing'
+  | 'error'
+  | 'dev-disabled';
+
+export interface UpdateState {
+  status: UpdateStatus;
+  currentVersion: string;
+  availableVersion: string | null;
+  downloadProgress: number;
+  error: string | null;
+  relaunchPending: boolean;
+}
+
+const initialState: UpdateState = {
+  status: 'idle',
+  currentVersion: '',
+  availableVersion: null,
+  downloadProgress: 0,
+  error: null,
+  relaunchPending: false,
+};
+
+function createUpdateStatusStore() {
+  const { subscribe, set, update } = writable<UpdateState>(initialState);
+
+  return {
+    subscribe,
+    set,
+    update,
+    reset: () => set(initialState),
+    setStatus: (status: UpdateStatus, patch: Partial<UpdateState> = {}) =>
+      set({
+        ...get(updateStatus),
+        status,
+        error: status === 'error' ? get(updateStatus).error : null,
+        // Clear stale download state when leaving download/install phases.
+        downloadProgress: status === 'downloading' || status === 'installing'
+          ? get(updateStatus).downloadProgress
+          : 0,
+        ...patch,
+      }),
+  };
+}
+
+export const updateStatus = createUpdateStatusStore();
+
+export function resetUpdateStatus(): void {
+  updateStatus.reset();
+}
+
+function friendlyErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return 'Update check failed.';
+  const msg = err.message.toLowerCase();
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('offline')) {
+    return 'Update check failed. Please check your internet connection and try again.';
+  }
+  if (msg.includes('signature') || msg.includes('verify') || msg.includes('invalid signature')) {
+    return 'Update signature mismatch. The update package could not be verified.';
+  }
+  if (msg.includes('platform') || msg.includes('asset') || msg.includes('no asset')) {
+    return 'No update is available for this platform yet.';
+  }
+  return err.message || 'Update check failed.';
+}
+
+export async function checkForUpdates(): Promise<void> {
+  const currentVersion = await resolveInstalledVersion();
+
+  if (isDevBuild()) {
+    updateStatus.setStatus('dev-disabled', { currentVersion });
+    return;
+  }
+
+  updateStatus.setStatus('checking', { currentVersion, availableVersion: null, error: null });
+
+  try {
+    const update = await check();
+    if (!update) {
+      updateStatus.setStatus('no-update', { currentVersion });
+      return;
+    }
+
+    updateStatus.setStatus('available', {
+      currentVersion,
+      availableVersion: update.version,
+      downloadProgress: 0,
+    });
+  } catch (err) {
+    const message = friendlyErrorMessage(err);
+    updateStatus.setStatus('error', { error: message });
+    showToast(message, undefined, undefined, { error: true });
+  }
+}
+
+let downloadTotalBytes = 0;
+let downloadedBytes = 0;
+
+function resetDownloadProgress(): void {
+  downloadTotalBytes = 0;
+  downloadedBytes = 0;
+}
+
+function getDownloadProgress(): number {
+  if (!downloadTotalBytes) return 0;
+  return Math.min(1, downloadedBytes / downloadTotalBytes);
+}
+
+function handleDownloadEvent(event: DownloadEvent): void {
+  if (event.event === 'Started') {
+    resetDownloadProgress();
+    downloadTotalBytes = event.data.contentLength ?? 0;
+    updateStatus.setStatus('downloading', { downloadProgress: 0 });
+  } else if (event.event === 'Progress') {
+    downloadedBytes += event.data.chunkLength;
+    updateStatus.setStatus('downloading', { downloadProgress: getDownloadProgress() });
+  } else if (event.event === 'Finished') {
+    updateStatus.setStatus('installing', { downloadProgress: 1 });
+  }
+}
+
+export async function downloadAndInstallUpdate(): Promise<void> {
+  const state = get(updateStatus);
+  if (state.status !== 'available') return;
+
+  resetDownloadProgress();
+
+  try {
+    const update = await check();
+    if (!update) {
+      updateStatus.setStatus('no-update');
+      return;
+    }
+
+    await update.downloadAndInstall((event) => handleDownloadEvent(event));
+    updateStatus.setStatus('available', { relaunchPending: true, downloadProgress: 1 });
+  } catch (err) {
+    const message = friendlyErrorMessage(err);
+    updateStatus.setStatus('error', { error: message, availableVersion: null });
+    showToast(message, undefined, undefined, { error: true });
+  }
+}
+
+export async function relaunchApp(): Promise<void> {
+  await relaunch();
+}
+
+/** Readable alias for components that only need to subscribe. */
+export const updateStatusReadable: Readable<UpdateState> = updateStatus;

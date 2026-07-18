@@ -175,6 +175,9 @@ jobs:
         run: echo "CARGO_TARGET_DIR=C:\cargo-target" >> $env:GITHUB_ENV
 
       - name: install frontend dependencies
+        env:
+          VITE_COMMIT_HASH: ${{ github.sha }}
+          VITE_APP_VERSION: ${{ github.ref_name }}
         run: pnpm install --frozen-lockfile
 
       - uses: tauri-apps/tauri-action@v1
@@ -182,6 +185,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_COMMIT_HASH: ${{ github.sha }}
+          VITE_APP_VERSION: ${{ github.ref_name }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pacto ${{ github.ref_name }}'
