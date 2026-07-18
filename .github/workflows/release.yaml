@@ -25,17 +25,12 @@ jobs:
         id: notes
         env:
           CHANGELOG: ${{ steps.changelog.outputs.content }}
+          TAG: ${{ github.ref_name }}
         run: |
+          VERSION="${TAG#v}"
           {
             printf '%s\n' "$CHANGELOG"
-            echo ""
-            echo "## Install"
-            echo ""
-            echo "**macOS:** Download the \`.dmg\` for your architecture, open it, and drag Pacto to Applications. For Apple Silicon (M1/M2/M3) use the \`aarch64\` DMG; for Intel Macs use the \`x64\` DMG."
-            echo ""
-            echo "**Linux:** Download the \`.AppImage\` matching your architecture (\`amd64\` or \`arm64\`), run \`chmod +x <file>.AppImage\`, then execute it. Debian/Ubuntu users can install the \`.deb\` package instead."
-            echo ""
-            echo "**Windows:** Download the \`.msi\` or \`.exe\` installer and run it."
+            sed -e "s/{{TAG}}/$TAG/g" -e "s/{{VERSION}}/$VERSION/g" .github/release-install-notes.md
           } > release-body.md
 
       - name: Upload release notes
