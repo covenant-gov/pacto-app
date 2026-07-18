@@ -20,6 +20,7 @@ export interface RelayInfo {
   is_custom: boolean;
   enabled: boolean;
   mode: string;
+  failure_reason?: string | null;
 }
 
 export interface CustomRelay {
@@ -27,6 +28,57 @@ export interface CustomRelay {
   enabled: boolean;
   mode: RelayMode;
 }
+
+/** A single health-check or monitor log entry for a relay. */
+export interface RelayLog {
+  timestamp: number;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+/** Per-relay health-check metrics. */
+export interface RelayMetrics {
+  ping_ms?: number | null;
+  bytes_up: number;
+  bytes_down: number;
+  last_check?: number | null;
+  events_received: number;
+  events_sent: number;
+}
+
+/** Read-only TLS certificate metadata for a wss:// relay. */
+export interface RelayCertificate {
+  subject: string;
+  issuer: string;
+  not_before: number;
+  not_after: number;
+  san_list: string[];
+  sha256_fingerprint: string;
+  key_algorithm: string;
+  key_bits: number;
+  validation_error?: string | null;
+}
+
+/** Result of a throwaway pre-add relay probe. */
+export interface ProbeResult {
+  status: string;
+  rtt_ms?: number | null;
+  message?: string | null;
+}
+
+/** Known probe status values returned by the backend. */
+export type ProbeStatus =
+  | 'healthy'
+  | 'timeout'
+  | 'connection_refused'
+  | 'dns_failed'
+  | 'not_a_relay'
+  | 'protocol_error'
+  | 'tls_certificate_expired'
+  | 'tls_certificate_invalid'
+  | 'tls_failed'
+  | 'connection_failed'
+  | 'unknown';
 
 /** Client-side check before invoking add_custom_relay. Returns an error message or null if OK. */
 export function validateRelayUrlInput(url: string): string | null {
@@ -109,6 +161,22 @@ export async function toggleCustomRelay(url: string, enabled: boolean): Promise<
 
 export async function toggleDefaultRelay(url: string, enabled: boolean): Promise<boolean> {
   return invoke<boolean>('toggle_default_relay', { url, enabled });
+}
+
+export async function getRelayLogs(url: string, _limit = 20): Promise<RelayLog[]> {
+  return invoke<RelayLog[]>('get_relay_logs', { url });
+}
+
+export async function getRelayMetrics(url: string): Promise<RelayMetrics> {
+  return invoke<RelayMetrics>('get_relay_metrics', { url });
+}
+
+export async function getRelayCertificate(url: string): Promise<RelayCertificate | null> {
+  return invoke<RelayCertificate | null>('get_relay_certificate', { url });
+}
+
+export async function probeRelay(url: string): Promise<ProbeResult> {
+  return invoke<ProbeResult>('probe_relay', { url });
 }
 
 export async function setRelayEnabled(relay: RelayInfo, enabled: boolean): Promise<boolean> {

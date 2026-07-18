@@ -2786,6 +2786,93 @@ static RELAY_METRICS: Lazy<RwLock<HashMap<String, RelayMetrics>>> =
 static RELAY_LOGS: Lazy<RwLock<HashMap<String, VecDeque<RelayLog>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// Global storage for relay failure reasons (key: normalized relay URL)
+static RELAY_FAILURE_REASONS: Lazy<RwLock<HashMap<String, String>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Store or clear the last failure reason for a relay. Reasons are redacted
+/// before storage so secrets never reach the frontend.
+fn set_relay_failure_reason(url: &str, reason: &str) {
+    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    let redacted = crate::evm::wallet_security::redact_urls_in_text(reason);
+    if let Ok(mut reasons) = RELAY_FAILURE_REASONS.write() {
+        reasons.insert(normalized, redacted);
+    }
+}
+
+/// Remove the failure reason for a relay (e.g. after it reconnects).
+fn clear_relay_failure_reason(url: &str) {
+    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    if let Ok(mut reasons) = RELAY_FAILURE_REASONS.write() {
+        reasons.remove(&normalized);
+    }
+}
+
+/// Read the stored failure reason for a relay, if any.
+fn get_relay_failure_reason(url: &str) -> Option<String> {
+    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    RELAY_FAILURE_REASONS.read().ok()?.get(&normalized).cloned()
+}
+
+/// Classify a transport/relay error into a stable, human-readable reason.
+/// Stack traces, bearer tokens, and query parameters are redacted from any
+/// URL-like substring in the final message.
+fn classify_relay_failure(error: &(dyn std::error::Error + Send + Sync + 'static)) -> String {
+    let mut chain: Vec<String> = Vec::new();
+    let mut current: Option<&dyn std::error::Error> = Some(error);
+    while let Some(e) = current {
+        chain.push(e.to_string().to_lowercase());
+        current = e.source();
+    }
+
+    // Helper: check whether any error message in the chain contains a needle.
+    let contains = |needle: &str| chain.iter().any(|m| m.contains(needle));
+
+    let reason = if let Some(io_err) = error.downcast_ref::<std::io::Error>() {
+        match io_err.kind() {
+            std::io::ErrorKind::TimedOut => "Connection timed out".to_string(),
+            std::io::ErrorKind::ConnectionRefused => "Connection refused".to_string(),
+            std::io::ErrorKind::NotFound => "DNS lookup failed".to_string(),
+            _ if contains("dns") && contains("failed") => "DNS lookup failed".to_string(),
+            _ if contains("connection refused") => "Connection refused".to_string(),
+            _ if contains("timed out") || contains("timeout") => "Connection timed out".to_string(),
+            _ if contains("network is unreachable") || contains("unreachable") => {
+                "Network unreachable".to_string()
+            }
+            _ => format!("Connection failed: {}", io_err),
+        }
+    } else if error.downcast_ref::<tokio_tungstenite::tungstenite::Error>().is_some() {
+        if contains("tls") && contains("expired") {
+            "TLS certificate expired".to_string()
+        } else if contains("tls") && (contains("invalid") || contains("certificate")) {
+            "TLS handshake failed".to_string()
+        } else if contains("protocol") {
+            "Protocol error".to_string()
+        } else {
+            "WebSocket error".to_string()
+        }
+    } else {
+        // Fallback heuristic over the whole chain.
+        if contains("dns") && contains("failed") {
+            "DNS lookup failed".to_string()
+        } else if contains("tls certificate expired") || contains("expired") && contains("cert") {
+            "TLS certificate expired".to_string()
+        } else if contains("tls") {
+            "TLS handshake failed".to_string()
+        } else if contains("connection refused") {
+            "Connection refused".to_string()
+        } else if contains("timed out") || contains("timeout") {
+            "Connection timed out".to_string()
+        } else if contains("protocol") {
+            "Protocol error".to_string()
+        } else {
+            "Unknown failure".to_string()
+        }
+    };
+
+    crate::evm::wallet_security::redact_urls_in_text(&reason)
+}
+
 /// Add a log entry for a relay
 fn add_relay_log(url: &str, level: &str, message: &str) {
     let normalized = url.trim().trim_end_matches('/').to_lowercase();
@@ -2853,6 +2940,7 @@ struct RelayInfo {
     is_custom: bool,
     enabled: bool,
     mode: String,
+    failure_reason: Option<String>,
 }
 
 /// Get all relays with their current status
@@ -2891,6 +2979,12 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             ("disabled".to_string(), "both".to_string())
         };
 
+        let failure_reason = if relay_status_is_non_connected_from_str(&status) {
+            get_relay_failure_reason(&url_str)
+        } else {
+            None
+        };
+
         relay_infos.push(RelayInfo {
             url: url_str,
             status,
@@ -2898,6 +2992,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             is_custom: false,
             enabled: !is_disabled,
             mode,
+            failure_reason,
         });
     }
 
@@ -2919,6 +3014,12 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             "disabled".to_string()
         };
 
+        let failure_reason = if relay_status_is_non_connected_from_str(&status) {
+            get_relay_failure_reason(&custom.url)
+        } else {
+            None
+        };
+
         relay_infos.push(RelayInfo {
             url: custom.url.clone(),
             status,
@@ -2926,6 +3027,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             is_custom: true,
             enabled: custom.enabled,
             mode: custom.mode.clone(),
+            failure_reason,
         });
     }
 
@@ -2953,6 +3055,15 @@ struct CustomRelay {
 
 fn default_relay_mode() -> String {
     "both".to_string()
+}
+
+/// Translate a string status label into the non-connected predicate used when
+/// populating [`RelayInfo`]. This mirrors the mapping in `get_relays`.
+fn relay_status_is_non_connected_from_str(status: &str) -> bool {
+    matches!(
+        status,
+        "disconnected" | "terminated" | "banned" | "sleeping" | "initialized"
+    )
 }
 
 /// Validate a relay URL format. Secure WebSockets (`wss://`) are required for
@@ -3048,6 +3159,144 @@ mod validate_relay_url_tests {
         assert_eq!(
             validate_relay_url("wss://relay.example.com/").unwrap(),
             "wss://relay.example.com"
+        );
+    }
+}
+
+#[cfg(test)]
+mod relay_failure_reason_tests {
+    use super::{
+        classify_relay_failure, clear_relay_failure_reason, get_relay_failure_reason,
+        relay_status_is_non_connected_from_str, set_relay_failure_reason,
+    };
+
+    #[test]
+    fn stores_and_retrieves_reason() {
+        set_relay_failure_reason("wss://relay.example.com/", "DNS lookup failed");
+        assert_eq!(
+            get_relay_failure_reason("wss://relay.example.com"),
+            Some("DNS lookup failed".to_string())
+        );
+        clear_relay_failure_reason("wss://relay.example.com/");
+        assert!(get_relay_failure_reason("wss://relay.example.com").is_none());
+    }
+
+    #[test]
+    fn redacts_secret_in_reason() {
+        set_relay_failure_reason(
+            "wss://relay.example.com",
+            "connect failed: https://evil.com?token=secret123",
+        );
+        let reason = get_relay_failure_reason("wss://relay.example.com").unwrap();
+        assert!(!reason.contains("secret123"));
+        assert!(reason.contains("[REDACTED]") || !reason.contains("token="));
+    }
+
+    #[test]
+    fn classifies_dns_failure() {
+        let err = std::io::Error::new(std::io::ErrorKind::NotFound, "dns lookup failed");
+        assert_eq!(classify_relay_failure(&err), "DNS lookup failed");
+    }
+
+    #[test]
+    fn classifies_timeout() {
+        let err = std::io::Error::new(std::io::ErrorKind::TimedOut, "operation timed out");
+        assert_eq!(classify_relay_failure(&err), "Connection timed out");
+    }
+
+    #[test]
+    fn classifies_connection_refused() {
+        let err = std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        );
+        assert_eq!(classify_relay_failure(&err), "Connection refused");
+    }
+
+    #[test]
+    fn non_connected_status_predicate() {
+        assert!(relay_status_is_non_connected_from_str("disconnected"));
+        assert!(relay_status_is_non_connected_from_str("terminated"));
+        assert!(relay_status_is_non_connected_from_str("banned"));
+        assert!(relay_status_is_non_connected_from_str("sleeping"));
+        assert!(relay_status_is_non_connected_from_str("initialized"));
+        assert!(!relay_status_is_non_connected_from_str("connected"));
+        assert!(!relay_status_is_non_connected_from_str("connecting"));
+        assert!(!relay_status_is_non_connected_from_str("pending"));
+    }
+}
+
+#[cfg(test)]
+mod probe_relay_tests {
+    use super::ProbeResult;
+
+    /// Spawn a TCP listener that accepts the connection but never sends a WebSocket
+    /// handshake response so the probe times out quickly.
+    async fn silent_listener() -> (tokio::net::TcpListener, u16) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind silent listener");
+        let port = listener.local_addr().unwrap().port();
+        (listener, port)
+    }
+
+    #[tokio::test]
+    async fn probe_refuses_connection_on_closed_port() {
+        // Use a local port that is extremely unlikely to be listening.
+        let url = "ws://127.0.0.1:1".to_string();
+        let result = super::probe_relay(url).await.unwrap();
+        assert_eq!(result.status, "connection_refused");
+        assert!(result.rtt_ms.is_none());
+    }
+
+    #[tokio::test]
+    async fn probe_times_out_when_handshake_is_silent() {
+        let (listener, port) = silent_listener().await;
+
+        // Accept the TCP connection in the background so the listener isn't dropped.
+        tokio::spawn(async move {
+            let _ = listener.accept().await;
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+
+        let url = format!("ws://127.0.0.1:{}", port);
+        let result = super::probe_relay(url).await.unwrap();
+        // Depending on OS/socket behavior, a silent handshake may surface as a
+        // read timeout or as a generic connection failure. The important property
+        // is that it is reported as unhealthy, not as healthy.
+        assert!(
+            result.status == "timeout" || result.status == "connection_failed",
+            "unexpected status: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_rejects_non_relay_http_endpoint() {
+        // Spawn an HTTP-ish listener that returns a plain 200 after a TCP read.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind http listener");
+        let port = listener.local_addr().unwrap().port();
+
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                // Read the incoming HTTP upgrade request (best effort) then reply
+                // with a plain HTTP 200. This is not a valid WebSocket upgrade,
+                // so the probe should report not_a_relay or connection_failed.
+                let mut buf = [0u8; 1024];
+                let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                let response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+                let _ = tokio::io::AsyncWriteExt::write_all(&mut stream, response.as_bytes()).await;
+            }
+        });
+
+        let url = format!("ws://127.0.0.1:{}", port);
+        let result = super::probe_relay(url).await.unwrap();
+        assert!(
+            result.status == "not_a_relay" || result.status == "connection_failed",
+            "unexpected status: {:?}",
+            result
         );
     }
 }
@@ -3391,6 +3640,478 @@ async fn validate_relay_url_cmd(url: String) -> Result<String, String> {
 }
 
 // ============================================================================
+// Pre-add relay probe
+// ============================================================================
+
+/// Result of a throwaway probe against a candidate relay URL.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+struct ProbeResult {
+    status: String,
+    rtt_ms: Option<u64>,
+    message: Option<String>,
+}
+
+impl ProbeResult {
+    fn healthy(rtt_ms: u64) -> Self {
+        Self {
+            status: "healthy".to_string(),
+            rtt_ms: Some(rtt_ms),
+            message: None,
+        }
+    }
+
+    fn failure(status: &str, message: &str) -> Self {
+        Self {
+            status: status.to_string(),
+            rtt_ms: None,
+            message: Some(message.to_string()),
+        }
+    }
+}
+
+/// Default probe timeout (well under the 10-second product requirement).
+const PROBE_TIMEOUT_SECONDS: u64 = 8;
+
+/// Probe a candidate relay without saving it or joining the live relay pool.
+/// Opens a throwaway WebSocket, completes the TLS handshake when required,
+/// sends a minimal Nostr EVENT and waits for an OK response, then closes.
+#[tauri::command]
+async fn probe_relay(url: String) -> Result<ProbeResult, String> {
+    use futures_util::{SinkExt, StreamExt};
+    use nostr_sdk::prelude::{EventBuilder, Keys, Kind};
+    use tokio_tungstenite::tungstenite::protocol::Message;
+
+    // Validate/normalize and reject userinfo so no credential is ever sent.
+    let normalized_url = validate_relay_url(&url)?;
+
+    let total_timeout = std::time::Duration::from_secs(PROBE_TIMEOUT_SECONDS);
+    let started = std::time::Instant::now();
+
+    // Open the WebSocket with a short timeout. The throwaway connection is never
+    // added to the live nostr-sdk pool, so it cannot receive live traffic.
+    let connect_result = tokio::time::timeout(
+        total_timeout,
+        tokio_tungstenite::connect_async(&normalized_url),
+    )
+    .await;
+
+    let (mut ws, response) = match connect_result {
+        Ok(Ok(pair)) => pair,
+        Ok(Err(e)) => {
+            return Ok(classify_probe_error(started.elapsed(), e));
+        }
+        Err(_) => {
+            return Ok(ProbeResult::failure(
+                "timeout",
+                "Probe timed out while opening the connection",
+            ));
+        }
+    };
+
+    // The WebSocket handshake must have returned HTTP 101.
+    if response.status() != tokio_tungstenite::tungstenite::http::StatusCode::SWITCHING_PROTOCOLS {
+        let _ = ws.close(None).await;
+        return Ok(ProbeResult::failure(
+            "not_a_relay",
+            &format!(
+                "Endpoint returned HTTP {} instead of a WebSocket upgrade",
+                response.status()
+            ),
+        ));
+    }
+
+    // Build and send a minimal, ephemeral Nostr EVENT. We generate a fresh key
+    // pair so the probe never touches the user's real identity.
+    let keys = Keys::generate();
+    let event = match EventBuilder::new(Kind::Metadata, "pacto_probe")
+        .sign(&keys)
+        .await
+    {
+        Ok(ev) => ev,
+        Err(e) => {
+            return Ok(ProbeResult::failure(
+                "protocol_error",
+                &format!("Failed to build probe event: {}", e),
+            ));
+        }
+    };
+
+    let event_json = serde_json::to_string(&event)
+        .map_err(|e| format!("Failed to serialize probe event: {}", e))?;
+    let probe_msg = format!("[\"EVENT\",{}]", event_json);
+
+    if let Err(e) = ws.send(Message::text(probe_msg)).await {
+        return Ok(classify_probe_error(started.elapsed(), e));
+    }
+
+    // Wait for an OK/NOTICE response within the remaining timeout.
+    let remaining = total_timeout.saturating_sub(started.elapsed());
+    let recv_result = tokio::time::timeout(remaining, ws.next()).await;
+
+    let outcome = match recv_result {
+        Ok(Some(Ok(Message::Text(text)))) => {
+            parse_probe_response(started.elapsed(), &text, &mut ws).await
+        }
+        Ok(Some(Ok(Message::Binary(_bin)))) => {
+            // Some relays send binary frames during handshake; treat as non-Nostr.
+            let _ = ws.close(None).await;
+            ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint sent a binary WebSocket frame instead of a Nostr message",
+            )
+        }
+        Ok(Some(Ok(_))) => {
+            let _ = ws.close(None).await;
+            ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint sent a non-Nostr WebSocket frame",
+            )
+        }
+        Ok(Some(Err(e))) => classify_probe_error(started.elapsed(), e),
+        Ok(None) => ProbeResult::failure(
+            "not_a_relay",
+            "Endpoint closed the connection without responding",
+        ),
+        Err(_) => {
+            let _ = ws.close(None).await;
+            ProbeResult::failure(
+                "timeout",
+                "Probe timed out waiting for a Nostr OK response",
+            )
+        }
+    };
+
+    Ok(outcome)
+}
+
+/// Parse a Nostr relay response received during the probe.
+async fn parse_probe_response(
+    rtt: std::time::Duration,
+    text: &str,
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> ProbeResult {
+
+    let value = match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(v) => v,
+        Err(_) => {
+            let _ = ws.close(None).await;
+            return ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint sent non-JSON WebSocket text",
+            );
+        }
+    };
+
+    let arr = match value.as_array() {
+        Some(a) if !a.is_empty() => a,
+        _ => {
+            let _ = ws.close(None).await;
+            return ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint sent an empty JSON message",
+            );
+        }
+    };
+
+    let first = match arr[0].as_str() {
+        Some(s) => s,
+        None => {
+            let _ = ws.close(None).await;
+            return ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint sent a malformed Nostr message",
+            );
+        }
+    };
+
+    match first {
+        "OK" => {
+            let ok_status = arr.get(2).and_then(|v| v.as_bool());
+            let ok_message = arr.get(3).and_then(|v| v.as_str()).unwrap_or("");
+            let _ = ws.close(None).await;
+            if ok_status == Some(true) {
+                ProbeResult::healthy(rtt.as_millis() as u64)
+            } else {
+                ProbeResult::failure(
+                    "healthy",
+                    &format!("Relay rejected the probe event: {}", ok_message),
+                )
+            }
+        }
+        "NOTICE" => {
+            let notice = arr.get(1).and_then(|v| v.as_str()).unwrap_or("");
+            let _ = ws.close(None).await;
+            if notice.to_lowercase().contains("auth")
+                || notice.to_lowercase().contains("restricted")
+            {
+                // The endpoint speaks Nostr but requires auth/restricted access.
+                ProbeResult::healthy(rtt.as_millis() as u64)
+            } else {
+                ProbeResult::failure(
+                    "not_a_relay",
+                    &format!("Endpoint sent a NOTICE instead of an OK response: {}", notice),
+                )
+            }
+        }
+        "EVENT" | "EOSE" | "AUTH" | "CLOSED" => {
+            // Any other recognized Nostr relay message proves the endpoint speaks
+            // the protocol. We don't care about the payload.
+            let _ = ws.close(None).await;
+            ProbeResult::healthy(rtt.as_millis() as u64)
+        }
+        _ => {
+            let _ = ws.close(None).await;
+            ProbeResult::failure(
+                "not_a_relay",
+                "Endpoint returned an unrecognized WebSocket message",
+            )
+        }
+    }
+}
+
+/// Classify a low-level WebSocket/IO/TLS error for the probe result.
+fn classify_probe_error(
+    _rtt: std::time::Duration,
+    error: tokio_tungstenite::tungstenite::Error,
+) -> ProbeResult {
+    use tokio_tungstenite::tungstenite::Error;
+
+    let msg = error.to_string().to_lowercase();
+
+    match error {
+        Error::Io(io_err) => match io_err.kind() {
+            std::io::ErrorKind::ConnectionRefused => {
+                ProbeResult::failure("connection_refused", "Connection refused")
+            }
+            std::io::ErrorKind::TimedOut => {
+                ProbeResult::failure("timeout", "Connection timed out")
+            }
+            std::io::ErrorKind::NotFound => {
+                ProbeResult::failure("dns_failed", "DNS lookup failed")
+            }
+            _ if msg.contains("dns") && msg.contains("failed") => {
+                ProbeResult::failure("dns_failed", "DNS lookup failed")
+            }
+            _ if msg.contains("connection refused") => {
+                ProbeResult::failure("connection_refused", "Connection refused")
+            }
+            _ if msg.contains("timed out") || msg.contains("timeout") => {
+                ProbeResult::failure("timeout", "Connection timed out")
+            }
+            _ => ProbeResult::failure(
+                "connection_failed",
+                &crate::evm::wallet_security::redact_urls_in_text(&io_err.to_string()),
+            ),
+        },
+        Error::Tls(_) => {
+            if msg.contains("expired") {
+                ProbeResult::failure("tls_certificate_expired", "TLS certificate expired")
+            } else if msg.contains("not valid for name") || msg.contains("invalid dns") {
+                ProbeResult::failure("tls_certificate_invalid", "TLS certificate is invalid")
+            } else {
+                ProbeResult::failure("tls_failed", "TLS handshake failed")
+            }
+        }
+        Error::Protocol(_) | Error::Http(_) => {
+            ProbeResult::failure("not_a_relay", "Endpoint is not a Nostr relay")
+        }
+        _ => {
+            if msg.contains("dns") && msg.contains("failed") {
+                ProbeResult::failure("dns_failed", "DNS lookup failed")
+            } else if msg.contains("tls") {
+                ProbeResult::failure("tls_failed", "TLS handshake failed")
+            } else if msg.contains("protocol") {
+                ProbeResult::failure("protocol_error", "Protocol error")
+            } else {
+                ProbeResult::failure(
+                    "unknown",
+                    &crate::evm::wallet_security::redact_urls_in_text(&error.to_string()),
+                )
+            }
+        }
+    }
+}
+
+/// In-memory cache of the last successfully captured TLS certificate per relay.
+/// Key: normalized relay URL. Certificates are not persisted to SQLite.
+static RELAY_CERTIFICATES: Lazy<RwLock<HashMap<String, RelayCertificate>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Read-only TLS certificate summary exposed to the frontend.
+#[derive(serde::Serialize, Clone, Debug, Default)]
+struct RelayCertificate {
+    subject: String,
+    issuer: String,
+    not_before: u64,
+    not_after: u64,
+    san_list: Vec<String>,
+    sha256_fingerprint: String,
+    key_algorithm: String,
+    key_bits: u32,
+    validation_error: Option<String>,
+}
+
+/// Extract the first peer certificate from a completed tokio-rustls handshake and
+/// parse its metadata with x509-parser. Returns `None` if no certificate was sent.
+fn parse_end_entity_certificate(certs: &[rustls::pki_types::CertificateDer<'_>]) -> Option<RelayCertificate> {
+    use sha2::{Sha256, Digest};
+    use x509_parser::prelude::*;
+
+    let first = certs.first()?;
+    let fingerprint = {
+        let mut hasher = Sha256::new();
+        hasher.update(first.as_ref());
+        hex::encode(hasher.finalize())
+    };
+
+    let parsed = X509Certificate::from_der(first.as_ref()).ok()?.1;
+    let subject = parsed.subject.to_string();
+    let issuer = parsed.issuer.to_string();
+
+    let validity = parsed.validity();
+    let not_before_u64 = validity.not_before.timestamp().try_into().unwrap_or(0);
+    let not_after_u64 = validity.not_after.timestamp().try_into().unwrap_or(0);
+
+    let san_list = parsed.subject_alternative_name()
+        .ok()
+        .flatten()
+        .map(|ext| ext.value.general_names.iter().map(|gn| gn.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
+    let key_algorithm = parsed.tbs_certificate.subject_pki.algorithm.oid().to_string();
+    let key_bits = parsed.tbs_certificate.subject_pki.raw.len() as u32 * 8;
+
+    Some(RelayCertificate {
+        subject,
+        issuer,
+        not_before: not_before_u64,
+        not_after: not_after_u64,
+        san_list,
+        sha256_fingerprint: fingerprint,
+        key_algorithm,
+        key_bits,
+        validation_error: None,
+    })
+}
+
+/// Perform a short, throwaway TLS handshake against a `wss://` host and capture the
+/// server certificate metadata without mutating the live relay pool. Non-TLS (`ws://`)
+/// relays return `Ok(None)`. TLS validation failures are reported in the DTO so the
+/// UI can show the reason instead of blank certificate details (R11).
+async fn probe_certificate(url: &str) -> Result<Option<RelayCertificate>, String> {
+    use tokio_rustls::{rustls, TlsConnector};
+    use rustls::pki_types::ServerName;
+
+    // Ensure a crypto provider is available. This is a no-op if one was already
+    // installed by the live relay pool or another caller.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    if parsed.scheme() != "wss" {
+        return Ok(None);
+    }
+
+    let host = parsed.host_str().ok_or("URL missing host")?.to_string();
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    let server_name = ServerName::try_from(host.clone())
+        .map_err(|e| format!("Invalid server name: {}", e))?;
+
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let connector = TlsConnector::from(Arc::new(config));
+
+    let addr = format!("{}:{}", host, port);
+    let stream = tokio::net::TcpStream::connect(&addr)
+        .await
+        .map_err(|e| format!("TCP connect failed: {}", e))?;
+
+    match connector.connect(server_name, stream).await {
+        Ok(tls) => {
+            let certs = tls.get_ref().1.peer_certificates();
+            Ok(certs.and_then(parse_end_entity_certificate))
+        }
+        Err(e) => {
+            let reason = classify_relay_failure(&e);
+            Ok(Some(RelayCertificate {
+                validation_error: Some(reason),
+                ..Default::default()
+            }))
+        }
+    }
+}
+
+/// Capture or refresh the TLS certificate for a relay and cache it in memory.
+async fn refresh_relay_certificate(url: &str) -> Option<RelayCertificate> {
+    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    match probe_certificate(url).await {
+        Ok(Some(cert)) => {
+            let clone = cert.clone();
+            if let Ok(mut cache) = RELAY_CERTIFICATES.write() {
+                cache.insert(normalized, cert);
+            }
+            Some(clone)
+        }
+        Ok(None) => {
+            if let Ok(mut cache) = RELAY_CERTIFICATES.write() {
+                cache.remove(&normalized);
+            }
+            None
+        }
+        Err(e) => {
+            let fallback = RelayCertificate {
+                validation_error: Some(e),
+                ..Default::default()
+            };
+            if let Ok(mut cache) = RELAY_CERTIFICATES.write() {
+                cache.insert(normalized.clone(), fallback.clone());
+            }
+            Some(fallback)
+        }
+    }
+}
+
+/// Return cached certificate details for a relay, or probe on demand if missing.
+/// For `wss://` relays that fail TLS validation, the DTO contains the failure reason.
+#[tauri::command]
+async fn get_relay_certificate(url: String) -> Result<Option<RelayCertificate>, String> {
+    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    let cached = RELAY_CERTIFICATES.read()
+        .map_err(|_| "Failed to read certificate cache")?
+        .get(&normalized)
+        .cloned();
+
+    if cached.is_some() {
+        return Ok(cached);
+    }
+
+    Ok(refresh_relay_certificate(&url).await)
+}
+
+#[cfg(test)]
+mod relay_certificate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn ws_relay_returns_none() {
+        let cert = probe_certificate("ws://localhost:7000").await.unwrap();
+        assert!(cert.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalid_wss_host_returns_validation_error() {
+        let cert = refresh_relay_certificate("wss://this-host-definitely-does-not-exist.example:443").await;
+        assert!(cert.is_some());
+        assert!(cert.unwrap().validation_error.is_some());
+    }
+}
+
+// ============================================================================
 
 /// Monitor relay pool connection status changes
 #[tauri::command]
@@ -3445,13 +4166,25 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                     // Handle reconnection logic
                     match status {
                         RelayStatus::Disconnected => {
+                            // Record a generic status-change reason unless a more
+                            // specific failure was already captured by the health check.
+                            if get_relay_failure_reason(&url_str).is_none() {
+                                set_relay_failure_reason(&url_str, "Relay disconnected");
+                            }
                             // The aggressive health check system will handle reconnection
                             // No action needed here to avoid race conditions
                         }
                         RelayStatus::Terminated => {
+                            if get_relay_failure_reason(&url_str).is_none() {
+                                set_relay_failure_reason(&url_str, "Relay connection terminated");
+                            }
                             // Relay connection terminated (hard disconnect)
                         }
+                        RelayStatus::Banned => {
+                            set_relay_failure_reason(&url_str, "Relay banned");
+                        }
                         RelayStatus::Connected => {
+                            clear_relay_failure_reason(&url_str);
                             // When a relay reconnects, fetch last 2 days of messages from just that relay
                             let handle_inner = handle_clone.clone();
                             let url_string = url_str.clone();
@@ -3515,9 +4248,11 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             if events.is_empty() && elapsed.as_secs() >= 2 {
                                 // Empty response after 2+ seconds means relay is not responding properly
                                 unhealthy_relays.push((url.clone(), relay.clone()));
+                                set_relay_failure_reason(&url_str, "Health check failed: slow/empty response");
                                 add_relay_log(&url_str, "warn", "Health check failed: slow/empty response");
                             } else {
-                                // Healthy - record ping time
+                                // Healthy - record ping time and clear any stale failure reason
+                                clear_relay_failure_reason(&url_str);
                                 update_relay_metrics(&url_str, |m| {
                                     m.ping_ms = Some(ping_ms);
                                     m.last_check = Some(now_secs);
@@ -3527,15 +4262,28 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                         Ok(Err(e)) => {
                             // Query failed
                             unhealthy_relays.push((url.clone(), relay.clone()));
-                            add_relay_log(&url_str, "warn", &format!("Health check failed: {}", e));
+                            let reason = classify_relay_failure(&e);
+                            set_relay_failure_reason(&url_str, &format!("Health check failed: {}", reason));
+                            add_relay_log(&url_str, "warn", &format!("Health check failed: {}", reason));
                         }
                         Err(_) => {
                             // Timeout
                             unhealthy_relays.push((url.clone(), relay.clone()));
+                            set_relay_failure_reason(&url_str, "Health check failed: timeout");
                             add_relay_log(&url_str, "warn", "Health check failed: timeout");
                         }
                     }
                 } else if status == RelayStatus::Terminated || status == RelayStatus::Disconnected {
+                    // Already disconnected; capture a reason if none exists.
+                    let url_str = url.to_string();
+                    if get_relay_failure_reason(&url_str).is_none() {
+                        let status_label = if status == RelayStatus::Terminated {
+                            "Relay connection terminated"
+                        } else {
+                            "Relay disconnected"
+                        };
+                        set_relay_failure_reason(&url_str, status_label);
+                    }
                     // Already disconnected, add to reconnect list
                     unhealthy_relays.push((url.clone(), relay.clone()));
                 }
@@ -6554,7 +7302,9 @@ pub fn run() {
             validate_relay_url_cmd,
             get_relay_metrics,
             get_relay_logs,
+            get_relay_certificate,
             monitor_relay_connections,
+            probe_relay,
             start_typing,
             connect,
             encrypt,

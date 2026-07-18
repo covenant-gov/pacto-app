@@ -29,6 +29,7 @@ mdk-sqlite-storage = { git = "https://github.com/parres-hq/mdk", rev = "f46875ec
 mdk-storage-traits = { git = "https://github.com/parres-hq/mdk", rev = "f46875ec6fbe1cd616e9dfb4d2aa10f56044e58c" }
 bip39 = { version = "2.2.0", features = ["rand"] }
 tokio = { version = "1.48.0", features = ["sync", "time"] }
+tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-webpki-roots", "connect", "handshake"] }
 futures-util = "0.3.31"
 tauri = { version = "2.9.1", features = [ "image-png"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -73,6 +74,10 @@ url = "2.5"
 alloy = { version = "1.0.41", default-features = false, features = ["provider-http", "signer-local", "sol-types", "rpc-types", "contract", "reqwest", "reqwest-rustls-tls"] }
 alloy-rlp = "0.3"
 bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "std"] }
+x509-parser = { version = "0.18.1", default-features = false, features = ["ring"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "logging", "tls12", "aws_lc_rs"] }
+rustls = { version = "0.23.26", default-features = false, features = ["ring", "logging", "tls12", "aws_lc_rs"] }
+webpki-roots = "0.26.5"
 
 # Android-only dependencies
 [target.'cfg(target_os = "android")'.dependencies]
@@ -105,4 +110,5 @@ libc = "0.2"
 tauri-plugin-mcp-bridge = "0.7"
 
 [dev-dependencies]
+rcgen = { version = "0.14.8", default-features = false, features = ["ring"] }
 tauri = { version = "2.9.1", features = ["test"] }
