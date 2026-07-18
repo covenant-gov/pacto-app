@@ -6,7 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## Unreleased
 
-## v0.2.0
+## v0.3.0
+
+### Highlights
+- Hardened the squad governance and launch flow: hats-first sponsor deploy paths, ala-carte Safe + governance extensions, sponsored governance writes, and an orchestrated launchpad for new squads.
+- Shipped an operable governance dashboard with a roles tree and module panels so squads can manage on-chain settings interactively.
+- Improved key security with per-device salt support and a migration to the v2 encryption scheme.
+- Kept payout addresses private by routing them through consent-based direct-message exchange instead of public metadata.
+- Added in-app "Check for Updates" with build introspection so users can verify the running release.
+
+### Reliability & Quality
+- Fixed CI landing-site deployments and release-tag resolution, and added the permissions needed for artifact uploads and Pages publishing.
+
+### Documentation
+- Added user-facing encryption architecture guidance and a macOS install quarantine note.
 
 ### Highlights
 - Delivered a full squad-centric governance experience: deploy flows, governance dashboard, squad-bot inbox join flow, polls, and sponsorship workflows.
