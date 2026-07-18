@@ -96,6 +96,7 @@ import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
+import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -124,6 +125,7 @@ const SCOPED_KEY_PREFIXES = [
   PACTO_SQUAD_JOIN_MUTED_PREFIX,
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
+  STARTUP_CHECK_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {

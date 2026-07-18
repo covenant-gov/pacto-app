@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runPostLoginNetworkSync } from './post-login-sync';
+import * as updateCheck from '../updater/update-check';
+import {
+  startupCheckEnabled,
+  markStartupCheckRun,
+  resetStartupCheckSession,
+  getHasRunStartupCheckThisSession,
+} from '../../stores/startup-check';
 
 const scheduleCommonsStartupPrefetch = vi.fn();
 const apiConnect = vi.fn();
@@ -33,16 +40,28 @@ vi.mock('../commons/commons-prefetch', () => ({
     scheduleCommonsStartupPrefetch(...args),
 }));
 
+vi.mock('../updater/update-check', () => ({
+  checkForUpdates: vi.fn().mockResolvedValue(undefined),
+  isDevBuild: vi.fn().mockReturnValue(false),
+  updateStatus: { setStatus: vi.fn() },
+  resetUpdateStatus: vi.fn(),
+  setIsDevBuildForTest: vi.fn(),
+}));
+
 describe('runPostLoginNetworkSync', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    resetStartupCheckSession();
+    startupCheckEnabled.set(false);
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     consoleError.mockClear();
+    resetStartupCheckSession();
+    startupCheckEnabled.set(false);
   });
 
   async function flushAsync(): Promise<void> {
@@ -137,5 +156,64 @@ describe('runPostLoginNetworkSync', () => {
     await flushAsync();
 
     expect(console.error).toHaveBeenCalledWith('syncMlsGroupsNow after login failed:', err);
+  });
+
+  describe('startup update check', () => {
+    beforeEach(() => {
+      vi.spyOn(updateCheck, 'isDevBuild').mockReturnValue(false);
+      vi.spyOn(updateCheck, 'checkForUpdates').mockResolvedValue(undefined);
+    });
+
+    it('does not check when the preference is disabled', async () => {
+      startupCheckEnabled.set(false);
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.checkForUpdates).not.toHaveBeenCalled();
+    });
+
+    it('does not check when the session has already been checked', async () => {
+      startupCheckEnabled.set(true);
+      markStartupCheckRun();
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.checkForUpdates).not.toHaveBeenCalled();
+      expect(getHasRunStartupCheckThisSession()).toBe(true);
+    });
+
+    it('does not check in dev builds', async () => {
+      vi.spyOn(updateCheck, 'isDevBuild').mockReturnValue(true);
+      startupCheckEnabled.set(true);
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.checkForUpdates).not.toHaveBeenCalled();
+    });
+
+    it('runs exactly once when enabled in a release build', async () => {
+      startupCheckEnabled.set(true);
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.checkForUpdates).toHaveBeenCalledTimes(1);
+      expect(getHasRunStartupCheckThisSession()).toBe(true);
+
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.checkForUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls updateStatus.setStatus when an update is found', async () => {
+      startupCheckEnabled.set(true);
+      vi.spyOn(updateCheck, 'checkForUpdates').mockImplementation(async () => {
+        updateCheck.updateStatus.setStatus('available', {
+          currentVersion: '0.2.0',
+          availableVersion: '0.3.0',
+        });
+      });
+      runPostLoginNetworkSync('npub1');
+      await flushAsync();
+      expect(updateCheck.updateStatus.setStatus).toHaveBeenCalledWith('available', {
+        currentVersion: '0.2.0',
+        availableVersion: '0.3.0',
+      });
+    });
   });
 });

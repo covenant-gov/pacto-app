@@ -37,6 +37,7 @@ import {
 import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
+import { loadStartupCheckPreference } from './startup-check';
 
 export {
   currentNpubForPersistence,
@@ -123,6 +124,7 @@ export function loadAccountState(npub: string): void {
     squadDashboardChannelMode.set(parseSquadDashboardChannelMode(rawSquadDashboardMode));
     const rawMyDashboardMode = localStorage.getItem(`${MY_DASHBOARD_MODE_PREFIX}_${npub}`);
     myDashboardChannelMode.set(parseMyDashboardChannelMode(rawMyDashboardMode));
+    loadStartupCheckPreference(npub);
   } catch {
     // ignore parse errors
   }
