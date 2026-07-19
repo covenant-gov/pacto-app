@@ -10,6 +10,7 @@ import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { get } from 'svelte/store';
+import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
 import {
   backendDmMessages,
   backendGroupMessages,
@@ -85,6 +86,7 @@ function register(
 export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   const typingClearTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const unsubs: Promise<UnlistenFn>[] = [];
+  const cleanupSessionFocusChecks = initSessionFocusChecks();
 
   register(unsubs, 'message_new', (event) => {
     const { message, chat_id } = event.payload as { message: DmMessage; chat_id: string };
@@ -322,9 +324,20 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     dashboardPollReplicaNonceByParentId.update((m) => ({ ...m, [pid]: (m[pid] ?? 0) + 1 }));
   });
 
+  register(unsubs, 'migration_complete', () => {
+    dmLog('migration_complete: showing migration toast');
+    showMigrationCompleteToast('Account security updated');
+  });
+
+  register(unsubs, 'session_locked', () => {
+    dmLog('session_locked: dropping frontend auth state');
+    dropSessionState();
+  });
+
   return () => {
     for (const t of typingClearTimeouts.values()) clearTimeout(t);
     typingClearTimeouts.clear();
     unsubs.forEach((p) => p.then((fn) => fn()));
+    cleanupSessionFocusChecks();
   };
 }

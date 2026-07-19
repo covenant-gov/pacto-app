@@ -15,6 +15,16 @@ export function getInvokeErrorMessage(e: unknown, fallback = 'Something went wro
   return fallback;
 }
 
+const MIGRATION_GATE_MESSAGE = 'Account security must be updated. Unlock the app to migrate.';
+
+/**
+ * Recognize the migration-gate error returned by sensitive backend commands.
+ */
+export function isMigrationGateError(error: unknown): boolean {
+  const message = getInvokeErrorMessage(error, '');
+  return message.includes(MIGRATION_GATE_MESSAGE);
+}
+
 /**
  * Map known backend error messages to friendlier copy for the UI.
  */
@@ -27,6 +37,9 @@ export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'g
       return 'Please log in first.';
     if (lower.includes('missing required key') || lower.includes('invalid args'))
       return 'Invalid request. Please try again.';
+  }
+  if (raw.includes(MIGRATION_GATE_MESSAGE)) {
+    return 'Please unlock to update account security.';
   }
   return raw;
 }

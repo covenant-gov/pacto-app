@@ -92,6 +92,34 @@ export async function listAllAccounts(): Promise<string[]> {
 }
 
 /**
+ * Query the backend session manager for the current lock/unlock state.
+ */
+export async function checkSession(): Promise<{ unlocked: boolean; lockedAt?: number }> {
+  return await invoke('check_session');
+}
+
+/**
+ * Send a heartbeat to the backend session manager to reset the idle timer.
+ */
+export async function sessionHeartbeat(): Promise<void> {
+  return await invoke('session_heartbeat');
+}
+
+/**
+ * Set the idle auto-lock timeout in minutes.
+ */
+export async function setSessionTimeout(timeoutMinutes: number): Promise<void> {
+  return await invoke('set_session_timeout', { timeoutMinutes });
+}
+
+/**
+ * Get the current idle auto-lock timeout in minutes.
+ */
+export async function getSessionTimeout(): Promise<number> {
+  return await invoke('get_session_timeout');
+}
+
+/**
  * Export the stored BIP-39 recovery phrase (requires PIN unlock / encryption key in memory).
  */
 export async function exportRecoveryPhrase(): Promise<string> {
