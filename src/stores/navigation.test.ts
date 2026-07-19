@@ -20,6 +20,9 @@ import {
   LAST_CHANNEL_BY_SQUAD_PREFIX,
   LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX,
   dashboardPollReplicaNonceByParentId,
+  squadAllowlistNonceByParentId,
+  squadTrackedTokensNonceByParentId,
+  squadBotMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
 
@@ -58,6 +61,9 @@ describe('navigation', () => {
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
     dashboardPollReplicaNonceByParentId.set({});
+    squadAllowlistNonceByParentId.set({});
+    squadTrackedTokensNonceByParentId.set({});
+    squadBotMetaNonceBySquadId.set({});
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();
   });

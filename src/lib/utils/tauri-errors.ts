@@ -1,17 +1,52 @@
+/** Unwrap stringified `{ code, message }` wallet errors (and similar) to the human message. */
+function unwrapJsonErrorString(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const message = (parsed as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message.trim();
+  } catch {
+    /* not JSON */
+  }
+  return null;
+}
+
 /**
  * Extract a user-facing error message from a Tauri invoke rejection or other unknown error.
- * Handles common shapes: Error, { message }, { error }, plain string, nested payloads.
+ * Handles common shapes: Error, { message }, { error }, plain string, nested payloads,
+ * and stringified wallet_err_json (`{"code":"…","message":"…"}`).
  */
 export function getInvokeErrorMessage(e: unknown, fallback = 'Something went wrong'): string {
   if (e == null) return fallback;
-  if (typeof e === 'string') return e.trim() || fallback;
+  if (typeof e === 'string') {
+    const trimmed = e.trim();
+    if (!trimmed) return fallback;
+    return unwrapJsonErrorString(trimmed) ?? trimmed;
+  }
   const obj = e as Record<string, unknown>;
-  if (typeof obj?.message === 'string' && obj.message.trim()) return obj.message.trim();
-  if (typeof obj?.error === 'string' && obj.error.trim()) return obj.error.trim();
+  if (typeof obj?.message === 'string' && obj.message.trim()) {
+    const msg = obj.message.trim();
+    return unwrapJsonErrorString(msg) ?? msg;
+  }
+  if (typeof obj?.error === 'string' && obj.error.trim()) {
+    const err = obj.error.trim();
+    return unwrapJsonErrorString(err) ?? err;
+  }
   const data = obj?.data as Record<string, unknown> | undefined;
-  if (data && typeof data?.message === 'string' && data.message.trim()) return data.message.trim();
-  if (data && typeof data?.error === 'string' && data.error.trim()) return data.error.trim();
-  if (e instanceof Error && e.message?.trim()) return e.message.trim();
+  if (data && typeof data?.message === 'string' && data.message.trim()) {
+    const msg = data.message.trim();
+    return unwrapJsonErrorString(msg) ?? msg;
+  }
+  if (data && typeof data?.error === 'string' && data.error.trim()) {
+    const err = data.error.trim();
+    return unwrapJsonErrorString(err) ?? err;
+  }
+  if (e instanceof Error && e.message?.trim()) {
+    const msg = e.message.trim();
+    return unwrapJsonErrorString(msg) ?? msg;
+  }
   return fallback;
 }
 

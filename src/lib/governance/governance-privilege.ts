@@ -1,4 +1,7 @@
-/** Visible privilege gating for Pacto Gov CTAs — show buttons, disable with reason. */
+/**
+ * Visible privilege gating for Pacto Gov CTAs — show buttons, disable with reason.
+ * Hat / ACL state never hides the governance dashboard; hat-less members still see peer-synced state.
+ */
 
 import type { SquadCapabilitiesDto } from './api';
 

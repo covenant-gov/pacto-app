@@ -49,6 +49,44 @@ export function formatJoinResponseDm(input: {
   });
 }
 
+export interface SquadBotJoinResponseDmDto {
+  squadId: string;
+  squadName: string;
+  requestId: string;
+  status: 'accepted' | 'rejected';
+}
+
+export function parseBotJoinResponseDm(content: string | null | undefined): SquadBotJoinResponseDmDto | null {
+  const wire = parseJoinWire(content);
+  if (!wire || wire.schema !== SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA) return null;
+  const status = wire.status === 'accepted' || wire.status === 'rejected' ? wire.status : null;
+  const squadId = wire.squadId?.trim() ?? '';
+  const squadName = wire.squadName?.trim() ?? '';
+  const requestId = wire.requestId?.trim() ?? '';
+  if (!status || !squadId || !requestId) return null;
+  return { squadId, squadName: squadName || squadId, requestId, status };
+}
+
+export function parseBotJoinDm(content: string | null | undefined): SquadBotJoinDmDto | null {
+  const wire = parseJoinWire(content);
+  if (!wire || wire.schema !== SQUAD_BOT_JOIN_DM_SCHEMA) return null;
+  const squadId = wire.squadId?.trim() ?? '';
+  const squadName = wire.squadName?.trim() ?? '';
+  const broadcastEventId = wire.broadcastEventId?.trim() ?? '';
+  const requestId = wire.requestId?.trim() ?? '';
+  const requesterNpub = wire.requesterNpub?.trim() ?? '';
+  const createdAt = typeof wire.createdAt === 'number' ? wire.createdAt : 0;
+  if (!squadId || !broadcastEventId) return null;
+  return {
+    requestId,
+    squadId,
+    squadName: squadName || squadId,
+    broadcastEventId,
+    requesterNpub,
+    createdAt,
+  };
+}
+
 export function formatMlsJoinRequest(input: {
   requestId: string;
   squadId: string;

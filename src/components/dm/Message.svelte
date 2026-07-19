@@ -1,6 +1,7 @@
 <script lang="ts">
   import FormattedMessageBody from './FormattedMessageBody.svelte';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
+  import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
 
   export let id: string = '';
   export let authorName: string = '';
@@ -13,6 +14,8 @@
   export let replyToId: string | undefined = undefined;
   export let replyAuthorName: string | undefined = undefined;
   export let replyPreview: string | undefined = undefined;
+
+  $: structuredNotice = summarizeStructuredMessageContent(content);
 
   function jumpToReply() {
     if (!replyToId) return;
@@ -52,7 +55,11 @@
       </div>
     {/if}
     <div class="message-text">
-      <FormattedMessageBody content={content} />
+      {#if structuredNotice}
+        <span class="structured-notice">{structuredNotice}</span>
+      {:else}
+        <FormattedMessageBody content={content} />
+      {/if}
     </div>
   </div>
 </div>
@@ -174,6 +181,11 @@
     font-size: 0.9375rem;
     line-height: 1.375rem;
     word-wrap: break-word;
+  }
+
+  .structured-notice {
+    color: var(--text-muted);
+    font-size: 0.875rem;
   }
 </style>
 

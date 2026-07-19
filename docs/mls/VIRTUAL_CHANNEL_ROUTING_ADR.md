@@ -125,6 +125,16 @@ Whatever stores `Message` rows must eventually persist a **normalized bucket** (
 
 ---
 
+## Side-effect ingest gate
+
+SQLite applicators for structured announces (`governance_updated`, `squad_safe_updated`, allowlist, tracked tokens, etc.) run from `apply_mls_virtual_bucket_side_effects` after bucket derivation.
+
+**Author gate:** the MLS message author must be treated as a **member** of the announcements group (`is_author_mls_member_for_chat`) — not restricted to the MLS group creator. Publish-time product ACL (Captain / bot holder) stays on the write path; peers must not silently drop announces that a member was allowed to send.
+
+**Parent id:** payload `parent_id` / `squad_id` must equal the MLS `chat_id` (announcements group id).
+
+---
+
 ## Related documents
 
 - This ADR — normative `pacto_bucket` / `pacto_virtual_bucket` contract.

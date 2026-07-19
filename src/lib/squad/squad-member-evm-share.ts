@@ -47,17 +47,18 @@ export async function publishSquadMemberEvmShare(
   const explicit = options?.evmAddress?.trim();
   const fromWallet = explicit || (await getActiveSquadEvmSignerAddress())?.trim() || '';
   if (!fromWallet) return false;
-  try {
-    await invoke('upsert_squad_member_evm', { parentId: rosterId, evmAddress: fromWallet });
-  } catch (e) {
-    console.warn('[squad-member-evm] upsert_squad_member_evm failed', e);
-    return false;
-  }
+  // Publish first so peers sync; local upsert only after MLS send succeeds.
   const json = formatSquadMemberEvmShare(rosterId, fromWallet);
   try {
     await sendDmMessage(rosterId, json, '', { virtualBucket: 'announcements' });
   } catch (e) {
     console.warn('[squad-member-evm] sendDmMessage failed', e);
+    return false;
+  }
+  try {
+    await invoke('upsert_squad_member_evm', { parentId: rosterId, evmAddress: fromWallet });
+  } catch (e) {
+    console.warn('[squad-member-evm] upsert_squad_member_evm failed after publish', e);
     return false;
   }
   return true;

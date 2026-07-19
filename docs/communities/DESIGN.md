@@ -103,8 +103,27 @@ Squads with **Commons on** and users may publish time-bounded broadcasts to **Co
 
 ---
 
-## 8. Contributor checklist
+## 8. Client sync contract (MLS / DM structured state)
+
+Squad dashboard mirrors that are not on-chain (roster EVM, infra announces, allowlist, tracked tokens, join flows, bot meta) follow:
+
+1. **Optimistic local** apply for the executor (smooth UI).
+2. **On publish failure** — roll back the local write (or never commit until publish succeeds).
+3. **On publish success** — peers ingest via MLS virtual-bucket side effects (`apply_mls_virtual_bucket_side_effects`) and FE refresh (`onMlsStructuredMessage`).
+
+**Ingest trust:** announce side effects require a non-empty MLS author who is treated as a **group member** (in-memory participants when known; otherwise a known `mls_groups` row). MLS delivery authenticates senders; creator-only ingest is not used. Publish-time ACL (Captain hat, bot holder) remains separate.
+
+**Wire ids:** `parent_id` / `squad_id` on announces must equal the announcements MLS group id.
+
+**Governance dashboard visibility:** every squad member can **open and read** Governance / Crew / infra whether or not they wear an on-chain hat. Hats / Squad Admin ACL gate **writes** only. “No on-chain hat” is status copy, not a visibility lock. Structured chat/DM JSON must never render as raw message bodies (dedicated cards or a short system notice).
+
+See also [`docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md`](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).
+
+---
+
+## 9. Contributor checklist
 
 - [ ] New parent ids come from announcements **`groupId`**, never per-device UUIDs.
 - [ ] Squad-pairs use `kind: 'squad-pair'` + `pairedSquads`; no separate network store.
 - [ ] **`channel_added_to_squad`** resolves the parent with **`announcements_group_id`**.
+- [ ] Structured announce publish failures roll back local SQLite writes; peers refresh on MLS ingest.

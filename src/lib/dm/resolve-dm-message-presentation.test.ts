@@ -110,6 +110,44 @@ describe('resolveDmMessagePresentation', () => {
     expect(resolveDmMessagePresentation(msg({ content: 'hello' }))).toEqual({ kind: 'plain' });
   });
 
+  it('classifies bot join response DM', () => {
+    const content = JSON.stringify({
+      schema: 'pacto.squad.bot_join_response.v1',
+      squadId: 's1',
+      squadName: 'zzz',
+      requestId: 'r1',
+      status: 'accepted',
+    });
+    const p = resolveDmMessagePresentation(msg({ content }));
+    expect(p.kind).toBe('bot-join-response');
+    if (p.kind === 'bot-join-response') {
+      expect(p.payload.squadName).toBe('zzz');
+      expect(p.payload.status).toBe('accepted');
+    }
+  });
+
+  it('classifies bot join DM', () => {
+    const content = JSON.stringify({
+      schema: 'pacto.squad.bot_join_dm.v1',
+      squadId: 's1',
+      squadName: 'Pirates',
+      broadcastEventId: 'e1',
+    });
+    const p = resolveDmMessagePresentation(msg({ content }));
+    expect(p.kind).toBe('bot-join-dm');
+    if (p.kind === 'bot-join-dm') {
+      expect(p.payload.squadName).toBe('Pirates');
+    }
+  });
+
+  it('falls back to structured-notice for unknown schema JSON', () => {
+    const content = JSON.stringify({ schema: 'pacto.future.thing.v1', foo: 1 });
+    expect(resolveDmMessagePresentation(msg({ content }))).toEqual({
+      kind: 'structured-notice',
+      text: 'Squad update',
+    });
+  });
+
   it('classifies channel-in-squad JSON', () => {
     const p = resolveDmMessagePresentation(msg({ content: CHANNEL_IN_SQUAD }));
     expect(p.kind).toBe('channel-in-squad');
@@ -174,10 +212,13 @@ describe('resolveDmMessagePresentation', () => {
     }
   });
 
-  it('falls back to plain for invalid or non-JSON content', () => {
+  it('falls back to plain for non-structured content; unknown type JSON uses structured-notice', () => {
     expect(resolveDmMessagePresentation(msg({ content: 'not json' }))).toEqual({ kind: 'plain' });
     expect(resolveDmMessagePresentation(msg({ content: '' }))).toEqual({ kind: 'plain' });
-    expect(resolveDmMessagePresentation(msg({ content: '{"type":"unknown"}' }))).toEqual({ kind: 'plain' });
+    expect(resolveDmMessagePresentation(msg({ content: '{"type":"unknown"}' }))).toEqual({
+      kind: 'structured-notice',
+      text: 'Squad update',
+    });
   });
 });
 

@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
-import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE } from '../announcements';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
+import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   isPactoAppRoutableInviteContent,
   resolveInviteInviterNpub,
@@ -197,18 +197,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
           [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
         };
       });
-      const announce = parseAnnouncement(m.content);
-      if (announce?.type === 'squad_safe_updated') {
-        handlers.mergeTreasurySafesForParent(announce.payload.squad_id);
-      }
-      if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
-        handlers.mergeSquadInfraForParent(announce.payload.parent_id);
-      }
-      if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
-        handlers.mergeSquadMemberEvmForAnnouncementsGroup(
-          announce.payload.parent_id || chat_id,
-        );
-      }
+      onMlsStructuredMessage(m.content, chat_id, handlers);
     }
   });
 
@@ -273,18 +262,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       );
       return { ...byGroup, [group_id]: [...withoutOpt, m] };
     });
-    const announce = parseAnnouncement(m.content);
-    if (announce?.type === 'squad_safe_updated') {
-      handlers.mergeTreasurySafesForParent(announce.payload.squad_id);
-    }
-    if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED) {
-      handlers.mergeSquadInfraForParent(announce.payload.parent_id);
-    }
-    if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
-      handlers.mergeSquadMemberEvmForAnnouncementsGroup(
-        announce.payload.parent_id || group_id,
-      );
-    }
+    onMlsStructuredMessage(m.content, group_id, handlers);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
   });
 
