@@ -23,6 +23,7 @@
   import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { withReadPlaneLimit } from '../../../lib/evm/read-plane-limiter';
@@ -156,6 +157,7 @@
 
   async function addToken() {
     if (!manageGate.enabled || addBusy) return;
+    if (!requireBackupVerified()) return;
     const addr = addAddress.trim();
     if (!isAddress(addr)) {
       showToast('Paste a valid ERC-20 contract address.');
@@ -193,6 +195,7 @@
 
   async function removeToken(row: SquadTrackedTokenRow) {
     if (!manageGate.enabled) return;
+    if (!requireBackupVerified()) return;
     try {
       await removeSquadTrackedToken(parentId.trim(), row.id);
       if (announcementsGroupId.trim()) {

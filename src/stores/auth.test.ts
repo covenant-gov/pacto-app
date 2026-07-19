@@ -43,6 +43,10 @@ import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
+import {
+  backupVerified,
+  backupVerificationModalOpen,
+} from './backup-verification';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -111,6 +115,9 @@ describe('auth', () => {
     vi.mocked(clearAccountState).mockReset();
     vi.mocked(apiCheckSession).mockReset();
     vi.mocked(apiSessionHeartbeat).mockReset();
+    vi.mocked(invoke).mockReset();
+    backupVerified.set(null);
+    backupVerificationModalOpen.set(false);
   });
 
   afterEach(() => {
@@ -292,6 +299,8 @@ describe('auth', () => {
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
       expect(loadAccountState).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(null);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {
@@ -313,6 +322,8 @@ describe('auth', () => {
       expect(get(isAuthenticated)).toBe(true);
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(true);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('rejects an invalid recovery phrase', async () => {
@@ -333,6 +344,8 @@ describe('auth', () => {
       expect(get(isAuthenticated)).toBe(true);
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(null);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {

@@ -31,6 +31,7 @@
   } from '../../lib/wallet';
   import { parseUnits } from 'viem';
   import { showToast } from '../../stores/toast';
+  import { requireBackupVerified } from '../../stores/backup-verification';
   import type { WalletSendPrefillPayload } from '../../stores/app';
   import { currentUser } from '../../stores/auth';
   import { formatWalletTxRequest } from '../../lib/wallet/dm-messages';
@@ -303,6 +304,7 @@
       }
       return;
     }
+    if (!requireBackupVerified()) return;
     sendError = null;
     sending = true;
     try {

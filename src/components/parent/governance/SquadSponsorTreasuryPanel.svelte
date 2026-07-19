@@ -34,6 +34,7 @@
   import { parseWalletOpError } from '../../../lib/wallet/backend-wallet';
   import { formatEther, parseEther } from 'viem';
   import { showToast } from '../../../stores/toast';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
 
   export let parentId: string;
   export let sponsorRow: SquadInfraDto | null = null;
@@ -226,6 +227,7 @@
   }
 
   async function submitDeposit() {
+    if (!requireBackupVerified()) return;
     depositError = '';
     if (!parentId?.trim() || !sponsorRow) return;
     let amountWei: string;
@@ -434,7 +436,10 @@
         <button
           type="button"
           class="btn-secondary sponsor-withdraw-btn"
-          on:click={() => (showWithdrawModal = true)}
+          on:click={() => {
+            if (!requireBackupVerified()) return;
+            showWithdrawModal = true;
+          }}
         >
           Withdraw
         </button>

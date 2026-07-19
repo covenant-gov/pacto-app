@@ -2,6 +2,7 @@
   import type { SquadDashboardChannelMode } from '../../../stores/app';
   import { showToast } from '../../../stores/toast';
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
   import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../../lib/wallet/chains';
   import { govAndSponsorCompletionToast } from '../../../lib/governance/deploy-completion';
   import type {
@@ -97,6 +98,7 @@
   $: existingTopHatId = hasPactoGov && !hasSponsor ? pactoGovTopHatId : '';
 
   export function openLaunchpad(): void {
+    if (!requireBackupVerified()) return;
     showLaunchpad = true;
   }
 
@@ -110,12 +112,14 @@
   }
 
   export function openDeploySafe(): void {
+    if (!requireBackupVerified()) return;
     if (parentId?.trim()) {
       showDeploySafeModal = true;
     }
   }
 
   export function openPactoGovDeploy(): void {
+    if (!requireBackupVerified()) return;
     if (hasPactoGov) {
       onNavigate('governance');
       return;
@@ -127,6 +131,7 @@
   }
 
   export function openGovAndSponsorDeploy(): void {
+    if (!requireBackupVerified()) return;
     if (hasSponsor) {
       showToast('Squad sponsor is already deployed for this parent.');
       return;
@@ -142,6 +147,7 @@
   }
 
   export function openExtSponsorDeploy(): void {
+    if (!requireBackupVerified()) return;
     if (hasSponsor) {
       showToast('Squad sponsor is already deployed for this parent.');
       return;
@@ -152,6 +158,7 @@
   }
 
   export function openSquadAdminDeploy(): void {
+    if (!requireBackupVerified()) return;
     if (hasSquadAdmin) {
       onNavigate('crew');
       showSquadRolesModal = true;
@@ -172,6 +179,7 @@
   }
 
   async function confirmSetSafe(): Promise<void> {
+    if (!requireBackupVerified()) return;
     const addr = setSafeInput.trim();
     if (!addr) {
       setSafeError = 'Enter a Safe address';

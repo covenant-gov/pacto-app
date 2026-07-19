@@ -10,6 +10,7 @@ import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-k
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
 import { setCurrentNpubForPersistence } from './persistence-context';
+import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
   MY_DASHBOARD_MODE_PREFIX,
@@ -52,6 +53,7 @@ export {
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
+  void loadBackupVerified();
   void hydrateSquadsFromDb().then(async () => {
     const { reconcileStaleInviteDecisions } = await import('../lib/invites/accept-invite');
     reconcileStaleInviteDecisions();
