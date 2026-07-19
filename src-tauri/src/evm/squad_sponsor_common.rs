@@ -27,17 +27,19 @@ fn require_parent_member_decision(
     }
 }
 
-/// Preflight: reject when this parent has no sponsor infra row in SQLite.
-pub fn require_sponsor_infra_for_parent<R: Runtime>(
+/// Preflight: reject when this parent has neither sponsor nor pacto_gov infra in SQLite.
+pub fn require_sponsor_or_pacto_gov_infra_for_parent<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
 ) -> Result<(), String> {
-    if crate::db::parent_has_sponsor_infra(app, parent_id)? {
+    if crate::db::parent_has_sponsor_infra(app, parent_id)?
+        || crate::db::parent_has_pacto_gov_infra_row(app, parent_id)?
+    {
         Ok(())
     } else {
         Err(wallet_err_json(
-            "SPONSOR_REQUIRED",
-            "Deploy squad sponsor for this parent before other on-chain infra.",
+            "SPONSOR_OR_PACTO_GOV_REQUIRED",
+            "Deploy squad sponsor or Pacto Gov for this parent before other on-chain infra.",
             None,
         ))
     }
