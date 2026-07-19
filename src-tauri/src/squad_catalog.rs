@@ -412,6 +412,7 @@ pub fn get_squad<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<
 
 #[command]
 pub fn upsert_squad<R: Runtime>(handle: AppHandle<R>, squad: SquadUpsert) -> Result<SquadRow, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let mut row = prepare_row(squad)?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     if let Some(existing) = get_squad_inner(&conn, row.id.as_str())? {
@@ -426,6 +427,7 @@ pub fn upsert_squad<R: Runtime>(handle: AppHandle<R>, squad: SquadUpsert) -> Res
 
 #[command]
 pub fn delete_squad<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     delete_squad_inner(&conn, parent_id.as_str())?;
     crate::account_manager::return_db_connection(conn);

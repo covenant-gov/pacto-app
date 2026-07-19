@@ -39,9 +39,36 @@ export const blockedDmNpubs = writable<Set<string>>(new Set());
 
 export const composingNewChat = writable<boolean>(false);
 
+export const NEW_CHAT_DRAFT_NPUB_PREFIX = 'pacto_new_chat_draft_npub';
+export const NEW_CHAT_DRAFT_MESSAGE_PREFIX = 'pacto_new_chat_draft_message';
+
 /** Prefill for the New Chat compose view (e.g. opened from a Commons user card). */
 export const newChatDraftNpub = writable<string>('');
 export const newChatDraftMessage = writable<string>('');
+
+newChatDraftNpub.subscribe((npub) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(NEW_CHAT_DRAFT_NPUB_PREFIX);
+  if (!key) return;
+  try {
+    if (npub) localStorage.setItem(key, npub);
+    else localStorage.removeItem(key);
+  } catch {
+    // ignore quota
+  }
+});
+
+newChatDraftMessage.subscribe((message) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(NEW_CHAT_DRAFT_MESSAGE_PREFIX);
+  if (!key) return;
+  try {
+    if (message) localStorage.setItem(key, message);
+    else localStorage.removeItem(key);
+  } catch {
+    // ignore quota
+  }
+});
 
 export const walletSidebarOpen = writable<boolean>(false);
 
