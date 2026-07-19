@@ -481,6 +481,7 @@ pub async fn squad_bot_init<R: Runtime>(
     handle: AppHandle<R>,
     squad_id: String,
 ) -> Result<SquadBotPublishBundle, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let squad_id = squad_id.trim().to_string();
     if squad_id.is_empty() {
         return Err("squadId is required".into());
@@ -564,6 +565,7 @@ pub async fn squad_bot_add_holder<R: Runtime>(
     squad_id: String,
     holder_npub: String,
 ) -> Result<SquadBotPublishBundle, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let squad_id = squad_id.trim().to_string();
     let holder_npub = holder_npub.trim().to_string();
     if squad_id.is_empty() || !holder_npub.starts_with("npub1") {
@@ -623,6 +625,7 @@ pub async fn squad_bot_remove_holder<R: Runtime>(
     squad_id: String,
     holder_npub: String,
 ) -> Result<SquadBotPublishBundle, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let squad_id = squad_id.trim().to_string();
     let holder_npub = holder_npub.trim().to_string();
     if squad_id.is_empty() || !holder_npub.starts_with("npub1") {
@@ -670,6 +673,7 @@ pub async fn squad_bot_rotate_key<R: Runtime>(
     handle: AppHandle<R>,
     squad_id: String,
 ) -> Result<SquadBotPublishBundle, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let squad_id = squad_id.trim().to_string();
     if squad_id.is_empty() {
         return Err("squadId is required".into());

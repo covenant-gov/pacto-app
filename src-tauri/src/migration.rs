@@ -551,6 +551,7 @@ pub async fn encrypt_with_password<R: Runtime>(
     };
 
     let key = derive_key_from_salt(password, &salt);
+    crate::session::load_timeout_ms_from_conn(&conn);
     crate::set_encryption_key(key);
     let ciphertext = encrypt_with_key(input, &key);
 
@@ -720,6 +721,7 @@ fn decrypt_with_password_on_conn(
     let salt = get_key_derivation_salt(conn)?
         .ok_or_else(|| "No key derivation salt found".to_string())?;
     let key = derive_key_from_salt(password, &salt);
+    crate::session::load_timeout_ms_from_conn(conn);
     crate::set_encryption_key(key);
 
     // After migrating a legacy account, the input `ciphertext` (which was the

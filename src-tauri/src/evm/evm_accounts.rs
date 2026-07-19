@@ -563,6 +563,10 @@ pub async fn export_evm_account_key_plaintext<R: Runtime>(
     handle: AppHandle<R>,
     account_id: String,
 ) -> Result<String, String> {
+    if !crate::session::SESSION_MANAGER.is_unlocked() {
+        return Err("Session locked".into());
+    }
+    crate::session::heartbeat();
     ensure_ready(handle.clone()).await?;
     let id = account_id.trim();
     if id.is_empty() {

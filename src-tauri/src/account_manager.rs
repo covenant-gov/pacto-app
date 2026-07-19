@@ -92,6 +92,17 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+-- Sensitive export audit log (rate-limiting and forensics)
+CREATE TABLE IF NOT EXISTS sensitive_export_log (
+    id TEXT PRIMARY KEY NOT NULL,
+    account_npub TEXT NOT NULL,
+    export_type TEXT NOT NULL,
+    attempted_at INTEGER NOT NULL,
+    success INTEGER NOT NULL DEFAULT 0,
+    error_code TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sensitive_export_log_account_time ON sensitive_export_log(account_npub, attempted_at);
+
 -- MLS Groups table
 CREATE TABLE IF NOT EXISTS mls_groups (
     group_id TEXT PRIMARY KEY,
@@ -1259,6 +1270,54 @@ fn run_migrations(conn: &rusqlite::Connection) -> Result<(), String> {
             [],
         )
         .map_err(|e| format!("Failed to set key_derivation_version: {}", e))?;
+    }
+
+    // Migration: ensure every account has a session idle timeout setting.
+    // Default is 15 minutes (900000 ms). The session manager reads this value
+    // when the encryption key is loaded.
+    let session_timeout_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM settings WHERE key = 'session_idle_timeout_ms'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !session_timeout_exists {
+        println!("[Migration] Recording session_idle_timeout_ms=900000 for existing account");
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('session_idle_timeout_ms', '900000')",
+            [],
+        )
+        .map_err(|e| format!("Failed to set session_idle_timeout_ms: {}", e))?;
+    }
+
+    // Migration: sensitive export audit log for U6.
+    let has_sensitive_export_log: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sensitive_export_log'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    if !has_sensitive_export_log {
+        println!("[Migration] Creating sensitive_export_log table...");
+        conn.execute_batch(
+            r#"CREATE TABLE IF NOT EXISTS sensitive_export_log (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_npub TEXT NOT NULL,
+                export_type TEXT NOT NULL,
+                attempted_at INTEGER NOT NULL,
+                success INTEGER NOT NULL DEFAULT 0,
+                error_code TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sensitive_export_log_account_time ON sensitive_export_log(account_npub, attempted_at);"#,
+        )
+        .map_err(|e| format!("Failed to create sensitive_export_log table: {}", e))?;
+        println!("[Migration] sensitive_export_log table created");
     }
 
     Ok(())

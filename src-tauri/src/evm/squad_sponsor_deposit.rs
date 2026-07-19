@@ -104,6 +104,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     sponsor_address: Option<String>,
     signer_wallet: Option<String>,
 ) -> Result<SquadSponsorDepositResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = require_non_empty_parent_id(&parent_id)?;
     require_parent_member(&app, pid).await?;
 

@@ -40,6 +40,10 @@ pub async fn safe_deploy_proxy<R: Runtime>(
     salt_nonce: Option<String>,
     parent_id: Option<String>,
 ) -> Result<SafeDeployProxyResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
+    if let Some(pid) = parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        require_sponsor_infra_for_parent(&app, pid)?;
+    }
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
