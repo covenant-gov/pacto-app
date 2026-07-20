@@ -76,6 +76,9 @@ mod image_cache;
 // Audio processing: resampling (all platforms) + notification playback (desktop only)
 mod audio;
 
+// Per-account SQLite schema and data migrations (refinery).
+mod migrations;
+
 // Salt/key-derivation migration engine (U2)
 mod migration;
 

@@ -252,6 +252,9 @@ fn subject_id_for(wire: &CommonsBroadcastWire, author_npub: &str) -> String {
 }
 
 pub fn ensure_commons_broadcasts_table(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Defensive guard during the refinery migration transition. The table is
+    // created with its full schema by V22, but some test paths open connections
+    // without running the refinery migration set.
     conn.execute_batch(
         r#"CREATE TABLE IF NOT EXISTS commons_broadcasts (
             event_id TEXT PRIMARY KEY NOT NULL,
@@ -276,11 +279,6 @@ pub fn ensure_commons_broadcasts_table(conn: &rusqlite::Connection) -> Result<()
         CREATE INDEX IF NOT EXISTS idx_commons_broadcasts_subject ON commons_broadcasts(subject_id, created_at);"#,
     )
     .map_err(|e| format!("Failed to create commons_broadcasts table: {e}"))?;
-    // Best-effort migration for tables created before the cancelled column existed.
-    let _ = conn.execute(
-        "ALTER TABLE commons_broadcasts ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0",
-        [],
-    );
     Ok(())
 }
 

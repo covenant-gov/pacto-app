@@ -15,7 +15,9 @@ Account discovery scans **`npub1*`** subfolders and validates stored keys — se
 
 ## `vector.db` schema (source of truth)
 
-The **authoritative CREATE TABLE** statements live in **`SQL_SCHEMA`** in `src-tauri/src/account_manager.rs`. They are applied in **`init_profile_database`**. **`run_migrations`** in the same file adds columns/tables for existing installs.
+The **authoritative schema and migration history** lives in **`src-tauri/src/migrations/`** as ordered refinery migration files (`V1__initial_schema.sql`, `V2__messages_wrapper_event_id.sql`, …). **`init_profile_database`** and **`get_db_connection`** run the refinery migration runner on every database open, so new accounts start at the latest version and existing accounts are migrated automatically.
+
+Old accounts are detected by the absence of `refinery_schema_history` and the presence of `settings`; on first refinery run they are **baselined** by stamping the full migration history without re-running the migrations.
 
 ### Core tables (conceptual)
 
@@ -34,7 +36,7 @@ The **authoritative CREATE TABLE** statements live in **`SQL_SCHEMA`** in `src-t
 | **squad_member_evm** / **squad_member_evm_account** | Roster address / local signing-account binding per parent |
 | **squad_tracked_tokens** | Squad-shared ERC-20 watchlist for Treasury Safe balance UI (MLS announce sync) |
 
-Indexes are defined next to each table in **`SQL_SCHEMA`**; duplicate definitions may appear inside **`run_migrations`** when a table was introduced in a migration block.
+Indexes and foreign keys are defined next to each table in the migration files.
 
 ## Encryption vs plaintext
 
@@ -44,10 +46,10 @@ Indexes are defined next to each table in **`SQL_SCHEMA`**; duplicate definition
 
 Most Tauri **`#[command]`** database entry points are implemented in **`db.rs`**: get/return connection via **`account_manager::get_db_connection`** / **`return_db_connection`**, parameterized SQL, map rows to structs used by the UI.
 
-When adding a column:
+When adding a column or table:
 
-1. Update **`SQL_SCHEMA`** for new databases.
-2. Add a **`run_migrations`** branch for existing DBs (see **`evm_address`**, **`events`**, **`wrapper_event_id`** examples).
+1. Add a new numbered migration file under **`src-tauri/src/migrations/`** (`V{next}__{description}.sql` for schema changes, or a `.rs` migration if the transformation requires generated SQL).
+2. The refinery runner will apply it automatically on the next app start/unlock.
 
 ## Frontend / other storage
 

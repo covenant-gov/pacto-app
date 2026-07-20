@@ -780,60 +780,14 @@ mod tests {
         rusqlite::Connection::open_in_memory().expect("in-memory db")
     }
 
-    fn create_schema(conn: &rusqlite::Connection) {
-        conn.execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS evm_accounts (
-                id TEXT PRIMARY KEY NOT NULL,
-                scheme TEXT NOT NULL,
-                hd_index INTEGER,
-                address TEXT NOT NULL,
-                label TEXT NOT NULL DEFAULT '',
-                imported_enc TEXT,
-                purpose TEXT NOT NULL DEFAULT 'squad'
-            );
-            CREATE TABLE IF NOT EXISTS events (
-                id TEXT PRIMARY KEY,
-                kind INTEGER NOT NULL,
-                chat_id INTEGER NOT NULL,
-                user_id INTEGER,
-                content TEXT NOT NULL,
-                tags TEXT NOT NULL DEFAULT '[]',
-                reference_id TEXT,
-                created_at INTEGER NOT NULL,
-                received_at INTEGER NOT NULL,
-                mine INTEGER NOT NULL DEFAULT 0,
-                pending INTEGER NOT NULL DEFAULT 0,
-                failed INTEGER NOT NULL DEFAULT 0,
-                wrapper_event_id TEXT,
-                npub TEXT,
-                virtual_bucket TEXT
-            );
-            CREATE TABLE IF NOT EXISTS messages (
-                id TEXT PRIMARY KEY,
-                chat_id INTEGER NOT NULL,
-                content_encrypted TEXT NOT NULL,
-                replied_to TEXT NOT NULL DEFAULT '',
-                preview_metadata TEXT,
-                attachments TEXT NOT NULL DEFAULT '[]',
-                reactions TEXT NOT NULL DEFAULT '[]',
-                at INTEGER NOT NULL,
-                mine INTEGER NOT NULL,
-                user_id INTEGER
-            );
-            "#,
-        )
-        .expect("schema creation");
+    fn create_schema(conn: &mut rusqlite::Connection) {
+        crate::migrations::run_migrations(conn).expect("schema creation");
     }
 
     #[test]
     fn migration_happy_path() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -870,7 +824,7 @@ mod tests {
     #[test]
     fn migration_rejects_wrong_pin() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let pkey = encrypt_with_key("nsec1secret", &derive_legacy_key("1234"));
         set_setting(&conn, "pkey", &pkey).unwrap();
@@ -889,7 +843,7 @@ mod tests {
     #[test]
     fn migration_retries_partially_migrated_rows() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -927,16 +881,16 @@ mod tests {
 
     #[test]
     fn require_key_derivation_version_2_passes_when_version_2() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
         set_key_derivation_version(&conn, 2).unwrap();
         assert!(require_key_derivation_version_2(&conn).is_ok());
     }
 
     #[test]
     fn require_key_derivation_version_2_fails_when_version_1() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
         set_key_derivation_version(&conn, 1).unwrap();
         let err = require_key_derivation_version_2(&conn).unwrap_err();
         assert!(err.contains("Account security must be updated"), "unexpected error: {err}");
@@ -945,8 +899,8 @@ mod tests {
 
     #[test]
     fn require_key_derivation_version_2_fails_when_version_0() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
         set_key_derivation_version(&conn, 0).unwrap();
         let err = require_key_derivation_version_2(&conn).unwrap_err();
         assert!(err.contains("Account security must be updated"), "unexpected error: {err}");
@@ -954,8 +908,8 @@ mod tests {
 
     #[test]
     fn version_set_and_get_round_trip() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
         set_key_derivation_version(&conn, 2).unwrap();
         assert_eq!(get_key_derivation_version(&conn).unwrap(), 2);
         set_key_derivation_version(&conn, 1).unwrap();
@@ -965,7 +919,7 @@ mod tests {
     #[test]
     fn sentinel_is_created_during_migration() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -995,7 +949,7 @@ mod tests {
     #[test]
     fn migration_sets_and_clears_in_progress_marker() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1023,7 +977,7 @@ mod tests {
     #[test]
     fn migration_retries_with_new_key_sentinel() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1062,7 +1016,7 @@ mod tests {
     #[test]
     fn migration_aborts_on_corrupted_row() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1104,8 +1058,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&profile_dir);
 
         let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
-        let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute_batch(crate::account_manager::SQL_SCHEMA).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1157,7 +1111,7 @@ mod tests {
     #[test]
     fn migration_refuses_accounts_with_too_many_rows() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1169,6 +1123,11 @@ mod tests {
         set_key_derivation_salt(&conn, &salt).unwrap();
 
         // Insert enough events to exceed the automatic migration limit.
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('test-chat', 0, '[]', 0)",
+            [],
+        )
+        .unwrap();
         for i in 0..MIGRATION_ROW_LIMIT + 1 {
             conn.execute(
                 "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -1198,7 +1157,7 @@ mod tests {
     #[test]
     fn migration_repairs_half_migrated_account_with_version_2_flag() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1245,7 +1204,7 @@ mod tests {
     #[test]
     fn migration_does_not_advance_version_until_success() {
         let mut conn = in_memory_conn();
-        create_schema(&conn);
+        create_schema(&mut conn);
 
         let password = "1234";
         let legacy_key = derive_legacy_key(password);
@@ -1258,6 +1217,11 @@ mod tests {
         set_key_derivation_salt(&conn, &salt).unwrap();
 
         // Insert too many rows for automatic migration, causing the scan to fail.
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at) VALUES ('test-chat', 0, '[]', 0)",
+            [],
+        )
+        .unwrap();
         for i in 0..MIGRATION_ROW_LIMIT + 1 {
             conn.execute(
                 "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -1287,8 +1251,8 @@ mod tests {
 
     #[test]
     fn decrypt_seed_fallback_returns_nsec_with_current_key() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
 
         let password = "123456";
         let salt = generate_salt();
@@ -1303,8 +1267,8 @@ mod tests {
 
     #[test]
     fn decrypt_seed_fallback_falls_back_to_legacy_key() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
 
         let password = "123456";
         let salt = generate_salt();
@@ -1319,8 +1283,8 @@ mod tests {
 
     #[test]
     fn decrypt_seed_fallback_fails_when_seed_missing() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
 
         let salt = generate_salt();
         let result = decrypt_seed_fallback(&conn, "123456", &salt);
@@ -1329,8 +1293,8 @@ mod tests {
 
     #[test]
     fn diagnose_key_derivation_state_reports_expected_decrypt_flags() {
-        let conn = in_memory_conn();
-        create_schema(&conn);
+        let mut conn = in_memory_conn();
+        create_schema(&mut conn);
 
         let password = "123456";
         let salt = generate_salt();

@@ -66,6 +66,7 @@ hound = "3.5.1"
 rubato = "0.16.2"
 symphonia = { version = "0.5.5", features = ["mp3", "wav", "flac", "pcm"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+refinery = { version = "0.9", features = ["rusqlite"] }
 log = "0.4"
 rand = "0.8"
 url = "2.5"
@@ -73,6 +74,7 @@ url = "2.5"
 # `reqwest` + `reqwest-rustls-tls` enable the JSON-RPC HTTP client (default-features = false drops them otherwise → "No transports enabled").
 alloy = { version = "1.0.41", default-features = false, features = ["provider-http", "signer-local", "sol-types", "rpc-types", "contract", "reqwest", "reqwest-rustls-tls"] }
 alloy-rlp = "0.3"
+time = "0.3"
 bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "std"] }
 
 # Android-only dependencies
