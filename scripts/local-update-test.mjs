@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { resolve, dirname, basename } from 'node:path';
@@ -195,8 +195,8 @@ function ensureSigningKey(path) {
 
   try {
     execSync(`pnpm exec tauri signer generate -w ${path}`, { stdio: 'inherit' });
-  } catch (err) {
-    throw new Error('Failed to generate signing key. You can generate one manually with: pnpm exec tauri signer generate');
+  } catch (_err) {
+    throw new Error('Failed to generate signing key. You can generate one manually with: pnpm exec tauri signer generate', { cause: _err });
   }
 
   console.log('');
