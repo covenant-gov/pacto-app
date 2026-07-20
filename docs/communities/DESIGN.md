@@ -47,7 +47,7 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 
 | Sidebar row | Virtual bucket | Purpose |
 |-------------|----------------|---------|
-| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), sponsor/gov deploy announces, late-joiner catch-up (`squad_state_sync_request`), dashboard poll created, squad bot metadata / key-rotated notices. |
+| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), squad network selection (`squad_network_updated`), sponsor/gov deploy announces, late-joiner catch-up (`squad_state_sync_request`), dashboard poll created, squad bot metadata / key-rotated notices. |
 | **#join-requests** | `join_requests` | Private Commons join request fan-out and accept/reject (MLS virtual bucket; bot DM ingress — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). Not a separate MLS group. |
 | **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
@@ -113,7 +113,7 @@ Squad dashboard mirrors that are not on-chain (roster EVM, infra announces, allo
 
 **Ingest trust:** announce side effects require a non-empty MLS author who is treated as a **group member** (in-memory participants when known; otherwise a known `mls_groups` row). MLS delivery authenticates senders; creator-only ingest is not used. Publish-time ACL (Captain hat, bot holder) remains separate.
 
-**Late joiners / catch-up:** MLS Kind-444 backfill is bounded (~48h). When a member joins `#announcements`, the client auto-publishes `squad_state_sync_request`. Online peers silently republish their `squad_member_evm_share` and any local announcements-scoped `governance_updated` rows. Anyone can also press **Request sync** on My Dashboard → Status. Hats wearers are read on-chain after `pacto_gov` infra is present — they are not MLS-synced as wearer lists.
+**Late joiners / catch-up:** MLS Kind-444 backfill is bounded (~48h). When a member joins `#announcements`, the client auto-publishes `squad_state_sync_request`. Online peers silently republish their `squad_member_evm_share`, squad network selection (`squad_network_updated`), and any local announcements-scoped `governance_updated` rows. Anyone can also press **Request sync** on My Dashboard → Status. Hats wearers are read on-chain after `pacto_gov` infra is present — they are not MLS-synced as wearer lists.
 
 **Wire ids:** `parent_id` / `squad_id` on announces must equal the announcements MLS group id.
 

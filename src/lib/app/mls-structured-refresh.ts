@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { parseAnnouncement, ANNOUNCE_TYPE_GOVERNANCE_UPDATED, ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE } from '../announcements';
 import { SQUAD_CONTRACT_ALLOWLIST_ANNOUNCE_TYPE } from '../governance/squad-allowlist';
 import { SQUAD_TRACKED_TOKENS_ANNOUNCE_TYPE } from '../governance/squad-tracked-tokens';
@@ -9,6 +10,9 @@ import {
   parseSquadStateSyncRequest,
   respondToSquadStateSyncRequest,
 } from '../squad/squad-state-sync';
+import { parseSquadNetworkUpdated } from '../squad/squad-network-share';
+import { saveSquadNetworkOverride } from '../squad/squad-network';
+import { currentUser } from '../../stores/auth';
 import {
   squadAllowlistNonceByParentId,
   squadBotMetaNonceBySquadId,
@@ -68,6 +72,14 @@ export function onMlsStructuredMessage(
 
   if (parseSquadStateSyncRequest(raw)) {
     void respondToSquadStateSyncRequest(raw, gid);
+  }
+
+  const networkUpdate = parseSquadNetworkUpdated(raw);
+  if (networkUpdate && networkUpdate.parent_id === gid) {
+    const me = get(currentUser)?.npub?.trim();
+    if (me) {
+      saveSquadNetworkOverride(me, networkUpdate.parent_id, networkUpdate.chain);
+    }
   }
 
   const root = tryParseRoot(raw);

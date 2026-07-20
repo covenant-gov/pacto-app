@@ -1,6 +1,6 @@
 /**
  * Late-joiner catch-up: sync request on #announcements; peers silently republish
- * roster EVM + known governance announces.
+ * roster EVM, known governance announces, and squad network selection.
  */
 
 import { get } from 'svelte/store';
@@ -16,6 +16,7 @@ import {
 } from '../governance/api';
 import { currentUser } from '../../stores/auth';
 import { publishSquadMemberEvmShare } from './squad-member-evm-share';
+import { publishSquadNetworkUpdated } from './squad-network-share';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
@@ -45,7 +46,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra'],
+      requested: ['evm', 'infra', 'network'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -104,7 +105,7 @@ function markResponded(respondKey: string, parentId: string): void {
 }
 
 /**
- * Broadcast a sync request on #announcements so online peers republish roster EVM + infra.
+ * Broadcast a sync request on #announcements so online peers republish roster EVM, infra, and network.
  */
 export async function requestSquadStateSync(announcementsGroupId: string): Promise<boolean> {
   const gid = announcementsGroupId.trim();
@@ -162,7 +163,7 @@ export async function maybeAutoRequestSquadStateSyncAfterJoin(
 }
 
 /**
- * Peer response: republish this device's roster EVM and announcements-scoped infra.
+ * Peer response: republish this device's roster EVM, announcements-scoped infra, and network.
  * Fire-and-forget from MLS structured refresh; debounced per request / parent.
  */
 export async function respondToSquadStateSyncRequest(
@@ -185,6 +186,7 @@ export async function respondToSquadStateSyncRequest(
 
   const wantEvm = !req.requested?.length || req.requested.includes('evm');
   const wantInfra = !req.requested?.length || req.requested.includes('infra');
+  const wantNetwork = !req.requested?.length || req.requested.includes('network');
 
   let anyOk = false;
 
@@ -230,9 +232,18 @@ export async function respondToSquadStateSyncRequest(
         anyOk = true;
       }
       // Infra requested but nothing to publish still counts as a handled attempt when list succeeded.
-      if (!wantEvm && rows.length === 0) anyOk = true;
+      if (!wantEvm && !wantNetwork && rows.length === 0) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] infra republish failed', e);
+    }
+  }
+
+  if (wantNetwork) {
+    try {
+      const ok = await publishSquadNetworkUpdated(parentId);
+      if (ok) anyOk = true;
+    } catch (e) {
+      console.warn('[squad-state-sync] network republish failed', e);
     }
   }
 

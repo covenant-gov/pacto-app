@@ -14,6 +14,34 @@ vi.mock('../squad/squad-state-sync', async (importOriginal) => {
   };
 });
 
+const currentUser = vi.hoisted(() => {
+  function makeStore<T>(initial: T) {
+    let value = initial;
+    const subs = new Set<(v: T) => void>();
+    return {
+      subscribe(run: (v: T) => void) {
+        subs.add(run);
+        run(value);
+        return () => {
+          subs.delete(run);
+        };
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subs) run(value);
+      },
+      update(fn: (v: T) => T) {
+        this.set(fn(value));
+      },
+    };
+  }
+  return makeStore<{ npub: string } | null>({ npub: 'npub1alice' });
+});
+
+vi.mock('../../stores/auth', () => ({
+  currentUser,
+}));
+
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   squadAllowlistNonceByParentId,
@@ -22,14 +50,34 @@ import {
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { formatSquadStateSyncRequest } from '../squad/squad-state-sync';
+import { formatSquadNetworkUpdated } from '../squad/squad-network-share';
+import { loadSquadNetworkOverride, SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 
 describe('onMlsStructuredMessage', () => {
+  const store = new Map<string, string>();
+
   beforeEach(() => {
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
     squadBotMetaNonceBySquadId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
     respondToSquadStateSyncRequest.mockClear();
+    currentUser.set({ npub: 'npub1alice' });
+    store.clear();
+    (globalThis as unknown as { localStorage: Storage }).localStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        store.set(k, v);
+      },
+      removeItem: (k: string) => {
+        store.delete(k);
+      },
+      clear: () => store.clear(),
+      key: (i: number) => [...store.keys()][i] ?? null,
+      get length() {
+        return store.size;
+      },
+    } as Storage;
   });
 
   it('refreshes infra and treasury from announce types', () => {
@@ -66,6 +114,30 @@ describe('onMlsStructuredMessage', () => {
     });
     onMlsStructuredMessage(raw, 'g1', handlers);
     expect(respondToSquadStateSyncRequest).toHaveBeenCalledWith(raw, 'g1');
+  });
+
+  it('applies squad_network_updated into local override', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({ parentId: 'g1', chain: 'local' });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBe('local');
+    expect(localStorage.getItem(`${SQUAD_NETWORK_PREFIX}_npub1alice`)).toBeTruthy();
+  });
+
+  it('ignores squad_network_updated when parent_id mismatches groupId', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    const raw = formatSquadNetworkUpdated({ parentId: 'other', chain: 'sepolia' });
+    onMlsStructuredMessage(raw, 'g1', handlers);
+    expect(loadSquadNetworkOverride('npub1alice', 'g1')).toBeNull();
+    expect(loadSquadNetworkOverride('npub1alice', 'other')).toBeNull();
   });
 
   it('bumps allowlist nonce', () => {
