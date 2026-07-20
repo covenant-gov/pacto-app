@@ -29,6 +29,25 @@ describe('summarizeStructuredMessageContent', () => {
     ).toBe('Contract allowlist updated');
   });
 
+  it('summarizes squad network update with display name', () => {
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({
+          type: 'squad_network_updated',
+          payload: { parent_id: 'g1', chain: 'sepolia' },
+        })
+      )
+    ).toBe('Squad network updated to Sepolia');
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({
+          type: 'squad_network_updated',
+          payload: { parent_id: 'g1', chain: 'local' },
+        })
+      )
+    ).toBe('Squad network updated to Local Anvil');
+  });
+
   it('detects structured product content', () => {
     expect(isStructuredProductContent('{"type":"governance_updated"}')).toBe(true);
     expect(isStructuredProductContent('hi')).toBe(false);

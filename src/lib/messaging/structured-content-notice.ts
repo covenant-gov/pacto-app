@@ -3,6 +3,9 @@
  * Never return the raw JSON body.
  */
 
+import { getWalletNetworkDisplayName } from '../wallet/assets';
+import { isSquadDeployableChain } from '../squad/squad-network';
+
 const SCHEMA_NOTICES: Record<string, string> = {
   'pacto.squad.bot_join_response.v1': 'Squad join response',
   'pacto.squad.bot_join_dm.v1': 'Squad join request',
@@ -21,6 +24,7 @@ const TYPE_NOTICES: Record<string, string> = {
   squad_tracked_tokens_updated: 'Tracked tokens updated',
   squad_member_evm_share: 'Member EVM address shared',
   squad_state_sync_request: 'Squad sync request',
+  squad_network_updated: 'Squad network updated',
   governance_updated: 'Governance updated',
   squad_safe_updated: 'Treasury Safe updated',
   safe_proposal: 'Safe proposal',
@@ -72,6 +76,17 @@ export function summarizeStructuredMessageContent(content: string | null | undef
 
   const type = typeof obj.type === 'string' ? obj.type.trim() : '';
   if (type) {
+    if (type === 'squad_network_updated') {
+      const payload =
+        obj.payload && typeof obj.payload === 'object'
+          ? (obj.payload as Record<string, unknown>)
+          : null;
+      const chain = payload?.chain;
+      if (isSquadDeployableChain(chain)) {
+        return `Squad network updated to ${getWalletNetworkDisplayName(chain)}`;
+      }
+      return TYPE_NOTICES.squad_network_updated;
+    }
     return TYPE_NOTICES[type] ?? 'Squad update';
   }
 
