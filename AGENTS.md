@@ -96,6 +96,9 @@ pnpm tauri:build
 pnpm check
 pnpm check:watch
 
+# Lint
+pnpm lint
+
 # Frontend unit tests
 pnpm test
 pnpm test:watch
@@ -173,7 +176,8 @@ cd src-tauri && cargo test
 - **Package manager:** pnpm (v9 in CI; workspace is single-root with build allowances in `pnpm-workspace.yaml`).
 - **Frontend runtime:** Node.js LTS; Vite dev server; SvelteKit static adapter SPA mode.
 - **Backend runtime:** Rust stable toolchain; Tauri v2; tokio async runtime.
-- **Type checking:** `svelte-check` via `pnpm check`. No ESLint/Prettier config is present in the repo.
+- **Linting:** `eslint .` via `pnpm lint`.
+- **Type checking:** `svelte-check` via `pnpm check`.
 - **Build orchestration:** Tauri CLI owns the loop: it runs `pnpm dev`/`pnpm build` first, then compiles the Rust backend, and the webview loads the static frontend.
 - **Environment variables:** Vite exposes only `VITE_*` and `ALCHEMY_*` to the client via `envPrefix`. The Rust backend reads `ALCHEMY_RPC_KEY` and others directly from the process environment.
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
@@ -205,4 +209,5 @@ cd src-tauri && cargo test
 - **Before creating or updating a PR:** use the [`value-based-pr`](.agents/skills/value-based-pr/README.md) skill so the title and description explain what changed and why it matters, not just which files were touched.
 - **Greenfield posture:** do not preserve legacy layouts, old wire formats, or dual-read paths unless explicitly asked. Alpha-only repair code in `docs/legacy-fixes/` should be removed before public beta.
 - **Do not delete or narrow `.cursor/rules/`** unless the user explicitly asked to remove or replace a policy.
+- **Run lint before committing or pushing:** always run `pnpm lint` and fix all reported violations before creating a commit or pushing a branch.
 - **`install.sh` at the repo root installs an external CLI (`pacto-bot-api`)**, not the Pacto desktop app; do not use it for local desktop setup.
