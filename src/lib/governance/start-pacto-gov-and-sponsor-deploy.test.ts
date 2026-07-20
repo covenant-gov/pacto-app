@@ -108,6 +108,15 @@ describe('bootstrapCrewCandidates', () => {
     );
     expect(out).toEqual([rosterB]);
   });
+
+  it('excludes payer-only Default when listed among member options', () => {
+    const out = bootstrapCrewCandidates(
+      [{ address: rosterA }, { address: rosterB }, { address: defaultOnly }],
+      rosterA,
+      [defaultOnly],
+    );
+    expect(out).toEqual([rosterB]);
+  });
 });
 
 const members = [{ address: rosterA }, { address: rosterB }];

@@ -98,9 +98,9 @@ export async function syncSquadMemberEvmForParent(
 
   const p = (async () => {
     try {
-      const rows = await fetchSquadMemberEvmByNpub(parentId, announcementsGroupId);
-      squadMemberEvmByParentId.update((m) => ({ ...m, [parentId]: rows }));
       const curNpub = activeNpub();
+      const rows = await fetchSquadMemberEvmByNpub(parentId, announcementsGroupId, curNpub);
+      squadMemberEvmByParentId.update((m) => ({ ...m, [parentId]: rows }));
       if (curNpub) persistSquadMemberEvmForParent(curNpub, parentId, rows);
     } finally {
       memberEvmInflight.delete(parentId);

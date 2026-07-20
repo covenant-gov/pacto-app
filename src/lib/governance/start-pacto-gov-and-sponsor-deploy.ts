@@ -40,12 +40,18 @@ function normalizeAddress(raw: string): string | null {
   }
 }
 
-/** Shared roster EVMs eligible for bootstrapCrew (captain excluded). */
+/** Shared roster EVMs eligible for bootstrapCrew (captain and payer-only Default excluded). */
 export function bootstrapCrewCandidates(
   memberOptions: { address: string; label?: string }[],
   captainAddress: string,
+  excludeAddresses: string[] = [],
 ): string[] {
   const captain = normalizeAddress(captainAddress)?.toLowerCase() ?? '';
+  const excluded = new Set(
+    excludeAddresses
+      .map((a) => normalizeAddress(a)?.toLowerCase())
+      .filter((a): a is string => !!a),
+  );
   const seen = new Set<string>();
   const out: string[] = [];
   for (const m of memberOptions) {
@@ -53,6 +59,7 @@ export function bootstrapCrewCandidates(
     if (!addr) continue;
     const key = addr.toLowerCase();
     if (captain && key === captain) continue;
+    if (excluded.has(key)) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(addr);
@@ -143,6 +150,8 @@ export function startPactoGovAndSponsorDeploy(params: {
   initialDepositWei: string;
   bootstrapCrew: boolean;
   memberOptions: { address: string; label?: string }[];
+  /** Payer-only Default (and similar) must not receive crew hats. */
+  bootstrapExcludeAddresses?: string[];
   signerWallet?: SquadSponsorDeploySignerWallet;
   onProgress?: (step: 'gov' | 'sponsor' | 'bootstrap') => void;
   onComplete: (out: CombinedGovSponsorDeployComplete) => void | Promise<void>;
@@ -189,7 +198,11 @@ export function startPactoGovAndSponsorDeploy(params: {
 
   const signerWallet = params.signerWallet ?? 'squad';
   const crewCandidates = params.bootstrapCrew
-    ? bootstrapCrewCandidates(params.memberOptions, captain)
+    ? bootstrapCrewCandidates(
+        params.memberOptions,
+        captain,
+        params.bootstrapExcludeAddresses ?? [],
+      )
     : [];
   if (params.bootstrapCrew && crewCandidates.length === 0) {
     const message =
@@ -335,6 +348,7 @@ export function startHatsSponsorOnlyDeploy(params: {
   quartermaster?: string;
   /** Used to exclude captain from bootstrap list; optional. */
   captainAddress?: string;
+  bootstrapExcludeAddresses?: string[];
   signerWallet?: SquadSponsorDeploySignerWallet;
   onProgress?: (step: 'sponsor' | 'bootstrap') => void;
   onComplete: (out: CombinedGovSponsorDeployComplete) => void | Promise<void>;
@@ -370,7 +384,11 @@ export function startHatsSponsorOnlyDeploy(params: {
 
   const signerWallet = params.signerWallet ?? 'squad';
   const crewCandidates = params.bootstrapCrew
-    ? bootstrapCrewCandidates(params.memberOptions, params.captainAddress ?? '')
+    ? bootstrapCrewCandidates(
+        params.memberOptions,
+        params.captainAddress ?? '',
+        params.bootstrapExcludeAddresses ?? [],
+      )
     : [];
   if (params.bootstrapCrew && crewCandidates.length === 0) {
     const message =

@@ -303,7 +303,7 @@ describe('syncSquadMemberEvmForParent', () => {
 
     await syncSquadMemberEvmForParent(parentId, 'group-1');
 
-    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(parentId, 'group-1');
+    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(parentId, 'group-1', npub);
     expect(get(squadMemberEvmByParentId)[parentId]).toEqual(evmMap);
     const raw = storage.get(`${SQUAD_MEMBER_EVM_CACHE_PREFIX}_${npub}`);
     expect(raw).toBeTruthy();
@@ -327,6 +327,7 @@ describe('syncSquadMemberEvmForAnnouncementsGroup', () => {
     expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(
       'squad-catalog-id',
       'mls-announcements',
+      npub,
     );
     expect(get(squadMemberEvmByParentId)['squad-catalog-id']).toEqual(evmMap);
   });
@@ -337,7 +338,11 @@ describe('syncSquadMemberEvmForAnnouncementsGroup', () => {
 
     await syncSquadMemberEvmForAnnouncementsGroup('orphan-group');
 
-    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith('orphan-group', 'orphan-group');
+    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(
+      'orphan-group',
+      'orphan-group',
+      npub,
+    );
   });
 });
 

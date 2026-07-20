@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
-import { getActiveSquadEvmSignerAddress } from '../wallet/evm-accounts';
+import { getActiveSquadEvmSignerAddress, listEvmAccounts } from '../wallet/evm-accounts';
+import { listEvmAccountSquadBindings } from './evm-account-squad-bindings';
 
 export const SQUAD_MEMBER_EVM_SHARE_TYPE = 'squad_member_evm_share';
 export const SQUAD_MEMBER_EVM_SHARE_VERSION = 1;
@@ -32,7 +33,60 @@ export function listSquadMemberEvmInvokeArgs(
 export type PublishSquadMemberEvmShareOptions = {
   /** If set, publish this address for the current user for this parent (e.g. Change signer). Otherwise uses wallet preference below. */
   evmAddress?: string | null;
+  /** Optional UI parent id when it differs from the announcements roster key. */
+  altParentId?: string | null;
 };
+
+/** Bound account address for this parent, if any (does not fall back to active WalletBar signer). */
+export async function getBoundSquadEvmAddressForParent(
+  parentId: string,
+  altParentId?: string | null,
+): Promise<string | null> {
+  const candidates = [parentId.trim(), altParentId?.trim() ?? ''].filter(
+    (id, i, arr) => !!id && arr.indexOf(id) === i,
+  );
+  if (candidates.length === 0) return null;
+  try {
+    const bindings = await listEvmAccountSquadBindings();
+    const hit = candidates
+      .map((pid) => bindings.find((b) => b.parentId.trim() === pid))
+      .find((b) => b?.evmAccountId);
+    if (!hit?.evmAccountId) return null;
+    const rows = await listEvmAccounts();
+    const addr = rows?.find((r) => r.id === hit.evmAccountId)?.address?.trim();
+    return addr || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Address to publish for this parent: explicit → bound account → resolve (binding/share/active) → active.
+ * Preferring binding prevents Default WalletBar overwrites after fund-then-deploy.
+ */
+export async function resolveSquadMemberEvmShareAddress(
+  announcementsMlsGroupId: string,
+  options?: PublishSquadMemberEvmShareOptions,
+): Promise<string | null> {
+  const rosterId = announcementsMlsGroupId.trim();
+  if (!rosterId) return null;
+  const explicit = options?.evmAddress?.trim();
+  if (explicit) return explicit;
+
+  const bound = await getBoundSquadEvmAddressForParent(rosterId, options?.altParentId);
+  if (bound) return bound;
+
+  try {
+    const resolved = await invoke<string | null>('resolve_squad_roster_evm_address', {
+      parentId: rosterId,
+      memberNpub: null,
+    });
+    if (resolved?.trim()) return resolved.trim();
+  } catch {
+    /* fall through */
+  }
+  return (await getActiveSquadEvmSignerAddress())?.trim() || null;
+}
 
 /**
  * Record the current user's squad roster signer for this parent and publish a `squad_member_evm_share` row to #announcements.
@@ -44,8 +98,7 @@ export async function publishSquadMemberEvmShare(
 ): Promise<boolean> {
   const rosterId = announcementsMlsGroupId.trim();
   if (!rosterId) return false;
-  const explicit = options?.evmAddress?.trim();
-  const fromWallet = explicit || (await getActiveSquadEvmSignerAddress())?.trim() || '';
+  const fromWallet = await resolveSquadMemberEvmShareAddress(rosterId, options);
   if (!fromWallet) return false;
   // Publish first so peers sync; local upsert only after MLS send succeeds.
   const json = formatSquadMemberEvmShare(rosterId, fromWallet);
@@ -62,4 +115,27 @@ export async function publishSquadMemberEvmShare(
     return false;
   }
   return true;
+}
+
+/**
+ * When the shared roster row disagrees with the local squad binding, republish the bound address.
+ * Returns true when a heal publish ran successfully.
+ */
+export async function healSquadMemberEvmShareIfDiverged(
+  announcementsMlsGroupId: string,
+  shareByNpub: Record<string, string>,
+  myNpub: string | null | undefined,
+  altParentId?: string | null,
+): Promise<boolean> {
+  const rosterId = announcementsMlsGroupId.trim();
+  const me = myNpub?.trim();
+  if (!rosterId || !me) return false;
+
+  const bound = await getBoundSquadEvmAddressForParent(rosterId, altParentId);
+  if (!bound) return false;
+
+  const share = shareByNpub[me]?.trim() ?? '';
+  if (share && share.toLowerCase() === bound.toLowerCase()) return false;
+
+  return publishSquadMemberEvmShare(rosterId, { evmAddress: bound, altParentId });
 }

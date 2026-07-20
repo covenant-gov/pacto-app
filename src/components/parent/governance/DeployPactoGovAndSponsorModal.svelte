@@ -186,7 +186,17 @@
     bootstrapCrew = false;
   }
 
-  $: crewPreview = bootstrapCrewCandidates(captainMemberOptions, captainAddress).map((addr) => {
+  /** Default is payer-only when it differs from the bound squad/captain key. */
+  $: bootstrapExcludeAddresses =
+    defaultCanonical && squadCanonical && defaultCanonical !== squadCanonical
+      ? [defaultCanonical]
+      : [];
+
+  $: crewPreview = bootstrapCrewCandidates(
+    captainMemberOptions,
+    captainAddress,
+    bootstrapExcludeAddresses,
+  ).map((addr) => {
     const key = addr.toLowerCase();
     const opt = captainMemberOptions.find((o) => o.address.toLowerCase() === key);
     return { address: addr, label: opt?.label?.trim() || '' };
@@ -323,6 +333,7 @@
           initialDepositWei: depositWei,
           bootstrapCrew: doBootstrap,
           memberOptions: captainMemberOptions,
+          bootstrapExcludeAddresses,
           quartermaster: quartermaster.trim() || undefined,
           captainAddress: captainAddress || undefined,
           signerWallet: payFrom,
@@ -339,6 +350,7 @@
           initialDepositWei: depositWei,
           bootstrapCrew: doBootstrap,
           memberOptions: captainMemberOptions,
+          bootstrapExcludeAddresses,
           signerWallet: payFrom,
           onProgress,
           onReject,
