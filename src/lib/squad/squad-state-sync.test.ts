@@ -170,4 +170,28 @@ describe('squad-state-sync', () => {
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     expect(publishSquadMemberEvmShare).toHaveBeenCalledTimes(1);
   });
+
+  it('ignores sync requests whose parent_id differs from the MLS groupId', async () => {
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'other-parent',
+      requestId: 'req-5',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(listSquadInfra).not.toHaveBeenCalled();
+  });
+
+  it('allows retry when republish fails without recording cooldown', async () => {
+    publishSquadMemberEvmShare.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    listSquadInfra.mockResolvedValue([]);
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-6',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadMemberEvmShare).toHaveBeenCalledTimes(2);
+  });
 });

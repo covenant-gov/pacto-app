@@ -1,6 +1,6 @@
 /**
  * Late-joiner catch-up: sync request on #announcements; peers silently republish
- * roster EVM + known governance announces. See docs/communities/DESIGN.md §8.
+ * roster EVM + known governance announces.
  */
 
 import { get } from 'svelte/store';
@@ -21,6 +21,8 @@ export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
 
 const RESPOND_COOLDOWN_MS = 15_000;
+const RESPONDED_KEYS_CAP = 200;
+/** Insertion-ordered keys for prune (Set iteration is insertion order). */
 const respondedRequestKeys = new Set<string>();
 const lastRespondAtByParent = new Map<string, number>();
 
@@ -83,8 +85,22 @@ export function resetSquadStateSyncRespondStateForTests(): void {
   lastRespondAtByParent.clear();
 }
 
-function autoRequestStorageKey(announcementsGroupId: string): string {
-  return `pacto_squad_state_sync_auto_v1_${announcementsGroupId.trim()}`;
+function autoRequestStorageKey(npub: string, announcementsGroupId: string): string {
+  return `pacto_squad_state_sync_auto_v1_${npub.trim()}_${announcementsGroupId.trim()}`;
+}
+
+function pruneRespondedRequestKeys(): void {
+  while (respondedRequestKeys.size > RESPONDED_KEYS_CAP) {
+    const oldest = respondedRequestKeys.values().next().value;
+    if (oldest === undefined) break;
+    respondedRequestKeys.delete(oldest);
+  }
+}
+
+function markResponded(respondKey: string, parentId: string): void {
+  respondedRequestKeys.add(respondKey);
+  pruneRespondedRequestKeys();
+  lastRespondAtByParent.set(parentId, Date.now());
 }
 
 /**
@@ -103,7 +119,7 @@ export async function requestSquadStateSync(announcementsGroupId: string): Promi
   const requestId =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
-      : `sync-${Date.now()}`;
+      : `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const json = formatSquadStateSyncRequest({
     parentId: gid,
     requestId,
@@ -124,8 +140,11 @@ export async function maybeAutoRequestSquadStateSyncAfterJoin(
 ): Promise<void> {
   const gid = announcementsGroupId.trim();
   if (!gid) return;
+  const me = get(currentUser)?.npub?.trim();
+  if (!me) return;
+  const storageKey = autoRequestStorageKey(me, gid);
   try {
-    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(autoRequestStorageKey(gid))) {
+    if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(storageKey)) {
       return;
     }
   } catch {
@@ -135,7 +154,7 @@ export async function maybeAutoRequestSquadStateSyncAfterJoin(
   if (!ok) return;
   try {
     if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem(autoRequestStorageKey(gid), '1');
+      sessionStorage.setItem(storageKey, '1');
     }
   } catch {
     /* ignore */
@@ -152,26 +171,27 @@ export async function respondToSquadStateSyncRequest(
 ): Promise<void> {
   const req = parseSquadStateSyncRequest(content);
   if (!req) return;
-  const gid = groupId.trim() || req.parent_id;
-  if (!gid) return;
+  const gid = groupId.trim();
+  if (!gid || req.parent_id !== gid) return;
   const me = get(currentUser)?.npub?.trim();
   if (!me) return;
   if (req.requester_npub === me) return;
 
-  const parentId = req.parent_id || gid;
+  const parentId = req.parent_id;
   const respondKey = `${parentId}:${req.request_id}`;
   if (respondedRequestKeys.has(respondKey)) return;
   const last = lastRespondAtByParent.get(parentId) ?? 0;
   if (Date.now() - last < RESPOND_COOLDOWN_MS) return;
-  respondedRequestKeys.add(respondKey);
-  lastRespondAtByParent.set(parentId, Date.now());
 
   const wantEvm = !req.requested?.length || req.requested.includes('evm');
   const wantInfra = !req.requested?.length || req.requested.includes('infra');
 
+  let anyOk = false;
+
   if (wantEvm) {
     try {
-      await publishSquadMemberEvmShare(parentId);
+      const ok = await publishSquadMemberEvmShare(parentId);
+      if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] EVM republish failed', e);
     }
@@ -207,9 +227,16 @@ export async function respondToSquadStateSyncRequest(
           '',
           { virtualBucket: 'announcements' },
         );
+        anyOk = true;
       }
+      // Infra requested but nothing to publish still counts as a handled attempt when list succeeded.
+      if (!wantEvm && rows.length === 0) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] infra republish failed', e);
     }
+  }
+
+  if (anyOk) {
+    markResponded(respondKey, parentId);
   }
 }

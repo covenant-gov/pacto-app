@@ -29,7 +29,7 @@
   import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
-  import { parseEther } from 'viem';
+  import { formatEther, parseEther } from 'viem';
 
   export let parentId: string;
   /** Prefer #announcements MLS id for roster resolve when it differs from parentId. */
@@ -308,7 +308,7 @@
         '',
         squadNetwork,
         'ETH',
-        transferTrimmed,
+        formatEther(transferWei),
         null,
         squadCanonical,
         true,

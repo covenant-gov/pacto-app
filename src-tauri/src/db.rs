@@ -1174,9 +1174,49 @@ pub fn side_effect_parent_matches_chat(chat_id: &str, payload_parent_id: &str) -
     !chat.is_empty() && !parent.is_empty() && chat == parent
 }
 
+fn author_listed_in_participants<'a, I>(parts: I, author: &str) -> bool
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let author = author.trim();
+    if author.is_empty() {
+        return false;
+    }
+    parts.into_iter().any(|p| p.trim() == author)
+}
+
+/// True when `chats.participants` JSON for `chat_id` contains `author` (fail closed).
+fn chat_db_participants_contain_author(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    author: &str,
+) -> bool {
+    let chat_id = chat_id.trim();
+    let author = author.trim();
+    if chat_id.is_empty() || author.is_empty() {
+        return false;
+    }
+    let participants_json: Option<String> = conn
+        .query_row(
+            "SELECT participants FROM chats WHERE chat_identifier = ?1",
+            rusqlite::params![chat_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    let Some(raw) = participants_json else {
+        return false;
+    };
+    let Ok(parts) = serde_json::from_str::<Vec<String>>(&raw) else {
+        return false;
+    };
+    author_listed_in_participants(parts.iter().map(|s| s.as_str()), author)
+}
+
 /// True when `author_npub` is treated as an MLS member of `chat_id` for announce side effects.
-/// Prefer in-memory participants when populated; otherwise a known `mls_groups` row plus
-/// non-empty author (MLS delivery already authenticated the sender).
+/// Prefer in-memory participants when populated; otherwise `chats.participants` in SQLite.
+/// Fail closed when membership cannot be verified (no `mls_groups`-only shortcut).
 fn is_author_mls_member_for_chat<R: Runtime>(
     handle: &AppHandle<R>,
     chat_id: &str,
@@ -1192,7 +1232,7 @@ fn is_author_mls_member_for_chat<R: Runtime>(
         if let Some(chat) = state.get_chat(chat_id) {
             let parts = chat.participants();
             if !parts.is_empty() {
-                return parts.iter().any(|p| p.trim() == author);
+                return author_listed_in_participants(parts.iter().map(|s| s.as_str()), author);
             }
         }
     }
@@ -1200,15 +1240,9 @@ fn is_author_mls_member_for_chat<R: Runtime>(
     let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
         return false;
     };
-    let known: bool = conn
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM mls_groups WHERE group_id = ?1 OR engine_group_id = ?1)",
-            rusqlite::params![chat_id],
-            |r| r.get(0),
-        )
-        .unwrap_or(false);
+    let ok = chat_db_participants_contain_author(&conn, chat_id, author);
     crate::account_manager::return_db_connection(conn);
-    known
+    ok
 }
 
 pub fn try_apply_squad_contract_allowlist_announce<R: Runtime>(
@@ -1699,7 +1733,10 @@ pub fn try_apply_squad_tracked_tokens_announce<R: Runtime>(
 
 #[cfg(test)]
 mod allowlist_tests {
-    use super::{allowlist_row_id, side_effect_parent_matches_chat};
+    use super::{
+        allowlist_row_id, author_listed_in_participants, chat_db_participants_contain_author,
+        side_effect_parent_matches_chat,
+    };
 
     #[test]
     fn stable_allowlist_row_id_normalizes_address_case() {
@@ -1721,6 +1758,48 @@ mod allowlist_tests {
         assert!(!side_effect_parent_matches_chat("grp-a", "grp-b"));
         assert!(!side_effect_parent_matches_chat("", "grp-a"));
         assert!(!side_effect_parent_matches_chat("grp-a", ""));
+    }
+
+    #[test]
+    fn author_listed_in_participants_matches_trimmed() {
+        assert!(author_listed_in_participants(["npub1a", " npub1b "], "npub1b"));
+        assert!(!author_listed_in_participants(["npub1a"], "npub1b"));
+        assert!(!author_listed_in_participants(["npub1a"], ""));
+        assert!(!author_listed_in_participants([], "npub1a"));
+    }
+
+    #[test]
+    fn chat_db_participants_require_author_in_json_not_merely_mls_group_row() {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        conn.execute_batch(
+            r#"
+            CREATE TABLE chats (
+                chat_identifier TEXT PRIMARY KEY,
+                participants TEXT NOT NULL DEFAULT '[]'
+            );
+            CREATE TABLE mls_groups (
+                group_id TEXT PRIMARY KEY,
+                engine_group_id TEXT NOT NULL DEFAULT ''
+            );
+            "#,
+        )
+        .expect("schema");
+        conn.execute(
+            "INSERT INTO mls_groups (group_id, engine_group_id) VALUES ('grp-1', 'eng-1')",
+            [],
+        )
+        .expect("mls");
+        // Group exists but chat participants empty / missing → fail closed.
+        assert!(!chat_db_participants_contain_author(&conn, "grp-1", "npub1author"));
+
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, participants) VALUES ('grp-1', ?1)",
+            rusqlite::params![r#"["npub1peer","npub1author"]"#],
+        )
+        .expect("chat");
+        assert!(chat_db_participants_contain_author(&conn, "grp-1", "npub1author"));
+        assert!(!chat_db_participants_contain_author(&conn, "grp-1", "npub1stranger"));
+        assert!(!chat_db_participants_contain_author(&conn, "grp-1", ""));
     }
 }
 
