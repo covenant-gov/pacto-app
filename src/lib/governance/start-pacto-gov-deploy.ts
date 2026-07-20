@@ -78,7 +78,7 @@ export function startPactoGovDeploy(params: {
 
   const captain = normalizeCaptainAddress(params.captain);
   if (!captain) {
-    const message = 'Pick a valid captain EVM address.';
+    const message = 'Your squad-assigned EVM is required as captain.';
     if (params.onReject) {
       params.onReject(message);
     } else {

@@ -59,20 +59,6 @@
 
   $: sponsorOnly = !!existingTopHatId.trim();
 
-  /** Captain defaults to roster EVM only — never the Default wallet unless it is the roster binding. */
-  function pickDefaultCaptain(rosterAddress: string | null) {
-    if (captainAddress) return;
-    const opts = captainMemberOptions;
-    if (rosterAddress) {
-      const match = opts.find((o) => o.address.toLowerCase() === rosterAddress.toLowerCase());
-      if (match) {
-        captainAddress = match.address;
-        return;
-      }
-    }
-    if (opts.length > 0) captainAddress = opts[0].address;
-  }
-
   const SIGNER_LOOKUP_TIMEOUT_MS = 15_000;
 
   async function refreshSigners() {
@@ -91,13 +77,15 @@
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
+      // MVP: deployer roster is always captain (hats + sponsor ACL).
+      captainAddress = canonicalAddress(squadSignerAddress) ?? '';
       signerWallet = reconcileSignerWallet(signerWallet, defaultSignerAddress, squadSignerAddress);
-      pickDefaultCaptain(canonicalAddress(squadSignerAddress));
     } catch (e) {
       if (seq === refreshSeq) {
         deployError = e instanceof Error ? e.message : 'Could not load signer addresses.';
         defaultSignerAddress = null;
         squadSignerAddress = null;
+        captainAddress = '';
       }
     } finally {
       if (seq === refreshSeq) resolvingAddresses = false;
@@ -135,14 +123,11 @@
     refreshSeq += 1;
   });
 
-  $: if (!resolvingAddresses && !captainAddress && captainMemberOptions.length > 0) {
-    pickDefaultCaptain(canonicalAddress(squadSignerAddress));
-  }
-
   $: defaultCanonical = canonicalAddress(defaultSignerAddress);
   $: squadCanonical = canonicalAddress(squadSignerAddress);
   $: signersAreSame =
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
+  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
 
   $: selectedBalance = signersAreSame
     ? squadBalance
@@ -160,6 +145,7 @@
   $: bootstrapAllowed = canBootstrapCrewDuringDeploy({
     captainAddress,
     squadRosterAddress: squadSignerAddress,
+    payFrom: payFromEffective,
   });
   $: if (!bootstrapAllowed && bootstrapCrew) {
     bootstrapCrew = false;
@@ -188,8 +174,8 @@
       deployError = 'Loading signer addresses…';
       return;
     }
-    if (!sponsorOnly && !captainAddress) {
-      deployError = 'Pick a captain with a squad-assigned EVM address.';
+    if (!captainAddress || !squadCanonical) {
+      deployError = 'Bind a squad-assigned EVM before deploying — you become captain.';
       return;
     }
     let depositWei: string;
@@ -209,12 +195,13 @@
       return;
     }
 
-    const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
+    const payFrom = payFromEffective;
     const doBootstrap =
       bootstrapCrew &&
       canBootstrapCrewDuringDeploy({
         captainAddress,
         squadRosterAddress: squadSignerAddress,
+        payFrom,
       });
 
     const onProgress = (step: 'gov' | 'sponsor' | 'bootstrap') => {
@@ -274,7 +261,8 @@
     !squadNetwork ||
     resolvingAddresses ||
     depositExceedsBalance ||
-    (!sponsorOnly && (captainMemberOptions.length === 0 || !captainAddress)) ||
+    !squadCanonical ||
+    !captainAddress ||
     (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical);
 </script>
 
@@ -288,9 +276,9 @@
       sponsorship follows captain and crew hats. Gas and deposit come from the payer below — not from hat
       identity.
     {:else}
-      Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. Pay gas and the sponsor deposit from
-      Default or your squad-assigned key; captain must be a squad-assigned EVM of an existing member. Paying
-      does not grant hats.
+      Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. You become captain on your
+      squad-assigned EVM. Pay gas and the sponsor deposit from Default or that key — Default pays only and
+      does not receive hats.
     {/if}
   </p>
 
@@ -382,41 +370,26 @@
     </fieldset>
   {/if}
 
-  {#if !sponsorOnly}
-    <div class="field">
-      <label class="label" for="gov-sponsor-captain">Captain</label>
-      {#if captainMemberOptions.length === 0}
-        <p class="hint muted">No members have a squad-assigned EVM yet.</p>
-      {:else}
-        <select
-          id="gov-sponsor-captain"
-          class="select"
-          bind:value={captainAddress}
-          disabled={resolvingAddresses}
-        >
-          {#each captainMemberOptions as opt (opt.npub)}
-            <option value={opt.address}>{opt.label} — {shortAddress(opt.address)}</option>
-          {/each}
-        </select>
-        <p class="hint muted">Any member’s squad-assigned EVM. Hats go here — not to the fee payer.</p>
-      {/if}
-    </div>
-  {:else if captainMemberOptions.length > 0}
-    <div class="field">
-      <label class="label" for="gov-sponsor-captain">Captain (bootstrap exclude)</label>
-      <select
-        id="gov-sponsor-captain"
-        class="select"
-        bind:value={captainAddress}
-        disabled={resolvingAddresses}
-      >
-        {#each captainMemberOptions as opt (opt.npub)}
-          <option value={opt.address}>{opt.label} — {shortAddress(opt.address)}</option>
-        {/each}
-      </select>
-      <p class="hint muted">Used only to skip the captain when bootstrapping crew hats.</p>
-    </div>
-  {/if}
+  <div class="field">
+    <span class="label">Captain</span>
+    {#if resolvingAddresses}
+      <p class="hint muted">Loading your squad-assigned EVM…</p>
+    {:else if squadCanonical}
+      <p class="pinned">
+        <code>{shortAddress(squadCanonical)}</code>
+        <span class="muted note">· your squad-assigned EVM</span>
+      </p>
+      <p class="hint muted">
+        {#if sponsorOnly}
+          Hats sponsor and crew bootstrap require the captain hat on this address.
+        {:else}
+          Captain hat is minted here. Fee payer may differ; Default never receives hats.
+        {/if}
+      </p>
+    {:else}
+      <p class="hint muted">Bind a squad-assigned EVM for this squad before deploying.</p>
+    {/if}
+  </div>
 
   <div class="field">
     <label class="label" for="gov-sponsor-deposit">Initial sponsor deposit (ETH)</label>
@@ -445,15 +418,17 @@
     </label>
     {#if !bootstrapAllowed}
       <p class="hint muted">
-        Available when you assign yourself as captain (your squad-assigned EVM). Mint is signed by that
-        key — funded ETH or sponsored UserOp after the sponsor pool exists. Otherwise mint later from
-        Governance → Captain.
+        {#if payFromEffective === 'default'}
+          Not available when Default pays — switch to your squad-assigned signer, or mint crew later from
+          Governance → Captain.
+        {:else}
+          Requires your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.
+        {/if}
       </p>
     {:else}
       <p class="hint muted">
-        Optional. Only squad-assigned EVMs (except the captain) are minted. Signed by your squad key
-        (self-funded when it has ETH; otherwise sponsored from the pool if eligible). Skip if keys are
-        incomplete — mint later from Governance → Captain.
+        Optional. Mints crew hats for other squad-assigned EVMs. Signed by your captain key (self-funded
+        when it has ETH; otherwise sponsored from the pool if eligible).
       </p>
     {/if}
     {#if bootstrapCrew && sponsorOnly && !quartermaster.trim()}

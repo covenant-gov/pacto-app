@@ -26,10 +26,10 @@ curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
 
 ## 1. Pacto Gov + squad sponsor (default)
 
-- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; pick captain (any member’s squad-assigned EVM), deposit, optional bootstrap crew.
-- [ ] **Privacy + funded Default:** bind a **new squad key** (empty), keep Default (DM) funded → wizard **Pay gas and deposit from → Default signer** → captain = yourself → confirm Default has **no** captain hat. Bootstrap is **enabled** (mint signed by roster; sponsored UserOp when roster has 0 ETH and bundler/7702 are configured).
-- [ ] **0 ETH roster + funded pool (sponsored bootstrap):** after deploy with empty roster key + funded sponsor deposit, **Bootstrap crew** (wizard or Governance → Captain) succeeds; pool balance decreases; bundler accepts the UserOp.
-- [ ] **Squad-key deployer + self as captain:** pay from squad-assigned signer, captain = yourself → Bootstrap enabled; Roles tree **Crew** shows wearers after deploy (self-funded EOA path when roster has ETH).
+- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; captain is locked to your squad-assigned EVM; deposit; optional bootstrap when paying from that key.
+- [ ] **Privacy + funded Default:** bind a **new squad key** (empty), keep Default (DM) funded → wizard **Pay gas and deposit from → Default signer** → you are still captain on the roster key → confirm Default has **no** captain hat. Bootstrap is **disabled** while Default pays (mint later from Governance → Captain, or switch payer to squad).
+- [ ] **0 ETH roster + funded pool (sponsored bootstrap):** after deploy with empty roster key + funded sponsor deposit (pay from squad), **Bootstrap crew** (wizard or Governance → Captain) succeeds; pool balance decreases; bundler accepts the UserOp.
+- [ ] **Squad-key deployer:** pay from squad-assigned signer → Bootstrap enabled; Roles tree **Crew** shows wearers after deploy (self-funded EOA path when roster has ETH).
 - [ ] **Governance** / **Roles** / **Treasury** (sponsor + gov Safe) look healthy after both txs.
 - [ ] Optional: Status checklist **Mint all members a Crew hat** completes after bootstrap (or Captain bootstrap later).
 

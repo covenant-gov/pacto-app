@@ -10,7 +10,7 @@
 
   export let parentId: string;
   export let squadNetwork: SupportedChainId | null = null;
-  /** Squad members who shared an EVM address on #announcements. */
+  /** Kept for parent wiring; captain is always the deployer's roster EVM. */
   export let captainMemberOptions: PactoGovCaptainOption[] = [];
   export let onClose: () => void;
   export let onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
@@ -27,38 +27,20 @@
     return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
   }
 
-  function pickDefaultCaptain(deployer: string | null) {
-    if (captainAddress) return;
-    const opts = captainMemberOptions;
-    if (deployer) {
-      const match = opts.find((o) => o.address.toLowerCase() === deployer.toLowerCase());
-      if (match) {
-        captainAddress = match.address;
-        return;
-      }
-    }
-    if (opts.length > 0) captainAddress = opts[0].address;
-  }
-
   onMount(async () => {
     resolvingDeployer = true;
-    let deployer: string | null = null;
+    captainAddress = '';
     try {
       const raw = await resolveSquadRosterEvmAddress(parentId.trim());
       if (raw?.trim() && isAddress(raw.trim() as `0x${string}`)) {
-        deployer = getAddress(raw.trim() as `0x${string}`);
+        captainAddress = getAddress(raw.trim() as `0x${string}`);
       }
     } catch {
-      // fall through to member list default
+      captainAddress = '';
     } finally {
       resolvingDeployer = false;
     }
-    pickDefaultCaptain(deployer);
   });
-
-  $: if (!resolvingDeployer && !captainAddress && captainMemberOptions.length > 0) {
-    pickDefaultCaptain(null);
-  }
 
   function executeDeploy() {
     deployError = '';
@@ -71,7 +53,7 @@
       return;
     }
     if (!captainAddress) {
-      deployError = 'Pick a captain with a shared squad EVM address.';
+      deployError = 'Bind a squad-assigned EVM before deploying — you become captain.';
       return;
     }
     startPactoGovDeploy({
@@ -95,8 +77,8 @@
 <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-pacto-gov-panel">
   <h2 id={titleId}>Deploy Pacto Gov</h2>
   <p id={descId} class="pacto-gov-deploy-desc">
-    Deploy the Nave Pirata factory bundle on the squad network. Gas is paid from your squad-assigned EVM address;
-    the captain receives on-chain governance authority.
+    Deploy the Nave Pirata factory bundle on the squad network. You become captain on your squad-assigned EVM;
+    gas is paid from that key.
   </p>
 
   <div class="pacto-gov-deploy-field">
@@ -114,28 +96,19 @@
   </div>
 
   <div class="pacto-gov-deploy-field">
-    <label class="pacto-gov-deploy-label" for="pacto-gov-captain">Captain</label>
-    {#if captainMemberOptions.length === 0}
-      <p class="pacto-gov-deploy-hint muted">
-        No squad members have shared an EVM address yet. Members share addresses in My Dashboard or via the roster prompt in
-        #my-dashboard Alerts.
+    <span class="pacto-gov-deploy-label">Captain</span>
+    {#if resolvingDeployer}
+      <p class="pacto-gov-deploy-hint muted">Loading your squad-assigned EVM…</p>
+    {:else if captainAddress}
+      <p class="pacto-gov-deploy-pinned">
+        <code>{shortAddress(captainAddress)}</code>
+        <span class="pacto-gov-deploy-pinned-note">· your squad-assigned EVM</span>
       </p>
     {:else}
-      <select
-        id="pacto-gov-captain"
-        class="pacto-gov-deploy-select"
-        bind:value={captainAddress}
-        disabled={resolvingDeployer}
-      >
-        {#each captainMemberOptions as opt (opt.npub)}
-          <option value={opt.address}>{opt.label} — {shortAddress(opt.address)}</option>
-        {/each}
-      </select>
       <p class="pacto-gov-deploy-hint muted">
-        {#if resolvingDeployer}
-          Defaulting to your squad address…
-        {:else}
-          Defaults to you as deployer. Pick any member who has shared a squad EVM address.
+        Bind a squad-assigned EVM for this squad before deploying.
+        {#if captainMemberOptions.length === 0}
+          Members share addresses in My Dashboard or via the roster prompt in #my-dashboard Alerts.
         {/if}
       </p>
     {/if}
@@ -150,7 +123,7 @@
     <button
       type="button"
       class="btn-primary"
-      disabled={!squadNetwork || resolvingDeployer || captainMemberOptions.length === 0 || !captainAddress}
+      disabled={!squadNetwork || resolvingDeployer || !captainAddress}
       on:click={executeDeploy}
     >
       Execute
@@ -166,21 +139,16 @@
     color: var(--text-secondary);
     max-width: 52ch;
   }
-
   .pacto-gov-deploy-field {
     margin-bottom: 14px;
   }
-
   .pacto-gov-deploy-label {
     display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.8125rem;
+    font-weight: 500;
     color: var(--text-muted);
-    margin: 0 0 6px;
+    margin-bottom: 6px;
   }
-
   .pacto-gov-deploy-pinned {
     margin: 0;
     padding: 8px 10px;
@@ -190,30 +158,30 @@
     color: var(--text-primary);
     font-size: 0.9375rem;
   }
-
   .pacto-gov-deploy-pinned--warn {
     color: var(--text-secondary);
   }
-
   .pacto-gov-deploy-pinned-note {
     color: var(--text-muted);
     font-size: 0.8125rem;
   }
-
-  .pacto-gov-deploy-select {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
   .pacto-gov-deploy-hint {
     margin: 6px 0 0;
     font-size: 0.8125rem;
     line-height: 1.4;
+  }
+  .muted {
+    color: var(--text-muted);
+  }
+  .input-error {
+    margin: 0 0 12px;
+    font-size: 0.875rem;
+    color: var(--danger, #c44);
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
   }
 </style>

@@ -52,11 +52,12 @@ describe('isRosterHatRecipientAddress', () => {
 });
 
 describe('canBootstrapCrewDuringDeploy', () => {
-  it('allows when the captain is the squad roster signer', () => {
+  it('allows when the captain is the squad roster signer paying from squad', () => {
     expect(
       canBootstrapCrewDuringDeploy({
         captainAddress: rosterA,
         squadRosterAddress: rosterA,
+        payFrom: 'squad',
       }),
     ).toBe(true);
   });
@@ -84,6 +85,16 @@ describe('canBootstrapCrewDuringDeploy', () => {
       canBootstrapCrewDuringDeploy({
         captainAddress: rosterA,
         squadRosterAddress: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('disallows when Default pays', () => {
+    expect(
+      canBootstrapCrewDuringDeploy({
+        captainAddress: rosterA,
+        squadRosterAddress: rosterA,
+        payFrom: 'default',
       }),
     ).toBe(false);
   });
@@ -177,6 +188,7 @@ describe('startPactoGovAndSponsorDeploy job branches', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBackgroundRunsJob();
+    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
   });
 
   it('stops before the sponsor step when the Nave Pirata deploy rejects', async () => {
@@ -193,12 +205,16 @@ describe('startPactoGovAndSponsorDeploy job branches', () => {
   it('bootstraps the crew after gov and sponsor succeed', async () => {
     deployNavePirataForParent.mockResolvedValueOnce(govResult());
     deploySquadSponsorHatsForParent.mockResolvedValueOnce(sponsorResult());
-    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
     quartermasterBootstrapCrew.mockResolvedValueOnce({ txHash: '0xboot' });
     const onComplete = vi.fn();
     const steps: string[] = [];
     startPactoGovAndSponsorDeploy(
-      combinedParams({ bootstrapCrew: true, onComplete, onProgress: (s) => steps.push(s) }),
+      combinedParams({
+        bootstrapCrew: true,
+        signerWallet: 'squad',
+        onComplete,
+        onProgress: (s) => steps.push(s),
+      }),
     );
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
     expect(quartermasterBootstrapCrew).toHaveBeenCalledWith({
@@ -216,16 +232,33 @@ describe('startPactoGovAndSponsorDeploy job branches', () => {
   it('surfaces bootstrapError and still completes when the crew mint fails', async () => {
     deployNavePirataForParent.mockResolvedValueOnce(govResult());
     deploySquadSponsorHatsForParent.mockResolvedValueOnce(sponsorResult());
-    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
     quartermasterBootstrapCrew.mockRejectedValueOnce(new Error('mint failed'));
     const onComplete = vi.fn();
-    startPactoGovAndSponsorDeploy(combinedParams({ bootstrapCrew: true, onComplete }));
+    startPactoGovAndSponsorDeploy(
+      combinedParams({ bootstrapCrew: true, signerWallet: 'squad', onComplete }),
+    );
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
     const out = onComplete.mock.calls[0][0];
     expect(out.bootstrapped).toBe(false);
     expect(out.bootstrapError).toMatch(/mint failed/);
     expect(out.gov).toBeTruthy();
     expect(out.sponsor?.sponsorAddress).toBe(sponsorAddress);
+  });
+
+  it('rejects bootstrap when Default pays', () => {
+    const onReject = vi.fn();
+    expect(
+      startPactoGovAndSponsorDeploy(
+        combinedParams({
+          bootstrapCrew: true,
+          signerWallet: 'default',
+          onComplete: vi.fn(),
+          onReject,
+        }),
+      ),
+    ).toBe(false);
+    expect(onReject.mock.calls[0][0]).toMatch(/squad-assigned signer/i);
+    expect(runOnChainInBackground).not.toHaveBeenCalled();
   });
 
   it('threads an explicit default signerWallet through both deploys', async () => {
@@ -247,6 +280,7 @@ describe('startHatsSponsorOnlyDeploy job', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBackgroundRunsJob();
+    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
   });
 
   it('deploys the sponsor and completes without bootstrap', async () => {
@@ -269,7 +303,6 @@ describe('startHatsSponsorOnlyDeploy job', () => {
 
   it('bootstraps when the quartermaster is known and the captain is the roster signer', async () => {
     deploySquadSponsorHatsForParent.mockResolvedValueOnce(sponsorResult());
-    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
     quartermasterBootstrapCrew.mockResolvedValueOnce({ txHash: '0xboot' });
     const onComplete = vi.fn();
     const steps: string[] = [];
@@ -278,6 +311,7 @@ describe('startHatsSponsorOnlyDeploy job', () => {
         bootstrapCrew: true,
         quartermaster,
         captainAddress: rosterA,
+        signerWallet: 'squad',
         onComplete,
         onProgress: (s) => steps.push(s),
       }),

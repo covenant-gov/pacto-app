@@ -75,18 +75,21 @@ export function isRosterHatRecipientAddress(
 }
 
 /**
- * Bootstrap in the combined wizard when this identity is captain (roster EVM).
- * Deploy gas may come from Default; crew mint is signed by the roster key and may
- * use sponsor UserOp when that key has no ETH.
+ * Bootstrap when the deployer is captain (roster EVM) and pays from that roster key.
+ * Default-as-payer is pay-only (no hats); crew mint stays on the captain roster path.
  */
 export function canBootstrapCrewDuringDeploy(params: {
   captainAddress: string;
   squadRosterAddress: string | null | undefined;
+  /** Effective fee payer; `default` disables bootstrap in the deploy wizard. */
+  payFrom?: SquadSponsorDeploySignerWallet;
 }): boolean {
   const roster = normalizeAddress(params.squadRosterAddress ?? '');
   const captain = normalizeAddress(params.captainAddress);
   if (!roster || !captain) return false;
-  return roster.toLowerCase() === captain.toLowerCase();
+  if (roster.toLowerCase() !== captain.toLowerCase()) return false;
+  if (params.payFrom === 'default') return false;
+  return true;
 }
 
 /**
@@ -114,7 +117,7 @@ async function runBootstrapCrewStep(params: {
       : null;
     if (required && roster.toLowerCase() !== required.toLowerCase()) {
       throw new Error(
-        'Crew bootstrap is signed by your squad key as captain. Pick yourself as captain to bootstrap now, or mint later from Governance → Captain.',
+        'Crew bootstrap is signed by your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.',
       );
     }
     await quartermasterBootstrapCrew({
@@ -157,14 +160,14 @@ export function startPactoGovAndSponsorDeploy(params: {
 
   const captain = normalizeAddress(params.captain);
   if (!captain) {
-    const message = 'Pick a valid captain EVM address.';
+    const message = 'Your squad-assigned EVM is required as captain.';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
   }
 
   if (!isRosterHatRecipientAddress(captain, params.memberOptions)) {
-    const message = 'Captain must be a squad-assigned EVM of an existing member.';
+    const message = 'Captain must be your squad-assigned EVM for this parent.';
     if (params.onReject) params.onReject(message);
     else showToast(message);
     return false;
@@ -189,11 +192,33 @@ export function startPactoGovAndSponsorDeploy(params: {
     else showToast(message);
     return false;
   }
+  if (
+    params.bootstrapCrew &&
+    !canBootstrapCrewDuringDeploy({
+      captainAddress: captain,
+      squadRosterAddress: captain,
+      payFrom: signerWallet,
+    })
+  ) {
+    const message =
+      'Bootstrap crew requires paying from your squad-assigned signer (not Default). Uncheck bootstrap or switch payer.';
+    if (params.onReject) params.onReject(message);
+    else showToast(message);
+    return false;
+  }
 
   runOnChainInBackground({
     startedToast: 'Pacto Gov + sponsor deploy started. Steps continue in the background.',
     subject: 'Pacto Gov + sponsor',
     job: async () => {
+      const rosterRaw = await resolveSquadRosterEvmAddress(parentId);
+      const roster = normalizeAddress(rosterRaw ?? '');
+      if (!roster || roster.toLowerCase() !== captain.toLowerCase()) {
+        throw new Error(
+          'Captain must be your squad-assigned EVM. Bind a roster key for this squad and try again.',
+        );
+      }
+
       params.onProgress?.('gov');
       const govResult = await deployNavePirataForParent({
         network,
@@ -223,11 +248,11 @@ export function startPactoGovAndSponsorDeploy(params: {
       let bootstrapped = false;
       let bootstrapError: string | undefined;
       if (sponsorResult && params.bootstrapCrew && crewCandidates.length > 0) {
-        const rosterRaw = await resolveSquadRosterEvmAddress(parentId);
         if (
           canBootstrapCrewDuringDeploy({
             captainAddress: captain,
-            squadRosterAddress: rosterRaw,
+            squadRosterAddress: roster,
+            payFrom: signerWallet,
           })
         ) {
           const boot = await runBootstrapCrewStep({
@@ -334,6 +359,7 @@ export function startHatsSponsorOnlyDeploy(params: {
     return false;
   }
 
+  const signerWallet = params.signerWallet ?? 'squad';
   const crewCandidates = params.bootstrapCrew
     ? bootstrapCrewCandidates(params.memberOptions, params.captainAddress ?? '')
     : [];
@@ -352,8 +378,20 @@ export function startHatsSponsorOnlyDeploy(params: {
     else showToast(message);
     return false;
   }
-
-  const signerWallet = params.signerWallet ?? 'squad';
+  if (
+    params.bootstrapCrew &&
+    !canBootstrapCrewDuringDeploy({
+      captainAddress: params.captainAddress?.trim() || '',
+      squadRosterAddress: params.captainAddress?.trim() || '',
+      payFrom: signerWallet,
+    })
+  ) {
+    const message =
+      'Bootstrap crew requires paying from your squad-assigned signer (not Default). Uncheck bootstrap or switch payer.';
+    if (params.onReject) params.onReject(message);
+    else showToast(message);
+    return false;
+  }
 
   runOnChainInBackground({
     startedToast: 'Hats sponsor deploy started. Confirmation continues in the background.',
@@ -377,6 +415,7 @@ export function startHatsSponsorOnlyDeploy(params: {
           canBootstrapCrewDuringDeploy({
             captainAddress: captainForGate,
             squadRosterAddress: rosterRaw,
+            payFrom: signerWallet,
           })
         ) {
           const boot = await runBootstrapCrewStep({
