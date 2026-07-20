@@ -60,8 +60,8 @@ function detectPlatform() {
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    oldVersion: '0.3.0',
-    newVersion: '0.3.1',
+    oldVersion: '0.3.1',
+    newVersion: '0.3.2',
     signingKey: resolve(process.env.HOME || process.env.USERPROFILE, '.tauri', 'pacto.key'),
     signingKeyPassword: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '',
     port: 8080,
@@ -118,8 +118,8 @@ Build two release versions of Pacto, generate a local update manifest, and
 serve it so you can test the in-app updater end-to-end.
 
 Options:
-  --old-version <x.y.z>   Version of the installed app (default: 0.3.0)
-  --new-version <x.y.z>   Version of the update (default: 0.3.1)
+  --old-version <x.y.z>   Version of the installed app (default: 0.3.1)
+  --new-version <x.y.z>   Version of the update (default: 0.3.2)
   --signing-key <path>    Path to Tauri updater private key (default: ~/.tauri/pacto.key)
   --signing-key-password <password>
                          Password for the private key (default: env TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
@@ -130,7 +130,7 @@ Options:
   --help, -h              Show this help
 
 Example:
-  pnpm exec node scripts/local-update-test.mjs --old-version 0.3.0 --new-version 0.3.1 --install
+  pnpm exec node scripts/local-update-test.mjs --old-version 0.3.1 --new-version 0.3.2 --install
 
 After the script starts the server, open the installed old app and go to:
   Settings → App → Updates → Check for Updates
