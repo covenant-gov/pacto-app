@@ -14,7 +14,7 @@ Local persistence is **per Nostr account (`npub`)**: one profile directory under
 
 | Concern | Location |
 |---------|----------|
-| Schema string + `init_profile_database`, `run_migrations` | `src-tauri/src/account_manager.rs` |
+| Schema migrations | `src-tauri/src/migrations/` |
 | Connection pool, most queries and commands | `src-tauri/src/db.rs` |
 | Event row shape / kinds | `src-tauri/src/stored_event.rs` |
 | Profile row / Nostr profile merge | `src-tauri/src/profile.rs` |

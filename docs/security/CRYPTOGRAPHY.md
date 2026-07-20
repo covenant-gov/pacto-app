@@ -209,7 +209,7 @@ These are **MLS protocol-level** failures, not app-level PIN/salt decryption fai
 | Tauri encrypt/decrypt commands | `src-tauri/src/lib.rs` — `encrypt`, `decrypt` |
 | At-rest event encryption | `src-tauri/src/db.rs` — `save_event`, `get_events_for_chat`, `message_to_stored_event` |
 | MLS engine and storage | `src-tauri/src/mls.rs` — `MlsService`, `MdkSqliteStorage`, `sync_group_since_cursor` |
-| Database schema and paths | `src-tauri/src/account_manager.rs` — `SQL_SCHEMA`, `init_profile_database`, `get_mls_directory` |
+| Database schema, migrations, and paths | `src-tauri/src/migrations/` (refinery migrations), `src-tauri/src/account_manager.rs` (`init_profile_database`, `get_db_connection`, `get_mls_directory`) |
 
 ## 7. See also
 

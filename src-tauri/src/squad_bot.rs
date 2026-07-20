@@ -102,6 +102,9 @@ fn unix_now_secs() -> i64 {
 }
 
 pub fn ensure_squad_bot_tables(conn: &rusqlite::Connection) -> Result<(), String> {
+    // Defensive guard during the refinery migration transition. Tables are
+    // created with their full schema by V23, but some test paths open
+    // connections without running the refinery migration set.
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS squad_bot_meta (
