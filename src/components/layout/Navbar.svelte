@@ -50,6 +50,7 @@
     syncCommonsUserActiveBroadcast,
   } from '../../stores/commons-ui';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
+  import { requireBackupVerified } from '../../stores/backup-verification';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
   import { initSquadBot } from '../../lib/squad/squad-bot';
   import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
@@ -122,6 +123,7 @@
   const squadNetworkOptions = listSquadDeployNetworkOptions();
 
   function openOrganizeSquadModal() {
+    if (!requireBackupVerified()) return;
     showOrganizeSquadModal = true;
     organizeSquadName = '';
     organizeSquadIconUrl = '';
@@ -286,6 +288,7 @@
   }
 
   function handleCreateSquad() {
+    if (!requireBackupVerified()) return;
     const name = organizeSquadName.trim();
     if (!name) return;
     organizeSquadError = '';

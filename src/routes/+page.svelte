@@ -142,6 +142,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
   import { subscribeAppEvents } from '../lib/app/tauri-subscriptions';
+  import { backupVerificationModalOpen } from '../stores/backup-verification';
+  import BackupVerificationModal from '../components/backup/BackupVerificationModal.svelte';
+  import BackupBanner from '../components/backup/BackupBanner.svelte';
   import {
     scheduleAllSquadsHubWarmup,
     scheduleHubParentPrefetch,
@@ -961,6 +964,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   <header class="top-navbar-slot">
     <TopNavbar />
   </header>
+  <BackupBanner />
   <main class="container">
     <Navbar />
     <div class="content-wrap">
@@ -1159,6 +1163,14 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   {#if $commonsBroadcastModalOpen}
     <div use:portal>
       <PersonalBroadcastModal />
+    </div>
+  {/if}
+  {#if $backupVerificationModalOpen}
+    <div use:portal>
+      <BackupVerificationModal
+        open={$backupVerificationModalOpen}
+        onClose={() => backupVerificationModalOpen.set(false)}
+      />
     </div>
   {/if}
   <UpdateAvailableModal />

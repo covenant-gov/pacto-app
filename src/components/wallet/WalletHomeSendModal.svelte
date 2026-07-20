@@ -32,6 +32,7 @@
   } from '../../lib/wallet';
   import { toastWalletBroadcastSubmitted } from '../../lib/wallet/wallet-dm-transfer';
   import { showToast } from '../../stores/toast';
+  import { requireBackupVerified } from '../../stores/backup-verification';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
 
   export let open: boolean;
@@ -215,6 +216,7 @@
 
   async function handleConfirm() {
     if (!canConfirm || !selectedOpt) return;
+    if (!requireBackupVerified()) return;
     const amountHuman = normalizeLeadingDotDecimalInput(amountStr.trim());
     let normalizedTo: string;
     try {

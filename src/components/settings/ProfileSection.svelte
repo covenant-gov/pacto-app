@@ -12,6 +12,7 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import { requireBackupVerified } from '../../stores/backup-verification';
   $: userNpub = $currentUser?.npub || '';
   $: profile = userNpub ? $profiles[userNpub] : null;
   $: loading = userNpub ? ($profileLoadingStates[userNpub] || false) : false;
@@ -301,7 +302,11 @@
                 <button
                   type="button"
                   class="btn-export-seed"
-                  on:click={() => (exportSeedModalOpen = true)}
+                  on:click={() => {
+                    if (requireBackupVerified()) {
+                      exportSeedModalOpen = true;
+                    }
+                  }}
                 >
                   Export seed phrase
                 </button>

@@ -97,6 +97,7 @@ import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
+import { backupVerified } from '../../stores/backup-verification';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -226,4 +227,5 @@ export function clearAccountState(npub?: string): void {
 
   /** Appearance theme is device-level (`pacto_theme`); keep it across logout / new account / import. */
   recentEmojisStore.set([]);
+  backupVerified.set(null);
 }

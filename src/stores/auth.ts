@@ -7,6 +7,7 @@ import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
+import { markBackupVerified } from './backup-verification';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 import { isMigrationGateError } from '../lib/utils/tauri-errors';
 
@@ -272,6 +273,7 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
       pubkey: keys.public
     });
     await maybeApplyLocalDevDefaults(npub);
+    await markBackupVerified(true);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
 
