@@ -26,6 +26,17 @@
     }
   }
 
+  function progressLabel(status: UpdateState['status']): string {
+    switch (status) {
+      case 'downloading':
+        return 'Downloading…';
+      case 'installing':
+        return 'Downloaded. Installing update…';
+      default:
+        return '';
+    }
+  }
+
   function handlePrimary(): void {
     if (state.status === 'error') {
       void checkForUpdates();
@@ -45,7 +56,7 @@
     </p>
   {:else if state.status === 'downloading' || state.status === 'installing'}
     <p class="update-version">
-      Update {state.availableVersion ?? ''} is being {state.status}.
+      Update {state.availableVersion ?? ''} is {state.status}.
       {#if state.currentVersion}
         You have {state.currentVersion}.
       {/if}
@@ -59,7 +70,26 @@
     >
       <div class="update-progress-bar" style="width: {progressPercent(state.downloadProgress)}"></div>
     </div>
-    <p class="update-progress-label">{primaryLabel(state.status)} {progressPercent(state.downloadProgress)}</p>
+    <p class="update-progress-label">
+      {#if state.status === 'downloading'}
+        {progressLabel(state.status)} {progressPercent(state.downloadProgress)}
+      {:else}
+        {progressLabel(state.status)}
+      {/if}
+    </p>
+  {:else if state.status === 'installed'}
+    <p class="update-version">
+      Update {state.availableVersion ?? ''} is installed.
+      {#if state.currentVersion}
+        You have {state.currentVersion}.
+      {/if}
+    </p>
+    <p class="update-relaunch-prompt">
+      Relaunch Pacto to start the new version.
+    </p>
+    <button type="button" class="btn-primary" on:click={() => void relaunchApp()}>
+      Relaunch now
+    </button>
   {:else if state.status === 'error'}
     <p class="update-version">
       {#if state.currentVersion}
@@ -69,17 +99,27 @@
     <p class="update-error" role="alert">{state.error ?? 'Update check failed.'}</p>
   {/if}
 
-  {#if state.relaunchPending}
-    <p class="update-relaunch-prompt">The update is installed. Relaunch to start the new version.</p>
-    <button type="button" class="btn-primary" on:click={() => void relaunchApp()}>
-      Relaunch now
-    </button>
-  {:else if state.status !== 'idle' && state.status !== 'checking' && state.status !== 'no-update' && state.status !== 'dev-disabled'}
+  {#if state.status === 'available'}
     <button
       type="button"
       class="btn-primary"
-      disabled={state.status === 'downloading' || state.status === 'installing'}
       on:click={handlePrimary}
+    >
+      {primaryLabel(state.status)}
+    </button>
+  {:else if state.status === 'error'}
+    <button
+      type="button"
+      class="btn-primary"
+      on:click={handlePrimary}
+    >
+      {primaryLabel(state.status)}
+    </button>
+  {:else if state.status === 'downloading' || state.status === 'installing'}
+    <button
+      type="button"
+      class="btn-primary"
+      disabled
     >
       {primaryLabel(state.status)}
     </button>

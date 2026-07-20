@@ -37,6 +37,7 @@ export type UpdateStatus =
   | 'available'
   | 'downloading'
   | 'installing'
+  | 'installed'
   | 'error'
   | 'dev-disabled';
 
@@ -46,7 +47,6 @@ export interface UpdateState {
   availableVersion: string | null;
   downloadProgress: number;
   error: string | null;
-  relaunchPending: boolean;
 }
 
 const initialState: UpdateState = {
@@ -55,7 +55,6 @@ const initialState: UpdateState = {
   availableVersion: null,
   downloadProgress: 0,
   error: null,
-  relaunchPending: false,
 };
 
 function createUpdateStatusStore() {
@@ -87,9 +86,10 @@ export function resetUpdateStatus(): void {
 }
 
 function friendlyErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return 'Update check failed.';
-  const msg = err.message.toLowerCase();
-  if (msg.includes('network') || msg.includes('fetch') || msg.includes('offline')) {
+  const rawMessage = err instanceof Error ? err.message : String(err ?? '');
+  const msg = rawMessage.toLowerCase();
+
+  if (msg.includes('network') || msg.includes('fetch') || msg.includes('offline') || msg.includes('connection')) {
     return 'Update check failed. Please check your internet connection and try again.';
   }
   if (msg.includes('signature') || msg.includes('verify') || msg.includes('invalid signature')) {
@@ -102,11 +102,16 @@ function friendlyErrorMessage(err: unknown): string {
     msg.includes('not found') ||
     msg.includes('404') ||
     msg.includes('latest.json') ||
-    msg.includes('no release')
+    msg.includes('no release') ||
+    msg.includes('unexpected http response')
   ) {
     return 'No published release was found. This is expected until the first release is shipped.';
   }
-  return err.message || 'Update check failed.';
+  if (msg.includes('timeout')) {
+    return 'Update check timed out. Please try again.';
+  }
+
+  return rawMessage || 'Update check failed.';
 }
 
 export async function checkForUpdates(): Promise<void> {
@@ -132,6 +137,7 @@ export async function checkForUpdates(): Promise<void> {
       downloadProgress: 0,
     });
   } catch (err) {
+    console.error('[updater] Update check failed:', err);
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message });
   }
@@ -177,8 +183,9 @@ export async function downloadAndInstallUpdate(): Promise<void> {
     }
 
     await update.downloadAndInstall((event) => handleDownloadEvent(event));
-    updateStatus.setStatus('available', { relaunchPending: true, downloadProgress: 1 });
+    updateStatus.setStatus('installed', { downloadProgress: 1 });
   } catch (err) {
+    console.error('[updater] Download or install failed:', err);
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message, availableVersion: null });
   }

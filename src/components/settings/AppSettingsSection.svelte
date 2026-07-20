@@ -23,7 +23,7 @@
     return `${version} (${buildCommitHash})`;
   }
 
-  function statusText(status: (typeof $updateStatus)['status'] | 'relaunchPending'): string {
+  function statusText(status: (typeof $updateStatus)['status']): string {
     switch (status) {
       case 'idle':
         return '';
@@ -35,10 +35,10 @@
       case 'downloading':
       case 'installing':
         return `Update ${$updateStatus.availableVersion ?? ''} available`;
+      case 'installed':
+        return 'Update installed — relaunch to apply.';
       case 'error':
         return $updateStatus.error ?? 'Update check failed.';
-      case 'relaunchPending':
-        return 'Update installed — relaunch to apply.';
       case 'dev-disabled':
         return 'Updates are only available in release builds.';
     }
@@ -140,7 +140,7 @@
         </p>
       {/if}
 
-      {#if $updateStatus.status === 'available' || $updateStatus.status === 'downloading' || $updateStatus.status === 'installing' || $updateStatus.status === 'error' || $updateStatus.relaunchPending}
+      {#if $updateStatus.status === 'available' || $updateStatus.status === 'downloading' || $updateStatus.status === 'installing' || $updateStatus.status === 'installed' || $updateStatus.status === 'error'}
         <div class="inline-update-panel">
           <UpdateAvailablePanel />
         </div>
