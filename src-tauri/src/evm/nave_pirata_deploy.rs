@@ -6,6 +6,7 @@ use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionReceipt;
 use alloy::sol_types::SolCall;
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
@@ -148,6 +149,86 @@ fn ensure_captain_on_roster<'a>(
     Ok(())
 }
 
+fn bound_squad_address_for_parent<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+) -> Result<Option<Address>, String> {
+    let Some(account_id) = db::get_squad_member_evm_account_id(app, parent_id, None)? else {
+        return Ok(None);
+    };
+    let conn = crate::account_manager::get_db_connection(app)?;
+    let addr: Option<String> = conn
+        .query_row(
+            "SELECT address FROM evm_accounts WHERE id = ?1",
+            rusqlite::params![account_id.as_str()],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(|e| format!("Failed to read evm_accounts: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(addr
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|s| parse_address(s).ok()))
+}
+
+/// Captain must appear on the shared roster (primary + optional alt parent id).
+/// If it only exists as this user's local squad binding, heal `squad_member_evm` and allow.
+fn ensure_captain_for_parent_deploy<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    alt_parent_id: Option<&str>,
+    captain: Address,
+) -> Result<(), String> {
+    let roster = db::list_squad_member_evm(
+        app.clone(),
+        parent_id.to_string(),
+        alt_parent_id.map(|s| s.to_string()),
+    )?;
+    if ensure_captain_on_roster(captain, roster.iter().map(|row| row.evm_address.as_str())).is_ok()
+    {
+        return Ok(());
+    }
+
+    let mut candidates = vec![parent_id];
+    if let Some(alt) = alt_parent_id.map(str::trim).filter(|s| !s.is_empty() && *s != parent_id) {
+        candidates.push(alt);
+    }
+    for pid in &candidates {
+        if bound_squad_address_for_parent(app, pid)?.as_ref() == Some(&captain) {
+            let hex = format!("{captain:#x}");
+            for heal_pid in &candidates {
+                db::upsert_squad_member_evm(app.clone(), (*heal_pid).to_string(), hex.clone())?;
+            }
+            return Ok(());
+        }
+    }
+
+    Err(wallet_err_json(
+        "INVALID_CAPTAIN",
+        "captain must be a squad-assigned roster EVM for a member of this parent",
+        None,
+    ))
+}
+
+/// Prefer the parent id that has a local squad binding when primary and alt differ.
+fn roster_signing_parent_id<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    alt_parent_id: Option<&str>,
+) -> Result<String, String> {
+    if db::get_squad_member_evm_account_id(app, parent_id, None)?.is_some() {
+        return Ok(parent_id.to_string());
+    }
+    if let Some(alt) = alt_parent_id.map(str::trim).filter(|s| !s.is_empty() && *s != parent_id) {
+        if db::get_squad_member_evm_account_id(app, alt, None)?.is_some() {
+            return Ok(alt.to_string());
+        }
+    }
+    Ok(parent_id.to_string())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NavePirataDeployResult {
@@ -174,6 +255,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     metadata_uri: String,
     salt_nonce: Option<String>,
     signer_wallet: Option<String>,
+    alt_parent_id: Option<String>,
 ) -> Result<NavePirataDeployResult, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -208,11 +290,11 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let captain_addr = parse_address(captain.trim())
         .map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
-    let roster = db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
-    ensure_captain_on_roster(
-        captain_addr,
-        roster.iter().map(|row| row.evm_address.as_str()),
-    )?;
+    let alt = alt_parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != pid);
+    ensure_captain_for_parent_deploy(&app, pid, alt, captain_addr)?;
 
     let meta = validate_metadata_uri(&metadata_uri)?;
 
@@ -249,13 +331,14 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         ));
     }
 
+    let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "squad")?;
     let (_signer, wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
     } else {
-        require_roster_treasury_signing_allowed(app.clone(), pid).await?;
-        load_squad_roster_embedded_signer(app.clone(), pid).await?
+        require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
+        load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?
     };
     let provider = connect_signing_provider(&urls, wallet).await?;
 

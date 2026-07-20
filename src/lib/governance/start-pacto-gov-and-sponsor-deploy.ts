@@ -75,8 +75,8 @@ export function isRosterHatRecipientAddress(
 }
 
 /**
- * Bootstrap when the deployer is captain (roster EVM) and pays from that roster key.
- * Default-as-payer is pay-only (no hats); crew mint stays on the captain roster path.
+ * Bootstrap when the deployer is captain (roster EVM) and that roster key pays.
+ * Default-as-funding in the wizard transfers ETH first, then deploys with `payFrom: squad`.
  */
 export function canBootstrapCrewDuringDeploy(params: {
   captainAddress: string;
@@ -136,6 +136,8 @@ async function runBootstrapCrewStep(params: {
 /** Sequential Nave Pirata → hats sponsor → optional bootstrapCrew. */
 export function startPactoGovAndSponsorDeploy(params: {
   parentId: string;
+  /** When set and distinct from parentId, roster rows may live under the announcements MLS id. */
+  announcementsGroupId?: string | null;
   squadNetwork: SupportedChainId | null;
   captain: string;
   initialDepositWei: string;
@@ -149,6 +151,10 @@ export function startPactoGovAndSponsorDeploy(params: {
 }): boolean {
   const parentId = params.parentId.trim();
   if (!parentId) return false;
+
+  const announcements = params.announcementsGroupId?.trim() || '';
+  const altParentId =
+    announcements && announcements !== parentId ? announcements : null;
 
   const network = params.squadNetwork;
   if (!network) {
@@ -211,7 +217,9 @@ export function startPactoGovAndSponsorDeploy(params: {
     startedToast: 'Pacto Gov + sponsor deploy started. Steps continue in the background.',
     subject: 'Pacto Gov + sponsor',
     job: async () => {
-      const rosterRaw = await resolveSquadRosterEvmAddress(parentId);
+      const rosterRaw = await resolveSquadRosterEvmAddress(
+        altParentId || parentId,
+      );
       const roster = normalizeAddress(rosterRaw ?? '');
       if (!roster || roster.toLowerCase() !== captain.toLowerCase()) {
         throw new Error(
@@ -226,6 +234,7 @@ export function startPactoGovAndSponsorDeploy(params: {
         captain,
         metadataUri: `pacto://squad/${parentId}`,
         signerWallet,
+        altParentId,
       });
 
       params.onProgress?.('sponsor');

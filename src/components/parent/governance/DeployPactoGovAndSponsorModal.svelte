@@ -26,9 +26,14 @@
     type CombinedGovSponsorDeployComplete,
   } from '../../../lib/governance/start-pacto-gov-and-sponsor-deploy';
   import { normalizeLeadingDotDecimalInput } from '../../../lib/wallet/amount-input';
+  import { walletBuildAndSendTransaction } from '../../../lib/wallet/backend-wallet';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { listSquadMemberEvmInvokeArgs } from '../../../lib/squad/squad-member-evm-share';
   import { parseEther } from 'viem';
 
   export let parentId: string;
+  /** Prefer #announcements MLS id for roster resolve when it differs from parentId. */
+  export let announcementsGroupId: string | null = null;
   export let squadNetwork: SupportedChainId | null = null;
   export let captainMemberOptions: PactoGovCaptainOption[] = [];
   /** When set, skips Nave Pirata and deploys hats sponsor for this top hat. */
@@ -44,9 +49,10 @@
   let captainAddress = '';
   let resolvingAddresses = true;
   let deployError = '';
+  let fundTransferEth = '';
   let initialDepositEth = '';
   let bootstrapCrew = false;
-  let progressStep: '' | 'gov' | 'sponsor' | 'bootstrap' = '';
+  let progressStep: '' | 'fund' | 'gov' | 'sponsor' | 'bootstrap' = '';
   let signerWallet: SquadSponsorDeploySignerWallet = 'squad';
   let defaultSignerAddress: string | null = null;
   let squadSignerAddress: string | null = null;
@@ -66,10 +72,12 @@
     resolvingAddresses = true;
     deployError = '';
     try {
+      const rosterArgs = listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId);
+      const rosterLookupId = rosterArgs.parentId || parentId.trim();
       const [defaultAddr, squadAddr] = await withTimeout(
         Promise.all([
           getActiveSquadEvmSignerAddress(),
-          resolveSquadRosterEvmAddress(parentId.trim()),
+          resolveSquadRosterEvmAddress(rosterLookupId),
         ]),
         SIGNER_LOOKUP_TIMEOUT_MS,
         'Signer lookup',
@@ -127,20 +135,47 @@
   $: squadCanonical = canonicalAddress(squadSignerAddress);
   $: signersAreSame =
     defaultCanonical != null && squadCanonical != null && defaultCanonical === squadCanonical;
-  $: payFromEffective = (signersAreSame ? 'squad' : signerWallet) as SquadSponsorDeploySignerWallet;
+  /** Default only funds the squad key; on-chain deploy always signs as squad/captain. */
+  $: needsFundTransfer = !signersAreSame && signerWallet === 'default';
+  $: payFromEffective = (signersAreSame || needsFundTransfer
+    ? 'squad'
+    : signerWallet) as SquadSponsorDeploySignerWallet;
 
   $: selectedBalance = signersAreSame
     ? squadBalance
-    : signerWallet === 'default'
+    : needsFundTransfer
       ? defaultBalance
-      : squadBalance;
+      : signerWallet === 'default'
+        ? defaultBalance
+        : squadBalance;
 
+  $: transferTrimmed = fundTransferEth.trim();
   $: depositTrimmed = initialDepositEth.trim();
-  $: depositExceedsBalance =
-    depositTrimmed.length > 0 &&
-    !selectedBalance.loading &&
-    !selectedBalance.error &&
-    amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
+
+  $: transferExceedsDefault =
+    needsFundTransfer &&
+    transferTrimmed.length > 0 &&
+    !defaultBalance.loading &&
+    !defaultBalance.error &&
+    amountExceedsBalance(transferTrimmed, defaultBalance.balanceRaw);
+
+  $: depositExceedsTransfer = (() => {
+    if (!needsFundTransfer || !depositTrimmed || !transferTrimmed) return false;
+    try {
+      const dep = parseEther(depositTrimmed.replace(/,/g, ''));
+      const fund = parseEther(transferTrimmed.replace(/,/g, ''));
+      return dep <= 0n || fund <= 0n || dep >= fund;
+    } catch {
+      return false;
+    }
+  })();
+
+  $: depositExceedsBalance = needsFundTransfer
+    ? depositExceedsTransfer
+    : depositTrimmed.length > 0 &&
+      !selectedBalance.loading &&
+      !selectedBalance.error &&
+      amountExceedsBalance(depositTrimmed, selectedBalance.balanceRaw);
 
   $: bootstrapAllowed = canBootstrapCrewDuringDeploy({
     captainAddress,
@@ -157,12 +192,17 @@
     return { address: addr, label: opt?.label?.trim() || '' };
   });
 
+  function onTransferInput(e: Event) {
+    const el = e.currentTarget as HTMLInputElement;
+    fundTransferEth = normalizeLeadingDotDecimalInput(el.value);
+  }
+
   function onDepositInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
     initialDepositEth = normalizeLeadingDotDecimalInput(el.value);
   }
 
-  function executeDeploy() {
+  async function executeDeploy() {
     if (deploying) return;
     deployError = '';
     progressStep = '';
@@ -178,11 +218,38 @@
       deployError = 'Bind a squad-assigned EVM before deploying — you become captain.';
       return;
     }
+
+    let transferWei: bigint | null = null;
+    if (needsFundTransfer) {
+      if (!defaultCanonical) {
+        deployError = 'Default signer is not configured.';
+        return;
+      }
+      try {
+        transferWei = parseEther(transferTrimmed.replace(/,/g, '') || '0');
+        if (transferWei <= 0n) {
+          deployError = 'Enter how much ETH to transfer to your squad signer.';
+          return;
+        }
+      } catch {
+        deployError = 'Invalid transfer amount.';
+        return;
+      }
+      if (transferExceedsDefault) {
+        deployError = 'Transfer must leave room for gas on the Default signer.';
+        return;
+      }
+    }
+
     let depositWei: string;
     try {
-      const wei = parseEther(initialDepositEth.trim().replace(/,/g, '') || '0');
+      const wei = parseEther(depositTrimmed.replace(/,/g, '') || '0');
       if (wei <= 0n) {
         deployError = 'Enter an initial sponsor deposit greater than zero.';
+        return;
+      }
+      if (transferWei != null && wei >= transferWei) {
+        deployError = 'Sponsor deposit must be less than the amount transferred to the squad signer.';
         return;
       }
       depositWei = wei.toString();
@@ -191,7 +258,9 @@
       return;
     }
     if (depositExceedsBalance) {
-      deployError = 'Deposit must leave room for gas on the selected payer.';
+      deployError = needsFundTransfer
+        ? 'Sponsor deposit must be less than the transfer amount (leave gas on the squad key).'
+        : 'Deposit must leave room for gas on the selected payer.';
       return;
     }
 
@@ -222,6 +291,30 @@
     };
 
     deploying = true;
+
+    if (needsFundTransfer && transferWei != null && squadCanonical && squadNetwork) {
+      progressStep = 'fund';
+      const send = await walletBuildAndSendTransaction(
+        '',
+        squadNetwork,
+        'ETH',
+        transferTrimmed,
+        null,
+        squadCanonical,
+        true,
+      );
+      if (closed) {
+        deploying = false;
+        return;
+      }
+      if (!send.ok) {
+        deploying = false;
+        progressStep = '';
+        deployError = getInvokeErrorMessage(send.message, 'Could not transfer ETH to the squad signer.');
+        return;
+      }
+    }
+
     const ok = sponsorOnly
       ? startHatsSponsorOnlyDeploy({
           parentId: parentId.trim(),
@@ -240,6 +333,7 @@
         })
       : startPactoGovAndSponsorDeploy({
           parentId: parentId.trim(),
+          announcementsGroupId,
           squadNetwork,
           captain: captainAddress,
           initialDepositWei: depositWei,
@@ -253,6 +347,7 @@
         });
     if (!ok) {
       deploying = false;
+      progressStep = '';
     }
   }
 
@@ -261,8 +356,10 @@
     !squadNetwork ||
     resolvingAddresses ||
     depositExceedsBalance ||
+    transferExceedsDefault ||
     !squadCanonical ||
     !captainAddress ||
+    (needsFundTransfer && (!transferTrimmed || !defaultCanonical)) ||
     (signersAreSame ? !squadCanonical : signerWallet === 'default' ? !defaultCanonical : !squadCanonical);
 </script>
 
@@ -273,12 +370,11 @@
   <p id={descId} class="deploy-desc">
     {#if sponsorOnly}
       Governance is live. Deploys a hats-linked sponsor for this squad’s top hat. Anyone may deposit;
-      sponsorship follows captain and crew hats. Gas and deposit come from the payer below — not from hat
-      identity.
+      sponsorship follows captain and crew hats. Choose squad signer to pay directly, or Default to fund
+      that key first — deploy always signs as captain.
     {:else}
       Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. You become captain on your
-      squad-assigned EVM. Pay gas and the sponsor deposit from Default or that key — Default pays only and
-      does not receive hats.
+      squad-assigned EVM. Default can fund that key; gas, deposit, and hats all run from the squad signer.
     {/if}
   </p>
 
@@ -325,7 +421,7 @@
           />
           <span class="signer-option-body">
             <span class="signer-option-title">Default signer</span>
-            <span class="signer-option-sub">Same as DM wallet — pays only; no hats</span>
+            <span class="signer-option-sub">Fund the squad signer, then deploy as captain</span>
             <code class="signer-addr">{shortAddress(defaultSignerAddress)}</code>
             <span class="signer-balance">
               {#if resolvingAddresses || defaultBalance.loading}
@@ -351,7 +447,7 @@
           />
           <span class="signer-option-body">
             <span class="signer-option-title">Squad-assigned signer</span>
-            <span class="signer-option-sub">Bound to this squad roster</span>
+            <span class="signer-option-sub">Bound to this squad roster — pays gas and deposit</span>
             <code class="signer-addr">{shortAddress(squadSignerAddress)}</code>
             <span class="signer-balance">
               {#if resolvingAddresses || squadBalance.loading}
@@ -367,6 +463,32 @@
           </span>
         </label>
       </div>
+
+      {#if needsFundTransfer}
+        <div class="fund-transfer" aria-live="polite">
+          <label class="label" for="gov-sponsor-fund-transfer">How much to transfer?</label>
+          <input
+            id="gov-sponsor-fund-transfer"
+            class="input"
+            class:input-invalid={transferExceedsDefault}
+            type="text"
+            inputmode="decimal"
+            placeholder="0.05"
+            value={fundTransferEth}
+            on:input={onTransferInput}
+            disabled={deploying}
+          />
+          <p class="hint muted">
+            Sends ETH from Default to your squad signer before deploy. Leave room for gas on Default.
+          </p>
+          {#if transferExceedsDefault}
+            <p class="input-error" role="alert">
+              Transfer must stay below {defaultBalance.balanceDecimal}
+              {defaultBalance.symbol} so Default can pay gas.
+            </p>
+          {/if}
+        </div>
+      {/if}
     </fieldset>
   {/if}
 
@@ -383,7 +505,7 @@
         {#if sponsorOnly}
           Hats sponsor and crew bootstrap require the captain hat on this address.
         {:else}
-          Captain hat is minted here. Fee payer may differ; Default never receives hats.
+          Captain hat is minted here. Deploy always signs from this key.
         {/if}
       </p>
     {:else}
@@ -402,11 +524,16 @@
       placeholder="0.01"
       value={initialDepositEth}
       on:input={onDepositInput}
+      disabled={deploying}
     />
     {#if depositExceedsBalance}
       <p class="input-error" role="alert">
-        Deposit must stay below {selectedBalance.balanceDecimal}
-        {selectedBalance.symbol} so this wallet can pay gas.
+        {#if needsFundTransfer}
+          Deposit must be less than the transfer amount so the squad signer can pay gas.
+        {:else}
+          Deposit must stay below {selectedBalance.balanceDecimal}
+          {selectedBalance.symbol} so this wallet can pay gas.
+        {/if}
       </p>
     {/if}
   </div>
@@ -418,12 +545,7 @@
     </label>
     {#if !bootstrapAllowed}
       <p class="hint muted">
-        {#if payFromEffective === 'default'}
-          Not available when Default pays — switch to your squad-assigned signer, or mint crew later from
-          Governance → Captain.
-        {:else}
-          Requires your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.
-        {/if}
+        Requires your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.
       </p>
     {:else}
       <p class="hint muted">
@@ -457,7 +579,9 @@
 
   {#if progressStep}
     <p class="muted" role="status">
-      {#if progressStep === 'gov'}
+      {#if progressStep === 'fund'}
+        Transferring ETH to squad signer…
+      {:else if progressStep === 'gov'}
         Deploying governance…
       {:else if progressStep === 'sponsor'}
         Deploying hats sponsor…
@@ -602,6 +726,19 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .fund-transfer {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated, var(--bg-panel));
+  }
+  .fund-transfer .label {
+    margin-bottom: 6px;
+  }
+  .fund-transfer .hint {
+    margin-top: 6px;
   }
   .signer-option {
     display: flex;

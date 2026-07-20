@@ -161,6 +161,7 @@
   {#if DeployGovAndSponsorComponent}
     <DeployGovAndSponsorComponent
       parentId={parentId.trim()}
+      announcementsGroupId={announcementsGroupId?.trim() || null}
       {squadNetwork}
       {captainMemberOptions}
       {existingTopHatId}

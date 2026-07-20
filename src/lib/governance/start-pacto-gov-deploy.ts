@@ -56,6 +56,7 @@ export function buildCaptainMemberOptions(
 /** Submit Pacto Gov deploy using squad network and the chosen captain address. Returns false when validation fails. */
 export function startPactoGovDeploy(params: {
   parentId: string;
+  announcementsGroupId?: string | null;
   squadNetwork: SupportedChainId | null;
   captain: string;
   onComplete: (out: PactoGovDeployComplete) => void | Promise<void>;
@@ -87,6 +88,10 @@ export function startPactoGovDeploy(params: {
     return false;
   }
 
+  const announcements = params.announcementsGroupId?.trim() || '';
+  const altParentId =
+    announcements && announcements !== parentId ? announcements : null;
+
   runOnChainInBackground({
     startedToast: 'Pacto Gov deploy submitted. Confirmation continues in the background.',
     subject: 'Pacto Gov deploy',
@@ -97,6 +102,7 @@ export function startPactoGovDeploy(params: {
         captain,
         // Hats metadata URI; captain modal has no field yet — stable placeholder until product adds one.
         metadataUri: `pacto://squad/${parentId}`,
+        altParentId,
       }),
     onSuccess: async (result) => {
       await params.onComplete({
