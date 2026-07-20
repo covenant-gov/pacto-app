@@ -59,6 +59,21 @@
   let qmPending: QuartermasterPendingDto | null = null;
   let showBootstrapModal = false;
 
+  function shortEvm(addr: string): string {
+    const a = addr.trim();
+    if (a.length < 12) return a;
+    return `${a.slice(0, 6)}…${a.slice(-4)}`;
+  }
+
+  $: if (memberEvmOptions.length > 0) {
+    const hit = memberEvmOptions.some(
+      (o) => o.address.trim().toLowerCase() === qmAddress.trim().toLowerCase(),
+    );
+    if (!qmAddress.trim() || !hit) {
+      qmAddress = memberEvmOptions[0].address;
+    }
+  }
+
   $: captainGate = gateRequiresCaptain(privilege);
   $: qmGate = gateBlockedByMutinyMode(privilege, !!qmStatus?.mutinyActive);
   $: execGate = gatePermissionlessSigner(privilege);
@@ -223,8 +238,16 @@
           <p class="muted">Crew change delay {qmStatus.crewChangeDelaySecs}s</p>
         {/if}
         <label class="field-label">
-          Target address
-          <input bind:value={qmAddress} placeholder="0x…" disabled={acting} />
+          Target member
+          {#if memberEvmOptions.length > 0}
+            <select bind:value={qmAddress} disabled={acting} aria-label="Target member">
+              {#each memberEvmOptions as opt (opt.address)}
+                <option value={opt.address}>{opt.label} — {shortEvm(opt.address)}</option>
+              {/each}
+            </select>
+          {:else}
+            <input bind:value={qmAddress} placeholder="0x… (share EVM on Status first)" disabled={acting} />
+          {/if}
         </label>
         <button
           type="button"
