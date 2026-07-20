@@ -1,0 +1,29 @@
+---
+description: Cursor agents only — never git commit or push unless the user explicitly asks; plan Build/execute is not permission
+alwaysApply: true
+---
+
+# No unrequested commits (Cursor agents)
+
+This rule applies to **Cursor** agents in this workspace (`.cursor/rules/`). It is not a repo-wide contributor policy for other tools or humans.
+
+Leave all work in the local working tree for human review unless the user **explicitly** asks to commit and/or push.
+
+## Never treat these as commit permission
+
+- Executing or “building” a plan (Plan → Build, “implement the plan”, “execute the plan”, “do the todos”)
+- Finishing implementation, tests passing, or “land this on main” phrased as an outcome in a plan
+- Opening or updating a PR description without an explicit commit/push request
+- Phrases like “done”, “ship it” about **code completeness** without the words commit / push / PR create
+
+## Required before any git commit
+
+The user must clearly ask to commit (e.g. “commit this”, “create a commit”, “commit and push”). Same for push and for creating a PR that needs a push.
+
+## After plan execution
+
+Stop with a short summary of what changed and which files to review. Do **not** `git add`, `git commit`, or `git push` as part of wrapping up.
+
+## Related
+
+Do not remove or narrow this rule unless the user asked to delete or replace it (see `no-unrequested-deletions`).

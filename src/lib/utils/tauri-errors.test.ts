@@ -12,6 +12,18 @@ describe('getInvokeErrorMessage', () => {
     expect(getInvokeErrorMessage('  oops  ')).toBe('oops');
   });
 
+  it('unwraps stringified wallet_err_json to message', () => {
+    expect(
+      getInvokeErrorMessage('{"code":"ACL_DENIED","message":"Requires Captain hat."}')
+    ).toBe('Requires Captain hat.');
+  });
+
+  it('unwraps wallet_err_json nested in Error.message', () => {
+    expect(
+      getInvokeErrorMessage(new Error('{"code":"ACL_DENIED","message":"Requires Captain hat."}'))
+    ).toBe('Requires Captain hat.');
+  });
+
   it('falls back when string error is empty/whitespace', () => {
     expect(getInvokeErrorMessage('   ', 'fallback')).toBe('fallback');
     expect(getInvokeErrorMessage('')).toBe('Something went wrong');

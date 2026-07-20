@@ -15,6 +15,11 @@ export function emptyBalance(): SignerBalance {
   return { balanceRaw: '0', balanceDecimal: '0', symbol: 'ETH', loading: false, error: '' };
 }
 
+/** Idle row used while a native balance RPC is in flight. */
+export function loadingBalance(): SignerBalance {
+  return { balanceRaw: '0', balanceDecimal: '0', symbol: 'ETH', loading: true, error: '' };
+}
+
 /** Checksums a valid EVM address; anything else becomes null. */
 export function canonicalAddress(addr: string | null | undefined): string | null {
   if (!addr?.trim() || !isAddress(addr.trim() as `0x${string}`)) return null;
@@ -58,7 +63,10 @@ export async function fetchEvmBalance(
   address: string | null,
   opts?: { timeoutMs?: number },
 ): Promise<SignerBalance> {
-  if (!network || !address) return emptyBalance();
+  if (!address) return emptyBalance();
+  if (!network) {
+    return { ...emptyBalance(), error: 'Squad network not set' };
+  }
   try {
     const pending = getEvmNativeBalance(network, address);
     const result = opts?.timeoutMs

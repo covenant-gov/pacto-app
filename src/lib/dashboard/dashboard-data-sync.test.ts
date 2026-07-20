@@ -5,7 +5,9 @@ import {
   squadMemberEvmByParentId,
   treasurySafesByParentId,
   squadInfraByParentId,
+  squads,
   type TreasurySafeEntry,
+  type Squad,
 } from '../../stores/squads';
 import {
   treasurySafesFetchMetaByParentId,
@@ -19,6 +21,7 @@ import {
   syncTreasurySafesForParent,
   syncSquadInfraForParent,
   syncSquadMemberEvmForParent,
+  syncSquadMemberEvmForAnnouncementsGroup,
   resetDashboardDataSyncInflight,
 } from './dashboard-data-sync';
 import { TREASURY_SAFES_CACHE_PREFIX } from './treasury-safes-cache';
@@ -29,6 +32,12 @@ import type { SquadInfraDto } from '../governance/api';
 vi.mock('../api/nostr');
 vi.mock('../governance/api');
 vi.mock('./parent-dashboard-loaders');
+vi.mock('../parent-navbar', () => ({
+  resolveAutomatedAnnounceGroupId: (parent: { id: string; channels?: { name: string; groupId: string }[] }) =>
+    parent.channels?.find((c) => c.name === 'announcements')?.groupId ??
+    parent.channels?.[0]?.groupId ??
+    null,
+}));
 
 const mockedListParentTreasurySafes = vi.mocked(listParentTreasurySafes);
 const mockedListSquadInfra = vi.mocked(listSquadInfra);
@@ -68,6 +77,7 @@ afterEach(() => {
   treasurySafesByParentId.set({});
   squadInfraByParentId.set({});
   squadMemberEvmByParentId.set({});
+  squads.set([]);
   clearDashboardFetchMetaStores();
   vi.unstubAllGlobals();
 });
@@ -293,12 +303,46 @@ describe('syncSquadMemberEvmForParent', () => {
 
     await syncSquadMemberEvmForParent(parentId, 'group-1');
 
-    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(parentId, 'group-1');
+    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(parentId, 'group-1', npub);
     expect(get(squadMemberEvmByParentId)[parentId]).toEqual(evmMap);
     const raw = storage.get(`${SQUAD_MEMBER_EVM_CACHE_PREFIX}_${npub}`);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
     expect(parsed.byParentId[parentId]).toEqual([evmMap]);
+  });
+});
+
+describe('syncSquadMemberEvmForAnnouncementsGroup', () => {
+  it('refreshes matching squad parents keyed by catalog id', async () => {
+    mockedFetchSquadMemberEvmByNpub.mockResolvedValue(evmMap);
+    squads.set([
+      {
+        id: 'squad-catalog-id',
+        channels: [{ name: 'announcements', groupId: 'mls-announcements' }],
+      } as Squad,
+    ]);
+
+    await syncSquadMemberEvmForAnnouncementsGroup('mls-announcements');
+
+    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(
+      'squad-catalog-id',
+      'mls-announcements',
+      npub,
+    );
+    expect(get(squadMemberEvmByParentId)['squad-catalog-id']).toEqual(evmMap);
+  });
+
+  it('falls back to the group id when no squad matches', async () => {
+    mockedFetchSquadMemberEvmByNpub.mockResolvedValueOnce(evmMap);
+    squads.set([]);
+
+    await syncSquadMemberEvmForAnnouncementsGroup('orphan-group');
+
+    expect(mockedFetchSquadMemberEvmByNpub).toHaveBeenCalledWith(
+      'orphan-group',
+      'orphan-group',
+      npub,
+    );
   });
 });
 

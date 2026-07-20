@@ -49,6 +49,15 @@ export const myDashboardChannelMode = writable<MyDashboardChannelMode>('status')
 /** Bumped when the Rust SQLite poll replica changes for a parent (local or remote MLS ingest). */
 export const dashboardPollReplicaNonceByParentId = writable<Record<string, number>>({});
 
+/** Bumped when peer MLS allowlist announces apply — panels refetch. */
+export const squadAllowlistNonceByParentId = writable<Record<string, number>>({});
+
+/** Bumped when peer MLS tracked-token announces apply — panels refetch. */
+export const squadTrackedTokensNonceByParentId = writable<Record<string, number>>({});
+
+/** Bumped when squad bot meta / key_rotated MLS announces apply. */
+export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});
+
 squadDashboardChannelMode.subscribe((mode) => {
   if (typeof localStorage === 'undefined') return;
   const key = persistenceKey(SQUAD_DASHBOARD_MODE_PREFIX);

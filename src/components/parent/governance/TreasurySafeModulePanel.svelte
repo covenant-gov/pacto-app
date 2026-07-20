@@ -23,6 +23,7 @@
   import { getEvmNativeBalance } from '../../../lib/wallet/backend-wallet';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { squadTrackedTokensNonceByParentId } from '../../../stores/navigation';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
@@ -147,11 +148,13 @@
     }
   }
 
+  $: trackedTokensNonce = $squadTrackedTokensNonceByParentId[parentId.trim()] ?? 0;
+
   $: {
-    const key = `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`;
+    const key = `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}|${trackedTokensNonce}`;
     if (key !== lastLoadKey && parentId.trim() && safeAddress.trim()) {
       lastLoadKey = key;
-      void refreshAll(false);
+      void refreshAll(trackedTokensNonce > 0);
     }
   }
 
@@ -178,10 +181,15 @@
         decimals: probe.balance.decimals,
       });
       if (announcementsGroupId.trim()) {
-        await publishSquadTrackedTokenAnnounce(
-          announcementsGroupId,
-          buildTrackedTokenAnnouncePayload({ parentId: parentId.trim(), action: 'upsert', row }),
-        );
+        try {
+          await publishSquadTrackedTokenAnnounce(
+            announcementsGroupId,
+            buildTrackedTokenAnnouncePayload({ parentId: parentId.trim(), action: 'upsert', row }),
+          );
+        } catch (announceErr) {
+          await removeSquadTrackedToken(parentId.trim(), row.id);
+          throw announceErr;
+        }
       }
       addAddress = '';
       showToast(`${row.symbol} added as squad tracked coin.`);
@@ -199,10 +207,21 @@
     try {
       await removeSquadTrackedToken(parentId.trim(), row.id);
       if (announcementsGroupId.trim()) {
-        await publishSquadTrackedTokenAnnounce(
-          announcementsGroupId,
-          buildTrackedTokenAnnouncePayload({ parentId: parentId.trim(), action: 'remove', row }),
-        );
+        try {
+          await publishSquadTrackedTokenAnnounce(
+            announcementsGroupId,
+            buildTrackedTokenAnnouncePayload({ parentId: parentId.trim(), action: 'remove', row }),
+          );
+        } catch (announceErr) {
+          await upsertSquadTrackedToken({
+            parentId: parentId.trim(),
+            chain: row.chain,
+            tokenAddress: row.tokenAddress,
+            symbol: row.symbol,
+            decimals: row.decimals,
+          });
+          throw announceErr;
+        }
       }
       showToast(`${row.symbol} removed from squad tracked coins.`);
       await refreshAll(true);

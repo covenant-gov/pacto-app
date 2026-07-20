@@ -14,6 +14,7 @@
     type SquadSponsorExtStatusDto,
   } from '../../../lib/governance/api';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
 
   export let squad: Squad;
@@ -60,6 +61,13 @@
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
     return addr.slice(0, 6) + '…' + addr.slice(-4);
+  }
+
+  async function copyEvmAddress(address: string) {
+    const t = address.trim();
+    if (!t) return;
+    const ok = await copyTextToClipboard(t);
+    showToast(ok ? 'Address copied' : 'Could not copy address');
   }
 
   function ownerLabel(): string {
@@ -160,9 +168,36 @@
             </div>
             <div class="roles-member-cols">
               <span class="roles-col-label">EVM</span>
-              <span class="roles-col-value" class:muted={!rosterEvm}
-                >{rosterEvm ? shortAddress(rosterEvm) : 'Not shared'}</span
-              >
+              {#if rosterEvm}
+                <span class="roles-col-value roles-col-evm">
+                  <code class="roles-evm-addr" title={rosterEvm}>{shortAddress(rosterEvm)}</code>
+                  <button
+                    type="button"
+                    class="roles-evm-copy-btn"
+                    aria-label="Copy EVM address"
+                    title="Copy address"
+                    on:click={() => void copyEvmAddress(rosterEvm)}
+                  >
+                    <svg
+                      class="roles-evm-copy-icon"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.75"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </span>
+              {:else}
+                <span class="roles-col-value muted">Not shared</span>
+              {/if}
               <span class="roles-col-label">Hats</span>
               <span
                 class="roles-col-value"
@@ -344,6 +379,36 @@
     font-family: ui-monospace, monospace;
     font-size: 0.75rem;
     color: var(--text-secondary);
+  }
+  .roles-col-evm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .roles-evm-addr {
+    font: inherit;
+    color: inherit;
+  }
+  .roles-evm-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 2px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .roles-evm-copy-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary, var(--bg-elevated));
+  }
+  .roles-evm-copy-icon {
+    display: block;
   }
   .roles-col-sponsored {
     display: flex;

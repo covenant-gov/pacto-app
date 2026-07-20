@@ -82,6 +82,9 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
             if ty == Some("squad_member_evm_share") {
                 return Some("announcements".to_string());
             }
+            if ty == Some("squad_network_updated") || ty == Some("squad_state_sync_request") {
+                return Some("announcements".to_string());
+            }
         }
     }
 
@@ -148,6 +151,17 @@ mod tests {
     #[test]
     fn squad_member_evm_share_derives_announcements_bucket() {
         let content = r#"{"type":"squad_member_evm_share","payload":{"parent_id":"p","evm_address":"0x1"}}"#;
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            content,
+            &[],
+        );
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn squad_network_updated_derives_announcements_bucket() {
+        let content = r#"{"type":"squad_network_updated","payload":{"parent_id":"p","chain":"sepolia"}}"#;
         let bucket = normalize_virtual_bucket_for_message(
             event_kind::PRIVATE_DIRECT_MESSAGE,
             content,

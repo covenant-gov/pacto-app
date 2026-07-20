@@ -33,10 +33,10 @@
   async function loadSquadMemberEvm() {
     if (!parentId) return;
     const loadParentId = parentId;
-    const rows = await fetchSquadMemberEvmByNpub(loadParentId, announcementsGroupId);
+    const npub = $currentUser?.npub;
+    const rows = await fetchSquadMemberEvmByNpub(loadParentId, announcementsGroupId, npub);
     if (parentId !== loadParentId) return;
     squadMemberEvmByParentId.update((m) => ({ ...m, [loadParentId]: rows }));
-    const npub = $currentUser?.npub;
     if (npub) persistSquadMemberEvmForParent(npub, loadParentId, rows);
   }
 

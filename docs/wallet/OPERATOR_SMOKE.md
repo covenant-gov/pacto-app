@@ -26,10 +26,10 @@ curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
 
 ## 1. Pacto Gov + squad sponsor (default)
 
-- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; pick captain (any member’s squad-assigned EVM), deposit, optional bootstrap crew.
-- [ ] **Privacy + funded Default:** bind a **new squad key** (empty), keep Default (DM) funded → wizard **Pay gas and deposit from → Default signer** → captain = yourself → confirm Default has **no** captain hat. Bootstrap is **enabled** (mint signed by roster; sponsored UserOp when roster has 0 ETH and bundler/7702 are configured).
-- [ ] **0 ETH roster + funded pool (sponsored bootstrap):** after deploy with empty roster key + funded sponsor deposit, **Bootstrap crew** (wizard or Governance → Captain) succeeds; pool balance decreases; bundler accepts the UserOp.
-- [ ] **Squad-key deployer + self as captain:** pay from squad-assigned signer, captain = yourself → Bootstrap enabled; Roles tree **Crew** shows wearers after deploy (self-funded EOA path when roster has ETH).
+- [ ] **#dashboard** → **Deploy** → **Deploy Pacto Gov + squad sponsor**; captain is locked to your squad-assigned EVM; deposit; optional bootstrap when the squad key pays (including after a Default→squad fund transfer).
+- [ ] **Privacy + funded Default:** bind a **new squad key** (empty), keep Default (DM) funded → wizard **Pay gas and deposit from → Default signer** → enter **How much to transfer?** (must exceed sponsor deposit) → ETH moves Default→squad, then deploy/gas/deposit/hats run as captain on the roster key. Bootstrap is allowed after that transfer path.
+- [ ] **0 ETH roster + funded pool (sponsored bootstrap):** after deploy with empty roster key + funded sponsor deposit (pay from squad, or fund via Default transfer first), **Bootstrap crew** (wizard or Governance → Captain) succeeds; pool balance decreases; bundler accepts the UserOp.
+- [ ] **Squad-key deployer:** pay from squad-assigned signer → Bootstrap enabled; Roles tree **Crew** shows wearers after deploy (self-funded EOA path when roster has ETH).
 - [ ] **Governance** / **Roles** / **Treasury** (sponsor + gov Safe) look healthy after both txs.
 - [ ] Optional: Status checklist **Mint all members a Crew hat** completes after bootstrap (or Captain bootstrap later).
 
@@ -38,7 +38,7 @@ curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
 | `SPONSOR_CONFIG` / `NAVE_PIRATA_CONFIG` | Missing factory / registry / paymaster in address book |
 | `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
-| Roster key has 0 ETH | Pay deploy from **Default signer**; gov writes use sponsored UserOp when eligible |
+| Roster key has 0 ETH | Fund via **Default signer** transfer in the deploy wizard, or pay deploy from squad after topping up; gov writes use sponsored UserOp when eligible |
 | `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `BUNDLER_RPC_URL` + `erc4337.accountImplementation` in the address book, or fund the roster key |
 | `SPONSOR_INELIGIBLE` / `SPONSOR_POOL_LOW` | Missing hat/Ext permit, or deposit more ETH into the sponsor pool |
 | Bootstrap checkbox disabled | Need yourself as captain (roster EVM); otherwise mint from Governance → Captain |

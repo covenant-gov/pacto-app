@@ -271,7 +271,7 @@ impl ChatState {
     }
 
     /// Get a chat by ID
-    fn get_chat(&self, id: &str) -> Option<&Chat> {
+    pub(crate) fn get_chat(&self, id: &str) -> Option<&Chat> {
         self.chats.iter().find(|c| c.id == id)
     }
     
@@ -2660,7 +2660,7 @@ async fn notifs() -> Result<bool, String> {
                                 "message": record,
                                 "group_name": group_name
                             }));
-                            db::apply_inbox_virtual_bucket_side_effects(
+                            db::apply_mls_virtual_bucket_side_effects(
                                 &handle,
                                 &group_id_for_emit,
                                 record.virtual_bucket.as_deref(),

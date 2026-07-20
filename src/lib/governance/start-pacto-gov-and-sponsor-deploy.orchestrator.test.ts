@@ -93,10 +93,15 @@ describe('startPactoGovAndSponsorDeploy validation', () => {
 describe('startPactoGovAndSponsorDeploy job', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    runOnChainInBackground.mockImplementation(({ job, onSuccess }) => {
+    resolveSquadRosterEvmAddress.mockResolvedValue(rosterA);
+    runOnChainInBackground.mockImplementation(({ job, onSuccess, onError }) => {
       void (async () => {
-        const result = await job();
-        await onSuccess?.(result);
+        try {
+          const result = await job();
+          await onSuccess?.(result);
+        } catch (e) {
+          onError?.(e instanceof Error ? e.message : String(e));
+        }
       })();
     });
   });

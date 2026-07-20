@@ -194,6 +194,20 @@
     pending={isWalletTxAnnouncementOnChainPending(presentation.payload, msg)}
     failed={!!msg.failed}
   />
+{:else if presentation.kind === 'bot-join-response'}
+  <div class="dm-thread-announcement" role="status">
+    {#if presentation.payload.status === 'accepted'}
+      Join request for {presentation.payload.squadName} was accepted
+    {:else}
+      Join request for {presentation.payload.squadName} was rejected
+    {/if}
+  </div>
+{:else if presentation.kind === 'bot-join-dm'}
+  <div class="dm-thread-announcement" role="status">
+    Join request for {presentation.payload.squadName}
+  </div>
+{:else if presentation.kind === 'structured-notice'}
+  <div class="dm-thread-announcement" role="status">{presentation.text}</div>
 {:else}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}

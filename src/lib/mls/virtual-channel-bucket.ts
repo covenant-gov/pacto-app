@@ -125,6 +125,13 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
     return 'inbox';
   }
 
+  if (rec['type'] === 'squad_state_sync_request') {
+    return 'announcements';
+  }
+  if (rec['type'] === 'squad_network_updated') {
+    return 'announcements';
+  }
+
   const ann = parseAnnouncement(trimmed);
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';
   if (ann?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) return 'announcements';

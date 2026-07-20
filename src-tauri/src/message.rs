@@ -400,7 +400,7 @@ pub async fn message(
                 "group_id": &receiver,
                 "message": &msg
             })).unwrap();
-            db::apply_inbox_virtual_bucket_side_effects(
+            db::apply_mls_virtual_bucket_side_effects(
                 &handle,
                 &receiver,
                 msg.virtual_bucket.as_deref(),

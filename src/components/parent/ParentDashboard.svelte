@@ -36,6 +36,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     saveSquadNetworkOverride,
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
+  import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -184,7 +185,9 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   function setSquadNetwork(chain: SupportedChainId): void {
     const npub = $currentUser?.npub;
     if (!npub || !parentId?.trim()) return;
-    saveSquadNetworkOverride(npub, parentId.trim(), chain);
+    const gid = parentId.trim();
+    saveSquadNetworkOverride(npub, gid, chain);
+    void publishSquadNetworkUpdated(gid);
   }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {
@@ -529,10 +532,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   async function loadSquadMemberEvm() {
     if (!parentId) return;
     const loadParentId = parentId;
-    const rows = await fetchSquadMemberEvmByNpub(loadParentId, announcementsGroupId);
+    const npub = $currentUser?.npub;
+    const rows = await fetchSquadMemberEvmByNpub(loadParentId, announcementsGroupId, npub);
     if (parentId !== loadParentId) return;
     squadMemberEvmByParentId.update((m) => ({ ...m, [loadParentId]: rows }));
-    const npub = $currentUser?.npub;
     if (npub) persistSquadMemberEvmForParent(npub, loadParentId, rows);
   }
 

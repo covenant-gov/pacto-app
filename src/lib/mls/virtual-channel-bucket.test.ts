@@ -342,4 +342,12 @@ describe('announceCardAllowedForTimelineBucket', () => {
       resolveVirtualBucketForTimelineMessage({ content: raw, virtual_bucket: 'inbox' })
     ).toBe('announcements');
   });
+
+  it('routes squad_network_updated to announcements', () => {
+    const raw = JSON.stringify({
+      type: 'squad_network_updated',
+      payload: { parent_id: 'p', chain: 'sepolia' },
+    });
+    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
+  });
 });

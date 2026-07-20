@@ -27,6 +27,7 @@ import {
   type Squad,
 } from '../../stores/app';
 import { pendingReadyToast, showToast } from '../../stores/toast';
+import { maybeAutoRequestSquadStateSyncAfterJoin } from '../squad/squad-state-sync';
 import { requireBackupVerified } from '../../stores/backup-verification';
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
@@ -190,6 +191,7 @@ export async function acceptAnnouncementsInvite(
     dmError('syncMlsGroupsNow after accept invite', e);
   }
   bumpMembershipVersion(payload.groupId);
+  void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
   pendingReadyToast.set({
     text: `${payload.name} is ready!`,
     goTo: {

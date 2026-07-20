@@ -1,13 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAddress } from 'viem';
+
+vi.mock('./backend-wallet', () => ({
+  getEvmNativeBalance: vi.fn(),
+}));
+
+import { getEvmNativeBalance } from './backend-wallet';
 import {
   amountExceedsBalance,
   canonicalAddress,
   emptyBalance,
+  fetchEvmBalance,
+  loadingBalance,
   reconcileSignerWallet,
   shortAddress,
   shouldPreferFundedDefault,
 } from './signer-balance';
+
+const mockedGetEvmNativeBalance = vi.mocked(getEvmNativeBalance);
 
 const addrA = getAddress('0x51012bcd8494f36b000000000000000000000001');
 const addrB = getAddress('0x897aae53a87e2d69000000000000000000000002');
@@ -48,6 +58,55 @@ describe('emptyBalance', () => {
     expect(emptyBalance()).toEqual({
       balanceRaw: '0',
       balanceDecimal: '0',
+      symbol: 'ETH',
+      loading: false,
+      error: '',
+    });
+  });
+});
+
+describe('loadingBalance', () => {
+  it('returns a zeroed in-flight balance', () => {
+    expect(loadingBalance()).toEqual({
+      balanceRaw: '0',
+      balanceDecimal: '0',
+      symbol: 'ETH',
+      loading: true,
+      error: '',
+    });
+  });
+});
+
+describe('fetchEvmBalance', () => {
+  beforeEach(() => {
+    mockedGetEvmNativeBalance.mockReset();
+  });
+
+  it('returns empty when address is missing', async () => {
+    await expect(fetchEvmBalance('sepolia', null)).resolves.toEqual(emptyBalance());
+    expect(mockedGetEvmNativeBalance).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a network error instead of a silent zero', async () => {
+    await expect(fetchEvmBalance(null, addrA)).resolves.toEqual({
+      ...emptyBalance(),
+      error: 'Squad network not set',
+    });
+    expect(mockedGetEvmNativeBalance).not.toHaveBeenCalled();
+  });
+
+  it('maps a successful RPC read', async () => {
+    mockedGetEvmNativeBalance.mockResolvedValueOnce({
+      ok: true,
+      balance: {
+        balanceRaw: '1000000000000000000',
+        balanceDecimal: '1',
+        symbol: 'ETH',
+      },
+    });
+    await expect(fetchEvmBalance('sepolia', addrA)).resolves.toEqual({
+      balanceRaw: '1000000000000000000',
+      balanceDecimal: '1',
       symbol: 'ETH',
       loading: false,
       error: '',

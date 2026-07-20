@@ -132,17 +132,6 @@
   </ul>
 </section>
 
-<SquadBroadcastSettingsSection {squad} />
-
-<SquadBotHoldersSection
-  {announcementsGroupId}
-  {channelMembers}
-  squadAdminActive={!!squadAdminCtx}
-  executorRolesLabel={myRosterEvm
-    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
-    : ''}
-/>
-
 <div class="status-fact-row" id="squad-status-network">
   <span class="meta-label">Network</span>
   {#if editingNetwork}
@@ -173,6 +162,17 @@
     />
   {/if}
 </div>
+
+<SquadBroadcastSettingsSection {squad} />
+
+<SquadBotHoldersSection
+  {announcementsGroupId}
+  {channelMembers}
+  squadAdminActive={!!squadAdminCtx}
+  executorRolesLabel={myRosterEvm
+    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
+    : ''}
+/>
 
 {#if parentId}
   <SmartContractSecuritySection

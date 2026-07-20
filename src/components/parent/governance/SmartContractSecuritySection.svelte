@@ -3,6 +3,7 @@
   import { isAddress } from 'viem';
   import chevronDownIcon from '../../../icons/chevron-down.svg';
   import { showToast } from '../../../stores/toast';
+  import { squadAllowlistNonceByParentId } from '../../../stores/navigation';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName, getExplorerTxUrl } from '../../../lib/wallet/assets';
   import {
@@ -93,7 +94,8 @@
     });
   });
 
-  $: parentId, void refreshRows();
+  $: allowlistNonce = $squadAllowlistNonceByParentId[parentId.trim()] ?? 0;
+  $: parentId, allowlistNonce, void refreshRows();
 
   function shortAddr(a: string): string {
     const t = a.trim();
@@ -118,10 +120,15 @@
         abiRef: addAbiRef.trim() || null,
       });
       if (announcementsGroupId.trim()) {
-        await publishSquadAllowlistAnnounce(
-          announcementsGroupId,
-          buildAllowlistAnnouncePayload({ parentId, action: 'upsert', row }),
-        );
+        try {
+          await publishSquadAllowlistAnnounce(
+            announcementsGroupId,
+            buildAllowlistAnnouncePayload({ parentId, action: 'upsert', row }),
+          );
+        } catch (announceErr) {
+          await removeSquadContractAllowlist(parentId, row.id);
+          throw announceErr;
+        }
       }
       addAddress = '';
       addLabel = '';
@@ -140,10 +147,22 @@
     try {
       await removeSquadContractAllowlist(parentId, row.id);
       if (announcementsGroupId.trim()) {
-        await publishSquadAllowlistAnnounce(
-          announcementsGroupId,
-          buildAllowlistAnnouncePayload({ parentId, action: 'remove', row }),
-        );
+        try {
+          await publishSquadAllowlistAnnounce(
+            announcementsGroupId,
+            buildAllowlistAnnouncePayload({ parentId, action: 'remove', row }),
+          );
+        } catch (announceErr) {
+          await upsertSquadContractAllowlist({
+            parentId,
+            chain: row.chain,
+            contractAddress: row.contractAddress,
+            label: row.label,
+            abiRef: row.abiRef,
+            notes: row.notes,
+          });
+          throw announceErr;
+        }
       }
       await refreshRows();
       showToast('Contract removed from allowlist.');

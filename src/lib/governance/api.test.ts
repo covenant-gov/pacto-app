@@ -375,6 +375,7 @@ describe('api command wrappers', () => {
       metadataUri: 'https://example.com',
       saltNonce: null,
       signerWallet: 'squad',
+      altParentId: null,
     });
   });
 
@@ -394,6 +395,7 @@ describe('api command wrappers', () => {
       metadataUri: 'uri',
       saltNonce: null,
       signerWallet: 'default',
+      altParentId: null,
     });
   });
 

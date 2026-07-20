@@ -20,7 +20,10 @@ import {
 } from '../governance/pacto-gov-payload';
 import { isTreasuryProposalActive } from '../governance/treasury-proposal-ui';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
-import { listSquadMemberEvmInvokeArgs } from '../squad/squad-member-evm-share';
+import {
+  healSquadMemberEvmShareIfDiverged,
+  listSquadMemberEvmInvokeArgs,
+} from '../squad/squad-member-evm-share';
 import { withReadPlaneLimit } from '../evm/read-plane-limiter';
 
 import { parseSupportedChainId, type SupportedChainId } from '../wallet/chains';
@@ -32,17 +35,39 @@ export function isSupersededLoaderKey(activeKey: string, capturedKey: string): b
 
 type SquadMemberEvmRow = { memberNpub: string; evmAddress: string; updatedAtMs: number };
 
+async function listSquadMemberEvmMap(
+  parentId: string,
+  announcementsGroupId: string | null,
+): Promise<Record<string, string>> {
+  const q = listSquadMemberEvmInvokeArgs(parentId, announcementsGroupId);
+  if (!q.parentId) return {};
+  const rows = await invoke<SquadMemberEvmRow[]>('list_squad_member_evm', q);
+  const m: Record<string, string> = {};
+  for (const r of rows) m[r.memberNpub] = r.evmAddress;
+  return m;
+}
+
 export async function fetchSquadMemberEvmByNpub(
   parentId: string | undefined,
   announcementsGroupId: string | null,
+  myNpub?: string | null,
 ): Promise<Record<string, string>> {
   if (!parentId && !announcementsGroupId) return {};
   try {
     const q = listSquadMemberEvmInvokeArgs(parentId ?? '', announcementsGroupId);
     if (!q.parentId) return {};
-    const rows = await invoke<SquadMemberEvmRow[]>('list_squad_member_evm', q);
-    const m: Record<string, string> = {};
-    for (const r of rows) m[r.memberNpub] = r.evmAddress;
+    let m = await listSquadMemberEvmMap(parentId ?? '', announcementsGroupId);
+    if (myNpub?.trim()) {
+      const healed = await healSquadMemberEvmShareIfDiverged(
+        q.parentId,
+        m,
+        myNpub,
+        q.altParentId,
+      );
+      if (healed) {
+        m = await listSquadMemberEvmMap(parentId ?? '', announcementsGroupId);
+      }
+    }
     return m;
   } catch {
     return {};

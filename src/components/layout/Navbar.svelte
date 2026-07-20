@@ -58,6 +58,7 @@
     listSquadDeployNetworkOptions,
     saveSquadNetworkOverride,
   } from '../../lib/squad/squad-network';
+  import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
 
@@ -213,6 +214,7 @@
         const creatorNpub = get(currentUser)?.npub;
         if (creatorNpub && options.network) {
           saveSquadNetworkOverride(creatorNpub, groupId, options.network);
+          void publishSquadNetworkUpdated(groupId);
         }
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {

@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { currentUser } from '../../stores/auth';
-import { squadMemberEvmByParentId, treasurySafesByParentId, squadInfraByParentId } from '../../stores/squads';
+import { squads, squadMemberEvmByParentId, treasurySafesByParentId, squadInfraByParentId } from '../../stores/squads';
 import { listParentTreasurySafes } from '../api/nostr';
 import { listSquadInfra } from '../governance/api';
 import { fetchSquadMemberEvmByNpub } from './parent-dashboard-loaders';
@@ -8,6 +8,7 @@ import { persistTreasurySafesForParent, treasurySafesFetchedAtMs } from './treas
 import { persistSquadInfraForParent, squadInfraFetchedAtMs } from './squad-infra-cache';
 import { persistSquadMemberEvmForParent } from './squad-member-evm-cache';
 import { setSquadInfraFetchMeta, setTreasurySafesFetchMeta } from './dashboard-fetch-meta';
+import { resolveAutomatedAnnounceGroupId } from '../parent-navbar';
 
 const treasuryInflight = new Map<string, Promise<void>>();
 const infraInflight = new Map<string, Promise<void>>();
@@ -97,9 +98,9 @@ export async function syncSquadMemberEvmForParent(
 
   const p = (async () => {
     try {
-      const rows = await fetchSquadMemberEvmByNpub(parentId, announcementsGroupId);
-      squadMemberEvmByParentId.update((m) => ({ ...m, [parentId]: rows }));
       const curNpub = activeNpub();
+      const rows = await fetchSquadMemberEvmByNpub(parentId, announcementsGroupId, curNpub);
+      squadMemberEvmByParentId.update((m) => ({ ...m, [parentId]: rows }));
       if (curNpub) persistSquadMemberEvmForParent(curNpub, parentId, rows);
     } finally {
       memberEvmInflight.delete(parentId);
@@ -108,6 +109,21 @@ export async function syncSquadMemberEvmForParent(
 
   memberEvmInflight.set(parentId, p);
   return p;
+}
+
+/**
+ * Refresh roster EVM maps for every local squad/network whose #announcements MLS group is `groupId`.
+ * Wire `squad_member_evm_share.parent_id` is the announcements group id.
+ */
+export async function syncSquadMemberEvmForAnnouncementsGroup(groupId: string): Promise<void> {
+  const gid = groupId.trim();
+  if (!gid) return;
+  const parents = get(squads).filter((p) => resolveAutomatedAnnounceGroupId(p) === gid);
+  if (parents.length === 0) {
+    await syncSquadMemberEvmForParent(gid, gid);
+    return;
+  }
+  await Promise.all(parents.map((p) => syncSquadMemberEvmForParent(p.id, gid)));
 }
 
 /** Clears in-flight dedupe maps (e.g. on logout). */

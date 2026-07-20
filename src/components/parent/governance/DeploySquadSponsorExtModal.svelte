@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { deploySquadSponsorForParent, type SquadSponsorDeploySignerWallet } from '../../../lib/governance/api';
+  import { getEvmAddress } from '../../../lib/api/auth';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
   import {
     amountExceedsBalance,
     canonicalAddress,
     emptyBalance,
     fetchEvmBalance,
+    loadingBalance,
     reconcileSignerWallet,
     shortAddress,
     shouldPreferFundedDefault,
@@ -62,43 +64,49 @@
   async function refreshAll() {
     const seq = ++refreshSeq;
     addressesLoading = true;
+    defaultBalance = loadingBalance();
+    squadBalance = loadingBalance();
     try {
-      const [defaultAddr, squadAddr] = await Promise.all([
+      const [defaultAddr, squadAddr, profileAddr] = await Promise.all([
         getActiveSquadEvmSignerAddress(),
         resolveSquadRosterEvmAddress(parentId.trim()),
+        getEvmAddress(),
       ]);
       if (closed || seq !== refreshSeq) return;
-      defaultSignerAddress = defaultAddr?.trim() || null;
+      defaultSignerAddress = defaultAddr?.trim() || profileAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
       signerWallet = reconcileSignerWallet(signerWallet, defaultSignerAddress, squadSignerAddress);
+
+      const [defaultBal, squadBal] = await Promise.all([
+        fetchEvmBalance(deployNetwork, defaultSignerAddress),
+        fetchEvmBalance(deployNetwork, squadSignerAddress),
+      ]);
+      if (closed || seq !== refreshSeq) return;
+      defaultBalance = defaultBal;
+      squadBalance = squadBal;
+      if (
+        !preferredPayerOnce &&
+        shouldPreferFundedDefault({
+          defaultSignerAddress,
+          squadSignerAddress,
+          defaultBalanceRaw: defaultBalance.balanceRaw,
+          squadBalanceRaw: squadBalance.balanceRaw,
+        })
+      ) {
+        signerWallet = 'default';
+        preferredPayerOnce = true;
+      }
+    } catch {
+      if (!closed && seq === refreshSeq) {
+        defaultSignerAddress = null;
+        squadSignerAddress = null;
+        defaultBalance = emptyBalance();
+        squadBalance = emptyBalance();
+      }
     } finally {
       if (!closed && seq === refreshSeq) addressesLoading = false;
     }
-    if (closed || seq !== refreshSeq) return;
-    const [defaultBal, squadBal] = await Promise.all([
-      fetchEvmBalance(deployNetwork, defaultSignerAddress),
-      fetchEvmBalance(deployNetwork, squadSignerAddress),
-    ]);
-    if (closed || seq !== refreshSeq) return;
-    defaultBalance = defaultBal;
-    squadBalance = squadBal;
-    if (
-      !preferredPayerOnce &&
-      shouldPreferFundedDefault({
-        defaultSignerAddress,
-        squadSignerAddress,
-        defaultBalanceRaw: defaultBalance.balanceRaw,
-        squadBalanceRaw: squadBalance.balanceRaw,
-      })
-    ) {
-      signerWallet = 'default';
-      preferredPayerOnce = true;
-    }
   }
-
-  onMount(() => {
-    void refreshAll();
-  });
 
   onDestroy(() => {
     closed = true;

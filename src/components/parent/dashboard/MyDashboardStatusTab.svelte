@@ -4,6 +4,7 @@
   import { showToast } from '../../../stores/toast';
   import { currentUser } from '../../../stores/auth';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
+  import { requestSquadStateSync } from '../../../lib/squad/squad-state-sync';
   import { onMount } from 'svelte';
 
   /** Enable when squad key rotation backend is wired. */
@@ -15,6 +16,7 @@
 
   let rotateModalOpen = false;
   let rosterKeyNeeded: boolean | null = null;
+  let syncRequesting = false;
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
@@ -31,6 +33,22 @@
       }, 2000);
     } else {
       showToast('Could not copy address.');
+    }
+  }
+
+  async function onRequestSync() {
+    const gid = announcementsGroupId?.trim();
+    if (!gid || syncRequesting) return;
+    syncRequesting = true;
+    try {
+      const ok = await requestSquadStateSync(gid);
+      showToast(
+        ok
+          ? 'Sync requested — online members will re-share keys and governance.'
+          : 'Could not request sync. Try again when connected.',
+      );
+    } finally {
+      syncRequesting = false;
     }
   }
 
@@ -108,7 +126,25 @@
   {/if}
 </section>
 
-<RotateSquadKeyModal open={rotateModalOpen} onClose={() => (rotateModalOpen = false)} />
+  <RotateSquadKeyModal open={rotateModalOpen} onClose={() => (rotateModalOpen = false)} />
+
+{#if announcementsGroupId && parentId}
+  <section class="dashboard-section sync-section" aria-labelledby="my-status-sync-heading">
+    <h3 id="my-status-sync-heading" class="section-heading">Squad sync</h3>
+    <p class="muted sync-hint">
+      Ask online members to re-share roster EVM addresses and governance announces if your Crew or
+      dashboard looks incomplete.
+    </p>
+    <button
+      type="button"
+      class="btn-secondary"
+      disabled={syncRequesting || !announcementsGroupId}
+      on:click={() => void onRequestSync()}
+    >
+      {syncRequesting ? 'Requesting…' : 'Request sync'}
+    </button>
+  </section>
+{/if}
 
 <style>
   .dashboard-section {
@@ -172,6 +208,13 @@
   .muted {
     color: var(--text-muted);
     font-size: 0.875rem;
+  }
+  .sync-section {
+    margin-top: 8px;
+  }
+  .sync-hint {
+    margin: 0 0 12px;
+    line-height: 1.4;
   }
   .btn-secondary {
     padding: 8px 14px;

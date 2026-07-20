@@ -47,7 +47,7 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 
 | Sidebar row | Virtual bucket | Purpose |
 |-------------|----------------|---------|
-| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), sponsor deploy announces, dashboard poll created, squad bot metadata / key-rotated notices. |
+| **#announcements** | `announcements` | Chat plus **squad-wide state** everyone should see: member roster EVM address shares/updates (`squad_member_evm_share`), squad network selection (`squad_network_updated`), sponsor/gov deploy announces, late-joiner catch-up (`squad_state_sync_request`), dashboard poll created, squad bot metadata / key-rotated notices. |
 | **#join-requests** | `join_requests` | Private Commons join request fan-out and accept/reject (MLS virtual bucket; bot DM ingress — [`SQUAD_BOT_JOIN.md`](./SQUAD_BOT_JOIN.md)). Not a separate MLS group. |
 | **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
@@ -103,8 +103,29 @@ Squads with **Commons on** and users may publish time-bounded broadcasts to **Co
 
 ---
 
-## 8. Contributor checklist
+## 8. Client sync contract (MLS / DM structured state)
+
+Squad dashboard mirrors that are not on-chain (roster EVM, infra announces, allowlist, tracked tokens, join flows, bot meta) follow:
+
+1. **Optimistic local** apply for the executor (smooth UI).
+2. **On publish failure** — roll back the local write (or never commit until publish succeeds).
+3. **On publish success** — peers ingest via MLS virtual-bucket side effects (`apply_mls_virtual_bucket_side_effects`) and FE refresh (`onMlsStructuredMessage`).
+
+**Ingest trust:** announce side effects require a non-empty MLS author who is treated as a **group member** (in-memory participants when known; otherwise a known `mls_groups` row). MLS delivery authenticates senders; creator-only ingest is not used. Publish-time ACL (Captain hat, bot holder) remains separate.
+
+**Late joiners / catch-up:** MLS Kind-444 backfill is bounded (~48h). When a member joins `#announcements`, the client auto-publishes `squad_state_sync_request`. Online peers silently republish their `squad_member_evm_share`, squad network selection (`squad_network_updated`), and any local announcements-scoped `governance_updated` rows. Anyone can also press **Request sync** on My Dashboard → Status. Hats wearers are read on-chain after `pacto_gov` infra is present — they are not MLS-synced as wearer lists.
+
+**Wire ids:** `parent_id` / `squad_id` on announces must equal the announcements MLS group id.
+
+**Governance dashboard visibility:** every squad member can **open and read** Governance / Crew / infra whether or not they wear an on-chain hat. Hats / Squad Admin ACL gate **writes** only. “No on-chain hat” is status copy, not a visibility lock. Structured chat/DM JSON must never render as raw message bodies (dedicated cards or a short system notice).
+
+See also [`docs/mls/VIRTUAL_CHANNEL_ROUTING_ADR.md`](../mls/VIRTUAL_CHANNEL_ROUTING_ADR.md).
+
+---
+
+## 9. Contributor checklist
 
 - [ ] New parent ids come from announcements **`groupId`**, never per-device UUIDs.
 - [ ] Squad-pairs use `kind: 'squad-pair'` + `pairedSquads`; no separate network store.
 - [ ] **`channel_added_to_squad`** resolves the parent with **`announcements_group_id`**.
+- [ ] Structured announce publish failures roll back local SQLite writes; peers refresh on MLS ingest.
