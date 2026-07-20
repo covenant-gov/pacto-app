@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { get, writable } from 'svelte/store';
+import { get } from 'svelte/store';
 
 vi.mock('../../stores/squad-join-requests', () => ({
   syncJoinRequestsForSquad: vi.fn(),

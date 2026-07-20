@@ -7,13 +7,33 @@ const {
   listSquadInfra,
   currentUser,
 } = vi.hoisted(() => {
-  const { writable: w } = require('svelte/store') as typeof import('svelte/store');
+  /** Minimal writable stand-in so hoisted mocks avoid `require('svelte/store')`. */
+  function makeStore<T>(initial: T) {
+    let value = initial;
+    const subs = new Set<(v: T) => void>();
+    return {
+      subscribe(run: (v: T) => void) {
+        subs.add(run);
+        run(value);
+        return () => {
+          subs.delete(run);
+        };
+      },
+      set(next: T) {
+        value = next;
+        for (const run of subs) run(value);
+      },
+      update(fn: (v: T) => T) {
+        this.set(fn(value));
+      },
+    };
+  }
   return {
     sendDmMessage: vi.fn(),
     syncMlsGroupsNow: vi.fn(),
     publishSquadMemberEvmShare: vi.fn(),
     listSquadInfra: vi.fn(),
-    currentUser: w<{ npub: string } | null>({ npub: 'npub1responder' }),
+    currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
   };
 });
 
