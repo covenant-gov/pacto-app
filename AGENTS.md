@@ -124,7 +124,7 @@ cd src-tauri && cargo test
 ### Backend
 - **Commands:** Expose functions to the frontend with `#[tauri::command]` and add them to the `generate_handler!` list in `src-tauri/src/lib.rs`. Most return `Result<T, String>`.
 - **State:** Access globals via `crate::STATE`, `crate::TAURI_APP`, `crate::get_nostr_client()`. Avoid holding synchronous locks across await points.
-- **Database:** One SQLite database per account at `<app_data_dir>/<npub>/vector.db`. `src-tauri/src/db.rs` defines the schema. `account_manager` provides a pooled connection that must be returned with `return_db_connection`.
+- **Database:** One SQLite database per account at `<app_data_dir>/<npub>/vector.db`. `src-tauri/src/migrations/` is the source of truth for the schema and migration history; `src-tauri/src/db.rs` contains most query logic. `account_manager` provides a pooled connection that must be returned with `return_db_connection`.
 - **Error handling:** String errors for most commands. EVM wallet code uses `wallet_err_json` / `wallet_err_json_with_tx_hash` to return structured `{ code, message, txHash? }`. Always call `wallet_security::redact_urls_in_text` before surfacing RPC errors/logs.
 - **Crypto:** `crypto::internal_encrypt`/`internal_decrypt` use ChaCha20-Poly1305 with an Argon2id-derived key cached in `ENCRYPTION_KEY`. Attachments use AES-256-GCM.
 - **EVM:** Respect signer purpose (`squad` vs `advanced`). Treasury/deploy paths require phrase-derived `bip44_v1` signers, not imported keys. Contract addresses belong in `src/lib/evm/pacto-protocol-addresses.json`, not `.env` or comments.
@@ -150,7 +150,8 @@ cd src-tauri && cargo test
 | `src-tauri/tauri.conf.json` | Tauri app config: dev/build hooks, window, updater, bundle. |
 | `src-tauri/src/main.rs` | Binary entry point. |
 | `src-tauri/src/lib.rs` | App bootstrap, global state, and the single `invoke_handler` registry. |
-| `src-tauri/src/db.rs` | Per-account SQLite schema and persistence. |
+| `src-tauri/src/migrations/` | Per-account SQLite schema migrations (refinery) |
+| `src-tauri/src/db.rs` | Per-account SQLite query logic and persistence |
 | `src-tauri/src/account_manager.rs` | Account lifecycle and DB connection pool. |
 | `src-tauri/src/mls.rs` | MLS group creation, keypackages, welcome processing. |
 | `src-tauri/src/message.rs` | Message domain model; send/edit/react commands. |
@@ -204,7 +205,7 @@ cd src-tauri && cargo test
 - **Start every investigation at `docs/README.md`** and the relevant domain index before opening source files. If docs and code disagree, trust the code and update the doc.
 - **Before adding a Tauri command:** implement it in the appropriate backend module, add `#[tauri::command]`, register it in `src-tauri/src/lib.rs`, and add a typed wrapper in `src/lib/api/<domain>.ts`.
 - **Before adding an environment variable:** verify whether it is consumed by Vite (must start with `VITE_` or `ALCHEMY_`) or by Rust (read directly from `std::env`). Public protocol addresses never go in `.env`.
-- **Before changing SQLite schema:** check inline DDL in any Rust test that uses `open_in_memory()`.
+- **Before changing SQLite schema:** add a new numbered refinery migration under `src-tauri/src/migrations/` (e.g., `V28__my_change.sql` for schema changes, or a `.rs` migration if the transformation requires generated SQL). Do not edit inline DDL in tests; tests should apply the same migration set via `crate::migrations::run_migrations`.
 - **Before modifying the build or CI:** the Tauri action is the release path; changes to `vite.config.ts` or `src-tauri/tauri.conf.json` can break the desktop bundle or the updater.
 - **Before creating or updating a PR:** use the [`value-based-pr`](.agents/skills/value-based-pr/README.md) skill so the title and description explain what changed and why it matters, not just which files were touched.
 - **Greenfield posture:** do not preserve legacy layouts, old wire formats, or dual-read paths unless explicitly asked. Alpha-only repair code in `docs/legacy-fixes/` should be removed before public beta.
