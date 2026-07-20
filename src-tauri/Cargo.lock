@@ -5784,7 +5784,7 @@ dependencies = [
 
 [[package]]
 name = "pacto"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -5816,6 +5816,7 @@ dependencies = [
  "nostr-sdk",
  "once_cell",
  "openssl",
+ "parking_lot",
  "rand 0.8.5",
  "reqwest",
  "rubato",

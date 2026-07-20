@@ -51,7 +51,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     isPactoAppThreadId,
     filterPeerThreadMessages,
   } from '../lib/pacto-app-inbox';
-  import { isAuthenticated, currentUser } from '../stores/auth';
+  import { isAuthenticated, currentUser, checkSession, sessionHeartbeat, maybeRequireSession } from '../stores/auth';
   import {
     squads,
     activeSquadId,
@@ -142,6 +142,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import { resolveOpenHubParent, syncSquadsHubSelection, resolveEffectiveHubChannel, parentIdForChannelGroup } from '../lib/squad-hub-nav';
   import { portal } from '../lib/utils/portal';
   import { subscribeAppEvents } from '../lib/app/tauri-subscriptions';
+  import { backupVerificationModalOpen } from '../stores/backup-verification';
+  import BackupVerificationModal from '../components/backup/BackupVerificationModal.svelte';
+  import BackupBanner from '../components/backup/BackupBanner.svelte';
   import {
     scheduleAllSquadsHubWarmup,
     scheduleHubParentPrefetch,
@@ -785,6 +788,10 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   async function handleDmSend(content: string): Promise<boolean> {
     const id = $activeDmId;
     if (!id || isPactoAppThreadId(id)) return false;
+    if (!(await maybeRequireSession())) {
+      dmLog('handleDmSend: session locked, aborting');
+      return false;
+    }
     if (parseWalletTxRequest(content)) {
       return sendWalletPaymentRequestDm(id, content);
     }
@@ -889,6 +896,33 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     prevTopNavTab = $activeTopNavTab;
   }
 
+  const HEARTBEAT_INTERVAL_MS = 30_000;
+
+  let lastHeartbeat = 0;
+
+  function throttledSessionHeartbeat(): void {
+    const now = Date.now();
+    if (now - lastHeartbeat < HEARTBEAT_INTERVAL_MS) return;
+    lastHeartbeat = now;
+    void sessionHeartbeat();
+  }
+
+  function handleUserActivity(): void {
+    throttledSessionHeartbeat();
+  }
+
+  function handleVisibilityChange(): void {
+    void checkSession();
+  }
+
+  function handleFocus(): void {
+    void checkSession();
+  }
+
+  function handleResume(): void {
+    void checkSession();
+  }
+
   onMount(() => {
     syncSquadsHubSelection();
 
@@ -900,11 +934,31 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       clearUngroupedChannels();
     }
 
-    return subscribeAppEvents({
+    // Session checks on lifecycle events
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('resume', handleResume);
+
+    // Heartbeat during user activity to keep the backend idle timer alive
+    window.addEventListener('click', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('touchstart', handleUserActivity);
+
+    const unsubscribe = subscribeAppEvents({
       mergeTreasurySafesForParent,
       mergeSquadInfraForParent,
       mergeSquadMemberEvmForAnnouncementsGroup,
     });
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('resume', handleResume);
+      window.removeEventListener('click', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('touchstart', handleUserActivity);
+      unsubscribe();
+    };
   });
 </script>
 
@@ -912,6 +966,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   <header class="top-navbar-slot">
     <TopNavbar />
   </header>
+  <BackupBanner />
   <main class="container">
     <Navbar />
     <div class="content-wrap">
@@ -1110,6 +1165,14 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   {#if $commonsBroadcastModalOpen}
     <div use:portal>
       <PersonalBroadcastModal />
+    </div>
+  {/if}
+  {#if $backupVerificationModalOpen}
+    <div use:portal>
+      <BackupVerificationModal
+        open={$backupVerificationModalOpen}
+        onClose={() => backupVerificationModalOpen.set(false)}
+      />
     </div>
   {/if}
   <UpdateAvailableModal />

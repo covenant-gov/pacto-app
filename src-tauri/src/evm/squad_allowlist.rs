@@ -35,6 +35,7 @@ pub async fn evm_send_squad_allowlisted_contract_call<R: Runtime>(
     data_hex: String,
     wait_for_confirmation: Option<bool>,
 ) -> Result<SquadAllowlistedCallResult, String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let wait_for_confirmation = wait_for_confirmation.unwrap_or(false);
     let pid = parent_id.trim();
     if pid.is_empty() {

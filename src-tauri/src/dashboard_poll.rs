@@ -343,6 +343,7 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
     description: String,
     options: Vec<SendPollOptionInput>,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     if title.trim().is_empty() {
         return Err("Title required".into());
     }
@@ -455,6 +456,7 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     poll_id: String,
     option_id: String,
 ) -> Result<(), String> {
+    crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let client = get_nostr_client()?;
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let pk = signer.get_public_key().await.map_err(|e| e.to_string())?;

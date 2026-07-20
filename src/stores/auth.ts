@@ -1,39 +1,15 @@
 import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
-import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount } from '../lib/api/auth';
+import { login as apiLogin, loginWithRecoveryPhrase, createAccount as apiCreateAccount, connect as apiConnect, checkAnyAccountExists, getCurrentAccount, checkSession as apiCheckSession, sessionHeartbeat as apiSessionHeartbeat } from '../lib/api/auth';
 import { hasStoredKey, encryptAndSaveKey, encryptAndSaveEvmKey, loadAndDecryptKey, validateRecoveryPhraseForImport } from '../lib/api/encryption';
 import { dmLog } from '../lib/utils/dm-debug';
 import { runPostLoginNetworkSync } from '../lib/app/post-login-sync';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { closeWalletSidebar } from './dm';
 import { loadAccountState } from './persistence';
+import { markBackupVerified } from './backup-verification';
 import { clearAccountState } from '../lib/utils/clear-account-state';
-
-const SESSION_UNLOCKED_KEY = 'pacto_session_unlocked';
-
-function markSessionUnlocked(): void {
-  try {
-    sessionStorage.setItem(SESSION_UNLOCKED_KEY, '1');
-  } catch {
-    // ignore
-  }
-}
-
-function clearSessionUnlocked(): void {
-  try {
-    sessionStorage.removeItem(SESSION_UNLOCKED_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-function hasSessionUnlockedFlag(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
+import { isMigrationGateError } from '../lib/utils/tauri-errors';
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
@@ -54,12 +30,125 @@ export interface CurrentUser {
 
 export const currentUser = writable<CurrentUser | null>(null);
 
-/** Drop frontend auth when the tab lost its unlock marker (e.g. partial unlock or HMR). */
-export function clearStaleAuthSession(): void {
-  if (get(isAuthenticated) && !hasSessionUnlockedFlag()) {
-    isAuthenticated.set(false);
-    currentUser.set(null);
+/** Toast state shown when the backend finishes a key-derivation migration. */
+export interface MigrationCompleteToast {
+  shown: boolean;
+  message: string;
+}
+
+export const migrationCompleteToast = writable<MigrationCompleteToast | null>(null);
+
+/** Timer handle returned by setTimeout; alias keeps the variable type local. */
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+let migrationToastTimer: TimerHandle | null = null;
+
+/** Show the migration-complete toast for five seconds, then clear it. */
+export function showMigrationCompleteToast(message = 'Account security updated'): void {
+  if (migrationToastTimer !== null) {
+    clearTimeout(migrationToastTimer);
+    migrationToastTimer = null;
   }
+  migrationToastTimer = globalThis.setTimeout(() => {
+    migrationCompleteToast.set(null);
+    migrationToastTimer = null;
+  }, 5000);
+  migrationCompleteToast.set({ shown: true, message });
+}
+
+/** Drop frontend auth state. Called when the backend reports the session is locked. */
+export function dropSessionState(): void {
+  isAuthenticated.set(false);
+  currentUser.set(null);
+}
+
+/** Query the backend for the current session state. Fail-secure: errors are treated as locked. */
+export async function checkSession(): Promise<{ unlocked: boolean; lockedAt?: number }> {
+  try {
+    const status = await apiCheckSession();
+    if (!status.unlocked) {
+      dropSessionState();
+    }
+    return status;
+  } catch (error: unknown) {
+    console.error('checkSession failed:', error);
+    dropSessionState();
+    return { unlocked: false };
+  }
+}
+
+/** Reset the backend idle timer. Lightweight no-op if the session is already locked. */
+export async function sessionHeartbeat(): Promise<void> {
+  try {
+    await apiSessionHeartbeat();
+  } catch (error: unknown) {
+    console.error('sessionHeartbeat failed:', error);
+  }
+}
+
+let focusCheckTimer: TimerHandle | null = null;
+let sessionFocusCleanup: (() => void) | null = null;
+let sessionFocusListenersInstalled = false;
+
+const FOCUS_CHECK_DEBOUNCE_MS = 50;
+
+function debouncedCheckSession(): void {
+  if (focusCheckTimer !== null) {
+    clearTimeout(focusCheckTimer);
+    focusCheckTimer = null;
+  }
+  focusCheckTimer = globalThis.setTimeout(() => {
+    focusCheckTimer = null;
+    void checkSession();
+  }, FOCUS_CHECK_DEBOUNCE_MS);
+}
+
+/**
+ * Register lightweight focus/resume listeners that verify the backend session
+ * is still unlocked when the app regains focus or becomes visible again.
+ * Returns a cleanup function that removes the listeners and any pending timer.
+ */
+export function initSessionFocusChecks(): () => void {
+  if (sessionFocusListenersInstalled) {
+    return sessionFocusCleanup ?? (() => {});
+  }
+
+  sessionFocusListenersInstalled = true;
+
+  const onFocus = () => debouncedCheckSession();
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      debouncedCheckSession();
+    }
+  };
+
+  window.addEventListener('focus', onFocus);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+
+  sessionFocusCleanup = () => {
+    window.removeEventListener('focus', onFocus);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    sessionFocusListenersInstalled = false;
+    if (focusCheckTimer !== null) {
+      clearTimeout(focusCheckTimer);
+      focusCheckTimer = null;
+    }
+  };
+
+  return sessionFocusCleanup;
+}
+
+/**
+ * Verify the session is still unlocked before a sensitive operation.
+ * Returns true if unlocked; otherwise drops auth state and returns false.
+ */
+export async function maybeRequireSession(): Promise<boolean> {
+  const status = await checkSession();
+  if (!status.unlocked) {
+    dropSessionState();
+    return false;
+  }
+  return true;
 }
 
 // Derived: Is user logged in with valid data
@@ -128,7 +217,6 @@ export async function createAccount(pin: string): Promise<void> {
     loadAccountState(npub);
     closeWalletSidebar();
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
@@ -179,13 +267,13 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
     loadAccountState(npub);
     closeWalletSidebar();
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
       pubkey: keys.public
     });
     await maybeApplyLocalDevDefaults(npub);
+    await markBackupVerified(true);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
 
@@ -216,7 +304,6 @@ export async function unlockWithPin(pin: string): Promise<void> {
     closeWalletSidebar();
     runPostLoginNetworkSync(npub);
 
-    markSessionUnlocked();
     isAuthenticated.set(true);
     currentUser.set({
       npub: npub,
@@ -247,7 +334,6 @@ export async function logout(): Promise<void> {
   try {
     isAuthenticated.set(false);
     currentUser.set(null);
-    clearSessionUnlocked();
     clearAccountState(npub);
     await invoke('logout');
   } catch (error: unknown) {
@@ -266,5 +352,19 @@ export async function logout(): Promise<void> {
  */
 export function clearAuthError(): void {
   authError.set(null);
+}
+
+/**
+ * If `error` is the backend migration-gate error, drop the frontend session
+ * so the user is returned to the unlock screen. The next successful unlock
+ * will run the migration engine and bring the account to version 2.
+ */
+export function handleMigrationGateError(error: unknown): boolean {
+  if (isMigrationGateError(error)) {
+    dropSessionState();
+    authError.set('Please unlock to update account security.');
+    return true;
+  }
+  return false;
 }
 

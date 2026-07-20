@@ -65,6 +65,12 @@ const mocks = vi.hoisted(() => {
   };
 
   const dmThreadScrolledToBottom = createMockStore<boolean>(false);
+  const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
+  const showMigrationCompleteToast = vi.fn((message: string) => {
+    migrationCompleteToast.set({ shown: true, message });
+  });
+  const dropSessionState = vi.fn();
+  const initSessionFocusChecks = vi.fn(() => () => {});
 
   return {
     createMockStore,
@@ -73,6 +79,10 @@ const mocks = vi.hoisted(() => {
     mockStores,
     mockFunctions,
     dmThreadScrolledToBottom,
+    migrationCompleteToast,
+    showMigrationCompleteToast,
+    dropSessionState,
+    initSessionFocusChecks,
   };
 });
 
@@ -124,6 +134,13 @@ vi.mock('../squad/squad-catalog', () => ({
 vi.mock('../utils/dm-debug', () => ({
   dmLog: (...args: unknown[]) => mocks.mockFunctions.dmLog(...args),
   dmError: (...args: unknown[]) => mocks.mockFunctions.dmError(...args),
+}));
+
+vi.mock('../../stores/auth', () => ({
+  dropSessionState: mocks.dropSessionState,
+  initSessionFocusChecks: mocks.initSessionFocusChecks,
+  showMigrationCompleteToast: mocks.showMigrationCompleteToast,
+  migrationCompleteToast: mocks.migrationCompleteToast,
 }));
 
 vi.mock('../../stores/app', () => ({
@@ -219,6 +236,8 @@ describe('subscribeAppEvents', () => {
       'mls_group_initial_sync',
       'mls_group_left',
       'dashboard_poll_replica_updated',
+      'migration_complete',
+      'session_locked',
     ];
     for (const e of expected) {
       expect(mocks.registered[e], `missing listener for ${e}`).toBeDefined();
@@ -229,6 +248,16 @@ describe('subscribeAppEvents', () => {
   it('unsubscribes clears timeouts and unlisten promises', () => {
     unsubscribe = subscribeAppEvents(handlers);
     unsubscribe();
+  });
+
+  it('shows migration complete toast on migration_complete event', () => {
+    unsubscribe = subscribeAppEvents(handlers);
+    emit('migration_complete', {});
+    expect(mocks.showMigrationCompleteToast).toHaveBeenCalledWith('Account security updated');
+    expect(mocks.migrationCompleteToast.get()).toEqual({
+      shown: true,
+      message: 'Account security updated',
+    });
   });
 
   describe('message_new', () => {

@@ -27,6 +27,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
 
   export let network: string;
   export let parentId: string;
@@ -124,7 +125,8 @@
               variant="primary"
               gate={crewGate}
               {acting}
-              onClick={() =>
+              onClick={() => {
+                if (!requireBackupVerified()) return;
                 void run('Crew yea', () =>
                   treasuryAuthorityCrewVote({
                     network,
@@ -133,13 +135,15 @@
                     proposalId: voteProposalId,
                     support: true,
                   }),
-                onRefreshProposals)}
+                  onRefreshProposals);
+              }}
             />
             <GovCtaButton
               label="Vote nay"
               gate={crewGate}
               {acting}
-              onClick={() =>
+              onClick={() => {
+                if (!requireBackupVerified()) return;
                 void run('Crew nay', () =>
                   treasuryAuthorityCrewVote({
                     network,
@@ -148,7 +152,8 @@
                     proposalId: voteProposalId,
                     support: false,
                   }),
-                onRefreshProposals)}
+                  onRefreshProposals);
+              }}
             />
           </div>
         {/if}
@@ -167,21 +172,23 @@
               {/each}
             </select>
           </label>
-          <GovCtaButton
-            label="Execute"
-            variant="execute"
-            gate={execGate}
-            {acting}
-            onClick={() =>
-              void run('Execute', () =>
-                treasuryAuthorityExecute({
-                  network,
-                  parentId,
-                  treasuryAuthority,
-                  proposalId: execProposalId,
-                }),
-              onRefreshProposals)}
-          />
+            <GovCtaButton
+              label="Execute"
+              variant="execute"
+              gate={execGate}
+              {acting}
+              onClick={() => {
+                if (!requireBackupVerified()) return;
+                void run('Execute', () =>
+                  treasuryAuthorityExecute({
+                    network,
+                    parentId,
+                    treasuryAuthority,
+                    proposalId: execProposalId,
+                  }),
+                  onRefreshProposals);
+              }}
+            />
         {/if}
       </div>
     </section>

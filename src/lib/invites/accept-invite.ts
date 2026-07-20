@@ -28,6 +28,7 @@ import {
 } from '../../stores/app';
 import { pendingReadyToast, showToast } from '../../stores/toast';
 import { maybeAutoRequestSquadStateSyncAfterJoin } from '../squad/squad-state-sync';
+import { requireBackupVerified } from '../../stores/backup-verification';
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
 const acceptedSquadInviteGroupIds = new Set<string>();
@@ -134,6 +135,7 @@ export async function acceptAnnouncementsInvite(
     );
     return;
   }
+  if (!requireBackupVerified()) return;
   const welcome = await resolvePendingWelcomeForGroup(payload.groupId);
   if (!welcome) {
     const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
@@ -205,6 +207,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
   const payload = parseSquadInviteMessage(msg.content);
   if (!payload) return;
   if (get(acceptingSquadInviteId)) return;
+  if (!requireBackupVerified()) return;
   acceptingSquadInviteId.set(msg.id);
   try {
     await acceptAnnouncementsInvite(
@@ -263,6 +266,7 @@ export async function acceptChannelInSquadInvite(
     );
     return;
   }
+  if (!requireBackupVerified()) return;
   acceptingChannelInSquadId.set(msg.id);
   try {
     const welcomes = await listPendingMlsWelcomes();

@@ -63,6 +63,15 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **require_capability** | Rust ACL gate on squad-scoped writes; denies unbound roster or missing hat/role before broadcast. |
 | **Greenfield** | Repo posture: no public alpha shipped yet; prefer breaking, minimal paths over compatibility shims. |
 
+## Onboarding
+
+| Term | Definition |
+|------|------------|
+| **Verified seed-backup gate** | A first-run safety ritual where the user writes down their BIP-39 seed offline and verifies a random subset of words before accessing risky actions. See `docs/brainstorms/2026-07-18-onboarding-verified-seed-backup-requirements.md`. |
+| **Progressive gate** | Enforcement model where the main app shell is available but specific risky actions are blocked until the user completes a required step (e.g., backup verification). |
+| **Backup verified** | Per-account status indicating the user has successfully completed the verified seed-backup ritual. |
+| **Random-subset verification** | Backup verification method that asks the user to enter a random subset of words by their position numbers (e.g., words #3, #7, #12). |
+
 ## See also
 
 - `docs/README.md` — authoritative docs index

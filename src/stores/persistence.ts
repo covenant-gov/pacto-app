@@ -10,6 +10,7 @@ import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-k
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
 import { setCurrentNpubForPersistence } from './persistence-context';
+import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
   MY_DASHBOARD_MODE_PREFIX,
@@ -33,6 +34,10 @@ import {
   PINNED_DM_NPUBS_PREFIX,
   PACTO_APP_INBOX_PREFIX,
   LAST_DM_NPUB_PREFIX,
+  newChatDraftNpub,
+  newChatDraftMessage,
+  NEW_CHAT_DRAFT_NPUB_PREFIX,
+  NEW_CHAT_DRAFT_MESSAGE_PREFIX,
 } from './dm';
 import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
@@ -48,6 +53,7 @@ export {
 /** Load account-specific state from localStorage for the given npub. Call after login/create/import/unlock. */
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
+  void loadBackupVerified();
   void hydrateSquadsFromDb().then(async () => {
     const { reconcileStaleInviteDecisions } = await import('../lib/invites/accept-invite');
     reconcileStaleInviteDecisions();
@@ -77,6 +83,10 @@ export function loadAccountState(npub: string): void {
     pactoAppInboxLastReadId.set(typeof rawInboxLastRead === 'string' ? rawInboxLastRead : '');
     const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`)?.trim();
     if (lastDm) activeDmId.set(lastDm);
+    const draftNpub = localStorage.getItem(`${NEW_CHAT_DRAFT_NPUB_PREFIX}_${npub}`);
+    newChatDraftNpub.set(draftNpub ?? '');
+    const draftMessage = localStorage.getItem(`${NEW_CHAT_DRAFT_MESSAGE_PREFIX}_${npub}`);
+    newChatDraftMessage.set(draftMessage ?? '');
     const lastSquad = localStorage.getItem(`${LAST_SQUAD_ID_PREFIX}_${npub}`);
     if (lastSquad) lastOpenedSquadId.set(lastSquad);
     const lastChannel = localStorage.getItem(`${LAST_CHANNEL_ID_PREFIX}_${npub}`);

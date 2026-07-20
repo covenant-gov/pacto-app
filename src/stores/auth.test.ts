@@ -13,6 +13,13 @@ import {
   unlockWithPin,
   logout,
   clearAuthError,
+  checkSession,
+  sessionHeartbeat,
+  dropSessionState,
+  maybeRequireSession,
+  initSessionFocusChecks,
+  migrationCompleteToast,
+  showMigrationCompleteToast,
 } from './auth';
 import {
   login,
@@ -21,6 +28,8 @@ import {
   connect,
   checkAnyAccountExists,
   getCurrentAccount,
+  checkSession as apiCheckSession,
+  sessionHeartbeat as apiSessionHeartbeat,
 } from '../lib/api/auth';
 import {
   hasStoredKey,
@@ -34,6 +43,10 @@ import { loadAccountState } from './persistence';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 import { activeTopNavTab, DEFAULT_TOP_NAV_TAB } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
+import {
+  backupVerified,
+  backupVerificationModalOpen,
+} from './backup-verification';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -46,6 +59,8 @@ vi.mock('../lib/api/auth', () => ({
   connect: vi.fn(),
   checkAnyAccountExists: vi.fn(),
   getCurrentAccount: vi.fn(),
+  checkSession: vi.fn(),
+  sessionHeartbeat: vi.fn(),
 }));
 
 vi.mock('../lib/api/encryption', () => ({
@@ -98,7 +113,11 @@ describe('auth', () => {
     vi.mocked(runPostLoginNetworkSync).mockReset();
     vi.mocked(loadAccountState).mockReset();
     vi.mocked(clearAccountState).mockReset();
+    vi.mocked(apiCheckSession).mockReset();
+    vi.mocked(apiSessionHeartbeat).mockReset();
     vi.mocked(invoke).mockReset();
+    backupVerified.set(null);
+    backupVerificationModalOpen.set(false);
   });
 
   afterEach(() => {
@@ -134,6 +153,106 @@ describe('auth', () => {
     it('is false when user is missing', () => {
       isAuthenticated.set(true);
       expect(get(isLoggedIn)).toBe(false);
+    });
+  });
+
+  describe('checkSession', () => {
+    it('returns unlocked=true when the backend session is open', async () => {
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      const status = await checkSession();
+      expect(status).toEqual({ unlocked: true });
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns unlocked=false and drops auth state when the backend reports locked', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: false, lockedAt: 1234567890 });
+
+      const status = await checkSession();
+
+      expect(status).toEqual({ unlocked: false, lockedAt: 1234567890 });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+
+    it('treats an error as locked and drops auth state', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockRejectedValue(new Error('ipc failed'));
+
+      const status = await checkSession();
+
+      expect(status).toEqual({ unlocked: false });
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('sessionHeartbeat', () => {
+    it('calls the backend heartbeat', async () => {
+      vi.mocked(apiSessionHeartbeat).mockResolvedValue(undefined);
+      await sessionHeartbeat();
+      expect(apiSessionHeartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not throw when the backend call fails', async () => {
+      vi.mocked(apiSessionHeartbeat).mockRejectedValue(new Error('ipc failed'));
+      await expect(sessionHeartbeat()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('dropSessionState', () => {
+    it('clears auth state', () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      dropSessionState();
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('maybeRequireSession', () => {
+    it('returns true when the session is unlocked', async () => {
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      await expect(maybeRequireSession()).resolves.toBe(true);
+    });
+
+    it('returns false and drops auth state when the session is locked', async () => {
+      currentUser.set({ npub, pubkey: 'pk' });
+      isAuthenticated.set(true);
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: false });
+      const ok = await maybeRequireSession();
+      expect(ok).toBe(false);
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+    });
+  });
+
+  describe('sessionStorage unlock flag', () => {
+    it('is not set after createAccount', async () => {
+      const setItem = vi.fn();
+      vi.stubGlobal('sessionStorage', { setItem, removeItem: vi.fn(), getItem: vi.fn() });
+      vi.mocked(apiCreateAccount).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await createAccount('123456');
+
+      expect(setItem).not.toHaveBeenCalledWith('pacto_session_unlocked', expect.any(String));
+      vi.unstubAllGlobals();
+    });
+
+    it('is not set after unlockWithPin', async () => {
+      const setItem = vi.fn();
+      vi.stubGlobal('sessionStorage', { setItem, removeItem: vi.fn(), getItem: vi.fn() });
+      vi.mocked(loadAndDecryptKey).mockResolvedValue(keys.private);
+      vi.mocked(login).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await unlockWithPin('123456');
+
+      expect(setItem).not.toHaveBeenCalledWith('pacto_session_unlocked', expect.any(String));
+      vi.unstubAllGlobals();
     });
   });
 
@@ -180,6 +299,8 @@ describe('auth', () => {
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
       expect(loadAccountState).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(null);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {
@@ -201,6 +322,8 @@ describe('auth', () => {
       expect(get(isAuthenticated)).toBe(true);
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(true);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('rejects an invalid recovery phrase', async () => {
@@ -221,6 +344,8 @@ describe('auth', () => {
       expect(get(isAuthenticated)).toBe(true);
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
+      expect(get(backupVerified)).toBe(null);
+      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {
@@ -261,6 +386,112 @@ describe('auth', () => {
       authError.set('oops');
       clearAuthError();
       expect(get(authError)).toBeNull();
+    });
+  });
+
+  describe('initSessionFocusChecks', () => {
+    let focusHandler: (() => void) | null = null;
+    let visibilityHandler: (() => void) | null = null;
+    const windowAddEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'focus') focusHandler = handler;
+    });
+    const windowRemoveEventListener = vi.fn();
+    const documentAddEventListener = vi.fn((event: string, handler: () => void) => {
+      if (event === 'visibilitychange') visibilityHandler = handler;
+    });
+    const documentRemoveEventListener = vi.fn();
+    let cleanup: (() => void) | undefined;
+    let docStub: {
+      visibilityState: string;
+      addEventListener: typeof documentAddEventListener;
+      removeEventListener: typeof documentRemoveEventListener;
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(apiCheckSession).mockResolvedValue({ unlocked: true });
+      vi.stubGlobal('window', {
+        addEventListener: windowAddEventListener,
+        removeEventListener: windowRemoveEventListener,
+      } as unknown as Window);
+      docStub = {
+        visibilityState: 'hidden',
+        addEventListener: documentAddEventListener,
+        removeEventListener: documentRemoveEventListener,
+      };
+      vi.stubGlobal('document', docStub as unknown as Document);
+    });
+
+    afterEach(() => {
+      cleanup?.();
+      cleanup = undefined;
+      focusHandler = null;
+      visibilityHandler = null;
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it('registers focus and visibilitychange listeners', () => {
+      cleanup = initSessionFocusChecks();
+      expect(windowAddEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(documentAddEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    });
+
+    it('calls checkSession on window focus', async () => {
+      cleanup = initSessionFocusChecks();
+      expect(focusHandler).toBeTruthy();
+      focusHandler?.();
+      expect(apiCheckSession).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('calls checkSession when document becomes visible', async () => {
+      cleanup = initSessionFocusChecks();
+      docStub.visibilityState = 'visible';
+      expect(visibilityHandler).toBeTruthy();
+      visibilityHandler?.();
+      expect(apiCheckSession).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call checkSession when document stays hidden', async () => {
+      cleanup = initSessionFocusChecks();
+      docStub.visibilityState = 'hidden';
+      expect(visibilityHandler).toBeTruthy();
+      visibilityHandler?.();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(apiCheckSession).not.toHaveBeenCalled();
+    });
+
+    it('removes listeners on cleanup', () => {
+      cleanup = initSessionFocusChecks();
+      cleanup();
+      expect(windowRemoveEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+      expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    });
+  });
+
+  describe('migrationCompleteToast', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      migrationCompleteToast.set(null);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows the migration-complete toast for 5 seconds', () => {
+      expect(get(migrationCompleteToast)).toBeNull();
+      showMigrationCompleteToast('Account security updated');
+      expect(get(migrationCompleteToast)).toEqual({
+        shown: true,
+        message: 'Account security updated',
+      });
+      vi.advanceTimersByTime(5000);
+      expect(get(migrationCompleteToast)).toBeNull();
     });
   });
 });

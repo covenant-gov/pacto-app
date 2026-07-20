@@ -27,6 +27,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { requireBackupVerified } from '../../../stores/backup-verification';
 
   export let network: string;
   export let parentId: string;
@@ -140,6 +141,7 @@
   }
 
   function startMutiny() {
+    if (!requireBackupVerified()) return;
     if (startKind === 'pause') {
       void run('Start pause-captain mutiny', () =>
         mutinyStartToPauseCaptain({ network, parentId, mutinyModule }),
@@ -183,29 +185,31 @@
             variant="primary"
             gate={hasVoted ? { enabled: false, reason: 'You already voted in this mutiny.' } : crewGate}
             {acting}
-            onClick={() =>
+            onClick={() => {
+              if (!requireBackupVerified()) return;
               void run('Mutiny vote', () =>
                 mutinyCastVote({
                   network,
                   parentId,
                   mutinyModule,
                   mutinyId: status!.activeMutinyId,
-                }),
-              )}
+                }));
+            }}
           />
           <GovCtaButton
             label="Execute mutiny"
             gate={execGate}
             {acting}
-            onClick={() =>
+            onClick={() => {
+              if (!requireBackupVerified()) return;
               void run('Execute mutiny', () =>
                 mutinyExecute({
                   network,
                   parentId,
                   mutinyModule,
                   mutinyId: status!.activeMutinyId,
-                }),
-              )}
+                }));
+            }}
           />
         </div>
       </div>
