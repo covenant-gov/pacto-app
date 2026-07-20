@@ -6,6 +6,10 @@ import {
   SQUAD_JOIN_REQUEST_SCHEMA,
 } from '../squad/squad-join-mls';
 import {
+  parseSquadStateSyncRequest,
+  respondToSquadStateSyncRequest,
+} from '../squad/squad-state-sync';
+import {
   squadAllowlistNonceByParentId,
   squadBotMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
@@ -60,6 +64,10 @@ export function onMlsStructuredMessage(
   }
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
     handlers.mergeSquadMemberEvmForAnnouncementsGroup(announce.payload.parent_id || gid);
+  }
+
+  if (parseSquadStateSyncRequest(raw)) {
+    void respondToSquadStateSyncRequest(raw, gid);
   }
 
   const root = tryParseRoot(raw);

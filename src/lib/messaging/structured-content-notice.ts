@@ -20,6 +20,7 @@ const TYPE_NOTICES: Record<string, string> = {
   squad_contract_allowlist_updated: 'Contract allowlist updated',
   squad_tracked_tokens_updated: 'Tracked tokens updated',
   squad_member_evm_share: 'Member EVM address shared',
+  squad_state_sync_request: 'Squad sync request',
   governance_updated: 'Governance updated',
   squad_safe_updated: 'Treasury Safe updated',
   safe_proposal: 'Safe proposal',
