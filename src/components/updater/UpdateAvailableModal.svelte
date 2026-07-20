@@ -7,13 +7,13 @@
     $updateStatus.status === 'available' ||
     $updateStatus.status === 'downloading' ||
     $updateStatus.status === 'installing' ||
-    $updateStatus.status === 'error' ||
-    $updateStatus.relaunchPending;
+    $updateStatus.status === 'installed' ||
+    $updateStatus.status === 'error';
 
   $: title =
     $updateStatus.status === 'error'
       ? 'Update check failed'
-      : $updateStatus.relaunchPending
+      : $updateStatus.status === 'installed'
         ? 'Update installed'
         : 'Update available';
 

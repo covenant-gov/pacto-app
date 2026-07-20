@@ -142,7 +142,7 @@ describe('downloadAndInstallUpdate', () => {
     expectStatus('idle');
   });
 
-  it('transitions through downloading/installing and sets relaunchPending on success', async () => {
+  it('transitions through downloading/installing and sets installed status on success', async () => {
     setIsDevBuildForTest(false);
     const downloadAndInstall = vi.fn().mockImplementation((onEvent) => {
       onEvent({ event: 'Started', data: { contentLength: 100 } });
@@ -159,8 +159,7 @@ describe('downloadAndInstallUpdate', () => {
     await downloadAndInstallUpdate();
 
     const state = get(updateStatus);
-    expect(state.status).toBe('available');
-    expect(state.relaunchPending).toBe(true);
+    expect(state.status).toBe('installed');
     expect(state.downloadProgress).toBe(1);
     expect(downloadAndInstall).toHaveBeenCalled();
   });
