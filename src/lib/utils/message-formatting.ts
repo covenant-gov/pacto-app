@@ -8,6 +8,7 @@ declare global {
     marked?: {
       use: (opts: object) => void;
       parse: (src: string, opts?: object) => string;
+      Marked: new () => { use: (opts: object) => void; parse: (src: string, opts?: object) => string };
     };
     twemoji?: {
       replace: (text: string, callback: (match: string) => string) => string;
@@ -25,8 +26,18 @@ function getDOMPurify(): Window['DOMPurify'] {
   return typeof window !== 'undefined' ? window.DOMPurify : undefined;
 }
 
-function markedBaseOptions() {
-  return {
+function getMarked() {
+  return typeof window !== 'undefined' ? window.marked : undefined;
+}
+
+function createMarkedInstance(
+  mentions?: Mention[],
+  profiles?: Record<string, NostrProfile>
+): { use: (opts: object) => void; parse: (src: string, opts?: object) => string } | undefined {
+  const marked = getMarked();
+  if (!marked) return undefined;
+  const instance = new marked.Marked();
+  instance.use({
     gfm: true,
     breaks: true,
     extensions: [spoilerExtension],
@@ -41,7 +52,11 @@ function markedBaseOptions() {
         return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="Copy code" title="Copy code">Copy</button></div>`;
       },
     },
-  };
+  });
+  if (mentions?.length) {
+    instance.use({ extensions: [buildMentionExtension(mentions, profiles ?? {})] });
+  }
+  return instance;
 }
 
 function escapeHtml(text: string): string {
@@ -167,13 +182,9 @@ export function parseMarkdownWithMentions(
   profiles: Record<string, NostrProfile>
 ): string {
   if (typeof content !== 'string') return '';
-  const marked = typeof window !== 'undefined' ? window.marked : undefined;
-  if (!marked) return escapeHtml(content);
-  return marked.parse(content, {
-    async: false,
-    ...markedBaseOptions(),
-    extensions: [spoilerExtension, buildMentionExtension(mentions, profiles)],
-  }) as string;
+  const instance = createMarkedInstance(mentions, profiles);
+  if (!instance) return escapeHtml(content);
+  return instance.parse(content, { async: false }) as string;
 }
 
 /**
@@ -210,9 +221,9 @@ const TWEMOJI_SRC_REGEX = /^\/twemoji\/svg\/[0-9a-f]+(-[0-9a-f]+)*\.svg$/;
  */
 export function parseMarkdown(content: string): string {
   if (typeof content !== 'string') return '';
-  const marked = typeof window !== 'undefined' ? window.marked : undefined;
-  if (!marked) return escapeHtml(content);
-  return marked.parse(content, { async: false, ...markedBaseOptions() }) as string;
+  const instance = createMarkedInstance();
+  if (!instance) return escapeHtml(content);
+  return instance.parse(content, { async: false }) as string;
 }
 
 /**

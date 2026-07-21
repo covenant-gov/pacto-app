@@ -42,6 +42,38 @@ type MockExtension = {
   tokenizer: (src: string) => { type: 'mention'; raw: string; alias: string; npub: string } | undefined;
 };
 
+interface MockMarkedInstance {
+  use: ReturnType<typeof vi.fn>;
+  parse: ReturnType<typeof vi.fn>;
+}
+
+function createMockMarkedInstance(): MockMarkedInstance {
+  return {
+    use: vi.fn(),
+    parse: vi.fn().mockReturnValue('<p>ok</p>'),
+  };
+}
+
+function createMockMarked() {
+  const instance = createMockMarkedInstance();
+  return {
+    marked: { Marked: vi.fn().mockReturnValue(instance) },
+    instance,
+  };
+}
+
+function findMentionExtension(instance: MockMarkedInstance): MockExtension | undefined {
+  const calls = instance.use.mock.calls as [object][];
+  for (const [opts] of calls) {
+    const exts = (opts as { extensions?: MockExtension[] }).extensions;
+    if (exts) {
+      const found = exts.find((e) => e.name === 'mention');
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 describe('emojiToTwemojiFilename', () => {
   it('returns null for empty input', () => {
     expect(emojiToTwemojiFilename('')).toBeNull();
@@ -78,14 +110,23 @@ describe('parseMarkdown', () => {
     expect(parseMarkdown(null as unknown as string)).toBe('');
   });
 
-  it('uses marked.parse when available', () => {
-    const marked = {
+  it('uses a new marked instance when available', () => {
+    const instance = {
       use: vi.fn(),
       parse: vi.fn().mockReturnValue('<p>parsed</p>'),
     };
+    const marked = {
+      Marked: vi.fn().mockReturnValue(instance),
+    };
     vi.stubGlobal('window', { marked });
     expect(parseMarkdown('hello')).toBe('<p>parsed</p>');
-    expect(marked.parse).toHaveBeenCalledWith(
+    expect(marked.Marked).toHaveBeenCalled();
+    expect(instance.use).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensions: expect.arrayContaining([expect.objectContaining({ name: 'spoiler' })]),
+      }),
+    );
+    expect(instance.parse).toHaveBeenCalledWith(
       'hello',
       expect.objectContaining({ async: false }),
     );
@@ -98,41 +139,39 @@ describe('parseMarkdownWithMentions', () => {
   });
 
   it('registers a mention extension alongside the spoiler extension', () => {
-    const marked = {
-      use: vi.fn(),
-      parse: vi.fn().mockReturnValue('<p>ok</p>'),
-    };
+    const { marked, instance } = createMockMarked();
     vi.stubGlobal('window', { marked });
     const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
     const profiles: Record<string, NostrProfile> = {
       npub1abc: profileStub({ id: 'npub1abc', name: 'Alice', display_name: 'Alice A' }),
     };
     parseMarkdownWithMentions('hello @alice', mentions, profiles);
-    expect(marked.parse).toHaveBeenCalledWith(
-      'hello @alice',
+    expect(marked.Marked).toHaveBeenCalled();
+    expect(instance.use).toHaveBeenCalledWith(
       expect.objectContaining({
-        async: false,
-        extensions: expect.arrayContaining([
-          expect.objectContaining({ name: 'mention' }),
-          expect.objectContaining({ name: 'spoiler' }),
-        ]),
+        extensions: expect.arrayContaining([expect.objectContaining({ name: 'spoiler' })]),
       }),
+    );
+    expect(instance.use).toHaveBeenCalledWith(
+      expect.objectContaining({
+        extensions: expect.arrayContaining([expect.objectContaining({ name: 'mention' })]),
+      }),
+    );
+    expect(instance.parse).toHaveBeenCalledWith(
+      'hello @alice',
+      expect.objectContaining({ async: false }),
     );
   });
 
   it('mention extension renderer emits a data-npub span using the profile display name', () => {
-    const marked = {
-      use: vi.fn(),
-      parse: vi.fn().mockReturnValue('<p>ok</p>'),
-    };
+    const { marked, instance } = createMockMarked();
     vi.stubGlobal('window', { marked });
     const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
     const profiles: Record<string, NostrProfile> = {
       npub1abc: profileStub({ id: 'npub1abc', name: 'Alice', display_name: 'Alice A' }),
     };
     parseMarkdownWithMentions('@alice', mentions, profiles);
-    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
-    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    const ext = findMentionExtension(instance);
     if (!ext) throw new Error('mention extension not registered');
     const html = ext.renderer({ raw: '@alice', alias: 'alice', npub: 'npub1abc' });
     expect(html).toContain('data-npub="npub1abc"');
@@ -140,16 +179,12 @@ describe('parseMarkdownWithMentions', () => {
   });
 
   it('mention extension tokenizer accepts @alias at a word boundary', () => {
-    const marked = {
-      use: vi.fn(),
-      parse: vi.fn().mockReturnValue('<p>ok</p>'),
-    };
+    const { marked, instance } = createMockMarked();
     vi.stubGlobal('window', { marked });
     const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
     const profiles: Record<string, NostrProfile> = {};
     parseMarkdownWithMentions('hi @alice', mentions, profiles);
-    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
-    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    const ext = findMentionExtension(instance);
     if (!ext) throw new Error('mention extension not registered');
     expect(ext.tokenizer('@alice')).toEqual({
       type: 'mention',
@@ -160,16 +195,12 @@ describe('parseMarkdownWithMentions', () => {
   });
 
   it('mention extension tokenizer rejects @alias when followed by a word character', () => {
-    const marked = {
-      use: vi.fn(),
-      parse: vi.fn().mockReturnValue('<p>ok</p>'),
-    };
+    const { marked, instance } = createMockMarked();
     vi.stubGlobal('window', { marked });
     const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
     const profiles: Record<string, NostrProfile> = {};
     parseMarkdownWithMentions('hi @alice', mentions, profiles);
-    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
-    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    const ext = findMentionExtension(instance);
     if (!ext) throw new Error('mention extension not registered');
     expect(ext.tokenizer('@aliceX')).toBeUndefined();
   });
@@ -256,7 +287,8 @@ describe('formatMessageContent', () => {
 
   it('keeps URLs inside code and pre tags unlinked', () => {
     const purify = createIdentityPurify();
-    const marked = { use: vi.fn(), parse: vi.fn((src: string) => src) };
+    const { marked, instance } = createMockMarked();
+    instance.parse.mockImplementation((src: string) => src);
     vi.stubGlobal('window', { DOMPurify: purify, marked, twemoji: undefined });
     const input = '<code>https://example.com</code>';
     const result = formatMessageContent(input);
@@ -274,20 +306,24 @@ describe('formatMessageContent', () => {
 
   it('uses mention-aware markdown parsing when mentions and profiles are provided', () => {
     const purify = createIdentityPurify();
-    const marked = {
-      use: vi.fn(),
-      parse: vi.fn((content: string, options: { extensions: MockExtension[] }) => {
+    const extensions: MockExtension[] = [];
+    const instance = {
+      use: vi.fn((opts: { extensions?: MockExtension[] }) => {
+        if (opts.extensions) extensions.push(...opts.extensions);
+      }),
+      parse: vi.fn((content: string) => {
         let html = content;
-        const mentionExt = options.extensions.find((e) => e.name === 'mention');
+        const mentionExt = extensions.find((e) => e.name === 'mention');
         if (mentionExt) {
           html = html.replace(/@[a-zA-Z]+/g, (raw) => {
             const token = mentionExt.tokenizer(raw);
             return token ? mentionExt.renderer(token) : raw;
           });
         }
-        return `<p>${html}</p>`;
+        return `\u003cp\u003e${html}\u003c/p\u003e`;
       }),
     };
+    const marked = { Marked: vi.fn().mockReturnValue(instance) };
     vi.stubGlobal('window', { DOMPurify: purify, marked, twemoji: undefined });
     const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
     const profiles: Record<string, NostrProfile> = {
