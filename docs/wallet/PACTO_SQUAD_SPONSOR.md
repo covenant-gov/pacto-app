@@ -52,29 +52,35 @@ BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>
 
 Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not Alchemy Gas Manager); the bundler only submits UserOps. Sponsored UserOps clamp `maxPriorityFeePerGas` to at least **1 gwei** so Alchemy precheck does not reject low RPC tip estimates.
 
-### Protocol paymaster float (once per chain)
+### Protocol paymaster float and stake (once per chain)
 
-Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s **EntryPoint deposit**.
+Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)).
 
-| Bucket | Address (Sepolia) | Who funds | Role |
-|--------|-------------------|-----------|------|
-| Squad sponsor pool | per-squad clone | squad | Reimburses paymaster after success (`spendGas`) |
-| Paymaster EntryPoint deposit | `EntryPoint.balanceOf(0xF7f557…24B8)` | protocol operator | Bundler prepaid gas at precheck |
+| Bucket | Who funds | Role |
+|--------|-----------|------|
+| Squad sponsor pool | squad (Treasury) | Reimburses paymaster after success (`spendGas`); validation uses `spendablePoolWei()` |
+| Paymaster EntryPoint deposit | protocol / any wallet | Bundler prepaid gas (`paymaster.deposit()`) |
+| Paymaster EntryPoint stake | protocol (FCFS `paymasterStaker` via factory) | Bundler reputation / ERC-7562; Alchemy Sepolia min **0.1 ETH**, delay ≥ **1 day** |
 
-Fund the shared paymaster once (anyone can call `deposit()`):
+**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones).
+
+Dev/protocol ops (no product UI) — example Sepolia addrs from the address book:
 
 ```bash
-# Confirm
-cast call 0x0000000071727De22E5E9d8BAf0edAc6f37da032 \
-  "balanceOf(address)(uint256)" 0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8 \
-  --rpc-url "$SEPOLIA_RPC"
+FACTORY=0x05F0130889dC678304D11cCA71983edB220A4c74
+PAYMASTER=0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6
+EP=0x0000000071727De22E5E9d8BAf0edAc6f37da032
 
-# Top up (example 0.1 ETH)
-cast send 0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8 \
-  "deposit()" --value 0.1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
+# EP deposit (anyone)
+cast call $EP "balanceOf(address)(uint256)" $PAYMASTER --rpc-url "$SEPOLIA_RPC"
+cast send $PAYMASTER "deposit()" --value 0.1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
+
+# Stake via factory (first caller becomes paymasterStaker; min 0.1 ETH, delay ≥ 86400)
+cast send $FACTORY "addPaymasterStake(uint32)" 172800 \
+  --value 0.1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
 ```
 
-If bundlers still reject with **stake too low**, the paymaster also needs `addStake` (owner-only; owner is the factory on Sepolia) — handle upstream / ops, not via the squad pool UI.
+Unlock / withdraw stake or EP deposit: factory `unlockPaymasterStake` / `withdrawPaymasterStake` / `withdrawPaymasterDeposit` — **staker only**.
 
 **EIP-7702 account implementation (Sepolia):** pinned in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) as `networks.sepolia.erc4337.accountImplementation`:
 

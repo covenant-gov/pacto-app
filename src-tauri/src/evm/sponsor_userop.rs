@@ -578,7 +578,14 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
     } else if lower.contains("stake too low") || lower.contains("paymaster stake") {
         (
             "PAYMASTER_STAKE_LOW",
-            "Shared paymaster is not staked on EntryPoint. Operator must addStake on the paymaster (owner/factory).".into(),
+            "Shared paymaster is not staked on EntryPoint. Operator: factory.addPaymasterStake (≥0.1 ETH, delay ≥1 day on Sepolia) — not the squad sponsor pool.".into(),
+        )
+    } else if lower.contains("-32502")
+        || lower.contains("banned opcode")
+    {
+        (
+            "PAYMASTER_VALIDATION",
+            "Bundler rejected paymaster validation (-32502 / banned opcode). Use the current address-book paymaster (spendablePoolWei validation) and ensure factory stake + EP deposit are funded.".into(),
         )
     } else if lower.contains("maxpriorityfeepergas") {
         (
@@ -819,7 +826,7 @@ mod tests {
     #[test]
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
-        let paymaster = address!("0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8");
+        let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
         let squad_id =
             b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
@@ -889,7 +896,7 @@ mod tests {
         });
         let err = parse_send_user_op_response(&rejected).unwrap_err();
         assert!(err.contains("PAYMASTER_STAKE_LOW"));
-        assert!(err.contains("addStake"));
+        assert!(err.contains("addPaymasterStake"));
 
         let missing = json!({"jsonrpc": "2.0", "id": 1});
         let err = parse_send_user_op_response(&missing).unwrap_err();
@@ -922,6 +929,12 @@ mod tests {
         );
         assert_eq!(code, "ACCOUNT_SIGNATURE");
         assert!(msg.contains("EIP-191"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32502,"message":"paymaster uses banned opcode: BALANCE"}"#,
+        );
+        assert_eq!(code, "PAYMASTER_VALIDATION");
+        assert!(msg.contains("banned opcode") || msg.contains("-32502"));
 
         let (code, msg) = classify_bundler_userop_reject("something else");
         assert_eq!(code, "PAYMASTER_REJECTED");

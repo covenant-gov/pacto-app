@@ -8,7 +8,7 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 - [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically; also used as the default Sepolia bundler when `BUNDLER_RPC_URL` is unset). Protocol factory addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md).
 - [ ] For **sponsored** gov writes (roster 0 ETH): `ALCHEMY_RPC_KEY` is enough for Sepolia; optional **`BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>`** override. EIP-7702 impl is pinned in the address book (`erc4337.accountImplementation`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 - [ ] Smoke identities: **funded Default (DM)** for deploy/deposit gas; **new empty roster key** (0 ETH) as captain after gov+sponsor; enough Sepolia ETH to **seed the sponsor pool**; throwaway `parentId`.
-- [ ] **Once per chain:** fund shared **paymaster EntryPoint deposit** (`paymaster.deposit()` on `0xF7f557…` / see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md)) — separate from squad pool deposits.
+- [ ] **Once per chain:** fund shared paymaster **EntryPoint deposit** (`paymaster.deposit()`) and **stake** (`factory.addPaymasterStake`, ≥0.1 ETH, delay ≥1 day) — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). Separate from squad pool deposits. After a factory redeploy, **recreate** squad sponsors (old clones point at the old paymaster).
 - [ ] Logged-in profile; wallet unlocked.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
@@ -43,8 +43,9 @@ curl -sS "https://eth-sepolia.g.alchemy.com/v2/$ALCHEMY_RPC_KEY" -H 'content-typ
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
 | Roster key has 0 ETH | Fund via **Default signer** transfer in the deploy wizard, or pay deploy from squad after topping up; gov writes use sponsored UserOp when eligible |
 | `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Ensure `ALCHEMY_RPC_KEY` (or `BUNDLER_RPC_URL`) reaches the Rust backend — restart after editing `.env`; or fund the roster key |
-| `PAYMASTER_DEPOSIT_LOW` | Fund shared paymaster via `deposit()` / `EntryPoint.depositTo` — **not** the squad sponsor pool |
-| `PAYMASTER_STAKE_LOW` | Paymaster needs EntryPoint `addStake` (owner/factory ops) |
+| `PAYMASTER_DEPOSIT_LOW` | Fund shared paymaster via `paymaster.deposit()` / `EntryPoint.depositTo` — **not** the squad sponsor pool |
+| `PAYMASTER_STAKE_LOW` | Stake via `factory.addPaymasterStake` (FCFS `paymasterStaker`; ≥0.1 ETH, delay ≥1 day on Sepolia) |
+| `PAYMASTER_VALIDATION` | Bundler rejected paymaster validation (e.g. banned opcode on an old paymaster) — use current address book + stake/deposit |
 | `BUNDLER_FEE` | Client tip below bundler floor (should be rare after 1 gwei clamp) |
 | `SPONSOR_INELIGIBLE` / `SPONSOR_POOL_LOW` | Missing hat/Ext permit, or deposit more ETH into the sponsor pool |
 | Bootstrap checkbox disabled | Need yourself as captain (roster EVM); otherwise mint from Governance → Captain |
