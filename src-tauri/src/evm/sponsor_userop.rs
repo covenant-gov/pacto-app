@@ -469,15 +469,25 @@ async fn sign_eip7702_authorization<S: Signer + Sync>(
         .sign_hash(&hash)
         .await
         .map_err(|e| wallet_err_json("EIP7702_SIGN", e.to_string(), None))?;
-    let sig_bytes = sig.as_bytes();
-    Ok(json!({
+    Ok(eip7702_auth_json(chain_id, implementation, nonce, &sig))
+}
+
+/// Bundler JSON for EIP-7702 auth. Uses `as_rsy()` so yParity is 0/1 — not Electrum `v` (27/28).
+fn eip7702_auth_json(
+    chain_id: u64,
+    implementation: Address,
+    nonce: u64,
+    sig: &alloy::primitives::Signature,
+) -> Value {
+    let rsy = sig.as_rsy();
+    json!({
         "chainId": format!("{chain_id:#x}"),
         "address": format!("{implementation:#x}"),
         "nonce": format!("{nonce:#x}"),
-        "yParity": format!("{:#x}", sig_bytes[64] as u64 % 2),
-        "r": format!("0x{}", hex::encode(&sig_bytes[0..32])),
-        "s": format!("0x{}", hex::encode(&sig_bytes[32..64])),
-    }))
+        "yParity": format!("{:#x}", rsy[64]),
+        "r": format!("0x{}", hex::encode(&rsy[0..32])),
+        "s": format!("0x{}", hex::encode(&rsy[32..64])),
+    })
 }
 
 /// RLP encoding of the EIP-7702 authorization tuple `[chain_id, address, nonce]`;
@@ -734,10 +744,10 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 mod tests {
     use super::{
         bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, classify_bundler_userop_reject,
-        clamp_userop_eip1559_fees, encode_eip7702_authorization, explicit_bundler_rpc_url,
-        pack_u128s, parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE,
-        UserOpParams,
+        clamp_userop_eip1559_fees, eip7702_auth_json, encode_eip7702_authorization,
+        explicit_bundler_rpc_url, pack_u128s, parse_send_user_op_response, paymaster_data,
+        receipt_transaction_hash, retriable_bundler_status, user_op_json, userop_max_cost_wei,
+        FALLBACK_MAX_PRIORITY_FEE, UserOpParams,
     };
     use crate::evm::sponsor_paymaster::{
         encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT,
@@ -940,6 +950,61 @@ mod tests {
         let mut expected = vec![0xc0 + payload.len() as u8];
         expected.extend_from_slice(&payload);
         assert_eq!(enc, expected);
+    }
+
+    #[test]
+    fn eip7702_auth_json_y_parity_recovers_signer_not_electrum_mod() {
+        use alloy::primitives::{keccak256, Signature};
+        use alloy::signers::local::PrivateKeySigner;
+        use alloy::signers::SignerSync;
+
+        // Anvil account #0
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+        let implementation = address!("0x69007702764179f14F51cdce752f4f775d74E139");
+        let chain_id = 11_155_111u64;
+        let nonce = 0u64;
+
+        let enc = encode_eip7702_authorization(chain_id, implementation, nonce);
+        let mut msg = Vec::with_capacity(1 + enc.len());
+        msg.push(0x05);
+        msg.extend_from_slice(&enc);
+        let hash = keccak256(&msg);
+        let sig = signer.sign_hash_sync(&hash).expect("sign");
+
+        let auth = eip7702_auth_json(chain_id, implementation, nonce, &sig);
+        let y_parity = u64::from_str_radix(
+            auth["yParity"].as_str().unwrap().trim_start_matches("0x"),
+            16,
+        )
+        .unwrap();
+        assert!(y_parity <= 1, "yParity must be 0 or 1, got {y_parity}");
+        assert_eq!(y_parity as u8, sig.as_rsy()[64]);
+
+        // Rebuild signature as the bundler would from auth JSON fields.
+        let rsy = sig.as_rsy();
+        let rebuilt =
+            Signature::from_bytes_and_parity(&rsy[..64], rsy[64] != 0);
+        let recovered = rebuilt
+            .recover_address_from_prehash(&hash)
+            .expect("recover");
+        assert_eq!(recovered, signer.address());
+
+        // Electrum v % 2 inverts yParity and recovers a different authority.
+        let electrum = sig.as_bytes();
+        let wrong_parity = (electrum[64] % 2) != 0;
+        assert_ne!(
+            wrong_parity,
+            rsy[64] != 0,
+            "bug demonstration: Electrum v%2 flips true y_parity"
+        );
+        let wrong = Signature::from_bytes_and_parity(&electrum[..64], wrong_parity);
+        let wrong_addr = wrong
+            .recover_address_from_prehash(&hash)
+            .expect("recover wrong parity");
+        assert_ne!(wrong_addr, signer.address());
     }
 
     struct EnvVarGuard(&'static str, Option<std::ffi::OsString>);
