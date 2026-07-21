@@ -3,9 +3,16 @@
   import { formatMessageContent } from '../../lib/utils/message-formatting';
   import { openExternalUrl } from '../../lib/utils/open-external';
 
-  export let content: string = '';
+  import { profiles } from '../../stores/profiles';
+  import type { Mention } from '../../lib/messaging/mentions';
 
-  $: formatted = formatMessageContent(content);
+  export let content: string = '';
+  export let mentions: Mention[] | undefined = undefined;
+
+  $: formatted = formatMessageContent(content, {
+    mentions,
+    profiles: $profiles,
+  });
 
   let bodyEl: HTMLDivElement | undefined;
 
@@ -195,6 +202,12 @@
     color: inherit;
     cursor: default;
     user-select: text;
+  }
+
+  .formatted-message-body :global(.mention) {
+    color: var(--accent);
+    font-weight: 500;
+    cursor: default;
   }
 
   .formatted-message-body :global(.twemoji) {

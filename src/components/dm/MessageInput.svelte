@@ -1,7 +1,19 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import smileFaceIcon from '../../icons/smile-face.svg';
+  import atIcon from '../../icons/at.svg';
   import { getEmojiList, recentEmojisStore, addToRecentEmojis, searchEmojis } from '../../stores/emojis';
+  import { profiles } from '../../stores/profiles';
+  import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import {
+    assignMentionAliases,
+    filterMentionsInText,
+    formatMentionEnvelope,
+    type Mention,
+    type MentionCandidate,
+  } from '../../lib/messaging/mentions';
+  import MentionAutocomplete from './MentionAutocomplete.svelte';
+  import MentionPicker from './MentionPicker.svelte';
 
   export let channelName: string = "";
   /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
@@ -11,6 +23,10 @@
   export let onTyping: (() => void) | undefined = undefined;
   /** When true, input and send are disabled (e.g. channel still being created). */
   export let disabled: boolean = false;
+  /** When true, typing @ opens a member-selection interface (used in squad channels). */
+  export let enableMentions: boolean = false;
+  /** Npubs available for @mention selection. */
+  export let mentionCandidates: string[] = [];
 
   $: inputPlaceholder = placeholderOverride ?? `Message #${channelName}`;
 
@@ -18,9 +34,22 @@
   let textareaEl: HTMLTextAreaElement | undefined;
   let emojiPickerOpen = false;
   let emojiSearchQuery = "";
+
+  // Mention composition state
+  let mentions: Mention[] = [];
+  let mentionAutocompleteOpen = false;
+  let mentionAutocompleteQuery = '';
+  let mentionAutocompleteStart = 0;
+  let mentionAutocompleteEnd = 0;
+  let mentionAutocompleteSelected = 0;
+  let mentionAutocompletePosition = { top: 0, left: 0 };
+  let mentionPickerOpen = false;
   $: if (disabled) {
     emojiPickerOpen = false;
     emojiSearchQuery = '';
+    mentionAutocompleteOpen = false;
+    mentionAutocompleteQuery = '';
+    mentionPickerOpen = false;
   }
 
   const fullEmojiList = getEmojiList();
@@ -53,21 +82,184 @@
     return out;
   })();
 
-  function handleSubmit(event: Event) {
-    event.preventDefault();
-    if (disabled) return;
-    if (messageText.trim()) {
-      onSend(messageText);
-      messageText = "";
+  $: mentionItems = (() => {
+    if (!enableMentions) return [];
+    const aliases = assignMentionAliases(mentionCandidates, $profiles);
+    const out: MentionCandidate[] = [];
+    for (const npub of mentionCandidates) {
+      const profile = $profiles[npub];
+      out.push({
+        npub,
+        alias: aliases.get(npub) ?? npub.slice(0, 16),
+        displayName: getProfileDisplayName(profile) || npub.slice(0, 16),
+        avatar: getProfileAvatarSrc(profile),
+        subtitle: npub.length > 16 ? `${npub.slice(0, 16)}…` : npub,
+      });
     }
+    return out.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  })();
+
+  function fuzzyMatches(query: string, candidate: MentionCandidate): boolean {
+    if (!query) return true;
+    const q = query.toLowerCase().trim();
+    const haystack = `${candidate.displayName} ${candidate.alias} ${candidate.npub}`.toLowerCase();
+    let i = 0;
+    for (const ch of haystack) {
+      if (ch === q[i]) i++;
+      if (i === q.length) return true;
+    }
+    return i === q.length;
+  }
+
+  $: filteredMentionItems = mentionItems.filter((c) =>
+    fuzzyMatches(mentionAutocompleteQuery, c)
+  );
+
+  function buildMentionMirror(textarea: HTMLTextAreaElement): HTMLDivElement {
+    const style = getComputedStyle(textarea);
+    const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.visibility = 'hidden';
+    div.style.whiteSpace = 'pre-wrap';
+    div.style.wordWrap = 'break-word';
+    div.style.boxSizing = 'border-box';
+    div.style.width = `${textarea.clientWidth}px`;
+    div.style.fontFamily = style.fontFamily;
+    div.style.fontSize = style.fontSize;
+    div.style.fontWeight = style.fontWeight;
+    div.style.lineHeight = style.lineHeight;
+    div.style.letterSpacing = style.letterSpacing;
+    div.style.paddingTop = style.paddingTop;
+    div.style.paddingRight = style.paddingRight;
+    div.style.paddingBottom = style.paddingBottom;
+    div.style.paddingLeft = style.paddingLeft;
+    div.style.borderTopWidth = style.borderTopWidth;
+    div.style.borderRightWidth = style.borderRightWidth;
+    div.style.borderBottomWidth = style.borderBottomWidth;
+    div.style.borderLeftWidth = style.borderLeftWidth;
+    return div;
+  }
+
+  function getCaretCoordinates(textarea: HTMLTextAreaElement): { top: number; left: number } {
+    const pos = textarea.selectionStart ?? 0;
+    const before = textarea.value.slice(0, pos);
+    const after = textarea.value.slice(pos);
+
+    const div = buildMentionMirror(textarea);
+    const marker = document.createElement('span');
+    marker.textContent = after || '\u200b';
+
+    div.appendChild(document.createTextNode(before));
+    div.appendChild(marker);
+    document.body.appendChild(div);
+
+    const markerRect = marker.getBoundingClientRect();
+    const top = markerRect.top - parseFloat(getComputedStyle(textarea).paddingTop);
+    const left = markerRect.left - parseFloat(getComputedStyle(textarea).paddingLeft);
+
+    document.body.removeChild(div);
+    return { top, left };
+  }
+
+  function openMentionAutocomplete(start: number, end: number) {
+    if (!enableMentions || mentionCandidates.length === 0 || !textareaEl) return;
+    mentionAutocompleteStart = start;
+    mentionAutocompleteEnd = end;
+    mentionAutocompleteQuery = messageText.slice(start + 1, end);
+    mentionAutocompleteSelected = 0;
+    const coords = getCaretCoordinates(textareaEl);
+    const lineHeight = parseFloat(getComputedStyle(textareaEl).lineHeight) || 20;
+    mentionAutocompletePosition = { top: coords.top + lineHeight + 2, left: coords.left };
+    mentionAutocompleteOpen = true;
+  }
+
+  function closeMentionAutocomplete() {
+    mentionAutocompleteOpen = false;
+    mentionAutocompleteQuery = '';
+    mentionAutocompleteStart = 0;
+    mentionAutocompleteEnd = 0;
+    mentionAutocompleteSelected = 0;
+  }
+
+  function updateMentionAutocomplete(cursor: number) {
+    if (!mentionAutocompleteOpen) return;
+    if (cursor < mentionAutocompleteStart || messageText[mentionAutocompleteStart] !== '@') {
+      closeMentionAutocomplete();
+      return;
+    }
+    const slice = messageText.slice(mentionAutocompleteStart + 1, cursor);
+    if (/\s/.test(slice)) {
+      closeMentionAutocomplete();
+      return;
+    }
+    mentionAutocompleteEnd = cursor;
+    mentionAutocompleteQuery = slice;
+  }
+
+  function insertMention(candidate: MentionCandidate) {
+    const alias = candidate.alias;
+    const start = mentionAutocompleteStart;
+    const end = mentionAutocompleteEnd;
+    const before = messageText.slice(0, start);
+    const after = messageText.slice(end);
+    const trailingSpace = after.startsWith(' ') ? '' : ' ';
+    messageText = `${before}@${alias}${trailingSpace}${after}`;
+    mentions = [...mentions, { npub: candidate.npub, alias }];
+    closeMentionAutocomplete();
+    void tick().then(() => {
+      if (!textareaEl) return;
+      const pos = start + 1 + alias.length + trailingSpace.length;
+      textareaEl.setSelectionRange(pos, pos);
+      textareaEl.focus();
+    });
+  }
+
+  function submitMentionMessage() {
+    if (!messageText.trim()) return;
+    const relevant = filterMentionsInText(messageText, mentions);
+    if (relevant.length > 0) {
+      onSend(formatMentionEnvelope(messageText, relevant));
+    } else {
+      onSend(messageText);
+    }
+    messageText = '';
+    mentions = [];
   }
 
   function handleKeydown(event: KeyboardEvent) {
     if (disabled) return;
+    if (mentionAutocompleteOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        mentionAutocompleteSelected =
+          (mentionAutocompleteSelected + 1) % filteredMentionItems.length;
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        mentionAutocompleteSelected =
+          mentionAutocompleteSelected <= 0
+            ? filteredMentionItems.length - 1
+            : mentionAutocompleteSelected - 1;
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        event.stopPropagation();
+        const candidate = filteredMentionItems[mentionAutocompleteSelected];
+        if (candidate) insertMention(candidate);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMentionAutocomplete();
+        return;
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
-      handleSubmit(event);
+      submitMentionMessage();
     } else if (event.key === 'Enter' && event.shiftKey) {
       // Allow default: insert newline in textarea (do not send)
     } else {
@@ -76,7 +268,23 @@
   }
 
   function handleInput() {
+    if (!disabled && enableMentions && textareaEl) {
+      const cursor = textareaEl.selectionStart ?? messageText.length;
+      const prevChar = messageText[cursor - 1];
+      const prevPrevChar = messageText[cursor - 2];
+      if (prevChar === '@' && (cursor === 1 || /\s/.test(prevPrevChar ?? ''))) {
+        openMentionAutocomplete(cursor - 1, cursor);
+      } else {
+        updateMentionAutocomplete(cursor);
+      }
+    }
     onTyping?.();
+  }
+
+  function openMentionPicker() {
+    if (!enableMentions || mentionCandidates.length === 0 || disabled) return;
+    closeMentionAutocomplete();
+    mentionPickerOpen = true;
   }
 
   async function insertEmoji(emoji: string) {
@@ -124,18 +332,26 @@
   }
 
   function handleClickOutside(event: MouseEvent) {
-    if (!emojiPickerOpen) return;
+    if (!emojiPickerOpen && !mentionAutocompleteOpen) return;
     const target = event.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest?.('.emoji-picker') || target.closest?.('.emoji-trigger-btn')) return;
-    void closeEmojiPicker();
+    if (emojiPickerOpen && !target.closest?.('.emoji-picker') && !target.closest?.('.emoji-trigger-btn')) {
+      void closeEmojiPicker();
+    }
+    if (
+      mentionAutocompleteOpen &&
+      !target.closest?.('.mention-autocomplete') &&
+      !target.closest?.('.message-input')
+    ) {
+      closeMentionAutocomplete();
+    }
   }
 </script>
 
 <svelte:window on:pointerdown={handleClickOutside} />
 
 <div class="message-input-container" class:disabled>
-  <form on:submit|preventDefault={handleSubmit}>
+  <form on:submit|preventDefault={submitMentionMessage}>
     <div class="input-wrapper">
       <button
         type="button"
@@ -149,6 +365,18 @@
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
       </button>
+      {#if enableMentions}
+        <button
+          type="button"
+          class="mention-trigger-btn"
+          disabled={disabled}
+          aria-label="Mention a member"
+          title="Mention a member"
+          on:click={openMentionPicker}
+        >
+          <img src={atIcon} alt="" width="20" height="20" />
+        </button>
+      {/if}
       <textarea
         bind:this={textareaEl}
         bind:value={messageText}
@@ -159,6 +387,26 @@
         rows="1"
         {disabled}
       ></textarea>
+      {#if mentionAutocompleteOpen && filteredMentionItems.length > 0}
+        <MentionAutocomplete
+          query={mentionAutocompleteQuery}
+          candidates={filteredMentionItems}
+          selectedIndex={mentionAutocompleteSelected}
+          position={mentionAutocompletePosition}
+          on:select={(e) => insertMention(e.detail)}
+        />
+      {/if}
+      {#if mentionPickerOpen}
+        <MentionPicker
+          candidates={mentionItems}
+          open={mentionPickerOpen}
+          on:select={(e) => {
+            insertMention(e.detail);
+            mentionPickerOpen = false;
+          }}
+          on:close={() => (mentionPickerOpen = false)}
+        />
+      {/if}
       {#if emojiPickerOpen && !disabled}
         <div
           class="emoji-picker"
@@ -260,7 +508,7 @@
         class="send-button"
         disabled={disabled || !messageText.trim()}
         aria-label="Send message"
-        on:click={handleSubmit}
+        on:click={submitMentionMessage}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
@@ -298,6 +546,34 @@
 
   .input-wrapper:focus-within {
     background: var(--border);
+  }
+
+  .mention-trigger-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .mention-trigger-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--code-border);
+  }
+
+  .mention-trigger-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .mention-trigger-btn img {
+    display: block;
   }
 
   .emoji-trigger-btn {

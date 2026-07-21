@@ -3,19 +3,26 @@
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
 
+  import { currentUser } from '../../stores/auth';
+  import type { Mention } from '../../lib/messaging/mentions';
+
   export let id: string = '';
   export let authorName: string = '';
   export let content: string = '';
   export let timestamp: string = '';
   export let avatar: string = '';
-  /** Hide avatar + name/timestamp; nest under the previous message from the same author. */
   export let compact: boolean = false;
-  /** When set, show a reply bar above the body (author + truncated content or "Attachment"). */
   export let replyToId: string | undefined = undefined;
   export let replyAuthorName: string | undefined = undefined;
   export let replyPreview: string | undefined = undefined;
+  export let mentions: Mention[] | undefined = undefined;
 
   $: structuredNotice = summarizeStructuredMessageContent(content);
+  $: isMentioned = (() => {
+    const myNpub = $currentUser?.npub;
+    if (!myNpub || !mentions?.length) return false;
+    return mentions.some((m) => m.npub === myNpub);
+  })();
 
   function jumpToReply() {
     if (!replyToId) return;
@@ -24,7 +31,7 @@
   }
 </script>
 
-<div class="message" class:compact id={id ? `msg-${id}` : undefined}>
+<div class="message" class:compact class:mentioned={isMentioned} id={id ? `msg-${id}` : undefined}>
   <div class="avatar" aria-hidden={compact ? 'true' : undefined}>
     {#if !compact}
       {#if avatar}
@@ -58,7 +65,7 @@
       {#if structuredNotice}
         <span class="structured-notice">{structuredNotice}</span>
       {:else}
-        <FormattedMessageBody content={content} />
+        <FormattedMessageBody content={content} mentions={mentions} />
       {/if}
     </div>
   </div>
@@ -79,6 +86,15 @@
 
   .message:hover {
     background: var(--bg-hover);
+  }
+
+  .message.mentioned {
+    background: var(--accent-soft, rgba(37, 99, 235, 0.1));
+    border-left: 3px solid var(--accent);
+  }
+
+  .message.mentioned:hover {
+    background: var(--accent-soft, rgba(37, 99, 235, 0.15));
   }
 
   .avatar {

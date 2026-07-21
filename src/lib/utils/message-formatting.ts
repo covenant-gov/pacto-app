@@ -1,9 +1,13 @@
+import type { NostrProfile } from '../api/nostr';
+import type { Mention } from '../messaging/mentions';
+import { getProfileDisplayName } from './profile';
+
 declare global {
   interface Window {
     hljs?: { highlight: (code: string, opts: { language: string }) => { value: string } };
     marked?: {
       use: (opts: object) => void;
-      parse: (src: string, opts?: { async?: boolean }) => string;
+      parse: (src: string, opts?: object) => string;
     };
     twemoji?: {
       replace: (text: string, callback: (match: string) => string) => string;
@@ -21,13 +25,8 @@ function getDOMPurify(): Window['DOMPurify'] {
   return typeof window !== 'undefined' ? window.DOMPurify : undefined;
 }
 
-let markedConfigured = false;
-
-function getMarked() {
-  if (typeof window === 'undefined') return undefined;
-  const m = window.marked;
-  if (!m || markedConfigured) return m;
-  m.use({
+function markedBaseOptions() {
+  return {
     gfm: true,
     breaks: true,
     extensions: [spoilerExtension],
@@ -42,9 +41,7 @@ function getMarked() {
         return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="Copy code" title="Copy code">Copy</button></div>`;
       },
     },
-  });
-  markedConfigured = true;
-  return m;
+  };
 }
 
 function escapeHtml(text: string): string {
@@ -108,6 +105,77 @@ const spoilerExtension = {
   },
 };
 
+interface MentionToken {
+  type: 'mention';
+  raw: string;
+  alias: string;
+  npub: string;
+}
+
+function buildMentionExtension(
+  mentions: Mention[],
+  profiles: Record<string, NostrProfile>
+) {
+  const aliasToNpub = new Map<string, string>();
+  for (const m of mentions) {
+    aliasToNpub.set(m.alias, m.npub);
+  }
+  const aliases = Array.from(aliasToNpub.keys()).sort((a, b) => b.length - a.length);
+  const boundaryRe = /[\s.,;:!?'"()\[\]{}<>\`\n]/;
+
+  return {
+    name: 'mention',
+    level: 'inline' as const,
+    start(src: string): number | void {
+      let idx = src.indexOf('@');
+      while (idx !== -1) {
+        const after = src.slice(idx + 1);
+        for (const alias of aliases) {
+          if (after.startsWith(alias)) {
+            const end = idx + 1 + alias.length;
+            const next = src[end];
+            if (next === undefined || boundaryRe.test(next)) {
+              return idx;
+            }
+          }
+        }
+        idx = src.indexOf('@', idx + 1);
+      }
+      return undefined;
+    },
+    tokenizer(src: string): MentionToken | undefined {
+      for (const alias of aliases) {
+        if (!src.startsWith('@' + alias)) continue;
+        const end = 1 + alias.length;
+        const next = src[end];
+        if (next !== undefined && !boundaryRe.test(next)) continue;
+        const npub = aliasToNpub.get(alias) ?? '';
+        return { type: 'mention', raw: '@' + alias, alias, npub };
+      }
+      return undefined;
+    },
+    renderer(token: MentionToken): string {
+      const displayName = getProfileDisplayName(profiles[token.npub]) || token.alias;
+      return `<span class="mention" data-npub="${escapeAttr(token.npub)}">@${escapeHtml(displayName)}</span>`;
+    },
+  };
+}
+
+export function parseMarkdownWithMentions(
+  content: string,
+  mentions: Mention[],
+  profiles: Record<string, NostrProfile>
+): string {
+  if (typeof content !== 'string') return '';
+  const marked = typeof window !== 'undefined' ? window.marked : undefined;
+  if (!marked) return escapeHtml(content);
+  return marked.parse(content, {
+    async: false,
+    ...markedBaseOptions(),
+    extensions: [spoilerExtension, buildMentionExtension(mentions, profiles)],
+  }) as string;
+}
+
 /**
  * Map emoji character(s) to Twemoji SVG filename (e.g. "🌈" → "1f308.svg", "🇺🇸" → "1f1fa-1f1f8.svg").
  * Used for local /twemoji/svg/<filename>.svg. Returns null if not a valid replacement.
@@ -132,7 +200,7 @@ const ALLOWED_TAGS = [
   'a', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td',
   'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'p', 'button',
 ];
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'title', 'class', 'align', 'data-raw-code', 'tabindex', 'role'];
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'title', 'class', 'align', 'data-raw-code', 'tabindex', 'role', 'data-npub'];
 const ALLOWED_TAGS_WITH_EMOJI = [...ALLOWED_TAGS, 'img'];
 const ALLOWED_ATTR_WITH_EMOJI = [...ALLOWED_ATTR, 'src', 'alt'];
 const TWEMOJI_SRC_REGEX = /^\/twemoji\/svg\/[0-9a-f]+(-[0-9a-f]+)*\.svg$/;
@@ -142,9 +210,9 @@ const TWEMOJI_SRC_REGEX = /^\/twemoji\/svg\/[0-9a-f]+(-[0-9a-f]+)*\.svg$/;
  */
 export function parseMarkdown(content: string): string {
   if (typeof content !== 'string') return '';
-  const marked = getMarked();
+  const marked = typeof window !== 'undefined' ? window.marked : undefined;
   if (!marked) return escapeHtml(content);
-  return marked.parse(content, { async: false }) as string;
+  return marked.parse(content, { async: false, ...markedBaseOptions() }) as string;
 }
 
 /**
@@ -314,8 +382,14 @@ export function formatMessageTimestamp(isoString: string): string {
 /**
  * Parse, linkify bare URLs, sanitize, replace emoji with Twemoji img, then re-sanitize.
  */
-export function formatMessageContent(content: string): string {
-  const html = parseMarkdown(content);
+export function formatMessageContent(
+  content: string,
+  options?: { mentions?: Mention[]; profiles?: Record<string, NostrProfile> }
+): string {
+  const html =
+    options?.mentions?.length && options?.profiles
+      ? parseMarkdownWithMentions(content, options.mentions, options.profiles)
+      : parseMarkdown(content);
   const linked = linkify(html);
   const cleaned = sanitize(linked);
   const withEmoji = replaceEmojiWithTwemoji(cleaned);

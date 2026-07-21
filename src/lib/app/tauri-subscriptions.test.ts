@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { subscribeAppEvents, type AppEventHandlers } from './tauri-subscriptions';
 import type { DmMessage } from '../../stores/dm';
+import type { CurrentUser } from '../../stores/auth';
+import type { Squad } from '../../stores/squads';
 
 const mocks = vi.hoisted(() => {
   function createMockStore<T>(initial: T) {
@@ -42,6 +44,9 @@ const mocks = vi.hoisted(() => {
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
     dashboardPollReplicaNonceByParentId: createMockStore<Record<string, number>>({}),
     activeDmId: createMockStore<string | null>(null),
+    currentUser: createMockStore<CurrentUser | null>(null),
+    squads: createMockStore<Squad[]>([]),
+    activeChannelId: createMockStore<string | null>(null),
   };
 
   const mockFunctions = {
@@ -62,6 +67,7 @@ const mocks = vi.hoisted(() => {
     incrementDmUnread: vi.fn(),
     dmLog: vi.fn(),
     dmError: vi.fn(),
+    incrementMentionAlert: vi.fn(),
   };
 
   const dmThreadScrolledToBottom = createMockStore<boolean>(false);
@@ -141,6 +147,7 @@ vi.mock('../../stores/auth', () => ({
   initSessionFocusChecks: mocks.initSessionFocusChecks,
   showMigrationCompleteToast: mocks.showMigrationCompleteToast,
   migrationCompleteToast: mocks.migrationCompleteToast,
+  currentUser: mocks.mockStores.currentUser,
 }));
 
 vi.mock('../../stores/app', () => ({
@@ -157,11 +164,17 @@ vi.mock('../../stores/app', () => ({
   bumpMembershipVersion: (...args: unknown[]) => mocks.mockFunctions.bumpMembershipVersion(...args),
   dashboardPollReplicaNonceByParentId: mocks.mockStores.dashboardPollReplicaNonceByParentId,
   activeDmId: mocks.mockStores.activeDmId,
+  squads: mocks.mockStores.squads,
+  activeChannelId: mocks.mockStores.activeChannelId,
 }));
 
 vi.mock('../../stores/dm-unread', () => ({
   incrementDmUnread: (...args: unknown[]) => mocks.mockFunctions.incrementDmUnread(...args),
   dmThreadScrolledToBottom: mocks.dmThreadScrolledToBottom,
+}));
+
+vi.mock('../../stores/squad-hub-alerts', () => ({
+  incrementMentionAlert: (...args: unknown[]) => mocks.mockFunctions.incrementMentionAlert(...args),
 }));
 
 function emit(event: string, payload: unknown): void {
@@ -204,6 +217,9 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.pendingMlsWelcomes.set([]);
     mocks.mockStores.dashboardPollReplicaNonceByParentId.set({});
     mocks.mockStores.activeDmId.set(null);
+    mocks.mockStores.currentUser.set(null);
+    mocks.mockStores.squads.set([]);
+    mocks.mockStores.activeChannelId.set(null);
     mocks.dmThreadScrolledToBottom.set(false);
     mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(false);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
@@ -500,6 +516,72 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('mls_message_new', { group_id: 'g1', message: dmMessage(), group_name: 'General' });
       expect(mocks.mockFunctions.updateChannelNameIfPlaceholder).toHaveBeenCalledWith('g1', 'General');
+    });
+
+    it('increments mention alert when message mentions current user in an inactive channel', () => {
+      const squad = {
+        id: 'squad1',
+        name: 'Squad One',
+        channels: [{ name: 'General', groupId: 'g1', order: 0 }],
+        kind: 'squad',
+        createdAt: 0,
+        updatedAt: 0,
+      } satisfies Squad;
+      mocks.mockStores.currentUser.set({ npub: 'npub1me', pubkey: 'pubkey1' });
+      mocks.mockStores.activeChannelId.set('active-g1');
+      mocks.mockStores.squads.set([squad]);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_message_new', {
+        group_id: 'g1',
+        message: dmMessage({
+          content: JSON.stringify({ body: 'hello', mentions: [{ npub: 'npub1me', alias: 'me' }] }),
+        }),
+      });
+      expect(mocks.mockFunctions.incrementMentionAlert).toHaveBeenCalledWith('squad1', 'General');
+    });
+
+    it('does not increment mention alert when message is for the active channel', () => {
+      const squad = {
+        id: 'squad1',
+        name: 'Squad One',
+        channels: [{ name: 'General', groupId: 'g1', order: 0 }],
+        kind: 'squad',
+        createdAt: 0,
+        updatedAt: 0,
+      } satisfies Squad;
+      mocks.mockStores.currentUser.set({ npub: 'npub1me', pubkey: 'pubkey1' });
+      mocks.mockStores.activeChannelId.set('g1');
+      mocks.mockStores.squads.set([squad]);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_message_new', {
+        group_id: 'g1',
+        message: dmMessage({
+          content: JSON.stringify({ body: 'hello', mentions: [{ npub: 'npub1me', alias: 'me' }] }),
+        }),
+      });
+      expect(mocks.mockFunctions.incrementMentionAlert).not.toHaveBeenCalled();
+    });
+
+    it('does not increment mention alert when current user is not mentioned', () => {
+      const squad = {
+        id: 'squad1',
+        name: 'Squad One',
+        channels: [{ name: 'General', groupId: 'g1', order: 0 }],
+        kind: 'squad',
+        createdAt: 0,
+        updatedAt: 0,
+      } satisfies Squad;
+      mocks.mockStores.currentUser.set({ npub: 'npub1me', pubkey: 'pubkey1' });
+      mocks.mockStores.activeChannelId.set('active-g1');
+      mocks.mockStores.squads.set([squad]);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_message_new', {
+        group_id: 'g1',
+        message: dmMessage({
+          content: JSON.stringify({ body: 'hello', mentions: [{ npub: 'npub1other', alias: 'other' }] }),
+        }),
+      });
+      expect(mocks.mockFunctions.incrementMentionAlert).not.toHaveBeenCalled();
     });
   });
 

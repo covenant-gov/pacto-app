@@ -1,11 +1,46 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { Mention } from '../messaging/mentions';
+import type { NostrProfile } from '../api/nostr';
 import {
   emojiToTwemojiFilename,
   parseMarkdown,
+  parseMarkdownWithMentions,
   sanitize,
   formatMessageTimestamp,
   formatMessageContent,
 } from './message-formatting';
+
+function profileStub(overrides: Partial<NostrProfile>): NostrProfile {
+  return {
+    id: '',
+    name: '',
+    avatar: '',
+    last_read: '',
+    status: { title: '', purpose: '', url: '' },
+    last_updated: 0,
+    typing_until: 0,
+    mine: false,
+    display_name: '',
+    nickname: '',
+    lud06: '',
+    lud16: '',
+    banner: '',
+    about: '',
+    website: '',
+    nip05: '',
+    muted: false,
+    bot: false,
+    avatar_cached: '',
+    banner_cached: '',
+    ...overrides,
+  };
+}
+
+type MockExtension = {
+  name: string;
+  renderer: (token: { raw: string; alias: string; npub: string }) => string;
+  tokenizer: (src: string) => { type: 'mention'; raw: string; alias: string; npub: string } | undefined;
+};
 
 describe('emojiToTwemojiFilename', () => {
   it('returns null for empty input', () => {
@@ -50,7 +85,93 @@ describe('parseMarkdown', () => {
     };
     vi.stubGlobal('window', { marked });
     expect(parseMarkdown('hello')).toBe('<p>parsed</p>');
-    expect(marked.parse).toHaveBeenCalledWith('hello', { async: false });
+    expect(marked.parse).toHaveBeenCalledWith(
+      'hello',
+      expect.objectContaining({ async: false }),
+    );
+  });
+});
+
+describe('parseMarkdownWithMentions', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('registers a mention extension alongside the spoiler extension', () => {
+    const marked = {
+      use: vi.fn(),
+      parse: vi.fn().mockReturnValue('<p>ok</p>'),
+    };
+    vi.stubGlobal('window', { marked });
+    const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
+    const profiles: Record<string, NostrProfile> = {
+      npub1abc: profileStub({ id: 'npub1abc', name: 'Alice', display_name: 'Alice A' }),
+    };
+    parseMarkdownWithMentions('hello @alice', mentions, profiles);
+    expect(marked.parse).toHaveBeenCalledWith(
+      'hello @alice',
+      expect.objectContaining({
+        async: false,
+        extensions: expect.arrayContaining([
+          expect.objectContaining({ name: 'mention' }),
+          expect.objectContaining({ name: 'spoiler' }),
+        ]),
+      }),
+    );
+  });
+
+  it('mention extension renderer emits a data-npub span using the profile display name', () => {
+    const marked = {
+      use: vi.fn(),
+      parse: vi.fn().mockReturnValue('<p>ok</p>'),
+    };
+    vi.stubGlobal('window', { marked });
+    const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
+    const profiles: Record<string, NostrProfile> = {
+      npub1abc: profileStub({ id: 'npub1abc', name: 'Alice', display_name: 'Alice A' }),
+    };
+    parseMarkdownWithMentions('@alice', mentions, profiles);
+    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
+    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    if (!ext) throw new Error('mention extension not registered');
+    const html = ext.renderer({ raw: '@alice', alias: 'alice', npub: 'npub1abc' });
+    expect(html).toContain('data-npub="npub1abc"');
+    expect(html).toContain('>@Alice</span>');
+  });
+
+  it('mention extension tokenizer accepts @alias at a word boundary', () => {
+    const marked = {
+      use: vi.fn(),
+      parse: vi.fn().mockReturnValue('<p>ok</p>'),
+    };
+    vi.stubGlobal('window', { marked });
+    const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
+    const profiles: Record<string, NostrProfile> = {};
+    parseMarkdownWithMentions('hi @alice', mentions, profiles);
+    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
+    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    if (!ext) throw new Error('mention extension not registered');
+    expect(ext.tokenizer('@alice')).toEqual({
+      type: 'mention',
+      raw: '@alice',
+      alias: 'alice',
+      npub: 'npub1abc',
+    });
+  });
+
+  it('mention extension tokenizer rejects @alias when followed by a word character', () => {
+    const marked = {
+      use: vi.fn(),
+      parse: vi.fn().mockReturnValue('<p>ok</p>'),
+    };
+    vi.stubGlobal('window', { marked });
+    const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
+    const profiles: Record<string, NostrProfile> = {};
+    parseMarkdownWithMentions('hi @alice', mentions, profiles);
+    const args = marked.parse.mock.calls[0] as [string, { extensions: MockExtension[] }];
+    const ext = args[1].extensions.find((e) => e.name === 'mention');
+    if (!ext) throw new Error('mention extension not registered');
+    expect(ext.tokenizer('@aliceX')).toBeUndefined();
   });
 });
 
@@ -149,5 +270,32 @@ describe('formatMessageContent', () => {
     const input = '<span https://example.com';
     const result = formatMessageContent(input);
     expect(result).toContain('https://example.com');
+  });
+
+  it('uses mention-aware markdown parsing when mentions and profiles are provided', () => {
+    const purify = createIdentityPurify();
+    const marked = {
+      use: vi.fn(),
+      parse: vi.fn((content: string, options: { extensions: MockExtension[] }) => {
+        let html = content;
+        const mentionExt = options.extensions.find((e) => e.name === 'mention');
+        if (mentionExt) {
+          html = html.replace(/@[a-zA-Z]+/g, (raw) => {
+            const token = mentionExt.tokenizer(raw);
+            return token ? mentionExt.renderer(token) : raw;
+          });
+        }
+        return `<p>${html}</p>`;
+      }),
+    };
+    vi.stubGlobal('window', { DOMPurify: purify, marked, twemoji: undefined });
+    const mentions: Mention[] = [{ npub: 'npub1abc', alias: 'alice' }];
+    const profiles: Record<string, NostrProfile> = {
+      npub1abc: profileStub({ id: 'npub1abc', name: 'Alice', display_name: 'Alice A' }),
+    };
+    const result = formatMessageContent('hello @alice', { mentions, profiles });
+    expect(result).toContain('class="mention"');
+    expect(result).toContain('data-npub="npub1abc"');
+    expect(result).toContain('>@Alice<');
   });
 });

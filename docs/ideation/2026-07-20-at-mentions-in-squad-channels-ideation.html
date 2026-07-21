@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideation: @ Mentions in Squad Channels</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --text: #1a1a1a;
+      --muted: #555;
+      --card: #ffffff;
+      --border: #e2e2e2;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --accent-text: #1e40af;
+      --warn: #b45309;
+      --warn-soft: #fffbeb;
+      --success: #15803d;
+      --success-soft: #f0fdf4;
+      --radius: 10px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f0f0f;
+        --text: #f0f0f0;
+        --muted: #aaa;
+        --card: #181818;
+        --border: #333;
+        --accent: #60a5fa;
+        --accent-soft: #1e293b;
+        --accent-text: #93c5fd;
+        --warn: #fbbf24;
+        --warn-soft: #292524;
+        --success: #4ade80;
+        --success-soft: #14532d;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+    header {
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 32px;
+      line-height: 1.2;
+      margin: 0 0 16px;
+      font-weight: 700;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    h2 {
+      font-size: 22px;
+      font-weight: 650;
+      margin: 48px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 8px;
+    }
+    p {
+      max-width: 70ch;
+      margin: 0 0 16px;
+    }
+    .lead {
+      font-size: 17px;
+      color: var(--muted);
+      max-width: 70ch;
+    }
+    .idea-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .idea-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 12px;
+    }
+    .idea-number {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 28px;
+    }
+    .idea-title {
+      font-size: 19px;
+      font-weight: 650;
+      margin: 0;
+      flex: 1;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 16px;
+    }
+    .chip {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--muted);
+    }
+    .chip.axis { background: var(--accent-soft); color: var(--accent-text); border-color: rgba(37,99,235,0.2); }
+    .chip.complexity-low { background: var(--success-soft); color: var(--success); border-color: rgba(21,128,61,0.2); }
+    .chip.complexity-medium { background: var(--warn-soft); color: var(--warn); border-color: rgba(180,83,9,0.2); }
+    .chip.complexity-high { background: #fee2e2; color: #b91c1c; border-color: rgba(185,28,28,0.2); }
+    .field {
+      margin-bottom: 14px;
+    }
+    .field-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 650;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .field-body {
+      font-size: 15px;
+    }
+    .field-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: rgba(0,0,0,0.05);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    @media (prefers-color-scheme: dark) {
+      .field-body code { background: rgba(255,255,255,0.1); }
+    }
+    .jump-list {
+      background: var(--accent-soft);
+      border: 1px solid rgba(37,99,235,0.15);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 32px;
+    }
+    .jump-list h3 {
+      margin-bottom: 12px;
+      font-size: 15px;
+      color: var(--accent-text);
+    }
+    .jump-list ol {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 15px;
+    }
+    .jump-list li {
+      margin-bottom: 6px;
+    }
+    .jump-list a {
+      color: var(--accent-text);
+      text-decoration: none;
+    }
+    .jump-list a:hover { text-decoration: underline; }
+    .rejection-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .rejection-table th, .rejection-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .rejection-table th {
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--bg);
+    }
+    .rejection-table td:first-child { width: 40px; color: var(--muted); }
+    .rejection-table td:nth-child(2) { font-weight: 500; min-width: 220px; }
+    .axis-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .axis-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 12px;
+    }
+    .axis-list li:last-child { border-bottom: none; }
+    .axis-number {
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 24px;
+    }
+    .context-block {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .context-block h3 { margin-top: 0; }
+    .context-block ul { padding-left: 20px; margin: 0; }
+    .context-block li { margin-bottom: 8px; }
+    footer.composition-signal {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    a { color: var(--accent); }
+    a:hover { text-decoration: underline; }
+    svg.diagram { max-width: 100%; height: auto; display: block; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="eyebrow">Ideation</div>
+      <h1>@ Mentions in Squad Channels</h1>
+      <p class="lead">Repo-grounded ideation for adding @ mentions to Pacto squad channels. Seven ranked directions survive from 41 raw ideas across five topic axes.</p>
+      <div class="meta">
+        <span><strong>Date:</strong> 2026-07-20</span>
+        <span><strong>Topic:</strong> at-mentions-in-squad-channels</span>
+        <span><strong>Mode:</strong> repo-grounded</span>
+        <span><strong>Focus:</strong> "I want to be able to mention someone with '@' in a squad channel."</span>
+      </div>
+    </header>
+
+    <section id="grounding">
+      <h2>Grounding Context</h2>
+      <div class="context-block">
+        <p>Pacto is a Tauri v2 desktop app: SvelteKit/Svelte 5 SPA frontend in <code>src/</code> and Rust backend in <code>src-tauri/src/</code>. Squad channels are MLS groups over Nostr (Kind 444), with per-account SQLite storage.</p>
+        <ul>
+          <li><strong>Shared composer:</strong> <code>src/components/dm/MessageInput.svelte</code> is a plain <code>textarea</code> used by both DMs and squad channels.</li>
+          <li><strong>Roster data already loaded:</strong> <code>membersByGroupId</code> and the <code>$profiles</code> store provide nickname, name, display_name, and avatar keyed by npub.</li>
+          <li><strong>Rendering pipeline:</strong> <code>src/lib/utils/message-formatting.ts</code> runs Markdown → Linkify → DOMPurify sanitize → Twemoji → DOMPurify sanitize.</li>
+          <li><strong>Notification gap:</strong> MLS messages update the UI but do not currently drive per-channel unread or highlight state for @mentions.</li>
+          <li><strong>Privacy posture:</strong> Group content is encrypted inside MLS; relays see only the group <code>h</code> tag and ciphertext.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="axes">
+      <h2>Topic Axes</h2>
+      <ol class="axis-list">
+        <li><span class="axis-number">1</span> <strong>Composition trigger</strong> — How the user types @ and selects a member.</li>
+        <li><span class="axis-number">2</span> <strong>Identity resolution</strong> — Which identifier to use and how to keep it stable.</li>
+        <li><span class="axis-number">3</span> <strong>Wire format / rendering</strong> — How mentions are serialized and rendered safely.</li>
+        <li><span class="axis-number">4</span> <strong>Notification / highlight</strong> — How the recipient gets notified.</li>
+        <li><span class="axis-number">5</span> <strong>Privacy and metadata</strong> — Whether mentioning leaks information outside the MLS group.</li>
+      </ol>
+    </section>
+
+    <section id="ideas">
+      <h2>Ranked Ideas</h2>
+
+      <div class="jump-list">
+        <h3>Jump to an idea</h3>
+        <ol>
+          <li><a href="#idea-1">The default @mention stack</a></li>
+          <li><a href="#idea-2">Go-to-Member Fuzzy Palette</a></li>
+          <li><a href="#idea-3">Mention by npub, render by nickname priority chain</a></li>
+          <li><a href="#idea-4">Inline mention tag pre-processed before the markdown pipeline</a></li>
+          <li><a href="#idea-5">Personal mention alert in squad-hub-alerts</a></li>
+          <li><a href="#idea-6">Quiet-by-default notifications with @-only bypass</a></li>
+          <li><a href="#idea-7">Plaintext-first private mentions</a></li>
+        </ol>
+      </div>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-header">
+          <span class="idea-number">1</span>
+          <h3 class="idea-title">The default @mention stack</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Cross-cutting</span>
+          <span class="chip complexity-medium">Medium complexity</span>
+          <span class="chip">Confidence 85%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Type <code>@</code> to trigger an inline autocomplete fed by the current squad roster and <code>$profiles</code>. When a member is selected, insert a stable canonical token (e.g., <code>[@npub1...]</code> or <code>@npub1...</code>) at the cursor. On the receiving side, the message passes through the existing <code>formatMessageContent</code> pipeline; a preprocessor converts the token into a safe <code>&lt;span class="mention" data-npub="..."&gt;</code> before markdown and sanitization run. After MLS decryption, the frontend scans the message for the current user's npub and, if found, triggers a highlight and a squad-hub alert. This is the smallest coherent path that satisfies the user's request without adding a new backend parser, protocol envelope, or metadata surface.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>MessageInput.svelte</code> is the shared textarea composer; <code>membersByGroupId</code> and <code>$profiles</code> already provide completion data; <code>formatMessageContent</code> runs Markdown → Linkify → Sanitize → Twemoji; and the <code>mls_message_new</code> event is already emitted to the frontend.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">It reuses the existing roster, rendering pipeline, and event bridge. Every piece has a known home in the codebase, so the feature can ship as a frontend-only change rather than a protocol redesign.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Inline autocomplete over a raw <code>textarea</code> requires caret-position tracking or a hidden mirror layer. Display names must be resolved locally, so a member with a stale profile cache may see raw npubs until profiles load.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-header">
+          <span class="idea-number">2</span>
+          <h3 class="idea-title">Go-to-Member Fuzzy Palette</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Composition trigger</span>
+          <span class="chip complexity-medium">Medium complexity</span>
+          <span class="chip">Confidence 75%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Instead of an inline dropdown floating over the textarea, typing <code>@</code> opens a fuzzy command palette modeled on an IDE's "Go to Symbol." The palette filters on nickname, name, display_name, and npub, and inserts a stable npub token at the cursor when the user selects a match. This avoids the fragile coordinate math of positioning a pop-up over a raw textarea.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>MessageInput.svelte</code> uses a standard <code>&lt;textarea rows="1"&gt;</code> and <code>handleKeydown</code> is the central interception point for character-level triggers.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">Squad rosters can be noisy and profile names change. A fuzzy palette reduces friction and mis-mentions while sidestepping the most common implementation risk of textarea autocomplete overlays.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">A modal breaks the flow of a continuous chat composer; it may feel heavy for small squads. It also requires a new keyboard shortcut or a clear dismissal behavior.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-header">
+          <span class="idea-number">3</span>
+          <h3 class="idea-title">Mention by npub, render by nickname priority chain</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Identity resolution</span>
+          <span class="chip complexity-low">Low complexity</span>
+          <span class="chip">Confidence 90%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Store the raw npub as the canonical mention identifier on the wire, but render the mention using the same priority chain the rest of the app already uses: nickname → name → display_name → shortened npub. When a profile updates, the rendered mention automatically reflects the new name without invalidating the message or requiring a message edit.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>src/lib/utils/profile.ts</code> resolves names in this priority: nickname, Nostr name, display_name, shortened npub, 'Unknown'.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">Display names in a group change frequently. Binding the mention to the unforgeable npub keeps the reference stable while the UX still feels like <code>@displayName</code>. It avoids inventing a parallel mention-name resolution system.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">During network lag or before profiles load, the user may see a raw npub. Two members with the same display name still require disambiguation at compose time.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-header">
+          <span class="idea-number">4</span>
+          <h3 class="idea-title">Inline mention tag pre-processed before the markdown pipeline</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Wire format / rendering</span>
+          <span class="chip complexity-medium">Medium complexity</span>
+          <span class="chip">Confidence 80%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Before <code>marked</code> runs, replace resolved <code>@handle</code> tokens with a safe <code>&lt;span class="mention" data-npub="..."&gt;display name&lt;/span&gt;</code>. Then add <code>span</code> and <code>data-npub</code> to the DOMPurify allowlist, mirroring how the existing <code>sanitizeWithEmoji</code> hook validates Twemoji <code>src</code> attributes. The rest of the pipeline remains unchanged.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>formatMessageContent</code> runs <code>parseMarkdown → linkify → sanitize → replaceEmoji → sanitizeWithEmoji</code>; the <code>sanitizeWithEmoji</code> hook pattern already validates structured attributes.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">It avoids forking the rendering pipeline into a separate DOM pass. XSS guarantees stay centralized in the existing strict allowlist, and the code pattern is already proven for spoilers and emojis.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">The allowlist must be widened carefully. A bug in the preprocessor could allow arbitrary <code>span</code> or <code>data-npub</code> attributes through the sanitizer.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-header">
+          <span class="idea-number">5</span>
+          <h3 class="idea-title">Personal mention alert in squad-hub-alerts</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Notification / highlight</span>
+          <span class="chip complexity-low">Low complexity</span>
+          <span class="chip">Confidence 85%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Extend the existing <code>personalAlertsNeededBySquadId</code> boolean store so a squad channel can show a badge when the current user has been explicitly @mentioned. The badge is distinct from the existing join-request and roster-signer alerts, so the user knows the alert is personal attention, not a governance action.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>mls_message_new</code> currently updates the message list but does not increment a per-channel unread count, while <code>personalAlertsNeededBySquadId</code> already drives <code>Channel.svelte</code> badges.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">It compounds the existing alert store rather than duplicating the DM unread system. This gives squads a lightweight "you were mentioned" signal without the scope of full per-message read receipts.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">A boolean alert cannot distinguish one mention from ten in the same channel. It may need a companion "mentions list" view to be truly useful.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-header">
+          <span class="idea-number">6</span>
+          <h3 class="idea-title">Quiet-by-default notifications with @-only bypass</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Notification / highlight</span>
+          <span class="chip complexity-medium">Medium complexity</span>
+          <span class="chip">Confidence 70%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Invert the default notification model for squad channels: they are muted for all members except when a message contains <code>@your-npub</code>. This removes the notification fatigue of every MLS message and makes the mention action meaningful again. The policy is enforced client-side by scanning decrypted messages for the user's own npub.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> DMs have a robust <code>last_read</code> and unread count system, while squad channels rely on a simplified alert model; the app already uses <code>tauri-plugin-notification</code> for native alerts.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">Squad channels can be high-volume. Without this, every message feels like a mention and @mentions lose their signal. It also aligns with the user's stated need to "get someone's attention."</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">Users may miss important non-mentioned messages unless they actively check the channel. Per-channel or per-user overrides may be needed.</div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-header">
+          <span class="idea-number">7</span>
+          <h3 class="idea-title">Plaintext-first private mentions</h3>
+        </div>
+        <div class="chips">
+          <span class="chip axis">Privacy and metadata</span>
+          <span class="chip complexity-low">Low complexity</span>
+          <span class="chip">Confidence 90%</span>
+        </div>
+        <div class="field">
+          <div class="field-label">Description</div>
+          <div class="field-body">Mentions are ordinary text tokens inside the encrypted message content. The relay and backend never parse them; each client scans decrypted messages for its own npub and highlights accordingly. No separate mention envelope, no structured metadata, and no new Nostr event kind is introduced.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Basis</div>
+          <div class="field-body"><strong>direct:</strong> <code>DmMessage</code> stores only a <code>content</code> string; <code>MlsGroupMessage</code> (Kind 444) encrypts content to the group and only members can unwrap it.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Rationale</div>
+          <div class="field-body">It preserves the privacy-first architecture. Adding mentions leaks no additional metadata to relays, backend operators, or non-members, because the mention is just structured text inside an already E2EE message.</div>
+        </div>
+        <div class="field">
+          <div class="field-label">Downsides</div>
+          <div class="field-body">The backend cannot compute aggregate mention statistics or send push notifications on behalf of offline users. Client-side scanning must be efficient in large channels.</div>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejected">
+      <h2>Rejection Summary</h2>
+      <p>41 raw ideas were considered. The 23 below were cut to keep the survivor set focused and high-signal.</p>
+      <table class="rejection-table">
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Autocomplete @mentions from the squad roster</td><td>Subsumed by the default @mention stack; kept as an implementation detail rather than a standalone direction.</td></tr>
+          <tr><td>2</td><td>Cursor-following @ autocomplete overlay</td><td>Subsumed by the default stack and the fuzzy palette; one implementation detail, not a distinct direction.</td></tr>
+          <tr><td>3</td><td>Keyboard-first @ trigger</td><td>Subsumed by the default stack and other composition ideas.</td></tr>
+          <tr><td>4</td><td>Member picker shortcut modeled on the emoji picker</td><td>Subsumed by the default stack and the fuzzy palette.</td></tr>
+          <tr><td>5</td><td>Auto-mention the thread author on reply</td><td>Narrow feature; better layered on the default stack as a follow-up.</td></tr>
+          <tr><td>6</td><td>No-dropdown avatar-grid @ insertion</td><td>Too specific and UI-heavy; subsumed by the fuzzy palette.</td></tr>
+          <tr><td>7</td><td>Stable npub-only mention payload</td><td>Subsumed by "Mention by npub, render by nickname priority chain."</td></tr>
+          <tr><td>8</td><td>npub-anchored mentions with multi-field search</td><td>Subsumed by "Mention by npub, render by nickname priority chain."</td></tr>
+          <tr><td>9</td><td>Local nickname-first mention handles</td><td>Subsumed by "Mention by npub, render by nickname priority chain."</td></tr>
+          <tr><td>10</td><td>Display-name collision disambiguation prompt</td><td>Important detail but too granular for a top-level direction; belongs in the autocomplete implementation.</td></tr>
+          <tr><td>11</td><td>CNAME Nicknames</td><td>Weak basis: the nickname field is global, not a squad-local CNAME.</td></tr>
+          <tr><td>12</td><td>Role-based rotating handles</td><td>Weak basis: no role-assignment system exists in the codebase.</td></tr>
+          <tr><td>13</td><td>Anonymous bat-signal mentions</td><td>Interesting but niche; not core to the stated @mention need.</td></tr>
+          <tr><td>14</td><td>Mention-link pre-processor in the rendering pipeline</td><td>Subsumed by "Inline mention tag pre-processed before the markdown pipeline."</td></tr>
+          <tr><td>15</td><td>Plaintext npub fallback for wire readability</td><td>Subsumed by "Plaintext-first private mentions."</td></tr>
+          <tr><td>16</td><td>Mention-safe links via a custom protocol</td><td>Adds complexity without clear payoff over the sanitized inline tag approach.</td></tr>
+          <tr><td>17</td><td>Mention as Email Multipart</td><td>Weak basis: would require breaking the plain-string wire format.</td></tr>
+          <tr><td>18</td><td>Mention as Inline Citation</td><td>Subsumed by "Inline mention tag pre-processed before the markdown pipeline."</td></tr>
+          <tr><td>19</td><td>Detached encrypted mention envelopes</td><td>Weak basis: no separate envelope or attachment mechanism exists in the current pipeline.</td></tr>
+          <tr><td>20</td><td>Zero-width encoded plaintext mentions</td><td>Too exotic and fragile; likely to cause copy-paste and accessibility issues.</td></tr>
+          <tr><td>21</td><td>Mention-only native desktop notifications</td><td>Subsumed by the notification ideas in the default stack and quiet-by-default.</td></tr>
+          <tr><td>22</td><td>Mention Callboard</td><td>Alternative notification model; less central than squad-hub alert and quiet-by-default.</td></tr>
+          <tr><td>23</td><td>Sender-localized @all</td><td>Niche use case; can be added after the core @mention feature.</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 16px; font-size: 14px; color: var(--muted);">Several additional ideas were also rejected as subsumed by the default stack or plaintext-first model, including Client-side self-highlight scan, Frontend-only mention parsing, Client-side broadcast with per-member self-check, Reply-driven auto-mention, Squad-local role mentions, and @all broadcast without roster enumeration.</p>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-07-20T17:00Z by ce-ideate from user focus: "I want to be able to mention someone with '@' in a squad channel."
+    </footer>
+  </div>
+</body>
+</html>

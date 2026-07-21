@@ -10,6 +10,7 @@ import {
   resolveInviteInviterNpub,
   toPactoAppInboxEntry,
 } from '../lib/pacto-app-inbox';
+import type { Mention } from '../lib/messaging/mentions';
 import { persistenceKey } from './persistence-context';
 import {
   initInviteDecisionPersistence,
@@ -206,6 +207,7 @@ export interface DmMessage {
   replied_to_content?: string | null;
   replied_to_npub?: string | null;
   replied_to_has_attachment?: boolean | null;
+  mentions?: Mention[];
 }
 
 export interface DmChatSnapshot {

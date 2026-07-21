@@ -7,6 +7,7 @@
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
+  import { parseMentionEnvelope } from '../../lib/messaging/mentions';
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
   import {
     groupTimelineKey,
@@ -56,6 +57,7 @@
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { clearMentionAlert } from '../../stores/squad-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
 
@@ -81,6 +83,15 @@
     return [...matches].sort((a, b) => a.order - b.order)[0];
   })();
   $: activeSquad = activeParent as Squad | null;
+
+  let prevActiveChannelKey: string | null = null;
+  $: if (activeSquad && activeChannel) {
+    const key = `${activeSquad.id}:${activeChannel.name}`;
+    if (key !== prevActiveChannelKey) {
+      prevActiveChannelKey = key;
+      clearMentionAlert(activeSquad.id, activeChannel.name);
+    }
+  }
 
   /** MLS group used for the members sidebar: announcements membership for the dashboard pseudo-channel. */
   $: announcementsGroupIdForMembers =
@@ -230,6 +241,7 @@
       replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
       replyAuthorName: undefined as string | undefined,
       replyPreview: undefined as string | undefined,
+      mentions: msg.mentions,
     };
     if (msg.mine) {
       base.authorName = 'You';
@@ -247,11 +259,13 @@
           : replyNpub
             ? getProfileDisplayName($profiles[replyNpub] ?? null)
             : 'Unknown';
+      const replyContent =
+        parseMentionEnvelope(msg.replied_to_content ?? '')?.body ?? msg.replied_to_content;
       base.replyPreview =
         msg.replied_to_has_attachment === true
           ? 'Attachment'
-          : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
+          : replyContent != null && replyContent.length > 0
+            ? replyContent.slice(0, 80).trim() + (replyContent.length > 80 ? '…' : '')
             : 'Message';
     }
     return base;
@@ -678,7 +692,13 @@
             {#if $groupSendError}
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
-            <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+            <MessageInput
+              channelName={channelName}
+              onSend={handleSendMessage}
+              disabled={isChannelCreating}
+              enableMentions={true}
+              mentionCandidates={panelMembers}
+            />
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
@@ -745,7 +765,13 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+    <MessageInput
+      channelName={channelName}
+      onSend={handleSendMessage}
+      disabled={isChannelCreating}
+      enableMentions={true}
+      mentionCandidates={panelMembers}
+    />
     {/if}
 
     <!-- Leave channel confirm -->

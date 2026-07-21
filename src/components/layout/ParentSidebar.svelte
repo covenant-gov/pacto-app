@@ -7,6 +7,7 @@
   import {
     hubChannelAlertCount,
     personalAlertsNeededBySquadId,
+    mentionAlertsByChannelKey,
   } from '../../stores/squad-hub-alerts';
   import { pendingJoinRequestsBySquadId } from '../../stores/squad-join-requests';
 
@@ -76,9 +77,10 @@
   $: hubAlertByChannelName = (() => {
     const personal = $personalAlertsNeededBySquadId;
     const joinRequests = $pendingJoinRequestsBySquadId;
+    const mentions = $mentionAlertsByChannelKey;
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
-      out[channel.name] = hubChannelAlertCount(channel.name, squadId, joinRequests, personal);
+      out[channel.name] = hubChannelAlertCount(channel.name, squadId, joinRequests, personal, mentions);
     }
     return out;
   })();

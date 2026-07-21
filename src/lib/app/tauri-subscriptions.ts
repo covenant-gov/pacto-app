@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
+import { parseMentionEnvelope } from '../messaging/mentions';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   isPactoAppRoutableInviteContent,
@@ -10,7 +11,7 @@ import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { get } from 'svelte/store';
-import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
+import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast, currentUser } from '../../stores/auth';
 import {
   backendDmMessages,
   backendGroupMessages,
@@ -23,11 +24,14 @@ import {
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
   activeDmId,
+  squads,
+  activeChannelId,
   type DmMessage,
   type DmChatState,
   type SyncStatus,
 } from '../../stores/app';
 import { incrementDmUnread, dmThreadScrolledToBottom } from '../../stores/dm-unread';
+import { incrementMentionAlert } from '../../stores/squad-hub-alerts';
 
 const TYPING_EXPIRY_SEC = 15;
 
@@ -39,9 +43,10 @@ export interface AppEventHandlers {
 }
 
 function normalizeDmPayload(message: DmMessage): DmMessage {
-  const base = {
+  const envelope = parseMentionEnvelope(message.content ?? '');
+  const base: DmMessage = {
     id: message.id,
-    content: message.content,
+    content: envelope?.body ?? message.content,
     at: message.at,
     mine: message.mine,
     npub: message.npub,
@@ -54,6 +59,9 @@ function normalizeDmPayload(message: DmMessage): DmMessage {
     replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null })
       .replied_to_has_attachment,
   };
+  if (envelope) {
+    base.mentions = envelope.mentions;
+  }
   const ann = parseWalletTxAnnouncement(message.content ?? '');
   if (ann?.block_number) {
     return { ...base, pending: false };
@@ -265,6 +273,18 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       return { ...byGroup, [group_id]: [...withoutOpt, m] };
     });
     onMlsStructuredMessage(m.content, group_id, handlers);
+    if (m.mentions?.length) {
+      const myNpub = get(currentUser)?.npub;
+      if (myNpub && m.mentions.some((x) => x.npub === myNpub) && group_id !== get(activeChannelId)) {
+        for (const squad of get(squads)) {
+          for (const channel of squad.channels) {
+            if (channel.groupId === group_id) {
+              incrementMentionAlert(squad.id, channel.name);
+            }
+          }
+        }
+      }
+    }
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
   });
 

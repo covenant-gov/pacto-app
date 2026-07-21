@@ -12,18 +12,23 @@ import type { Squad } from './squads';
 /** Per-user action needed in my-dashboard alerts (roster signer prompt). */
 export const personalAlertsNeededBySquadId = writable<Record<string, boolean>>({});
 
+/** Per-squad per-channel mention alert counts (key: `${squadId}:${channelName}`). */
+export const mentionAlertsByChannelKey = writable<Record<string, number>>({});
+
 const personalAlertRefreshGenBySquadId = new Map<string, number>();
 
 export function resetSquadHubAlertStores(): void {
   personalAlertsNeededBySquadId.set({});
   personalAlertRefreshGenBySquadId.clear();
+  mentionAlertsByChannelKey.set({});
 }
 
 export function hubChannelAlertCount(
   channelName: string,
   squadId: string | null | undefined,
   joinRequestsBySquad: Record<string, CommonsJoinRequestDto[]>,
-  personalBySquad = get(personalAlertsNeededBySquadId)
+  personalBySquad = get(personalAlertsNeededBySquadId),
+  mentionByChannelKey = get(mentionAlertsByChannelKey)
 ): number {
   const sid = squadId?.trim();
   if (!sid) return 0;
@@ -33,7 +38,7 @@ export function hubChannelAlertCount(
   if (channelName === MY_DASHBOARD_CHANNEL_NAME) {
     return personalBySquad[sid] ? 1 : 0;
   }
-  return 0;
+  return mentionByChannelKey[`${sid}:${channelName}`] ?? 0;
 }
 
 export function formatHubChannelAlertCount(count: number): string {
@@ -46,6 +51,25 @@ function announcementsGroupIdForSquad(squad: Squad): string | null {
     squad.channels[0]?.groupId?.trim() ||
     null
   );
+}
+
+export function getMentionAlertKey(squadId: string, channelName: string): string {
+  return `${squadId.trim()}:${channelName.trim()}`;
+}
+
+export function incrementMentionAlert(squadId: string, channelName: string): void {
+  const key = getMentionAlertKey(squadId, channelName);
+  mentionAlertsByChannelKey.update((m) => ({ ...m, [key]: (m[key] ?? 0) + 1 }));
+}
+
+export function clearMentionAlert(squadId: string, channelName: string): void {
+  const key = getMentionAlertKey(squadId, channelName);
+  mentionAlertsByChannelKey.update((m) => {
+    if (m[key] == null) return m;
+    const next = { ...m };
+    delete next[key];
+    return next;
+  });
 }
 
 /** Optimistic clear/set; bumps refresh generation so stale async refreshes cannot flip state back. */
