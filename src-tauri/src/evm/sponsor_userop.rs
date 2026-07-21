@@ -296,8 +296,9 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
 
+    // SemiModularAccount7702 recovers against EIP-191 personal_sign(userOpHash), not raw eth_sign.
     let sig = signer
-        .sign_hash(&user_op_hash)
+        .sign_message(user_op_hash.as_slice())
         .await
         .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
     let packed_sig = pack_mav2_eoa_userop_signature(&sig.as_bytes());
@@ -591,6 +592,13 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
         (
             "ACCOUNT_VALIDATION",
             "Account validateUserOp reverted (AA23). For SemiModularAccount7702 this is usually a wrong nonce key or UserOp signature packing.".into(),
+        )
+    } else if lower.contains("-32507")
+        || lower.contains("invalid account signature")
+    {
+        (
+            "ACCOUNT_SIGNATURE",
+            "Account signature invalid (-32507). SemiModularAccount7702 expects EIP-191 personal_sign of the userOpHash, then 0xFF||0x00||ECDSA packing.".into(),
         )
     } else {
         ("PAYMASTER_REJECTED", raw.to_string())
@@ -909,9 +917,43 @@ mod tests {
         assert_eq!(code, "ACCOUNT_VALIDATION");
         assert!(msg.contains("AA23"));
 
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32507,"message":"Invalid account signature"}"#,
+        );
+        assert_eq!(code, "ACCOUNT_SIGNATURE");
+        assert!(msg.contains("EIP-191"));
+
         let (code, msg) = classify_bundler_userop_reject("something else");
         assert_eq!(code, "PAYMASTER_REJECTED");
         assert_eq!(msg, "something else");
+    }
+
+    #[test]
+    fn mav2_userop_sig_uses_eip191_not_raw_hash() {
+        use alloy::primitives::keccak256;
+        use alloy::signers::local::PrivateKeySigner;
+        use alloy::signers::SignerSync;
+
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+        let user_op_hash = keccak256(b"fake-userop-hash-for-test");
+
+        // Deployed MAv2: recover against toEthSignedMessageHash(userOpHash).
+        let eip191 = alloy::primitives::eip191_hash_message(user_op_hash.as_slice());
+        let sig = signer.sign_message_sync(user_op_hash.as_slice()).unwrap();
+        let recovered = sig.recover_address_from_prehash(&eip191).unwrap();
+        assert_eq!(recovered, signer.address());
+
+        // Raw sign_hash would not recover against the EIP-191 digest.
+        let raw = signer.sign_hash_sync(&user_op_hash).unwrap();
+        let wrong = raw.recover_address_from_prehash(&eip191).unwrap();
+        assert_ne!(wrong, signer.address());
+
+        let packed = pack_mav2_eoa_userop_signature(&sig.as_bytes());
+        assert_eq!(packed.len(), 67);
+        assert_eq!(&packed[0..2], &[0xff, 0x00]);
     }
 
     #[test]
