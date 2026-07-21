@@ -240,7 +240,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         addrs.entry_point,
         &IEntryPointV07::getNonceCall {
             sender: member,
-            key: Uint::<192, 3>::ZERO,
+            key: mav2_fallback_nonce_key(),
         },
     )
     .await
@@ -300,6 +300,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         .sign_hash(&user_op_hash)
         .await
         .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
+    let packed_sig = pack_mav2_eoa_userop_signature(&sig.as_bytes());
 
     let user_op = user_op_json(UserOpParams {
         sender: member,
@@ -312,11 +313,26 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         max_priority_fee_per_gas: max_priority,
         paymaster: addrs.pacto_sponsor_paymaster,
         paymaster_and_data: &paymaster_and_data,
-        signature: &sig.as_bytes(),
+        signature: &packed_sig,
         eip7702_auth,
     })?;
 
     bundler_send_user_operation(&bundler, &user_op, addrs.entry_point).await
+}
+
+/// Alchemy SemiModularAccount7702 (MAv2): entityId 0 + isGlobalValidation → nonce key 1.
+/// Without the global bit, `execute` hits ValidationFunctionMissing (AA23).
+fn mav2_fallback_nonce_key() -> Uint<192, 3> {
+    Uint::<192, 3>::from(1u64)
+}
+
+/// aa-sdk `packUOSignature`: sparse final segment `0xFF`, EOA type `0x00`, then Electrum ECDSA.
+fn pack_mav2_eoa_userop_signature(ecdsa_65: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(2 + ecdsa_65.len());
+    out.push(0xff);
+    out.push(0x00);
+    out.extend_from_slice(ecdsa_65);
+    out
 }
 
 /// Fields of the ERC-4337 v0.7 UserOperation JSON sent to the bundler.
@@ -568,6 +584,14 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "BUNDLER_FEE",
             "Bundler rejected UserOp gas fees (priority fee below floor). Retry after updating the client.".into(),
         )
+    } else if lower.contains("aa23")
+        || lower.contains("validationfunctionmissing")
+        || lower.contains("cf7b49f6")
+    {
+        (
+            "ACCOUNT_VALIDATION",
+            "Account validateUserOp reverted (AA23). For SemiModularAccount7702 this is usually a wrong nonce key or UserOp signature packing.".into(),
+        )
     } else {
         ("PAYMASTER_REJECTED", raw.to_string())
     }
@@ -745,15 +769,16 @@ mod tests {
     use super::{
         bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, classify_bundler_userop_reject,
         clamp_userop_eip1559_fees, eip7702_auth_json, encode_eip7702_authorization,
-        explicit_bundler_rpc_url, pack_u128s, parse_send_user_op_response, paymaster_data,
-        receipt_transaction_hash, retriable_bundler_status, user_op_json, userop_max_cost_wei,
-        FALLBACK_MAX_PRIORITY_FEE, UserOpParams,
+        explicit_bundler_rpc_url, mav2_fallback_nonce_key, pack_mav2_eoa_userop_signature,
+        pack_u128s, parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE,
+        UserOpParams,
     };
     use crate::evm::sponsor_paymaster::{
         encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT,
         PAYMASTER_DATA_OFFSET,
     };
-    use alloy::primitives::{address, b256, B256, U256};
+    use alloy::primitives::{address, b256, B256, U256, Uint};
     use reqwest::StatusCode;
     use serde_json::json;
     use std::time::Duration;
@@ -878,9 +903,30 @@ mod tests {
         assert_eq!(code, "BUNDLER_FEE");
         assert!(msg.contains("priority fee"));
 
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32500,"data":{"reason":"AA23 reverted","revertData":"0xcf7b49f6b61d27f6"},"message":"validation reverted"}"#,
+        );
+        assert_eq!(code, "ACCOUNT_VALIDATION");
+        assert!(msg.contains("AA23"));
+
         let (code, msg) = classify_bundler_userop_reject("something else");
         assert_eq!(code, "PAYMASTER_REJECTED");
         assert_eq!(msg, "something else");
+    }
+
+    #[test]
+    fn mav2_nonce_key_is_global_fallback() {
+        assert_eq!(mav2_fallback_nonce_key(), Uint::<192, 3>::from(1u64));
+    }
+
+    #[test]
+    fn pack_mav2_eoa_signature_prefixes_ff_00() {
+        let ecdsa = [0xabu8; 65];
+        let packed = pack_mav2_eoa_userop_signature(&ecdsa);
+        assert_eq!(packed.len(), 67);
+        assert_eq!(packed[0], 0xff);
+        assert_eq!(packed[1], 0x00);
+        assert_eq!(&packed[2..], &ecdsa);
     }
 
     #[test]

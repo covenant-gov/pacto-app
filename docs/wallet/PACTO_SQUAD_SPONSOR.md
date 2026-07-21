@@ -82,6 +82,8 @@ If bundlers still reject with **stake too low**, the paymaster also needs `addSt
 |---------|--------|--------|
 | `0x69007702764179f14F51cdce752f4f775d74E139` | Alchemy [SemiModularAccount7702](https://www.alchemy.com/docs/wallets/smart-contracts/deployed-addresses) (MAv2) | `entryPoint()` = EP v0.7; `execute(address,uint256,bytes)`; shared bytecode for roster EOA set-code (not a per-user deploy) |
 
+Sponsored UserOps against this impl must use **EntryPoint nonce key `1`** (fallback owner entity 0 + global validation) and pack the UserOp signature as **`0xFF || 0x00 ||` ECDSA** (aa-sdk `packUOSignature`). Key `0` or a raw 65-byte signature yields AA23 `ValidationFunctionMissing(execute)` / invalid signature type.
+
 Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack.
 
 ## Manual smoke (Sepolia)
