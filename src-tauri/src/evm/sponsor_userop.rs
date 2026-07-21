@@ -702,22 +702,75 @@ fn parse_estimate_user_op_gas_response(res: &Value) -> Result<EstimatedUserOpGas
         call_gas_limit: parse_hex_u128_field(result, "callGasLimit")?,
         verification_gas_limit: parse_hex_u128_field(result, "verificationGasLimit")?,
         pre_verification_gas: parse_hex_u128_field(result, "preVerificationGas")?,
+        // Sponsored path needs this; Alchemy may omit postOp when the paymaster has none.
         paymaster_verification_gas_limit: parse_hex_u128_field(
             result,
             "paymasterVerificationGasLimit",
         )?,
-        paymaster_post_op_gas_limit: parse_hex_u128_field(result, "paymasterPostOpGasLimit")?,
+        paymaster_post_op_gas_limit: parse_hex_u128_field_or(
+            result,
+            "paymasterPostOpGasLimit",
+            DEFAULT_POST_OP_GAS_LIMIT,
+        )?,
     })
 }
 
 fn parse_hex_u128_field(obj: &Value, key: &str) -> Result<u128, String> {
-    let raw = obj.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
-        wallet_err_json(
+    let Some(v) = obj.get(key) else {
+        return Err(wallet_err_json(
             "BUNDLER_ESTIMATE",
             format!("eth_estimateUserOperationGas missing {key}"),
             None,
+        ));
+    };
+    if v.is_null() {
+        return Err(wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas missing {key}"),
+            None,
+        ));
+    }
+    let raw = v.as_str().ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas invalid {key}"),
+            None,
         )
     })?;
+    if raw.is_empty() {
+        return Err(wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas missing {key}"),
+            None,
+        ));
+    }
+    parse_hex_u128(raw).ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas invalid {key}: {raw}"),
+            None,
+        )
+    })
+}
+
+/// Optional hex gas field; missing / null / empty → `default` (Alchemy omits unused paymaster postOp).
+fn parse_hex_u128_field_or(obj: &Value, key: &str, default: u128) -> Result<u128, String> {
+    let Some(v) = obj.get(key) else {
+        return Ok(default);
+    };
+    if v.is_null() {
+        return Ok(default);
+    }
+    let raw = v.as_str().ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas invalid {key}"),
+            None,
+        )
+    })?;
+    if raw.is_empty() {
+        return Ok(default);
+    }
     parse_hex_u128(raw).ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_ESTIMATE",
@@ -988,8 +1041,8 @@ mod tests {
         paymaster_data, receipt_transaction_hash, retriable_bundler_status, user_op_json,
         userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE, UserOpParams,
     };
+    use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
-    use crate::evm::sponsor_paymaster::encode_paymaster_and_data;
     use alloy::primitives::{address, b256, B256, U256, Uint};
     use reqwest::StatusCode;
     use serde_json::json;
@@ -1110,6 +1163,53 @@ mod tests {
         });
         let err = parse_estimate_user_op_gas_response(&res).unwrap_err();
         assert!(err.contains("PAYMASTER_GAS_EFFICIENCY"));
+    }
+
+    #[test]
+    fn parse_estimate_defaults_omitted_paymaster_post_op() {
+        let res = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "preVerificationGas": "0x13880",
+                "verificationGasLimit": "0x186a0",
+                "callGasLimit": "0x33450",
+                "paymasterVerificationGasLimit": "0x1bb00"
+            }
+        });
+        let g = parse_estimate_user_op_gas_response(&res).unwrap();
+        assert_eq!(g.paymaster_verification_gas_limit, 113_408);
+        assert_eq!(g.paymaster_post_op_gas_limit, DEFAULT_POST_OP_GAS_LIMIT);
+
+        let null_post = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "preVerificationGas": "0x13880",
+                "verificationGasLimit": "0x186a0",
+                "callGasLimit": "0x33450",
+                "paymasterVerificationGasLimit": "0x1bb00",
+                "paymasterPostOpGasLimit": null
+            }
+        });
+        let g = parse_estimate_user_op_gas_response(&null_post).unwrap();
+        assert_eq!(g.paymaster_post_op_gas_limit, DEFAULT_POST_OP_GAS_LIMIT);
+    }
+
+    #[test]
+    fn parse_estimate_requires_paymaster_verification_gas() {
+        let res = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "preVerificationGas": "0x13880",
+                "verificationGasLimit": "0x186a0",
+                "callGasLimit": "0x33450"
+            }
+        });
+        let err = parse_estimate_user_op_gas_response(&res).unwrap_err();
+        assert!(err.contains("BUNDLER_ESTIMATE"));
+        assert!(err.contains("paymasterVerificationGasLimit"));
     }
 
     #[test]
