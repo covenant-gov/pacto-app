@@ -85,8 +85,15 @@
   $: mentionItems = (() => {
     if (!enableMentions) return [];
     const aliases = assignMentionAliases(mentionCandidates, $profiles);
+    const allPossibleMentions: Mention[] = mentionCandidates.map((npub) => ({
+      npub,
+      alias: aliases.get(npub) ?? npub.slice(0, 16),
+    }));
+    const currentMentions = filterMentionsInText(messageText, allPossibleMentions);
+    const alreadyMentioned = new Set(currentMentions.map((m) => m.npub));
     const out: MentionCandidate[] = [];
     for (const npub of mentionCandidates) {
+      if (alreadyMentioned.has(npub)) continue;
       const profile = $profiles[npub];
       out.push({
         npub,
@@ -118,12 +125,14 @@
   function buildMentionMirror(textarea: HTMLTextAreaElement): HTMLDivElement {
     const style = getComputedStyle(textarea);
     const div = document.createElement('div');
-    div.style.position = 'absolute';
+    div.style.position = 'fixed';
     div.style.visibility = 'hidden';
+    div.style.pointerEvents = 'none';
     div.style.whiteSpace = 'pre-wrap';
     div.style.wordWrap = 'break-word';
     div.style.boxSizing = 'border-box';
-    div.style.width = `${textarea.clientWidth}px`;
+    div.style.overflow = 'auto';
+    div.style.zIndex = '-1';
     div.style.fontFamily = style.fontFamily;
     div.style.fontSize = style.fontSize;
     div.style.fontWeight = style.fontWeight;
@@ -141,11 +150,18 @@
   }
 
   function getCaretCoordinates(textarea: HTMLTextAreaElement): { top: number; left: number } {
+    const taRect = textarea.getBoundingClientRect();
     const pos = textarea.selectionStart ?? 0;
     const before = textarea.value.slice(0, pos);
     const after = textarea.value.slice(pos);
 
     const div = buildMentionMirror(textarea);
+    div.style.top = `${taRect.top}px`;
+    div.style.left = `${taRect.left}px`;
+    div.style.width = `${textarea.clientWidth}px`;
+    div.style.height = `${textarea.clientHeight}px`;
+    div.scrollTop = textarea.scrollTop;
+
     const marker = document.createElement('span');
     marker.textContent = after || '\u200b';
 
@@ -154,11 +170,9 @@
     document.body.appendChild(div);
 
     const markerRect = marker.getBoundingClientRect();
-    const top = markerRect.top - parseFloat(getComputedStyle(textarea).paddingTop);
-    const left = markerRect.left - parseFloat(getComputedStyle(textarea).paddingLeft);
 
     document.body.removeChild(div);
-    return { top, left };
+    return { top: markerRect.top, left: markerRect.left };
   }
 
   function openMentionAutocomplete(start: number, end: number) {
@@ -169,7 +183,16 @@
     mentionAutocompleteSelected = 0;
     const coords = getCaretCoordinates(textareaEl);
     const lineHeight = parseFloat(getComputedStyle(textareaEl).lineHeight) || 20;
-    mentionAutocompletePosition = { top: coords.top + lineHeight + 2, left: coords.left };
+    const candidateCount = mentionCandidates.length;
+    const estimateHeight = Math.min(280, 38 + candidateCount * 44);
+    const spaceBelow = window.innerHeight - coords.top - lineHeight;
+    let top: number;
+    if (spaceBelow >= estimateHeight + 8) {
+      top = coords.top + lineHeight + 2;
+    } else {
+      top = Math.max(8, coords.top - estimateHeight - 2);
+    }
+    mentionAutocompletePosition = { top, left: coords.left };
     mentionAutocompleteOpen = true;
   }
 
@@ -271,8 +294,7 @@
     if (!disabled && enableMentions && textareaEl) {
       const cursor = textareaEl.selectionStart ?? messageText.length;
       const prevChar = messageText[cursor - 1];
-      const prevPrevChar = messageText[cursor - 2];
-      if (prevChar === '@' && (cursor === 1 || /\s/.test(prevPrevChar ?? ''))) {
+      if (prevChar === '@') {
         openMentionAutocomplete(cursor - 1, cursor);
       } else {
         updateMentionAutocomplete(cursor);

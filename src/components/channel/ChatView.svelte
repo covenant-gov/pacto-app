@@ -285,7 +285,8 @@
     groupSendError.set(null);
   }
 
-  // When members panel is open and the MLS group for the sidebar changes, hydrate that group once.
+  // Hydrate the MLS group for the active channel once when it changes, so the mention
+  // candidate list is available even when the members sidebar is collapsed.
   let prevMembersGroupIdForPanel: string | null = null;
   let prevMembersVersionByGroup: Record<string, number> = {};
 
@@ -296,15 +297,15 @@
     panelMembersGroupId != null ? ($membersLoadingByGroupId[panelMembersGroupId] ?? false) : false;
   $: showPanelMembersLoading = panelMembersLoading && panelMembers.length === 0;
 
-  $: if ($showMembersPanel && panelMembersGroupId && prevMembersGroupIdForPanel !== panelMembersGroupId) {
+  $: if (panelMembersGroupId && prevMembersGroupIdForPanel !== panelMembersGroupId) {
     prevMembersGroupIdForPanel = panelMembersGroupId;
     void ensureMlsGroupMembers(panelMembersGroupId);
   }
-  $: if (!$showMembersPanel) {
+  $: if (!panelMembersGroupId) {
     prevMembersGroupIdForPanel = null;
   }
 
-  $: if ($showMembersPanel && panelMembersGroupId) {
+  $: if (panelMembersGroupId) {
     const gid = panelMembersGroupId;
     const version = $membershipVersionByGroupId[gid] ?? 0;
     const prev = prevMembersVersionByGroup[gid] ?? -1;

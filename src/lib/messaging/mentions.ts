@@ -99,7 +99,7 @@ export function filterMentionsInText(body: string, mentions: Mention[]): Mention
   const seen = new Set<string>();
   const out: Mention[] = [];
   for (const m of mentions) {
-    const pattern = `(?:^|[\\s\\b])@${escapeRegExp(m.alias)}(?:$|[\\s.,;:!?'"()\\[\\]{}<>\\\`\\n\\b])`;
+    const pattern = `(?:^|[\\s])@${escapeRegExp(m.alias)}(?:$|[\\s.,;:!?'"()\\[\\]{}<>\\u0060\\n])`;
     if (new RegExp(pattern).test(body) && !seen.has(m.alias)) {
       seen.add(m.alias);
       out.push(m);
