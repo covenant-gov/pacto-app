@@ -88,7 +88,7 @@ Unlock / withdraw stake or EP deposit: factory `unlockPaymasterStake` / `withdra
 |---------|--------|--------|
 | `0x69007702764179f14F51cdce752f4f775d74E139` | Alchemy [SemiModularAccount7702](https://www.alchemy.com/docs/wallets/smart-contracts/deployed-addresses) (MAv2) | `entryPoint()` = EP v0.7; `execute(address,uint256,bytes)`; shared bytecode for roster EOA set-code (not a per-user deploy) |
 
-Sponsored UserOps against this impl must use **EntryPoint nonce key `1`** (fallback owner entity 0 + global validation), **EIP-191 `personal_sign` of the 32-byte `userOpHash`** (not raw `eth_sign` / `sign_hash`), then pack as **`0xFF || 0x00 ||` ECDSA** (aa-sdk `packUOSignature`). Key `0`, a raw hash signature, or a bare 65-byte signature yields AA23 / `-32507 Invalid account signature`.
+Sponsored UserOps against this impl must use **EntryPoint nonce key `1`** (fallback owner entity 0 + global validation), **EIP-191 `personal_sign` of the 32-byte `userOpHash`** (not raw `eth_sign` / `sign_hash`), then pack as **`0xFF || 0x00 ||` ECDSA** (aa-sdk `packUOSignature`). Key `0`, a raw hash signature, or a bare 65-byte signature yields AA23 / `-32507 Invalid account signature`. Client sets **`paymasterVerificationGasLimit` = 500_000** (account `verificationGasLimit` stays 100_000) so Hats/registry validation does not OOG under Alchemy simulation.
 
 Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack.
 

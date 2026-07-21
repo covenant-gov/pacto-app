@@ -20,8 +20,8 @@ use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
 use super::rpc::{connect_read_provider, wallet_err_json};
 use super::sponsor_paymaster::{
-    encode_paymaster_and_data, required_pool_balance, DEFAULT_POST_OP_GAS_LIMIT,
-    DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
+    encode_paymaster_and_data, required_pool_balance, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+    DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
 };
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id};
 use super::wallet_chain_config;
@@ -243,7 +243,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         squad_id,
         sponsor,
         member,
-        DEFAULT_VERIFICATION_GAS_LIMIT,
+        DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
         DEFAULT_POST_OP_GAS_LIMIT,
     );
 
@@ -378,7 +378,7 @@ fn user_op_json(p: UserOpParams) -> Result<Value, String> {
         "maxFeePerGas": format!("{:#x}", p.max_fee_per_gas),
         "maxPriorityFeePerGas": format!("{:#x}", p.max_priority_fee_per_gas),
         "paymaster": format!("{:#x}", p.paymaster),
-        "paymasterVerificationGasLimit": format!("{DEFAULT_VERIFICATION_GAS_LIMIT:#x}"),
+        "paymasterVerificationGasLimit": format!("{DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT:#x}"),
         "paymasterPostOpGasLimit": format!("{DEFAULT_POST_OP_GAS_LIMIT:#x}"),
         "paymasterData": format!("0x{}", hex::encode(paymaster_data(p.paymaster_and_data)?)),
         "signature": format!("0x{}", hex::encode(p.signature)),
@@ -477,7 +477,7 @@ fn userop_max_cost_wei(
     let total_gas = U256::from(call_gas_limit)
         + U256::from(verification_gas_limit)
         + U256::from(pre_verification_gas)
-        + U256::from(DEFAULT_VERIFICATION_GAS_LIMIT)
+        + U256::from(DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT)
         + U256::from(DEFAULT_POST_OP_GAS_LIMIT);
     U256::from(max_fee_per_gas) * total_gas
 }
@@ -592,8 +592,15 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "PAYMASTER_STAKE_LOW",
             "Shared paymaster is not staked on EntryPoint. Operator: factory.addPaymasterStake (≥0.1 ETH, delay ≥1 day on Sepolia) — not the squad sponsor pool.".into(),
         )
-    } else if lower.contains("-32502")
-        || lower.contains("banned opcode")
+    } else if lower.contains("ran out of gas for entity: paymaster")
+        || lower.contains("out of gas for entity: paymaster")
+    {
+        (
+            "PAYMASTER_VERIFICATION_GAS",
+            "Bundler paymaster simulation ran out of gas. Client paymasterVerificationGasLimit may be too low for Hats/registry validation.".into(),
+        )
+    } else if lower.contains("banned opcode")
+        || (lower.contains("-32502") && !lower.contains("ran out of gas"))
     {
         (
             "PAYMASTER_VALIDATION",
@@ -804,8 +811,8 @@ mod tests {
         UserOpParams,
     };
     use crate::evm::sponsor_paymaster::{
-        encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT,
-        PAYMASTER_DATA_OFFSET,
+        encode_paymaster_and_data, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        DEFAULT_POST_OP_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
     };
     use alloy::primitives::{address, b256, B256, U256, Uint};
     use reqwest::StatusCode;
@@ -827,7 +834,7 @@ mod tests {
         assert_eq!(
             cost,
             U256::from(30_000_000_000u128)
-                * U256::from(500_000u128 + 100_000 + 80_000 + 100_000 + 50_000)
+                * U256::from(500_000u128 + 100_000 + 80_000 + 500_000 + 50_000)
         );
     }
 
@@ -849,7 +856,7 @@ mod tests {
             squad_id,
             sponsor,
             member,
-            DEFAULT_VERIFICATION_GAS_LIMIT,
+            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
             DEFAULT_POST_OP_GAS_LIMIT,
         );
         let op = user_op_json(UserOpParams {
@@ -878,7 +885,7 @@ mod tests {
         assert_eq!(op["maxFeePerGas"], json!("0x6fc23ac00"));
         assert_eq!(op["maxPriorityFeePerGas"], json!("0x3b9aca00"));
         assert_eq!(op["paymaster"], json!(format!("{paymaster:#x}")));
-        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x186a0"));
+        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x7a120"));
         assert_eq!(op["paymasterPostOpGasLimit"], json!("0xc350"));
         let expected_pmd = hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..]);
         assert_eq!(op["paymasterData"], json!(format!("0x{expected_pmd}")));
@@ -943,6 +950,12 @@ mod tests {
         );
         assert_eq!(code, "ACCOUNT_SIGNATURE");
         assert!(msg.contains("EIP-191"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6\""}"#,
+        );
+        assert_eq!(code, "PAYMASTER_VERIFICATION_GAS");
+        assert!(msg.contains("paymasterVerificationGasLimit") || msg.contains("out of gas"));
 
         let (code, msg) = classify_bundler_userop_reject(
             r#"{"code":-32502,"message":"paymaster uses banned opcode: BALANCE"}"#,
