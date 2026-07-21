@@ -45,7 +45,8 @@ curl -sS "https://eth-sepolia.g.alchemy.com/v2/$ALCHEMY_RPC_KEY" -H 'content-typ
 | `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Ensure `ALCHEMY_RPC_KEY` (or `BUNDLER_RPC_URL`) reaches the Rust backend — restart after editing `.env`; or fund the roster key |
 | `PAYMASTER_DEPOSIT_LOW` | Fund shared paymaster via `paymaster.deposit()` / `EntryPoint.depositTo` — **not** the squad sponsor pool |
 | `PAYMASTER_STAKE_LOW` | Stake via `factory.addPaymasterStake` (FCFS `paymasterStaker`; ≥0.1 ETH, delay ≥1 day on Sepolia) |
-| `PAYMASTER_VERIFICATION_GAS` | Paymaster simulation OOG — client uses `paymasterVerificationGasLimit` 500k; bump further if Hats/registry validation still OOGs |
+| `PAYMASTER_VERIFICATION_GAS` | Paymaster simulation OOG — client uses `paymasterVerificationGasLimit` 250k; raise carefully (Alchemy also enforces ≥0.4 efficiency) |
+| `PAYMASTER_GAS_EFFICIENCY` | Limit too high vs gas used (Alchemy efficiency floor) — tighten toward ~250k |
 | `PAYMASTER_VALIDATION` | Bundler `-32502` / banned opcode — often an **old clone** still on the pre-redeploy paymaster, or Tauri not restarted after address-book cutover. Recreate sponsor; check raw detail in the toast |
 | `SPONSOR_PAYMASTER_MISMATCH` | Clone `paymaster()` ≠ address book — recreate squad sponsor under the current factory |
 | `BUNDLER_FEE` | Client tip below bundler floor (should be rare after 1 gwei clamp) |

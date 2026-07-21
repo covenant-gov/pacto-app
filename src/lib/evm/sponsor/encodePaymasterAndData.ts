@@ -15,7 +15,7 @@ export const PAYMASTER_DATA_VERSION = 1 as const;
 export const PAYMASTER_DATA_OFFSET = 52 as const;
 export const BALANCE_HEADROOM_BPS = 11_500 as const;
 /** Paymaster header verification gas (matches Rust DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT). */
-export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT = 500_000 as const;
+export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT = 250_000 as const;
 export const DEFAULT_POST_OP_GAS_LIMIT = 50_000 as const;
 
 export type Address = `0x${string}`;

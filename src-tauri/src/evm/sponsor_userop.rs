@@ -599,6 +599,13 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "PAYMASTER_VERIFICATION_GAS",
             "Bundler paymaster simulation ran out of gas. Client paymasterVerificationGasLimit may be too low for Hats/registry validation.".into(),
         )
+    } else if lower.contains("verification gas limit efficiency")
+        || lower.contains("gas limit efficiency too low")
+    {
+        (
+            "PAYMASTER_GAS_EFFICIENCY",
+            "Bundler rejected paymasterVerificationGasLimit as too high vs gas used (Alchemy efficiency floor). Tighten the client limit (target ~250k for current Hats validation).".into(),
+        )
     } else if lower.contains("banned opcode")
         || (lower.contains("-32502") && !lower.contains("ran out of gas"))
     {
@@ -834,7 +841,7 @@ mod tests {
         assert_eq!(
             cost,
             U256::from(30_000_000_000u128)
-                * U256::from(500_000u128 + 100_000 + 80_000 + 500_000 + 50_000)
+                * U256::from(500_000u128 + 100_000 + 80_000 + 250_000 + 50_000)
         );
     }
 
@@ -885,7 +892,7 @@ mod tests {
         assert_eq!(op["maxFeePerGas"], json!("0x6fc23ac00"));
         assert_eq!(op["maxPriorityFeePerGas"], json!("0x3b9aca00"));
         assert_eq!(op["paymaster"], json!(format!("{paymaster:#x}")));
-        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x7a120"));
+        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x3d090"));
         assert_eq!(op["paymasterPostOpGasLimit"], json!("0xc350"));
         let expected_pmd = hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..]);
         assert_eq!(op["paymasterData"], json!(format!("0x{expected_pmd}")));
@@ -956,6 +963,12 @@ mod tests {
         );
         assert_eq!(code, "PAYMASTER_VERIFICATION_GAS");
         assert!(msg.contains("paymasterVerificationGasLimit") || msg.contains("out of gas"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32602,"message":"Verification gas limit efficiency too low. Required: 0.4, Actual: 0.226785"}"#,
+        );
+        assert_eq!(code, "PAYMASTER_GAS_EFFICIENCY");
+        assert!(msg.contains("efficiency") || msg.contains("250k"));
 
         let (code, msg) = classify_bundler_userop_reject(
             r#"{"code":-32502,"message":"paymaster uses banned opcode: BALANCE"}"#,
