@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pacto",
+  "productName": "Pacto",
   "version": "0.3.2",
   "identifier": "io.pacto",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pacto",
+        "title": "Pacto",
         "minWidth": 400,
         "width": 1000,
         "minHeight": 400,
