@@ -185,17 +185,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let member = signer.address();
     let read_provider = connect_read_provider(&urls).await?;
 
-    let verification_gas_limit = DEFAULT_VERIFICATION_GAS_LIMIT;
-    let pre_verification_gas: u128 = 80_000;
-
-    // Estimate from the RPC; fall back to conservative constants when estimation is unavailable.
-    let call_gas_limit = estimate_call_gas(&read_provider, member, to, &calldata)
-        .await
-        .map(call_gas_with_margin)
-        .unwrap_or_else(|| {
-            log::warn!(target: "pacto_wallet", "call gas estimation failed; using fallback");
-            FALLBACK_CALL_GAS_LIMIT
-        });
     let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
         Ok(fees) => clamp_userop_eip1559_fees(
             fees.max_priority_fee_per_gas,
@@ -207,18 +196,25 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         }
     };
 
-    // Preflight against the EntryPoint maxCost of this UserOp, not a fixed guess.
-    let estimated_max_cost = userop_max_cost_wei(
-        call_gas_limit,
-        verification_gas_limit,
-        pre_verification_gas,
+    // Placeholder ceilings so deposit/pool preflight and bundler estimate do not OOG.
+    let placeholder_call = FALLBACK_CALL_GAS_LIMIT;
+    let placeholder_verification = DEFAULT_VERIFICATION_GAS_LIMIT;
+    let placeholder_pre_verification: u128 = 80_000;
+    let placeholder_pm_verification = DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
+    let placeholder_pm_post = DEFAULT_POST_OP_GAS_LIMIT;
+    let placeholder_max_cost = userop_max_cost_wei(
+        placeholder_call,
+        placeholder_verification,
+        placeholder_pre_verification,
         max_fee,
+        placeholder_pm_verification,
+        placeholder_pm_post,
     );
     paymaster_entry_point_deposit_preflight(
         &read_provider,
         addrs.entry_point,
         addrs.pacto_sponsor_paymaster,
-        estimated_max_cost,
+        placeholder_max_cost,
     )
     .await?;
     let (sponsor, squad_id) = sponsor_eligibility_preflight(
@@ -227,7 +223,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         addrs.pacto_sponsor_paymaster,
         parent_id,
         member,
-        estimated_max_cost,
+        placeholder_max_cost,
     )
     .await?;
 
@@ -238,13 +234,13 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     }
     .abi_encode();
 
-    let paymaster_and_data = encode_paymaster_and_data(
+    let mut paymaster_and_data = encode_paymaster_and_data(
         addrs.pacto_sponsor_paymaster,
         squad_id,
         sponsor,
         member,
-        DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_POST_OP_GAS_LIMIT,
+        placeholder_pm_verification,
+        placeholder_pm_post,
     );
 
     let nonce: U256 = eth_call_decode(
@@ -257,9 +253,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     )
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
-
-    let account_gas_limits = pack_u128s(verification_gas_limit, call_gas_limit);
-    let gas_fees = pack_u128s(max_priority, max_fee);
 
     // EIP-7702: authorization for empty-code EOAs (bundler/EntryPoint attach set-code).
     let code = read_provider.get_code_at(member).await.map_err(|e| {
@@ -286,6 +279,69 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         );
     }
 
+    let dummy_sig = mav2_dummy_userop_signature();
+    let estimate_op = user_op_json(UserOpParams {
+        sender: member,
+        nonce,
+        call_data: &execute_calldata,
+        call_gas_limit: placeholder_call,
+        verification_gas_limit: placeholder_verification,
+        pre_verification_gas: placeholder_pre_verification,
+        max_fee_per_gas: max_fee,
+        max_priority_fee_per_gas: max_priority,
+        paymaster: addrs.pacto_sponsor_paymaster,
+        paymaster_verification_gas_limit: placeholder_pm_verification,
+        paymaster_post_op_gas_limit: placeholder_pm_post,
+        paymaster_and_data: &paymaster_and_data,
+        signature: &dummy_sig,
+        eip7702_auth: eip7702_auth.clone(),
+    })?;
+    let estimated = bundler_estimate_user_operation_gas(&bundler, &estimate_op, addrs.entry_point)
+        .await?;
+    let call_gas_limit = apply_userop_gas_margin(estimated.call_gas_limit);
+    let verification_gas_limit = apply_userop_gas_margin(estimated.verification_gas_limit);
+    let pre_verification_gas = apply_userop_gas_margin(estimated.pre_verification_gas);
+    let paymaster_verification_gas_limit =
+        apply_userop_gas_margin(estimated.paymaster_verification_gas_limit);
+    let paymaster_post_op_gas_limit =
+        apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit);
+
+    paymaster_and_data = encode_paymaster_and_data(
+        addrs.pacto_sponsor_paymaster,
+        squad_id,
+        sponsor,
+        member,
+        paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit,
+    );
+
+    let final_max_cost = userop_max_cost_wei(
+        call_gas_limit,
+        verification_gas_limit,
+        pre_verification_gas,
+        max_fee,
+        paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit,
+    );
+    paymaster_entry_point_deposit_preflight(
+        &read_provider,
+        addrs.entry_point,
+        addrs.pacto_sponsor_paymaster,
+        final_max_cost,
+    )
+    .await?;
+    sponsor_eligibility_preflight(
+        &read_provider,
+        addrs.squad_sponsor_factory,
+        addrs.pacto_sponsor_paymaster,
+        parent_id,
+        member,
+        final_max_cost,
+    )
+    .await?;
+
+    let account_gas_limits = pack_u128s(verification_gas_limit, call_gas_limit);
+    let gas_fees = pack_u128s(max_priority, max_fee);
     let packed = PackedUserOperation {
         sender: member,
         nonce,
@@ -325,6 +381,8 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         max_fee_per_gas: max_fee,
         max_priority_fee_per_gas: max_priority,
         paymaster: addrs.pacto_sponsor_paymaster,
+        paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit,
         paymaster_and_data: &paymaster_and_data,
         signature: &packed_sig,
         eip7702_auth,
@@ -348,6 +406,16 @@ fn pack_mav2_eoa_userop_signature(ecdsa_65: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Semi-valid MAv2 signature length for `eth_estimateUserOperationGas` (sig content ignored).
+fn mav2_dummy_userop_signature() -> Vec<u8> {
+    let mut ecdsa = [0u8; 65];
+    // Classic bundler dummy ECDSA shape (non-zero s, Electrum v).
+    ecdsa[31] = 0x01;
+    ecdsa[63] = 0x01;
+    ecdsa[64] = 0x1c;
+    pack_mav2_eoa_userop_signature(&ecdsa)
+}
+
 /// Fields of the ERC-4337 v0.7 UserOperation JSON sent to the bundler.
 struct UserOpParams<'a> {
     sender: Address,
@@ -359,12 +427,14 @@ struct UserOpParams<'a> {
     max_fee_per_gas: u128,
     max_priority_fee_per_gas: u128,
     paymaster: Address,
+    paymaster_verification_gas_limit: u128,
+    paymaster_post_op_gas_limit: u128,
     paymaster_and_data: &'a [u8],
     signature: &'a [u8],
     eip7702_auth: Option<Value>,
 }
 
-/// Serializes the UserOperation for `eth_sendUserOperation` (EntryPoint v0.7 shape).
+/// Serializes the UserOperation for `eth_sendUserOperation` / `eth_estimateUserOperationGas` (v0.7).
 fn user_op_json(p: UserOpParams) -> Result<Value, String> {
     Ok(json!({
         "sender": format!("{:#x}", p.sender),
@@ -378,8 +448,8 @@ fn user_op_json(p: UserOpParams) -> Result<Value, String> {
         "maxFeePerGas": format!("{:#x}", p.max_fee_per_gas),
         "maxPriorityFeePerGas": format!("{:#x}", p.max_priority_fee_per_gas),
         "paymaster": format!("{:#x}", p.paymaster),
-        "paymasterVerificationGasLimit": format!("{DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT:#x}"),
-        "paymasterPostOpGasLimit": format!("{DEFAULT_POST_OP_GAS_LIMIT:#x}"),
+        "paymasterVerificationGasLimit": format!("{:#x}", p.paymaster_verification_gas_limit),
+        "paymasterPostOpGasLimit": format!("{:#x}", p.paymaster_post_op_gas_limit),
         "paymasterData": format!("0x{}", hex::encode(paymaster_data(p.paymaster_and_data)?)),
         "signature": format!("0x{}", hex::encode(p.signature)),
         "eip7702Auth": p.eip7702_auth,
@@ -405,11 +475,15 @@ pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
 /// Alchemy (and similar) bundlers reject tips below ~1 gwei on Sepolia.
 pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
 pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
-/// Headroom over `eth_estimateGas` to cover the account `execute` dispatch and state drift.
+/// Headroom over bundler / `eth_estimateGas` estimates (1.2x; efficiency ≈ 0.83 ≥ Alchemy 0.4 floor).
 const CALL_GAS_MARGIN_BPS: u128 = 12_000;
 
 pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
     estimate * CALL_GAS_MARGIN_BPS / 10_000
+}
+
+fn apply_userop_gas_margin(estimate: u128) -> u128 {
+    call_gas_with_margin(estimate)
 }
 
 /// Raise RPC tip/max-fee to bundler floors; ensure maxFee ≥ maxPriorityFee.
@@ -473,12 +547,14 @@ fn userop_max_cost_wei(
     verification_gas_limit: u128,
     pre_verification_gas: u128,
     max_fee_per_gas: u128,
+    paymaster_verification_gas_limit: u128,
+    paymaster_post_op_gas_limit: u128,
 ) -> U256 {
     let total_gas = U256::from(call_gas_limit)
         + U256::from(verification_gas_limit)
         + U256::from(pre_verification_gas)
-        + U256::from(DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT)
-        + U256::from(DEFAULT_POST_OP_GAS_LIMIT);
+        + U256::from(paymaster_verification_gas_limit)
+        + U256::from(paymaster_post_op_gas_limit);
     U256::from(max_fee_per_gas) * total_gas
 }
 
@@ -565,6 +641,100 @@ async fn bundler_send_user_operation(
     parse_send_user_op_response(&res)
 }
 
+/// Gas limits returned by `eth_estimateUserOperationGas` (EntryPoint v0.7).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EstimatedUserOpGas {
+    call_gas_limit: u128,
+    verification_gas_limit: u128,
+    pre_verification_gas: u128,
+    paymaster_verification_gas_limit: u128,
+    paymaster_post_op_gas_limit: u128,
+}
+
+async fn bundler_estimate_user_operation_gas(
+    bundler_url: &str,
+    user_op: &Value,
+    entry_point: Address,
+) -> Result<EstimatedUserOpGas, String> {
+    let body = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_estimateUserOperationGas",
+        "params": [user_op, format!("{entry_point:#x}")]
+    });
+    let mut attempt = 0u32;
+    let res = loop {
+        attempt += 1;
+        match bundler_rpc(bundler_url, &body).await {
+            Err(e) if e.retriable && attempt < BUNDLER_MAX_ATTEMPTS => {
+                tokio::time::sleep(bundler_retry_delay(attempt)).await;
+            }
+            result => break result,
+        }
+    };
+    let res = res.map_err(|e| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!(
+                "eth_estimateUserOperationGas failed after {attempt} attempt(s): {}",
+                e.message
+            ),
+            None,
+        )
+    })?;
+    parse_estimate_user_op_gas_response(&res)
+}
+
+fn parse_estimate_user_op_gas_response(res: &Value) -> Result<EstimatedUserOpGas, String> {
+    if let Some(err) = res.get("error") {
+        let raw = crate::evm::wallet_security::redact_urls_in_text(&err.to_string());
+        let (code, message) = classify_bundler_userop_reject(&raw);
+        return Err(wallet_err_json(code, message, None));
+    }
+    let result = res.get("result").ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            "eth_estimateUserOperationGas returned no result",
+            None,
+        )
+    })?;
+    Ok(EstimatedUserOpGas {
+        call_gas_limit: parse_hex_u128_field(result, "callGasLimit")?,
+        verification_gas_limit: parse_hex_u128_field(result, "verificationGasLimit")?,
+        pre_verification_gas: parse_hex_u128_field(result, "preVerificationGas")?,
+        paymaster_verification_gas_limit: parse_hex_u128_field(
+            result,
+            "paymasterVerificationGasLimit",
+        )?,
+        paymaster_post_op_gas_limit: parse_hex_u128_field(result, "paymasterPostOpGasLimit")?,
+    })
+}
+
+fn parse_hex_u128_field(obj: &Value, key: &str) -> Result<u128, String> {
+    let raw = obj.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas missing {key}"),
+            None,
+        )
+    })?;
+    parse_hex_u128(raw).ok_or_else(|| {
+        wallet_err_json(
+            "BUNDLER_ESTIMATE",
+            format!("eth_estimateUserOperationGas invalid {key}: {raw}"),
+            None,
+        )
+    })
+}
+
+fn parse_hex_u128(s: &str) -> Option<u128> {
+    let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))?;
+    if hex.is_empty() {
+        return Some(0);
+    }
+    u128::from_str_radix(hex, 16).ok()
+}
+
 /// Parses the `eth_sendUserOperation` response. A JSON-RPC error here is a bundler/
 /// paymaster validation reject, which is final and must not be retried.
 fn parse_send_user_op_response(res: &Value) -> Result<String, String> {
@@ -604,7 +774,7 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
     {
         (
             "PAYMASTER_GAS_EFFICIENCY",
-            "Bundler rejected paymasterVerificationGasLimit as too high vs gas used (Alchemy efficiency floor). Tighten the client limit (target ~250k for current Hats validation).".into(),
+            "Bundler rejected a verification gas limit as too high vs gas used (Alchemy efficiency floor). Limits should come from eth_estimateUserOperationGas with a small margin.".into(),
         )
     } else if lower.contains("banned opcode")
         || (lower.contains("-32502") && !lower.contains("ran out of gas"))
@@ -810,17 +980,16 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, classify_bundler_userop_reject,
-        clamp_userop_eip1559_fees, eip7702_auth_json, encode_eip7702_authorization,
-        explicit_bundler_rpc_url, mav2_fallback_nonce_key, pack_mav2_eoa_userop_signature,
-        pack_u128s, parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE,
-        UserOpParams,
+        apply_userop_gas_margin, bundler_retry_delay, bundler_rpc_url, call_gas_with_margin,
+        classify_bundler_userop_reject, clamp_userop_eip1559_fees, eip7702_auth_json,
+        encode_eip7702_authorization, explicit_bundler_rpc_url, mav2_dummy_userop_signature,
+        mav2_fallback_nonce_key, pack_mav2_eoa_userop_signature, pack_u128s,
+        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
+        paymaster_data, receipt_transaction_hash, retriable_bundler_status, user_op_json,
+        userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE, UserOpParams,
     };
-    use crate::evm::sponsor_paymaster::{
-        encode_paymaster_and_data, DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-        DEFAULT_POST_OP_GAS_LIMIT, PAYMASTER_DATA_OFFSET,
-    };
+    use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
+    use crate::evm::sponsor_paymaster::encode_paymaster_and_data;
     use alloy::primitives::{address, b256, B256, U256, Uint};
     use reqwest::StatusCode;
     use serde_json::json;
@@ -837,7 +1006,14 @@ mod tests {
 
     #[test]
     fn userop_max_cost_covers_all_gas_limits() {
-        let cost = userop_max_cost_wei(500_000, 100_000, 80_000, 30_000_000_000);
+        let cost = userop_max_cost_wei(
+            500_000,
+            100_000,
+            80_000,
+            30_000_000_000,
+            250_000,
+            50_000,
+        );
         assert_eq!(
             cost,
             U256::from(30_000_000_000u128)
@@ -849,6 +1025,7 @@ mod tests {
     fn call_gas_margin_adds_headroom() {
         assert_eq!(call_gas_with_margin(100_000), 120_000);
         assert_eq!(call_gas_with_margin(0), 0);
+        assert_eq!(apply_userop_gas_margin(113_392), 136_070);
     }
 
     #[test]
@@ -863,8 +1040,8 @@ mod tests {
             squad_id,
             sponsor,
             member,
-            DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
-            DEFAULT_POST_OP_GAS_LIMIT,
+            136_070,
+            60_000,
         );
         let op = user_op_json(UserOpParams {
             sender: member,
@@ -876,6 +1053,8 @@ mod tests {
             max_fee_per_gas: 30_000_000_000,
             max_priority_fee_per_gas: 1_000_000_000,
             paymaster,
+            paymaster_verification_gas_limit: 136_070,
+            paymaster_post_op_gas_limit: 60_000,
             paymaster_and_data: &paymaster_and_data,
             signature: &[0xaa; 65],
             eip7702_auth: None,
@@ -892,12 +1071,59 @@ mod tests {
         assert_eq!(op["maxFeePerGas"], json!("0x6fc23ac00"));
         assert_eq!(op["maxPriorityFeePerGas"], json!("0x3b9aca00"));
         assert_eq!(op["paymaster"], json!(format!("{paymaster:#x}")));
-        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x3d090"));
-        assert_eq!(op["paymasterPostOpGasLimit"], json!("0xc350"));
+        assert_eq!(op["paymasterVerificationGasLimit"], json!("0x21386"));
+        assert_eq!(op["paymasterPostOpGasLimit"], json!("0xea60"));
         let expected_pmd = hex::encode(&paymaster_and_data[PAYMASTER_DATA_OFFSET..]);
         assert_eq!(op["paymasterData"], json!(format!("0x{expected_pmd}")));
         assert_eq!(op["signature"], json!(format!("0x{}", "aa".repeat(65))));
         assert!(op["eip7702Auth"].is_null());
+    }
+
+    #[test]
+    fn parse_estimate_user_op_gas_response_reads_v07_fields() {
+        let res = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "preVerificationGas": "0x13880",
+                "verificationGasLimit": "0x186a0",
+                "callGasLimit": "0x33450",
+                "paymasterVerificationGasLimit": "0x1bb00",
+                "paymasterPostOpGasLimit": "0xc350"
+            }
+        });
+        let g = parse_estimate_user_op_gas_response(&res).unwrap();
+        assert_eq!(g.pre_verification_gas, 80_000);
+        assert_eq!(g.verification_gas_limit, 100_000);
+        assert_eq!(g.call_gas_limit, 210_000);
+        assert_eq!(g.paymaster_verification_gas_limit, 113_408);
+        assert_eq!(g.paymaster_post_op_gas_limit, 50_000);
+        assert_eq!(apply_userop_gas_margin(g.paymaster_verification_gas_limit), 136_089);
+    }
+
+    #[test]
+    fn parse_estimate_user_op_gas_response_maps_bundler_errors() {
+        let res = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {"code": -32602, "message": "Verification gas limit efficiency too low. Required: 0.4, Actual: 0.226785"}
+        });
+        let err = parse_estimate_user_op_gas_response(&res).unwrap_err();
+        assert!(err.contains("PAYMASTER_GAS_EFFICIENCY"));
+    }
+
+    #[test]
+    fn parse_hex_u128_accepts_hex_strings() {
+        assert_eq!(parse_hex_u128("0x0"), Some(0));
+        assert_eq!(parse_hex_u128("0x7a120"), Some(500_000));
+        assert_eq!(parse_hex_u128("not-hex"), None);
+    }
+
+    #[test]
+    fn mav2_dummy_signature_has_packed_length() {
+        let dummy = mav2_dummy_userop_signature();
+        assert_eq!(dummy.len(), 67);
+        assert_eq!(&dummy[0..2], &[0xff, 0x00]);
     }
 
     #[test]
@@ -968,7 +1194,7 @@ mod tests {
             r#"{"code":-32602,"message":"Verification gas limit efficiency too low. Required: 0.4, Actual: 0.226785"}"#,
         );
         assert_eq!(code, "PAYMASTER_GAS_EFFICIENCY");
-        assert!(msg.contains("efficiency") || msg.contains("250k"));
+        assert!(msg.contains("efficiency") || msg.contains("estimateUserOperationGas"));
 
         let (code, msg) = classify_bundler_userop_reject(
             r#"{"code":-32502,"message":"paymaster uses banned opcode: BALANCE"}"#,
