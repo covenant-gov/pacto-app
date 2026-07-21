@@ -12,7 +12,9 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};
 
-use super::contracts::pacto_sponsor::ISquadSponsorBase::isEligibleCall;
+use super::contracts::pacto_sponsor::ISquadSponsorBase::{
+    isEligibleCall, paymasterCall, spendablePoolWeiCall,
+};
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_squad_roster_embedded_signer;
@@ -88,6 +90,7 @@ pub async fn roster_native_balance_wei<P: Provider>(
 pub async fn sponsor_eligibility_preflight<P: Provider>(
     provider: &P,
     factory: Address,
+    expected_paymaster: Address,
     parent_id: &str,
     member: Address,
     estimated_max_cost_wei: U256,
@@ -96,6 +99,18 @@ pub async fn sponsor_eligibility_preflight<P: Provider>(
     let (sponsor, _variant, _hat) = read_squad_record(provider, factory, squad_id)
         .await
         .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
+    let clone_paymaster: Address = eth_call_decode(provider, sponsor, &paymasterCall {})
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
+    if clone_paymaster != expected_paymaster {
+        return Err(wallet_err_json(
+            "SPONSOR_PAYMASTER_MISMATCH",
+            format!(
+                "squad sponsor clone paymaster ({clone_paymaster:#x}) does not match the address book ({expected_paymaster:#x}). After a factory redeploy, recreate the squad sponsor (old clones are not migratable)."
+            ),
+            None,
+        ));
+    }
     let eligible: bool = eth_call_decode(provider, sponsor, &isEligibleCall { member })
         .await
         .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
@@ -106,18 +121,14 @@ pub async fn sponsor_eligibility_preflight<P: Provider>(
             None,
         ));
     }
-    let pool = provider.get_balance(sponsor).await.map_err(|e| {
-        wallet_err_json(
-            "RPC_BALANCE",
-            crate::evm::wallet_security::redact_urls_in_text(&e.to_string()),
-            None,
-        )
-    })?;
+    let pool: U256 = eth_call_decode(provider, sponsor, &spendablePoolWeiCall {})
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_READ", e, None))?;
     let need = required_pool_balance(estimated_max_cost_wei);
     if pool < need {
         return Err(wallet_err_json(
             "SPONSOR_POOL_LOW",
-            format!("sponsor pool {pool} below required headroom {need}"),
+            format!("sponsor spendablePoolWei {pool} below required headroom {need}"),
             None,
         ));
     }
@@ -213,6 +224,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let (sponsor, squad_id) = sponsor_eligibility_preflight(
         &read_provider,
         addrs.squad_sponsor_factory,
+        addrs.pacto_sponsor_paymaster,
         parent_id,
         member,
         estimated_max_cost,
@@ -585,7 +597,9 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
     {
         (
             "PAYMASTER_VALIDATION",
-            "Bundler rejected paymaster validation (-32502 / banned opcode). Use the current address-book paymaster (spendablePoolWei validation) and ensure factory stake + EP deposit are funded.".into(),
+            format!(
+                "Bundler rejected paymaster validation (-32502 / banned opcode). Usually an old clone still wired to a pre-redeploy paymaster, or a stale Tauri binary after an address-book cutover. Recreate the squad sponsor under the current factory, restart tauri:dev, and confirm factory stake + EP deposit. Detail: {raw}"
+            ),
         )
     } else if lower.contains("maxpriorityfeepergas") {
         (
@@ -934,7 +948,8 @@ mod tests {
             r#"{"code":-32502,"message":"paymaster uses banned opcode: BALANCE"}"#,
         );
         assert_eq!(code, "PAYMASTER_VALIDATION");
-        assert!(msg.contains("banned opcode") || msg.contains("-32502"));
+        assert!(msg.contains("banned opcode"));
+        assert!(msg.contains("BALANCE") || msg.contains("recreate"));
 
         let (code, msg) = classify_bundler_userop_reject("something else");
         assert_eq!(code, "PAYMASTER_REJECTED");

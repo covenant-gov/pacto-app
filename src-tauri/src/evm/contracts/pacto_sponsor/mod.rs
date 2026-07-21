@@ -53,11 +53,15 @@ sol! {
 
         function paymaster() external view returns (address paymaster);
 
+        function factory() external view returns (address factory);
+
         function totalShares() external view returns (uint256 totalShares);
 
         function sponsorShares(address sponsor) external view returns (uint256 shares);
 
         function withdrawable(address sponsor) external view returns (uint256 amount);
+
+        function spendablePoolWei() external view returns (uint256 amount);
 
         function isEligible(address member) external view returns (bool eligible);
     }
