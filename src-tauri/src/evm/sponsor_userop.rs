@@ -56,7 +56,15 @@ pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
     pacto_chain_config::erc4337_account_implementation(network_key)
 }
 
-pub fn bundler_rpc_url() -> Option<String> {
+/// Explicit `BUNDLER_RPC_URL`, else Alchemy URL for `network_key` from `ALCHEMY_RPC_KEY`.
+pub fn bundler_rpc_url(network_key: &str) -> Option<String> {
+    if let Some(url) = explicit_bundler_rpc_url() {
+        return Some(url);
+    }
+    crate::evm::wallet_rpc_providers::provider_primary_rpc_url(network_key)
+}
+
+fn explicit_bundler_rpc_url() -> Option<String> {
     std::env::var("BUNDLER_RPC_URL")
         .ok()
         .map(|s| s.trim().to_string())
@@ -123,22 +131,22 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     to: Address,
     calldata: Vec<u8>,
 ) -> Result<String, String> {
-    let bundler = bundler_rpc_url().ok_or_else(|| {
+    let net_key = network.to_lowercase();
+    let bundler = bundler_rpc_url(&net_key).ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_CONFIG",
-            "Set BUNDLER_RPC_URL for sponsored governance writes when the roster key has no ETH.",
+            "Set BUNDLER_RPC_URL or ALCHEMY_RPC_KEY for sponsored governance writes when the roster key has no ETH.",
             None,
         )
     })?;
     let account_impl = erc4337_account_implementation(network).ok_or_else(|| {
         wallet_err_json(
             "ERC4337_ACCOUNT_CONFIG",
-            "Configure PACTO_ERC4337_ACCOUNT_IMPL (EIP-7702 account implementation) for sponsored writes.",
+            "Missing EIP-7702 account implementation for this network (address book erc4337.accountImplementation, or PACTO_ERC4337_ACCOUNT_IMPL).",
             None,
         )
     })?;
 
-    let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
             "UNSUPPORTED_NETWORK",
@@ -659,9 +667,10 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bundler_retry_delay, call_gas_with_margin, encode_eip7702_authorization, pack_u128s,
-        parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, UserOpParams,
+        bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, encode_eip7702_authorization,
+        explicit_bundler_rpc_url, pack_u128s, parse_send_user_op_response, paymaster_data,
+        receipt_transaction_hash, retriable_bundler_status, user_op_json, userop_max_cost_wei,
+        UserOpParams,
     };
     use crate::evm::sponsor_paymaster::{
         encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT, DEFAULT_VERIFICATION_GAS_LIMIT,
@@ -830,5 +839,58 @@ mod tests {
         let mut expected = vec![0xc0 + payload.len() as u8];
         expected.extend_from_slice(&payload);
         assert_eq!(enc, expected);
+    }
+
+    struct EnvVarGuard(&'static str, Option<std::ffi::OsString>);
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.1 {
+                Some(v) => std::env::set_var(self.0, v),
+                None => std::env::remove_var(self.0),
+            }
+        }
+    }
+
+    #[test]
+    fn bundler_rpc_url_prefers_explicit_env() {
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
+        std::env::set_var("BUNDLER_RPC_URL", "https://bundler.example/v2/explicit");
+        std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
+        assert_eq!(
+            bundler_rpc_url("sepolia").as_deref(),
+            Some("https://bundler.example/v2/explicit")
+        );
+        assert_eq!(
+            explicit_bundler_rpc_url().as_deref(),
+            Some("https://bundler.example/v2/explicit")
+        );
+    }
+
+    #[test]
+    fn bundler_rpc_url_derives_from_alchemy_when_unset() {
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
+        assert_eq!(
+            bundler_rpc_url("sepolia").as_deref(),
+            Some("https://eth-sepolia.g.alchemy.com/v2/alchemy-key")
+        );
+    }
+
+    #[test]
+    fn bundler_rpc_url_none_without_bundler_or_alchemy() {
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::remove_var("ALCHEMY_RPC_KEY");
+        assert!(bundler_rpc_url("sepolia").is_none());
     }
 }

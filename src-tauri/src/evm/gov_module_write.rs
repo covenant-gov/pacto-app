@@ -88,10 +88,10 @@ pub async fn send_gov_module_call<R: Runtime>(
                     // The write guard must stay held through inclusion: returning now would let
                     // the next write reuse the same EntryPoint nonce. Callers expect a real L1
                     // transaction hash, not the bundler userOp hash.
-                    let bundler = bundler_rpc_url().ok_or_else(|| {
+                    let bundler = bundler_rpc_url(&net.key).ok_or_else(|| {
                         wallet_err_json(
                             "BUNDLER_CONFIG",
-                            "Set BUNDLER_RPC_URL for sponsored governance writes when the roster key has no ETH.",
+                            "Set BUNDLER_RPC_URL or ALCHEMY_RPC_KEY for sponsored governance writes when the roster key has no ETH.",
                             None,
                         )
                     })?;
@@ -104,7 +104,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         return Err(wallet_err_json(
                             "SPONSOR_PATH_UNAVAILABLE",
                             format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key or set BUNDLER_RPC_URL and PACTO_ERC4337_ACCOUNT_IMPL."
+                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or ensure ALCHEMY_RPC_KEY / BUNDLER_RPC_URL reach the Rust backend (repo-root .env is loaded in debug builds)."
                             ),
                             None,
                         ));

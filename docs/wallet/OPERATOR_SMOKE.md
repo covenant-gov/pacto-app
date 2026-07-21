@@ -4,9 +4,9 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 
 ## Shared prerequisites
 
-- [ ] Copy [`.env.example`](../../.env.example) → `.env` (or export before `tauri dev`) for **RPC**.
-- [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically). Protocol factory addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md).
-- [ ] For **sponsored** gov writes (roster 0 ETH): set **`BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>`** (same Alchemy app). EIP-7702 impl is pinned in the address book (`erc4337.accountImplementation`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+- [ ] Copy [`.env.example`](../../.env.example) → `.env` for **RPC** (debug Tauri loads root `.env` into Rust at startup; release builds need real process env / export).
+- [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically; also used as the default Sepolia bundler when `BUNDLER_RPC_URL` is unset). Protocol factory addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md).
+- [ ] For **sponsored** gov writes (roster 0 ETH): `ALCHEMY_RPC_KEY` is enough for Sepolia; optional **`BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>`** override. EIP-7702 impl is pinned in the address book (`erc4337.accountImplementation`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 - [ ] Smoke identities: **funded Default (DM)** for deploy/deposit gas; **new empty roster key** (0 ETH) as captain after gov+sponsor; enough Sepolia ETH to **seed the sponsor pool**; throwaway `parentId`.
 - [ ] Logged-in profile; wallet unlocked.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
@@ -15,8 +15,10 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 ### Bundler quick check (once per Alchemy key)
 
 ```bash
-curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
+# With only ALCHEMY_RPC_KEY set, use the derived URL:
+curl -sS "https://eth-sepolia.g.alchemy.com/v2/$ALCHEMY_RPC_KEY" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}'
+# Or: curl against "$BUNDLER_RPC_URL" when set explicitly
 # expect …71727De22E5E9d8BAf0edAc6f37da032… (EntryPoint v0.7)
 ```
 
@@ -39,7 +41,7 @@ curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
 | `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
 | Roster key has 0 ETH | Fund via **Default signer** transfer in the deploy wizard, or pay deploy from squad after topping up; gov writes use sponsored UserOp when eligible |
-| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `BUNDLER_RPC_URL` + `erc4337.accountImplementation` in the address book, or fund the roster key |
+| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Ensure `ALCHEMY_RPC_KEY` (or `BUNDLER_RPC_URL`) reaches the Rust backend — restart after editing `.env`; or fund the roster key |
 | `SPONSOR_INELIGIBLE` / `SPONSOR_POOL_LOW` | Missing hat/Ext permit, or deposit more ETH into the sponsor pool |
 | Bootstrap checkbox disabled | Need yourself as captain (roster EVM); otherwise mint from Governance → Captain |
 

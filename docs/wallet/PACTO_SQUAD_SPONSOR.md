@@ -38,10 +38,13 @@ Deploy and deposit themselves are **not** sponsored — only those gov writes. S
 
 | Variable | Role |
 |----------|------|
-| `BUNDLER_RPC_URL` | JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 |
+| `ALCHEMY_RPC_KEY` | Chain RPC + default Sepolia bundler URL when `BUNDLER_RPC_URL` is unset |
+| `BUNDLER_RPC_URL` | Optional explicit JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 |
 | `PACTO_ERC4337_ACCOUNT_IMPL` | Optional override of the shared EIP-7702 set-code target (not pacto-gov; leave unset unless experimenting) |
 
-**Bundler (Sepolia):** use the same Alchemy app as `ALCHEMY_RPC_KEY`:
+In **debug** `tauri:dev` builds, the Rust backend loads repo-root `.env` into the process at startup (existing process env wins). Release builds expect secrets via the real environment. Vite still loads `.env` separately for the frontend.
+
+**Bundler (Sepolia):** defaults to the same Alchemy app as `ALCHEMY_RPC_KEY`. Override only if needed:
 
 ```bash
 BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>
