@@ -50,7 +50,31 @@ In **debug** `tauri:dev` builds, the Rust backend loads repo-root `.env` into th
 BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>
 ```
 
-Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not Alchemy Gas Manager); the bundler only submits UserOps.
+Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not Alchemy Gas Manager); the bundler only submits UserOps. Sponsored UserOps clamp `maxPriorityFeePerGas` to at least **1 gwei** so Alchemy precheck does not reject low RPC tip estimates.
+
+### Protocol paymaster float (once per chain)
+
+Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s **EntryPoint deposit**.
+
+| Bucket | Address (Sepolia) | Who funds | Role |
+|--------|-------------------|-----------|------|
+| Squad sponsor pool | per-squad clone | squad | Reimburses paymaster after success (`spendGas`) |
+| Paymaster EntryPoint deposit | `EntryPoint.balanceOf(0xF7f557…24B8)` | protocol operator | Bundler prepaid gas at precheck |
+
+Fund the shared paymaster once (anyone can call `deposit()`):
+
+```bash
+# Confirm
+cast call 0x0000000071727De22E5E9d8BAf0edAc6f37da032 \
+  "balanceOf(address)(uint256)" 0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8 \
+  --rpc-url "$SEPOLIA_RPC"
+
+# Top up (example 0.1 ETH)
+cast send 0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8 \
+  "deposit()" --value 0.1ether --rpc-url "$SEPOLIA_RPC" --private-key "$OPS_KEY"
+```
+
+If bundlers still reject with **stake too low**, the paymaster also needs `addStake` (owner-only; owner is the factory on Sepolia) — handle upstream / ops, not via the squad pool UI.
 
 **EIP-7702 account implementation (Sepolia):** pinned in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) as `networks.sepolia.erc4337.accountImplementation`:
 

@@ -35,6 +35,7 @@ alloy::sol! {
     interface IEntryPointV07 {
         function getNonce(address sender, uint192 key) external view returns (uint256 nonce);
         function getUserOpHash(PackedUserOperation userOp) external view returns (bytes32);
+        function balanceOf(address account) external view returns (uint256);
     }
 
     #[derive(Debug)]
@@ -185,7 +186,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             FALLBACK_CALL_GAS_LIMIT
         });
     let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => (
+        Ok(fees) => clamp_userop_eip1559_fees(
             fees.max_priority_fee_per_gas,
             fees.max_fee_per_gas,
         ),
@@ -202,6 +203,13 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         pre_verification_gas,
         max_fee,
     );
+    paymaster_entry_point_deposit_preflight(
+        &read_provider,
+        addrs.entry_point,
+        addrs.pacto_sponsor_paymaster,
+        estimated_max_cost,
+    )
+    .await?;
     let (sponsor, squad_id) = sponsor_eligibility_preflight(
         &read_provider,
         addrs.squad_sponsor_factory,
@@ -365,13 +373,49 @@ fn pack_u128s(hi: u128, lo: u128) -> B256 {
 
 /// Fallback gas values when RPC estimation is unavailable.
 pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
-const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
+/// Alchemy (and similar) bundlers reject tips below ~1 gwei on Sepolia.
+pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
 pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
 /// Headroom over `eth_estimateGas` to cover the account `execute` dispatch and state drift.
 const CALL_GAS_MARGIN_BPS: u128 = 12_000;
 
 pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
     estimate * CALL_GAS_MARGIN_BPS / 10_000
+}
+
+/// Raise RPC tip/max-fee to bundler floors; ensure maxFee ≥ maxPriorityFee.
+fn clamp_userop_eip1559_fees(priority: u128, max_fee: u128) -> (u128, u128) {
+    let priority = priority.max(FALLBACK_MAX_PRIORITY_FEE);
+    let max_fee = max_fee.max(priority);
+    (priority, max_fee)
+}
+
+/// Shared paymaster must hold EntryPoint deposit ≥ UserOp maxCost (bundler precheck).
+async fn paymaster_entry_point_deposit_preflight<P: Provider>(
+    provider: &P,
+    entry_point: Address,
+    paymaster: Address,
+    required_wei: U256,
+) -> Result<(), String> {
+    let deposit: U256 = eth_call_decode(
+        provider,
+        entry_point,
+        &IEntryPointV07::balanceOfCall {
+            account: paymaster,
+        },
+    )
+    .await
+    .map_err(|e| wallet_err_json("PAYMASTER_DEPOSIT_READ", e, None))?;
+    if deposit < required_wei {
+        return Err(wallet_err_json(
+            "PAYMASTER_DEPOSIT_LOW",
+            format!(
+                "shared paymaster EntryPoint deposit ({deposit} wei) is below this UserOp's maxCost ({required_wei} wei). Operator: call paymaster.deposit() or EntryPoint.depositTo(paymaster) — not the squad sponsor pool."
+            ),
+            None,
+        ));
+    }
+    Ok(())
 }
 
 /// `eth_estimateGas` for the governance call executed by the account. Estimates the inner
@@ -488,13 +532,35 @@ fn parse_send_user_op_response(res: &Value) -> Result<String, String> {
     if let Some(hash) = res.get("result").and_then(|v| v.as_str()) {
         return Ok(hash.to_string());
     }
-    Err(wallet_err_json(
-        "PAYMASTER_REJECTED",
-        res.get("error")
-            .map(|e| crate::evm::wallet_security::redact_urls_in_text(&e.to_string()))
-            .unwrap_or_else(|| "eth_sendUserOperation failed".into()),
-        None,
-    ))
+    let raw = res
+        .get("error")
+        .map(|e| crate::evm::wallet_security::redact_urls_in_text(&e.to_string()))
+        .unwrap_or_else(|| "eth_sendUserOperation failed".into());
+    let (code, message) = classify_bundler_userop_reject(&raw);
+    Err(wallet_err_json(code, message, None))
+}
+
+/// Map common bundler precheck strings to operator-facing codes/messages.
+fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
+    let lower = raw.to_lowercase();
+    if lower.contains("paymaster deposit") {
+        (
+            "PAYMASTER_DEPOSIT_LOW",
+            "Shared paymaster EntryPoint deposit is too low for this UserOp. Operator: fund via paymaster.deposit() or EntryPoint.depositTo(paymaster) — not the squad sponsor pool.".into(),
+        )
+    } else if lower.contains("stake too low") || lower.contains("paymaster stake") {
+        (
+            "PAYMASTER_STAKE_LOW",
+            "Shared paymaster is not staked on EntryPoint. Operator must addStake on the paymaster (owner/factory).".into(),
+        )
+    } else if lower.contains("maxpriorityfeepergas") {
+        (
+            "BUNDLER_FEE",
+            "Bundler rejected UserOp gas fees (priority fee below floor). Retry after updating the client.".into(),
+        )
+    } else {
+        ("PAYMASTER_REJECTED", raw.to_string())
+    }
 }
 
 /// Poll cadence and overall bound while waiting for UserOp inclusion on L1.
@@ -667,9 +733,10 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, encode_eip7702_authorization,
-        explicit_bundler_rpc_url, pack_u128s, parse_send_user_op_response, paymaster_data,
-        receipt_transaction_hash, retriable_bundler_status, user_op_json, userop_max_cost_wei,
+        bundler_retry_delay, bundler_rpc_url, call_gas_with_margin, classify_bundler_userop_reject,
+        clamp_userop_eip1559_fees, encode_eip7702_authorization, explicit_bundler_rpc_url,
+        pack_u128s, parse_send_user_op_response, paymaster_data, receipt_transaction_hash,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE,
         UserOpParams,
     };
     use crate::evm::sponsor_paymaster::{
@@ -778,13 +845,47 @@ mod tests {
             "error": {"code": -32500, "message": "paymaster stake too low"}
         });
         let err = parse_send_user_op_response(&rejected).unwrap_err();
-        assert!(err.contains("PAYMASTER_REJECTED"));
-        assert!(err.contains("paymaster stake too low"));
+        assert!(err.contains("PAYMASTER_STAKE_LOW"));
+        assert!(err.contains("addStake"));
 
         let missing = json!({"jsonrpc": "2.0", "id": 1});
         let err = parse_send_user_op_response(&missing).unwrap_err();
         assert!(err.contains("PAYMASTER_REJECTED"));
         assert!(err.contains("eth_sendUserOperation failed"));
+    }
+
+    #[test]
+    fn classify_bundler_rejects_maps_deposit_stake_and_fee() {
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32000,"message":"precheck failed: paymaster deposit is 0"}"#,
+        );
+        assert_eq!(code, "PAYMASTER_DEPOSIT_LOW");
+        assert!(msg.contains("paymaster.deposit()"));
+
+        let (code, msg) = classify_bundler_userop_reject(
+            r#"{"code":-32000,"message":"maxPriorityFeePerGas is 1500000 but must be at least 1000000000"}"#,
+        );
+        assert_eq!(code, "BUNDLER_FEE");
+        assert!(msg.contains("priority fee"));
+
+        let (code, msg) = classify_bundler_userop_reject("something else");
+        assert_eq!(code, "PAYMASTER_REJECTED");
+        assert_eq!(msg, "something else");
+    }
+
+    #[test]
+    fn clamp_userop_fees_raises_tip_floor_and_keeps_max_fee_above_tip() {
+        let (p, f) = clamp_userop_eip1559_fees(1_500_000, 20_000_000_000);
+        assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
+        assert_eq!(f, 20_000_000_000);
+
+        let (p, f) = clamp_userop_eip1559_fees(1_500_000, 500_000);
+        assert_eq!(p, FALLBACK_MAX_PRIORITY_FEE);
+        assert_eq!(f, FALLBACK_MAX_PRIORITY_FEE);
+
+        let (p, f) = clamp_userop_eip1559_fees(2_000_000_000, 40_000_000_000);
+        assert_eq!(p, 2_000_000_000);
+        assert_eq!(f, 40_000_000_000);
     }
 
     #[test]
