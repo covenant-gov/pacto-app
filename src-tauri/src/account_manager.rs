@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, Mutex};
 use lazy_static::lazy_static;
-use tauri::{AppHandle, Runtime, Manager};
+use tauri::{AppHandle, Runtime};
 
 lazy_static! {
     /// Global state tracking the currently active account (npub)
@@ -23,7 +23,7 @@ pub fn get_profile_directory<R: Runtime>(
     handle: &AppHandle<R>,
     npub: &str
 ) -> Result<PathBuf, String> {
-    let app_data = handle.path().app_data_dir()
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
 
     // Validate npub format
@@ -79,7 +79,7 @@ pub fn get_mls_directory<R: Runtime>(
 /// Returns: Vec of full npubs that have valid pkeys (not just directories)
 /// Also cleans up invalid account directories without pkeys
 pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
-    let app_data = handle.path().app_data_dir()
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
 
     let mut accounts = Vec::new();

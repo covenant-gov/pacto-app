@@ -18,7 +18,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 use sha2::{Sha256, Digest};
-use tauri::{AppHandle, Runtime, Manager, Emitter};
+use tauri::{AppHandle, Runtime, Emitter};
 use tokio::sync::Semaphore;
 use once_cell::sync::Lazy;
 use log::{info, warn, debug};
@@ -151,7 +151,7 @@ pub fn get_cache_dir<R: Runtime>(
     handle: &AppHandle<R>,
     image_type: ImageType,
 ) -> Result<PathBuf, String> {
-    let app_data = handle.path().app_data_dir()
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
     let cache_dir = app_data.join("cache").join(image_type.subdir());
 
@@ -421,7 +421,7 @@ pub fn clear_cache<R: Runtime>(
 pub fn get_cache_size<R: Runtime>(
     handle: &AppHandle<R>,
 ) -> Result<u64, String> {
-    let app_data = handle.path().app_data_dir()
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
     let cache_dir = app_data.join("cache");
 

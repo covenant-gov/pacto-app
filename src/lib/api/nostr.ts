@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./index";
 import type { TreasurySafeEntry } from "../treasury/treasury-safes";
 import type { VirtualBucket } from "../mls/virtual-channel-bucket";
 import { dmLog } from "../utils/dm-debug";

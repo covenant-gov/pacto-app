@@ -9,6 +9,7 @@
     "notification:default",
     "dialog:default",
     "fs:default",
+    "mcp-bridge:default",
     "clipboard-manager:default",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-image",

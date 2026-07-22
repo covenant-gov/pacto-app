@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use futures_util::StreamExt;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-use tauri::{AppHandle, Runtime, Manager, Emitter};
+use tauri::{AppHandle, Runtime, Emitter};
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
@@ -216,7 +216,7 @@ pub fn is_model_downloaded<R: Runtime>(handle: &AppHandle<R>, model_name: &str) 
     // Note: Whisper models use app_local_data_dir (AppData\Local on Windows)
     // while user data uses app_data_dir (AppData\Roaming). This is intentional
     // as large AI models are better suited to Local (cache-like) storage.
-    let models_dir = handle.path().app_local_data_dir().unwrap().join("whisper");
+    let models_dir = crate::test_sandbox::test_local_data_dir(handle).unwrap().join("whisper");
     
     // Construct model path
     let model_filename = format!("ggml-{}.bin", model_name);
@@ -246,7 +246,7 @@ pub struct WhisperModelStatus {
 #[tauri::command]
 pub async fn delete_whisper_model<R: Runtime>(handle: AppHandle<R>, model_name: String) -> bool {
     // Get models directory in app data directory
-    let models_dir = handle.path().app_local_data_dir().unwrap().join("whisper");
+    let models_dir = crate::test_sandbox::test_local_data_dir(&handle).unwrap().join("whisper");
     
     // Construct model path
     let model_filename = format!("ggml-{}.bin", model_name);
@@ -293,7 +293,7 @@ pub async fn list_models(app_handle: tauri::AppHandle) -> Vec<WhisperModelStatus
 
 pub async fn download_whisper_model<R: Runtime>(handle: &AppHandle<R>, model_name: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     // Get models directory in app data directory
-    let models_dir = handle.path().app_local_data_dir().unwrap().join("whisper");
+    let models_dir = crate::test_sandbox::test_local_data_dir(handle).unwrap().join("whisper");
     
     // Create directory if it doesn't exist
     std::fs::create_dir_all(&models_dir)?;

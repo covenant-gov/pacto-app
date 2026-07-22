@@ -26,7 +26,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(desktop)]
 use std::time::{Duration, Instant};
 #[cfg(desktop)]
-use tauri::{command, AppHandle, Manager, Runtime};
+use tauri::{command, AppHandle, Runtime};
+#[cfg(all(desktop, not(debug_assertions)))]
+use tauri::Manager;
 #[cfg(desktop)]
 use crate::db;
 
@@ -177,9 +179,7 @@ pub fn check_cache_ttl() {
 #[cfg(desktop)]
 /// Get the sounds cache directory (cache/sounds/)
 fn get_sound_cache_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
-    let app_data = handle
-        .path()
-        .app_data_dir()
+    let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
     Ok(app_data.join("cache").join("sounds"))
 }

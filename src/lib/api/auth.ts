@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./index";
 import { updateProfile } from "./nostr";
 
 // Type definitions matching Rust structs

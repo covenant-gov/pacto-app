@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './index';
 
 const BACKUP_VERIFIED_KEY = 'backup_verified';
 

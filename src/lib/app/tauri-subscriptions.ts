@@ -1,4 +1,4 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '../api';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
@@ -82,6 +82,13 @@ function register(
   event: string,
   handler: Parameters<typeof listen>[1]
 ): void {
+  const isVitest =
+    (typeof import.meta.env !== 'undefined' && import.meta.env.VITEST) ||
+    (typeof process !== 'undefined' && process.env?.VITEST);
+  if (!isVitest && typeof window !== 'undefined' && !window.__TAURI__) {
+    unsubs.push(Promise.resolve(() => {}));
+    return;
+  }
   unsubs.push(listen(event, handler));
 }
 

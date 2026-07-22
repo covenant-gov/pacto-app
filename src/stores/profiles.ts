@@ -1,5 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '../lib/api';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles } from '../lib/api/nostr';
 import type { NostrProfile } from '../lib/api/nostr';
 export type { NostrProfile };
