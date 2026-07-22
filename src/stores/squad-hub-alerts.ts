@@ -12,28 +12,54 @@ import type { Squad } from './squads';
 /** Per-user action needed in my-dashboard alerts (roster signer prompt). */
 export const personalAlertsNeededBySquadId = writable<Record<string, boolean>>({});
 
+/** Per-channel mention alerts keyed by `${squadId}:${channelName}`. */
+export const mentionsBySquadChannel = writable<Record<string, number>>({});
+
 const personalAlertRefreshGenBySquadId = new Map<string, number>();
 
 export function resetSquadHubAlertStores(): void {
   personalAlertsNeededBySquadId.set({});
   personalAlertRefreshGenBySquadId.clear();
+  mentionsBySquadChannel.set({});
+}
+
+function squadChannelAlertKey(squadId: string, channelName: string): string | null {
+  const sid = squadId?.trim();
+  const name = channelName?.trim();
+  if (!sid || !name) return null;
+  return `${sid}:${name}`;
+}
+
+export function incrementMentionAlert(squadId: string, channelName: string): void {
+  const key = squadChannelAlertKey(squadId, channelName);
+  if (!key) return;
+  mentionsBySquadChannel.update((m) => ({ ...m, [key]: (m[key] ?? 0) + 1 }));
+}
+
+export function clearMentionAlert(squadId: string, channelName: string): void {
+  const key = squadChannelAlertKey(squadId, channelName);
+  if (!key) return;
+  mentionsBySquadChannel.update((m) => ({ ...m, [key]: 0 }));
 }
 
 export function hubChannelAlertCount(
   channelName: string,
   squadId: string | null | undefined,
   joinRequestsBySquad: Record<string, CommonsJoinRequestDto[]>,
-  personalBySquad = get(personalAlertsNeededBySquadId)
+  personalBySquad: Record<string, boolean> = get(personalAlertsNeededBySquadId),
+  mentionsBySquad: Record<string, number> = {}
 ): number {
   const sid = squadId?.trim();
   if (!sid) return 0;
+  let count = 0;
   if (channelName === SQUAD_DASHBOARD_CHANNEL_NAME) {
-    return (joinRequestsBySquad[sid] ?? []).length;
+    count += (joinRequestsBySquad[sid] ?? []).length;
   }
   if (channelName === MY_DASHBOARD_CHANNEL_NAME) {
-    return personalBySquad[sid] ? 1 : 0;
+    count += personalBySquad[sid] ? 1 : 0;
   }
-  return 0;
+  count += mentionsBySquad[`${sid}:${channelName}`] ?? 0;
+  return count;
 }
 
 export function formatHubChannelAlertCount(count: number): string {

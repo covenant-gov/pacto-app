@@ -43,10 +43,12 @@ function tryParseObject(content: string): Record<string, unknown> | null {
   return null;
 }
 
-/** True when content looks like a product structured event (schema or type key). */
+/** True when content looks like a product structured event (schema or type key).
+ * Mentions envelopes use `kind` and are intentionally not treated as structured product notices. */
 export function isStructuredProductContent(content: string | null | undefined): boolean {
   const obj = tryParseObject(content ?? '');
   if (!obj) return false;
+  if (obj.kind === 'pacto.mentions.envelope.v1') return false;
   return typeof obj.schema === 'string' || typeof obj.type === 'string';
 }
 

@@ -1,11 +1,18 @@
 <script lang="ts">
   import { afterUpdate } from 'svelte';
-  import { formatMessageContent } from '../../lib/utils/message-formatting';
+  import { formatMessageContent, formatMessageContentWithMentions } from '../../lib/utils/message-formatting';
   import { openExternalUrl } from '../../lib/utils/open-external';
+  import type { Mention } from '../../lib/messaging/mentions';
+  import type { NostrProfile } from '../../lib/api/nostr';
 
   export let content: string = '';
+  export let mentions: Mention[] | undefined = undefined;
+  export let profiles: Record<string, NostrProfile | undefined> | undefined = undefined;
+  export let rosterNpubs: string[] | Set<string> | undefined = undefined;
 
-  $: formatted = formatMessageContent(content);
+  $: formatted = mentions && profiles && rosterNpubs
+    ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs)
+    : formatMessageContent(content);
 
   let bodyEl: HTMLDivElement | undefined;
 
@@ -237,6 +244,20 @@
 
   .formatted-message-body :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  .formatted-message-body :global(.mention) {
+    color: var(--accent);
+    font-weight: 500;
+    background: var(--bg-hover);
+    border-radius: 4px;
+    padding: 0.05em 0.25em;
+  }
+
+  .formatted-message-body :global(.mention-trust) {
+    color: var(--text-muted);
+    font-size: 0.75em;
+    margin-left: 0.25em;
   }
 
   .formatted-message-body.empty .formatted-message-body-empty {

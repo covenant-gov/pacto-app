@@ -2,10 +2,18 @@
   import FormattedMessageBody from './FormattedMessageBody.svelte';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
+  import type { Mention } from '../../lib/messaging/mentions';
+  import type { NostrProfile } from '../../lib/api/nostr';
 
   export let id: string = '';
   export let authorName: string = '';
   export let content: string = '';
+  export let body: string = '';
+  export let mentions: Mention[] | undefined = undefined;
+  export let rosterNpubs: string[] | Set<string> | undefined = undefined;
+  export let profiles: Record<string, NostrProfile | undefined> | undefined = undefined;
+  export let currentUserNpub: string | undefined = undefined;
+  export let isMentioned: boolean = false;
   export let timestamp: string = '';
   export let avatar: string = '';
   /** Hide avatar + name/timestamp; nest under the previous message from the same author. */
@@ -15,7 +23,8 @@
   export let replyAuthorName: string | undefined = undefined;
   export let replyPreview: string | undefined = undefined;
 
-  $: structuredNotice = summarizeStructuredMessageContent(content);
+  $: displayContent = body || content;
+  $: structuredNotice = summarizeStructuredMessageContent(displayContent);
 
   function jumpToReply() {
     if (!replyToId) return;
@@ -24,7 +33,7 @@
   }
 </script>
 
-<div class="message" class:compact id={id ? `msg-${id}` : undefined}>
+<div class="message" class:compact class:mentioned={isMentioned} id={id ? `msg-${id}` : undefined}>
   <div class="avatar" aria-hidden={compact ? 'true' : undefined}>
     {#if !compact}
       {#if avatar}
@@ -58,7 +67,7 @@
       {#if structuredNotice}
         <span class="structured-notice">{structuredNotice}</span>
       {:else}
-        <FormattedMessageBody content={content} />
+        <FormattedMessageBody content={displayContent} {mentions} {profiles} {rosterNpubs} />
       {/if}
     </div>
   </div>
@@ -70,6 +79,10 @@
     gap: 16px;
     padding: 8px 16px;
     transition: background 0.1s;
+  }
+
+  .message.mentioned {
+    background: rgba(88, 101, 242, 0.12);
   }
 
   .message.compact {

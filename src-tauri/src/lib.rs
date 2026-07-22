@@ -45,6 +45,7 @@ mod whisper;
 
 mod message;
 pub use message::{Message, Attachment, Reaction};
+use message::extract_mention_notification_body;
 
 mod profile;
 pub use profile::{Profile, Status};
@@ -2209,7 +2210,7 @@ async fn notifs() -> Result<bool, String> {
                                                                     };
                                                                     
                                                                     // Create notification for text message
-                                                                    let notification = NotificationData::group_message(sender_name, group_name, message.content.clone());
+                                                                    let notification = NotificationData::group_message(sender_name, group_name, extract_mention_notification_body(&message.content));
                                                                     show_notification_generic(notification);
                                                                 }
                                                                 
@@ -2303,7 +2304,7 @@ async fn notifs() -> Result<bool, String> {
                                                                             .unwrap_or_else(|| String::from("file"));
                                                                         "Sent a ".to_string() + &get_file_type_description(&extension)
                                                                     } else {
-                                                                        message.content.clone()
+                                                                        extract_mention_notification_body(&message.content)
                                                                     };
                                                                     let notification = NotificationData::group_message(sender_name, group_name, content);
                                                                     

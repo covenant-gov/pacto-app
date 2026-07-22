@@ -3003,3 +3003,55 @@ pub async fn edit_message(
 
     Ok(edit_id)
 }
+
+#[derive(serde::Deserialize)]
+struct MentionNotificationEnvelope {
+    kind: String,
+    body: String,
+}
+
+/// Extracts the plain-text body from a @mention envelope so that OS notifications
+/// display readable text instead of the JSON envelope.
+pub fn extract_mention_notification_body(content: &str) -> String {
+    if let Ok(envelope) = serde_json::from_str::<MentionNotificationEnvelope>(content) {
+        if envelope.kind == "pacto.mentions.envelope.v1" {
+            return envelope.body;
+        }
+    }
+    content.to_string()
+}
+
+#[cfg(test)]
+mod extract_mention_notification_body_tests {
+    use super::extract_mention_notification_body;
+
+    #[test]
+    fn valid_envelope_returns_body() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hello team"}"#;
+        assert_eq!(extract_mention_notification_body(content), "hello team");
+    }
+
+    #[test]
+    fn plain_text_returns_original() {
+        let content = "hello team";
+        assert_eq!(extract_mention_notification_body(content), "hello team");
+    }
+
+    #[test]
+    fn wrong_kind_returns_original() {
+        let content = r#"{"kind":"pacto.other.envelope.v1","body":"hello team"}"#;
+        assert_eq!(extract_mention_notification_body(content), content);
+    }
+
+    #[test]
+    fn malformed_mentions_content_does_not_fail_or_read_mentions() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hello","mentions":"invalid"}"#;
+        assert_eq!(extract_mention_notification_body(content), "hello");
+    }
+
+    #[test]
+    fn malformed_json_returns_original() {
+        let content = "not { valid json";
+        assert_eq!(extract_mention_notification_body(content), content);
+    }
+}
