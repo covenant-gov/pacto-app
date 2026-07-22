@@ -1,3 +1,14 @@
+<!-- intent-skills:start -->
+## Skill Loading
+
+Before editing files for a substantial task:
+- Run `pnpm dlx @tanstack/intent@latest list` from the workspace root to see available local skills.
+- If a listed skill matches the task, run `pnpm dlx @tanstack/intent@latest load <package>#<skill>` before changing files.
+- Use the loaded `SKILL.md` guidance while making the change.
+- Monorepos: when working across packages, run the skill check from the workspace root and prefer the local skill for the package being changed.
+- Multiple matches: prefer the most specific local skill for the package or concern you are changing; load additional skills only when the task spans multiple packages or concerns.
+<!-- intent-skills:end -->
+
 # Repository Guidelines
 
 ## Project Overview
@@ -212,6 +223,49 @@ cd src-tauri && cargo test
 - **Do not delete or narrow `.cursor/rules/`** unless the user explicitly asked to remove or replace a policy.
 - **Run lint before committing or pushing:** always run `pnpm lint` and fix all reported violations before creating a commit or pushing a branch.
 - **`install.sh` at the repo root installs an external CLI (`pacto-bot-api`)**, not the Pacto desktop app; do not use it for local desktop setup.
+
+## UI Validation with Tauri MCP
+
+When the Tauri MCP bridge is configured (see `docs/TAURI_MCP_INTEGRATION.md`), **agents must use it to verify any UI change** before declaring the work complete. This includes component changes, layout changes, navigation changes, theme/styling changes, and any frontend work that affects what a user sees or clicks.
+
+### Why
+
+Unit and store tests cannot assert that a button renders, a modal opens, or a message sends through the real UI. The MCP bridge closes that gap by letting the agent drive the live app: take screenshots, capture DOM snapshots, click elements, type text, and observe backend → frontend events. This turns "trust me, it looks right" into observable evidence.
+
+### When to use it
+
+Use the MCP tools for verification if **all** of the following are true:
+
+- The change touches `src/components/`, `src/routes/`, `src/app.css`, or any frontend-visible code.
+- The Tauri MCP server is configured in your client (`xd://mcp__tauri_*` tools are available).
+- You can run the app in debug mode (`make dev`).
+
+If the MCP tools are not available in your session, fall back to the existing test suite (`pnpm test`, `pnpm check`) and note the limitation in your handoff.
+
+### Verification workflow
+
+1. **Start the app** in debug mode: `make dev`.
+2. **Start a driver session**: `xd://mcp__tauri_driver_session` with `{ "action": "start" }`.
+3. **Navigate to the affected screen(s)** using `xd://mcp__tauri_webview_interact` (click, scroll) or `xd://mcp__tauri_webview_execute_js` if text selectors are ambiguous.
+4. **Capture evidence**:
+   - `xd://mcp__tauri_webview_screenshot` — save the viewport image.
+   - `xd://mcp__tauri_webview_dom_snapshot` with `"type": "accessibility"` — capture the semantic UI tree.
+5. **Exercise the interaction** that changed: click the new button, open the modal, send a test message, etc.
+6. **Capture a final screenshot** showing the result.
+7. **Stop the driver session** when done: `xd://mcp__tauri_driver_session` with `{ "action": "stop" }`.
+
+### What to include in your handoff
+
+- Paths to any screenshots saved (e.g., `/tmp/...`).
+- A brief description of the navigation path you exercised.
+- Any DOM snapshot observations that confirm the expected elements appeared or disappeared.
+- If the change could not be verified via MCP, say why and what was verified instead.
+
+### Boundaries
+
+- The MCP bridge is **debug-only and desktop-only**; it does not run in production, mobile, or CI release builds. Do not rely on it for release validation.
+- Do not send disruptive messages in live production channels. Use low-traffic test channels (e.g., `#pacto-app` in the `t14` squad) for message typing tests.
+- The bridge is a verification aid, not a replacement for accessibility review, security review, or product sign-off.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker
