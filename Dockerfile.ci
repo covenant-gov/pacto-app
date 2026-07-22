@@ -1,0 +1,73 @@
+# CI base image for Pacto Linux jobs.
+# Pre-installs the native toolchain, Rust, Node/pnpm, and Tauri/Whisper
+# system dependencies so per-run apt installs are eliminated.
+#
+# Build & push (from repo root):
+#   docker build -f Dockerfile.ci -t ghcr.io/covenant-gov/pacto-ci:latest .
+#   docker push ghcr.io/covenant-gov/pacto-ci:latest
+#
+# Use in GitHub Actions by adding to a job:
+#   container:
+#     image: ghcr.io/covenant-gov/pacto-ci:latest
+#     options: --user root
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CARGO_HOME=/usr/local/cargo
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV PNPM_HOME=/usr/local/pnpm
+ENV PATH="${CARGO_HOME}/bin:${PNPM_HOME}:${PATH}"
+
+# 1. Native build dependencies used by Tauri and whisper-rs
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        cmake \
+        curl \
+        file \
+        git \
+        libasound2-dev \
+        libayatana-appindicator3-dev \
+        libclang-dev \
+        librsvg2-dev \
+        libssl-dev \
+        libvulkan-dev \
+        libwebkit2gtk-4.1-dev \
+        libxdo-dev \
+        pkg-config \
+        wget \
+        xvfb \
+        glslc \
+        # Node/pnpm runtime requirements
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Rust stable toolchain (required by src-tauri)
+# Pin a recent stable version for reproducibility; update periodically.
+ARG RUST_VERSION=stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal \
+    && rustc --version \
+    && cargo --version
+
+# 3. Node.js LTS + pnpm (match .github/workflows/ci.yaml versions)
+ARG NODE_VERSION=24.18.0
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar -xJf - -C /usr/local --strip-components=1 \
+    && node --version \
+    && npm --version
+
+ARG PNPM_VERSION=11.7.0
+RUN npm install -g pnpm@${PNPM_VERSION} \
+    && pnpm --version
+
+# 4. Pre-warm a throwaway crate so Cargo downloads its internal registry index.
+# This shaves a few seconds off the first real build.
+RUN cargo new --bin /tmp/throwaway \
+    && cd /tmp/throwaway \
+    && cargo build --release \
+    && rm -rf /tmp/throwaway
+
+# GitHub Actions containers run as root by default; keep the image generic.
+WORKDIR /github/workspace
