@@ -4,6 +4,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 
 | Area | Purpose |
 |------|---------|
+| **[BEADS.md](./BEADS.md)** | **Issue tracking with Beads (`bd`)**: install, sync, daily workflow, and DoltHub setup |
 | **[CONCEPTS.md](../CONCEPTS.md)** | Shared vocabulary / acronyms (npub, MLS, roster EVM, ACL, …) |
 | **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |
 | **[user/UNDERSTANDING_ENCRYPTION.md](./user/UNDERSTANDING_ENCRYPTION.md)** | **User-facing explanation of PIN, salt, and group encryption** (non-technical) |
