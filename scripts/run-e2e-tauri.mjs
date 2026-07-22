@@ -68,10 +68,14 @@ async function callTool(client, name, args) {
   const result = await client.callTool({ name, arguments: args });
   const text = result.content.find(c => c.type === 'text')?.text;
   if (!text) return null;
+  // The MCP server appends a "\n\n[Executed in window: ...]" footer to
+  // webview_execute_js results. Strip it before trying JSON so callers get
+  // the real payload.
+  const payload = text.split('\n\n[Executed in window:')[0];
   try {
-    return JSON.parse(text);
+    return JSON.parse(payload);
   } catch {
-    return text;
+    return payload;
   }
 }
 
@@ -80,9 +84,10 @@ async function main() {
   mkdirSync(resultsDir, { recursive: true });
 
   const binaryName = process.platform === 'win32' ? 'pacto.exe' : 'pacto';
-  const binaryPath = path.join(repoRoot, 'src-tauri', 'target', 'debug', binaryName);
+  const defaultBinaryPath = path.join(repoRoot, 'src-tauri', 'target', 'debug', binaryName);
+  const binaryPath = process.env.PACTO_TAURI_BINARY || defaultBinaryPath;
   if (!existsSync(binaryPath)) {
-    throw new Error(`Debug binary not found at ${binaryPath}. Run 'cargo build' in src-tauri first.`);
+    throw new Error(`Debug binary not found at ${binaryPath}. Run 'cargo build' in src-tauri or set PACTO_TAURI_BINARY.`);
   }
 
   const env = {
