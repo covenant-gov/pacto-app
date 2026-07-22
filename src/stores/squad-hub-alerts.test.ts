@@ -8,6 +8,9 @@ import {
   refreshPersonalAlertForSquad,
   resetSquadHubAlertStores,
   setPersonalAlertNeeded,
+  mentionsBySquadChannel,
+  incrementMentionAlert,
+  clearMentionAlert,
 } from './squad-hub-alerts';
 import type { Squad } from './squads';
 
@@ -83,5 +86,52 @@ describe('squad hub channel alerts', () => {
 
     expect(get(personalAlertsNeededBySquadId).squad1).toBe(true);
     needsSpy.mockRestore();
+  });
+
+  it('mention alert increments count for the correct squad and channel', () => {
+    incrementMentionAlert('squad1', 'general');
+    expect(get(mentionsBySquadChannel)['squad1:general']).toBe(1);
+  });
+
+  it('mention alert count combines with join request count on dashboard', () => {
+    const joinRequests = { squad1: [{ eventId: 'a' }] };
+    incrementMentionAlert('squad1', SQUAD_DASHBOARD_CHANNEL_NAME);
+    expect(
+      hubChannelAlertCount(
+        SQUAD_DASHBOARD_CHANNEL_NAME,
+        'squad1',
+        joinRequests as never,
+        {},
+        get(mentionsBySquadChannel)
+      )
+    ).toBe(2);
+  });
+
+  it('clearMentionAlert resets the count for a channel', () => {
+    incrementMentionAlert('squad1', 'general');
+    clearMentionAlert('squad1', 'general');
+    expect(get(mentionsBySquadChannel)['squad1:general']).toBe(0);
+  });
+
+  it('clearMentionAlert leaves other channel badges intact', () => {
+    incrementMentionAlert('squad1', 'general');
+    incrementMentionAlert('squad1', 'random');
+    clearMentionAlert('squad1', 'general');
+    expect(get(mentionsBySquadChannel)['squad1:general']).toBe(0);
+    expect(get(mentionsBySquadChannel)['squad1:random']).toBe(1);
+  });
+
+  it('clearing a badge in one squad does not restore it for another squad', () => {
+    incrementMentionAlert('squad1', 'general');
+    clearMentionAlert('squad1', 'general');
+    incrementMentionAlert('squad2', 'general');
+    expect(get(mentionsBySquadChannel)['squad1:general']).toBe(0);
+    expect(get(mentionsBySquadChannel)['squad2:general']).toBe(1);
+  });
+
+  it('resetSquadHubAlertStores clears mention counts', () => {
+    incrementMentionAlert('squad1', 'general');
+    resetSquadHubAlertStores();
+    expect(get(mentionsBySquadChannel)).toEqual({});
   });
 });

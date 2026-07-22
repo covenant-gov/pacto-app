@@ -12,6 +12,7 @@
     groupTimelineKey,
     defaultTrioSharesSingleMlsGroup,
     announceCardAllowedForTimelineBucket,
+    resolveVirtualBucketForTimelineMessage,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
@@ -21,6 +22,7 @@
     membersByGroupId,
     membersLoadingByGroupId,
     refreshMlsGroupMembers,
+    isMlsGroupMembersHydrated,
   } from '../../stores/mls-group-members';
   import {
     activeChannelId,
@@ -54,8 +56,14 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
+  import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import {
+    incrementMentionAlert,
+    clearMentionAlert,
+  } from '../../stores/squad-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
 
@@ -99,6 +107,7 @@
   })();
 
   $: channelName = activeChannel?.name || 'channel';
+  $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
@@ -221,10 +230,24 @@
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
     const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
+    const parsed = parseMessageContent(msg.content);
+    const groupId = $activeChannelId;
+    const members = groupId ? ($membersByGroupId[groupId] ?? []) : [];
+    const rosterSet = new Set(members);
+    const filteredMentions = filterMentionsByRoster(parsed.mentions, rosterSet);
+    const isMentioned = currentUserNpub
+      ? filteredMentions.some((m) => m.npub === currentUserNpub)
+      : false;
     const base = {
       id: msg.id,
       authorName: '',
-      content: msg.content,
+      body: parsed.body,
+      content: parsed.body,
+      mentions: filteredMentions,
+      rosterNpubs: members,
+      profiles: $profiles,
+      currentUserNpub,
+      isMentioned,
       timestamp: new Date(msg.at).toISOString(),
       avatar: '',
       replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
@@ -251,7 +274,11 @@
         msg.replied_to_has_attachment === true
           ? 'Attachment'
           : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
+            ? (() => {
+                const parsedReply = parseMessageContent(msg.replied_to_content as string);
+                const body = parsedReply.body;
+                return body.slice(0, 80).trim() + (body.length > 80 ? '…' : '');
+              })()
             : 'Message';
     }
     return base;
@@ -306,12 +333,15 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
-  async function handleSendMessage(content: string) {
+  async function handleSendMessage(body: string, mentions?: Mention[]) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket =
       virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
+    const content = mentions?.length
+      ? buildMentionEnvelope(body, mentions, virtualBucket)
+      : body;
     try {
       await sendDmMessage(groupId, content, '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
@@ -527,6 +557,93 @@
     }, 0);
   }
   $: if (messagesTimelineKey !== scrollPrevTimelineKey && !virtualTimelineMessages.length) scrollPrevTimelineKey = messagesTimelineKey;
+
+  function channelNameForMentionAlert(
+    groupId: string,
+    bucket: VirtualBucket,
+    channels: Array<{ name: string; groupId: string; order: number }>
+  ): string | null {
+    const matches = channels.filter((c) => c.groupId === groupId);
+    if (matches.length === 0) return null;
+    if (matches.length === 1) return matches[0].name;
+    if (bucket === 'polls') {
+      const polls = matches.find((c) => c.name === POLLS_CHANNEL_NAME);
+      if (polls) return polls.name;
+    }
+    const ann = matches.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
+    if (ann) return ann.name;
+    return [...matches].sort((a, b) => a.order - b.order)[0]?.name ?? null;
+  }
+
+  // Pre-load squad channel rosters so mention filtering and alerts can use membersByGroupId.
+  $: if (activeSquad) {
+    const seen = new Set<string>();
+    for (const ch of activeSquad.channels) {
+      const gid = ch.groupId.trim();
+      if (gid && !gid.startsWith('creating-') && !seen.has(gid) && !isMlsGroupMembersHydrated(gid)) {
+        seen.add(gid);
+        void ensureMlsGroupMembers(gid);
+      }
+    }
+  }
+
+  // Track which messages have already been evaluated for mention alerts.
+  let processedMentionIds: Set<string> = new Set();
+  let lastActiveSquadIdForMentions: string | null = null;
+  $: if (activeSquad?.id !== lastActiveSquadIdForMentions) {
+    lastActiveSquadIdForMentions = activeSquad?.id ?? null;
+    const snapshot = new Set<string>();
+    if (activeSquad) {
+      for (const ch of activeSquad.channels) {
+        for (const m of $backendGroupMessages[ch.groupId] ?? []) {
+          snapshot.add(m.id);
+        }
+      }
+    }
+    processedMentionIds = snapshot;
+  }
+
+  $: {
+    const currentUserNpub = $currentUser?.npub;
+    if (activeSquad && currentUserNpub) {
+      for (const ch of activeSquad.channels) {
+        const members = $membersByGroupId[ch.groupId];
+        if (members === undefined) continue;
+        const rosterSet = new Set(members);
+        for (const m of $backendGroupMessages[ch.groupId] ?? []) {
+          if (m.mine) continue;
+          if (processedMentionIds.has(m.id)) continue;
+          processedMentionIds.add(m.id);
+          const parsed = parseMessageContent(m.content);
+          const filtered = filterMentionsByRoster(parsed.mentions, rosterSet);
+          if (!filtered.some((mention) => mention.npub === currentUserNpub)) continue;
+          const bucket = parsed.pacto_virtual_bucket
+            ? (parsed.pacto_virtual_bucket as VirtualBucket)
+            : resolveVirtualBucketForTimelineMessage(m);
+          const channelName = channelNameForMentionAlert(ch.groupId, bucket, activeSquad.channels);
+          if (channelName) incrementMentionAlert(activeSquad.id, channelName);
+        }
+      }
+    }
+  }
+
+  // Clear the mention badge when the user opens or scrolls-to-bottom of a squad channel.
+  let lastClearedMentionKey: string | null = null;
+  $: if (activeSquad && activeChannel) {
+    const key = `${activeSquad.id}:${activeChannel.name}`;
+    if (lastClearedMentionKey !== key) {
+      lastClearedMentionKey = key;
+      clearMentionAlert(activeSquad.id, activeChannel.name);
+    }
+  }
+
+  function handleMessagesScroll(event: Event) {
+    const el = event.currentTarget as HTMLDivElement;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (isNearBottom && activeSquad && activeChannel) {
+      clearMentionAlert(activeSquad.id, activeChannel.name);
+    }
+  }
 </script>
 
 <svelte:window
@@ -644,7 +761,7 @@
             }}
           ></button>
           <div class="polls-channel-chat-pane">
-            <div class="messages-container" bind:this={messagesContainer}>
+            <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
               <div class="messages-list">
                 {#if isChannelCreating}
                   <p class="channel-creating-message">Private group channel is being created.</p>
@@ -678,7 +795,16 @@
             {#if $groupSendError}
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
-            <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+            <MessageInput
+              channelName={channelName}
+              onSend={handleSendMessage}
+              onSendMentions={handleSendMessage}
+              squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+              squadRosterNpubs={panelMembers}
+              squadProfiles={$profiles}
+              {currentUserNpub}
+              disabled={isChannelCreating}
+            />
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
@@ -688,7 +814,7 @@
         {/if}
       </div>
     {:else}
-      <div class="messages-container" bind:this={messagesContainer}>
+      <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
       <div class="messages-list">
         {#if isChannelCreating}
           <p class="channel-creating-message">Private group channel is being created.</p>
@@ -745,7 +871,16 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+    <MessageInput
+      channelName={channelName}
+      onSend={handleSendMessage}
+      onSendMentions={handleSendMessage}
+      squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+      squadRosterNpubs={panelMembers}
+      squadProfiles={$profiles}
+      {currentUserNpub}
+      disabled={isChannelCreating}
+    />
     {/if}
 
     <!-- Leave channel confirm -->
