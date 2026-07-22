@@ -60,6 +60,9 @@ dolt-pprof/
 # Backup data (auto-exported JSONL, local-only)
 backup/
 
+# Auto-exported issue list (regenerated from Dolt; not source of truth)
+issues.jsonl
+
 # Per-project environment file (Dolt connection config, GH#2520)
 .env
 

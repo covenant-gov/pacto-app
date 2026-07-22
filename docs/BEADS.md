@@ -46,6 +46,22 @@ bd context
 bd ping
 ```
 
+### Git role warning
+
+If `bd bootstrap` warns that `beads.role` is not configured, set it explicitly:
+
+```bash
+# For team members with push access to covenant-gov/pacto-app
+# (routes new issues to the main repo; use this for the core team)
+git config beads.role maintainer
+
+# For external contributors working from a fork
+# (routes personal planning issues to ~/.beads-planning)
+git config beads.role contributor
+```
+
+This repo is currently configured in maintainer routing mode, so core team members should use `maintainer`.
+
 ## Setting up a new project
 
 Only use this if you are creating a brand-new Beads workspace, not for cloning this repo.
