@@ -17,6 +17,7 @@ sudo apt install -y \
   git \
   pkg-config \
   libvulkan-dev \
+  glslc \
   libwebkit2gtk-4.1-dev \
   libxdo-dev \
   libssl-dev \
@@ -34,6 +35,7 @@ sudo apt install -y \
 | `git` | Version control for cloning the repository |
 | `pkg-config` | Helper tool for compiling libraries |
 | `libvulkan-dev` | Vulkan headers/libraries used by Whisper acceleration on Linux |
+| `glslc` | Vulkan shader compiler required by `whisper-rs-sys` on Linux |
 | `libwebkit2gtk-4.1-dev` | WebKit rendering engine for Tauri UI |
 | `libxdo-dev` | X11 input simulation library |
 | `libssl-dev` | OpenSSL development headers |
@@ -161,9 +163,10 @@ sudo apt install cmake clang libclang-dev
 error: failed to compile with Vulkan support
 ```
 
-**Solution:** Install Vulkan development libraries:
+**Solution:** Install the Vulkan development libraries and shader compiler:
+
 ```bash
-sudo apt install libvulkan-dev
+sudo apt install libvulkan-dev glslc
 ```
 
 ### Rust not found after installation
