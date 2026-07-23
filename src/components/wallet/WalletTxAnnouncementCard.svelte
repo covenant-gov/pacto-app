@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { WalletTxAnnouncementPayload } from '../../lib/wallet/dm-messages';
   import {
     getWalletNetworkDisplayName,
@@ -19,7 +20,7 @@
   export let failed = false;
 
   $: networkLabel = getWalletNetworkDisplayName(payload.network);
-  $: badgeLabel = failed ? 'Transfer failed' : pending ? 'Transfer pending' : 'Transfer confirmed';
+  $: badgeLabel = failed ? $t('wallet.transferFailed') : pending ? $t('wallet.transferPending') : $t('wallet.transferConfirmed');
   $: iconGlyph = failed ? '!' : pending ? '…' : '✓';
   $: fromAddr = payload.from_evm_address.trim();
   $: fromAddrShort =
@@ -29,7 +30,7 @@
 
   async function copyHash() {
     const ok = await copyTextToClipboard(payload.tx_hash);
-    showToast(ok ? 'Transaction hash copied' : 'Could not copy hash');
+    showToast(ok ? $t('wallet.txHashCopied') : $t('wallet.couldNotCopyHash'));
   }
 </script>
 
@@ -44,14 +45,14 @@
     <p class="wallet-tx-announce-badge">{badgeLabel}</p>
     <div class="wallet-tx-announce-role">
       <span class="wallet-tx-announce-role-line">
-        {viewerIsSender ? 'You transferred' : `${peerDisplayName} transferred`}
+        {viewerIsSender ? $t('wallet.youTransferred') : $t('wallet.peerTransferred', { values: { peerName: peerDisplayName } })}
       </span>
       <span class="wallet-tx-announce-role-amount">{payload.amount} {payload.asset}</span>
       <span class="wallet-tx-announce-role-line">
-        {viewerIsSender ? `to ${peerDisplayName}` : 'to you'}
+        {viewerIsSender ? $t('wallet.toPeer', { values: { peerName: peerDisplayName } }) : $t('wallet.toYou')}
       </span>
     </div>
-    <p class="wallet-tx-announce-subtitle">{networkLabel} · from {fromAddrShort}</p>
+    <p class="wallet-tx-announce-subtitle">{$t('wallet.announcementSubtitle', { values: { networkLabel, fromAddrShort } })}</p>
     <div class="wallet-tx-announce-hash-row">
       <p class="wallet-tx-announce-hash" title={payload.tx_hash}>
         {payload.tx_hash.slice(0, 10)}…{payload.tx_hash.slice(-8)}
@@ -59,10 +60,10 @@
       <button
         type="button"
         class="wallet-tx-announce-copy"
-        aria-label="Copy full transaction hash"
+        aria-label={$t('wallet.copyFullTransactionHash')}
         on:click={copyHash}
       >
-        Copy hash
+        {$t('wallet.copyHash')}
       </button>
     </div>
     {#if explorerUrl}

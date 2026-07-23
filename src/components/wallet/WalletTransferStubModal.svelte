@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../lib/wallet/chains';
@@ -41,6 +42,8 @@
   } from '../../lib/wallet/wallet-dm-transfer';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
+
+  const tFn = get(t);
 
   export let mode: 'send' | 'request';
   export let npub: string;
@@ -216,7 +219,7 @@
     const h = sendError?.txHash;
     if (!h) return;
     const ok = await copyTextToClipboard(h);
-    showToast(ok ? 'Transaction hash copied' : 'Could not copy hash');
+    showToast(ok ? tFn('wallet.txHashCopied') : tFn('wallet.couldNotCopyHash'));
   }
 
   /** Receipt timeout: tx was already broadcast; another Confirm would risk a duplicate send. */
@@ -239,16 +242,16 @@
 
   $: usdLine =
     pricesResult === null
-      ? 'Loading USD rates…'
+      ? tFn('wallet.loadingUsdRates')
       : !pricesResult.ok
         ? pricesResult.message
         : approxUsd != null
           ? `≈ ${formatApproxUsd(approxUsd)}`
           : amountValid && (assetCode === 'ETH' || assetCode === 'USDC' || assetCode === 'USDT')
-            ? 'Enter an amount to see USD estimate.'
+            ? tFn('wallet.enterAmountForUsd')
             : amountValid
-              ? 'USD estimate unavailable for this asset.'
-              : 'Enter an amount to see USD estimate.';
+              ? tFn('wallet.usdUnavailable')
+              : tFn('wallet.enterAmountForUsd');
 
   function onAmountInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
@@ -266,7 +269,7 @@
     if (mode === 'request') {
       const postDm = postDmPlaintext;
       if (!postDm) {
-        showToast('Payment requests can only be sent from the desktop app in an open DM.');
+        showToast(tFn('wallet.paymentRequestDesktopOnly'));
         return;
       }
       sendError = null;
@@ -274,7 +277,7 @@
       try {
         const fromEvm = await getActiveEvmSignerAddress();
         if (!fromEvm) {
-          const msg = 'No active EVM account. Set up accounts under Settings → EVM.';
+          const msg = tFn('wallet.noActiveEvmAccount');
           sendError = { message: msg };
           showToast(msg);
           return;
@@ -291,12 +294,12 @@
         if (ok) {
           onClose();
         } else {
-          const msg = 'Could not deliver the request. Check your connection and try again.';
+          const msg = tFn('wallet.couldNotDeliverRequest');
           sendError = { message: msg };
           showToast(msg);
         }
       } catch {
-        const msg = 'Could not send the payment request.';
+        const msg = tFn('wallet.couldNotSendPaymentRequest');
         sendError = { message: msg };
         showToast(msg);
       } finally {
@@ -341,7 +344,7 @@
           txHash: out.parsed?.txHash,
           code: out.parsed?.code,
         };
-        showToast(out.parsed?.code === 'RECEIPT_TIMEOUT' ? 'Confirmation timed out' : out.message);
+        showToast(out.parsed?.code === 'RECEIPT_TIMEOUT' ? tFn('wallet.confirmationTimedOut') : out.message);
       }
     } finally {
       sending = false;
@@ -355,21 +358,21 @@
   {onClose}
   dismissible={mode === 'request' ? !requestPosting : !sending}
 >
-  <h2 id={titleId}>{mode === 'send' ? 'Send' : 'Request payment'}</h2>
+  <h2 id={titleId}>{mode === 'send' ? $t('wallet.sendTitle') : $t('wallet.requestPaymentTitle')}</h2>
   <p id={descId} class="wallet-stub-desc">
     {mode === 'send'
-      ? `Send assets to ${peerDisplayName} from your embedded wallet (desktop app). Confirm signs and broadcasts the transaction; the payment card appears in chat while confirmation finishes in the background. Your contact must have an EVM address on their profile.`
-      : `Request a payment from ${peerDisplayName}. Confirm posts a payment request card in this chat (desktop app). They can accept to open Send with your amount pre-filled.`}
+      ? $t('wallet.sendStubDesc', { values: { peerName: peerDisplayName } })
+      : $t('wallet.requestStubDesc', { values: { peerName: peerDisplayName } })}
     <span class="wallet-stub-npub-ref">{truncateNpub(npub)}</span>
   </p>
 
   <div class="wallet-stub-fields">
     <label class="wallet-stub-label">
-      <span class="wallet-stub-label-text">Network</span>
+      <span class="wallet-stub-label-text">{$t('wallet.networkLabel')}</span>
       <select
         class="wallet-stub-select"
         bind:value={chainId}
-        aria-label="Network"
+        aria-label={$t('wallet.networkLabel')}
         disabled={sending || requestPosting}
       >
         {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
@@ -379,8 +382,8 @@
     </label>
 
     <label class="wallet-stub-label">
-      <span class="wallet-stub-label-text">Asset</span>
-      <select class="wallet-stub-select" bind:value={assetCode} aria-label="Asset" disabled={sending || requestPosting}>
+      <span class="wallet-stub-label-text">{$t('wallet.assetLabel')}</span>
+      <select class="wallet-stub-select" bind:value={assetCode} aria-label={$t('wallet.assetLabel')} disabled={sending || requestPosting}>
         {#each assetOptions as o (o.code)}
           <option value={o.code}>{o.code}</option>
         {/each}
@@ -388,33 +391,31 @@
     </label>
 
     <label class="wallet-stub-label">
-      <span class="wallet-stub-label-text">Amount</span>
+      <span class="wallet-stub-label-text">{$t('wallet.amountLabel')}</span>
       <input
         class="wallet-stub-input"
         type="text"
         inputmode="decimal"
         autocomplete="off"
-        placeholder="0.0"
+        placeholder={$t('wallet.amountPlaceholder')}
         value={amountStr}
         on:input={onAmountInput}
         disabled={sending || requestPosting}
         aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
-        aria-label="Amount"
+        aria-label={$t('wallet.amountLabel')}
       />
     </label>
 
     {#if mode === 'send' && sendBalanceLoading}
-      <p class="wallet-stub-balance-loading" role="status">Loading balance…</p>
+      <p class="wallet-stub-balance-loading" role="status">{$t('wallet.loadingBalance')}</p>
     {/if}
     {#if mode === 'send' && insufficientFunds && selectedBalanceRow}
       <p class="wallet-stub-insufficient" role="alert">
-        This amount is more than your {assetCode} balance on this network. Available: {selectedBalanceRow.balanceDecimal} 
-        {assetCode}.
+        {$t('wallet.insufficientFunds', { values: { assetCode, balanceDecimal: selectedBalanceRow.balanceDecimal } })}
       </p>
     {:else if mode === 'send' && sendBalanceError && !sendBalanceLoading}
       <p class="wallet-stub-balance-warn" role="status">
-        Could not load your balance ({sendBalanceError}). You can still try to send; the network will reject if funds are
-        insufficient.
+        {$t('wallet.couldNotLoadBalanceStillTry', { values: { error: sendBalanceError } })}
       </p>
     {/if}
 
@@ -429,10 +430,10 @@
             <button
               type="button"
               class="wallet-stub-copy-hash"
-              aria-label="Copy full transaction hash"
+              aria-label={$t('wallet.copyFullTransactionHash')}
               on:click={copyErrorTxHash}
             >
-              Copy hash
+              {$t('wallet.copyHash')}
             </button>
           </div>
         {/if}
@@ -449,11 +450,11 @@
         {/if}
         {#if sendError?.code === 'RECEIPT_TIMEOUT'}
           <p class="wallet-stub-error-retry-hint" role="note">
-            The transaction may still confirm. Check the explorer before sending again.
+            {$t('wallet.retryHint')}
           </p>
         {:else if canRetryAfterError}
           <button type="button" class="wallet-stub-retry" on:click={retryFailedSend}>
-            Try again
+            {$t('wallet.tryAgain')}
           </button>
         {/if}
       </div>
@@ -465,13 +466,13 @@
       type="button"
       class="wallet-stub-btn wallet-stub-btn-secondary"
       disabled={mode === 'send' ? sending : requestPosting}
-      on:click={onClose}>Cancel</button>
+      on:click={onClose}>{$t('wallet.cancel')}</button>
     <button type="button" class="wallet-stub-btn wallet-stub-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
       {requestPosting
-        ? 'Sending…'
+        ? $t('wallet.sending')
         : sending
-          ? 'Submitting…'
-          : 'Confirm'}
+          ? $t('wallet.submitting')
+          : $t('wallet.confirm')}
     </button>
   </div>
 </Modal>
@@ -624,7 +625,7 @@
   .wallet-stub-retry {
     margin-top: 12px;
     padding: 8px 14px;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
     font-weight: 600;
     font-family: inherit;
     color: var(--text-primary);

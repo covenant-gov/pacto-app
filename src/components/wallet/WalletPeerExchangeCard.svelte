@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   /**
    * Thread card for private wallet-address exchange (request / grant / decline).
    * Structured content is still parsed for persistence; this is the human-visible summary.
@@ -20,36 +22,36 @@
   $: title = (() => {
     switch (variant) {
       case 'request-in':
-        return 'Wallet information request';
+        return $t('wallet.peerRequestInTitle');
       case 'request-out':
-        return 'Wallet info request sent';
+        return $t('wallet.peerRequestOutTitle');
       case 'grant-in':
-        return 'Wallet information shared';
+        return $t('wallet.peerGrantInTitle');
       case 'grant-out':
-        return 'You shared your wallet address';
+        return $t('wallet.peerGrantOutTitle');
       case 'decline-in':
-        return 'Wallet request declined';
+        return $t('wallet.peerDeclineInTitle');
       case 'decline-out':
-        return 'You declined';
+        return $t('wallet.peerDeclineOutTitle');
       default:
-        return 'Wallet';
+        return $t('wallet.walletTitle');
     }
   })();
 
   $: body = (() => {
     switch (variant) {
       case 'request-in':
-        return `${peerName} asked to exchange payout addresses. If you accept, your address is sent and theirs is shared back so both of you can send payments.`;
+        return $t('wallet.peerRequestInBody', { values: { peerName } });
       case 'request-out':
-        return `Waiting for ${peerName} to accept or decline.`;
+        return $t('wallet.peerRequestOutBody', { values: { peerName } });
       case 'grant-in':
-        return `${peerName} shared their payout address. Your address is sent back automatically so both of you can use Send or Request.`;
+        return $t('wallet.peerGrantInBody', { values: { peerName } });
       case 'grant-out':
-        return `You shared your payout address with ${peerName}.`;
+        return $t('wallet.peerGrantOutBody', { values: { peerName } });
       case 'decline-in':
-        return `${peerName} declined to exchange wallet addresses.`;
+        return $t('wallet.peerDeclineInBody', { values: { peerName } });
       case 'decline-out':
-        return `You chose not to exchange wallet addresses with ${peerName}.`;
+        return $t('wallet.peerDeclineOutBody', { values: { peerName } });
       default:
         return '';
     }
@@ -67,9 +69,9 @@
     {/if}
     {#if variant === 'request-in'}
       {#if status === 'accepted'}
-        <p class="wpeer-status wpeer-ok" aria-live="polite">Accepted</p>
+        <p class="wpeer-status wpeer-ok" aria-live="polite">{$t('wallet.accepted')}</p>
       {:else if status === 'declined'}
-        <p class="wpeer-status wpeer-no" aria-live="polite">Declined</p>
+        <p class="wpeer-status wpeer-no" aria-live="polite">{$t('wallet.declined')}</p>
       {:else}
         <div class="wpeer-actions">
           <button
@@ -78,7 +80,7 @@
             disabled={accepting}
             on:click={() => onAccept?.()}
           >
-            {accepting ? 'Accepting…' : 'Accept'}
+            {accepting ? $t('wallet.accepting') : $t('wallet.accept')}
           </button>
           <button
             type="button"
@@ -86,7 +88,7 @@
             disabled={accepting}
             on:click={() => onDecline?.()}
           >
-            Decline
+            {$t('wallet.decline')}
           </button>
         </div>
       {/if}

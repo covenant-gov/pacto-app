@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { WALLET_ASSETS_CHAIN_IDS, WALLET_CHAIN_GROUPS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -138,7 +139,7 @@
   <div class="evm-extras-chain-groups">
     {#each WALLET_CHAIN_GROUPS as group (group.id)}
       <div class="evm-extras-chain-group">
-        <h3 class="evm-extras-chain-group-label">{group.label}</h3>
+        <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
         <ul class="evm-extras-toggle-list">
           {#each group.chains as chain (chain)}
             <li>
