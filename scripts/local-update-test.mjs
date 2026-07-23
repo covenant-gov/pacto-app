@@ -16,19 +16,20 @@ const FILES = {
   tauriConf: resolve(ROOT, 'src-tauri', 'tauri.conf.json'),
 };
 
-const PLATFORM_INFO = detectPlatform();
+let PLATFORM_INFO = detectPlatform();
 
-function detectPlatform() {
+function detectPlatform(debug = false) {
   const platform = process.platform;
   const arch = process.arch;
+  const targetDir = debug ? 'debug' : 'release';
 
   if (platform === 'darwin') {
     return {
       id: arch === 'arm64' ? 'darwin-aarch64' : 'darwin-x86_64',
       archLabel: arch === 'arm64' ? 'aarch64' : 'x86_64',
       productName: 'pacto',
-      dmgDir: resolve(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'dmg'),
-      updaterDir: resolve(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'macos'),
+      dmgDir: resolve(ROOT, 'src-tauri', 'target', targetDir, 'bundle', 'dmg'),
+      updaterDir: resolve(ROOT, 'src-tauri', 'target', targetDir, 'bundle', 'macos'),
       dmgExtension: '.dmg',
       updaterExtension: '.app.tar.gz',
     };
@@ -39,7 +40,7 @@ function detectPlatform() {
       id: 'windows-x86_64',
       archLabel: 'x64',
       productName: 'pacto',
-      bundleDir: resolve(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'msi'),
+      bundleDir: resolve(ROOT, 'src-tauri', 'target', targetDir, 'bundle', 'msi'),
       extension: '.msi',
     };
   }
@@ -49,7 +50,7 @@ function detectPlatform() {
       id: 'linux-x86_64',
       archLabel: 'amd64',
       productName: 'pacto',
-      bundleDir: resolve(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'appimage'),
+      bundleDir: resolve(ROOT, 'src-tauri', 'target', targetDir, 'bundle', 'appimage'),
       extension: '.AppImage',
     };
   }
@@ -68,6 +69,7 @@ function parseArgs() {
     install: false,
     serve: true,
     restore: false,
+    debug: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -93,6 +95,9 @@ function parseArgs() {
         break;
       case '--no-serve':
         options.serve = false;
+        break;
+      case '--debug':
+        options.debug = true;
         break;
       case '--restore':
         options.restore = true;
@@ -126,6 +131,7 @@ Options:
   --port <number>         Port for the local update server (default: 8080)
   --install               Install the old version to /Applications/Pacto-Test.app
   --no-serve              Build artifacts but do not start the local server
+  --debug                 Build debug bundles instead of release bundles (much faster)
   --restore               Restore backed-up files and exit
   --help, -h              Show this help
 
@@ -181,6 +187,9 @@ function setLocalEndpoint(port) {
   tauriConf.plugins ??= {};
   tauriConf.plugins.updater ??= {};
   tauriConf.plugins.updater.endpoints = [`http://localhost:${port}/latest.json`];
+  // Release builds require HTTPS for the updater endpoint, but local test servers
+  // cannot easily serve a valid certificate. Allow plain HTTP for this test only.
+  tauriConf.plugins.updater.dangerousInsecureTransportProtocol = true;
   writeFileSync(FILES.tauriConf, JSON.stringify(tauriConf, null, 2) + '\n');
 }
 
@@ -206,16 +215,20 @@ function ensureSigningKey(path) {
   process.exit(1);
 }
 
-function buildRelease(signingKey, signingKeyPassword, label) {
-  console.log(`\nBuilding ${label}...`);
-  const env = {
-    ...process.env,
-    TAURI_SIGNING_PRIVATE_KEY: signingKey,
-  };
-  if (signingKeyPassword) {
+function buildRelease(signingKey, signingKeyPassword, label, debug = false) {
+  console.log(`\nBuilding ${label}${debug ? ' (debug)' : ' (release)'}...`);
+  const env = { ...process.env };
+  // Allow the private key to be provided from the environment (e.g. macOS
+  // Keychain) instead of forcing a file path. Tauri accepts either a string
+  // or a path in TAURI_SIGNING_PRIVATE_KEY.
+  if (!env.TAURI_SIGNING_PRIVATE_KEY) {
+    env.TAURI_SIGNING_PRIVATE_KEY = signingKey;
+  }
+  if (signingKeyPassword && !env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
     env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = signingKeyPassword;
   }
-  execSync('pnpm tauri:build', {
+  const command = debug ? 'pnpm tauri:build --debug' : 'pnpm tauri:build';
+  execSync(command, {
     cwd: ROOT,
     stdio: 'inherit',
     env,
@@ -353,6 +366,9 @@ function serveTestDir(port, oldArtifactPath) {
 async function main() {
   const options = parseArgs();
 
+  // Recompute platform paths now that we know whether we're building debug or release.
+  PLATFORM_INFO = detectPlatform(options.debug);
+
   if (options.restore) {
     console.log('Restoring backed-up files...');
     restoreFiles();
@@ -364,6 +380,7 @@ async function main() {
   console.log(`  Old version: ${options.oldVersion}`);
   console.log(`  New version: ${options.newVersion}`);
   console.log(`  Platform: ${PLATFORM_INFO.id}`);
+  console.log(`  Build mode: ${options.debug ? 'debug' : 'release'}`);
   console.log(`  Signing key: ${options.signingKey}`);
   console.log(`  Signing key password: ${options.signingKeyPassword ? 'provided' : 'not provided'}`);
   console.log(`  Server port: ${options.port}`);
@@ -382,7 +399,7 @@ async function main() {
   try {
     // Build old version
     setVersion(options.oldVersion);
-    buildRelease(options.signingKey, options.signingKeyPassword, `old version ${options.oldVersion}`);
+    buildRelease(options.signingKey, options.signingKeyPassword, `old version ${options.oldVersion}`, options.debug);
     const oldArtifact = findOldInstaller(options.oldVersion);
     const oldArtifactDest = resolve(TEST_DIR, basename(oldArtifact));
     copyFileSync(oldArtifact, oldArtifactDest);
@@ -390,7 +407,7 @@ async function main() {
 
     // Build new version
     setVersion(options.newVersion);
-    buildRelease(options.signingKey, options.signingKeyPassword, `new version ${options.newVersion}`);
+    buildRelease(options.signingKey, options.signingKeyPassword, `new version ${options.newVersion}`, options.debug);
     const newArtifact = findUpdaterArtifact(options.newVersion);
     const newArtifactSig = findSignature(newArtifact);
     const newArtifactDest = resolve(TEST_DIR, basename(newArtifact));

@@ -1,6 +1,6 @@
 import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
-import { relaunch } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 import { writable, get, type Readable } from 'svelte/store';
 
 
@@ -192,7 +192,10 @@ export async function downloadAndInstallUpdate(): Promise<void> {
 }
 
 export async function relaunchApp(): Promise<void> {
-  await relaunch();
+  // Use the backend restart command: it runs cleanup and then spawns the
+  // new process directly, avoiding the macOS event-loop race described in
+  // https://github.com/tauri-apps/tauri/issues/11392.
+  await invoke<void>('relaunch_app');
 }
 
 /** Readable alias for components that only need to subscribe. */

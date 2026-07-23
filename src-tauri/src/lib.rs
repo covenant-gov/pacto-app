@@ -4788,6 +4788,19 @@ async fn run_maintenance() {
     image_cache::cleanup_stale_downloads().await;
 }
 
+/// Restart the app from the Rust side after an updater install.
+///
+/// Going through `tauri::process::restart` directly (instead of the JS
+/// `plugin-process` relaunch API) avoids a known race on macOS where the
+/// event loop can exit before the new process is spawned, leaving the app
+/// closed after a successful update.
+#[cfg(desktop)]
+#[tauri::command]
+fn relaunch_app(app_handle: AppHandle) {
+    app_handle.cleanup_before_exit();
+    tauri::process::restart(&app_handle.env());
+}
+
 #[tauri::command]
 async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
     // Get the count of unread messages from the state
@@ -6743,6 +6756,7 @@ pub fn run() {
             audio::select_custom_notification_sound,
             // Maintenance (periodic cleanup tasks)
             run_maintenance,
+            relaunch_app,
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
             whisper::delete_whisper_model,
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
