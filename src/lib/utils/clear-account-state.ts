@@ -93,6 +93,7 @@ import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-stat
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
 import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
+import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
@@ -118,6 +119,7 @@ const SCOPED_KEY_PREFIXES = [
   SAFE_STATE_DISK_CACHE_PREFIX,
   'pacto_wallet_ui_enabled_chains_v1',
   SQUAD_NETWORK_PREFIX,
+  SQUAD_RPC_PREFIX,
   'pacto_wallet_preferred_network_v1',
   'pacto_wallet_rpc_prefs_v1',
   'pacto_wallet_tx_request_accepted',

@@ -211,6 +211,7 @@ describe('api command wrappers', () => {
       amountWei: '1000',
       sponsorAddress: '0xabc',
       signerWallet: 'default',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -223,6 +224,7 @@ describe('api command wrappers', () => {
       amountWei: '1000',
       sponsorAddress: null,
       signerWallet: 'default',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -239,6 +241,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       accountId: 'acc-1',
       sponsorAddress: '0xabc',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -254,6 +257,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       accountAddress: '0xdef',
       sponsorAddress: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -271,6 +275,7 @@ describe('api command wrappers', () => {
       topHatId: '42',
       initialDepositWei: '1000',
       signerWallet: 'squad',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -288,6 +293,7 @@ describe('api command wrappers', () => {
       topHatId: '42',
       initialDepositWei: '1000',
       signerWallet: 'squad',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -299,6 +305,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       initialDepositWei: null,
       signerWallet: 'default',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -315,6 +322,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       initialDepositWei: '1000',
       signerWallet: 'default',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -325,6 +333,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       parentId: PARENT,
       sponsorAddress: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -341,6 +350,7 @@ describe('api command wrappers', () => {
       parentId: PARENT,
       memberAddresses: ['0xabc', '0xdef'],
       sponsorAddress: '0xsponsor',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -358,6 +368,7 @@ describe('api command wrappers', () => {
       memberAddress: '0xabc',
       permitted: true,
       sponsorAddress: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -377,6 +388,7 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'squad',
       altParentId: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -397,6 +409,7 @@ describe('api command wrappers', () => {
       saltNonce: null,
       signerWallet: 'default',
       altParentId: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -406,6 +419,7 @@ describe('api command wrappers', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('get_nave_pirata_deployment', {
       network: NETWORK,
       topHatId: '42',
+      rpcUrls: null,
     });
   });
 
@@ -416,6 +430,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       treasuryAuthority: '0xabc',
       maxScan: null,
+      rpcUrls: null,
     });
   });
 
@@ -426,6 +441,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       treasuryAuthority: '0xabc',
       maxScan: 50,
+      rpcUrls: null,
     });
   });
 
@@ -436,6 +452,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       quartermaster: '0xqm',
       fromBlock: null,
+      rpcUrls: null,
     });
   });
 
@@ -446,6 +463,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       quartermaster: '0xqm',
       fromBlock: 12,
+      rpcUrls: null,
     });
   });
 
@@ -462,6 +480,7 @@ describe('api command wrappers', () => {
       treasuryAuthority: '0xabc',
       proposalId: '1',
       voter: '0xdef',
+      rpcUrls: null,
     });
   });
 
@@ -473,6 +492,7 @@ describe('api command wrappers', () => {
       topHatId: '42',
       maxDepth: null,
       maxNodes: null,
+      rpcUrls: null,
     });
   });
 
@@ -484,6 +504,7 @@ describe('api command wrappers', () => {
       topHatId: '42',
       maxDepth: 3,
       maxNodes: 100,
+      rpcUrls: null,
     });
   });
 
@@ -500,6 +521,7 @@ describe('api command wrappers', () => {
       hatsContract: null,
       memberAddresses: ['0xabc'],
       hatChecks,
+      rpcUrls: null,
     });
   });
 
@@ -516,6 +538,7 @@ describe('api command wrappers', () => {
       hatsContract: '0xcontract',
       memberAddresses: ['0xabc'],
       hatChecks: [{ hatId: '1', label: 'Captain' }],
+      rpcUrls: null,
     });
   });
 
@@ -530,6 +553,7 @@ describe('api command wrappers', () => {
       network: NETWORK,
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
+      rpcUrls: null,
     });
   });
 
@@ -548,6 +572,7 @@ describe('api command wrappers', () => {
       variant: 'captain_hat',
       owner: '0xowner',
       captainHatId: '42',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -564,6 +589,7 @@ describe('api command wrappers', () => {
       variant: 'ext_standalone',
       owner: null,
       captainHatId: null,
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -580,6 +606,7 @@ describe('api command wrappers', () => {
       parentId: 'parent-1',
       squadAdminProxy: '0xadmin',
       roleLabel: 'Treasurer',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -598,6 +625,7 @@ describe('api command wrappers', () => {
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       roleLabel: 'Treasurer',
+      rpcUrls: expect.any(Array),
     });
   });
 
@@ -616,6 +644,7 @@ describe('api command wrappers', () => {
       squadAdminProxy: '0xadmin',
       executorAddress: '0xexec',
       enable: true,
+      rpcUrls: expect.any(Array),
     });
   });
 });

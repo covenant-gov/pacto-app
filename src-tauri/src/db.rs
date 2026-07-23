@@ -1447,6 +1447,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
     token_address: String,
     symbol: String,
     decimals: u8,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadTrackedTokenRow, String> {
     let pid = parent_id.trim().to_string();
     let chain_norm = normalize_allowlist_chain(&chain)?;
@@ -1462,6 +1463,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
         &handle,
         pid.as_str(),
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
+        rpc_urls,
     )
     .await?;
     let added_by = crate::account_manager::get_current_account()?;
@@ -1515,6 +1517,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
     handle: AppHandle<R>,
     parent_id: String,
     id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<(), String> {
     let pid = parent_id.trim();
     let row_id = id.trim();
@@ -1525,6 +1528,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
         &handle,
         pid,
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
+        rpc_urls,
     )
     .await?;
     let conn = crate::account_manager::get_db_connection(&handle)?;

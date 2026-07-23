@@ -9,7 +9,43 @@ pub struct GovReadNetwork {
     pub rpc_urls: Vec<String>,
 }
 
-pub fn resolve_gov_read_network(network: &str) -> Result<GovReadNetwork, String> {
+pub(crate) fn sanitize_rpc_urls(raw: Option<Vec<String>>) -> Vec<String> {
+    let Some(list) = raw else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for url in list {
+        let trimmed = url.trim().to_string();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = trimmed.to_lowercase();
+        if !seen.insert(key) {
+            continue;
+        }
+        out.push(trimmed);
+    }
+    out
+}
+
+/// Prefer non-empty FE override list; otherwise curated/operator defaults for `net`.
+pub fn rpc_urls_or_default(
+    net: &wallet_chain_config::WalletNetworkConfig,
+    rpc_urls_override: Option<Vec<String>>,
+) -> Vec<String> {
+    let override_urls = sanitize_rpc_urls(rpc_urls_override);
+    if !override_urls.is_empty() {
+        override_urls
+    } else {
+        wallet_chain_config::rpc_urls_for(net).to_vec()
+    }
+}
+
+pub fn resolve_gov_read_network(
+    network: &str,
+    rpc_urls_override: Option<Vec<String>>,
+) -> Result<GovReadNetwork, String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
@@ -18,7 +54,7 @@ pub fn resolve_gov_read_network(network: &str) -> Result<GovReadNetwork, String>
             None,
         ));
     };
-    let urls: Vec<String> = wallet_chain_config::rpc_urls_for(net).to_vec();
+    let urls = rpc_urls_or_default(net, rpc_urls_override);
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",
@@ -35,10 +71,53 @@ pub fn resolve_gov_read_network(network: &str) -> Result<GovReadNetwork, String>
 
 pub async fn connect_gov_read_provider(
     network: &str,
+    rpc_urls_override: Option<Vec<String>>,
 ) -> Result<(impl alloy::providers::Provider + Clone, GovReadNetwork), String> {
-    let ctx = resolve_gov_read_network(network)?;
+    let ctx = resolve_gov_read_network(network, rpc_urls_override)?;
     let provider = connect_read_provider(&ctx.rpc_urls).await?;
     Ok((provider, ctx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_gov_read_network, sanitize_rpc_urls};
+
+    #[test]
+    fn sanitize_dedupes_and_trims() {
+        let urls = sanitize_rpc_urls(Some(vec![
+            " https://a.example/rpc ".into(),
+            "https://a.example/rpc".into(),
+            "".into(),
+            "https://b.example/rpc".into(),
+        ]));
+        assert_eq!(urls, vec!["https://a.example/rpc", "https://b.example/rpc"]);
+    }
+
+    #[test]
+    fn override_urls_win_over_defaults() {
+        let ctx = resolve_gov_read_network(
+            "sepolia",
+            Some(vec!["https://custom.example/rpc".into()]),
+        )
+        .expect("resolve");
+        assert_eq!(ctx.rpc_urls, vec!["https://custom.example/rpc"]);
+    }
+
+    #[test]
+    fn override_list_preserves_order() {
+        let ctx = resolve_gov_read_network(
+            "sepolia",
+            Some(vec![
+                "https://first.example/rpc".into(),
+                "https://second.example/rpc".into(),
+            ]),
+        )
+        .expect("resolve");
+        assert_eq!(
+            ctx.rpc_urls,
+            vec!["https://first.example/rpc", "https://second.example/rpc"]
+        );
+    }
 }
 
 pub fn parse_top_hat_id(raw: &str) -> Result<alloy::primitives::U256, String> {

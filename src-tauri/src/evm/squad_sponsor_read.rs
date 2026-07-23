@@ -11,6 +11,7 @@ use super::contracts::pacto_sponsor::ISquadSponsorBase::{
 use super::pacto_chain_config;
 use super::rpc::{call::eth_call_decode, connect_read_provider, parse_address, wallet_err_json};
 use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id, squad_variant_label};
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -48,6 +49,7 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
     network: String,
     parent_id: String,
     sponsor_address: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorSummary, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -70,7 +72,7 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",

@@ -191,7 +191,7 @@
         key,
         parentId,
         async () => {
-          const next = await getMutinyStatus({ network, mutinyModule });
+          const next = await getMutinyStatus({ network, mutinyModule, parentId });
           let voted = false;
           if (next.activeMutinyId !== '0' && privilege.myAddress) {
             voted = await mutinyHasVoted({
@@ -199,6 +199,7 @@
               mutinyModule,
               mutinyId: next.activeMutinyId,
               voter: privilege.myAddress,
+              parentId,
             });
           }
           return { status: next, hasVoted: voted };
@@ -237,7 +238,7 @@
       const next = await fetchGovModuleReadCached(
         key,
         parentId,
-        () => getQuartermasterStatus({ network, quartermaster }),
+        () => getQuartermasterStatus({ network, quartermaster, parentId }),
         { force: force || !!peeked },
       );
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
@@ -257,7 +258,7 @@
     }
     const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
     qmPendingLoading = qmPending.length === 0;
-    const result = await fetchQuartermasterPendingActions({ network, quartermaster });
+    const result = await fetchQuartermasterPendingActions({ network, quartermaster, parentId });
     if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
     qmPendingLoading = false;
     qmPending = result.pending;

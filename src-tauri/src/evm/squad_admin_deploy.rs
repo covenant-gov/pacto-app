@@ -21,6 +21,7 @@ use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::squad_sponsor_common::require_parent_member;
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -125,6 +126,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
     variant: String,
     owner: Option<String>,
     captain_hat_id: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminDeployResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = parent_id.trim();
@@ -137,7 +139,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
     }
     require_parent_member(&app, pid).await?;
     if db::parent_has_pacto_gov_infra_row(&app, pid).unwrap_or(false) {
-        require_capability(&app, pid, GovCapability::CaptainResign).await?;
+        require_capability(&app, pid, GovCapability::CaptainResign, rpc_urls.clone()).await?;
     }
 
     let variant_key = parse_variant(variant.as_str())
@@ -156,7 +158,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
         .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
     let factory = addrs.nave_pirata_factory;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",

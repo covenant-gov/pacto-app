@@ -49,6 +49,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
     value_wei: String,
     data_hex: String,
     operation: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -76,6 +77,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
         ta,
         calldata,
         GovCapability::ProposeTreasury,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -94,6 +96,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
     treasury_authority: String,
     proposal_id: String,
     support: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -112,6 +115,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
         ta,
         calldata,
         GovCapability::CrewVote,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -130,6 +134,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
     treasury_authority: String,
     proposal_id: String,
     support: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -148,6 +153,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
         ta,
         calldata,
         GovCapability::CaptainVote,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -165,6 +171,7 @@ pub async fn treasury_authority_execute<R: Runtime>(
     parent_id: String,
     treasury_authority: String,
     proposal_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -182,6 +189,7 @@ pub async fn treasury_authority_execute<R: Runtime>(
         ta,
         calldata,
         GovCapability::ExecuteTreasury,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {

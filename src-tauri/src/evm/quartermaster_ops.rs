@@ -142,10 +142,11 @@ pub async fn get_quartermaster_status<R: Runtime>(
     _app: AppHandle<R>,
     network: String,
     quartermaster: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterStatusDto, String> {
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let delay = eth_call_decode(&provider, qm, &crewChangeDelayCall {})
         .await
         .map_err(|e| wallet_err_json("QM_READ", e, None))?;
@@ -190,12 +191,13 @@ pub async fn get_quartermaster_pending<R: Runtime>(
     network: String,
     quartermaster: String,
     address: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterPendingDto, String> {
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
     let addr =
         parse_address(address.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let add_at = eth_call_decode(
         &provider,
         qm,
@@ -224,10 +226,11 @@ pub async fn list_quartermaster_pending<R: Runtime>(
     network: String,
     quartermaster: String,
     from_block: Option<u64>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<Vec<QuartermasterPendingActionDto>, String> {
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let (from, to) =
         resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
     let logs = get_logs_chunked(&provider, qm, from, to, DEFAULT_LOG_CHUNK_BLOCKS).await?;
@@ -283,12 +286,13 @@ async fn qm_write<R: Runtime>(
     quartermaster: String,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
     let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, qm, calldata, capability).await?;
+        send_gov_module_call(app, network, parent, qm, calldata, capability, rpc_urls).await?;
     Ok(QuartermasterWriteResult {
         tx_hash,
         chain,
@@ -304,6 +308,7 @@ pub async fn quartermaster_request_add_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     candidate: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let calldata = encode_request_add_crew(&candidate)?;
     qm_write(
@@ -313,6 +318,7 @@ pub async fn quartermaster_request_add_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterMutateCrew,
+        rpc_urls,
     )
     .await
 }
@@ -324,6 +330,7 @@ pub async fn quartermaster_cancel_add_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     candidate: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let addr = parse_address(candidate.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -335,6 +342,7 @@ pub async fn quartermaster_cancel_add_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterMutateCrew,
+        rpc_urls,
     )
     .await
 }
@@ -346,6 +354,7 @@ pub async fn quartermaster_execute_add_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     candidate: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let calldata = encode_execute_add_crew(&candidate)?;
     qm_write(
@@ -355,6 +364,7 @@ pub async fn quartermaster_execute_add_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterExecute,
+        rpc_urls,
     )
     .await
 }
@@ -366,6 +376,7 @@ pub async fn quartermaster_bootstrap_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     candidates: Vec<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let calldata = encode_bootstrap_crew(&candidates)?;
     qm_write(
@@ -375,6 +386,7 @@ pub async fn quartermaster_bootstrap_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterMutateCrew,
+        rpc_urls,
     )
     .await
 }
@@ -386,6 +398,7 @@ pub async fn quartermaster_request_remove_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     crew: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let calldata = encode_request_remove_crew(&crew)?;
     qm_write(
@@ -395,6 +408,7 @@ pub async fn quartermaster_request_remove_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterMutateCrew,
+        rpc_urls,
     )
     .await
 }
@@ -406,6 +420,7 @@ pub async fn quartermaster_cancel_remove_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     crew: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let addr =
         parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -417,6 +432,7 @@ pub async fn quartermaster_cancel_remove_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterMutateCrew,
+        rpc_urls,
     )
     .await
 }
@@ -428,6 +444,7 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
     parent_id: String,
     quartermaster: String,
     crew: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
     let addr =
         parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -439,6 +456,7 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
         quartermaster,
         calldata,
         GovCapability::QuartermasterExecute,
+        rpc_urls,
     )
     .await
 }

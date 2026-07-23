@@ -13,6 +13,7 @@ use super::rpc::{
     wallet_err_json,
 };
 use super::rpc::signer::load_squad_roster_embedded_signer;
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -34,6 +35,7 @@ pub async fn evm_send_squad_allowlisted_contract_call<R: Runtime>(
     value_wei: String,
     data_hex: String,
     wait_for_confirmation: Option<bool>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAllowlistedCallResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let wait_for_confirmation = wait_for_confirmation.unwrap_or(false);
@@ -69,7 +71,7 @@ pub async fn evm_send_squad_allowlisted_contract_call<R: Runtime>(
         ));
     }
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }

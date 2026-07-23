@@ -31,6 +31,7 @@ use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id, squad_variant_label,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -229,6 +230,7 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     initial_deposit_wei: Option<String>,
     signer_wallet: Option<String>,
     variant: SponsorDeployVariant,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorDeployResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = parent_id.trim();
@@ -240,7 +242,7 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
         ));
     }
     require_parent_member(&app, pid).await?;
-    require_capability(&app, pid, DEPLOY_REQUIRED_CAPABILITY).await?;
+    require_capability(&app, pid, DEPLOY_REQUIRED_CAPABILITY, rpc_urls.clone()).await?;
 
     // Hats inputs validate against the persisted gov infra before any network work.
     let hats_top_hat = match &variant {
@@ -278,7 +280,7 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     let squad_id = squad_id_from_parent_id(pid);
     let factory = addrs.squad_sponsor_factory;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",
@@ -445,6 +447,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
     parent_id: String,
     initial_deposit_wei: Option<String>,
     signer_wallet: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorDeployResult, String> {
     deploy_squad_sponsor_impl(
         app,
@@ -453,6 +456,7 @@ pub async fn deploy_squad_sponsor_for_parent<R: Runtime>(
         initial_deposit_wei,
         signer_wallet,
         SponsorDeployVariant::Ext,
+        rpc_urls,
     )
     .await
 }
@@ -466,6 +470,7 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
     top_hat_id: String,
     initial_deposit_wei: Option<String>,
     signer_wallet: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorDeployResult, String> {
     deploy_squad_sponsor_impl(
         app,
@@ -474,6 +479,7 @@ pub async fn deploy_squad_sponsor_hats_for_parent<R: Runtime>(
         initial_deposit_wei,
         signer_wallet,
         SponsorDeployVariant::Hats { top_hat_id },
+        rpc_urls,
     )
     .await
 }

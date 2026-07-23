@@ -59,6 +59,7 @@ fn load_pacto_gov_row<R: Runtime>(
 async fn load_chain_context<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAclChain, String> {
     let (network, top_hat_raw) = load_pacto_gov_row(app, parent_id)?;
     let top_hat = parse_top_hat_id(top_hat_raw.as_str())
@@ -81,7 +82,7 @@ async fn load_chain_context<R: Runtime>(
         )
     })?;
 
-    let (provider, ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let deployment =
         read_nave_pirata_deployment(&provider, registry, top_hat, ctx.key.as_str(), ctx.chain_id)
             .await?;
@@ -178,6 +179,7 @@ fn build_snapshot(
 pub async fn evaluate_squad_capabilities<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadCapabilitiesDto, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -200,8 +202,8 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
         }
     };
 
-    let chain = load_chain_context(app, pid).await?;
-    let (provider, _ctx) = connect_gov_read_provider(chain.network.as_str()).await?;
+    let chain = load_chain_context(app, pid, rpc_urls.clone()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(chain.network.as_str(), rpc_urls).await?;
 
     let wears_captain =
         is_wearer(&provider, chain.hats, roster, chain.captain_hat_id).await?;
@@ -246,8 +248,9 @@ pub async fn require_capability<R: Runtime>(
     app: &AppHandle<R>,
     parent_id: &str,
     capability: GovCapability,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let snap = evaluate_squad_capabilities(app, parent_id.trim()).await?;
+    let snap = evaluate_squad_capabilities(app, parent_id.trim(), rpc_urls).await?;
     let key = capability.as_str();
     let flag = snap.capabilities.get(key);
     if flag.map(|f| f.allowed).unwrap_or(false) {

@@ -179,6 +179,7 @@ describe('squad allowlist command wrappers', () => {
       valueWei: '1000',
       dataHex: '0x1234',
       waitForConfirmation: false,
+      rpcUrls: expect.any(Array),
     });
   });
 

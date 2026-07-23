@@ -5,6 +5,7 @@ const {
   syncMlsGroupsNow,
   publishSquadMemberEvmShare,
   publishSquadNetworkUpdated,
+  publishSquadRpcUpdated,
   listSquadInfra,
   currentUser,
 } = vi.hoisted(() => {
@@ -34,6 +35,7 @@ const {
     syncMlsGroupsNow: vi.fn(),
     publishSquadMemberEvmShare: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
+    publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
   };
@@ -59,6 +61,10 @@ vi.mock('./squad-network-share', async (importOriginal) => {
     publishSquadNetworkUpdated: (...args: unknown[]) => publishSquadNetworkUpdated(...args),
   };
 });
+
+vi.mock('./squad-rpc-share', () => ({
+  publishSquadRpcUpdated: (...args: unknown[]) => publishSquadRpcUpdated(...args),
+}));
 
 vi.mock('../governance/api', () => ({
   listSquadInfra: (...args: unknown[]) => listSquadInfra(...args),
@@ -87,6 +93,7 @@ describe('squad-state-sync', () => {
     sendDmMessage.mockResolvedValue(undefined);
     publishSquadMemberEvmShare.mockResolvedValue(true);
     publishSquadNetworkUpdated.mockResolvedValue(true);
+    publishSquadRpcUpdated.mockResolvedValue(true);
     listSquadInfra.mockResolvedValue([]);
   });
 
@@ -109,7 +116,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network'],
+      requested: ['evm', 'infra', 'network', 'rpc'],
     });
   });
 
@@ -200,6 +207,7 @@ describe('squad-state-sync', () => {
   it('allows retry when republish fails without recording cooldown', async () => {
     publishSquadMemberEvmShare.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     publishSquadNetworkUpdated.mockResolvedValue(false);
+    publishSquadRpcUpdated.mockResolvedValue(false);
     listSquadInfra.mockResolvedValue([]);
     const raw = formatSquadStateSyncRequest({
       parentId: 'ann-gid',

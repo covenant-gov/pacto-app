@@ -4,6 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
+import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SupportedChainId } from '../wallet/chains';
 import { parseWalletOpError, type WalletOpParsedError } from '../wallet/backend-wallet';
 
@@ -151,6 +152,7 @@ export async function evmSendSquadAllowlistedContractCall(params: {
       valueWei: params.valueWei.trim() || '0',
       dataHex: params.dataHex.trim() || '0x',
       waitForConfirmation: params.waitForConfirmation ?? false,
+      rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     });
     return { ok: true, result };
   } catch (e) {

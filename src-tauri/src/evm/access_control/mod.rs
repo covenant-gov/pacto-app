@@ -18,6 +18,7 @@ use tauri::{AppHandle, Runtime};
 pub async fn get_squad_capabilities<R: Runtime>(
     app: AppHandle<R>,
     parent_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadCapabilitiesDto, String> {
-    evaluate_squad_capabilities(&app, parent_id.trim()).await
+    evaluate_squad_capabilities(&app, parent_id.trim(), rpc_urls).await
 }

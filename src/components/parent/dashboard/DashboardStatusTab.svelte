@@ -9,6 +9,11 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import {
+    formatSquadRpcLabel,
+    squadRpcHasBackup,
+    type SquadRpcConfig,
+  } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
@@ -30,6 +35,10 @@
   export let squadNetwork: SupportedChainId | null = null;
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
+  export let squadRpcConfig: SquadRpcConfig | null = null;
+  export let onSetSquadRpcPrimary: (url: string) => string | void = () => {};
+  export let onSetSquadRpcBackup: (url: string) => string | void = () => {};
+  export let onClearSquadRpcPrimary: () => void = () => {};
   export let hasGovernance = false;
   export let hasSquadAdmin = false;
   export let captainWearers: string[] = [];
@@ -42,10 +51,17 @@
   let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
   $: if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
 
+  let editingRpc: 'primary' | 'backup' | null = null;
+  let rpcUrlDraft = '';
+  let rpcFormError = '';
+
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
   $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
+  $: rpcLabel = formatSquadRpcLabel(squadRpcConfig);
+  $: rpcHasBackup = squadRpcHasBackup(squadRpcConfig);
+  $: rpcPrimaryIsCustom = squadRpcConfig?.rpc1.kind === 'url';
   $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
   $: govState = binaryInfraState(hasGovernance);
   $: adminState = binaryInfraState(hasSquadAdmin);
@@ -73,6 +89,28 @@
   function cancelNetworkEdit() {
     squadNetworkChoice = squadNetwork ?? '';
     editingNetwork = false;
+  }
+
+  function openRpcEdit(mode: 'primary' | 'backup') {
+    editingRpc = mode;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  function cancelRpcEdit() {
+    editingRpc = null;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  function applyRpcEdit() {
+    const err =
+      editingRpc === 'backup' ? onSetSquadRpcBackup(rpcUrlDraft) : onSetSquadRpcPrimary(rpcUrlDraft);
+    if (typeof err === 'string' && err.trim()) {
+      rpcFormError = err;
+      return;
+    }
+    cancelRpcEdit();
   }
 </script>
 
@@ -163,6 +201,62 @@
     />
   {/if}
 </div>
+
+<div class="status-fact-row" id="squad-status-rpc">
+  <span class="meta-label">RPC</span>
+  {#if editingRpc}
+    <input
+      class="rpc-input"
+      type="url"
+      bind:value={rpcUrlDraft}
+      placeholder="https://…"
+      aria-label={editingRpc === 'backup' ? 'Backup squad RPC URL' : 'Primary squad RPC URL'}
+    />
+    <button type="button" class="btn-text" disabled={!rpcUrlDraft.trim()} on:click={applyRpcEdit}>
+      Save
+    </button>
+    <button type="button" class="btn-text muted" on:click={cancelRpcEdit}>Cancel</button>
+    {#if rpcFormError}
+      <span class="rpc-error" role="alert">{rpcFormError}</span>
+    {/if}
+  {:else}
+    <span class="network-value">{rpcLabel}</span>
+    {#if rpcHasBackup}
+      <span class="muted network-hint">+ backup</span>
+    {/if}
+    <EditIconButton
+      ariaLabel="Edit squad RPC"
+      title="Edit RPC"
+      on:click={() => openRpcEdit('primary')}
+    />
+  {/if}
+</div>
+{#if !editingRpc}
+  <div class="rpc-actions">
+    <button type="button" class="btn-text" on:click={() => openRpcEdit('primary')}>
+      Add custom RPC
+    </button>
+    {#if rpcPrimaryIsCustom}
+      <button type="button" class="btn-text" on:click={() => openRpcEdit('backup')}>
+        Add backup RPC
+      </button>
+      <button type="button" class="btn-text muted" on:click={onClearSquadRpcPrimary}>
+        Use public node
+      </button>
+    {/if}
+    <a
+      class="rpc-provider-link"
+      href="https://www.alchemy.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Need an RPC provider?
+    </a>
+  </div>
+  <p class="muted rpc-share-note">
+    Squad RPC endpoints are shared with all members. Your Settings default is a private fallback only.
+  </p>
+{/if}
 
 <SquadBroadcastSettingsSection {squad} />
 
@@ -272,6 +366,39 @@
 
   .network-hint {
     font-size: 0.75rem;
+  }
+  .rpc-input {
+    flex: 1 1 12rem;
+    min-width: 10rem;
+    font-size: 0.8125rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+  .rpc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 0 0 4px;
+    margin: -2px 0 0;
+    padding-left: calc(5.5rem + 12px);
+  }
+  .rpc-provider-link {
+    font-size: 0.8125rem;
+    color: var(--accent);
+  }
+  .rpc-share-note {
+    margin: 0 0 8px;
+    padding-left: calc(5.5rem + 12px);
+    font-size: 0.75rem;
+  }
+  .rpc-error {
+    flex: 1 1 100%;
+    font-size: 0.75rem;
+    color: var(--danger, #f87171);
   }
 
   .muted {

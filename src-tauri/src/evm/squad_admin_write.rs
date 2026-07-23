@@ -17,6 +17,7 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -52,6 +53,7 @@ async fn squad_admin_write<R: Runtime>(
     squad_admin_proxy: String,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     let admin = parse_address(squad_admin_proxy.trim())
         .map_err(|e| wallet_err_json("INVALID_SQUAD_ADMIN", e, None))?;
@@ -65,7 +67,7 @@ async fn squad_admin_write<R: Runtime>(
         ));
     };
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",
@@ -76,7 +78,7 @@ async fn squad_admin_write<R: Runtime>(
 
     let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
 
-    require_capability(&app, parent.as_str(), capability).await?;
+    require_capability(&app, parent.as_str(), capability, rpc_urls).await?;
     require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
 
     let _write_guard = with_gov_write_lock(parent.as_str()).await;
@@ -160,6 +162,7 @@ pub async fn squad_admin_create_role<R: Runtime>(
     parent_id: String,
     squad_admin_proxy: String,
     role_label: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let role = bytes32_role_tag(role_label.as_str())
@@ -172,6 +175,7 @@ pub async fn squad_admin_create_role<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminCreateRole,
+        rpc_urls,
     )
     .await
 }
@@ -184,6 +188,7 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
     squad_admin_proxy: String,
     executor_address: String,
     role_label: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
@@ -202,6 +207,7 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminEnableExecutor,
+        rpc_urls,
     )
     .await
 }
@@ -214,6 +220,7 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
     squad_admin_proxy: String,
     executor_address: String,
     enable: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
@@ -230,6 +237,7 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminEnableFull,
+        rpc_urls,
     )
     .await
 }

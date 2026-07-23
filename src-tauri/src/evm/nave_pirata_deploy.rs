@@ -28,6 +28,7 @@ use super::rpc::signer::{
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
 use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
@@ -256,6 +257,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     salt_nonce: Option<String>,
     signer_wallet: Option<String>,
     alt_parent_id: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<NavePirataDeployResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = parent_id.trim();
@@ -323,7 +325,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     let calldata = deployNavePirataCall { _params: params }.abi_encode();
     let factory = addrs.nave_pirata_factory;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",

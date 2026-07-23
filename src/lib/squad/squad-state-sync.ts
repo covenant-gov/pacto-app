@@ -17,6 +17,7 @@ import {
 import { currentUser } from '../../stores/auth';
 import { publishSquadMemberEvmShare } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
+import { publishSquadRpcUpdated } from './squad-rpc-share';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
@@ -46,7 +47,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network'],
+      requested: ['evm', 'infra', 'network', 'rpc'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -187,6 +188,7 @@ export async function respondToSquadStateSyncRequest(
   const wantEvm = !req.requested?.length || req.requested.includes('evm');
   const wantInfra = !req.requested?.length || req.requested.includes('infra');
   const wantNetwork = !req.requested?.length || req.requested.includes('network');
+  const wantRpc = !req.requested?.length || req.requested.includes('rpc');
 
   let anyOk = false;
 
@@ -244,6 +246,15 @@ export async function respondToSquadStateSyncRequest(
       if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] network republish failed', e);
+    }
+  }
+
+  if (wantRpc) {
+    try {
+      const ok = await publishSquadRpcUpdated(parentId);
+      if (ok) anyOk = true;
+    } catch (e) {
+      console.warn('[squad-state-sync] rpc republish failed', e);
     }
   }
 

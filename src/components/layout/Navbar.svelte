@@ -60,6 +60,8 @@
     saveSquadNetworkOverride,
   } from '../../lib/squad/squad-network';
   import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
+  import { initSquadRpcOnCreate } from '../../lib/squad/squad-rpc';
+  import { publishSquadRpcUpdated } from '../../lib/squad/squad-rpc-share';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
 
@@ -217,7 +219,9 @@
         const creatorNpub = get(currentUser)?.npub;
         if (creatorNpub && options.network) {
           saveSquadNetworkOverride(creatorNpub, groupId, options.network);
+          initSquadRpcOnCreate(creatorNpub, groupId, options.network);
           void publishSquadNetworkUpdated(groupId);
+          void publishSquadRpcUpdated(groupId);
         }
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {
