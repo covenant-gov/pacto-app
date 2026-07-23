@@ -5,6 +5,7 @@ pub mod address;
 pub mod call;
 pub mod config;
 pub mod errors;
+pub mod logs;
 pub mod provider;
 pub mod signer;
 

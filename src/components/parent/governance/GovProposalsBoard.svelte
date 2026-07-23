@@ -1,17 +1,25 @@
 <script lang="ts">
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
-  import GovProposalReadCard from './GovProposalReadCard.svelte';
+  import GovProcessCardView from './GovProcessCard.svelte';
   import {
+    quartermasterExecuteAddCrew,
+    quartermasterExecuteRemoveCrew,
     treasuryAuthorityExecute,
     type MutinyStatusDto,
+    type QuartermasterPendingActionDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
   import {
     gatePermissionlessSigner,
+    gateQuartermasterExecute,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import { isMutinyActive, isMutinyExecutable } from '../../../lib/governance/gov-proposal-lists';
-  import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
+  import {
+    buildGovProcessCards,
+    countOpenGovProcesses,
+    govProcessCardKey,
+    type GovProcessCard,
+  } from '../../../lib/governance/gov-process';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
@@ -20,13 +28,17 @@
   export let network: string;
   export let parentId: string;
   export let treasuryAuthority: string;
-  export let mutinyModule: string;
+  export let quartermaster = '';
   export let privilege: GovernancePrivilege;
   export let proposals: TreasuryProposalDto[] = [];
   export let proposalsLoading = false;
   export let proposalsError = '';
   export let mutinyStatus: MutinyStatusDto | null = null;
   export let mutinyLoading = false;
+  export let qmPending: QuartermasterPendingActionDto[] = [];
+  export let qmPendingLoading = false;
+  export let qmPendingError = '';
+  export let mutinyMode = false;
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void = () => {};
   export let fundingHint = '';
@@ -36,11 +48,20 @@
   let acting = false;
 
   $: execGate = gatePermissionlessSigner(privilege);
-  $: openCount = proposals.filter((p) => isTreasuryProposalActive(p.status)).length;
-  $: mutinyActive = isMutinyActive(mutinyStatus);
-  $: mutinyReady = isMutinyExecutable(mutinyStatus);
+  $: qmExecGate = gateQuartermasterExecute(privilege, mutinyMode);
+  $: processCards = buildGovProcessCards({
+    treasuryProposals: proposals,
+    mutinyStatus,
+    qmPending,
+  });
+  $: openCount = countOpenGovProcesses(processCards);
+  $: boardLoading =
+    (proposalsLoading && proposals.length === 0) ||
+    (mutinyLoading && !mutinyStatus) ||
+    (qmPendingLoading && qmPending.length === 0);
+  $: refreshSpinning = proposalsLoading || mutinyLoading || qmPendingLoading;
 
-  async function runExecute(proposalId: string) {
+  async function runTreasuryExecute(proposalId: string) {
     if (acting || !execGate.enabled) return;
     acting = true;
     try {
@@ -58,14 +79,60 @@
       acting = false;
     }
   }
+
+  async function runCrewExecute(card: Extract<GovProcessCard, { kind: 'crew_add' | 'crew_remove' }>) {
+    if (acting || !qmExecGate.enabled || !quartermaster.trim()) return;
+    acting = true;
+    try {
+      if (card.kind === 'crew_add') {
+        await quartermasterExecuteAddCrew({
+          network,
+          parentId,
+          quartermaster,
+          candidate: card.address,
+        });
+        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeAddCrew') } }));
+      } else {
+        await quartermasterExecuteRemoveCrew({
+          network,
+          parentId,
+          quartermaster,
+          crew: card.address,
+        });
+        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeRemoveCrew') } }));
+      }
+      onRefreshProposals();
+    } catch (e) {
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
+    } finally {
+      acting = false;
+    }
+  }
+
+  function executeForCard(card: GovProcessCard) {
+    if (card.kind === 'treasury') {
+      void runTreasuryExecute(card.proposal.proposalId);
+    } else if (card.kind === 'mutiny') {
+      onExecuteMutiny();
+    } else {
+      void runCrewExecute(card);
+    }
+  }
+
+  function executeDisabledFor(card: GovProcessCard): string {
+    if (card.kind === 'crew_add' || card.kind === 'crew_remove') {
+      return qmExecGate.enabled ? '' : $t(qmExecGate.reason);
+    }
+    return execGate.enabled ? '' : $t(execGate.reason);
+  }
 </script>
 
 <div class="proposals-board">
   <div class="board-head">
     <h4 class="board-title">{$t('governance.proposal.boardTitle')}{#if openCount} {$t('governance.proposal.openCount', { values: { count: openCount } })}{/if}</h4>
     <RefreshIconButton
-      spinning={proposalsLoading}
-      ariaLabel={proposalsLoading ? $t('governance.aria.refreshingProposals') : $t('governance.aria.refreshProposals')}
+      spinning={refreshSpinning}
+      ariaLabel={refreshSpinning ? $t('governance.aria.refreshingProposals') : $t('governance.aria.refreshProposals')}
       on:click={onRefreshProposals}
     />
   </div>
@@ -73,45 +140,27 @@
     <p class="muted funding-hint">{fundingHint}</p>
   {/if}
 
-  {#if mutinyLoading && !mutinyStatus}
-    <p class="muted">{$t('governance.status.loadingMutinyStatus')}</p>
-  {:else if mutinyStatus}
-    <div class="mutiny-strip" class:mutiny-strip-active={mutinyActive} class:mutiny-strip-ready={mutinyReady}>
-      <span class="mutiny-label">{$t('governance.title.mutiny')}</span>
-      {#if mutinyActive}
-        <p class="mutiny-detail">
-          {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
-        </p>
-        {#if mutinyReady}
-          <button
-            type="button"
-            class="execute-btn"
-            disabled={acting || !execGate.enabled}
-            title={execGate.enabled ? tFn('governance.action.executeMutiny') : $t(execGate.reason)}
-            on:click={onExecuteMutiny}
-          >
-            {tFn('governance.action.executeMutiny')}
-          </button>
-        {/if}
-      {:else}
-        <p class="mutiny-detail muted">{$t('governance.mutiny.noActive', { values: { address: mutinyStatus.captain || '—' } })}</p>
-      {/if}
-    </div>
-  {/if}
-
-  {#if proposalsLoading && proposals.length === 0}
+  {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
-  {:else if proposals.length === 0}
-    <p class="muted">{proposalsError || $t('governance.empty.noTreasuryProposals')}</p>
+  {:else if processCards.length === 0}
+    <p class="muted">
+      {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
+    </p>
   {:else}
+    {#if proposalsError}
+      <p class="muted">{proposalsError}</p>
+    {/if}
+    {#if qmPendingError}
+      <p class="muted">{qmPendingError}</p>
+    {/if}
     <ul class="proposal-list" role="list">
-      {#each proposals as proposal (proposal.proposalId)}
-        <GovProposalReadCard
-          {proposal}
+      {#each processCards as card (govProcessCardKey(card))}
+        <GovProcessCardView
+          {card}
           showExecute
           executePending={acting}
-          executeDisabledReason={execGate.enabled ? '' : $t(execGate.reason)}
-          onExecute={() => runExecute(proposal.proposalId)}
+          executeDisabledReason={executeDisabledFor(card)}
+          onExecute={() => executeForCard(card)}
         />
       {/each}
     </ul>
@@ -135,33 +184,6 @@
     font-weight: 600;
     flex: 1;
   }
-  .mutiny-strip {
-    padding: 10px 12px;
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    background: var(--bg-elevated);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .mutiny-strip-active {
-    border-color: var(--accent);
-  }
-  .mutiny-strip-ready {
-    border-color: color-mix(in srgb, #16a34a 55%, var(--border-subtle));
-  }
-  .mutiny-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-secondary);
-  }
-  .mutiny-detail {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.4;
-  }
   .proposal-list {
     list-style: none;
     margin: 0;
@@ -177,19 +199,5 @@
   }
   .funding-hint {
     margin: 0 0 4px;
-  }
-  .execute-btn {
-    align-self: flex-start;
-    font-size: 0.8125rem;
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    background: #16a34a;
-    color: #fff;
-  }
-  .execute-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
   }
 </style>

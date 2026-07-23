@@ -1,6 +1,10 @@
 //! Quartermaster crew roster reads and writes.
 
-use alloy::sol_types::SolCall;
+use std::collections::HashSet;
+
+use alloy::primitives::{Address, U256};
+use alloy::rpc::types::Log;
+use alloy::sol_types::{SolCall, SolEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
@@ -10,10 +14,15 @@ use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
     bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall,
     crewHatIdCall, executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall,
     pendingCrewAddAtCall, pendingCrewRemoveAtCall, requestAddCrewCall, requestRemoveCrewCall,
+    CrewAddCancelled, CrewAddExecuted, CrewAddRequested, CrewRemoveCancelled, CrewRemoveExecuted,
+    CrewRemoveRequested,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
 use super::pacto_chain_config;
+use super::rpc::logs::{
+    get_logs_chunked, resolve_lookback_range, DEFAULT_LOG_CHUNK_BLOCKS, DEFAULT_LOG_LOOKBACK_BLOCKS,
+};
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
 fn encode_request_add_crew(candidate: &str) -> Result<Vec<u8>, String> {
@@ -68,6 +77,55 @@ pub struct QuartermasterPendingDto {
     pub address: String,
     pub pending_add_at: String,
     pub pending_remove_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QmPendingKind {
+    Add,
+    Remove,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuartermasterPendingActionDto {
+    /// `"add"` or `"remove"`.
+    pub kind: String,
+    pub address: String,
+    pub executable_at: String,
+}
+
+/// Fold Quartermaster lifecycle logs into candidate address sets (Requested − Cancelled/Executed).
+fn collect_qm_pending_candidates_from_logs(logs: &[Log]) -> (HashSet<Address>, HashSet<Address>) {
+    let mut adds = HashSet::new();
+    let mut removes = HashSet::new();
+    for log in logs {
+        let topics = log.topics();
+        let data = log.data().data.as_ref();
+        if let Ok(ev) = CrewAddRequested::decode_raw_log(topics, data) {
+            adds.insert(ev._candidate);
+            continue;
+        }
+        if let Ok(ev) = CrewAddCancelled::decode_raw_log(topics, data) {
+            adds.remove(&ev._candidate);
+            continue;
+        }
+        if let Ok(ev) = CrewAddExecuted::decode_raw_log(topics, data) {
+            adds.remove(&ev._candidate);
+            continue;
+        }
+        if let Ok(ev) = CrewRemoveRequested::decode_raw_log(topics, data) {
+            removes.insert(ev._crew);
+            continue;
+        }
+        if let Ok(ev) = CrewRemoveCancelled::decode_raw_log(topics, data) {
+            removes.remove(&ev._crew);
+            continue;
+        }
+        if let Ok(ev) = CrewRemoveExecuted::decode_raw_log(topics, data) {
+            removes.remove(&ev._crew);
+        }
+    }
+    (adds, removes)
 }
 
 #[derive(Serialize)]
@@ -157,6 +215,65 @@ pub async fn get_quartermaster_pending<R: Runtime>(
         pending_add_at: add_at.to_string(),
         pending_remove_at: remove_at.to_string(),
     })
+}
+
+/// Discover still-pending crew add/remove via QM event logs, verified with `pending*At` views.
+#[tauri::command]
+pub async fn list_quartermaster_pending<R: Runtime>(
+    _app: AppHandle<R>,
+    network: String,
+    quartermaster: String,
+    from_block: Option<u64>,
+) -> Result<Vec<QuartermasterPendingActionDto>, String> {
+    let qm = parse_address(quartermaster.trim())
+        .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (from, to) =
+        resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
+    let logs = get_logs_chunked(&provider, qm, from, to, DEFAULT_LOG_CHUNK_BLOCKS).await?;
+    let (add_addrs, remove_addrs) = collect_qm_pending_candidates_from_logs(&logs);
+
+    let mut out = Vec::new();
+    for (kind, addr) in add_addrs
+        .into_iter()
+        .map(|a| (QmPendingKind::Add, a))
+        .chain(remove_addrs.into_iter().map(|a| (QmPendingKind::Remove, a)))
+    {
+        let executable_at: U256 = match kind {
+            QmPendingKind::Add => eth_call_decode(
+                &provider,
+                qm,
+                &pendingCrewAddAtCall { _candidate: addr },
+            )
+            .await
+            .map_err(|e| wallet_err_json("QM_READ", e, None))?,
+            QmPendingKind::Remove => eth_call_decode(
+                &provider,
+                qm,
+                &pendingCrewRemoveAtCall { _crew: addr },
+            )
+            .await
+            .map_err(|e| wallet_err_json("QM_READ", e, None))?,
+        };
+        if executable_at.is_zero() {
+            continue;
+        }
+        out.push(QuartermasterPendingActionDto {
+            kind: match kind {
+                QmPendingKind::Add => "add".into(),
+                QmPendingKind::Remove => "remove".into(),
+            },
+            address: format!("{:#x}", addr),
+            executable_at: executable_at.to_string(),
+        });
+    }
+    out.sort_by(|a, b| {
+        a.executable_at
+            .cmp(&b.executable_at)
+            .then_with(|| a.address.cmp(&b.address))
+            .then_with(|| a.kind.cmp(&b.kind))
+    });
+    Ok(out)
 }
 
 async fn qm_write<R: Runtime>(
@@ -329,17 +446,30 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_bootstrap_crew, encode_execute_add_crew, encode_request_add_crew,
-        encode_request_remove_crew,
+        collect_qm_pending_candidates_from_logs, encode_bootstrap_crew, encode_execute_add_crew,
+        encode_request_add_crew, encode_request_remove_crew,
     };
-    use alloy::sol_types::SolCall;
+    use alloy::primitives::{Address, U256};
+    use alloy::rpc::types::Log;
+    use alloy::sol_types::{SolCall, SolEvent};
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
         bootstrapCrewCall, executeAddCrewCall, requestAddCrewCall, requestRemoveCrewCall,
+        CrewAddCancelled, CrewAddExecuted, CrewAddRequested, CrewRemoveRequested,
     };
     use crate::evm::rpc::parse_address;
 
     const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
     const ADDR_B: &str = "0x2222222222222222222222222222222222222222";
+
+    fn log_from_event<E: SolEvent>(event: E) -> Log {
+        Log {
+            inner: alloy::primitives::Log {
+                address: Address::ZERO,
+                data: event.encode_log_data(),
+            },
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn request_add_crew_encodes_selector_and_address() {
@@ -386,5 +516,31 @@ mod tests {
         .abi_encode();
         assert_eq!(encoded, expected);
         assert!(encoded.len() > 4);
+    }
+
+    #[test]
+    fn pending_candidates_track_request_cancel_and_execute() {
+        let a = parse_address(ADDR_A).unwrap();
+        let b = parse_address(ADDR_B).unwrap();
+        let logs = vec![
+            log_from_event(CrewAddRequested {
+                _candidate: a,
+                _executableAt: U256::from(100u64),
+            }),
+            log_from_event(CrewRemoveRequested {
+                _crew: b,
+                _executableAt: U256::from(200u64),
+            }),
+            log_from_event(CrewAddCancelled { _candidate: a }),
+            log_from_event(CrewAddRequested {
+                _candidate: a,
+                _executableAt: U256::from(300u64),
+            }),
+            log_from_event(CrewAddExecuted { _candidate: a }),
+        ];
+        let (adds, removes) = collect_qm_pending_candidates_from_logs(&logs);
+        assert!(adds.is_empty());
+        assert_eq!(removes.len(), 1);
+        assert!(removes.contains(&b));
     }
 }

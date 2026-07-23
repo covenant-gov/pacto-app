@@ -1,0 +1,194 @@
+<script lang="ts">
+  import type { GovProcessCard } from '../../../lib/governance/gov-process';
+  import { govProcessToolLabel } from '../../../lib/governance/gov-process';
+  import { treasuryProposalStatusLabel } from '../../../lib/governance/pacto-gov-payload';
+  import {
+    isTreasuryProposalActive,
+    isTreasuryProposalPast,
+    treasuryProposalOutcomeLabel,
+  } from '../../../lib/governance/treasury-proposal-ui';
+  import { executableTreasuryProposals, isMutinyExecutable } from '../../../lib/governance/gov-proposal-lists';
+
+  export let card: GovProcessCard;
+  export let showExecute = false;
+  export let executePending = false;
+  export let executeDisabledReason = '';
+  export let onExecute: (() => void) | undefined = undefined;
+
+  $: tool = govProcessToolLabel(card);
+  $: isActive =
+    card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
+  $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
+  $: isExecutable =
+    card.kind === 'treasury'
+      ? executableTreasuryProposals([card.proposal]).length > 0
+      : card.kind === 'mutiny'
+        ? isMutinyExecutable(card.status)
+        : card.status === 'executable';
+  $: title =
+    card.kind === 'treasury'
+      ? `Proposal #${card.proposal.proposalId}`
+      : card.kind === 'mutiny'
+        ? `Mutiny #${card.status.activeMutinyId}`
+        : card.kind === 'crew_add'
+          ? 'Add crew member'
+          : 'Remove crew member';
+  $: statusLabel =
+    card.kind === 'treasury'
+      ? treasuryProposalStatusLabel(card.proposal.status)
+      : card.kind === 'mutiny'
+        ? isMutinyExecutable(card.status)
+          ? 'Ready to execute'
+          : 'Active'
+        : card.status === 'executable'
+          ? 'Ready to execute'
+          : 'Timelock';
+  $: outcome =
+    card.kind === 'treasury' ? treasuryProposalOutcomeLabel(card.proposal.status) : '';
+</script>
+
+<li
+  class="proposal-card"
+  class:proposal-card-active={isActive}
+  class:proposal-card-past={isPast}
+  class:proposal-card-executable={isExecutable}
+>
+  <div class="proposal-card-head">
+    <span class="proposal-card-tool">{tool}</span>
+    <span class="proposal-card-status" class:proposal-card-status-active={isActive && !isPast}>
+      {statusLabel}
+    </span>
+  </div>
+  <p class="proposal-card-title">{title}</p>
+  {#if outcome && isPast}
+    <p class="proposal-card-outcome">{outcome}</p>
+  {/if}
+
+  {#if card.kind === 'treasury'}
+    <p class="proposal-card-meta muted">
+      Yeas {card.proposal.yeas} / nays {card.proposal.nays} · snapshot {card.proposal.snapshot} · deadline
+      {new Date(card.proposal.deadline * 1000).toLocaleString()}
+    </p>
+    {#if card.proposal.captainApproved}
+      <p class="proposal-card-meta muted">Captain approved</p>
+    {:else if card.proposal.captainDefeated}
+      <p class="proposal-card-meta muted">Captain vetoed</p>
+    {/if}
+    <p class="proposal-card-target muted">
+      Target <code class="proposal-card-ref">{card.proposal.to}</code>
+    </p>
+  {:else if card.kind === 'mutiny'}
+    <p class="proposal-card-meta muted">
+      Toward <code class="proposal-card-ref">{card.status.proposedNewCaptain || '—'}</code>
+      · yeas {card.status.yeas} / snapshot {card.status.snapshot}
+    </p>
+    <p class="proposal-card-meta muted">
+      Captain <code class="proposal-card-ref">{card.status.captain || '—'}</code>
+    </p>
+  {:else}
+    <p class="proposal-card-meta muted">
+      {card.kind === 'crew_add' ? 'Candidate' : 'Member'}
+      <code class="proposal-card-ref">{card.address}</code>
+    </p>
+    <p class="proposal-card-meta muted">
+      Executable {new Date(card.executableAt * 1000).toLocaleString()}
+    </p>
+  {/if}
+
+  {#if showExecute && isExecutable && onExecute}
+    <button
+      type="button"
+      class="execute-btn"
+      disabled={executePending || !!executeDisabledReason}
+      title={executeDisabledReason || 'Execute'}
+      on:click={() => onExecute()}
+    >
+      Execute
+    </button>
+  {/if}
+</li>
+
+<style>
+  .proposal-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg-elevated);
+    list-style: none;
+  }
+  .proposal-card-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+  .proposal-card-executable {
+    border-color: color-mix(in srgb, #16a34a 55%, var(--border-subtle));
+  }
+  .proposal-card-past {
+    opacity: 0.92;
+  }
+  .proposal-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .proposal-card-tool {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+  .proposal-card-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .proposal-card-status-active {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .proposal-card-title {
+    margin: 0 0 6px 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .proposal-card-outcome {
+    margin: 0 0 6px 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+  .proposal-card-meta,
+  .proposal-card-target {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    margin: 0 0 8px 0;
+  }
+  .proposal-card-ref {
+    font-family: ui-monospace, monospace;
+    font-size: 0.8125rem;
+    word-break: break-all;
+  }
+  .muted {
+    color: var(--text-muted);
+  }
+  .execute-btn {
+    margin-top: 4px;
+    font-size: 0.8125rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    background: #16a34a;
+    color: #fff;
+  }
+  .execute-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+</style>

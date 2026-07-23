@@ -22,6 +22,7 @@ import {
   hasSponsorInfra,
   infraTypeFromLegacyProvider,
   listSquadInfra,
+  listQuartermasterPending,
   listTreasuryProposals,
   pactoGovInfraId,
   pactoGovInfraRow,
@@ -425,6 +426,26 @@ describe('api command wrappers', () => {
       network: NETWORK,
       treasuryAuthority: '0xabc',
       maxScan: 50,
+    });
+  });
+
+  it('listQuartermasterPending sends list_quartermaster_pending', async () => {
+    mockedInvoke.mockResolvedValueOnce([]);
+    await listQuartermasterPending({ network: NETWORK, quartermaster: ' 0xqm ' });
+    expect(mockedInvoke).toHaveBeenCalledWith('list_quartermaster_pending', {
+      network: NETWORK,
+      quartermaster: '0xqm',
+      fromBlock: null,
+    });
+  });
+
+  it('listQuartermasterPending passes fromBlock when provided', async () => {
+    mockedInvoke.mockResolvedValueOnce([]);
+    await listQuartermasterPending({ network: NETWORK, quartermaster: '0xqm', fromBlock: 12 });
+    expect(mockedInvoke).toHaveBeenCalledWith('list_quartermaster_pending', {
+      network: NETWORK,
+      quartermaster: '0xqm',
+      fromBlock: 12,
     });
   });
 

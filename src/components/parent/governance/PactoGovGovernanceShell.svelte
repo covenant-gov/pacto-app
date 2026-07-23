@@ -11,6 +11,7 @@
     getSquadCapabilities,
     type SquadCapabilitiesDto,
     type MutinyStatusDto,
+    type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
@@ -27,6 +28,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
@@ -64,6 +66,11 @@
 
   let qmStatus: QuartermasterStatusDto | null = null;
   let qmHydrateKey = '';
+
+  let qmPending: QuartermasterPendingActionDto[] = [];
+  let qmPendingLoading = false;
+  let qmPendingError = '';
+  let qmPendingHydrateKey = '';
 
   let rosterBalanceRaw = '0';
   let rosterBalanceKnown = false;
@@ -120,6 +127,14 @@
     if (key !== qmHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
       qmHydrateKey = key;
       void reloadQm(false);
+    }
+  }
+
+  $: {
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|pending`;
+    if (key !== qmPendingHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
+      qmPendingHydrateKey = key;
+      void reloadQmPending();
     }
   }
 
@@ -233,6 +248,29 @@
     }
   }
 
+  async function reloadQmPending() {
+    const quartermaster = payload.quartermaster?.trim();
+    if (!quartermaster) {
+      qmPending = [];
+      qmPendingError = '';
+      return;
+    }
+    const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
+    qmPendingLoading = qmPending.length === 0;
+    const result = await fetchQuartermasterPendingActions({ network, quartermaster });
+    if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
+    qmPendingLoading = false;
+    qmPending = result.pending;
+    qmPendingError = result.error;
+  }
+
+  function refreshAllProposals() {
+    onRefreshProposals();
+    void reloadMutiny(true);
+    void reloadQm(true);
+    void reloadQmPending();
+  }
+
   async function executeMutinyFromBoard() {
     const mutinyModule = payload.mutinyModule?.trim();
     if (!mutinyModule || !mutinyStatus) return;
@@ -299,14 +337,18 @@
         {network}
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
-        mutinyModule={payload.mutinyModule ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
         {privilege}
         proposals={treasuryProposals}
         proposalsLoading={treasuryProposalsLoading}
         proposalsError={treasuryProposalsError}
         {mutinyStatus}
         {mutinyLoading}
-        {onRefreshProposals}
+        {qmPending}
+        {qmPendingLoading}
+        {qmPendingError}
+        mutinyMode={!!qmStatus?.mutinyActive || !!(mutinyStatus && mutinyStatus.activeMutinyId !== '0' && !mutinyStatus.executed)}
+        onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
       />
@@ -320,7 +362,7 @@
         proposals={treasuryProposals}
         {mutinyStatus}
         mutinyHasVotedFlag={mutinyHasVotedFlag}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
       />
@@ -337,9 +379,12 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
-        onRefreshQm={() => reloadQm(true)}
+        onRefreshQm={() => {
+          void reloadQm(true);
+          void reloadQmPending();
+        }}
         {fundingHint}
       />
     {/if}

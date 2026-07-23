@@ -1,11 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getMlsGroupMembers } from '../api/nostr';
-import type { HatTreeNodeDto, TreasuryProposalDto } from '../governance/api';
+import type {
+  HatTreeNodeDto,
+  QuartermasterPendingActionDto,
+  TreasuryProposalDto,
+} from '../governance/api';
 import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
   getSquadAdminExecutorRoles,
+  listQuartermasterPending,
   listTreasuryProposals,
   treasuryProposalHasVoted,
 } from '../governance/api';
@@ -127,6 +132,24 @@ export async function fetchTreasuryProposals(params: {
     return {
       proposals: [],
       error: getInvokeErrorMessage(e, 'Could not load treasury proposals.'),
+    };
+  }
+}
+
+export async function fetchQuartermasterPendingActions(params: {
+  network: string;
+  quartermaster: string;
+}): Promise<{ pending: QuartermasterPendingActionDto[]; error: string }> {
+  try {
+    const pending = await listQuartermasterPending({
+      network: params.network,
+      quartermaster: params.quartermaster,
+    });
+    return { pending, error: '' };
+  } catch (e) {
+    return {
+      pending: [],
+      error: getInvokeErrorMessage(e, 'Could not load pending crew changes.'),
     };
   }
 }
