@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { SquadMemberEvmSharePayload } from '../../lib/announcements';
   import { currentUser } from '../../stores/auth';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
@@ -8,12 +10,14 @@
   export let authorNpub: string | undefined = undefined;
   export let timestamp: string;
 
+  const tFn = get(t);
+
   $: isMine =
     Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub);
 
   $: summary = isMine
-    ? 'You updated your EVM key for this Squad'
-    : `${authorName || 'A member'} updated their EVM key for this Squad`;
+    ? tFn('announcements.signerShare.mine')
+    : tFn('announcements.signerShare.theirs', { values: { authorName: authorName || tFn('announcements.signerShare.aMember') } });
 
   $: evmAddress = payload.evm_address?.trim() ?? '';
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import SquadRosterKeyInboxCard from '../../inbox/SquadRosterKeyInboxCard.svelte';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
   import { onMount } from 'svelte';
@@ -29,7 +30,7 @@
 </script>
 
 {#if loading}
-  <p class="muted">Loading alerts…</p>
+  <p class="muted">{$t('governance.alerts.loading')}</p>
 {:else if showRosterCard && announcementsGroupId}
   <SquadRosterKeyInboxCard
     {parentId}
@@ -39,7 +40,7 @@
     }}
   />
 {:else}
-  <p class="muted">No personal alerts right now.</p>
+  <p class="muted">{$t('governance.alerts.empty')}</p>
 {/if}
 
 <style>

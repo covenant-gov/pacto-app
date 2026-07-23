@@ -7,12 +7,16 @@
     treasuryProposalOutcomeLabel,
   } from '$lib/governance/treasury-proposal-ui';
   import { executableTreasuryProposals } from '$lib/governance/gov-proposal-lists';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let proposal: TreasuryProposalDto;
   export let showExecute = false;
   export let executePending = false;
   export let executeDisabledReason = '';
   export let onExecute: (() => void) | undefined = undefined;
+
+  const tFn = get(t);
 
   $: isActive = isTreasuryProposalActive(proposal.status);
   $: isPast = isTreasuryProposalPast(proposal.status);
@@ -27,36 +31,35 @@
   class:proposal-card-executable={isExecutable}
 >
   <div class="proposal-card-head">
-    <span class="proposal-card-tool">Treasury Authority</span>
+    <span class="proposal-card-tool">{$t('governance.title.treasuryAuthority')}</span>
     <span class="proposal-card-status" class:proposal-card-status-active={isActive}>
       {treasuryProposalStatusLabel(proposal.status)}
     </span>
   </div>
-  <p class="proposal-card-title">Proposal #{proposal.proposalId}</p>
+  <p class="proposal-card-title">{$t('governance.proposal.title', { values: { id: proposal.proposalId } })}</p>
   {#if outcome && isPast}
     <p class="proposal-card-outcome">{outcome}</p>
   {/if}
   <p class="proposal-card-meta muted">
-    Yeas {proposal.yeas} / nays {proposal.nays} · snapshot {proposal.snapshot} · deadline
-    {new Date(proposal.deadline * 1000).toLocaleString()}
+    {$t('governance.proposal.meta', { values: { yeas: proposal.yeas, nays: proposal.nays, snapshot: proposal.snapshot, deadline: new Date(proposal.deadline * 1000).toLocaleString() } })}
   </p>
   {#if proposal.captainApproved}
-    <p class="proposal-card-meta muted">Captain approved</p>
+    <p class="proposal-card-meta muted">{$t('governance.proposal.captainApproved')}</p>
   {:else if proposal.captainDefeated}
-    <p class="proposal-card-meta muted">Captain vetoed</p>
+    <p class="proposal-card-meta muted">{$t('governance.proposal.captainVetoed')}</p>
   {/if}
   <p class="proposal-card-target muted">
-    Target <code class="proposal-card-ref">{proposal.to}</code>
+    {$t('governance.proposal.target')} <code class="proposal-card-ref">{proposal.to}</code>
   </p>
   {#if showExecute && isExecutable && onExecute}
     <button
       type="button"
       class="execute-btn"
       disabled={executePending || !!executeDisabledReason}
-      title={executeDisabledReason || 'Execute proposal'}
+      title={executeDisabledReason || tFn('governance.proposal.execute')}
       on:click={() => onExecute()}
     >
-      Execute
+      {tFn('governance.action.execute')}
     </button>
   {/if}
 </li>

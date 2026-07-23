@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import {
     ANNOUNCE_TYPE_SAFE_UPDATED,
     ANNOUNCE_TYPE_SAFE_PROPOSAL,
@@ -17,6 +19,8 @@
     | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload };
   export let authorName: string = '';
   export let timestamp: string = '';
+
+  const tFn = get(t);
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -37,12 +41,12 @@
 
   async function copySafeAddress(addr: string) {
     const ok = await copyTextToClipboard(addr);
-    showToast(ok ? 'Safe address copied' : 'Could not copy address');
+    showToast(ok ? tFn('announcements.safe.copyAddressToast') : tFn('announcements.safe.copyAddressFailed'));
   }
 
   async function copyTxHash(hash: string) {
     const ok = await copyTextToClipboard(hash);
-    showToast(ok ? 'Transaction hash copied' : 'Could not copy hash');
+    showToast(ok ? tFn('announcements.safe.copyTxHashToast') : tFn('announcements.safe.copyTxHashFailed'));
   }
 </script>
 
@@ -50,7 +54,7 @@
   {@const payload = announce.payload}
   <div class="safe-icon" aria-hidden="true">🛡️</div>
   <div class="safe-body">
-    <p class="safe-title">{txHash ? 'Safe deployed' : 'Safe address updated'}</p>
+    <p class="safe-title">{txHash ? $t('announcements.safe.deployedTitle') : $t('announcements.safe.updatedTitle')}</p>
     <p class="safe-detail safe-detail-meta">
       {#if payload.chain}<span class="safe-chain">{payload.chain}</span>{/if}
       {#if payload.label}<span class="safe-label">{#if payload.chain} · {/if}{payload.label}</span>{/if}
@@ -60,10 +64,10 @@
       <button
         type="button"
         class="safe-copy-btn"
-        aria-label="Copy full Safe address"
+        aria-label={$t('announcements.safe.copyAddressAria')}
         on:click={() => copySafeAddress(payload.safe_address)}
       >
-        Copy address
+        {$t('announcements.safe.copyAddress')}
       </button>
       {#if safeExplorerUrl}
         <a
@@ -72,12 +76,12 @@
           target="_blank"
           rel="external noopener noreferrer"
         >
-          View on explorer
+          {$t('announcements.safe.viewExplorer')}
         </a>
       {/if}
       {#if safeAppUrl}
         <a class="safe-explorer-link" href={safeAppUrl} target="_blank" rel="external noopener noreferrer">
-          Open in Safe
+          {$t('announcements.safe.openInSafe')}
         </a>
       {/if}
     </div>
@@ -87,19 +91,19 @@
         <button
           type="button"
           class="safe-copy-btn"
-          aria-label="Copy full transaction hash"
+          aria-label={$t('announcements.safe.copyTxHashAria')}
           on:click={() => copyTxHash(txHash)}
         >
-          Copy tx hash
+          {$t('announcements.safe.copyTxHash')}
         </button>
         {#if explorerTx}
           <a class="safe-explorer-link" href={explorerTx} target="_blank" rel="external noopener noreferrer">
-            View transaction
+            {$t('announcements.safe.viewTransaction')}
           </a>
         {/if}
       </div>
       {#if !explorerTx}
-        <p class="safe-explorer-fallback muted">Explorer link unavailable for this network.</p>
+        <p class="safe-explorer-fallback muted">{$t('announcements.safe.explorerFallback')}</p>
       {/if}
     {/if}
     {#if authorName || timestamp}
@@ -114,9 +118,9 @@
   {@const payload = announce.payload}
   <div class="safe-icon" aria-hidden="true">📋</div>
   <div class="safe-body">
-    <p class="safe-title">Safe proposal</p>
+    <p class="safe-title">{$t('announcements.safe.proposalTitle')}</p>
     <p class="safe-detail">
-      Send {payload.amount} {payload.token === 'ETH' ? 'ETH' : shortAddress(payload.token)} to <code class="safe-address">{shortAddress(payload.to)}</code>
+      {$t('announcements.safe.proposalDetail', { values: { amount: payload.amount, token: payload.token === 'ETH' ? 'ETH' : shortAddress(payload.token), to: shortAddress(payload.to) } })}
     </p>
     {#if authorName || timestamp}
       <p class="safe-meta">
@@ -127,10 +131,10 @@
     {/if}
     <div class="safe-actions">
       <button type="button" class="safe-btn" disabled>
-        Sign
+        {$t('announcements.safe.sign')}
       </button>
       <button type="button" class="safe-btn safe-btn-secondary" disabled>
-        Execute
+        {$t('announcements.safe.execute')}
       </button>
     </div>
   </div>

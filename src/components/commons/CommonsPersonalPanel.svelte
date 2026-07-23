@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { currentUser } from '../../stores/auth';
   import { activeView, activeChannelId, activeHubChannelName } from '../../stores/navigation';
   import { profiles } from '../../stores/profiles';
@@ -34,6 +36,8 @@
   $: avatarSrc = getProfileAvatarSrc(profile);
   $: displayName = npub ? getProfileDisplayName(profile) : '';
 
+  const tFn = get(t);
+
   async function load() {
     if (!npub) {
       lastBroadcast = null;
@@ -55,12 +59,12 @@
 
   function relativeExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
-    if (ms <= 0) return 'expired';
+    if (ms <= 0) return tFn('commons.duration.expired');
     const minutes = Math.floor(ms / 60000);
-    if (minutes < 60) return `${Math.max(minutes, 1)}m left`;
+    if (minutes < 60) return tFn('commons.duration.minutesLeft', { values: { minutes: Math.max(minutes, 1) } });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h left`;
-    return `${Math.floor(hours / 24)}d left`;
+    if (hours < 24) return tFn('commons.duration.hoursLeft', { values: { hours } });
+    return tFn('commons.duration.daysLeft', { values: { days: Math.floor(hours / 24) } });
   }
 
   function openSettings() {
@@ -80,7 +84,7 @@
     }
     lastBroadcast = null;
     commonsUserHasActiveBroadcast.set(false);
-    showToast('Broadcast cancelled. You can broadcast again now.');
+    showToast(tFn('commons.personal.cancelToast'));
     onChanged();
   }
 
@@ -92,15 +96,15 @@
     : fullMessage;
 </script>
 
-<section class="commons-personal" aria-label="Your broadcast">
+<section class="commons-personal" aria-label={$t('commons.personal.ariaLabel')}>
   <div class="commons-personal-row">
     <button
       type="button"
       class="commons-personal-avatar"
       class:is-active={hasActive}
       style={avatarSrc ? '' : `background-image: ${commonsTagGradient(npub || displayName)}`}
-      aria-label="Profile settings"
-      title="Profile settings"
+      aria-label={$t('commons.personal.profileSettings')}
+      title={$t('commons.personal.profileSettings')}
       on:click={openSettings}
     >
       {#if avatarSrc}
@@ -112,12 +116,12 @@
 
     <div class="commons-personal-block">
       {#if loading}
-        <span class="commons-personal-status muted">Checking…</span>
+        <span class="commons-personal-status muted">{$t('commons.personal.checking')}</span>
       {:else if hasActive && lastBroadcast}
         <div class="commons-personal-status-row">
           <span class="commons-personal-status">
             <span class="commons-status-dot commons-status-dot-active" aria-hidden="true"></span>
-            Active broadcast - {relativeExpiry(lastBroadcast.expiresAt)}
+            {$t('commons.personal.activeBroadcast')} - {relativeExpiry(lastBroadcast.expiresAt)}
           </span>
           <button
             type="button"
@@ -125,7 +129,7 @@
             on:click={handleCancel}
             disabled={cancelling}
           >
-            {cancelling ? 'Terminating broadcast…' : 'Terminate Broadcast'}
+            {cancelling ? $t('commons.personal.terminating') : $t('commons.personal.terminate')}
           </button>
         </div>
         <p class="commons-personal-message muted">
@@ -140,7 +144,7 @@
               class="commons-personal-see-more"
               on:click={() => (messageExpanded = !messageExpanded)}
             >
-              {messageExpanded ? 'see less' : 'see more…'}
+              {messageExpanded ? $t('commons.personal.seeLess') : $t('commons.personal.seeMore')}
             </button>
           {/if}
         </p>
@@ -155,10 +159,10 @@
         <div class="commons-personal-status-row">
           <span class="commons-personal-status">
             <span class="commons-status-dot" aria-hidden="true"></span>
-            No active broadcast
+            {$t('commons.personal.noActiveBroadcast')}
           </span>
           <button type="button" class="commons-personal-inline-btn is-accent" on:click={onBroadcast}>
-            Start Broadcast
+            {$t('commons.personal.startBroadcast')}
           </button>
         </div>
       {/if}

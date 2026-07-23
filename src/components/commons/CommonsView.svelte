@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { t } from 'svelte-i18n';
   import CommonsTopFilters from './CommonsTopFilters.svelte';
   import CommonsCategoryFocus from './CommonsCategoryFocus.svelte';
   import CommonsTagBrowser from './CommonsTagBrowser.svelte';
@@ -199,11 +200,11 @@
   <div class="commons-scroll">
     <header class="commons-header">
       <div class="commons-header-row">
-        <h1 id="commons-feed-heading" class="commons-title">Commons</h1>
+        <h1 id="commons-feed-heading" class="commons-title">{$t('commons.view.title')}</h1>
         <RefreshIconButton
           disabled={$commonsFeedSyncing}
           spinning={$commonsFeedSyncing}
-          ariaLabel={$commonsFeedSyncing ? 'Refreshing feed' : 'Refresh feed'}
+          ariaLabel={$commonsFeedSyncing ? $t('commons.view.refreshSyncing') : $t('commons.view.refresh')}
           on:click={() => loadFeed()}
         />
       </div>
@@ -242,9 +243,9 @@
       />
     {:else if browseMode === 'latest'}
       {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">Loading broadcasts…</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.loading')}</p>
       {:else if latestBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">No broadcasts match your filters.</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.noMatches')}</p>
       {:else}
         <ul class="commons-results" role="feed" aria-busy={$commonsFeedSyncing}>
           {#each latestBroadcasts as broadcast (broadcast.eventId)}
@@ -265,11 +266,11 @@
       />
 
       {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">Loading broadcasts…</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.loading')}</p>
       {:else if filteredBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">No broadcasts match your filters.</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.noMatches')}</p>
         <p class="commons-state-hint muted">
-          Try ALL-{focusedCategoryTitle} or pick fewer tags.
+          {$t('commons.view.categoryHint', { values: { categoryTitle: focusedCategoryTitle } })}
         </p>
       {:else}
         <ul class="commons-results" role="feed" aria-busy={$commonsFeedSyncing}>
@@ -282,11 +283,11 @@
       {/if}
     {:else if hasFilters}
       {#if $commonsFeedSyncing && $commonsBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">Loading broadcasts…</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.loading')}</p>
       {:else if filteredBroadcasts.length === 0}
-        <p class="commons-state muted" role="status">No broadcasts match your filters.</p>
+        <p class="commons-state muted" role="status">{$t('commons.view.noMatches')}</p>
         <p class="commons-state-hint muted">
-          Try a narrower category, fewer tags, or broaden Squads / Users / Audience.
+          {$t('commons.view.narrowHint')}
         </p>
       {:else}
         <ul class="commons-results" role="feed" aria-busy={$commonsFeedSyncing}>

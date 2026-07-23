@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import SquadJoinRequestsPanel from '../../squad/SquadJoinRequestsPanel.svelte';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
@@ -67,7 +70,7 @@
     const t = address.trim();
     if (!t) return;
     const ok = await copyTextToClipboard(t);
-    showToast(ok ? 'Address copied' : 'Could not copy address');
+    showToast(ok ? tFn('governance.crew.toastAddressCopied') : tFn('governance.crew.toastCopyFailed'));
   }
 
   function ownerLabel(): string {
@@ -90,10 +93,10 @@
         permitted: true,
         sponsorAddress: sponsorExtStatus?.sponsorAddress ?? null,
       });
-      showToast('Member sponsored.');
+      showToast(tFn('governance.crew.toastMemberSponsored'));
       onRefreshSponsorExt();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Sponsor failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.crew.toastSponsorFailed')));
     } finally {
       sponsoringAddress = '';
     }
@@ -101,35 +104,39 @@
 </script>
 
 {#if sponsorHatsMode && hasSponsor}
-  <section class="sponsor-owner-banner" aria-label="Squad sponsor">
-    <span class="meta-label">Sponsor</span>
-    <span class="sponsor-owner-value">Hats-linked</span>
-    <span class="muted sponsor-owner-hint">Captain and crew hat wearers are eligible</span>
+  <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorAriaLabel')}>
+    <span class="meta-label">{$t('governance.crew.sponsorLabel')}</span>
+    <span class="sponsor-owner-value">{$t('governance.crew.sponsorHatsLinked')}</span>
+    <span class="muted sponsor-owner-hint">{$t('governance.crew.sponsorHatsHint')}</span>
   </section>
 {:else if sponsorExtStatus || sponsorExtLoading || sponsorExtError}
-  <section class="sponsor-owner-banner" aria-label="Squad sponsor owner">
-    <span class="meta-label">Sponsor owner</span>
+  <section class="sponsor-owner-banner" aria-label={$t('governance.crew.sponsorOwnerAriaLabel')}>
+    <span class="meta-label">{$t('governance.crew.sponsorOwnerLabel')}</span>
     {#if sponsorExtLoading && !sponsorExtStatus}
-      <span class="muted">Loading…</span>
+      <span class="muted">{$t('governance.crew.loading')}</span>
     {:else if sponsorExtError && !sponsorExtStatus}
       <span class="chain-read-error" role="alert">{sponsorExtError}</span>
     {:else if sponsorExtStatus}
+      {#if addressOwner}
       <span class="sponsor-owner-value">{ownerLabel()}</span>
+    {:else}
+      <span class="sponsor-owner-value">{$t('governance.crew.unknown')}</span>
+    {/if}
       {#if hatsWired}
-        <span class="muted sponsor-owner-hint">Hats wired — address list closed</span>
+        <span class="muted sponsor-owner-hint">{$t('governance.crew.hatsWired')}</span>
       {:else if iAmSponsorOwner}
-        <span class="muted sponsor-owner-hint">You can permit members</span>
+        <span class="muted sponsor-owner-hint">{$t('governance.crew.canPermit')}</span>
       {/if}
     {/if}
   </section>
 {/if}
 
 <section class="dashboard-section" aria-labelledby="crew-roster-heading">
-  <h3 id="crew-roster-heading" class="section-heading">Crew</h3>
-  <p class="caption muted">Membership from #announcements (MLS). Hats and privileges may be empty.</p>
+  <h3 id="crew-roster-heading" class="section-heading">{$t('governance.crew.sectionCrew')}</h3>
+  <p class="caption muted">{$t('governance.crew.membershipCaption')}</p>
 
   {#if settingsChainRefreshing}
-    <p class="muted" role="status">Refreshing on-chain member data…</p>
+    <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
   {/if}
   {#if settingsChainError}
     <p class="chain-read-error" role="alert">{settingsChainError}</p>
@@ -137,7 +144,7 @@
 
   {#if announcementsGroupId}
     {#if loadingMembers && channelMembers.length === 0}
-      <p class="muted">Loading members…</p>
+      <p class="muted">{$t('governance.crew.loadingMembers')}</p>
     {:else if channelMembers.length > 0}
       <ul class="roles-member-list" role="list">
         {#each channelMembers as memberNpub (memberNpub)}
@@ -167,15 +174,15 @@
               >
             </div>
             <div class="roles-member-cols">
-              <span class="roles-col-label">EVM</span>
+              <span class="roles-col-label">{$t('governance.crew.colEvm')}</span>
               {#if rosterEvm}
                 <span class="roles-col-value roles-col-evm">
                   <code class="roles-evm-addr" title={rosterEvm}>{shortAddress(rosterEvm)}</code>
                   <button
                     type="button"
                     class="roles-evm-copy-btn"
-                    aria-label="Copy EVM address"
-                    title="Copy address"
+                    aria-label={$t('governance.crew.copyEvmAddress')}
+                    title={$t('governance.crew.copyAddress')}
                     on:click={() => void copyEvmAddress(rosterEvm)}
                   >
                     <svg
@@ -196,36 +203,38 @@
                   </button>
                 </span>
               {:else}
-                <span class="roles-col-value muted">Not shared</span>
+                <span class="roles-col-value muted">{$t('governance.crew.notShared')}</span>
               {/if}
-              <span class="roles-col-label">Hats</span>
+              <span class="roles-col-label">{$t('governance.crew.colHats')}</span>
               <span
                 class="roles-col-value"
                 class:muted={!rosterEvm || !memberHatByAddress[rosterEvm.toLowerCase()]}
                 >{settingsChainLoading && !memberHatByAddress[rosterEvm?.toLowerCase() ?? '']
-                  ? 'Loading…'
+                  ? $t('governance.crew.loadingShort')
                   : rosterEvm
-                    ? memberHatByAddress[rosterEvm.toLowerCase()] || '—'
-                    : 'Not shared'}</span
+                    ? memberHatByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
+                    : $t('governance.crew.notShared')}
+                </span
               >
-              <span class="roles-col-label">Privileges</span>
+              <span class="roles-col-label">{$t('governance.crew.colPrivileges')}</span>
               <span
                 class="roles-col-value"
                 class:muted={!rosterEvm || !memberRolesByAddress[rosterEvm.toLowerCase()]}
                 >{settingsChainLoading && !memberRolesByAddress[rosterEvm?.toLowerCase() ?? '']
-                  ? 'Loading…'
+                  ? $t('governance.crew.loadingShort')
                   : rosterEvm
-                    ? memberRolesByAddress[rosterEvm.toLowerCase()] || '—'
-                    : 'Not shared'}</span
+                    ? memberRolesByAddress[rosterEvm.toLowerCase()] || $t('governance.crew.dash')
+                    : $t('governance.crew.notShared')}
+                </span
               >
               {#if showSponsoredCol}
-                <span class="roles-col-label">Sponsored</span>
+                <span class="roles-col-label">{$t('governance.crew.colSponsored')}</span>
                 {#if !rosterEvm}
-                  <span class="roles-col-value muted">Not shared</span>
+                  <span class="roles-col-value muted">{$t('governance.crew.notShared')}</span>
                 {:else if !sponsorHatsMode && sponsorExtLoading && permittedByAddress[rosterKey] === undefined}
-                  <span class="roles-col-value muted">Loading…</span>
+                  <span class="roles-col-value muted">{$t('governance.crew.loading')}</span>
                 {:else if isSponsored}
-                  <span class="roles-col-value">Yes</span>
+                  <span class="roles-col-value">{$t('governance.crew.sponsoredYes')}</span>
                 {:else if showSponsorBtn}
                   <span class="roles-col-value roles-col-sponsored">
                     <button
@@ -234,16 +243,16 @@
                       disabled={!canManagePermits || sponsoringAddress === rosterKey}
                       title={!canManagePermits
                         ? hatsWired
-                          ? 'Hats wired'
-                          : 'Only the sponsor owner can permit addresses'
-                        : 'Permit this address for gas sponsorship'}
+                          ? $t('governance.crew.titleHatsWired')
+                          : $t('governance.crew.titleOnlyOwner')
+                        : $t('governance.crew.titlePermit')}
                       on:click={() => void sponsorMember(rosterEvm)}
                     >
-                      {sponsoringAddress === rosterKey ? 'Sponsoring…' : 'Sponsor'}
+                      {sponsoringAddress === rosterKey ? $t('governance.crew.sponsoring') : $t('governance.crew.sponsorBtn')}
                     </button>
                   </span>
                 {:else}
-                  <span class="roles-col-value">No</span>
+                  <span class="roles-col-value">{$t('governance.crew.sponsoredNo')}</span>
                 {/if}
               {/if}
             </div>
@@ -251,27 +260,27 @@
         {/each}
       </ul>
     {:else}
-      <p class="muted">No members loaded yet.</p>
+      <p class="muted">{$t('governance.crew.noMembers')}</p>
     {/if}
   {:else}
-    <p class="muted">No announcements channel for this squad.</p>
+    <p class="muted">{$t('governance.crew.noChannel')}</p>
   {/if}
 </section>
 
 {#if showManagePrivileges || pactoGovRevision}
   <div class="privileges-row">
-    <span class="meta-label">Privileges</span>
+    <span class="meta-label">{$t('governance.crew.privilegesLabel')}</span>
     {#if pactoGovRevision}
       <code class="rev">{pactoGovRevision}</code>
     {/if}
     {#if showManagePrivileges}
-      <button type="button" class="btn-text" on:click={onOpenSquadRolesModal}>Manage</button>
+      <button type="button" class="btn-text" on:click={onOpenSquadRolesModal}>{$t('governance.crew.manage')}</button>
     {/if}
   </div>
 {/if}
 
 {#if squad}
-  <section class="join-requests-wrap" aria-label="Join requests">
+  <section class="join-requests-wrap" aria-label={$t('governance.crew.joinRequestsAria')}>
     <SquadJoinRequestsPanel {squad} />
   </section>
 {/if}

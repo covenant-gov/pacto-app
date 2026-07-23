@@ -35,10 +35,14 @@
   import { formatEther, parseEther } from 'viem';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let parentId: string;
   export let sponsorRow: SquadInfraDto | null = null;
   export let onOpenDeploy: (() => void) | undefined = undefined;
+
+  const tFn = get(t);
 
   let summary: SquadSponsorSummaryDto | null = null;
   let loading = false;
@@ -102,7 +106,7 @@
         { force }
       );
     } catch (e) {
-      loadError = getInvokeErrorMessage(e, 'Could not load sponsor balance.');
+      loadError = getInvokeErrorMessage(e, tFn('governance.error.couldNotLoadSponsorBalance'));
       if (force) summary = null;
     } finally {
       loading = false;
@@ -234,22 +238,28 @@
     try {
       amountWei = parseEther(depositEth.trim()).toString();
       if (BigInt(amountWei) <= 0n) {
-        depositError = 'Amount must be greater than zero.';
+        depositError = tFn('governance.error.amountMustBeGreater');
         return;
       }
     } catch {
-      depositError = 'Enter a valid ETH amount (e.g. 0.01).';
+      depositError = tFn('governance.error.validEthAmount');
       return;
     }
     if (signerUnavailable) {
       depositError =
         signerWallet === 'default'
-          ? 'Set a default signer under Settings → Default wallet config.'
-          : 'No squad-assigned signer for this squad. Bind one from Settings or Inbox.';
+          ? tFn('governance.error.defaultSignerNotSet')
+          : tFn('governance.error.noSquadAssignedSigner');
       return;
     }
     if (depositExceedsBalance) {
-      depositError = `Deposit plus gas needs less than your ${selectedSymbol} balance (${selectedBalance.balanceDecimal}). Fund the selected wallet on ${network}.`;
+      depositError = tFn('governance.error.depositExceedsBalance', {
+        values: {
+          symbol: selectedSymbol,
+          balance: selectedBalance.balanceDecimal,
+          network,
+        },
+      });
       return;
     }
     const payFrom: SquadSponsorDeploySignerWallet = signersAreSame ? 'squad' : signerWallet;
@@ -262,15 +272,21 @@
         sponsorAddress: sponsorRow.canonicalRef,
         signerWallet: payFrom,
       });
-      showToast('Sponsor pool deposit confirmed.');
+      showToast(tFn('governance.toast.sponsorDepositConfirmed'));
       showDepositForm = false;
       await refreshSummary(true);
     } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Deposit failed.');
+      let raw = getInvokeErrorMessage(e, tFn('governance.error.depositFailed'));
       const parsed = parseWalletOpError(raw);
       if (parsed?.message) raw = parsed.message;
       if (/insufficient funds/i.test(raw)) {
-        depositError = `Selected wallet has insufficient ${selectedSymbol} for this deposit and gas. Fund ${shortAddress(selectedAddress)} on ${network}.`;
+        depositError = tFn('governance.error.insufficientFundsForDeposit', {
+          values: {
+            symbol: selectedSymbol,
+            address: shortAddress(selectedAddress),
+            network,
+          },
+        });
       } else {
         depositError = raw;
       }
@@ -282,43 +298,43 @@
 
 <section class="dashboard-section sponsor-treasury-section" aria-labelledby="sponsor-heading">
   <div class="treasury-section-head">
-    <h3 id="sponsor-heading" class="section-heading">Squad sponsor</h3>
+    <h3 id="sponsor-heading" class="section-heading">{$t('governance.title.squadSponsor')}</h3>
     {#if sponsorRow}
       <RefreshIconButton
         className="sponsor-refresh-btn"
         disabled={loading}
         spinning={loading}
-        ariaLabel={loading ? 'Refreshing sponsor balance' : 'Refresh sponsor balance'}
+        ariaLabel={loading ? $t('governance.aria.refreshingSponsorBalance') : $t('governance.aria.refreshSponsorBalance')}
         on:click={() => refreshSummary(true)}
       />
     {:else if onOpenDeploy}
-      <button type="button" class="btn-primary sponsor-deploy-btn" on:click={onOpenDeploy}>Deploy Sponsor</button>
+      <button type="button" class="btn-primary sponsor-deploy-btn" on:click={onOpenDeploy}>{tFn('governance.action.deploySponsor')}</button>
     {/if}
   </div>
 
   {#if !sponsorRow}
-    <p class="sponsor-empty-lead">No squad sponsor deployed yet. Gas sponsorship requires a sponsor clone first.</p>
+    <p class="sponsor-empty-lead">{$t('governance.empty.noSponsorDeployed')}</p>
   {:else if loading && !summary}
-    <p class="muted">Loading sponsor balance…</p>
+    <p class="muted">{$t('governance.status.loadingSponsorBalance')}</p>
   {:else if loadError}
     <p class="sponsor-error" role="alert">{loadError}</p>
-    <button type="button" class="btn-secondary" on:click={() => refreshSummary(true)}>Retry</button>
+    <button type="button" class="btn-secondary" on:click={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
-    <p class="sponsor-lead muted">Gas sponsorship pool for this squad on <strong>{summary.chain}</strong>.</p>
+    <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>
     <dl class="sponsor-dl">
-      <dt>Pool balance</dt>
+      <dt>{$t('governance.info.sponsorPoolBalance')}</dt>
       <dd>
-        <strong>{formatEther(BigInt(summary.poolBalanceWei))} ETH</strong>
+        <strong>{$t('governance.treasury.balanceEth', { values: { balance: formatEther(BigInt(summary.poolBalanceWei)) } })}</strong>
         {#if lowBalance}
-          <span class="sponsor-low-badge" role="status">Low balance — top up before gas runs out</span>
+          <span class="sponsor-low-badge" role="status">{$t('governance.info.sponsorLowBalance')}</span>
         {/if}
       </dd>
-      <dt>Sponsor clone</dt>
+      <dt>{$t('governance.info.sponsorClone')}</dt>
       <dd>
         <code class="sponsor-mono">{summary.sponsorAddress}</code>
         {#if explorerUrl}
           <button type="button" class="btn-link sponsor-explorer-link" on:click={() => openExternalUrl(explorerUrl)}>
-            View on explorer
+            {tFn('governance.action.viewOnExplorer')}
           </button>
         {/if}
       </dd>
@@ -328,24 +344,24 @@
       <div class="sponsor-deposit-form">
         {#if signersAreSame}
           <div class="signer-single" aria-live="polite">
-            <span class="sponsor-deposit-label">Pay deposit from</span>
+            <span class="sponsor-deposit-label">{$t('governance.info.payDepositFrom')}</span>
             <p class="signer-single-addr">
               <code>{shortAddress(squadCanonical)}</code>
-              <span class="muted note">Squad signer</span>
+              <span class="muted note">{$t('governance.info.squadSigner')}</span>
             </p>
             <p class="signer-balance muted">
               {#if addressesLoading || squadBalance.loading}
-                Balance: …
+                {tFn('governance.info.balanceLoading')}
               {:else if squadBalance.error}
-                Balance unavailable
+                {tFn('governance.info.balanceUnavailable')}
               {:else}
-                Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+                {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
               {/if}
             </p>
           </div>
         {:else}
           <fieldset class="signer-fieldset" disabled={addressesLoading}>
-            <legend class="sponsor-deposit-label">Pay deposit from</legend>
+            <legend class="sponsor-deposit-label">{$t('governance.info.payDepositFrom')}</legend>
             <div class="signer-options">
               <label class="signer-option" class:selected={signerWallet === 'default'}>
                 <input
@@ -356,18 +372,18 @@
                   disabled={!defaultSignerAddress}
                 />
                 <span class="signer-option-body">
-                  <span class="signer-option-title">Default signer</span>
-                  <span class="signer-option-sub">Same as DM wallet</span>
+                  <span class="signer-option-title">{$t('governance.info.defaultSigner')}</span>
+                  <span class="signer-option-sub">{$t('governance.info.sameAsDmWallet')}</span>
                   <code class="signer-addr">{shortAddress(defaultSignerAddress)}</code>
                   <span class="signer-balance">
                     {#if addressesLoading || defaultBalance.loading}
-                      Balance: …
+                      {tFn('governance.info.balanceLoading')}
                     {:else if defaultBalance.error}
-                      Balance unavailable
+                      {tFn('governance.info.balanceUnavailable')}
                     {:else if defaultSignerAddress}
-                      Balance: {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+                      {tFn('governance.info.balance')} {defaultBalance.balanceDecimal} {defaultBalance.symbol}
                     {:else}
-                      Not configured
+                      {tFn('governance.info.notConfigured')}
                     {/if}
                   </span>
                 </span>
@@ -382,18 +398,18 @@
                   disabled={!squadSignerAddress}
                 />
                 <span class="signer-option-body">
-                  <span class="signer-option-title">Squad-assigned signer</span>
-                  <span class="signer-option-sub">Bound to this squad roster</span>
+                  <span class="signer-option-title">{$t('governance.info.squadAssignedSigner')}</span>
+                  <span class="signer-option-sub">{$t('governance.info.boundToRoster')}</span>
                   <code class="signer-addr">{shortAddress(squadSignerAddress)}</code>
                   <span class="signer-balance">
                     {#if addressesLoading || squadBalance.loading}
-                      Balance: …
+                      {tFn('governance.info.balanceLoading')}
                     {:else if squadBalance.error}
-                      Balance unavailable
+                      {tFn('governance.info.balanceUnavailable')}
                     {:else if squadSignerAddress}
-                      Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+                      {tFn('governance.info.balance')} {squadBalance.balanceDecimal} {squadBalance.symbol}
                     {:else}
-                      Not assigned
+                      {tFn('governance.info.notAssigned')}
                     {/if}
                   </span>
                 </span>
@@ -402,7 +418,7 @@
           </fieldset>
         {/if}
 
-        <label class="sponsor-deposit-label" for="sponsor-deposit-eth">Deposit amount (ETH)</label>
+        <label class="sponsor-deposit-label" for="sponsor-deposit-eth">{$t('governance.field.depositAmount')}</label>
         <input
           id="sponsor-deposit-eth"
           type="text"
@@ -415,23 +431,22 @@
           <p class="input-error" role="alert">{depositError}</p>
         {:else if depositExceedsBalance}
           <p class="input-error" role="alert">
-            Deposit must stay below {selectedBalance.balanceDecimal}
-            {selectedSymbol} on {network} so this wallet can pay gas.
+            {$t('governance.info.depositBelowMax', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedSymbol, network } })}
           </p>
         {/if}
         <div class="sponsor-deposit-actions">
           <button type="button" class="btn-secondary" on:click={() => (showDepositForm = false)} disabled={depositing}>
-            Cancel
+            {tFn('governance.action.cancel')}
           </button>
           <button type="button" class="btn-primary" on:click={submitDeposit} disabled={!canConfirmDeposit}>
-            {depositing ? 'Sending…' : 'Confirm deposit'}
+            {depositing ? tFn('governance.info.sending') : tFn('governance.action.confirmDeposit')}
           </button>
         </div>
       </div>
     {:else}
       <div class="sponsor-pool-actions">
         <button type="button" class="btn-primary sponsor-deposit-btn" on:click={openDepositForm}>
-          Deposit
+          {tFn('governance.action.deposit')}
         </button>
         <button
           type="button"
@@ -441,7 +456,7 @@
             showWithdrawModal = true;
           }}
         >
-          Withdraw
+          {tFn('governance.action.withdraw')}
         </button>
       </div>
     {/if}
@@ -719,5 +734,11 @@
   .sponsor-deposit-btn,
   .sponsor-withdraw-btn {
     margin-top: 0;
+  }
+
+  .input-error {
+    color: var(--danger, #e53e3e);
+    font-size: 0.8125rem;
+    margin: 0 0 8px;
   }
 </style>

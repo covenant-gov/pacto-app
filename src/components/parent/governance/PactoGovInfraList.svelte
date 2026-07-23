@@ -10,6 +10,7 @@
     txHashFromPactoGovProviderPayload,
   } from '../../../lib/governance/pacto-gov-payload';
   import { hatsTreeDomain, prettyHatId } from '../../../lib/governance/pretty-hat-id';
+  import { t } from 'svelte-i18n';
 
   export let providerPayload: string | null | undefined = undefined;
   export let topHatId = '';
@@ -64,7 +65,7 @@
               target="_blank"
               rel="noopener noreferrer"
             >
-              Hats tree
+              {$t('governance.explorer.hatsTree')}
             </a>
           {/if}
         {/if}
@@ -76,7 +77,7 @@
   <p class="pacto-gov-infra-tx">
     <!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
     <a class="pacto-gov-infra-link" href={explorerTxUrl} target="_blank" rel="noopener noreferrer">
-      View deployment transaction
+      {$t('governance.explorer.viewDeploymentTransaction')}
     </a>
   </p>
 {/if}

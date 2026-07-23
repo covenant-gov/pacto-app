@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
   import { govWriteFundingFallbackHint } from '../../../lib/governance/gov-write-funding';
@@ -19,6 +21,8 @@
 
   const titleId = 'gov-bootstrap-crew-title';
   const descId = 'gov-bootstrap-crew-desc';
+
+  const tFn = get(t);
 
   let selected = new Set<string>();
   let acting = false;
@@ -70,7 +74,7 @@
       .map((m) => m.address.trim())
       .filter((addr) => selected.has(addr.toLowerCase()));
     if (candidates.length === 0) {
-      error = 'Select at least one member with a shared squad EVM address.';
+      error = tFn('governance.bootstrapCrew.error.noMember');
       return;
     }
     acting = true;
@@ -82,11 +86,11 @@
         quartermaster,
         candidates,
       });
-      showToast(`Bootstrap crew submitted for ${candidates.length} member${candidates.length === 1 ? '' : 's'}.`);
+      showToast(tFn('governance.bootstrapCrew.toast.submitted', { values: { count: candidates.length } }));
       onSubmitted();
       onClose();
     } catch (e) {
-      error = getInvokeErrorMessage(e, 'Bootstrap crew failed.');
+      error = getInvokeErrorMessage(e, tFn('governance.bootstrapCrew.toast.error'));
     } finally {
       acting = false;
     }
@@ -95,20 +99,19 @@
 
 {#if open}
   <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible={!acting} contentClass="bootstrap-crew-modal">
-    <h2 id={titleId} class="modal-title">Bootstrap initial crew</h2>
+    <h2 id={titleId} class="modal-title">{$t('governance.bootstrapCrew.title')}</h2>
     <p id={descId} class="modal-lead muted">
-      Mint crew hats immediately while the crew roster is still empty. After the first crew wearer exists, adds use the
-      Quartermaster delay. {gasLine}
+      {$t('governance.bootstrapCrew.description', { values: { gasLine } })}
     </p>
 
     {#if eligible.length === 0}
-      <p class="muted">No other squad members have a shared EVM yet (captain cannot receive a crew hat).</p>
+      <p class="muted">{$t('governance.bootstrapCrew.empty')}</p>
     {:else}
       <div class="select-row">
         <button type="button" class="btn-link" disabled={acting} on:click={toggleAll}>
-          {allSelected ? 'Clear selection' : 'Select all'}
+          {allSelected ? $t('governance.common.clearSelection') : $t('governance.common.selectAll')}
         </button>
-        <span class="muted tiny">{selected.size} of {eligible.length} selected</span>
+        <span class="muted tiny">{$t('governance.bootstrapCrew.selectCount', { values: { selected: selected.size, total: eligible.length } })}</span>
       </div>
       <ul class="member-list" role="list">
         {#each eligible as member (member.address)}
@@ -137,14 +140,14 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>Cancel</button>
+      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
         disabled={acting || !captainGate.enabled || selected.size === 0}
         on:click={submit}
       >
-        {acting ? 'Submitting…' : 'Bootstrap crew'}
+        {acting ? $t('governance.common.submitting') : $t('governance.bootstrapCrew.action')}
       </button>
     </div>
   </Modal>

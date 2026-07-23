@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -17,6 +19,8 @@
 
   const titleId = 'deploy-pacto-gov-title';
   const descId = 'deploy-pacto-gov-desc';
+
+  const tFn = get(t);
 
   let captainAddress = '';
   let resolvingDeployer = true;
@@ -45,15 +49,15 @@
   function executeDeploy() {
     deployError = '';
     if (!squadNetwork) {
-      deployError = 'Set the squad network in Settings before deploying.';
+      deployError = tFn('governance.deployPactoGov.error.noNetwork');
       return;
     }
     if (resolvingDeployer) {
-      deployError = 'Loading your squad EVM address…';
+      deployError = tFn('governance.deployPactoGov.error.loadingEvm');
       return;
     }
     if (!captainAddress) {
-      deployError = 'Bind a squad-assigned EVM before deploying — you become captain.';
+      deployError = tFn('governance.deployPactoGov.error.noBoundEvm');
       return;
     }
     startPactoGovDeploy({
@@ -75,40 +79,39 @@
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-pacto-gov-panel">
-  <h2 id={titleId}>Deploy Pacto Gov</h2>
+  <h2 id={titleId}>{$t('governance.deployPactoGov.title')}</h2>
   <p id={descId} class="pacto-gov-deploy-desc">
-    Deploy the Nave Pirata factory bundle on the squad network. You become captain on your squad-assigned EVM;
-    gas is paid from that key.
+    {$t('governance.deployPactoGov.description')}
   </p>
 
   <div class="pacto-gov-deploy-field">
-    <span class="pacto-gov-deploy-label">Squad network</span>
+    <span class="pacto-gov-deploy-label">{$t('governance.deployPactoGov.squadNetworkLabel')}</span>
     {#if squadNetwork}
       <p class="pacto-gov-deploy-pinned">
         {getWalletNetworkDisplayName(squadNetwork)}
-        <span class="pacto-gov-deploy-pinned-note">· change in Settings</span>
+        <span class="pacto-gov-deploy-pinned-note">{$t('governance.common.changeInSettings')}</span>
       </p>
     {:else}
       <p class="pacto-gov-deploy-pinned pacto-gov-deploy-pinned--warn">
-        Not set — choose a network in Settings before deploying.
+        {$t('governance.deployPactoGov.networkNotSet')}
       </p>
     {/if}
   </div>
 
   <div class="pacto-gov-deploy-field">
-    <span class="pacto-gov-deploy-label">Captain</span>
+    <span class="pacto-gov-deploy-label">{$t('governance.deployPactoGov.captainLabel')}</span>
     {#if resolvingDeployer}
-      <p class="pacto-gov-deploy-hint muted">Loading your squad-assigned EVM…</p>
+      <p class="pacto-gov-deploy-hint muted">{$t('governance.common.loadingSquadAssignedEvm')}</p>
     {:else if captainAddress}
       <p class="pacto-gov-deploy-pinned">
         <code>{shortAddress(captainAddress)}</code>
-        <span class="pacto-gov-deploy-pinned-note">· your squad-assigned EVM</span>
+        <span class="pacto-gov-deploy-pinned-note">{$t('governance.common.yourSquadAssignedEvm')}</span>
       </p>
     {:else}
       <p class="pacto-gov-deploy-hint muted">
-        Bind a squad-assigned EVM for this squad before deploying.
+        {$t('governance.deployPactoGov.captainNoEvmHint')}
         {#if captainMemberOptions.length === 0}
-          Members share addresses in My Dashboard or via the roster prompt in #my-dashboard Alerts.
+          {$t('governance.deployPactoGov.captainDashboardHint')}
         {/if}
       </p>
     {/if}
@@ -119,14 +122,14 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
       class="btn-primary"
       disabled={!squadNetwork || resolvingDeployer || !captainAddress}
       on:click={executeDeploy}
     >
-      Execute
+      {$t('governance.common.execute')}
     </button>
   </div>
 </Modal>

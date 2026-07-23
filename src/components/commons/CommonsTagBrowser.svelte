@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import {
     COMMONS_TAG_TREE,
     commonsCategoryLiveCount,
@@ -38,7 +39,7 @@
             <span class="commons-browser-desc">{category.description}</span>
           </span>
           {#if count > 0}
-            <span class="commons-browser-badge">{count} live</span>
+            <span class="commons-browser-badge">{$t('commons.tagBrowser.liveBadge', { values: { count } })}</span>
           {/if}
           <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>

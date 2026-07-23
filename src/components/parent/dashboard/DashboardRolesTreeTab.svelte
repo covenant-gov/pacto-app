@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import HatsTreeDiagram from '../governance/HatsTreeDiagram.svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
   import { openExternalUrl } from '../../../lib/utils/open-external';
@@ -35,35 +36,39 @@
 
 {#if squadInfraRows !== undefined && !structureSummary}
   <div class="sponsor-empty-banner" role="status">
-    <p class="sponsor-empty-banner-text">Deploy Pacto Gov + squad sponsor from Launchpad for a hats tree.</p>
-    <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>Open Deploy</button>
+    <p class="sponsor-empty-banner-text">{$t('governance.roles.empty')}</p>
+    <button type="button" class="btn-primary" on:click={onOpenLaunchpad}>{$t('governance.roles.openDeploy')}</button>
   </div>
 {/if}
 
 <section class="roles-tree-panel" aria-labelledby="roles-tree-heading">
   <div class="roles-tree-section-head">
-    <h3 id="roles-tree-heading" class="section-heading">On-chain tree</h3>
+    <h3 id="roles-tree-heading" class="section-heading">{$t('governance.roles.title')}</h3>
     {#if structureSummary}
       <RefreshIconButton
         className="roles-tree-refresh-btn"
         disabled={rolesTreeLoading || rolesTreeRefreshing}
         spinning={rolesTreeRefreshing}
-        ariaLabel={rolesTreeRefreshing ? 'Refreshing roles tree' : 'Refresh roles tree'}
+        ariaLabel={rolesTreeRefreshing ? $t('governance.roles.refreshing') : $t('governance.roles.refresh')}
         on:click={onRefreshRolesTree}
       />
     {/if}
   </div>
   {#if structureSummary === undefined}
-    <p class="dashboard-placeholder-text muted">Loading roles tree context…</p>
+    <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingContext')}</p>
   {:else if structureSummary === null}
     <p class="dashboard-placeholder-text dashboard-placeholder-lead">
-      Hat tree and role structure show here once this squad has a <strong>Pacto Gov</strong> deployment
-      (Deploy). Safe-only setups do not publish a Hats tree id yet.
+      {$t('governance.roles.leadPrefix')}
+      <strong>Pacto Gov</strong>
+      {$t('governance.roles.leadSuffix')}
     </p>
   {:else}
     <p class="structure-summary-lead dashboard-placeholder-text">
-      Top hat for this squad on <strong>{structureSummary.chainDisplayName}</strong> (chain id
-      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>). Hat tree ID
+      {$t('governance.roles.topHatOn')}
+      <strong>{structureSummary.chainDisplayName}</strong>
+      {$t('governance.roles.chainIdStart')}
+      <code class="structure-mono">{structureSummary.chainIdNumeric}</code>
+      {$t('governance.roles.hatTreeIdStart')}
       <code class="structure-mono" title={structureSummary.treeIdRaw}
         >{structureSummary.treeDomain ?? structureSummary.treeIdRaw}</code
       >.
@@ -72,11 +77,11 @@
       {@const hatsUrl = structureSummary.hatsExplorerUrl}
       <p class="structure-actions">
         <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(hatsUrl)}>
-          Open in Hats tree explorer
+          {$t('governance.roles.openExplorer')}
         </button>
       </p>
     {:else}
-      <p class="dashboard-placeholder-text muted">Explorer link could not be built for this hat id format.</p>
+      <p class="dashboard-placeholder-text muted">{$t('governance.roles.explorerError')}</p>
     {/if}
     {#if hatsTreeError && hatsTree}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
@@ -85,16 +90,15 @@
       <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
     {/if}
     {#if hatsTreeLoading && !hatsTree}
-      <p class="dashboard-placeholder-text muted">Loading Hats tree from chain…</p>
+      <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingTree')}</p>
     {:else if rolesTreeAnnotationsLoading && !hatsTree}
-      <p class="dashboard-placeholder-text muted">Loading role labels and wearers…</p>
+      <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingLabels')}</p>
     {:else if !hatsTree && hatsTreeError}
       <p class="chain-read-error" role="alert">{hatsTreeError}</p>
     {:else if hatsTree}
       {#if isHatsTreeLikelyTruncated(hatsTree)}
         <p class="hats-tree-truncation-note muted" role="status">
-          Showing up to {HATS_TREE_DEFAULT_MAX_NODES} hats (depth {HATS_TREE_DEFAULT_MAX_DEPTH}). Open the Hats
-          tree explorer for the full tree.
+          {$t('governance.roles.truncation', { values: { maxNodes: HATS_TREE_DEFAULT_MAX_NODES, maxDepth: HATS_TREE_DEFAULT_MAX_DEPTH } })}
         </p>
       {/if}
       <HatsTreeDiagram

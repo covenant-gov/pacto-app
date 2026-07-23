@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { onDestroy } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -36,6 +38,8 @@
 
   const titleId = 'deploy-sponsor-ext-title';
   const descId = 'deploy-sponsor-ext-desc';
+
+  const tFn = get(t);
 
   let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let initialDepositEth = '';
@@ -172,25 +176,25 @@
     if (deploying) return;
     deployError = '';
     if (!deployNetwork) {
-      deployError = 'Select a network for this squad.';
+      deployError = tFn('governance.deploySquadSponsorExt.error.noNetwork');
       return;
     }
     if (ownerUnavailable) {
       deployError =
-        'No squad-assigned EVM for this squad. Bind one from Settings or Inbox — that address becomes Ext allowlist owner.';
+        tFn('governance.deploySquadSponsorExt.error.noOwnerEvm');
       return;
     }
     if (payerUnavailable) {
-      deployError = 'Selected payer wallet is unavailable.';
+      deployError = tFn('governance.deploySquadSponsorExt.error.payerUnavailable');
       return;
     }
     const initialDepositWei = depositWei?.toString();
     if (!initialDepositWei) {
-      deployError = 'Enter an initial deposit greater than zero (e.g. 0.01).';
+      deployError = tFn('governance.deploySquadSponsorExt.error.depositGreaterThanZero');
       return;
     }
     if (depositExceedsBalance) {
-      deployError = `Deposit must stay below your ${selectedBalance.symbol} balance (${selectedBalance.balanceDecimal}) so this wallet can pay gas.`;
+      deployError = tFn('governance.deploySquadSponsorExt.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol, network: deployNetwork } });
       return;
     }
     deploying = true;
@@ -201,8 +205,8 @@
       signerWallet: payFromEffective,
     };
     runOnChainInBackground({
-      startedToast: 'Squad sponsor Ext deploy submitted. Confirmation continues in the background.',
-      subject: 'Squad sponsor Ext deploy',
+      startedToast: tFn('governance.deploySquadSponsorExt.toast.submitted'),
+      subject: tFn('governance.deploySquadSponsorExt.subject'),
       job: () => deploySquadSponsorForParent(jobParams),
       onSuccess: async (result) => {
         await onComplete({
@@ -223,10 +227,9 @@
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-sponsor-modal-panel">
-  <h2 id={titleId}>Deploy squad sponsor (Ext)</h2>
+  <h2 id={titleId}>{$t('governance.deploySquadSponsorExt.title')}</h2>
   <p id={descId} class="sponsor-deploy-desc">
-    You deploy and fund; your squad-assigned EVM owns the allowlist. Gas and the initial deposit may come from
-    Default (DM) or the roster key — ownership stays on the roster address.
+    {$t('governance.deploySquadSponsorExt.description')}
   </p>
 
   <div class="sponsor-deploy-field">
@@ -240,49 +243,49 @@
   </div>
 
   <div class="sponsor-owner-block" aria-live="polite">
-    <span class="sponsor-deploy-label">Allowlist owner (addressOwner)</span>
+    <span class="sponsor-deploy-label">{$t('governance.deploySquadSponsorExt.ownerLabel')}</span>
     <p class="sponsor-signer-single-addr">
       <code>{shortAddress(squadCanonical)}</code>
-      <span class="sponsor-signer-single-sub">Squad-assigned roster EVM</span>
+      <span class="sponsor-signer-single-sub">{$t('governance.deploySquadSponsorExt.ownerSub')}</span>
     </p>
   </div>
 
   {#if signersAreSame}
     <div class="sponsor-signer-single" aria-live="polite">
-      <span class="sponsor-deploy-label">Pay gas and deposit from</span>
+      <span class="sponsor-deploy-label">{$t('governance.deploySquadSponsorExt.labels.payFrom')}</span>
       <p class="sponsor-signer-single-addr">
         <code>{shortAddress(squadCanonical)}</code>
-        <span class="sponsor-signer-single-sub">Squad signer (same as Default)</span>
+        <span class="sponsor-signer-single-sub">{$t('governance.deploySquadSponsorExt.signer.singleSub')}</span>
       </p>
       <p class="sponsor-signer-balance">
         {#if addressesLoading || squadBalance.loading}
-          Balance: …
+          {$t('governance.common.balanceLoading')}
         {:else if squadBalance.error}
-          Balance unavailable
+          {$t('governance.common.balanceUnavailable')}
         {:else if squadCanonical}
-          Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+          {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
         {:else}
-          Not assigned — bind a squad EVM address first
+          {$t('governance.deploySquadSponsorExt.notAssignedBindFirst')}
         {/if}
       </p>
     </div>
   {:else}
     <fieldset class="sponsor-payer-fieldset" disabled={addressesLoading || deploying}>
-      <legend class="sponsor-deploy-label">Pay gas and deposit from</legend>
+      <legend class="sponsor-deploy-label">{$t('governance.deploySquadSponsorExt.labels.payFrom')}</legend>
       <label class="sponsor-payer-option">
         <input type="radio" bind:group={signerWallet} value="default" />
         <span>
-          Default signer
+          {$t('governance.deploySquadSponsorExt.signer.default')}
           <code class="sponsor-payer-code">{shortAddress(defaultCanonical)}</code>
           <span class="sponsor-signer-balance">
             {#if addressesLoading || defaultBalance.loading}
-              Balance: …
+              {$t('governance.common.balanceLoading')}
             {:else if defaultBalance.error}
-              Balance unavailable
+              {$t('governance.common.balanceUnavailable')}
             {:else if defaultCanonical}
-              Balance: {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+              {$t('governance.common.balance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
             {:else}
-              Not set
+              {$t('governance.common.notSet')}
             {/if}
           </span>
         </span>
@@ -290,17 +293,17 @@
       <label class="sponsor-payer-option">
         <input type="radio" bind:group={signerWallet} value="squad" />
         <span>
-          Squad-assigned
+          {$t('governance.deploySquadSponsorExt.signer.squad')}
           <code class="sponsor-payer-code">{shortAddress(squadCanonical)}</code>
           <span class="sponsor-signer-balance">
             {#if addressesLoading || squadBalance.loading}
-              Balance: …
+              {$t('governance.common.balanceLoading')}
             {:else if squadBalance.error}
-              Balance unavailable
+              {$t('governance.common.balanceUnavailable')}
             {:else if squadCanonical}
-              Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+              {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
             {:else}
-              Not assigned
+              {$t('governance.common.notAssigned')}
             {/if}
           </span>
         </span>
@@ -309,13 +312,13 @@
   {/if}
 
   <div class="sponsor-deploy-field">
-    <label class="sponsor-deploy-label" for="sponsor-ext-initial-deposit">Initial deposit (ETH)</label>
+    <label class="sponsor-deploy-label" for="sponsor-ext-initial-deposit">{$t('governance.deploySquadSponsorExt.deposit.label')}</label>
     <input
       id="sponsor-ext-initial-deposit"
       type="text"
       class="sponsor-deploy-input"
       class:input-invalid={depositInvalidFormat || depositExceedsBalance}
-      placeholder="e.g. 0.01"
+      placeholder={$t('governance.deploySquadSponsorExt.deposit.placeholder')}
       value={initialDepositEth}
       on:input={onDepositInput}
       disabled={ownerUnavailable || payerUnavailable || deploying}
@@ -324,16 +327,14 @@
       aria-invalid={depositInvalidFormat || depositExceedsBalance ? 'true' : undefined}
     />
     {#if depositInvalidFormat}
-      <p class="input-error" role="alert">Enter a valid ETH amount greater than zero (e.g. 0.01).</p>
+      <p class="input-error" role="alert">{$t('governance.deploySquadSponsorExt.deposit.error.invalid')}</p>
     {:else if depositExceedsBalance}
       <p class="input-error" role="alert">
-        Deposit must stay below {selectedBalance.balanceDecimal}
-        {selectedBalance.symbol} on {deployNetwork} so this wallet can pay gas.
+        {$t('governance.deploySquadSponsorExt.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol, network: deployNetwork } })}
       </p>
     {:else if depositWei !== null}
       <p class="sponsor-deploy-hint">
-        Depositing from {shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical)};
-        owner remains {shortAddress(squadCanonical)}.
+        {$t('governance.deploySquadSponsorExt.deposit.hint', { values: { payer: shortAddress(payFromEffective === 'default' ? defaultCanonical : squadCanonical), owner: shortAddress(squadCanonical) } })}
       </p>
     {/if}
   </div>
@@ -343,9 +344,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
     <button type="button" class="btn-primary" on:click={confirmDeploy} disabled={!canDeploy}>
-      {deploying ? 'Deploying…' : 'Deploy on-chain'}
+      {deploying ? $t('governance.common.deploying') : $t('governance.common.deployOnChain')}
     </button>
   </div>
 </Modal>

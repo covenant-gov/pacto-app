@@ -31,6 +31,8 @@
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let payload: PactoGovProviderPayloadV1;
   export let network: string;
@@ -47,6 +49,8 @@
 
   type GovSubMode = 'proposals' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
+
+  const tFn = get(t);
 
   let govSubMode: GovSubMode = 'proposals';
   let mutinyCaptain = '';
@@ -239,10 +243,10 @@
         mutinyModule,
         mutinyId: mutinyStatus.activeMutinyId,
       });
-      showToast('Execute mutiny submitted.');
+      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeMutiny') } }));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Execute mutiny failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.executeMutiny') } })));
     }
   }
 
@@ -260,21 +264,21 @@
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [
-    { id: 'proposals', label: 'Proposals' },
-    { id: 'crew', label: 'Crew' },
-    { id: 'captain', label: 'Captain' },
+    { id: 'proposals', label: tFn('governance.shell.tab.proposals') },
+    { id: 'crew', label: tFn('governance.shell.tab.crew') },
+    { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
 </script>
 
 <div class="gov-shell">
   <div class="role-chip" role="status">
-    You · <strong>{privilege.roleLabel}</strong>
+    {$t('governance.shell.you')} · <strong>{privilege.roleLabel}</strong>
     {#if privilege.myAddress}
       <code class="role-addr">{shortAddr(privilege.myAddress)}</code>
     {/if}
   </div>
 
-  <div class="submode-tabs" role="tablist" aria-label="Governance sub-modes">
+  <div class="submode-tabs" role="tablist" aria-label={$t('governance.shell.subModesAria')}>
     {#each subModes as mode (mode.id)}
       <button
         type="button"
@@ -289,7 +293,7 @@
     {/each}
   </div>
 
-  <section class="submode-panel" role="tabpanel" aria-label={govSubMode}>
+  <section class="submode-panel" role="tabpanel" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
     {#if govSubMode === 'proposals'}
       <GovProposalsBoard
         {network}

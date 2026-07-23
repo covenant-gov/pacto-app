@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { onDestroy, onMount } from 'svelte';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
@@ -13,7 +15,6 @@
     reconcileSignerWallet,
     shortAddress,
     shouldPreferFundedDefault,
-    withTimeout,
     type SignerBalance,
   } from '../../../lib/wallet/signer-balance';
   import type { PactoGovCaptainOption } from '../../../lib/governance/start-pacto-gov-deploy';
@@ -46,6 +47,8 @@
   const titleId = 'deploy-gov-sponsor-title';
   const descId = 'deploy-gov-sponsor-desc';
 
+  const tFn = get(t);
+
   let captainAddress = '';
   let resolvingAddresses = true;
   let deployError = '';
@@ -74,14 +77,25 @@
     try {
       const rosterArgs = listSquadMemberEvmInvokeArgs(parentId.trim(), announcementsGroupId);
       const rosterLookupId = rosterArgs.parentId || parentId.trim();
-      const [defaultAddr, squadAddr] = await withTimeout(
+      const [defaultAddr, squadAddr] = await Promise.race([
         Promise.all([
           getActiveSquadEvmSignerAddress(),
           resolveSquadRosterEvmAddress(rosterLookupId),
         ]),
-        SIGNER_LOOKUP_TIMEOUT_MS,
-        'Signer lookup',
-      );
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  tFn('governance.deployGovAndSponsor.error.signerLookupTimeout', {
+                    values: { seconds: SIGNER_LOOKUP_TIMEOUT_MS / 1000 },
+                  }),
+                ),
+              ),
+            SIGNER_LOOKUP_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       if (seq !== refreshSeq) return;
       defaultSignerAddress = defaultAddr?.trim() || null;
       squadSignerAddress = squadAddr?.trim() || null;
@@ -90,7 +104,7 @@
       signerWallet = reconcileSignerWallet(signerWallet, defaultSignerAddress, squadSignerAddress);
     } catch (e) {
       if (seq === refreshSeq) {
-        deployError = e instanceof Error ? e.message : 'Could not load signer addresses.';
+        deployError = e instanceof Error ? e.message : tFn('governance.deployGovAndSponsor.error.loadSigners');
         defaultSignerAddress = null;
         squadSignerAddress = null;
         captainAddress = '';
@@ -217,36 +231,36 @@
     deployError = '';
     progressStep = '';
     if (!squadNetwork) {
-      deployError = 'Set the squad network in Settings before deploying.';
+      deployError = tFn('governance.deployGovAndSponsor.error.noNetwork');
       return;
     }
     if (resolvingAddresses) {
-      deployError = 'Loading signer addresses…';
+      deployError = tFn('governance.deployGovAndSponsor.error.loadingSigners');
       return;
     }
     if (!captainAddress || !squadCanonical) {
-      deployError = 'Bind a squad-assigned EVM before deploying — you become captain.';
+      deployError = tFn('governance.deployGovAndSponsor.error.noBoundEvm');
       return;
     }
 
     let transferWei: bigint | null = null;
     if (needsFundTransfer) {
       if (!defaultCanonical) {
-        deployError = 'Default signer is not configured.';
+        deployError = tFn('governance.deployGovAndSponsor.error.noDefaultSigner');
         return;
       }
       try {
         transferWei = parseEther(transferTrimmed.replace(/,/g, '') || '0');
         if (transferWei <= 0n) {
-          deployError = 'Enter how much ETH to transfer to your squad signer.';
+          deployError = tFn('governance.deployGovAndSponsor.transfer.error.amountRequired');
           return;
         }
       } catch {
-        deployError = 'Invalid transfer amount.';
+        deployError = tFn('governance.deployGovAndSponsor.transfer.error.invalidAmount');
         return;
       }
       if (transferExceedsDefault) {
-        deployError = 'Transfer must leave room for gas on the Default signer.';
+        deployError = tFn('governance.deployGovAndSponsor.transfer.error.gasRoom');
         return;
       }
     }
@@ -255,22 +269,22 @@
     try {
       const wei = parseEther(depositTrimmed.replace(/,/g, '') || '0');
       if (wei <= 0n) {
-        deployError = 'Enter an initial sponsor deposit greater than zero.';
+        deployError = tFn('governance.deployGovAndSponsor.deposit.error.greaterThanZero');
         return;
       }
       if (transferWei != null && wei >= transferWei) {
-        deployError = 'Sponsor deposit must be less than the amount transferred to the squad signer.';
+        deployError = tFn('governance.deployGovAndSponsor.deposit.error.mustBeLessThanTransfer');
         return;
       }
       depositWei = wei.toString();
     } catch {
-      deployError = 'Invalid deposit amount.';
+      deployError = tFn('governance.deployGovAndSponsor.deposit.error.invalid');
       return;
     }
     if (depositExceedsBalance) {
       deployError = needsFundTransfer
-        ? 'Sponsor deposit must be less than the transfer amount (leave gas on the squad key).'
-        : 'Deposit must leave room for gas on the selected payer.';
+        ? tFn('governance.deployGovAndSponsor.deposit.error.lessThanTransferGas')
+        : tFn('governance.deployGovAndSponsor.deposit.error.gasRoom');
       return;
     }
 
@@ -320,7 +334,7 @@
       if (!send.ok) {
         deploying = false;
         progressStep = '';
-        deployError = getInvokeErrorMessage(send.message, 'Could not transfer ETH to the squad signer.');
+        deployError = getInvokeErrorMessage(send.message, tFn('governance.deployGovAndSponsor.error.transferFailed'));
         return;
       }
     }
@@ -377,51 +391,48 @@
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-gov-sponsor-panel">
   <h2 id={titleId}>
-    {sponsorOnly ? 'Deploy squad sponsor' : 'Deploy Pacto Gov + squad sponsor'}
+    {$t(sponsorOnly ? 'governance.deployGovAndSponsor.title.sponsorOnly' : 'governance.deployGovAndSponsor.title.full')}
   </h2>
   <p id={descId} class="deploy-desc">
     {#if sponsorOnly}
-      Governance is live. Deploys a hats-linked sponsor for this squad’s top hat. Anyone may deposit;
-      sponsorship follows captain and crew hats. Choose squad signer to pay directly, or Default to fund
-      that key first — deploy always signs as captain.
+      {$t('governance.deployGovAndSponsor.description.sponsorOnly')}
     {:else}
-      Deploys Nave Pirata (Hats + Safe), then a hats-linked sponsor. You become captain on your
-      squad-assigned EVM. Default can fund that key; gas, deposit, and hats all run from the squad signer.
+      {$t('governance.deployGovAndSponsor.description.full')}
     {/if}
   </p>
 
   <div class="field">
-    <span class="label">Squad network</span>
+    <span class="label">{$t('governance.deployGovAndSponsor.labels.squadNetwork')}</span>
     {#if squadNetwork}
       <p class="pinned">
         {getWalletNetworkDisplayName(squadNetwork)}
-        <span class="muted note">· change in Settings</span>
+        <span class="muted note">{$t('governance.common.changeInSettings')}</span>
       </p>
     {:else}
-      <p class="pinned warn">Not set — choose a network in Settings before deploying.</p>
+      <p class="pinned warn">{$t('governance.deployGovAndSponsor.networkNotSet')}</p>
     {/if}
   </div>
 
   {#if signersAreSame}
     <div class="signer-single" aria-live="polite">
-      <span class="label">Pay gas and deposit from</span>
+      <span class="label">{$t('governance.deployGovAndSponsor.labels.payFrom')}</span>
       <p class="signer-single-addr">
         <code>{shortAddress(squadCanonical)}</code>
-        <span class="muted note">Squad signer</span>
+        <span class="muted note">{$t('governance.deployGovAndSponsor.signer.singleNote')}</span>
       </p>
       <p class="signer-balance muted">
         {#if resolvingAddresses || squadBalance.loading}
-          Balance: …
+          {$t('governance.common.balanceLoading')}
         {:else if squadBalance.error}
-          Balance unavailable
+          {$t('governance.common.balanceUnavailable')}
         {:else}
-          Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+          {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
         {/if}
       </p>
     </div>
   {:else}
     <fieldset class="signer-fieldset" disabled={resolvingAddresses}>
-      <legend class="label">Pay gas and deposit from</legend>
+      <legend class="label">{$t('governance.deployGovAndSponsor.labels.payFrom')}</legend>
       <div class="signer-options">
         <label class="signer-option" class:selected={signerWallet === 'default'}>
           <input
@@ -432,18 +443,18 @@
             disabled={!defaultSignerAddress}
           />
           <span class="signer-option-body">
-            <span class="signer-option-title">Default signer</span>
-            <span class="signer-option-sub">Fund the squad signer, then deploy as captain</span>
+            <span class="signer-option-title">{$t('governance.deployGovAndSponsor.signer.default.title')}</span>
+            <span class="signer-option-sub">{$t('governance.deployGovAndSponsor.signer.default.sub')}</span>
             <code class="signer-addr">{shortAddress(defaultSignerAddress)}</code>
             <span class="signer-balance">
               {#if resolvingAddresses || defaultBalance.loading}
-                Balance: …
+                {$t('governance.common.balanceLoading')}
               {:else if defaultBalance.error}
-                Balance unavailable
+                {$t('governance.common.balanceUnavailable')}
               {:else if defaultSignerAddress}
-                Balance: {defaultBalance.balanceDecimal} {defaultBalance.symbol}
+                {$t('governance.common.balance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
               {:else}
-                Not configured
+                {$t('governance.common.notConfigured')}
               {/if}
             </span>
           </span>
@@ -458,18 +469,18 @@
             disabled={!squadSignerAddress}
           />
           <span class="signer-option-body">
-            <span class="signer-option-title">Squad-assigned signer</span>
-            <span class="signer-option-sub">Bound to this squad roster — pays gas and deposit</span>
+            <span class="signer-option-title">{$t('governance.deployGovAndSponsor.signer.squad.title')}</span>
+            <span class="signer-option-sub">{$t('governance.deployGovAndSponsor.signer.squad.sub')}</span>
             <code class="signer-addr">{shortAddress(squadSignerAddress)}</code>
             <span class="signer-balance">
               {#if resolvingAddresses || squadBalance.loading}
-                Balance: …
+                {$t('governance.common.balanceLoading')}
               {:else if squadBalance.error}
-                Balance unavailable
+                {$t('governance.common.balanceUnavailable')}
               {:else if squadSignerAddress}
-                Balance: {squadBalance.balanceDecimal} {squadBalance.symbol}
+                {$t('governance.common.balance', { values: { balance: squadBalance.balanceDecimal, symbol: squadBalance.symbol } })}
               {:else}
-                Not assigned
+                {$t('governance.common.notAssigned')}
               {/if}
             </span>
           </span>
@@ -478,25 +489,24 @@
 
       {#if needsFundTransfer}
         <div class="fund-transfer" aria-live="polite">
-          <label class="label" for="gov-sponsor-fund-transfer">How much to transfer?</label>
+          <label class="label" for="gov-sponsor-fund-transfer">{$t('governance.deployGovAndSponsor.transfer.label')}</label>
           <input
             id="gov-sponsor-fund-transfer"
             class="input"
             class:input-invalid={transferExceedsDefault}
             type="text"
             inputmode="decimal"
-            placeholder="0.05"
+            placeholder={$t('governance.deployGovAndSponsor.transfer.placeholder')}
             value={fundTransferEth}
             on:input={onTransferInput}
             disabled={deploying}
           />
           <p class="hint muted">
-            Sends ETH from Default to your squad signer before deploy. Leave room for gas on Default.
+            {$t('governance.deployGovAndSponsor.transfer.hint')}
           </p>
           {#if transferExceedsDefault}
             <p class="input-error" role="alert">
-              Transfer must stay below {defaultBalance.balanceDecimal}
-              {defaultBalance.symbol} so Default can pay gas.
+              {$t('governance.deployGovAndSponsor.transfer.error.exceedsBalance', { values: { balance: defaultBalance.balanceDecimal, symbol: defaultBalance.symbol } })}
             </p>
           {/if}
         </div>
@@ -505,35 +515,35 @@
   {/if}
 
   <div class="field">
-    <span class="label">Captain</span>
+    <span class="label">{$t('governance.deployGovAndSponsor.captain.label')}</span>
     {#if resolvingAddresses}
-      <p class="hint muted">Loading your squad-assigned EVM…</p>
+      <p class="hint muted">{$t('governance.common.loadingSquadAssignedEvm')}</p>
     {:else if squadCanonical}
       <p class="pinned">
         <code>{shortAddress(squadCanonical)}</code>
-        <span class="muted note">· your squad-assigned EVM</span>
+        <span class="muted note">{$t('governance.common.yourSquadAssignedEvm')}</span>
       </p>
       <p class="hint muted">
         {#if sponsorOnly}
-          Hats sponsor and crew bootstrap require the captain hat on this address.
+          {$t('governance.deployGovAndSponsor.captain.hint.sponsorOnly')}
         {:else}
-          Captain hat is minted here. Deploy always signs from this key.
+          {$t('governance.deployGovAndSponsor.captain.hint.full')}
         {/if}
       </p>
     {:else}
-      <p class="hint muted">Bind a squad-assigned EVM for this squad before deploying.</p>
+      <p class="hint muted">{$t('governance.deployGovAndSponsor.captain.noEvm')}</p>
     {/if}
   </div>
 
   <div class="field">
-    <label class="label" for="gov-sponsor-deposit">Initial sponsor deposit (ETH)</label>
+    <label class="label" for="gov-sponsor-deposit">{$t('governance.deployGovAndSponsor.deposit.label')}</label>
     <input
       id="gov-sponsor-deposit"
       class="input"
       class:input-invalid={depositExceedsBalance}
       type="text"
       inputmode="decimal"
-      placeholder="0.01"
+      placeholder={$t('governance.deployGovAndSponsor.deposit.placeholder')}
       value={initialDepositEth}
       on:input={onDepositInput}
       disabled={deploying}
@@ -541,10 +551,9 @@
     {#if depositExceedsBalance}
       <p class="input-error" role="alert">
         {#if needsFundTransfer}
-          Deposit must be less than the transfer amount so the squad signer can pay gas.
+          {$t('governance.deployGovAndSponsor.deposit.error.exceedsTransfer')}
         {:else}
-          Deposit must stay below {selectedBalance.balanceDecimal}
-          {selectedBalance.symbol} so this wallet can pay gas.
+          {$t('governance.deployGovAndSponsor.deposit.error.exceedsBalance', { values: { balance: selectedBalance.balanceDecimal, symbol: selectedBalance.symbol } })}
         {/if}
       </p>
     {/if}
@@ -553,26 +562,25 @@
   <div class="field bootstrap-field">
     <label class="bootstrap-label" class:bootstrap-disabled={!bootstrapAllowed}>
       <input type="checkbox" bind:checked={bootstrapCrew} disabled={!bootstrapAllowed} />
-      Bootstrap crew hats now
+      {$t('governance.deployGovAndSponsor.bootstrap.label')}
     </label>
     {#if !bootstrapAllowed}
       <p class="hint muted">
-        Requires your squad-assigned EVM as captain. Mint later from Governance → Captain if needed.
+        {$t('governance.deployGovAndSponsor.bootstrap.hint.disabled')}
       </p>
     {:else}
       <p class="hint muted">
-        Optional. Mints crew hats for other squad-assigned EVMs. Signed by your captain key (self-funded
-        when it has ETH; otherwise sponsored from the pool if eligible).
+        {$t('governance.deployGovAndSponsor.bootstrap.hint.enabled')}
       </p>
     {/if}
     {#if bootstrapCrew && sponsorOnly && !quartermaster.trim()}
       <p class="hint warn-hint">
-        Quartermaster address missing from gov payload — bootstrap will fail until it is present.
+        {$t('governance.deployGovAndSponsor.bootstrap.warning.noQuartermaster')}
       </p>
     {/if}
     {#if bootstrapCrew && bootstrapAllowed}
       {#if crewPreview.length === 0}
-        <p class="hint muted">No non-captain shared addresses to include yet.</p>
+        <p class="hint muted">{$t('governance.deployGovAndSponsor.bootstrap.preview.empty')}</p>
       {:else}
         <ul class="preview-list">
           {#each crewPreview as row (row.address)}
@@ -592,13 +600,13 @@
   {#if progressStep}
     <p class="muted" role="status">
       {#if progressStep === 'fund'}
-        Transferring ETH to squad signer…
+        {$t('governance.deployGovAndSponsor.progress.fund')}
       {:else if progressStep === 'gov'}
-        Deploying governance…
+        {$t('governance.deployGovAndSponsor.progress.gov')}
       {:else if progressStep === 'sponsor'}
-        Deploying hats sponsor…
+        {$t('governance.deployGovAndSponsor.progress.sponsor')}
       {:else}
-        Bootstrapping crew…
+        {$t('governance.deployGovAndSponsor.progress.bootstrap')}
       {/if}
     </p>
   {/if}
@@ -608,9 +616,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
     <button type="button" class="btn-primary" disabled={deployDisabled} on:click={executeDeploy}>
-      {deploying ? 'Deploying…' : 'Deploy'}
+      {deploying ? $t('governance.common.deploying') : $t('governance.common.deploy')}
     </button>
   </div>
 </Modal>

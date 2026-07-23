@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
@@ -43,8 +44,8 @@
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
-  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : 'Not set';
-  $: networkHint = squadNetworkFromInfra ? 'Locked to deployed infra' : '';
+  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
+  $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
   $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
   $: govState = binaryInfraState(hasGovernance);
   $: adminState = binaryInfraState(hasSquadAdmin);
@@ -75,15 +76,15 @@
   }
 </script>
 
-<section class="status-checklist" aria-label="Setup checklist">
-  <span class="meta-label">Checklist</span>
+<section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
+  <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
         >{checklistGlyph(squadNetwork ? 'done' : 'not_started')}</span
       >
       {#if squadNetwork}
-        <span>{getWalletNetworkDisplayName(squadNetwork)} selected</span>
+        <span>{$t('governance.status.networkSelected', { values: { network: getWalletNetworkDisplayName(squadNetwork) } })}</span>
       {:else}
         <button
           type="button"
@@ -93,50 +94,50 @@
             document.getElementById('squad-status-network')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }}
         >
-          Select network
+          {$t('governance.status.selectNetwork')}
         </button>
       {/if}
     </li>
     <li class="checklist-item" class:done={shareEvmState === 'done'}>
       <span class={glyphClass(shareEvmState)} aria-hidden="true">{checklistGlyph(shareEvmState)}</span>
-      <span>All members share EVM address</span>
+      <span>{$t('governance.status.allMembersShareEvm')}</span>
     </li>
     <li class="checklist-item" class:done={govState === 'done'}>
       <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
       {#if hasGovernance}
-        <span>Squad governance</span>
+        <span>{$t('governance.status.squadGovernance')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad governance</button>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={adminState === 'done'}>
       <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
       {#if hasSquadAdmin}
-        <span>Squad admin</span>
+        <span>{$t('governance.status.squadAdmin')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad admin</button>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={crewMintState === 'done'}>
       <span class={glyphClass(crewMintState)} aria-hidden="true">{checklistGlyph(crewMintState)}</span>
       {#if crewMintState === 'done'}
-        <span>Mint all members a Crew hat</span>
+        <span>{$t('governance.status.mintCrewHats')}</span>
       {:else if hasGovernance}
         <button type="button" class="checklist-action" on:click={onOpenCrewBootstrap}
-          >Mint all members a Crew hat</button
+          >{$t('governance.status.mintCrewHats')}</button
         >
       {:else}
-        <span>Mint all members a Crew hat</span>
+        <span>{$t('governance.status.mintCrewHats')}</span>
       {/if}
     </li>
   </ul>
 </section>
 
 <div class="status-fact-row" id="squad-status-network">
-  <span class="meta-label">Network</span>
+  <span class="meta-label">{$t('governance.status.networkLabel')}</span>
   {#if editingNetwork}
-    <select class="network-select" bind:value={squadNetworkChoice} aria-label="Squad network">
-      <option value="" disabled>Select…</option>
+    <select class="network-select" bind:value={squadNetworkChoice} aria-label={$t('governance.status.squadNetworkLabel')}>
+      <option value="" disabled>{$t('governance.status.selectPlaceholder')}</option>
       {#each squadNetworkOptions as opt (opt.id)}
         <option value={opt.id}>{opt.label}</option>
       {/each}
@@ -147,17 +148,17 @@
       disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
       on:click={applySquadNetwork}
     >
-      Save
+      {$t('governance.common.save')}
     </button>
-    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>Cancel</button>
+    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>{$t('governance.common.cancel')}</button>
   {:else}
     <span class="network-value">{networkLabel}</span>
     {#if networkHint}
       <span class="muted network-hint">{networkHint}</span>
     {/if}
     <EditIconButton
-      ariaLabel="Edit squad network"
-      title="Edit network"
+      ariaLabel={$t('governance.status.editNetwork')}
+      title={$t('governance.status.editNetworkTitle')}
       on:click={() => (editingNetwork = true)}
     />
   {/if}

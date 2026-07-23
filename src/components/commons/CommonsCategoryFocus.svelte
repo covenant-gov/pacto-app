@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import {
     commonsTagArtSrc,
     commonsTagGradient,
@@ -19,13 +20,13 @@
 </script>
 
 {#if category}
-  <div class="commons-category-focus" role="region" aria-label="{category.title} tags">
+  <div class="commons-category-focus" role="region" aria-label={$t('commons.categoryFocus.tagsAria', { values: { title: category.title } })}>
     <div class="commons-category-focus-tile-wrap">
       <button
         type="button"
         class="commons-category-focus-tile"
         style={art ? '' : `background-image: ${commonsTagGradient(category.id)}`}
-        aria-label="Close {category.title} and show all categories"
+        aria-label={$t('commons.categoryFocus.closeAria', { values: { title: category.title } })}
         on:click={onClearFocus}
       >
         {#if art}

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import BroadcastSquadModal from '../../commons/BroadcastSquadModal.svelte';
   import { commonsTagGradient } from '../../../lib/commons/tag-catalog';
   import {
@@ -65,14 +68,14 @@
 
   $: squad.id, refreshToken, void loadBroadcast();
 
-  function relativeExpiry(expiresAt: number): string {
+  function relativeExpiry(expiresAt: number, tFn: (key: string, opts?: object) => string): string {
     const ms = expiresAt * 1000 - Date.now();
-    if (ms <= 0) return 'expired';
+    if (ms <= 0) return tFn('governance.broadcast.expired');
     const minutes = Math.floor(ms / 60000);
-    if (minutes < 60) return `${Math.max(minutes, 1)}m left`;
+    if (minutes < 60) return tFn('governance.broadcast.minutesLeft', { values: { minutes: Math.max(minutes, 1) } });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h left`;
-    return `${Math.floor(hours / 24)}d left`;
+    if (hours < 24) return tFn('governance.broadcast.hoursLeft', { values: { hours } });
+    return tFn('governance.broadcast.daysLeft', { values: { days: Math.floor(hours / 24) } });
   }
 
   async function loadBroadcast() {
@@ -97,7 +100,7 @@
           commonsTags: undefined,
         }));
         if (!result) {
-          showToast('Could not update Commons settings.');
+          showToast(tFn('governance.broadcast.toastOffFailed'));
           return;
         }
         mode = 'disabled';
@@ -109,7 +112,7 @@
         visibility: 'public',
       }));
       if (!result) {
-        showToast('Could not turn Commons on for this squad.');
+        showToast(tFn('governance.broadcast.toastOnFailed'));
         return;
       }
       mode = 'enabled';
@@ -138,7 +141,7 @@
       return;
     }
     activeBroadcast = null;
-    showToast('Broadcast terminated. You can publish a new one now.');
+    showToast(tFn('governance.broadcast.toastTerminated'));
     refreshToken += 1;
   }
 </script>
@@ -148,9 +151,9 @@
   class="dashboard-section squad-broadcast-section"
   aria-labelledby="settings-squad-broadcast-heading"
 >
-  <h3 id="settings-squad-broadcast-heading" class="section-heading">Squad Broadcast</h3>
+  <h3 id="settings-squad-broadcast-heading" class="section-heading">{$t('governance.broadcast.title')}</h3>
 
-  <div class="squad-broadcast-mode" role="radiogroup" aria-label="Commons broadcast">
+  <div class="squad-broadcast-mode" role="radiogroup" aria-label={$t('governance.broadcast.aria')}>
     <label class="squad-broadcast-mode-option">
       <input
         type="radio"
@@ -160,7 +163,7 @@
         disabled={savingMode}
         on:change={() => void setMode('disabled')}
       />
-      <span>Commons off</span>
+      <span>{$t('governance.broadcast.off')}</span>
     </label>
     <label class="squad-broadcast-mode-option">
       <input
@@ -171,17 +174,14 @@
         disabled={savingMode}
         on:change={() => void setMode('enabled')}
       />
-      <span>Commons on</span>
+      <span>{$t('governance.broadcast.on')}</span>
     </label>
   </div>
 
   {#if mode === 'enabled'}
-    <p class="squad-broadcast-hint muted">
-      Your squad stays private and encrypted. Commons only posts a public discovery card with exactly
-      3 tags while you broadcast. You can pick different tags on the next broadcast.
-    </p>
+    <p class="squad-broadcast-hint muted">{$t('governance.broadcast.enabledHint')}</p>
 
-    <div class="commons-personal squad-broadcast-status" aria-label="Squad broadcast status">
+    <div class="commons-personal squad-broadcast-status" aria-label={$t('governance.broadcast.statusAria')}>
       <div class="commons-personal-row">
         <div
           class="commons-personal-avatar"
@@ -197,12 +197,12 @@
 
         <div class="commons-personal-block">
           {#if loadingBroadcast}
-            <span class="commons-personal-status muted">Checking…</span>
+            <span class="commons-personal-status muted">{$t('governance.broadcast.checking')}</span>
           {:else if hasActive && activeBroadcast}
             <div class="commons-personal-status-row">
               <span class="commons-personal-status">
                 <span class="commons-status-dot commons-status-dot-active" aria-hidden="true"></span>
-                Active broadcast - {relativeExpiry(activeBroadcast.expiresAt)}
+                {$t('governance.broadcast.active', { values: { expiry: relativeExpiry(activeBroadcast.expiresAt, $t) } })}
               </span>
               <button
                 type="button"
@@ -211,7 +211,7 @@
                 disabled={cancelling || !roleAllowed}
                 title={!roleAllowed ? broadcastDeniedReason : undefined}
               >
-                {cancelling ? 'Terminating…' : 'Terminate'}
+                {cancelling ? $t('governance.common.terminating') : $t('governance.common.terminate')}
               </button>
             </div>
             <p class="commons-personal-message muted">
@@ -224,7 +224,7 @@
                   class="commons-personal-see-more"
                   on:click={() => (messageExpanded = !messageExpanded)}
                 >
-                  {messageExpanded ? 'see less' : 'see more…'}
+                  {messageExpanded ? $t('governance.common.seeLess') : $t('governance.common.seeMore')}
                 </button>
               {/if}
             </p>
@@ -239,7 +239,7 @@
             <div class="commons-personal-status-row">
               <span class="commons-personal-status">
                 <span class="commons-status-dot" aria-hidden="true"></span>
-                No active broadcast
+                {$t('governance.broadcast.noActive')}
               </span>
               <button
                 type="button"
@@ -248,7 +248,7 @@
                 disabled={!canStartBroadcast}
                 title={!roleAllowed ? broadcastDeniedReason : undefined}
               >
-                Start Broadcast
+                {$t('governance.broadcast.start')}
               </button>
             </div>
           {/if}
@@ -256,7 +256,7 @@
       </div>
     </div>
   {:else}
-    <p class="squad-broadcast-hint muted">Broadcasting to Commons is off for this squad.</p>
+    <p class="squad-broadcast-hint muted">{$t('governance.broadcast.disabledHint')}</p>
   {/if}
 </section>
 

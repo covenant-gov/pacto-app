@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../../ui/Modal.svelte';
   import {
     launchpadCtaDisabled,
@@ -29,37 +30,36 @@
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} contentClass="launchpad-modal-panel">
-  <h2 id={titleId}>Deploy Governance</h2>
+  <h2 id={titleId}>{$t('governance.launchpad.title')}</h2>
   <p id={descId} class="launchpad-desc">
-    Recommended: deploy Pacto Gov and a hats-linked squad sponsor together so gas sponsorship follows
-    captain and crew hats.
+    {$t('governance.launchpad.description')}
   </p>
 
   {#if channelBlocked}
     <p class="launchpad-channel-note muted" role="status">
-      Add an #announcements channel before deploying governance infra.
+      {$t('governance.launchpad.channelNote')}
     </p>
   {/if}
 
   <ul class="launchpad-primary" role="list">
     <li class="launchpad-card" class:launchpad-card--primary={primaryCard !== 'deployed'}>
-      <h3 class="launchpad-card-title">Pacto Gov + squad sponsor</h3>
+      <h3 class="launchpad-card-title">{$t('governance.launchpad.primaryCard.title')}</h3>
       {#if primaryCard === 'deployed'}
         <div class="launchpad-deployed-status" role="status">
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
-            <p class="launchpad-deployed-label">Deployed</p>
+            <p class="launchpad-deployed-label">{$t('governance.launchpad.status.deployed')}</p>
             {#if pactoGovAddress}
-              <code class="launchpad-deployed-addr">Gov {pactoGovAddress}</code>
+              <code class="launchpad-deployed-addr">{$t('governance.launchpad.govLabel', { values: { address: pactoGovAddress } })}</code>
             {/if}
             {#if sponsorAddress}
-              <code class="launchpad-deployed-addr">Sponsor {sponsorAddress}</code>
+              <code class="launchpad-deployed-addr">{$t('governance.launchpad.sponsorLabel', { values: { address: sponsorAddress } })}</code>
             {/if}
           </div>
         </div>
       {:else if primaryCard === 'finish-sponsor'}
         <p class="launchpad-card-desc">
-          Governance is live. Finish with a hats-linked sponsor (same wizard as combined deploy).
+          {$t('governance.launchpad.primaryCard.finishSponsor.description')}
         </p>
         <button
           type="button"
@@ -70,11 +70,11 @@
             onDeployGovAndSponsor();
           }}
         >
-          Deploy squad sponsor
+          {$t('governance.launchpad.primaryCard.finishSponsor.action')}
         </button>
       {:else if primaryCard === 'deploy-gov'}
         <p class="launchpad-card-desc">
-          Sponsor is live without Pacto Gov. Deploy governance alone to finish setup.
+          {$t('governance.launchpad.primaryCard.deployGov.description')}
         </p>
         <button
           type="button"
@@ -85,12 +85,11 @@
             onDeployPactoGov();
           }}
         >
-          Deploy Pacto Gov
+          {$t('governance.launchpad.primaryCard.deployGov.action')}
         </button>
       {:else}
         <p class="launchpad-card-desc">
-          One flow: Nave Pirata (Hats tree + Safe) then hats-based gas sponsorship. Optional crew
-          bootstrap.
+          {$t('governance.launchpad.primaryCard.combined.description')}
         </p>
         <button
           type="button"
@@ -101,7 +100,7 @@
             onDeployGovAndSponsor();
           }}
         >
-          Deploy Pacto Gov + squad sponsor
+          {$t('governance.launchpad.primaryCard.combined.action')}
         </button>
       {/if}
     </li>
@@ -110,29 +109,29 @@
   <div class="launchpad-divider" role="separator">
     <span class="launchpad-divider-line" aria-hidden="true"></span>
     <p class="launchpad-advanced-blurb muted">
-      Advanced: deploy a standalone Ext sponsor or Squad Admin without full Nave Pirata.
+      {$t('governance.launchpad.advancedBlurb')}
     </p>
   </div>
 
   <ul class="launchpad-grid" role="list">
     <li class="launchpad-card">
-      <h3 class="launchpad-card-title">Squad sponsor (Ext)</h3>
+      <h3 class="launchpad-card-title">{$t('governance.launchpad.extSponsor.title')}</h3>
       {#if hasSponsor}
         <div class="launchpad-deployed-status" role="status">
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
-            <p class="launchpad-deployed-label">Deployed</p>
+            <p class="launchpad-deployed-label">{$t('governance.launchpad.status.deployed')}</p>
             {#if pactoGovAddress}
-              <code class="launchpad-deployed-addr">Gov {pactoGovAddress}</code>
+              <code class="launchpad-deployed-addr">{$t('governance.launchpad.govLabel', { values: { address: pactoGovAddress } })}</code>
             {/if}
             {#if sponsorAddress}
-              <code class="launchpad-deployed-addr">Sponsor {sponsorAddress}</code>
+              <code class="launchpad-deployed-addr">{$t('governance.launchpad.sponsorLabel', { values: { address: sponsorAddress } })}</code>
             {/if}
           </div>
         </div>
       {:else}
         <p class="launchpad-card-desc">
-          Address-list sponsor: roster EVM owns the allowlist; Default may pay gas and the initial deposit.
+          {$t('governance.launchpad.extSponsor.description')}
         </p>
         <button
           type="button"
@@ -143,17 +142,17 @@
             onDeployExtSponsor();
           }}
         >
-          Deploy squad sponsor (Ext)
+          {$t('governance.launchpad.extSponsor.action')}
         </button>
       {/if}
     </li>
     <li class="launchpad-card">
-      <h3 class="launchpad-card-title">Squad Admin</h3>
+      <h3 class="launchpad-card-title">{$t('governance.launchpad.squadAdmin.title')}</h3>
       {#if hasSquadAdmin}
         <div class="launchpad-deployed-status" role="status">
           <span class="launchpad-deployed-check" aria-hidden="true">✓</span>
           <div class="launchpad-deployed-body">
-            <p class="launchpad-deployed-label">Deployed</p>
+            <p class="launchpad-deployed-label">{$t('governance.launchpad.status.deployed')}</p>
             {#if squadAdminAddress}
               <code class="launchpad-deployed-addr">{squadAdminAddress}</code>
             {/if}
@@ -161,7 +160,7 @@
         </div>
       {:else}
         <p class="launchpad-card-desc">
-          Standalone executor roster without full Nave Pirata ceremony.
+          {$t('governance.launchpad.squadAdmin.description')}
         </p>
         <button
           type="button"
@@ -172,14 +171,14 @@
             onDeploySquadAdmin();
           }}
         >
-          Deploy Squad Admin
+          {$t('governance.launchpad.squadAdmin.action')}
         </button>
       {/if}
     </li>
   </ul>
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>Close</button>
+    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.close')}</button>
   </div>
 </Modal>
 

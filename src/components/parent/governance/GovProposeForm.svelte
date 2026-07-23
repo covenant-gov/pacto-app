@@ -4,12 +4,16 @@
   import { gateRequiresCaptainOrCrew, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let network: string;
   export let parentId: string;
   export let treasuryAuthority: string;
   export let privilege: GovernancePrivilege;
   export let onSubmitted: () => void = () => {};
+
+  const tFn = get(t);
 
   let acting = false;
   let proposeTo = '';
@@ -32,10 +36,10 @@
         dataHex: proposeData,
         operation: proposeOp,
       });
-      showToast('Proposal submitted.');
+      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.submitProposal') } }));
       onSubmitted();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Proposal failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.submitProposal') } })));
     } finally {
       acting = false;
     }
@@ -43,20 +47,20 @@
 </script>
 
 <div class="propose-section">
-  <h6 class="section-label">Submit proposal</h6>
+  <h6 class="section-label">{$t('governance.section.submitProposal')}</h6>
   <div class="form-grid">
-    <label>To<input bind:value={proposeTo} placeholder="0x…" disabled={!proposeGate.enabled || acting} /></label>
-    <label>Value (wei)<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
-    <label>Data<input bind:value={proposeData} placeholder="0x" disabled={!proposeGate.enabled || acting} /></label>
+    <label>{$t('governance.field.to')}<input bind:value={proposeTo} placeholder={$t('governance.field.toPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
+    <label>{$t('governance.field.valueWei')}<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
+    <label>{$t('governance.field.data')}<input bind:value={proposeData} placeholder={$t('governance.field.dataPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
     <label
-      >Op
+      >{$t('governance.field.op')}
       <select bind:value={proposeOp} disabled={!proposeGate.enabled || acting}>
-        <option value="call">call</option>
-        <option value="delegatecall">delegatecall</option>
+        <option value="call">{$t('governance.field.opCall')}</option>
+        <option value="delegatecall">{$t('governance.field.opDelegatecall')}</option>
       </select>
     </label>
   </div>
-  <GovCtaButton label="Submit proposal" variant="primary" gate={proposeGate} {acting} onClick={submit} />
+  <GovCtaButton label={tFn('governance.action.submitProposal')} variant="primary" gate={proposeGate} {acting} onClick={submit} />
 </div>
 
 <style>
