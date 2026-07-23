@@ -187,8 +187,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pacto ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
           retryAttempts: 3
