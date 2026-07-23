@@ -1,7 +1,7 @@
 /**
  * Pairwise DM wallet address exchange (persisted per account + peer npub).
  */
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from './index';
 
 export async function getDmPeerEvmAddress(peerNpub: string): Promise<string | null> {
   return await invoke<string | null>('get_dm_peer_evm_address', { peerNpub });

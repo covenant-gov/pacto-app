@@ -4,6 +4,9 @@ tauri-dev.log
 node_modules
 .pnpm-store/
 /build
+/build-agent
+/test-results
+/test_sandbox
 /.svelte-kit
 /package
 .env

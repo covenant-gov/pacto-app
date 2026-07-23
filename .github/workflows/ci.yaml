@@ -160,11 +160,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb
 
-      - name: Build Tauri debug binary
-        working-directory: src-tauri
-        run: cargo build
+      - name: Build Tauri debug bundle
+        run: xvfb-run --auto-servernum pnpm tauri build --debug --no-bundle --ci
 
       - name: Run real-Tauri e2e harness
+        env:
+          PACTO_TAURI_BINARY: src-tauri/target/debug/pacto
         run: xvfb-run --auto-servernum pnpm test:e2e:tauri
 
       - name: Upload Tauri e2e results on failure

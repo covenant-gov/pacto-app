@@ -1,0 +1,14 @@
+{
+  "skills": {},
+  "mcp": {
+    "tauri": {
+      "command": "node",
+      "args": [
+        "./node_modules/@hypothesi/tauri-mcp-server/dist/index.js"
+      ]
+    }
+  },
+  "rules": {},
+  "prompts": {},
+  "agents": {}
+}

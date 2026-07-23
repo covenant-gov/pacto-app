@@ -11,6 +11,8 @@ use rand::distributions::Alphanumeric;
 
 mod crypto;
 
+mod test_sandbox;
+
 mod squad_catalog;
 
 mod db;
@@ -507,7 +509,7 @@ async fn fetch_messages<R: Runtime>(
             let my_public_key = signer.get_public_key().await.unwrap();
             let npub = my_public_key.to_bech32().unwrap();
             
-            let app_data = handle.path().app_data_dir().ok();
+            let app_data = crate::test_sandbox::test_data_dir(&handle).ok();
             if let Some(data_dir) = app_data {
                 let profile_db = data_dir.join(&npub).join("vector.db");
                 if profile_db.exists() {
@@ -4149,6 +4151,61 @@ async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Debug-only fixture authentication for automated end-to-end tests.
+/// Requires `PACTO_ALLOW_TEST_AUTH=1` and creates a fresh sandboxed account.
+#[cfg(debug_assertions)]
+#[tauri::command]
+async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_json::Value, String> {
+    if std::env::var("PACTO_ALLOW_TEST_AUTH").unwrap_or_default() != "1" {
+        return Err("Test auth disabled".to_string());
+    }
+
+    // Generate a fresh Nostr keypair.
+    let keys = Keys::generate();
+    let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
+
+    // Initialize the Nostr client.
+    let client = Client::builder()
+        .signer(keys.clone())
+        .opts(ClientOptions::new().gossip(false))
+        .monitor(Monitor::new(1024))
+        .build();
+    set_nostr_client(client);
+
+    // Build a minimal profile and reset state.
+    let mut profile = Profile::new();
+    profile.id = npub.clone();
+    profile.mine = true;
+    profile.name = "Fixture Account".to_string();
+    {
+        let mut st = STATE.lock().await;
+        st.clear_session();
+        st.profiles.push(profile);
+    }
+
+    // Initialize the sandboxed profile database and mark the account as active.
+    account_manager::init_profile_database(&handle, &npub).await?;
+    account_manager::set_current_account(npub.clone())?;
+
+    // Set up key-derivation version 2 so test sessions can use commands that
+    // normally require a PIN-protected account (e.g. sending messages).
+    {
+        let conn = account_manager::get_db_connection(&handle)?;
+        crate::migration::create_new_account_salt(&handle, &conn)?;
+        account_manager::return_db_connection(conn);
+    }
+
+    let state = STATE.lock().await;
+    Ok(serde_json::json!({
+        "success": true,
+        "npub": npub,
+        "profiles": &state.profiles,
+        "chats": &state.chats,
+        "is_syncing": state.is_syncing,
+        "sync_mode": format!("{:?}", state.sync_mode)
+    }))
+}
+
 /// Build client and profile state after keys are resolved (mnemonic- or nsec-derived).
 async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
@@ -4169,7 +4226,7 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     }
 
     if let Some(handle) = TAURI_APP.get() {
-        let app_data = handle.path().app_local_data_dir().ok();
+        let app_data = crate::test_sandbox::test_local_data_dir(handle).ok();
         if let Some(data_dir) = app_data {
             let profile_db = data_dir.join(&npub).join("vector.db");
             if profile_db.exists() {
@@ -5112,8 +5169,7 @@ async fn clear_storage() -> Result<serde_json::Value, String> {
     }
     
     // Clear all disk caches (images, sounds, etc.) by nuking the cache directory
-    let cache_dir = handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+    let cache_dir = crate::test_sandbox::test_data_dir(handle)?
         .join("cache");
     if cache_dir.exists() {
         let _ = std::fs::remove_dir_all(&cache_dir);
@@ -6539,6 +6595,8 @@ pub fn run() {
             login_with_recovery_phrase,
             #[cfg(debug_assertions)]
             debug_hot_reload_sync,
+            #[cfg(debug_assertions)]
+            test_login_fixture,
             notifs,
             get_relays,
             get_media_servers,
