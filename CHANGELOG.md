@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## v0.4.0
+
+### Bug Fixes
+- Update ai.json tauri mcp command to use direct node path
+- Repair tauri-e2e job after docker image update (ci)
+- Make updater relaunch restart the updated app on macOS
+
+
+### Chores
+- Record closures for pacto-app-ayq mention feature (beads)
+- Bump version to 0.4.0 (release)
+
+
+### Documentation
+- Docs(mentions) - Add initial plan and idea files
+- Add tauri mcp integration guide and ui validation policy
+
+
+### Features
+- Add @ mentions to squad channels (mentions)
+- Add self-correcting AI testing architecture
+
+
+### Other
+- Capitalize product name
+- Bd init: initialize beads issue tracking
+- Update beads ignore file and create bead
+- Add vulkan deps and rust/pnpm caches for faster linux builds
+- Add prebuilt CI base image
+- Switch backend-tests job to pacto-ci container image
+- Switch release-symbol-check to pacto-ci container and add tauri-e2e diagnostics
+
 ## v0.3.2
 
 ### Bug Fixes
@@ -11,25 +43,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sync squad MLS state across peers and stop raw JSON in UI (#111)
 
 
+### Chores
+- Bump version to 0.3.2 (#120) (release)
+
+
 ### Refactor
 - Adopt refinery for SQLite migrations (#119)
 
 ## v0.3.1
 
-### Highlights
-- Hardened account security with automatic idle lock and a verified seed-backup gate that blocks risky actions until the recovery phrase is backed up.
-- Shipped user-facing install instructions for macOS, Linux, and Windows, and included them in GitHub release notes.
+### Chores
+- Bump version to 0.3.1 (#115) (release)
+
+
+### Documentation
+- Add install instructions for macOS, Linux, and Windows (#107)
+
 
 ### Features
 - Add automatic idle lock and migration gate for sensitive operations (#96) (session)
 - Add verified seed-backup gate for risky actions (#114)
 
-### Documentation
-- Add install instructions for macOS, Linux, and Windows (#107)
 
 ### Other
 - Include install instructions in release notes (#108)
 - Docs/install instructions (#109)
+
+* docs: add install instructions for macOS, Linux, and Windows
+
+* ci: include install instructions in release notes
 
 ## v0.3.0
 
