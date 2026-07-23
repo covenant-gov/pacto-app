@@ -178,19 +178,15 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/covenant-gov/pacto-app/pacto-ci:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v6
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
-      - name: Install Rust system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
       - name: Rust unit tests
         working-directory: src-tauri
@@ -225,19 +221,15 @@ jobs:
     # MCP-bridge symbols. This job is intentionally separate from the debug
     # backend-tests because it builds --release and is slower.
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/covenant-gov/pacto-app/pacto-ci:latest
+      options: --user root
     steps:
       - uses: actions/checkout@v6
-
-      - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-
-      - name: Install Rust system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
 
       - name: Check release binary symbols
         run: ./scripts/check-release-symbols.sh

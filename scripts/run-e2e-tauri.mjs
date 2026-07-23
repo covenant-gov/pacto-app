@@ -34,8 +34,11 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+let tauriLogs = { out: [], err: [] };
+
 async function waitForPort(port, timeoutMs = 30000) {
   const start = Date.now();
+  let lastError = 'no attempt made';
   while (Date.now() - start < timeoutMs) {
     try {
       await new Promise((resolve, reject) => {
@@ -43,7 +46,10 @@ async function waitForPort(port, timeoutMs = 30000) {
           socket.destroy();
           resolve();
         });
-        socket.on('error', reject);
+        socket.on('error', err => {
+          lastError = err.message;
+          reject(err);
+        });
         setTimeout(() => {
           socket.destroy();
           reject(new Error('timeout'));
@@ -54,6 +60,9 @@ async function waitForPort(port, timeoutMs = 30000) {
       await sleep(250);
     }
   }
+  log('last MCP bridge port probe error:', lastError);
+  log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+  log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
   throw new Error(`MCP bridge port ${port} did not become ready within ${timeoutMs}ms`);
 }
 
@@ -108,7 +117,6 @@ async function main() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  const tauriLogs = { out: [], err: [] };
   tauri.stdout.on('data', d => tauriLogs.out.push(d.toString()));
   tauri.stderr.on('data', d => tauriLogs.err.push(d.toString()));
 
@@ -162,6 +170,12 @@ async function main() {
     log('starting driver session');
     const sessionResult = await callTool(client, 'driver_session', { action: 'start', port: MCP_BRIDGE_PORT });
     log('driver_session result:', sessionResult);
+
+    const statusResult = await callTool(client, 'driver_session', { action: 'status' });
+    log('driver_session status:', statusResult);
+    if (!statusResult?.connected) {
+      throw new Error(`MCP driver session did not connect; status=${JSON.stringify(statusResult)}`);
+    }
 
     // Give the webview a moment to load before driving it. The MCP server will
     // wait for the webview to be ready, but a short pause helps on slower hosts.
