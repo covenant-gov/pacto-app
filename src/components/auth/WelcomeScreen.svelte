@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   export let onCreateAccount: () => void;
   export let onImportKeys: () => void;
 </script>
@@ -10,20 +12,20 @@
         <span class="logo-text">P</span>
       </div>
       <h1 class="app-title">Pacto</h1>
-      <p class="app-subtitle">Private | Censorship-Resistant | Governable</p>
+      <p class="app-subtitle">{$t('auth.welcomeSubtitle')}</p>
     </div>
 
     <div class="welcome-actions">
       <button class="btn-primary" on:click={onCreateAccount}>
-        Create Account
+        {$t('auth.createAccount')}
       </button>
       <button class="btn-secondary" on:click={onImportKeys}>
-        Import with recovery phrase
+        {$t('auth.importWithRecoveryPhrase')}
       </button>
     </div>
 
     <p class="welcome-footer">
-      Built on Nostr, EVM, & Aztec • End-to-End Encrypted
+      {$t('auth.welcomeFooter')}
     </p>
   </div>
 </div>

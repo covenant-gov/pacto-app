@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   export let open = false;
   export let parentName = '';
   export let title = '';
@@ -21,7 +23,13 @@
     (selectedNpubs.length > 0 || inviteByNpub.trim().length > 0) && !inviting;
 
   const titleId = 'invite-to-parent-modal-title';
-  $: ariaLabel = (title || 'Invite to Squad') + ' for ' + (parentName || 'squad');
+  $: resolvedTitle = title || $t('messaging.inviteParent.title');
+  $: ariaLabel = $t('messaging.inviteParent.forAria', {
+    values: {
+      title: resolvedTitle,
+      parentName: parentName || $t('messaging.inviteParent.defaultParent'),
+    },
+  });
 </script>
 
 {#if open}
@@ -43,10 +51,10 @@
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}
     >
-      <h2 id={titleId}>{title || 'Invite to Squad'}</h2>
+      <h2 id={titleId}>{resolvedTitle}</h2>
       <p class="invite-to-parent-subtitle">{subtitle}</p>
       {#if loading}
-        <p class="invite-to-parent-loading">Loading…</p>
+        <p class="invite-to-parent-loading">{$t('messaging.inviteParent.loading')}</p>
       {:else if candidates.length === 0}
         <p class="invite-to-parent-empty">{emptyMessage}</p>
       {:else}
@@ -66,11 +74,11 @@
           {/each}
         </div>
       {/if}
-      <p class="invite-to-parent-npub-label">Or invite by npub:</p>
+      <p class="invite-to-parent-npub-label">{$t('messaging.inviteParent.inviteByNpubLabel')}</p>
       <input
         type="text"
         class="invite-to-parent-npub-input"
-        placeholder="npub1…"
+        placeholder={$t('messaging.inviteParent.npubPlaceholder')}
         bind:value={inviteByNpub}
         disabled={inviting}
       />
@@ -84,7 +92,7 @@
           on:click={onClose}
           disabled={inviting}
         >
-          Cancel
+          {$t('messaging.inviteParent.cancel')}
         </button>
         <button
           type="button"
@@ -92,7 +100,7 @@
           on:click={onInvite}
           disabled={!canInvite}
         >
-          {inviting ? 'Inviting…' : 'Invite'}
+          {inviting ? $t('messaging.inviteParent.inviting') : $t('messaging.inviteParent.invite')}
         </button>
       </div>
     </div>

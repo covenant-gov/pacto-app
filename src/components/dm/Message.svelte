@@ -4,6 +4,7 @@
   import { summarizeStructuredMessageContent } from '../../lib/messaging/structured-content-notice';
   import type { Mention } from '../../lib/messaging/mentions';
   import type { NostrProfile } from '../../lib/api/nostr';
+  import { t } from 'svelte-i18n';
 
   export let id: string = '';
   export let authorName: string = '';
@@ -51,14 +52,14 @@
       </div>
     {/if}
     {#if replyToId && (replyAuthorName != null || replyPreview != null)}
-      <div class="msg-reply" role="region" aria-label="Reply to {replyAuthorName ?? 'message'}">
+      <div class="msg-reply" role="region" aria-label={$t('messaging.message.replyTo', { values: { name: replyAuthorName ?? $t('messaging.message.replyToDefault') } })}>
         <button
           type="button"
           class="msg-reply-inner"
           on:click={jumpToReply}
-          aria-label="Jump to replied message"
+          aria-label={$t('messaging.message.jumpToReply')}
         >
-          <span class="msg-reply-author">{replyAuthorName ?? 'Unknown'}</span>
+          <span class="msg-reply-author">{replyAuthorName ?? $t('messaging.message.replyUnknown')}</span>
           <span class="msg-reply-preview">{#if replyPreview}{replyPreview}{/if}</span>
         </button>
       </div>

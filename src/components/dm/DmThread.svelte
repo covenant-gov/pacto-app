@@ -39,6 +39,9 @@
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
 
   export let npub: string;
   export let messages: DmMessage[] = [];
@@ -173,7 +176,7 @@
           }
           if (!myAddr) {
             reciprocalGrantInFlight.delete(g.request_id);
-            showToast('Add or select a wallet to finish sharing your payout address.');
+            showToast(tFn('messaging.dm.wallet.addWalletForPayout'));
             return;
           }
           if (
@@ -200,14 +203,14 @@
           }
           if (sendResult === false) {
             reciprocalGrantInFlight.delete(g.request_id);
-            showToast('Could not share your address. Open the chat to try again.');
+            showToast(tFn('messaging.dm.wallet.shareAddressError'));
             return;
           }
           reciprocatedWalletPeerInfoRequestIds.update((ids) =>
             ids.includes(g.request_id) ? ids : [...ids, g.request_id]
           );
           dmWalletPeerExchangeTick.update((t: number) => t + 1);
-          showToast('Wallet addresses exchanged for this chat.');
+          showToast(tFn('messaging.dm.wallet.addressExchanged'));
         } catch {
           reciprocalGrantInFlight.delete(g.request_id);
         }
@@ -253,7 +256,7 @@
       ? getProfileDisplayName(contactProfile)
       : npub
         ? truncateNpub(npub)
-        : 'Unknown';
+        : $t('messaging.message.replyUnknown');
 
   let menuOpen = false;
   let showNicknameEdit = false;
@@ -291,17 +294,17 @@
       if (nowBlocked) {
         appendDmThreadAnnouncement(
           npub,
-          `You blocked ${peerLabel}. New messages from this user are ignored.`
+          tFn('messaging.dm.thread.blockedAnnouncement', { values: { peerLabel } })
         );
-        showToast('Blocked. New messages from this user are ignored. Relays may still deliver data to the app.');
-        notifyUserAction('Blocked user', `${peerLabel} is blocked.`);
+        showToast(tFn('messaging.dm.thread.blockToast'));
+        notifyUserAction(tFn('messaging.dm.thread.blockedNotifyTitle'), tFn('messaging.dm.thread.blockedNotifyBody', { values: { peerLabel } }));
       } else {
-        appendDmThreadAnnouncement(npub, `You unblocked ${peerLabel}.`);
-        showToast('User unblocked.');
-        notifyUserAction('Unblocked user', `${peerLabel} is unblocked.`);
+        appendDmThreadAnnouncement(npub, tFn('messaging.dm.thread.unblockedAnnouncement', { values: { peerLabel } }));
+        showToast(tFn('messaging.dm.thread.unblockToast'));
+        notifyUserAction(tFn('messaging.dm.thread.unblockedNotifyTitle'), tFn('messaging.dm.thread.unblockedNotifyBody', { values: { peerLabel } }));
       }
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Could not update block status.');
+      showToast(e instanceof Error ? e.message : tFn('messaging.dm.thread.blockError'));
     }
   }
 
@@ -328,7 +331,7 @@
       await onSaveNickname(nicknameEditValue.trim());
       showNicknameEdit = false;
     } catch (e: unknown) {
-      nicknameError = e instanceof Error ? e.message : 'Failed to set nickname';
+      nicknameError = e instanceof Error ? e.message : tFn('messaging.dm.thread.nicknameError');
     } finally {
       nicknameSaving = false;
     }
@@ -357,15 +360,15 @@
           <input
             type="text"
             class="dm-thread-nickname-input"
-            placeholder="Nickname"
+            placeholder={$t('messaging.dm.thread.nicknamePlaceholder')}
             bind:value={nicknameEditValue}
             on:keydown={(e) => e.key === 'Escape' && cancelNicknameEdit()}
           />
           <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-save" on:click={saveNickname} disabled={nicknameSaving}>
-            {nicknameSaving ? 'Saving…' : 'Save'}
+            {nicknameSaving ? $t('messaging.dm.thread.savingNickname') : $t('messaging.dm.thread.saveNickname')}
           </button>
           <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-cancel" on:click={cancelNicknameEdit} disabled={nicknameSaving}>
-            Cancel
+            {$t('messaging.dm.thread.cancel')}
           </button>
         </div>
         {#if nicknameError}
@@ -380,7 +383,7 @@
                 <button
                   type="button"
                   class="dm-thread-dropdown-trigger"
-                  title="Options"
+                  title={$t('messaging.dm.thread.optionsTitle')}
                   on:click={() => (menuOpen = !menuOpen)}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
@@ -394,19 +397,19 @@
                 {#if menuOpen}
                   <div class="dm-thread-dropdown" role="menu">
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
-                      Set Nickname
+                      {$t('messaging.dm.thread.setNickname')}
                     </button>
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={toggleBlockUser}>
-                      {$profiles[npub]?.blocked ? 'Unblock User' : 'Block User'}
+                      {$profiles[npub]?.blocked ? $t('messaging.dm.thread.unblockUser') : $t('messaging.dm.thread.blockUser')}
                     </button>
                     {#if showPinOption}
                       {#if $pinnedDmNpubs.has(npub)}
                         <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
-                          Unpin DM
+                          {$t('messaging.dm.thread.unpinDm')}
                         </button>
                       {:else}
                         <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
-                          Pin DM
+                          {$t('messaging.dm.thread.pinDm')}
                         </button>
                       {/if}
                     {/if}
@@ -420,7 +423,7 @@
                           onDeleteChat();
                         }}
                       >
-                        Delete Chat
+                        {$t('messaging.dm.thread.deleteChat')}
                       </button>
                     {/if}
                   </div>
@@ -432,8 +435,8 @@
             <button
               type="button"
               class="dm-thread-wallet-btn"
-              title={$dmWalletSidebarVisible ? 'Close wallet' : 'Open wallet'}
-              aria-label={$dmWalletSidebarVisible ? 'Close wallet sidebar' : 'Open wallet sidebar'}
+              title={$dmWalletSidebarVisible ? $t('messaging.dm.thread.closeWallet') : $t('messaging.dm.thread.openWallet')}
+              aria-label={$dmWalletSidebarVisible ? $t('messaging.dm.thread.closeWalletSidebar') : $t('messaging.dm.thread.openWalletSidebar')}
               aria-expanded={$dmWalletSidebarVisible}
               aria-controls="wallet-bar"
               on:click={() => toggleWalletSidebar()}
@@ -462,7 +465,7 @@
           <button
             type="button"
             class="dm-thread-copy-btn"
-            title="Copy full npub"
+            title={$t('messaging.dm.thread.copyNpub')}
             on:click={() => navigator.clipboard?.writeText(npub)}
           >
             <span class="dm-thread-copy-icon" aria-hidden="true">
@@ -481,7 +484,7 @@
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>
-          {loadingOlder ? 'Loading…' : 'Load older messages'}
+          {loadingOlder ? $t('messaging.dm.thread.loading') : $t('messaging.dm.thread.loadOlder')}
         </button>
       </div>
     {/if}
@@ -507,11 +510,11 @@
         />
       {/each}
     {:else}
-      <p class="dm-thread-placeholder">No messages yet</p>
+      <p class="dm-thread-placeholder">{$t('messaging.dm.thread.noMessages')}</p>
     {/if}
   </div>
   {#if ($typingByChat[npub]?.length ?? 0) > 0}
-    <p class="dm-thread-typing" role="status">Typing…</p>
+    <p class="dm-thread-typing" role="status">{$t('messaging.dm.thread.typing')}</p>
   {/if}
   {#if $dmSendError}
     <p class="dm-thread-error" role="alert">{$dmSendError}</p>
@@ -519,7 +522,7 @@
   {#if !isPactoAppThread}
   <MessageInput
     channelName={truncateNpub(npub)}
-    placeholderOverride={peerBlockedByMe ? `Blocked #${truncateNpub(npub)}` : undefined}
+    placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
     disabled={peerBlockedByMe}
     onSend={onSend}
     onTyping={onTyping}

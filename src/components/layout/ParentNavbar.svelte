@@ -28,6 +28,8 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { partnerSquadsForHubParent } from '../../lib/squad-pair';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
   import {
@@ -58,6 +60,8 @@
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
   import { refreshPersonalAlertForSquad } from '../../stores/squad-hub-alerts';
+
+  const translate = get(t);
 
   $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
 
@@ -164,7 +168,7 @@
     if (!anchor || pairCreating) return;
     const partner = $squads.find((s) => s.id === params.partnerSquadId);
     if (!partner) {
-      pairCreateError = 'Could not find the selected squads.';
+      pairCreateError = translate('nav.parentNavbar.pair.noPartner');
       return;
     }
     if (params.visibility === 'public') {
@@ -178,7 +182,7 @@
     try {
       commons = resolveSquadCommonsOnCreate(params.visibility, params.commonsTags ?? []);
     } catch (e) {
-      pairCreateError = e instanceof Error ? e.message : 'Invalid tags.';
+      pairCreateError = e instanceof Error ? e.message : translate('nav.parentNavbar.pair.invalidTags');
       return;
     }
     pairCreating = true;
@@ -190,7 +194,7 @@
         (gid) => getMlsGroupMembers(gid)
       );
       if (memberNpubs.length === 0) {
-        pairCreateError = 'No other members to invite in these squads.';
+        pairCreateError = translate('nav.parentNavbar.pair.noMembers');
         return;
       }
       showPairWithSquadModal = false;
@@ -202,10 +206,22 @@
     }
   }
 
-  $: emptyMessage = 'Select a squad';
+  $: emptyMessage = $t('nav.parentNavbar.emptySquad');
 
   $: canShowParentMenuActions =
     !!activeParent && !creating && activeParent.channels.length > 0;
+
+  $: createChannelSubtitle = $t('nav.parentNavbar.createChannel.subtitle', {
+    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+  });
+  $: createChannelMembersLabel = $t('nav.parentNavbar.createChannel.membersLabel');
+  $: createChannelSelectAllLabel = $t('nav.parentNavbar.createChannel.selectAll');
+  $: createChannelEmptyMessage = $t('nav.parentNavbar.createChannel.empty');
+  $: inviteModalTitle = $t('nav.parentNavbar.invite.title');
+  $: inviteModalSubtitle = $t('nav.parentNavbar.invite.subtitle', {
+    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+  });
+  $: inviteModalEmptyMessage = $t('nav.parentNavbar.invite.empty');
 
   let retryingCreate = false;
   let inviteErrorBanner = '';
@@ -310,13 +326,13 @@
     const name = createChannelName.trim();
     if (!name) return;
     if (selectedNpubs.length === 0) {
-      createChannelError = 'Select at least one member';
+      createChannelError = translate('nav.parentNavbar.createChannel.noMembers');
       return;
     }
     const parent = activeParent;
     const squadId = $activeSquadId;
     if (!parent || !squadId) {
-      createChannelError = 'Squad not found';
+      createChannelError = translate('nav.parentNavbar.createChannel.squadNotFound');
       return;
     }
     createChannelError = '';
@@ -389,14 +405,13 @@
       ...(extraNpub && extraNpub.startsWith('npub1') ? [extraNpub] : []),
     ];
     if (npubsToInvite.length === 0) {
-      inviteError =
-        extraNpub
-          ? 'Please enter a valid npub (starts with npub1) or pick from the list.'
-          : 'Select at least one person or enter an npub.';
+      inviteError = extraNpub
+        ? translate('nav.parentNavbar.invite.invalidNpub')
+        : translate('nav.parentNavbar.invite.noSelection');
       return;
     }
     if (extraNpub && !extraNpub.startsWith('npub1')) {
-      inviteError = 'Please enter a valid npub (starts with npub1) or pick from the list.';
+      inviteError = translate('nav.parentNavbar.invite.invalidNpub');
       return;
     }
     inviteError = '';
@@ -439,7 +454,7 @@
       squad,
       wasActive: $activeSquadId === squad.id,
       previousChannelId: $activeChannelId,
-      onFailure: (msg) => showToast(`Could not exit squad "${squad.name}": ${msg}`),
+      onFailure: (msg) => showToast(translate('nav.parentNavbar.exit.failure', { values: { squadName: squad.name, message: msg } })),
     });
   }
 </script>
@@ -475,14 +490,14 @@
 <CreateChannelModal
   open={showCreateChannelModal}
   parentName={activeParent?.name ?? ''}
-  subtitle={"Add a channel to " + (activeParent?.name ?? 'this squad') + ". Choose a name and at least one member."}
-  membersLabel="Members (squad announcements only, select at least one)"
+  subtitle={createChannelSubtitle}
+  membersLabel={createChannelMembersLabel}
   bind:channelName={createChannelName}
   memberList={createChannelMemberList}
   loading={loadingCreateChannelMembers}
   bind:selectedNpubs={selectedNpubs}
-  selectAllLabel="Add everyone in squad"
-  emptyMessage="Invite people to the squad (announcements) first to add them to new channels."
+  selectAllLabel={createChannelSelectAllLabel}
+  emptyMessage={createChannelEmptyMessage}
   error={createChannelError}
   creating={false}
   canCreate={canCreateChannel}
@@ -496,13 +511,13 @@
 <InviteToParentModal
   open={showInviteModal}
   parentName={activeParent?.name ?? ''}
-  title="Invite to Squad"
-  subtitle={"Invite friends to " + (activeParent?.name ?? 'this Squad') + "."}
+  title={inviteModalTitle}
+  subtitle={inviteModalSubtitle}
   candidates={inviteCandidates}
   bind:selectedNpubs={selectedInviteNpubs}
   bind:inviteByNpub={inviteByNpub}
   loading={loadingInvite}
-  emptyMessage="No one to invite right now. Start a DM with someone first, or they may already be in this Squad."
+  emptyMessage={inviteModalEmptyMessage}
   error={inviteError}
   inviting={inviting}
   onClose={closeInviteModal}

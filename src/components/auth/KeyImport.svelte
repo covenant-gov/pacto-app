@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+
   export let onImport: (privateKey: string) => void;
   export let onBack: () => void;
   export let isValidating: boolean = false;
@@ -14,18 +17,18 @@
     localError = null;
 
     if (!trimmed) {
-      localError = 'Please enter your recovery phrase';
+      localError = get(t)('auth.errorMissingRecoveryPhrase');
       return;
     }
 
     const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
     if (words.length !== 12 && words.length !== 24) {
-      localError = `Recovery phrase must be 12 or 24 words (you entered ${words.length})`;
+      localError = get(t)('auth.errorRecoveryPhraseLength', { values: { count: words.length } });
       return;
     }
 
     if (trimmed.startsWith('nsec1')) {
-      localError = 'Use your recovery phrase here, not an nsec key';
+      localError = get(t)('auth.errorNsecNotAllowed');
       return;
     }
 
@@ -51,9 +54,9 @@
 <div class="key-import-container">
   <div class="key-import-content">
     <div class="import-header">
-      <h2>Import your account</h2>
+      <h2>{$t('auth.importTitle')}</h2>
       <p class="import-subtitle">
-        Enter your 12- or 24-word recovery phrase
+        {$t('auth.importSubtitle')}
       </p>
     </div>
 
@@ -65,7 +68,7 @@
       <textarea
         bind:value={privateKey}
         on:paste={handlePaste}
-        placeholder="word1 word2 word3 … (12 or 24 words)"
+        placeholder={$t('auth.recoveryPhrasePlaceholder')}
         disabled={isValidating}
         class="key-textarea"
         rows="4"
@@ -77,20 +80,20 @@
           on:click={onBack}
           disabled={isValidating}
         >
-          Back
+          {$t('auth.back')}
         </button>
         <button
           class="btn-primary"
           on:click={handleSubmit}
           disabled={isValidating || !privateKey.trim()}
         >
-          {isValidating ? 'Validating...' : 'Continue'}
+          {isValidating ? $t('auth.validating') : $t('auth.continue')}
         </button>
       </div>
     </div>
 
     <div class="import-notice">
-      <p>⚠️ Your recovery phrase will be encrypted with a PIN and stored securely on this device.</p>
+      <p>{$t('auth.recoveryPhraseNotice')}</p>
     </div>
   </div>
 </div>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
 
-  export let title: string = 'Enter PIN';
+  export let title: string;
   export let onComplete: (pin: string) => void;
   export let isProcessing: boolean = false;
   export let error: string | null = null;
@@ -118,7 +119,7 @@
         on:keydown={(e) => handleKeydown(i, e)}
         on:paste={handlePaste}
         class="pin-digit"
-        aria-label={`PIN digit ${i + 1}`}
+        aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
       />
     {/each}
   </div>
@@ -126,13 +127,13 @@
   {#if isProcessing}
     <div class="pin-processing" role="status">
       <div class="spinner"></div>
-      <p>Processing...</p>
+      <p>{$t('auth.processing')}</p>
     </div>
   {/if}
 
   {#if onBack && error}
     <button type="button" class="btn-back" on:click={onBack} disabled={isProcessing}>
-      Back
+      {$t('auth.back')}
     </button>
   {/if}
 </div>

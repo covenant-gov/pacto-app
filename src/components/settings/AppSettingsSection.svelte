@@ -11,6 +11,7 @@
   import UpdateAvailablePanel from '../updater/UpdateAvailablePanel.svelte';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
+  import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
 
   $: isDev = $updateStatus.status === 'dev-disabled';
   $: isChecking = $updateStatus.status === 'checking';
@@ -97,6 +98,27 @@
 
 <SettingsCollapsibleSection sectionId="settings-app" title="App settings">
   <div class="app-settings">
+    <div class="language-section" aria-labelledby="language-heading">
+      <h3 id="language-heading" class="theme-subheading">Language</h3>
+      <span class="theme-label">Display language</span>
+      <div class="theme-options" role="radiogroup" aria-label="App language">
+        {#each LOCALE_OPTIONS as opt (opt.value)}
+          <label class="theme-option">
+            <input
+              type="radio"
+              name="locale"
+              value={opt.value}
+              checked={$locale === opt.value}
+              on:change={() => setLocale(opt.value)}
+            />
+            <span class="theme-option-label">{opt.label}</span>
+          </label>
+        {/each}
+      </div>
+    </div>
+
+    <hr class="app-settings-divider" />
+
     <div class="theme-section" aria-labelledby="theme-heading">
       <h3 id="theme-heading" class="theme-subheading">Appearance</h3>
       <span class="theme-label">Theme</span>
