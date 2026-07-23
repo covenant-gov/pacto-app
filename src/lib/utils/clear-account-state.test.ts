@@ -103,6 +103,7 @@ describe('clearAccountState', () => {
     storage.set(`pacto_last_dm_npub_${npub}`, 'value');
     storage.set(`pacto_pinned_dm_npubs_${npub}`, 'value');
     storage.set(`pacto_wallet_ui_enabled_chains_v1_${npub}`, 'value');
+    storage.set(`pacto_locale_v1_${npub}`, 'es');
     storage.set('unrelated_key', 'keep');
 
     clearAccountState(npub);
@@ -110,6 +111,7 @@ describe('clearAccountState', () => {
     expect(storage.has(`pacto_last_dm_npub_${npub}`)).toBe(false);
     expect(storage.has(`pacto_pinned_dm_npubs_${npub}`)).toBe(false);
     expect(storage.has(`pacto_wallet_ui_enabled_chains_v1_${npub}`)).toBe(false);
+    expect(storage.has(`pacto_locale_v1_${npub}`)).toBe(false);
     expect(storage.get('unrelated_key')).toBe('keep');
   });
 

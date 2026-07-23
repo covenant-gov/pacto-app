@@ -1,0 +1,4 @@
+{
+	"test.hello": "Hello",
+	"test.items": "{count, plural, =0 {No items} one {One item} other {# items}}"
+}
