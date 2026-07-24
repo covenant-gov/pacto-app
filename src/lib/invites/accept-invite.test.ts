@@ -37,6 +37,7 @@ vi.mock('../squad/squad-outbound-invite', () => ({
 
 import {
   handleChannelAddedToSquad,
+  handleMlsWelcomeAccepted,
   reconcileStaleInviteDecisions,
   squadInviteResolvedByMembership,
   waitForAnnouncementsWelcome,
@@ -124,6 +125,14 @@ describe('accept-invite channel persistence', () => {
     const patch = persistSquadPatchMock.mock.calls[0]![1] as (s: Squad) => Squad;
     const patched = patch(get(squads)[0]!);
     expect(patched.channels).toHaveLength(2);
+  });
+
+  it('does not attach unattributed welcome to a single-channel squad', () => {
+    // A squad with exactly one channel (announcements) and no pending invite.
+    squads.set([parent]);
+    handleMlsWelcomeAccepted('unrelated-welcome');
+    expect(persistSquadPatchMock).not.toHaveBeenCalled();
+    expect(get(squads)[0]!.channels).toHaveLength(1);
   });
 
   it('detects squad invite resolved when squad is already local', () => {

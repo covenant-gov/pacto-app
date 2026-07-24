@@ -13,6 +13,7 @@
   import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
   import {
     squads,
     activeSquadId,
@@ -66,7 +67,6 @@
   import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
 
-:
   const translate = get(t);
   $: orderedSquads = orderSquads($squads, $squadNavOrder);
 
@@ -193,6 +193,11 @@
     squadGhost = null;
     document.body.classList.remove('pacto-squad-nav-dragging');
   }
+
+  onDestroy(() => {
+    clearSquadPointerDrag(false);
+    unbindSquadWindowListeners();
+  });
 
   function onSquadPointerDown(e: PointerEvent, squadId: string) {
     if (e.button !== 0) return;

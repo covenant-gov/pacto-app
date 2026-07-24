@@ -124,6 +124,9 @@ async function inviteOpenChannelsInBackground(
       }
     }
   } finally {
+    // Keep the in-flight guard until every open-channel background invite has
+    // been attempted. Deleting earlier allowed a second admit for the same
+    // member to start while channel invites were still running.
     admitInFlight.delete(admitKeyForMember);
   }
 }

@@ -9,7 +9,7 @@ import { safeStateByTreasuryId } from './safe';
 import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-key-choice';
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
-import { setCurrentNpubForPersistence } from './persistence-context';
+import { setCurrentNpubForPersistence, persistenceKey } from './persistence-context';
 import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
@@ -63,7 +63,12 @@ export function loadAccountState(npub: string): void {
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {
     try {
-      squadNavOrder.set(parseSquadNavOrder(localStorage.getItem(`${SQUAD_NAV_ORDER_PREFIX}_${npub}`)));
+      const navKey = persistenceKey(SQUAD_NAV_ORDER_PREFIX);
+      if (navKey) {
+        squadNavOrder.set(parseSquadNavOrder(localStorage.getItem(navKey)));
+      } else {
+        squadNavOrder.set([]);
+      }
     } catch {
       squadNavOrder.set([]);
     }

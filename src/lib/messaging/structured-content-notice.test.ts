@@ -1,21 +1,14 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { get } from 'svelte/store';
-import { t } from 'svelte-i18n';
-import { initI18n } from '../i18n';
+import { describe, expect, it } from 'vitest';
 import {
   isStructuredProductContent,
   summarizeStructuredMessageContent,
 } from './structured-content-notice';
 
-beforeAll(async () => {
-  await initI18n('en');
-});
-
 describe('summarizeStructuredMessageContent', () => {
-  const tFn = () => get(t);
+  const tFn = (key: string) => key;
 
   it('returns null for plain text', () => {
-    expect(summarizeStructuredMessageContent('hello', tFn())).toBeNull();
+    expect(summarizeStructuredMessageContent('hello', tFn)).toBeNull();
   });
 
   it('summarizes join response with status', () => {
@@ -26,18 +19,18 @@ describe('summarizeStructuredMessageContent', () => {
           squadName: 'zzz',
           status: 'accepted',
         }),
-        tFn()
-      )
-    ).toBe('Join request for zzz was accepted');
+        tFn,
+      ),
+    ).toBe('messaging.structuredNotice.joinRequestAccepted');
   });
 
   it('summarizes allowlist type', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ type: 'squad_contract_allowlist_updated', payload: {} }),
-        tFn()
-      )
-    ).toBe('Contract allowlist updated');
+        tFn,
+      ),
+    ).toBe('messaging.structuredNotice.contractAllowlistUpdated');
   });
 
   it('summarizes squad network update with display name', () => {
@@ -47,18 +40,18 @@ describe('summarizeStructuredMessageContent', () => {
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'sepolia' },
         }),
-        tFn()
-      )
-    ).toBe('Squad network updated to Sepolia');
+        tFn,
+      ),
+    ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'local' },
         }),
-        tFn()
-      )
-    ).toBe('Squad network updated to Local Anvil');
+        tFn,
+      ),
+    ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
   });
 
   it('detects structured product content', () => {
@@ -69,23 +62,23 @@ describe('summarizeStructuredMessageContent', () => {
 
   it('summarizes new outbound-invite and channels catalog types', () => {
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' })),
-    ).toBe('Squad invite pending');
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' }), tFn),
+    ).toBe('messaging.structuredNotice.squadInvitePending');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' })),
-    ).toBe('Squad member admit');
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' }), tFn),
+    ).toBe('messaging.structuredNotice.squadMemberAdmit');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' })),
-    ).toBe('Squad channels updated');
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' }), tFn),
+    ).toBe('messaging.structuredNotice.squadChannelsUpdated');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' })),
-    ).toBe('Squad join update');
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn),
+    ).toBe('messaging.structuredNotice.squadInviteAccepted');
   });
 
   it('covers schema/type fallbacks and invalid JSON', () => {
-    expect(summarizeStructuredMessageContent(null)).toBeNull();
-    expect(summarizeStructuredMessageContent(undefined)).toBeNull();
-    expect(summarizeStructuredMessageContent('{')).toBeNull();
+    expect(summarizeStructuredMessageContent(null, tFn)).toBeNull();
+    expect(summarizeStructuredMessageContent(undefined, tFn)).toBeNull();
+    expect(summarizeStructuredMessageContent('{', tFn)).toBeNull();
     expect(isStructuredProductContent(null)).toBe(false);
     expect(isStructuredProductContent('{')).toBe(false);
 
@@ -95,8 +88,9 @@ describe('summarizeStructuredMessageContent', () => {
           schema: 'pacto.squad.bot_join_response.v1',
           status: 'rejected',
         }),
+        tFn,
       ),
-    ).toBe('Join request for squad was rejected');
+    ).toBe('messaging.structuredNotice.joinRequestRejected');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
@@ -104,25 +98,28 @@ describe('summarizeStructuredMessageContent', () => {
           squadName: 'zzz',
           status: 'pending',
         }),
+        tFn,
       ),
-    ).toBe('Join update for zzz');
+    ).toBe('messaging.structuredNotice.joinUpdateFor');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ schema: 'pacto.squad.bot_join_dm.v1', squadName: 'Crew' }),
+        tFn,
       ),
-    ).toBe('Join request for Crew');
+    ).toBe('messaging.structuredNotice.joinRequestFor');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' })),
-    ).toBe('Squad update');
+      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' }), tFn),
+    ).toBe('messaging.structuredNotice.squadUpdate');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ type: 'squad_network_updated', payload: { chain: 'not-a-chain' } }),
+        tFn,
       ),
-    ).toBe('Squad network updated');
+    ).toBe('messaging.structuredNotice.squadNetworkUpdated');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'totally_unknown' })),
-    ).toBe('Squad update');
-    expect(summarizeStructuredMessageContent(JSON.stringify({ foo: 1 }))).toBeNull();
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'totally_unknown' }), tFn),
+    ).toBe('messaging.structuredNotice.squadUpdate');
+    expect(summarizeStructuredMessageContent(JSON.stringify({ foo: 1 }), tFn)).toBeNull();
   });
 });
 

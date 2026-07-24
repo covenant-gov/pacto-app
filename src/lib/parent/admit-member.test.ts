@@ -115,6 +115,30 @@ describe('admitMemberToSquad', () => {
     });
   });
 
+  it('prevents concurrent admits for the same member until background invites finish', async () => {
+    let gate = Promise.withResolvers<void>();
+    vi.mocked(inviteMemberToGroup).mockImplementation(async (groupId: string) => {
+      if (groupId === 'g-ops') {
+        await gate.promise;
+      }
+    });
+
+    const first = admitMemberToSquad({ parent, memberNpub: 'npub-bob' });
+    const second = admitMemberToSquad({ parent, memberNpub: 'npub-bob' });
+
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+    // Only one announcements invite should run; the second call is deduped.
+    const annCalls = vi.mocked(inviteMemberToGroup).mock.calls.filter(([gid]) => gid === 'g-ann');
+    expect(annCalls).toHaveLength(1);
+
+    gate.resolve();
+    await vi.waitFor(() => {
+      expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob');
+    });
+  });
+
   it('runAdmitMembersToSquad aggregates admitted npubs and errors', async () => {
     vi.mocked(inviteMemberToGroup).mockRejectedValueOnce(new Error('boom'));
     const onErrorBanner = vi.fn();

@@ -460,19 +460,6 @@ export function handleMlsWelcomeAccepted(group_id: string): void {
     acceptedSquadInviteGroupIds.delete(group_id);
     return;
   }
-  const list = get(squads);
-  const singleChannelSquads = list.filter((s: Squad) => s.channels.length === 1);
-  if (singleChannelSquads.length === 1) {
-    const squad = singleChannelSquads[0];
-    const name = group_id.slice(0, 12) + '…';
-    void persistSquadPatch(squad.id, (s) => {
-      if (s.channels.some((ch) => ch.groupId === group_id)) return s;
-      return {
-        ...s,
-        channels: [...s.channels, { name, groupId: group_id, order: s.channels.length }],
-      };
-    });
-  }
 }
 
 export function handleChannelAddedToSquad(

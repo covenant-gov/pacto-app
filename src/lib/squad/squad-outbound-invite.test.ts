@@ -305,6 +305,22 @@ describe('squad-outbound-invite flows', () => {
     expect(sendDmMessage).toHaveBeenCalledTimes(2);
   });
 
+  it('handleInviteeConsentForAdmit does not retry immediately on admit failure', async () => {
+    vi.mocked(admitMemberToSquad).mockResolvedValue({
+      ok: false,
+      announcementsOk: false,
+      openChannelsInvited: 0,
+      error: 'network down',
+    });
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
+
+    // A second broadcast for the same invite must be suppressed even though the
+    // admit failed, preventing a retry storm across multiple peers.
+    await handleInviteeConsentForAdmit(validOutbound);
+    expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
+  });
+
   it('handleInviteeConsentForAdmit admits once and can broadcast admit_needed', async () => {
     await handleInviteeConsentForAdmit(validOutbound, { broadcastAdmitNeeded: true });
     expect(admitMemberToSquad).toHaveBeenCalledWith({

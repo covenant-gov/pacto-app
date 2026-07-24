@@ -58,7 +58,7 @@ describe('resolveGovernancePrivilege', () => {
       capabilities: snap,
     });
     expect(p.myAddress).toBe('0xsnap');
-    expect(p.roleLabel).toBe('No on-chain hat');
+    expect(p.roleLabel).toBe('governance.roleLabel.noOnChainHat');
     expect(p.squadAdminFull).toBe(true);
   });
 
@@ -70,7 +70,7 @@ describe('resolveGovernancePrivilege', () => {
         captainWearers: ['0xsafe'],
         crewWearers: [],
       }).roleLabel,
-    ).toBe('No squad EVM linked');
+    ).toBe('governance.roleLabel.noSquadEvmLinked');
 
     expect(
       resolveGovernancePrivilege({
@@ -79,7 +79,7 @@ describe('resolveGovernancePrivilege', () => {
         captainWearers: ['0xaaa'],
         crewWearers: ['0xaaa'],
       }).roleLabel,
-    ).toBe('Captain + Crew');
+    ).toBe('governance.roleLabel.captainAndCrew');
 
     expect(
       resolveGovernancePrivilege({
@@ -88,7 +88,7 @@ describe('resolveGovernancePrivilege', () => {
         captainWearers: [],
         crewWearers: ['0xaaa'],
       }).roleLabel,
-    ).toBe('Crew');
+    ).toBe('governance.roleLabel.crew');
 
     expect(
       resolveGovernancePrivilege({
@@ -97,7 +97,7 @@ describe('resolveGovernancePrivilege', () => {
         captainWearers: ['0xsafe'],
         crewWearers: [],
       }).roleLabel,
-    ).toBe('No hat · Safe holds captain');
+    ).toBe('governance.roleLabel.noHatSafeHoldsCaptain');
   });
 });
 
@@ -120,7 +120,7 @@ describe('governance gates', () => {
         squadAdminCreateRole: { allowed: true, reason: '' },
       },
     };
-    expect(gateRequiresCrew(denied)).toEqual({ enabled: false, reason: 'Access denied' });
+    expect(gateRequiresCrew(denied)).toEqual({ enabled: false, reason: 'governance.gate.accessDenied' });
     expect(gateRequiresCaptain(denied)).toEqual({ enabled: false, reason: 'Nope' });
     expect(gateRequiresCaptainOrCrew(denied).enabled).toBe(true);
     expect(gatePermissionlessSigner(denied)).toEqual({ enabled: false, reason: 'No exec' });
@@ -129,18 +129,18 @@ describe('governance gates', () => {
 
   it('falls back to hat checks without capability flags', () => {
     const noEvm = { ...base, myAddress: '', wearsCaptain: false, wearsCrew: false };
-    expect(gateRequiresCrew(noEvm).reason).toMatch(/Link a squad EVM/i);
-    expect(gateRequiresCaptain(noEvm).reason).toMatch(/Link a squad EVM/i);
-    expect(gateRequiresCaptainOrCrew(noEvm).reason).toMatch(/Link a squad EVM/i);
-    expect(gatePermissionlessSigner(noEvm).reason).toMatch(/sign/i);
+    expect(gateRequiresCrew(noEvm).reason).toBe('governance.gate.linkSquadEvmAddressToAct');
+    expect(gateRequiresCaptain(noEvm).reason).toBe('governance.gate.linkSquadEvmAddressToAct');
+    expect(gateRequiresCaptainOrCrew(noEvm).reason).toBe('governance.gate.linkSquadEvmAddressToAct');
+    expect(gatePermissionlessSigner(noEvm).reason).toBe('governance.gate.linkSquadEvmAddressToSign');
 
     const crewOnly = { ...base, wearsCaptain: false, wearsCrew: true, captainIsSafe: false };
     expect(gateRequiresCrew(crewOnly).enabled).toBe(true);
-    expect(gateRequiresCaptain(crewOnly).reason).toMatch(/Captain hat/i);
+    expect(gateRequiresCaptain(crewOnly).reason).toBe('governance.gate.requiresCaptain');
     expect(gateRequiresCaptainOrCrew(crewOnly).enabled).toBe(true);
 
     const none = { ...base, wearsCaptain: false, wearsCrew: false, captainIsSafe: false };
-    expect(gateRequiresCaptainOrCrew(none).reason).toMatch(/Captain or Crew/i);
+    expect(gateRequiresCaptainOrCrew(none).reason).toBe('governance.gate.requiresCaptainOrCrew');
     expect(gatePermissionlessSigner(base).enabled).toBe(true);
   });
 

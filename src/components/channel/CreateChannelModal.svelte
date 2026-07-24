@@ -64,7 +64,7 @@
 
       {#if !showMemberPicker}
         <p class="create-channel-hint">
-          Open channels include everyone in announcements. Closed channels let you pick members.
+          {$t('messaging.channel.openClosedHint')}
         </p>
         {#if error}
           <p class="create-channel-error" role="alert">{error}</p>
@@ -76,7 +76,7 @@
             disabled={!nameReady || creating}
             on:click={onOpenChannel}
           >
-            {creating ? $t('messaging.channel.creating') : 'Open channel'}
+            {creating ? $t('messaging.channel.creating') : $t('messaging.channel.openChannel')}
           </button>
           <button
             type="button"
@@ -84,7 +84,7 @@
             disabled={!nameReady || creating}
             on:click={onChooseClosed}
           >
-            Closed channel
+            {$t('messaging.channel.closedChannel')}
           </button>
         </div>
         <div class="create-channel-actions">

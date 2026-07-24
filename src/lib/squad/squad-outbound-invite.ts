@@ -193,11 +193,9 @@ export async function handleInviteeConsentForAdmit(
     get(squads).find((s) => getAnnouncementsChannel(s).groupId === payload.parent_id);
   if (!parent) return;
 
-  const result = await admitMemberToSquad({ parent, memberNpub: payload.invitee_npub });
-  if (!result.ok) {
-    handledAcceptKeys.delete(key);
-    return;
-  }
+  await admitMemberToSquad({ parent, memberNpub: payload.invitee_npub });
+  // Keep handledAcceptKeys even on failure. Removing it let every subsequent
+  // admit_needed broadcast for the same invite re-trigger a retry storm.
 
   if (opts?.broadcastAdmitNeeded) {
     const announcements = getAnnouncementsChannel(parent);
