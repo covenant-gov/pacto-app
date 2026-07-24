@@ -116,7 +116,7 @@ describe('admitMemberToSquad', () => {
   });
 
   it('prevents concurrent admits for the same member until background invites finish', async () => {
-    let gate = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
     vi.mocked(inviteMemberToGroup).mockImplementation(async (groupId: string) => {
       if (groupId === 'g-ops') {
         await gate.promise;

@@ -215,7 +215,6 @@
     values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
   });
   $: createChannelMembersLabel = $t('nav.parentNavbar.createChannel.membersLabel');
-  $: createChannelSelectAllLabel = $t('nav.parentNavbar.createChannel.selectAll');
   $: createChannelEmptyMessage = $t('nav.parentNavbar.createChannel.empty');
   $: inviteModalTitle = $t('nav.parentNavbar.invite.title');
   $: inviteModalSubtitle = $t('nav.parentNavbar.invite.subtitle', {
