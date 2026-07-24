@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, B256, U256};
 use alloy::rpc::types::Log;
 use alloy::sol_types::{SolCall, SolEvent};
 use serde::Serialize;
@@ -92,6 +92,17 @@ pub struct QuartermasterPendingActionDto {
     pub kind: String,
     pub address: String,
     pub executable_at: String,
+}
+
+fn qm_crew_lifecycle_topic0s() -> [B256; 6] {
+    [
+        CrewAddRequested::SIGNATURE_HASH,
+        CrewAddCancelled::SIGNATURE_HASH,
+        CrewAddExecuted::SIGNATURE_HASH,
+        CrewRemoveRequested::SIGNATURE_HASH,
+        CrewRemoveCancelled::SIGNATURE_HASH,
+        CrewRemoveExecuted::SIGNATURE_HASH,
+    ]
 }
 
 /// Fold Quartermaster lifecycle logs into candidate address sets (Requested − Cancelled/Executed).
@@ -233,7 +244,15 @@ pub async fn list_quartermaster_pending<R: Runtime>(
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let (from, to) =
         resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
-    let logs = get_logs_chunked(&provider, qm, from, to, DEFAULT_LOG_CHUNK_BLOCKS).await?;
+    let logs = get_logs_chunked(
+        &provider,
+        qm,
+        from,
+        to,
+        DEFAULT_LOG_CHUNK_BLOCKS,
+        Some(&qm_crew_lifecycle_topic0s()),
+    )
+    .await?;
     let (add_addrs, remove_addrs) = collect_qm_pending_candidates_from_logs(&logs);
 
     let mut out = Vec::new();
@@ -465,9 +484,9 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
 mod tests {
     use super::{
         collect_qm_pending_candidates_from_logs, encode_bootstrap_crew, encode_execute_add_crew,
-        encode_request_add_crew, encode_request_remove_crew,
+        encode_request_add_crew, encode_request_remove_crew, qm_crew_lifecycle_topic0s,
     };
-    use alloy::primitives::{Address, U256};
+    use alloy::primitives::{keccak256, Address, U256};
     use alloy::rpc::types::Log;
     use alloy::sol_types::{SolCall, SolEvent};
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
@@ -534,6 +553,24 @@ mod tests {
         .abi_encode();
         assert_eq!(encoded, expected);
         assert!(encoded.len() > 4);
+    }
+
+    #[test]
+    fn crew_lifecycle_topic0s_match_event_signatures() {
+        let topics = qm_crew_lifecycle_topic0s();
+        assert_eq!(topics.len(), 6);
+        assert_eq!(
+            topics[0],
+            keccak256("CrewAddRequested(address,uint256)")
+        );
+        assert_eq!(topics[1], keccak256("CrewAddCancelled(address)"));
+        assert_eq!(topics[2], keccak256("CrewAddExecuted(address)"));
+        assert_eq!(
+            topics[3],
+            keccak256("CrewRemoveRequested(address,uint256)")
+        );
+        assert_eq!(topics[4], keccak256("CrewRemoveCancelled(address)"));
+        assert_eq!(topics[5], keccak256("CrewRemoveExecuted(address)"));
     }
 
     #[test]
