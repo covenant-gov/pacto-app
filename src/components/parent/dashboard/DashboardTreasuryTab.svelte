@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { onMount } from 'svelte';
   import SquadSponsorTreasuryPanel from '../governance/SquadSponsorTreasuryPanel.svelte';
   import TreasurySafeModulePanel from '../governance/TreasurySafeModulePanel.svelte';
@@ -13,10 +14,6 @@
   } from '../../../lib/governance/governance-privilege';
   import { explorerAddressUrl, parseSupportedChainId, safeAppHomeUrl } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import {
-    governanceTreasuryHeading,
-    treasuryVaultHeading,
-  } from '../../../lib/treasury/treasury-vault-labels';
   import { safeStateByTreasuryId } from '../../../stores/safe';
   import { treasurySafesFetchMetaByParentId } from '../../../lib/dashboard/dashboard-fetch-meta';
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
@@ -100,18 +97,18 @@
 
 {#if showGovTreasury}
   <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">
-    <h3 id="gov-treasury-heading" class="section-heading">{governanceTreasuryHeading()}</h3>
+    <h3 id="gov-treasury-heading" class="section-heading">{$t('governance.treasury.govHeading')}</h3>
     <code class="treasury-card-address">{govSafeAddress}</code>
     {#if govExUrl || govSafeAppUrl}
       <div class="treasury-card-links">
         {#if govExUrl}
           <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govExUrl)}>
-            View on explorer
+            {$t('governance.treasury.viewExplorer')}
           </button>
         {/if}
         {#if govSafeAppUrl}
           <button type="button" class="btn-link treasury-explorer-link" on:click={() => openExternalUrl(govSafeAppUrl)}>
-            Open in Safe
+            {$t('governance.treasury.openSafe')}
           </button>
         {/if}
       </div>
@@ -128,14 +125,14 @@
 
 <section class="dashboard-section" aria-labelledby="safe-heading">
   <div class="treasury-section-head">
-    <h3 id="safe-heading" class="section-heading">Other vaults</h3>
+    <h3 id="safe-heading" class="section-heading">{$t('governance.treasury.otherVaults')}</h3>
     {#if treasuryFetchMeta?.loading && (treasurySafes?.length ?? 0) > 0}
-      <span class="treasury-refresh-note muted" role="status">Refreshing…</span>
+      <span class="treasury-refresh-note muted" role="status">{$t('governance.treasury.refreshing')}</span>
     {/if}
     {#if (treasurySafes?.length ?? 0) < TREASURY_SAFE_UI_CAP}
       <div class="treasury-action-btns">
-        <button type="button" class="btn-primary treasury-deploy-btn" on:click={onOpenDeploySafe}>Deploy Safe</button>
-        <button type="button" class="btn-secondary treasury-import-btn" on:click={onOpenImportSafe}>Import Safe</button>
+        <button type="button" class="btn-primary treasury-deploy-btn" on:click={onOpenDeploySafe}>{$t('governance.treasury.deploySafe')}</button>
+        <button type="button" class="btn-secondary treasury-import-btn" on:click={onOpenImportSafe}>{$t('governance.treasury.importSafe')}</button>
       </div>
     {/if}
   </div>
@@ -144,11 +141,11 @@
   {/if}
   {#if (treasurySafes?.length ?? 0) > TREASURY_SAFE_UI_CAP}
     <p class="treasury-cap-note muted">
-      Showing {TREASURY_SAFE_UI_CAP} of {treasurySafes.length} linked Safes.
+      {$t('governance.treasury.capNote', { values: { shown: TREASURY_SAFE_UI_CAP, total: treasurySafes.length } })}
     </p>
   {/if}
   {#if displayedTreasurySafes.length === 0}
-    <p class="no-safe">No additional vault Safes linked yet.</p>
+    <p class="no-safe">{$t('governance.treasury.noVaults')}</p>
   {:else}
     <ul class="treasury-safe-card-list" role="list">
       {#each displayedTreasurySafes as entry (entry.id)}
@@ -156,7 +153,7 @@
         {@const exUrl = explorerAddressUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
         {@const safeAppUrl = safeAppHomeUrl(parseSupportedChainId(entry.chain), entry.safeAddress)}
         <li class="treasury-safe-card">
-          <h4 class="treasury-vault-title">{treasuryVaultHeading(entry)}</h4>
+          <h4 class="treasury-vault-title">{entry.label ? $t('governance.treasury.vaultLabel', { values: { label: entry.label } }) : $t('governance.treasury.vaultMultisig')}</h4>
           <div class="treasury-card-top">
             <span class="treasury-pill treasury-pill-chain">{entry.chain}</span>
             {#if entry.label}
@@ -172,7 +169,7 @@
                   class="btn-link treasury-explorer-link"
                   on:click={() => openTreasuryExplorer(entry)}
                 >
-                  View on explorer
+                  {$t('governance.treasury.viewExplorer')}
                 </button>
               {/if}
               {#if safeAppUrl}
@@ -181,20 +178,20 @@
                   class="btn-link treasury-explorer-link"
                   on:click={() => openTreasurySafeApp(entry)}
                 >
-                  Open in Safe
+                  {$t('governance.treasury.openSafe')}
                 </button>
               {/if}
             </div>
           {/if}
           {#if st?.state}
             <dl class="safe-state-dl treasury-card-dl">
-              <dt>Balance</dt>
-              <dd>{st.state.balanceFormatted} ETH</dd>
-              <dt>Signatures</dt>
-              <dd>{st.state.threshold} of {st.state.owners.length}</dd>
-              <dt>Nonce</dt>
+              <dt>{$t('governance.treasury.balance')}</dt>
+              <dd>{$t('governance.treasury.balanceEth', { values: { balance: st.state.balanceFormatted } })}</dd>
+              <dt>{$t('governance.treasury.signatures')}</dt>
+              <dd>{$t('governance.treasury.thresholdOf', { values: { threshold: st.state.threshold, owners: st.state.owners.length } })}</dd>
+              <dt>{$t('governance.treasury.nonce')}</dt>
               <dd>{String(st.state.nonce)}</dd>
-              <dt>Owners</dt>
+              <dt>{$t('governance.treasury.owners')}</dt>
               <dd>
                 <ul class="safe-owners-list">
                   {#each st.state.owners as owner (owner)}
@@ -204,12 +201,12 @@
               </dd>
             </dl>
             {#if st.loading}
-              <p class="safe-state-meta">Refreshing…</p>
+              <p class="safe-state-meta">{$t('governance.treasury.refreshing')}</p>
             {:else if st.error}
-              <p class="safe-state-error" role="alert">Last refresh failed: {st.error}</p>
+              <p class="safe-state-error" role="alert">{$t('governance.treasury.lastRefreshFailed', { values: { error: st.error } })}</p>
             {/if}
           {:else if st?.loading}
-            <p class="safe-state-meta">Loading Safe state…</p>
+            <p class="safe-state-meta">{$t('governance.treasury.loadingSafe')}</p>
           {:else if st?.error}
             <p class="safe-state-error" role="alert">{st.error}</p>
           {/if}

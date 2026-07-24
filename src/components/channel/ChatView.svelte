@@ -66,6 +66,10 @@
   } from '../../stores/squad-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
@@ -106,7 +110,7 @@
     return $activeChannelId;
   })();
 
-  $: channelName = activeChannel?.name || 'channel';
+  $: channelName = activeChannel?.name || $t('messaging.channel.createDefaultParent');
   $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
@@ -255,7 +259,7 @@
       replyPreview: undefined as string | undefined,
     };
     if (msg.mine) {
-      base.authorName = 'You';
+      base.authorName = tFn('messaging.message.authorYou');
       base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
     } else {
       const senderProfile = msg.npub ? $profiles[msg.npub] : null;
@@ -266,20 +270,20 @@
       const replyNpub = msg.replied_to_npub ?? undefined;
       base.replyAuthorName =
         replyNpub && currentUserNpub && replyNpub === currentUserNpub
-          ? 'You'
+          ? tFn('messaging.message.authorYou')
           : replyNpub
             ? getProfileDisplayName($profiles[replyNpub] ?? null)
-            : 'Unknown';
+            : tFn('messaging.message.replyUnknown');
       base.replyPreview =
         msg.replied_to_has_attachment === true
-          ? 'Attachment'
+          ? tFn('messaging.message.attachment')
           : msg.replied_to_content != null && msg.replied_to_content.length > 0
             ? (() => {
                 const parsedReply = parseMessageContent(msg.replied_to_content as string);
                 const body = parsedReply.body;
                 return body.slice(0, 80).trim() + (body.length > 80 ? '…' : '');
               })()
-            : 'Message';
+            : tFn('messaging.message.messageFallback');
     }
     return base;
   }
@@ -516,8 +520,8 @@
       if (!inviteToChannelCandidates.includes(memberNpub)) {
         inviteToChannelCandidates = [...inviteToChannelCandidates, memberNpub];
       }
-      showToast(`Could not add ${displayName} to this channel: ${message}`, undefined, {
-        label: 'Retry',
+      showToast(tFn('messaging.channel.inviteToastError', { values: { displayName, message } }), undefined, {
+        label: tFn('messaging.channel.retry'),
         action: () =>
           runInviteMemberToChannel({
             groupId,
@@ -658,7 +662,7 @@
   {#if parentSettingUp}
     <div class="squad-setting-up-state" role="status" aria-live="polite">
       <div class="squad-setting-up-spinner"></div>
-      <p class="squad-setting-up-text">Setting up this space…</p>
+      <p class="squad-setting-up-text">{$t('messaging.channel.settingUp')}</p>
       {#if parentSettingUpError}
         <p class="squad-setting-up-error" role="alert">{parentSettingUpError}</p>
       {/if}
@@ -676,7 +680,7 @@
             <button
               type="button"
               class="channel-menu-btn"
-              title="Channel options"
+              title={$t('messaging.channel.optionsTitle')}
               on:click={() => (channelMenuOpen = !channelMenuOpen)}
               aria-expanded={channelMenuOpen}
               aria-haspopup="menu"
@@ -690,17 +694,17 @@
               class="polls-chat-layout-btn"
               on:click={togglePollsChatCollapsed}
               aria-pressed={pollsChatCollapsed}
-              title={pollsChatCollapsed ? 'Show chat below polls' : 'Hide chat and show polls only'}
+              title={pollsChatCollapsed ? $t('messaging.channel.showChatBelowPolls') : $t('messaging.channel.hideChatShowPollsOnly')}
             >
-              {pollsChatCollapsed ? 'Show chat' : 'Polls only'}
+              {pollsChatCollapsed ? $t('messaging.channel.showChat') : $t('messaging.channel.pollsOnly')}
             </button>
           {/if}
           <button
             type="button"
             class="channel-members-btn"
-            title="Members"
+            title={$t('messaging.channel.membersTitle')}
             on:click={toggleMembersPanel}
-            aria-label={$showMembersPanel ? 'Close channel members' : 'View channel members'}
+            aria-label={$showMembersPanel ? $t('messaging.channel.closeMembersAria') : $t('messaging.channel.viewMembersAria')}
             aria-expanded={$showMembersPanel}
           >
             <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
@@ -710,7 +714,7 @@
           <div class="channel-menu-dropdown" role="menu">
             {#if !hideChannelOverflowMenu}
               <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
-                Invite to channel
+                {$t('messaging.channel.inviteToChannel')}
               </button>
               <button
                 type="button"
@@ -719,7 +723,7 @@
                 disabled={leavingChannel}
                 on:click={openLeaveChannelConfirm}
               >
-                Leave channel
+                {$t('messaging.channel.leaveChannel')}
               </button>
             {/if}
           </div>
@@ -753,7 +757,7 @@
           <button
             type="button"
             class="polls-channel-split-handle"
-            aria-label="Resize polls and chat panes"
+            aria-label={$t('messaging.channel.resizePollsAria')}
             on:mousedown={startPollsSplitResize}
             on:dblclick={() => {
               pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
@@ -764,7 +768,7 @@
             <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
               <div class="messages-list">
                 {#if isChannelCreating}
-                  <p class="channel-creating-message">Private group channel is being created.</p>
+                  <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
                 {:else}
                   {#if canLoadOlder}
                     <div class="load-older-wrap">
@@ -774,7 +778,7 @@
                         on:click={loadOlder}
                         disabled={loadingOlder}
                       >
-                        {loadingOlder ? 'Loading…' : 'Load older messages'}
+                        {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
                       </button>
                     </div>
                   {/if}
@@ -808,8 +812,8 @@
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
-            <span class="polls-channel-chat-collapsed-label">Chat hidden</span>
-            <span class="polls-channel-chat-collapsed-action">Show chat</span>
+            <span class="polls-channel-chat-collapsed-label">{$t('messaging.channel.chatHidden')}</span>
+            <span class="polls-channel-chat-collapsed-action">{$t('messaging.channel.showChatAction')}</span>
           </button>
         {/if}
       </div>
@@ -817,7 +821,7 @@
       <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
       <div class="messages-list">
         {#if isChannelCreating}
-          <p class="channel-creating-message">Private group channel is being created.</p>
+          <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
         {:else}
           {#if canLoadOlder}
             <div class="load-older-wrap">
@@ -827,7 +831,7 @@
                 on:click={loadOlder}
                 disabled={loadingOlder}
               >
-                {loadingOlder ? 'Loading…' : 'Load older messages'}
+                {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
               </button>
             </div>
           {/if}
@@ -886,17 +890,17 @@
     <!-- Leave channel confirm -->
     {#if showLeaveChannelConfirm}
       <Modal titleId="leave-channel-title" onClose={() => (showLeaveChannelConfirm = false)}>
-        <h2 id="leave-channel-title">Leave channel?</h2>
-        <p class="channel-leave-explainer">Channels are private groups and you will need to be re-invited to re-enter this channel.</p>
+        <h2 id="leave-channel-title">{$t('messaging.channel.leaveTitle')}</h2>
+        <p class="channel-leave-explainer">{$t('messaging.channel.leaveExplainer')}</p>
         <div class="channel-modal-actions">
-          <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>Cancel</button>
+          <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>{$t('messaging.channel.cancel')}</button>
           <button
             type="button"
             class="channel-modal-primary channel-modal-danger"
             disabled={leavingChannel}
             on:click={handleLeaveChannel}
           >
-            {leavingChannel ? 'Leaving…' : 'Leave channel'}
+            {leavingChannel ? $t('messaging.channel.leaving') : $t('messaging.channel.leave')}
           </button>
         </div>
       </Modal>
@@ -905,11 +909,11 @@
     <!-- Invite to channel modal -->
     {#if showInviteToChannelModal}
       <Modal titleId="invite-channel-modal-title" onClose={() => (showInviteToChannelModal = false)}>
-        <h2 id="invite-channel-modal-title">Invite to channel</h2>
+        <h2 id="invite-channel-modal-title">{$t('messaging.channel.inviteTitle')}</h2>
         {#if loadingInviteCandidates}
-          <p class="channel-modal-loading">Loading…</p>
+          <p class="channel-modal-loading">{$t('messaging.channel.inviteLoading')}</p>
         {:else if inviteToChannelCandidates.length === 0}
-          <p class="channel-modal-empty">No one to invite. For squad channels, add members to the squad first.</p>
+          <p class="channel-modal-empty">{$t('messaging.channel.inviteEmpty')}</p>
         {:else}
           <div class="channel-invite-list">
             {#each inviteToChannelCandidates as npub (npub)}
@@ -922,7 +926,7 @@
         {/if}
         <div class="channel-modal-actions">
           <button type="button" class="channel-modal-close" on:click={() => (showInviteToChannelModal = false)}>
-            Cancel
+            {$t('messaging.channel.cancel')}
           </button>
           <button
             type="button"
@@ -930,7 +934,7 @@
             disabled={!selectedInviteNpub}
             on:click={handleInviteToChannel}
           >
-            Invite
+            {$t('messaging.channel.invite')}
           </button>
         </div>
       </Modal>
@@ -938,13 +942,13 @@
     </div>
     <!-- Right-hand members panel (Discord-style) -->
     {#if $showMembersPanel}
-      <aside class="members-panel" aria-label="Channel members">
+      <aside class="members-panel" aria-label={$t('messaging.channel.membersTitle')}>
         <div class="members-panel-header">
-          <h3 class="members-panel-title">Members</h3>
+          <h3 class="members-panel-title">{$t('messaging.channel.membersPanelTitle')}</h3>
         </div>
         <div class="members-panel-list">
           {#if showPanelMembersLoading}
-            <p class="members-panel-loading">Loading…</p>
+            <p class="members-panel-loading">{$t('messaging.channel.membersPanelLoading')}</p>
           {:else}
             {#each panelMembers as npub (npub)}
               {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
@@ -963,7 +967,7 @@
     {/if}
   {:else}
     <div class="empty-state">
-      <p>Select a channel to start chatting</p>
+      <p>{$t('messaging.channel.selectChannelPrompt')}</p>
     </div>
   {/if}
 </div>

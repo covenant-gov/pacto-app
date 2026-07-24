@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { onMount } from 'svelte';
   import Modal from '../ui/Modal.svelte';
   import { exportRecoveryPhrase } from '../../lib/api/auth';
@@ -17,6 +19,7 @@
   const titleId = 'backup-verification-title';
   const descId = 'backup-verification-desc';
   const MAX_ATTEMPTS = 3;
+  const tFn = get(t);
 
   let phase: Phase = 'show';
   let seed = '';
@@ -60,12 +63,12 @@
       seed = raw;
       seedWords = raw.trim().split(/\s+/);
       if (seedWords.length !== 12 && seedWords.length !== 24) {
-        throw new Error('Seed phrase must be 12 or 24 words.');
+        throw new Error(tFn('backup.error.seedPhraseLength'));
       }
       challenge = seedWords.length >= 3 ? createChallenge(seedWords, 3) : { positions: [], answers: [] };
       inputs = new Array(challenge.positions.length).fill('');
     } catch (e) {
-      loadError = getInvokeErrorMessage(e, 'Could not load your recovery phrase.');
+      loadError = getInvokeErrorMessage(e, tFn('backup.error.loadRecoveryPhrase'));
     } finally {
       busy = false;
     }
@@ -88,12 +91,12 @@
     const ok = await copyTextToClipboard(seed);
     if (ok) {
       copied = true;
-      showToast('Seed phrase copied');
+      showToast(tFn('export.toast.copied', { values: { label: tFn('export.modal.label.seedPhrase') } }));
       setTimeout(() => {
         copied = false;
       }, 2000);
     } else {
-      showToast('Could not copy seed phrase');
+      showToast(tFn('export.toast.couldNotCopy', { values: { label: tFn('export.modal.label.seedPhrase') } }));
     }
   }
 
@@ -122,11 +125,11 @@
 
   async function submitQuiz(): Promise<void> {
     if (challenge.positions.length === 0) {
-      quizError = 'No backup challenge available. Try again.';
+      quizError = tFn('backup.quiz.noChallenge');
       return;
     }
     if (inputs.some((v) => !v.trim())) {
-      quizError = 'Enter all requested words.';
+      quizError = tFn('backup.quiz.enterAllWords');
       return;
     }
     const result = checkChallenge(seedWords, challenge.positions, inputs);
@@ -140,13 +143,13 @@
           backupVerificationModalOpen.set(false);
         }, 1200);
       } catch (e) {
-        quizError = getInvokeErrorMessage(e, 'Could not save backup status. Try again.');
+        quizError = getInvokeErrorMessage(e, tFn('backup.error.saveBackupStatus'));
       }
       return;
     }
     attempts += 1;
     if (attempts >= MAX_ATTEMPTS) {
-      quizError = 'Too many incorrect attempts. The seed phrase will be shown again.';
+      quizError = tFn('backup.quiz.tooManyAttempts');
       setTimeout(() => goToShow(), 1500);
       return;
     }
@@ -154,7 +157,9 @@
       .filter((d) => d.expected.trim().toLowerCase() !== d.actual.trim().toLowerCase())
       .map((d) => `#${d.position}`)
       .join(', ');
-    quizError = `Word ${mismatchLabels} does not match. You have ${MAX_ATTEMPTS - attempts} attempt${MAX_ATTEMPTS - attempts === 1 ? '' : 's'} left.`;
+    quizError = tFn('backup.quiz.wordMismatch', {
+      values: { positions: mismatchLabels, attempts: MAX_ATTEMPTS - attempts },
+    });
   }
 
   function handleInputKey(index: number, e: KeyboardEvent): void {
@@ -176,26 +181,25 @@
   <Modal {titleId} descriptionId={descId} onClose={handleClose} dismissible={!busy}>
     <h2 id={titleId}>
       {#if phase === 'show'}
-        Back up your account
+        {$t('backup.modal.title.backUp')}
       {:else if phase === 'confirm'}
-        Confirm you wrote it down
+        {$t('backup.modal.title.confirm')}
       {:else if phase === 'quiz'}
-        Verify your backup
+        {$t('backup.modal.title.verify')}
       {:else}
-        Backup verified
+        {$t('backup.modal.title.verified')}
       {/if}
     </h2>
 
     <p id={descId} class="backup-desc">
       {#if phase === 'show'}
-        This recovery phrase is the only way to restore your account and funds. Write it down
-        offline and keep it safe.
+        {$t('backup.modal.desc.backUp')}
       {:else if phase === 'confirm'}
-        Make sure you have the words written in the correct order before continuing.
+        {$t('backup.modal.desc.confirm')}
       {:else if phase === 'quiz'}
-        Enter the words from your written copy.
+        {$t('backup.modal.desc.verify')}
       {:else}
-        Your backup is verified. You can now use gated features like squads and sends.
+        {$t('backup.modal.desc.verified')}
       {/if}
     </p>
 
@@ -206,8 +210,7 @@
     {#if phase === 'show'}
       {#if seedWords.length > 0}
         <p class="backup-warning" role="alert">
-          Never share this phrase or save it online. Anyone with these words can control your
-          account.
+          {$t('backup.modal.warning')}
         </p>
 
         <div class="seed-grid-shell">
@@ -234,7 +237,7 @@
             on:click={toggleReveal}
             aria-pressed={revealed}
           >
-            {revealed ? 'Hide seed phrase' : 'Show seed phrase'}
+          {revealed ? $t('backup.modal.hideSeedPhrase') : $t('backup.modal.showSeedPhrase')}
           </button>
           <button
             type="button"
@@ -242,20 +245,20 @@
             on:click={() => void copySeed()}
             disabled={!revealed}
           >
-            {copied ? 'Copied' : 'Copy'}
+            {copied ? $t('settings.copied') : $t('settings.copy')}
           </button>
         </div>
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={handleClose}>Do this later</button>
+        <button type="button" class="btn-secondary" on:click={handleClose}>{$t('backup.modal.later')}</button>
         <button
           type="button"
           class="btn-primary"
           on:click={goToConfirm}
           disabled={!revealed || seedWords.length === 0}
         >
-          I wrote it down
+          {$t('backup.modal.wroteItDown')}
         </button>
       </div>
     {:else if phase === 'confirm'}
@@ -263,27 +266,27 @@
         <label class="backup-checkbox-label">
           <input type="checkbox" bind:checked={writtenDown} />
           <span>
-            I have written down all {seedWords.length} words in the correct order on paper.
+            {$t('backup.modal.confirmCheckbox', { values: { count: seedWords.length } })}
           </span>
         </label>
       </div>
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={() => (phase = 'show')}>Back</button>
+        <button type="button" class="btn-secondary" on:click={() => (phase = 'show')}>{$t('auth.back')}</button>
         <button
           type="button"
           class="btn-primary"
           on:click={goToQuiz}
           disabled={!writtenDown}
         >
-          Continue
+          {$t('auth.continue')}
         </button>
       </div>
     {:else if phase === 'quiz'}
       <div class="backup-quiz">
         {#each challenge.positions as position, i (i)}
           <label class="backup-quiz-label" for={`backup-word-${position}`}>
-            Word #{position}
+            {$t('backup.quiz.wordLabel', { values: { position } })}
           </label>
           <input
             id={`backup-word-${position}`}
@@ -293,7 +296,7 @@
             bind:this={inputEls[i]}
             autocomplete="off"
             spellcheck="false"
-            aria-label={`Word number ${position}`}
+            aria-label={$t('backup.quiz.wordNumberAria', { values: { position } })}
             on:keydown={(e) => handleInputKey(i, e)}
           />
         {/each}
@@ -304,15 +307,15 @@
       {/if}
 
       <div class="backup-actions">
-        <button type="button" class="btn-secondary" on:click={goToShow}>Show seed again</button>
+        <button type="button" class="btn-secondary" on:click={goToShow}>{$t('backup.modal.showSeedAgain')}</button>
         <button type="button" class="btn-primary" on:click={() => void submitQuiz()}>
-          Verify
+          {$t('commons.verify')}
         </button>
       </div>
     {:else}
       <div class="backup-success" role="status">
         <span class="backup-success-icon">✓</span>
-        <p>Your backup is verified. Closing…</p>
+        <p>{$t('backup.modal.success.closing')}</p>
       </div>
     {/if}
   </Modal>

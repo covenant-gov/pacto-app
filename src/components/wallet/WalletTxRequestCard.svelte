@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { WalletTxRequestPayload } from '../../lib/wallet/dm-messages';
   import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
 
@@ -18,8 +19,8 @@
     fromAddr.length > 14 ? `${fromAddr.slice(0, 8)}…${fromAddr.slice(-6)}` : fromAddr;
   $: subtitle = `${networkLabel} · ${fromAddrShort}`;
   $: bodyText = isMine
-    ? `You requested this payment on ${networkLabel} (account ${fromAddrShort}).`
-    : `${peerDisplayName} requested you send this amount (their account ${fromAddrShort}).`;
+    ? $t('wallet.requestedPaymentOn', { values: { networkLabel, fromAddrShort } })
+    : $t('wallet.peerRequestedPayment', { values: { peerName: peerDisplayName, fromAddrShort } });
   /** Declined stays expanded; fulfilled compacts to amount + Paid. */
   $: collapsed = status === 'fulfilled';
 </script>
@@ -37,7 +38,7 @@
   </div>
   <div class="wallet-tx-request-body">
     <p class="wallet-tx-request-badge">
-      {status === 'sending' ? 'Sending' : 'Payment request'}
+      {status === 'sending' ? $t('wallet.sending') : $t('wallet.paymentRequest')}
     </p>
     <p class="wallet-tx-request-title">{title}</p>
     <p class="wallet-tx-request-subtitle">{subtitle}</p>
@@ -45,25 +46,25 @@
       <p class="wallet-tx-request-text">{bodyText}</p>
     {/if}
     {#if status === 'sending'}
-      <p class="wallet-tx-request-hint">Posting to this chat…</p>
+      <p class="wallet-tx-request-hint">{$t('wallet.postingToChat')}</p>
     {:else if status === 'fulfilled'}
         <p class="wallet-tx-request-status wallet-tx-request-status-fulfilled" aria-live="polite">
-          Paid
+          {$t('wallet.paid')}
         </p>
         {#if isMine}
-          <p class="wallet-tx-request-hint">A matching transfer was posted in this chat.</p>
+          <p class="wallet-tx-request-hint">{$t('wallet.matchingTransferPosted')}</p>
         {/if}
       {:else if isMine}
-        <p class="wallet-tx-request-hint">Waiting for the other person to respond.</p>
+        <p class="wallet-tx-request-hint">{$t('wallet.waitingForResponse')}</p>
       {:else if status === 'declined'}
-        <p class="wallet-tx-request-status wallet-tx-request-status-declined" aria-live="polite">Declined</p>
+        <p class="wallet-tx-request-status wallet-tx-request-status-declined" aria-live="polite">{$t('wallet.declined')}</p>
         {#if isMine}
           <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
-            {peerDisplayName} declined this payment request. You can follow up in chat or send another request later.
+            {$t('wallet.peerDeclinedRequest', { values: { peerName: peerDisplayName } })}
           </p>
         {:else}
           <p class="wallet-tx-request-hint wallet-tx-request-hint-declined">
-            You declined. No automatic message was sent to {peerDisplayName}.
+            {$t('wallet.youDeclinedRequest', { values: { peerName: peerDisplayName } })}
           </p>
         {/if}
       {:else}
@@ -74,7 +75,7 @@
             disabled={accepting}
             on:click={onAccept}
           >
-            {accepting ? 'Accepting…' : 'Accept'}
+            {accepting ? $t('wallet.accepting') : $t('wallet.accept')}
           </button>
           <button
             type="button"
@@ -82,7 +83,7 @@
             disabled={accepting}
             on:click={onDecline}
           >
-            Decline
+            {$t('wallet.decline')}
           </button>
         </div>
       {/if}

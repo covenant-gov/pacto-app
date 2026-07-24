@@ -1,6 +1,7 @@
 <script lang="ts">
   import { currentUser } from '../../stores/auth';
   import { activeView } from '../../stores/app';
+  import { t } from 'svelte-i18n';
   import SettingsPage from '../settings/SettingsPage.svelte';
   import ProfileSection from '../settings/ProfileSection.svelte';
   import NostrSettingsSection from '../settings/NostrSettingsSection.svelte';
@@ -25,7 +26,7 @@
 
       <SettingsCollapsibleSection
         sectionId="settings-evm"
-        title="EVM settings"
+        title={$t('settings.evmSettingsTitle')}
         sectionClass="settings-section--evm"
       >
         <WalletView embeddedInSettings />

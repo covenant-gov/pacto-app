@@ -1,5 +1,6 @@
 import { normalizeCommonsTag } from './tags';
 
+
 /**
  * Curated Commons tag tree. Categories are browse-only groupings shown as image
  * tiles; their `children` are the actual filterable #tags (e.g. Communism →
@@ -11,24 +12,29 @@ import { normalizeCommonsTag } from './tags';
  *    sorted A–Z by title.
  * Categories without an `image` fall back to a deterministic gradient tile.
  *
+ * All `title` and `description` values are svelte-i18n keys. Use the helpers
+ * exported below (e.g. `getLocalizedCommonsTagTree`) to get translated strings.
+ *
  * Image spec (see ai-docs/commons/COMMONS_PLAN.md → Tag art):
  * ~800×500 WebP/AVIF, < ~80 KB, static stills only (no GIF/video).
  */
+
+
 export interface CommonsTagGroup {
   /** Normalized hashtag (lowercase, no `#`). Matches broadcast `tags`. */
   tag: string;
-  /** Display label, e.g. "Left". */
+  /** i18n key for the display label, e.g. "tags.tag.left.title". */
   title: string;
-  /** Optional one-line blurb. */
+  /** Optional i18n key for a one-line blurb. */
   description?: string;
 }
 
 export interface CommonsTagCategory {
   /** Stable id, also the image filename stem, e.g. "politics". */
   id: string;
-  /** Display label, e.g. "POLITICS". */
+  /** i18n key for the display label, e.g. "tags.category.ai.title". */
   title: string;
-  /** One-line blurb shown on the tile. */
+  /** i18n key for the one-line blurb shown on the tile. */
   description: string;
   /** Filename under `static/commons-tags/`, e.g. "politics.webp". Optional. */
   image?: string;
@@ -42,268 +48,270 @@ export const COMMONS_TAG_ART_BASE = '/commons-tags/';
 export const COMMONS_CATEGORY_TAG_MIN = 4;
 export const COMMONS_CATEGORY_TAG_MAX = 6;
 
+
 export const COMMONS_TAG_TREE: CommonsTagCategory[] = [
   {
     id: 'ai',
-    title: 'AI',
-    description: 'Models, agents, and machine learning work.',
+    title: 'tags.category.ai.title',
+    description: 'tags.category.ai.description',
     image: 'nick-land-ai.jpeg',
     children: [
-      { tag: 'agents', title: 'Agents' },
-      { tag: 'ai', title: 'AI' },
-      { tag: 'llm', title: 'LLM' },
-      { tag: 'ml', title: 'ML' },
-      { tag: 'robotics', title: 'Robotics' },
+      { tag: 'agents', title: 'tags.tag.agents.title' },
+      { tag: 'ai', title: 'tags.tag.ai.title' },
+      { tag: 'llm', title: 'tags.tag.llm.title' },
+      { tag: 'ml', title: 'tags.tag.ml.title' },
+      { tag: 'robotics', title: 'tags.tag.robotics.title' },
     ],
   },
   {
     id: 'anarchism',
-    title: 'ANARCHISM',
-    description: 'Autonomy, mutual aid, and horizontal organizing.',
+    title: 'tags.category.anarchism.title',
+    description: 'tags.category.anarchism.description',
     image: 'black-block.jpeg',
     children: [
-      { tag: 'anarchist', title: 'Anarchist' },
-      { tag: 'autonomous', title: 'Autonomous' },
-      { tag: 'black_block', title: 'Black Block' },
-      { tag: 'mutual_aid', title: 'Mutual Aid' },
-      { tag: 'syndicalist', title: 'Syndicalist' },
+      { tag: 'anarchist', title: 'tags.tag.anarchist.title' },
+      { tag: 'autonomous', title: 'tags.tag.autonomous.title' },
+      { tag: 'black_block', title: 'tags.tag.black_block.title' },
+      { tag: 'mutual_aid', title: 'tags.tag.mutual_aid.title' },
+      { tag: 'syndicalist', title: 'tags.tag.syndicalist.title' },
     ],
   },
   {
     id: 'build',
-    title: 'BUILD',
-    description: 'Makers shipping tools, contracts, and apps.',
+    title: 'tags.category.build.title',
+    description: 'tags.category.build.description',
     image: 'scaffold.jpeg',
     children: [
-      { tag: 'builders', title: 'Builders' },
-      { tag: 'design', title: 'Design' },
-      { tag: 'dev', title: 'Dev' },
-      { tag: 'open_source', title: 'Open Source' },
+      { tag: 'builders', title: 'tags.tag.builders.title' },
+      { tag: 'design', title: 'tags.tag.design.title' },
+      { tag: 'dev', title: 'tags.tag.dev.title' },
+      { tag: 'open_source', title: 'tags.tag.open_source.title' },
     ],
   },
   {
     id: 'communism',
-    title: 'COMMUNISM',
-    description: 'Marxist, Leninist, and communist organizing.',
+    title: 'tags.category.communism.title',
+    description: 'tags.category.communism.description',
     image: 'communism.jpeg',
     children: [
-      { tag: 'communist', title: 'Communist' },
-      { tag: 'leninist', title: 'Leninist' },
-      { tag: 'maoist', title: 'Maoist' },
-      { tag: 'marxist', title: 'Marxist' },
+      { tag: 'communist', title: 'tags.tag.communist.title' },
+      { tag: 'leninist', title: 'tags.tag.leninist.title' },
+      { tag: 'maoist', title: 'tags.tag.maoist.title' },
+      { tag: 'marxist', title: 'tags.tag.marxist.title' },
     ],
   },
   {
     id: 'crypto',
-    title: 'CRYPTO',
-    description: 'Chains, wallets, DeFi, and on-chain finance.',
+    title: 'tags.category.crypto.title',
+    description: 'tags.category.crypto.description',
     image: 'nouns-nft.jpeg',
     children: [
-      { tag: 'crypto', title: 'Crypto' },
-      { tag: 'defi', title: 'DeFi' },
-      { tag: 'dex', title: 'DEX' },
-      { tag: 'lending', title: 'Lending' },
-      { tag: 'stablecoin', title: 'Stablecoin' },
-      { tag: 'web3', title: 'Web3' },
+      { tag: 'crypto', title: 'tags.tag.crypto.title' },
+      { tag: 'defi', title: 'tags.tag.defi.title' },
+      { tag: 'dex', title: 'tags.tag.dex.title' },
+      { tag: 'lending', title: 'tags.tag.lending.title' },
+      { tag: 'stablecoin', title: 'tags.tag.stablecoin.title' },
+      { tag: 'web3', title: 'tags.tag.web3.title' },
     ],
   },
   {
     id: 'cooperatives',
-    title: 'COOPERATIVES',
-    description: 'Member-owned co-ops, credit unions, and shared enterprise.',
+    title: 'tags.category.cooperatives.title',
+    description: 'tags.category.cooperatives.description',
     image: 'women-coop.jpeg',
     children: [
-      { tag: 'bread', title: 'Bread' },
-      { tag: 'co_op', title: 'Co-op' },
-      { tag: 'credit_union', title: 'Credit Union' },
-      { tag: 'housing_coop', title: 'Housing Co-op' },
-      { tag: 'member_owned', title: 'Member Owned' },
-      { tag: 'worker_coop', title: 'Worker Co-op' },
+      { tag: 'bread', title: 'tags.tag.bread.title' },
+      { tag: 'co_op', title: 'tags.tag.co_op.title' },
+      { tag: 'credit_union', title: 'tags.tag.credit_union.title' },
+      { tag: 'housing_coop', title: 'tags.tag.housing_coop.title' },
+      { tag: 'member_owned', title: 'tags.tag.member_owned.title' },
+      { tag: 'worker_coop', title: 'tags.tag.worker_coop.title' },
     ],
   },
   {
     id: 'culture',
-    title: 'CULTURE',
-    description: 'Art, sound, and creative work.',
+    title: 'tags.category.culture.title',
+    description: 'tags.category.culture.description',
     image: 'curved-lines.jpeg',
     children: [
-      { tag: 'art', title: 'Art' },
-      { tag: 'film', title: 'Film' },
-      { tag: 'literature', title: 'Literature' },
-      { tag: 'music', title: 'Music' },
-      { tag: 'theater', title: 'Theater' },
-      { tag: 'writing', title: 'Writing' },
+      { tag: 'art', title: 'tags.tag.art.title' },
+      { tag: 'film', title: 'tags.tag.film.title' },
+      { tag: 'literature', title: 'tags.tag.literature.title' },
+      { tag: 'music', title: 'tags.tag.music.title' },
+      { tag: 'theater', title: 'tags.tag.theater.title' },
+      { tag: 'writing', title: 'tags.tag.writing.title' },
     ],
   },
   {
     id: 'dao',
-    title: 'DAO',
-    description: 'On-chain groups, multisigs, and collective treasuries.',
+    title: 'tags.category.dao.title',
+    description: 'tags.category.dao.description',
     image: 'daohaus.jpeg',
     children: [
-      { tag: 'dao', title: 'DAO' },
-      { tag: 'moloch', title: 'Moloch' },
-      { tag: 'multisig', title: 'Multisig' },
-      { tag: 'onchain', title: 'On-chain' },
-      { tag: 'token_gov', title: 'Token Gov' },
+      { tag: 'dao', title: 'tags.tag.dao.title' },
+      { tag: 'moloch', title: 'tags.tag.moloch.title' },
+      { tag: 'multisig', title: 'tags.tag.multisig.title' },
+      { tag: 'onchain', title: 'tags.tag.onchain.title' },
+      { tag: 'token_gov', title: 'tags.tag.token_gov.title' },
     ],
   },
   {
     id: 'economics',
-    title: 'ECONOMICS',
-    description: 'Markets, planning, labor, and economic models.',
+    title: 'tags.category.economics.title',
+    description: 'tags.category.economics.description',
     image: 'bricks.jpeg',
     children: [
-      { tag: 'economics', title: 'Economics' },
-      { tag: 'free_market', title: 'Free Market' },
-      { tag: 'labor', title: 'Labor' },
-      { tag: 'planned_economy', title: 'Planned Economy' },
-      { tag: 'trade', title: 'Trade' },
+      { tag: 'economics', title: 'tags.tag.economics.title' },
+      { tag: 'free_market', title: 'tags.tag.free_market.title' },
+      { tag: 'labor', title: 'tags.tag.labor.title' },
+      { tag: 'planned_economy', title: 'tags.tag.planned_economy.title' },
+      { tag: 'trade', title: 'tags.tag.trade.title' },
     ],
   },
   {
     id: 'governance',
-    title: 'GOVERNANCE',
-    description: 'How groups decide — across ideologies and scales.',
+    title: 'tags.category.governance.title',
+    description: 'tags.category.governance.description',
     image: 'governance.jpeg',
     children: [
-      { tag: 'coordination', title: 'Coordination' },
-      { tag: 'decentralization', title: 'Decentralization' },
-      { tag: 'democracy', title: 'Democracy' },
-      { tag: 'federalism', title: 'Federalism' },
-      { tag: 'governance', title: 'Governance' },
+      { tag: 'coordination', title: 'tags.tag.coordination.title' },
+      { tag: 'decentralization', title: 'tags.tag.decentralization.title' },
+      { tag: 'democracy', title: 'tags.tag.democracy.title' },
+      { tag: 'federalism', title: 'tags.tag.federalism.title' },
+      { tag: 'governance', title: 'tags.tag.governance.title' },
     ],
   },
   {
     id: 'identity',
-    title: 'IDENTITY',
-    description: 'Community, belonging, and lived experience.',
+    title: 'tags.category.identity.title',
+    description: 'tags.category.identity.description',
     image: 'double-rainbow.jpg',
     children: [
-      { tag: 'bipoc', title: 'BIPOC' },
-      { tag: 'lgbtqia_plus', title: 'LGBTQIA+' },
-      { tag: 'trans', title: 'Trans' },
-      { tag: 'women', title: 'Women' },
+      { tag: 'bipoc', title: 'tags.tag.bipoc.title' },
+      { tag: 'lgbtqia_plus', title: 'tags.tag.lgbtqia_plus.title' },
+      { tag: 'trans', title: 'tags.tag.trans.title' },
+      { tag: 'women', title: 'tags.tag.women.title' },
     ],
   },
   {
     id: 'knowledge',
-    title: 'KNOWLEDGE',
-    description: 'Research, science, and learning.',
+    title: 'tags.category.knowledge.title',
+    description: 'tags.category.knowledge.description',
     image: 'aya.jpeg',
     children: [
-      { tag: 'academia', title: 'Academia' },
-      { tag: 'education', title: 'Education' },
-      { tag: 'learning', title: 'Learning' },
-      { tag: 'research', title: 'Research' },
-      { tag: 'science', title: 'Science' },
+      { tag: 'academia', title: 'tags.tag.academia.title' },
+      { tag: 'education', title: 'tags.tag.education.title' },
+      { tag: 'learning', title: 'tags.tag.learning.title' },
+      { tag: 'research', title: 'tags.tag.research.title' },
+      { tag: 'science', title: 'tags.tag.science.title' },
     ],
   },
   {
     id: 'libertarianism',
-    title: 'LIBERTARIANISM',
-    description: 'Markets, capitalist organizing, and libertarian politics.',
+    title: 'tags.category.libertarianism.title',
+    description: 'tags.category.libertarianism.description',
     image: 'libertarianism.jpeg',
     children: [
-      { tag: 'capitalist', title: 'Capitalist' },
-      { tag: 'libertarian', title: 'Libertarian' },
-      { tag: 'moderate', title: 'Moderate' },
-      { tag: 'right', title: 'Right' },
+      { tag: 'capitalist', title: 'tags.tag.capitalist.title' },
+      { tag: 'libertarian', title: 'tags.tag.libertarian.title' },
+      { tag: 'moderate', title: 'tags.tag.moderate.title' },
+      { tag: 'right', title: 'tags.tag.right.title' },
     ],
   },
   {
     id: 'local',
-    title: 'LOCAL',
-    description: 'People organizing by place and IRL.',
+    title: 'tags.category.local.title',
+    description: 'tags.category.local.description',
     image: 'civil-rights-march.jpeg',
     children: [
-      { tag: 'community', title: 'Community' },
-      { tag: 'events', title: 'Events' },
-      { tag: 'irl', title: 'IRL' },
-      { tag: 'local', title: 'Local' },
+      { tag: 'community', title: 'tags.tag.community.title' },
+      { tag: 'events', title: 'tags.tag.events.title' },
+      { tag: 'irl', title: 'tags.tag.irl.title' },
+      { tag: 'local', title: 'tags.tag.local.title' },
     ],
   },
   {
     id: 'privacy',
-    title: 'PRIVACY',
-    description: 'Encryption, anonymity, and resisting surveillance.',
+    title: 'tags.category.privacy.title',
+    description: 'tags.category.privacy.description',
     image: 'distorted-tv.jpeg',
     children: [
-      { tag: 'anonymity', title: 'Anonymity' },
-      { tag: 'cypherpunk', title: 'Cypherpunk' },
-      { tag: 'encryption', title: 'Encryption' },
-      { tag: 'opsec', title: 'Opsec' },
-      { tag: 'privacy', title: 'Privacy' },
-      { tag: 'surveillance', title: 'Surveillance' },
+      { tag: 'anonymity', title: 'tags.tag.anonymity.title' },
+      { tag: 'cypherpunk', title: 'tags.tag.cypherpunk.title' },
+      { tag: 'encryption', title: 'tags.tag.encryption.title' },
+      { tag: 'opsec', title: 'tags.tag.opsec.title' },
+      { tag: 'privacy', title: 'tags.tag.privacy.title' },
+      { tag: 'surveillance', title: 'tags.tag.surveillance.title' },
     ],
   },
   {
     id: 'socialist',
-    title: 'SOCIALISM',
-    description: 'Social democracy, public ownership, and reform organizing.',
+    title: 'tags.category.socialist.title',
+    description: 'tags.category.socialist.description',
     image: 'socialist-cloud.jpeg',
     children: [
-      { tag: 'left', title: 'Left' },
-      { tag: 'public_ownership', title: 'Public Ownership' },
-      { tag: 'reformist', title: 'Reformist' },
-      { tag: 'socdem', title: 'Social Democrat' },
-      { tag: 'socialist', title: 'Socialist' },
+      { tag: 'left', title: 'tags.tag.left.title' },
+      { tag: 'public_ownership', title: 'tags.tag.public_ownership.title' },
+      { tag: 'reformist', title: 'tags.tag.reformist.title' },
+      { tag: 'socdem', title: 'tags.tag.socdem.title' },
+      { tag: 'socialist', title: 'tags.tag.socialist.title' },
     ],
   },
   {
     id: 'spirituality',
-    title: 'SPIRITUALITY',
-    description: 'Faith, practice, and the sacred — without denomination labels.',
+    title: 'tags.category.spirituality.title',
+    description: 'tags.category.spirituality.description',
     children: [
-      { tag: 'faith', title: 'Faith' },
-      { tag: 'monotheism', title: 'Monotheism' },
-      { tag: 'mysticism', title: 'Mysticism' },
-      { tag: 'pantheism', title: 'Pantheism' },
-      { tag: 'polytheism', title: 'Polytheism' },
-      { tag: 'spiritual', title: 'Spiritual' },
+      { tag: 'faith', title: 'tags.tag.faith.title' },
+      { tag: 'monotheism', title: 'tags.tag.monotheism.title' },
+      { tag: 'mysticism', title: 'tags.tag.mysticism.title' },
+      { tag: 'pantheism', title: 'tags.tag.pantheism.title' },
+      { tag: 'polytheism', title: 'tags.tag.polytheism.title' },
+      { tag: 'spiritual', title: 'tags.tag.spiritual.title' },
     ],
   },
   {
     id: 'technology',
-    title: 'TECHNOLOGY',
-    description: 'Hardware, software, networks, and systems.',
+    title: 'tags.category.technology.title',
+    description: 'tags.category.technology.description',
     image: 'gamer.jpeg',
     children: [
-      { tag: 'hardware', title: 'Hardware' },
-      { tag: 'infra', title: 'Infra' },
-      { tag: 'networking', title: 'Networking' },
-      { tag: 'software', title: 'Software' },
-      { tag: 'systems', title: 'Systems' },
-      { tag: 'tech', title: 'Tech' },
+      { tag: 'hardware', title: 'tags.tag.hardware.title' },
+      { tag: 'infra', title: 'tags.tag.infra.title' },
+      { tag: 'networking', title: 'tags.tag.networking.title' },
+      { tag: 'software', title: 'tags.tag.software.title' },
+      { tag: 'systems', title: 'tags.tag.systems.title' },
+      { tag: 'tech', title: 'tags.tag.tech.title' },
     ],
   },
   {
     id: 'university',
-    title: 'UNIVERSITY',
-    description: 'Campus life, students, and academic organizing.',
+    title: 'tags.category.university.title',
+    description: 'tags.category.university.description',
     image: 'uni.jpeg',
     children: [
-      { tag: 'campus', title: 'Campus' },
-      { tag: 'faculty', title: 'Faculty' },
-      { tag: 'graduate', title: 'Graduate' },
-      { tag: 'students', title: 'Students' },
-      { tag: 'undergrad', title: 'Undergrad' },
-      { tag: 'university', title: 'University' },
+      { tag: 'campus', title: 'tags.tag.campus.title' },
+      { tag: 'faculty', title: 'tags.tag.faculty.title' },
+      { tag: 'graduate', title: 'tags.tag.graduate.title' },
+      { tag: 'students', title: 'tags.tag.students.title' },
+      { tag: 'undergrad', title: 'tags.tag.undergrad.title' },
+      { tag: 'university', title: 'tags.tag.university.title' },
     ],
   },
   {
     id: 'unions',
-    title: 'UNIONS',
-    description: 'Strikes, bargaining, and labor union organizing.',
+    title: 'tags.category.unions.title',
+    description: 'tags.category.unions.description',
     children: [
-      { tag: 'collective_bargaining', title: 'Collective Bargaining' },
-      { tag: 'labor_union', title: 'Labor Union' },
-      { tag: 'strike', title: 'Strike' },
-      { tag: 'trade_union', title: 'Trade Union' },
-      { tag: 'union', title: 'Union' },
+      { tag: 'collective_bargaining', title: 'tags.tag.collective_bargaining.title' },
+      { tag: 'labor_union', title: 'tags.tag.labor_union.title' },
+      { tag: 'strike', title: 'tags.tag.strike.title' },
+      { tag: 'trade_union', title: 'tags.tag.trade_union.title' },
+      { tag: 'union', title: 'tags.tag.union.title' },
     ],
   },
 ];
+
 
 /** Flattened, de-duplicated leaf tags across all categories. */
 export const COMMONS_TAG_GROUPS: CommonsTagGroup[] = (() => {
@@ -363,4 +371,59 @@ export function commonsTagGradient(seed: string): string {
   const h1 = hash;
   const h2 = (hash + 48) % 360;
   return `linear-gradient(135deg, hsl(${h1} 62% 30%), hsl(${h2} 58% 18%))`;
+}
+
+export type CommonsTagTranslator = (key: string) => string;
+
+/** Translate a leaf tag group for display. */
+export function localizeCommonsTagGroup(
+  t: CommonsTagTranslator,
+  group: CommonsTagGroup
+): CommonsTagGroup {
+  return {
+    tag: group.tag,
+    title: t(group.title),
+    description: group.description ? t(group.description) : undefined,
+  };
+}
+
+/** Translate a category (including its children) for display. */
+export function localizeCommonsTagCategory(
+  t: CommonsTagTranslator,
+  category: CommonsTagCategory
+): CommonsTagCategory {
+  return {
+    ...category,
+    title: t(category.title),
+    description: t(category.description),
+    children: category.children.map((child) => localizeCommonsTagGroup(t, child)),
+  };
+}
+
+/** Full translated tag tree. */
+export function getLocalizedCommonsTagTree(t: CommonsTagTranslator): CommonsTagCategory[] {
+  return COMMONS_TAG_TREE.map((category) => localizeCommonsTagCategory(t, category));
+}
+
+/** Flattened, translated leaf tags. */
+export function getLocalizedCommonsTagGroups(t: CommonsTagTranslator): CommonsTagGroup[] {
+  return COMMONS_TAG_GROUPS.map((group) => localizeCommonsTagGroup(t, group));
+}
+
+/** Find and translate a single category. */
+export function getLocalizedCommonsTagCategory(
+  t: CommonsTagTranslator,
+  id: string
+): CommonsTagCategory | null {
+  const category = findCommonsTagCategory(id);
+  return category ? localizeCommonsTagCategory(t, category) : null;
+}
+
+/** Find and translate a single leaf tag. */
+export function getLocalizedCommonsTagGroup(
+  t: CommonsTagTranslator,
+  tag: string
+): CommonsTagGroup | null {
+  const group = findCommonsTagGroup(tag);
+  return group ? localizeCommonsTagGroup(t, group) : null;
 }

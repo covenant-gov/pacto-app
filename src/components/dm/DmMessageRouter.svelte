@@ -8,6 +8,7 @@
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
+  import { t } from 'svelte-i18n';
   import {
     acceptedSquadInviteIds,
     declinedSquadInviteIds,
@@ -197,14 +198,14 @@
 {:else if presentation.kind === 'bot-join-response'}
   <div class="dm-thread-announcement" role="status">
     {#if presentation.payload.status === 'accepted'}
-      Join request for {presentation.payload.squadName} was accepted
+      {$t('messaging.dm.thread.joinRequestAccepted', { values: { squadName: presentation.payload.squadName } })}
     {:else}
-      Join request for {presentation.payload.squadName} was rejected
+      {$t('messaging.dm.thread.joinRequestRejected', { values: { squadName: presentation.payload.squadName } })}
     {/if}
   </div>
 {:else if presentation.kind === 'bot-join-dm'}
   <div class="dm-thread-announcement" role="status">
-    Join request for {presentation.payload.squadName}
+    {$t('messaging.dm.thread.joinRequestPending', { values: { squadName: presentation.payload.squadName } })}
   </div>
 {:else if presentation.kind === 'structured-notice'}
   <div class="dm-thread-announcement" role="status">{presentation.text}</div>

@@ -15,6 +15,7 @@
     MY_DASHBOARD_CHANNEL_ID,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
+  import { t } from 'svelte-i18n';
 
   function goToSpace(goTo: ToastGoTo) {
     activeTopNavTab.set('squads');
@@ -51,9 +52,9 @@
           type="button"
           class="toast-go-btn"
           on:click={() => goToSpace($toastMessage!.goTo!)}
-          aria-label="Go to {$toastMessage.goTo.name}"
+          aria-label="{$t('commons.goTo')} {$toastMessage.goTo.name}"
         >
-          Go to {$toastMessage.goTo.name}
+          {$t('commons.goTo')} {$toastMessage.goTo.name}
         </button>
       {/if}
       {#if $toastMessage.retryLabel}
@@ -67,7 +68,7 @@
         </button>
       {/if}
     </div>
-    <button type="button" class="toast-dismiss" on:click={clearToast} aria-label="Dismiss">
+    <button type="button" class="toast-dismiss" on:click={clearToast} aria-label={$t('commons.dismiss')}>
       ×
     </button>
   </div>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   export let open = false;
   export let parentName = '';
   export let subtitle = '';
@@ -7,12 +9,14 @@
   export let memberList: string[] = [];
   export let loading = false;
   export let selectedNpubs: string[] = [];
-  export let selectAllLabel = 'Add everyone';
+  export let selectAllLabel = '';
   export let emptyMessage = '';
   export let error = '';
   export let creating = false;
   export let canCreate = false;
   export let inputId: string | undefined = undefined;
+
+  $: resolvedSelectAllLabel = selectAllLabel || $t('messaging.channel.addEveryone');
 
   export let onClose: () => void = () => {};
   export let onCreate: () => void = () => {};
@@ -43,21 +47,21 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-label="Create channel for {parentName || 'squad'}"
+      aria-label={$t('messaging.channel.createForAria', { values: { parentName: parentName || $t('messaging.channel.createDefaultParent') } })}
       data-parent-type="squad"
       tabindex="0"
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}
     >
-      <h2 id={titleId}>Create channel</h2>
+      <h2 id={titleId}>{$t('messaging.channel.createTitle')}</h2>
       <p class="create-channel-subtitle">{subtitle}</p>
       <form on:submit|preventDefault={onCreate}>
-        <label class="create-channel-label" for={resolvedInputId}>Channel name</label>
+        <label class="create-channel-label" for={resolvedInputId}>{$t('messaging.channel.nameLabel')}</label>
         <input
           id={resolvedInputId}
           type="text"
           class="create-channel-input"
-          placeholder="e.g. general"
+          placeholder={$t('messaging.channel.namePlaceholder')}
           bind:value={channelName}
           required
         />
@@ -68,11 +72,11 @@
             checked={allSelected}
             on:change={onToggleSelectAll}
           />
-          {selectAllLabel}
+          {resolvedSelectAllLabel}
         </label>
         <div class="create-channel-members">
           {#if loading}
-            <p class="create-channel-loading">Loading…</p>
+            <p class="create-channel-loading">{$t('messaging.channel.loading')}</p>
           {:else}
             {#each memberList as npub (npub)}
               <label class="create-channel-member-row">
@@ -99,14 +103,14 @@
             on:click={onClose}
             disabled={creating}
           >
-            Cancel
+            {$t('messaging.channel.cancel')}
           </button>
           <button
             type="submit"
             class="create-channel-btn-create"
             disabled={!canCreate || creating}
           >
-            {creating ? 'Creating…' : 'Create'}
+            {creating ? $t('messaging.channel.creating') : $t('messaging.channel.create')}
           </button>
         </div>
       </form>

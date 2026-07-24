@@ -2,5 +2,6 @@ packages:
   - .
   - landing
 allowBuilds:
+  es5-ext: true
   esbuild: true
   fsevents: false

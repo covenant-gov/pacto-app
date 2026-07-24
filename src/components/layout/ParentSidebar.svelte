@@ -4,6 +4,7 @@
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import chevronDownIcon from '../../icons/chevron-down.svg';
+  import { t } from 'svelte-i18n';
   import {
     hubChannelAlertCount,
     personalAlertsNeededBySquadId,
@@ -32,7 +33,7 @@
   export let createError = '';
   export let canRetryCreate = false;
   export let retryingCreate = false;
-  export let emptyMessage = 'Select a parent';
+  export let emptyMessage = '';
   /** When false, show empty state instead of header/channels. */
   export let hasParent = false;
   /**
@@ -85,10 +86,11 @@
     return out;
   })();
   $: showCustomChannelDivider = defaultHubChannels.length > 0 && customChannels.length > 0;
-  $: inviteLabel = 'Invite to Squad';
+  $: inviteLabel = $t('nav.parentSidebar.invite');
   $: showExit = typeof onExitSquad === 'function';
-  $: exitLabel = 'Exit Squad';
+  $: exitLabel = $t('nav.parentSidebar.exit');
   $: onExit = onExitSquad;
+  $: resolvedEmptyMessage = emptyMessage || $t('nav.parentSidebar.empty');
 </script>
 
 <svelte:window
@@ -100,15 +102,15 @@
 
 <ResizableSidebar sidebarClass="parent-sidebar">
   {#if hasParent}
-    <div class="parent-heading" role="region" aria-label="Squad {parentName}">
+    <div class="parent-heading" role="region" aria-label={$t('nav.parentSidebar.squadHeading', { values: { squadName: parentName } })}>
       <div class="parent-header-row">
         <h2 class="parent-name">{parentName}</h2>
         <div class="parent-header-actions">
           <button
             type="button"
             class="parent-menu-btn"
-            title="Squad options"
-            aria-label="Squad menu"
+            title={$t('nav.parentSidebar.squadOptionsTitle')}
+            aria-label={$t('nav.parentSidebar.squadMenuAria')}
             on:click={() => (menuOpen = !menuOpen)}
             aria-haspopup="true"
             aria-expanded={menuOpen}
@@ -157,7 +159,7 @@
             type="button"
             class="parent-error-dismiss"
             on:click={() => onDismissBanner(banner.id)}
-            aria-label="Dismiss"
+            aria-label={$t('nav.parentSidebar.dismissAria')}
           >×</button>
         {/if}
       </div>
@@ -219,12 +221,12 @@
         </div>
         {#if channels.length > 0}
           <button type="button" class="parent-create-channel-btn" on:click={onCreateChannel}>
-            + Create channel
+            {$t('nav.parentSidebar.createChannel')}
           </button>
         {/if}
         {#if showPartnerSquads}
-          <div class="partner-squads-section" role="navigation" aria-label="Partner Squads">
-            <p class="partner-squads-heading">Partner Squads</p>
+          <div class="partner-squads-section" role="navigation" aria-label={$t('nav.parentSidebar.partnerSquadsAria')}>
+            <p class="partner-squads-heading">{$t('nav.parentSidebar.partnerSquads')}</p>
             {#if partnerSquads.length > 0}
             <div class="partner-squad-list">
               {#each partnerSquads as partner (partner.id)}
@@ -243,14 +245,14 @@
         {/if}
         {#if showPairWithSquadAction && typeof onPairWithSquad === 'function' && !creating}
           <button type="button" class="parent-pair-squad-btn" on:click={onPairWithSquad}>
-            + Pair with squad…
+            {$t('nav.parentSidebar.pairWithSquad')}
           </button>
         {/if}
       {/if}
     </div>
   {:else}
     <div class="parent-empty-state">
-      <p>{emptyMessage}</p>
+      <p>{resolvedEmptyMessage}</p>
     </div>
   {/if}
 </ResizableSidebar>

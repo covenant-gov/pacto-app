@@ -1,13 +1,17 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import CommonsTagMenu from './CommonsTagMenu.svelte';
-  import { COMMONS_TAG_GROUPS, findCommonsTagGroup } from '../../lib/commons/tag-catalog';
+  import {
+    findCommonsTagGroup,
+    getLocalizedCommonsTagGroups,
+  } from '../../lib/commons/tag-catalog';
 
   /** Selected leaf tags (bindable). */
   export let selected: string[] = [];
   export let maxTags = 3;
   export let disabled = false;
-  export let placeholder = 'Search tags…';
+  export let placeholder = $t('commons.tagPicker.searchPlaceholder');
 
   let query = '';
   /** Flat predictive list visible (search mode only). */
@@ -21,7 +25,7 @@
   $: q = query.trim().toLowerCase();
   $: activeSet = new Set(selected);
 
-  $: flatMatches = COMMONS_TAG_GROUPS.filter((g) => {
+  $: flatMatches = getLocalizedCommonsTagGroups($t).filter((g) => {
     if (!q) return true;
     return g.title.toLowerCase().includes(q) || g.tag.includes(q);
   });
@@ -114,7 +118,7 @@
           <button
             type="button"
             class="tag-picker-chip-remove"
-            aria-label="Remove tag {tag}"
+            aria-label={$t('commons.tagPicker.removeTagAria', { values: { tag } })}
             on:click={() => removeTag(tag)}
             {disabled}
           >
@@ -146,7 +150,7 @@
     <button
       type="button"
       class="tag-picker-toggle"
-      aria-label={categoryBrowse ? 'Back to search' : 'Browse by category'}
+      aria-label={categoryBrowse ? $t('commons.tagPicker.backToSearch') : $t('commons.tagPicker.browseByCategory')}
       aria-expanded={categoryBrowse}
       on:click={() => (categoryBrowse ? closeCategoryBrowse() : openCategoryBrowse())}
       {disabled}
@@ -156,7 +160,7 @@
   </div>
 
   {#if atMax}
-    <p class="tag-picker-hint">Max {maxTags} tags. Remove one to pick another.</p>
+    <p class="tag-picker-hint">{$t('commons.tagPicker.maxTagsHint', { values: { maxTags } })}</p>
   {/if}
 
   {#if categoryBrowse}
@@ -168,10 +172,11 @@
       class="tag-picker-menu"
       id="commons-tag-picker-flat-list"
       role="listbox"
+      tabindex="-1"
       on:mousedown|preventDefault
     >
       {#if flatMatches.length === 0}
-        <p class="tag-picker-empty">No tags match “{query}”.</p>
+        <p class="tag-picker-empty">{$t('commons.tagPicker.noMatches', { values: { query } })}</p>
       {:else}
         <ul class="tag-picker-flat" role="list">
           {#each flatMatches as group (group.tag)}

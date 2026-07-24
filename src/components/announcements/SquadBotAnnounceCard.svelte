@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { SquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
   import { shortNpub } from '../../lib/squad/squad-bot-announce';
   import { currentUser } from '../../stores/auth';
@@ -10,19 +12,21 @@
   export let authorNpub: string | undefined = undefined;
   export let timestamp: string = '';
 
+  const tFn = get(t);
+
   $: isMine =
     Boolean(authorNpub && $currentUser?.npub && authorNpub === $currentUser.npub);
 
   $: title =
     announce.kind === 'meta'
       ? isMine
-        ? 'You updated the squad bot roster'
-        : `${authorName || 'A member'} updated the squad bot roster`
+        ? tFn('announcements.squadBot.rosterMine')
+        : tFn('announcements.squadBot.rosterTheirs', { values: { authorName: authorName || tFn('announcements.squadBot.aMember') } })
       : announce.kind === 'key_rotated'
         ? isMine
-          ? 'You rotated the squad bot key'
-          : `${authorName || 'A member'} rotated the squad bot key`
-        : 'Squad bot update';
+          ? tFn('announcements.squadBot.rotatedMine')
+          : tFn('announcements.squadBot.rotatedTheirs', { values: { authorName: authorName || tFn('announcements.squadBot.aMember') } })
+        : tFn('announcements.squadBot.updateTitle');
 
   $: holderCount =
     announce.kind === 'meta' ? announce.payload.holders.length : null;
@@ -43,13 +47,13 @@
     <p class="announce-title">{title}</p>
     <ul class="announce-details">
       {#if holderCount != null}
-        <li>{holderCount} key holder{holderCount === 1 ? '' : 's'}</li>
+        <li>{$t('announcements.squadBot.keyHolders', { values: { count: holderCount } })}</li>
       {/if}
       {#if keyEpoch != null}
-        <li>Key epoch {keyEpoch}</li>
+        <li>{$t('announcements.squadBot.keyEpoch', { values: { keyEpoch } })}</li>
       {/if}
       {#if botNpub}
-        <li>Bot <code title={botNpub}>{shortNpub(botNpub)}</code></li>
+        <li>{$t('announcements.squadBot.botLabel', { values: { shortNpub: shortNpub(botNpub) } })} <code title={botNpub}>{shortNpub(botNpub)}</code></li>
       {/if}
     </ul>
     <p class="announce-meta">

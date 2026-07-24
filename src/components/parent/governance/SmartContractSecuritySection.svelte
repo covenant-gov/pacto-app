@@ -32,6 +32,8 @@
   } from '../../../lib/evm/calldata-builder';
   import { loadShippedAbi, listShippedAbiRefs } from '../../../lib/evm/abi-loader';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let parentId = '';
   export let announcementsGroupId = '';
@@ -39,6 +41,8 @@
   export let canManage = false;
   /** Slimmer chrome for Status (collapsed add form by default). */
   export let compact = false;
+
+  const tFn = get(t);
 
   let rows: SquadContractAllowlistRow[] = [];
   let loading = true;
@@ -81,7 +85,7 @@
       rows = await listSquadContractAllowlist(pid);
     } catch (e) {
       rows = [];
-      loadError = getInvokeErrorMessage(e, 'Could not load allowlist.');
+      loadError = getInvokeErrorMessage(e, tFn('governance.error.couldNotLoadAllowlist'));
     } finally {
       loading = false;
     }
@@ -107,7 +111,7 @@
     if (!canManage || addBusy) return;
     const addr = addAddress.trim();
     if (!isAddress(addr)) {
-      showToast('Enter a valid 0x contract address.');
+      showToast(tFn('governance.error.invalidContractAddress'));
       return;
     }
     addBusy = true;
@@ -134,9 +138,9 @@
       addLabel = '';
       addAbiRef = '';
       await refreshRows();
-      showToast('Contract added to squad allowlist.');
+      showToast(tFn('governance.toast.contractAdded'));
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not add contract.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.error.couldNotAddContract')));
     } finally {
       addBusy = false;
     }
@@ -165,9 +169,9 @@
         }
       }
       await refreshRows();
-      showToast('Contract removed from allowlist.');
+      showToast(tFn('governance.toast.contractRemoved'));
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not remove contract.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.error.couldNotRemoveContract')));
     }
   }
 
@@ -190,7 +194,7 @@
     try {
       if (!isAddress(callTo.trim())) {
         callSimOk = false;
-        callSimMessage = 'Enter a valid 0x target address.';
+        callSimMessage = tFn('governance.error.invalidTargetAddress');
         return;
       }
       const data = builtCallCalldata();
@@ -202,10 +206,10 @@
         dataHex: data,
       });
       callSimOk = result.ok;
-      callSimMessage = result.ok ? 'Simulation succeeded.' : result.message;
+      callSimMessage = result.ok ? tFn('governance.toast.simulationSucceeded') : result.message;
     } catch (e) {
       callSimOk = false;
-      callSimMessage = e instanceof Error ? e.message : 'Simulation failed.';
+      callSimMessage = e instanceof Error ? e.message : tFn('governance.error.simulationFailed');
     } finally {
       callSimulating = false;
     }
@@ -222,17 +226,17 @@
       waitForConfirmation: false as const,
     };
     runOnChainInBackground({
-      startedToast: 'Squad transaction submitted. Confirmation continues in the background.',
-      subject: 'Squad transaction',
+      startedToast: tFn('governance.toast.squadTransactionSubmitted'),
+      subject: tFn('governance.onchain.subject'),
       job: async () => {
         const outcome = await evmSendSquadAllowlistedContractCall(params);
         if (!outcome.ok) throw new Error(outcome.message);
         return outcome.result;
       },
       onSuccess: (result) => {
-        toastOnChainSubmitted(callChain, result.txHash, 'Squad transaction');
+        toastOnChainSubmitted(callChain, result.txHash, tFn('governance.onchain.subject'));
         waitForOnChainConfirmationInBackground(callChain, result.txHash, {
-          subject: 'Squad transaction',
+          subject: tFn('governance.onchain.subject'),
           confirmedToast: true,
           onConfirmed: () => {
             const url = getExplorerTxUrl(callChain, result.txHash);
@@ -252,24 +256,24 @@
   class:smart-contract-security--compact={compact}
   aria-labelledby="smart-contract-security-heading"
 >
-  <h4 id="smart-contract-security-heading" class="roles-table-caption">Contracts</h4>
+  <h4 id="smart-contract-security-heading" class="roles-table-caption">{$t('governance.title.contracts')}</h4>
 
   {#if loading}
-    <p class="smart-contract-security-note muted">Loading…</p>
+    <p class="smart-contract-security-note muted">{$t('governance.status.loading')}</p>
   {:else if loadError}
     <p class="smart-contract-security-note">{loadError}</p>
   {:else if rows.length === 0}
-    <p class="smart-contract-security-note muted">No allowlisted contracts.</p>
+    <p class="smart-contract-security-note muted">{$t('governance.empty.noAllowlistedContracts')}</p>
   {:else}
     <ul class="allowlist-list">
       {#each rows as row (row.id)}
         <li class="allowlist-row">
           <div class="allowlist-main">
-            <span class="allowlist-label">{row.label?.trim() || 'Unlabeled'}</span>
+            <span class="allowlist-label">{row.label?.trim() || tFn('governance.allowlist.unlabeled')}</span>
             <span class="allowlist-meta">{getWalletNetworkDisplayName(row.chain as SupportedChainId)} · {shortAddr(row.contractAddress)}</span>
           </div>
           {#if canManage}
-            <button type="button" class="allowlist-remove" on:click={() => onRemove(row)}>Remove</button>
+            <button type="button" class="allowlist-remove" on:click={() => onRemove(row)}>{tFn('governance.action.remove')}</button>
           {/if}
         </li>
       {/each}
@@ -292,29 +296,29 @@
             class="allowlist-call-chevron"
             class:allowlist-call-chevron--open={addSectionOpen}
           />
-          <span>Add contract</span>
+          <span>{$t('governance.allowlist.addContract')}</span>
         </button>
       </h5>
       <div id="squad-contract-add-panel" class="allowlist-call-panel" hidden={!addSectionOpen}>
-        <label class="allowlist-field-label" for="allowlist-chain">Chain</label>
+        <label class="allowlist-field-label" for="allowlist-chain">{$t('governance.field.chain')}</label>
         <select id="allowlist-chain" class="allowlist-input" bind:value={addChain}>
           {#each WALLET_ASSETS_CHAIN_IDS as chain (chain)}
             <option value={chain}>{getWalletNetworkDisplayName(chain)}</option>
           {/each}
         </select>
-        <label class="allowlist-field-label" for="allowlist-addr">Contract address</label>
-        <input id="allowlist-addr" class="allowlist-input" placeholder="0x…" bind:value={addAddress} />
-        <label class="allowlist-field-label" for="allowlist-label">Label</label>
-        <input id="allowlist-label" class="allowlist-input" placeholder="e.g. Uniswap router" bind:value={addLabel} />
-        <label class="allowlist-field-label" for="allowlist-abi">ABI ref (optional)</label>
-        <input id="allowlist-abi" class="allowlist-input" placeholder="erc20-minimal or URL" bind:value={addAbiRef} />
+        <label class="allowlist-field-label" for="allowlist-addr">{$t('governance.field.contractAddress')}</label>
+        <input id="allowlist-addr" class="allowlist-input" placeholder={$t('governance.field.contractAddressPlaceholder')} bind:value={addAddress} />
+        <label class="allowlist-field-label" for="allowlist-label">{$t('governance.field.label')}</label>
+        <input id="allowlist-label" class="allowlist-input" placeholder={$t('governance.field.labelPlaceholder')} bind:value={addLabel} />
+        <label class="allowlist-field-label" for="allowlist-abi">{$t('governance.field.abiRef')}</label>
+        <input id="allowlist-abi" class="allowlist-input" placeholder={$t('governance.field.abiRefPlaceholder')} bind:value={addAbiRef} />
         <button type="button" class="allowlist-btn" disabled={addBusy} on:click={onAddContract}>
-          {addBusy ? 'Adding…' : 'Add to allowlist'}
+          {addBusy ? tFn('governance.allowlist.addingToAllowlist') : tFn('governance.action.addToAllowlist')}
         </button>
       </div>
     </div>
   {:else if !compact}
-    <p class="smart-contract-security-note muted">Only Role-approved members can add contracts once enabled.</p>
+    <p class="smart-contract-security-note muted">{$t('governance.info.onlyRoleApproved')}</p>
   {/if}
 
   <div class="allowlist-call">
@@ -332,36 +336,36 @@
           class="allowlist-call-chevron"
           class:allowlist-call-chevron--open={callSectionOpen}
         />
-        <span>Contract call</span>
+        <span>{$t('governance.allowlist.contractCall')}</span>
       </button>
     </h5>
     <div id="squad-contract-call-panel" class="allowlist-call-panel" hidden={!callSectionOpen}>
     {#if !squadSigner}
-      <p class="smart-contract-security-note muted">Set a signer under Default wallet config.</p>
+      <p class="smart-contract-security-note muted">{$t('governance.info.setDefaultSigner')}</p>
     {:else}
-      <p class="smart-contract-security-note muted">Signing as {shortAddr(squadSigner)}. Simulate before send.</p>
-      <label class="allowlist-field-label" for="call-chain">Chain</label>
+      <p class="smart-contract-security-note muted">{$t('governance.info.signingAs', { values: { address: shortAddr(squadSigner) } })}</p>
+      <label class="allowlist-field-label" for="call-chain">{$t('governance.field.chain')}</label>
       <select id="call-chain" class="allowlist-input" bind:value={callChain}>
         {#each WALLET_ASSETS_CHAIN_IDS as chain (chain)}
           <option value={chain}>{getWalletNetworkDisplayName(chain)}</option>
         {/each}
       </select>
-      <label class="allowlist-field-label" for="call-to">Target (allowlisted or implicit infra)</label>
-      <input id="call-to" class="allowlist-input" placeholder="0x…" bind:value={callTo} list="allowlist-targets" />
+      <label class="allowlist-field-label" for="call-to">{$t('governance.field.targetAllowlisted')}</label>
+      <input id="call-to" class="allowlist-input" placeholder={$t('governance.field.targetPlaceholder')} bind:value={callTo} list="allowlist-targets" />
       <datalist id="allowlist-targets">
         {#each rows.filter((r) => r.chain === callChain) as row (row.id)}
           <option value={row.contractAddress}>{row.label || row.contractAddress}</option>
         {/each}
       </datalist>
       {#if callTargetLabel}
-        <p class="allowlist-target-label">Allowlist: {callTargetLabel}</p>
+        <p class="allowlist-target-label">{$t('governance.info.allowlistTarget', { values: { label: callTargetLabel } })}</p>
       {/if}
-      <label class="allowlist-field-label" for="call-value">Value (ETH)</label>
+      <label class="allowlist-field-label" for="call-value">{$t('governance.field.valueEth')}</label>
       <input id="call-value" class="allowlist-input" bind:value={callValueEth} />
       <fieldset class="allowlist-mode">
-        <legend class="allowlist-field-label">Calldata</legend>
-        <label><input type="radio" bind:group={callMode} value="raw" /> Raw hex</label>
-        <label><input type="radio" bind:group={callMode} value="abi" /> Shipped ABI</label>
+        <legend class="allowlist-field-label">{$t('governance.field.calldata')}</legend>
+        <label><input type="radio" bind:group={callMode} value="raw" /> {$t('governance.field.rawHex')}</label>
+        <label><input type="radio" bind:group={callMode} value="abi" /> {$t('governance.field.shippedAbi')}</label>
       </fieldset>
       {#if callMode === 'raw'}
         <textarea class="allowlist-textarea" rows="2" bind:value={callDataHex} placeholder="0x"></textarea>
@@ -371,18 +375,18 @@
             <option value={item.ref}>{item.label}</option>
           {/each}
         </select>
-        <input class="allowlist-input" placeholder="functionName" bind:value={callFunctionName} />
-        <textarea class="allowlist-textarea" rows="2" bind:value={callArgsJson} placeholder='["0x…"]'></textarea>
+        <input class="allowlist-input" placeholder={$t('governance.field.functionNamePlaceholder')} bind:value={callFunctionName} />
+        <textarea class="allowlist-textarea" rows="2" bind:value={callArgsJson} placeholder={$t('governance.field.argsPlaceholder')}></textarea>
       {/if}
       {#if callSimMessage}
         <p class="allowlist-sim" class:ok={callSimOk === true} class:err={callSimOk === false}>{callSimMessage}</p>
       {/if}
       <div class="allowlist-call-actions">
         <button type="button" class="allowlist-btn allowlist-btn-secondary" disabled={callSimulating} on:click={onSimulateCall}>
-          {callSimulating ? 'Simulating…' : 'Simulate'}
+          {callSimulating ? tFn('governance.allowlist.simulating') : tFn('governance.action.simulate')}
         </button>
         <button type="button" class="allowlist-btn" disabled={!canSendCall || callSending} on:click={onSendCall}>
-          {callSending ? 'Sending…' : 'Send (squad key)'}
+          {callSending ? tFn('governance.allowlist.sending') : tFn('governance.action.sendSquadKey')}
         </button>
       </div>
     {/if}

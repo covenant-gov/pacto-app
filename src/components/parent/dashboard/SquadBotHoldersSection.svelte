@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import { onMount } from 'svelte';
   import { currentUser } from '../../../stores/auth';
   import { profiles } from '../../../stores/profiles';
@@ -51,7 +54,7 @@
     try {
       state = (await getSquadBotState(squadId)) ?? (await ensureSquadBot(squadId));
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Could not load bot key holders.';
+      error = e instanceof Error ? e.message : tFn('governance.botHolders.toastLoadFailed');
       state = null;
     } finally {
       loading = false;
@@ -81,7 +84,7 @@
         copiedBotNpub = false;
       }, 2000);
     } else {
-      showToast('Could not copy.');
+      showToast(tFn('governance.botHolders.toastCopyFailed'));
     }
   }
 
@@ -104,7 +107,7 @@
     }
     state = result.state;
     addNpub = '';
-    showToast('Bot key holder added.');
+    showToast(tFn('governance.botHolders.toastAdded'));
   }
 
   async function onRemove(npub: string) {
@@ -117,7 +120,7 @@
       return;
     }
     state = result.state;
-    showToast('Holder removed. Remaining holders should rotate the bot key.');
+    showToast(tFn('governance.botHolders.toastRemoved'));
   }
 
   async function onRotate() {
@@ -131,7 +134,7 @@
       return;
     }
     state = result.state;
-    showToast('Bot key rotated.');
+    showToast(tFn('governance.botHolders.toastRotated'));
   }
 </script>
 
@@ -140,31 +143,29 @@
   class="dashboard-section squad-bot-holders-section"
   aria-labelledby="squad-bot-holders-title"
 >
-  <h3 id="squad-bot-holders-title" class="section-heading">Join inbox / Bot key holders</h3>
-  <p class="section-lead">
-    Join requests DM this squad’s bot; only listed holders keep the key.
-  </p>
+  <h3 id="squad-bot-holders-title" class="section-heading">{$t('governance.botHolders.title')}</h3>
+  <p class="section-lead">{$t('governance.botHolders.lead')}</p>
 
   {#if loading}
-    <p class="muted" role="status">Loading…</p>
+    <p class="muted" role="status">{$t('governance.common.loading')}</p>
   {:else if error}
     <p class="err" role="alert">{error}</p>
   {:else if !state}
-    <p class="muted">Bot not initialized yet.</p>
+    <p class="muted">{$t('governance.botHolders.botNotInitialized')}</p>
     <button type="button" class="btn" disabled={acting || !squadId} on:click={() => void reload()}>
-      Initialize bot
+      {$t('governance.botHolders.initialize')}
     </button>
   {:else}
     <div class="bot-details">
       <div class="bot-key-box">
-        <span class="bot-key-box-label">Bot npub</span>
+        <span class="bot-key-box-label">{$t('governance.botHolders.botNpub')}</span>
         <div class="bot-key-value-row">
           <code class="bot-key-value-full">{state.botNpub}</code>
           <button
             type="button"
             class="bot-key-copy-btn"
-            aria-label={copiedBotNpub ? 'Copied' : 'Copy bot npub'}
-            title={copiedBotNpub ? 'Copied' : 'Copy'}
+            aria-label={copiedBotNpub ? $t('governance.common.copied') : $t('governance.botHolders.copyBotNpub')}
+            title={copiedBotNpub ? $t('governance.common.copied') : $t('governance.common.copy')}
             on:click={copyBotNpub}
           >
             <svg
@@ -187,12 +188,12 @@
       </div>
 
       <div class="bot-key-box bot-key-box-compact">
-        <span class="bot-key-box-label">Key epoch</span>
+        <span class="bot-key-box-label">{$t('governance.botHolders.keyEpoch')}</span>
         <span class="bot-key-box-value">{state.keyEpoch}</span>
       </div>
     </div>
 
-    <h4 class="subhead">Holders</h4>
+    <h4 class="subhead">{$t('governance.botHolders.holders')}</h4>
     <ul class="holder-list">
       {#each state.holders as npub (npub)}
         <li>
@@ -204,7 +205,7 @@
               disabled={acting}
               on:click={() => void onRemove(npub)}
             >
-              Remove
+              {$t('governance.common.remove')}
             </button>
           {/if}
         </li>
@@ -213,15 +214,15 @@
 
     {#if canManage}
       <div class="add-row">
-        <label class="sr-only" for="squad-bot-add-holder">Add holder</label>
+        <label class="sr-only" for="squad-bot-add-holder">{$t('governance.botHolders.addHolderLabel')}</label>
         <select id="squad-bot-add-holder" bind:value={addNpub} disabled={acting || candidates.length === 0}>
-          <option value="">Add member as holder…</option>
+          <option value="">{$t('governance.botHolders.addHolder')}</option>
           {#each candidates as npub (npub)}
             <option value={npub}>{label(npub)}</option>
           {/each}
         </select>
         <button type="button" class="btn" disabled={acting || !addNpub} on:click={() => void onAdd()}>
-          Add
+          {$t('governance.common.add')}
         </button>
       </div>
 
@@ -232,7 +233,7 @@
           disabled={acting}
           on:click={() => void onRotate()}
         >
-          Rotate Bot Key
+          {$t('governance.botHolders.rotateBotKey')}
         </button>
       </div>
     {/if}

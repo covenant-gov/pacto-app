@@ -9,6 +9,9 @@
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { explorerAddressUrl, type SupportedChainId } from '../../../lib/wallet/chains';
   import { profiles } from '../../../stores/profiles';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+  import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
 
   export let node: HatTreeNodeDto;
   export let roleLabelByHatId: Record<string, string> = {};
@@ -19,12 +22,13 @@
   export let knownWearerLabels: Record<string, string> = {};
   export let chainKey: SupportedChainId | null = null;
 
+  const tFn = get(t);
+
   $: roleLabel = roleLabelByHatId[node.hatId] ?? '';
   $: wearerAddresses = wearerAddressesByHatId[node.hatId] ?? [];
   $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
   $: prettyId = prettyHatId(node.hatId) ?? node.hatId;
   $: humanDetails = humanHatDetails(node.details);
-  $: title = roleLabel || humanDetails || 'Untitled hat';
   /** Extra line only when role label and a distinct human details string both exist. */
   $: detailsSubtitle =
     roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '';
@@ -49,8 +53,8 @@
 
   function footerSupply(): string {
     if (node.maxSupply >= 0xffffffff) return hasWearers ? `${node.supply}` : '';
-    if (hasWearers) return `${node.supply} of ${node.maxSupply}`;
-    return `of ${node.maxSupply}`;
+    if (hasWearers) return tFn('governance.hats.supply', { values: { count: node.supply, max: node.maxSupply } });
+    return tFn('governance.hats.supplyOf', { values: { max: node.maxSupply } });
   }
 
   function openWearerExplorer(address: string) {
@@ -60,7 +64,7 @@
   }
 
   function wearerExplorerTitle(address: string): string {
-    return `Open ${address.trim()} on block explorer`;
+    return tFn('governance.hats.wearerExplorerTitle', { values: { address: address.trim() } });
   }
 
   function humanHatDetails(raw: string | null | undefined): string {
@@ -68,13 +72,18 @@
     if (!t || t.includes('://')) return '';
     return t;
   }
+
+  function wearerCountLabel(count: number): string {
+    if (count === 0) return tFn('governance.hats.noWearers');
+    return tFn('governance.hats.wearerCount', { values: { count } });
+  }
 </script>
 
 <div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined}>
   <div class="hats-tree-node-card" class:has-wearers={hasWearers} class:inactive={!node.active}>
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
-      <span class="hats-tree-node-title">{title}</span>
+      <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
       {#if detailsSubtitle}
         <span class="hats-tree-node-details muted">{detailsSubtitle}</span>
       {/if}
@@ -93,10 +102,8 @@
           {#if primaryWearerRoles}
             <span class="wearer-roles"> · {primaryWearerRoles}</span>
           {/if}
-        {:else if node.supply > 0}
-          {node.supply} wearer{node.supply === 1 ? '' : 's'}
         {:else}
-          0 Wearers
+          {wearerCountLabel(node.supply)}
         {/if}
       </span>
       {#if footerSupply()}
@@ -105,7 +112,7 @@
     </div>
     {#if wearerAddresses.length > 1}
       <div class="hats-tree-extra-wearers muted">
-        +{wearerAddresses.length - 1} more:
+        {$t('governance.hats.moreWearers', { values: { count: wearerAddresses.length - 1 } })}
         {#each wearerAddresses.slice(1) as address, i (address)}
           {#if i > 0}, {/if}
           <button
@@ -298,10 +305,5 @@
     width: 2px;
     height: 12px;
     background: var(--border-subtle);
-    margin-bottom: 0;
-  }
-
-  .muted {
-    color: var(--text-muted);
   }
 </style>

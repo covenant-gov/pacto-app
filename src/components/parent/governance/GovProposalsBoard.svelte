@@ -14,6 +14,8 @@
   import { isTreasuryProposalActive } from '../../../lib/governance/treasury-proposal-ui';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let network: string;
   export let parentId: string;
@@ -28,6 +30,8 @@
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void = () => {};
   export let fundingHint = '';
+
+  const tFn = get(t);
 
   let acting = false;
 
@@ -46,10 +50,10 @@
         treasuryAuthority,
         proposalId,
       });
-      showToast('Execute submitted.');
+      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.execute') } }));
       onRefreshProposals();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Execute failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
     } finally {
       acting = false;
     }
@@ -58,10 +62,10 @@
 
 <div class="proposals-board">
   <div class="board-head">
-    <h4 class="board-title">Proposals {#if openCount}({openCount} open){/if}</h4>
+    <h4 class="board-title">{$t('governance.proposal.boardTitle')}{#if openCount} {$t('governance.proposal.openCount', { values: { count: openCount } })}{/if}</h4>
     <RefreshIconButton
       spinning={proposalsLoading}
-      ariaLabel={proposalsLoading ? 'Refreshing proposals' : 'Refresh proposals'}
+      ariaLabel={proposalsLoading ? $t('governance.aria.refreshingProposals') : $t('governance.aria.refreshProposals')}
       on:click={onRefreshProposals}
     />
   </div>
@@ -70,36 +74,35 @@
   {/if}
 
   {#if mutinyLoading && !mutinyStatus}
-    <p class="muted">Loading mutiny status…</p>
+    <p class="muted">{$t('governance.status.loadingMutinyStatus')}</p>
   {:else if mutinyStatus}
     <div class="mutiny-strip" class:mutiny-strip-active={mutinyActive} class:mutiny-strip-ready={mutinyReady}>
-      <span class="mutiny-label">Mutiny</span>
+      <span class="mutiny-label">{$t('governance.title.mutiny')}</span>
       {#if mutinyActive}
         <p class="mutiny-detail">
-          Active #{mutinyStatus.activeMutinyId} toward <code>{mutinyStatus.proposedNewCaptain || '—'}</code>
-          · yeas {mutinyStatus.yeas} / snapshot {mutinyStatus.snapshot}
+          {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
         </p>
         {#if mutinyReady}
           <button
             type="button"
             class="execute-btn"
             disabled={acting || !execGate.enabled}
-            title={execGate.enabled ? 'Execute mutiny' : execGate.reason}
+            title={execGate.enabled ? tFn('governance.action.executeMutiny') : $t(execGate.reason)}
             on:click={onExecuteMutiny}
           >
-            Execute mutiny
+            {tFn('governance.action.executeMutiny')}
           </button>
         {/if}
       {:else}
-        <p class="mutiny-detail muted">No active mutiny · captain <code>{mutinyStatus.captain || '—'}</code></p>
+        <p class="mutiny-detail muted">{$t('governance.mutiny.noActive', { values: { address: mutinyStatus.captain || '—' } })}</p>
       {/if}
     </div>
   {/if}
 
   {#if proposalsLoading && proposals.length === 0}
-    <p class="muted">Loading proposals…</p>
+    <p class="muted">{$t('governance.status.loadingProposals')}</p>
   {:else if proposals.length === 0}
-    <p class="muted">{proposalsError || 'No treasury proposals yet.'}</p>
+    <p class="muted">{proposalsError || $t('governance.empty.noTreasuryProposals')}</p>
   {:else}
     <ul class="proposal-list" role="list">
       {#each proposals as proposal (proposal.proposalId)}
@@ -107,7 +110,7 @@
           {proposal}
           showExecute
           executePending={acting}
-          executeDisabledReason={execGate.enabled ? '' : execGate.reason}
+          executeDisabledReason={execGate.enabled ? '' : $t(execGate.reason)}
           onExecute={() => runExecute(proposal.proposalId)}
         />
       {/each}
@@ -174,11 +177,6 @@
   }
   .funding-hint {
     margin: 0 0 4px;
-  }
-  code {
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    word-break: break-all;
   }
   .execute-btn {
     align-self: flex-start;

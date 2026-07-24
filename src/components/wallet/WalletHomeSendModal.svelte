@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAddress, isAddress, parseUnits } from 'viem';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import { DEFAULT_CHAIN_ID } from '../../lib/wallet/chains';
@@ -30,10 +31,12 @@
     watchedWireFingerprint,
     type WalletSummary,
   } from '../../lib/wallet';
-  import { toastWalletBroadcastSubmitted } from '../../lib/wallet/wallet-dm-transfer';
+  import { getAddress, isAddress, parseUnits } from 'viem';
   import { showToast } from '../../stores/toast';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { normalizeLeadingDotDecimalInput } from '../../lib/wallet/amount-input';
+
+  const tFn = get(t);
 
   export let open: boolean;
   export let onClose: () => void;
@@ -175,6 +178,22 @@
   $: canConfirm =
     recipientValid && amountValid && !sending && selectedOpt != null && !insufficientFunds;
 
+  $: explorerLinkForError =
+    sendError?.txHash != null && sendError.txHash.length > 0
+      ? getExplorerTxUrl(chainId, sendError.txHash)
+      : null;
+  $: explorerLinkLabel = explorerTxLinkLabel(chainId);
+
+  async function copyErrorTxHash() {
+    const h = sendError?.txHash;
+    if (!h) return;
+    const ok = await copyTextToClipboard(h);
+    showToast(ok ? tFn('wallet.txHashCopied') : tFn('wallet.couldNotCopyHash'));
+  }
+
+  $: canRetryAfterError =
+    sendError != null && !sending && sendError.code !== 'RECEIPT_TIMEOUT';
+
   $: approxUsd =
     pricesResult?.ok === true && amountValid
       ? amountToApproxUsd(amountStr, assetCode, pricesResult.prices)
@@ -182,36 +201,26 @@
 
   $: usdLine =
     pricesResult === null
-      ? 'Loading USD rates…'
+      ? tFn('wallet.loadingUsdRates')
       : !pricesResult.ok
         ? pricesResult.message
         : approxUsd != null
           ? `≈ ${formatApproxUsd(approxUsd)}`
           : amountValid && (assetCode === 'ETH' || assetCode === 'USDC' || assetCode === 'USDT')
-            ? 'Enter an amount to see USD estimate.'
+            ? tFn('wallet.enterAmountForUsd')
             : amountValid
-              ? 'USD estimate unavailable for this asset.'
-              : 'Enter an amount to see USD estimate.';
-
-  $: explorerLinkForError =
-    sendError?.txHash != null && sendError.txHash.length > 0
-      ? getExplorerTxUrl(chainId, sendError.txHash)
-      : null;
-  $: explorerLinkLabel = explorerTxLinkLabel(chainId);
-
-  $: canRetryAfterError =
-    sendError != null && !sending && sendError.code !== 'RECEIPT_TIMEOUT';
+              ? tFn('wallet.usdUnavailable')
+              : tFn('wallet.enterAmountForUsd');
 
   function onAmountInput(e: Event) {
     const el = e.currentTarget as HTMLInputElement;
     amountStr = normalizeLeadingDotDecimalInput(el.value);
   }
 
-  async function copyErrorTxHash() {
-    const h = sendError?.txHash;
-    if (!h) return;
-    const ok = await copyTextToClipboard(h);
-    showToast(ok ? 'Transaction hash copied' : 'Could not copy hash');
+  async function retryFailedSend() {
+    if (!sendError || sending || !canRetryAfterError) return;
+    sendError = null;
+    await handleConfirm();
   }
 
   async function handleConfirm() {
@@ -222,7 +231,7 @@
     try {
       normalizedTo = getAddress(toAddress.trim() as `0x${string}`);
     } catch {
-      showToast('Enter a valid recipient address.');
+      showToast(tFn('wallet.invalidEthereumAddress'));
       return;
     }
     const erc20Transfer =
@@ -242,13 +251,12 @@
         false,
       );
       if (out.ok) {
-        toastWalletBroadcastSubmitted(out.result);
         onClose();
         void walletWaitForTransaction(chainId, out.result.txHash).then((wait) => {
           if (wait.ok) {
             const h = wait.result.txHash;
             const short = h.length > 14 ? `${h.slice(0, 10)}…${h.slice(-4)}` : h;
-            showToast(`Confirmed on ${wait.result.network}. Tx ${short}`);
+            showToast(tFn('wallet.txConfirmed', { values: { network: wait.result.network, txHash: short } }));
           } else if (wait.parsed?.code !== 'RECEIPT_TIMEOUT') {
             showToast(wait.message);
           }
@@ -259,17 +267,11 @@
           txHash: out.parsed?.txHash,
           code: out.parsed?.code,
         };
-        showToast(out.parsed?.code === 'RECEIPT_TIMEOUT' ? 'Confirmation timed out' : out.message);
+        showToast(out.parsed?.code === 'RECEIPT_TIMEOUT' ? tFn('wallet.confirmationTimedOut') : out.message);
       }
     } finally {
       sending = false;
     }
-  }
-
-  async function retryFailedSend() {
-    if (!sendError || sending || !canRetryAfterError) return;
-    sendError = null;
-    await handleConfirm();
   }
 
   $: if (!open) {
@@ -281,34 +283,33 @@
 
 {#if open}
   <Modal {titleId} descriptionId={descId} onClose={() => !sending && onClose()} dismissible={!sending}>
-    <h2 id={titleId}>Send</h2>
+    <h2 id={titleId}>{$t('wallet.sendTitle')}</h2>
     <p id={descId} class="home-send-desc">
-      Send from your embedded wallet to any <strong>0x</strong> address on the selected network. Confirm signs and
-      broadcasts in the desktop app; confirmation continues in the background after the modal closes.
+      {$t('wallet.sendDesc', { values: { '0x': '0x' } })}
     </p>
 
     <div class="home-send-fields">
       <label class="home-send-label">
-        <span class="home-send-label-text">Recipient address</span>
+        <span class="home-send-label-text">{$t('wallet.recipientAddressLabel')}</span>
         <input
           class="home-send-input"
           type="text"
           bind:value={toAddress}
-          placeholder="0x…"
+          placeholder={$t('wallet.recipientAddressPlaceholder')}
           autocomplete="off"
           spellcheck="false"
           disabled={sending}
           aria-invalid={toAddress.trim() !== '' && !recipientValid}
-          aria-label="Recipient EVM address"
+          aria-label={$t('wallet.recipientEvmAddressAria')}
         />
       </label>
       {#if toAddress.trim() && !recipientValid}
-        <p class="home-send-invalid" role="alert">Enter a valid Ethereum address.</p>
+        <p class="home-send-invalid" role="alert">{$t('wallet.invalidEthereumAddress')}</p>
       {/if}
 
       <label class="home-send-label">
-        <span class="home-send-label-text">Network</span>
-        <select class="home-send-select" bind:value={chainId} aria-label="Network" disabled={sending}>
+        <span class="home-send-label-text">{$t('wallet.networkLabel')}</span>
+        <select class="home-send-select" bind:value={chainId} aria-label={$t('wallet.networkLabel')} disabled={sending}>
           {#each chainsForUi as cid (cid)}
             <option value={cid}>{getWalletNetworkDisplayName(cid)}</option>
           {/each}
@@ -316,8 +317,8 @@
       </label>
 
       <label class="home-send-label">
-        <span class="home-send-label-text">Asset</span>
-        <select class="home-send-select" bind:value={assetCode} aria-label="Asset" disabled={sending}>
+        <span class="home-send-label-text">{$t('wallet.assetLabel')}</span>
+        <select class="home-send-select" bind:value={assetCode} aria-label={$t('wallet.assetLabel')} disabled={sending}>
           {#each assetOptions as o (o.code)}
             <option value={o.code}>{o.code}</option>
           {/each}
@@ -325,32 +326,31 @@
       </label>
 
       <label class="home-send-label">
-        <span class="home-send-label-text">Amount</span>
+        <span class="home-send-label-text">{$t('wallet.amountLabel')}</span>
         <input
           class="home-send-input"
           type="text"
           inputmode="decimal"
           autocomplete="off"
-          placeholder="0.0"
+          placeholder={$t('wallet.amountPlaceholder')}
           value={amountStr}
           on:input={onAmountInput}
           disabled={sending}
           aria-invalid={amountStr.trim() !== '' && (!amountValid || insufficientFunds)}
-          aria-label="Amount"
+          aria-label={$t('wallet.amountLabel')}
         />
       </label>
 
       {#if sendBalanceLoading}
-        <p class="home-send-balance-loading" role="status">Loading balance…</p>
+        <p class="home-send-balance-loading" role="status">{$t('wallet.loadingBalance')}</p>
       {/if}
       {#if insufficientFunds && selectedBalanceRow}
         <p class="home-send-insufficient" role="alert">
-          This amount is more than your {assetCode} balance on this network. Available: {selectedBalanceRow.balanceDecimal}
-          {assetCode}.
+          {$t('wallet.insufficientFunds', { values: { assetCode, balanceDecimal: selectedBalanceRow.balanceDecimal } })}
         </p>
       {:else if sendBalanceError && !sendBalanceLoading}
         <p class="home-send-balance-warn" role="status">
-          Could not load your balance ({sendBalanceError}). You can still try to send.
+          {$t('wallet.couldNotLoadBalance', { values: { error: sendBalanceError } })}
         </p>
       {/if}
 
@@ -362,7 +362,7 @@
           {#if sendError.txHash}
             <div class="home-send-tx-row">
               <code class="home-send-tx-code" title={sendError.txHash}>{sendError.txHash}</code>
-              <button type="button" class="home-send-copy-hash" on:click={copyErrorTxHash}>Copy hash</button>
+              <button type="button" class="home-send-copy-hash" on:click={copyErrorTxHash}>{$t('wallet.copyHash')}</button>
             </div>
           {/if}
           {#if explorerLinkForError}
@@ -372,10 +372,10 @@
           {/if}
           {#if sendError?.code === 'RECEIPT_TIMEOUT'}
             <p class="home-send-retry-hint" role="note">
-              The transaction may still confirm. Check the explorer before sending again.
+              {$t('wallet.retryHint')}
             </p>
           {:else if canRetryAfterError}
-            <button type="button" class="home-send-retry" on:click={retryFailedSend}>Try again</button>
+            <button type="button" class="home-send-retry" on:click={retryFailedSend}>{$t('wallet.tryAgain')}</button>
           {/if}
         </div>
       {/if}
@@ -383,10 +383,10 @@
 
     <div class="home-send-actions">
       <button type="button" class="home-send-btn home-send-btn-secondary" disabled={sending} on:click={onClose}>
-        Cancel
+        {$t('wallet.cancel')}
       </button>
       <button type="button" class="home-send-btn home-send-btn-primary" disabled={!canConfirm} on:click={handleConfirm}>
-        {sending ? 'Submitting…' : 'Confirm'}
+        {sending ? $t('wallet.submitting') : $t('wallet.confirm')}
       </button>
     </div>
   </Modal>

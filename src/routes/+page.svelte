@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import Navbar from '../components/layout/Navbar.svelte';
   import TopNavbar from '../components/layout/TopNavbar.svelte';
   import CommonsView from '../components/commons/CommonsView.svelte';
@@ -1042,7 +1043,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
               {/key}
             {:else}
               <div class="dm-empty">
-                <p>Select a conversation or start a new chat</p>
+                <p>{$t('app.dm.empty')}</p>
               </div>
             {/if}
             </div>
@@ -1147,12 +1148,12 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
             {#if ChatViewComponent}
               <svelte:component this={ChatViewComponent} />
             {:else}
-              <p class="surface-loading muted" role="status">Loading channel…</p>
+              <p class="surface-loading muted" role="status">{$t('app.loading.channel')}</p>
             {/if}
           {:else if $activeSquadId && !openHubParent}
-            <p class="surface-loading muted" role="status">Loading squad…</p>
+            <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
           {:else}
-            <p class="surface-loading muted" role="status">Select a squad channel</p>
+            <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
           {/if}
           </div>
         </div>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { GovernanceUpdatedPayload } from '../../lib/announcements';
   import { getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import { parseSupportedChainId } from '../../lib/wallet/chains';
@@ -12,13 +14,15 @@
   export let authorNpub: string | undefined = undefined;
   export let timestamp: string;
 
+  const tFn = get(t);
+
   $: displayName =
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || 'A member';
+    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember');
   $: networkLabel = getWalletNetworkDisplayName(parseSupportedChainId(payload.chain));
 </script>
 
 <div class="pacto-gov-deploy-body">
-  <p class="pacto-gov-deploy-title">{displayName} deployed Pacto Gov</p>
+  <p class="pacto-gov-deploy-title">{$t('announcements.pactoGovDeployed.title', { values: { displayName } })}</p>
   {#if networkLabel}
     <p class="pacto-gov-deploy-network">{networkLabel}</p>
   {/if}

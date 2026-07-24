@@ -51,7 +51,7 @@ export function resolveGovernancePrivilege(params: {
       wearsCaptain: snap.wearsCaptain,
       wearsCrew: snap.wearsCrew,
       captainIsSafe: snap.captainIsSafe,
-      roleLabel: snap.roleLabel || 'No on-chain hat',
+      roleLabel: localizeRoleLabel(snap.roleLabel) || 'governance.roleLabel.noOnChainHat',
       capabilities: snap.capabilities,
       squadAdminFull: snap.squadAdminFull,
       squadAdminPaused: snap.squadAdminPaused,
@@ -67,33 +67,76 @@ export function resolveGovernancePrivilege(params: {
   const wearsCaptain = !!my && captains.includes(my);
   const wearsCrew = !!my && crew.includes(my);
 
-  let roleLabel = 'No on-chain hat';
-  if (!my) roleLabel = 'No squad EVM linked';
-  else if (wearsCaptain && wearsCrew) roleLabel = 'Captain + Crew';
-  else if (wearsCaptain) roleLabel = 'Captain';
-  else if (wearsCrew) roleLabel = 'Crew';
-  else if (captainIsSafe) roleLabel = 'No hat · Safe holds captain';
+  let roleLabel = 'governance.roleLabel.noOnChainHat';
+  if (!my) roleLabel = 'governance.roleLabel.noSquadEvmLinked';
+  else if (wearsCaptain && wearsCrew) roleLabel = 'governance.roleLabel.captainAndCrew';
+  else if (wearsCaptain) roleLabel = 'governance.roleLabel.captain';
+  else if (wearsCrew) roleLabel = 'governance.roleLabel.crew';
+  else if (captainIsSafe) roleLabel = 'governance.roleLabel.noHatSafeHoldsCaptain';
 
   return { myAddress: my, wearsCaptain, wearsCrew, captainIsSafe, roleLabel };
+}
+
+/** Map backend role label strings to i18n keys. Unknown labels are passed through. */
+export function localizeRoleLabel(label: string): string {
+  switch (label) {
+    case 'No on-chain hat':
+      return 'governance.roleLabel.noOnChainHat';
+    case 'No squad EVM linked':
+      return 'governance.roleLabel.noSquadEvmLinked';
+    case 'Captain + Crew':
+      return 'governance.roleLabel.captainAndCrew';
+    case 'Captain':
+      return 'governance.roleLabel.captain';
+    case 'Crew':
+      return 'governance.roleLabel.crew';
+    case 'No hat · Safe holds captain':
+      return 'governance.roleLabel.noHatSafeHoldsCaptain';
+    default:
+      return label;
+  }
 }
 
 export type CtaGate =
   | { enabled: true; reason: '' }
   | { enabled: false; reason: string };
 
+/** Map backend ACL reason strings to i18n keys. Unknown reasons are passed through. */
+export function localizeAclReason(reason: string): string {
+  switch (reason) {
+    case 'Link a squad EVM address to act.':
+      return 'governance.gate.linkSquadEvmAddressToAct';
+    case 'Link a squad EVM address to sign.':
+      return 'governance.gate.linkSquadEvmAddressToSign';
+    case 'Requires Crew hat.':
+      return 'governance.gate.requiresCrew';
+    case 'Captain hat is on the Safe.':
+      return 'governance.gate.captainHatOnSafe';
+    case 'Requires Captain hat.':
+      return 'governance.gate.requiresCaptain';
+    case 'Requires Captain or Crew hat.':
+      return 'governance.gate.requiresCaptainOrCrew';
+    case 'Access denied':
+    case 'Access denied.':
+      return 'governance.gate.accessDenied';
+    default:
+      return reason;
+  }
+}
+
 function gateFromCapability(p: GovernancePrivilege, key: GovCapabilityKey): CtaGate | null {
   const flag = p.capabilities?.[key];
   if (!flag) return null;
   if (flag.allowed) return { enabled: true, reason: '' };
-  return { enabled: false, reason: flag.reason || 'Access denied' };
+  return { enabled: false, reason: localizeAclReason(flag.reason || 'governance.gate.accessDenied') };
 }
 
 export function gateRequiresCrew(p: GovernancePrivilege): CtaGate {
   return (
     gateFromCapability(p, 'crewVote') ??
     (() => {
-      if (!p.myAddress) return { enabled: false, reason: 'Link a squad EVM address to act.' };
-      if (!p.wearsCrew) return { enabled: false, reason: 'Requires Crew hat.' };
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToAct' };
+      if (!p.wearsCrew) return { enabled: false, reason: 'governance.gate.requiresCrew' };
       return { enabled: true, reason: '' };
     })()
   );
@@ -103,11 +146,11 @@ export function gateRequiresCaptain(p: GovernancePrivilege): CtaGate {
   return (
     gateFromCapability(p, 'captainVote') ??
     (() => {
-      if (!p.myAddress) return { enabled: false, reason: 'Link a squad EVM address to act.' };
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToAct' };
       if (p.captainIsSafe && !p.wearsCaptain) {
-        return { enabled: false, reason: 'Captain hat is on the Safe.' };
+        return { enabled: false, reason: 'governance.gate.captainHatOnSafe' };
       }
-      if (!p.wearsCaptain) return { enabled: false, reason: 'Requires Captain hat.' };
+      if (!p.wearsCaptain) return { enabled: false, reason: 'governance.gate.requiresCaptain' };
       return { enabled: true, reason: '' };
     })()
   );
@@ -118,9 +161,9 @@ export function gateRequiresCaptainOrCrew(p: GovernancePrivilege): CtaGate {
     gateFromCapability(p, 'proposeTreasury') ??
     gateFromCapability(p, 'mutateTrackedTokens') ??
     (() => {
-      if (!p.myAddress) return { enabled: false, reason: 'Link a squad EVM address to act.' };
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToAct' };
       if (p.wearsCaptain || p.wearsCrew) return { enabled: true, reason: '' };
-      return { enabled: false, reason: 'Requires Captain or Crew hat.' };
+      return { enabled: false, reason: 'governance.gate.requiresCaptainOrCrew' };
     })()
   );
 }
@@ -130,7 +173,7 @@ export function gatePermissionlessSigner(p: GovernancePrivilege): CtaGate {
   return (
     gateFromCapability(p, 'executeTreasury') ??
     (() => {
-      if (!p.myAddress) return { enabled: false, reason: 'Link a squad EVM address to sign.' };
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToSign' };
       return { enabled: true, reason: '' };
     })()
   );
@@ -138,7 +181,7 @@ export function gatePermissionlessSigner(p: GovernancePrivilege): CtaGate {
 
 export function gateBlockedByMutinyMode(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
   if (mutinyMode) {
-    return { enabled: false, reason: 'Quartermaster locked while mutiny is active.' };
+    return { enabled: false, reason: 'governance.gate.quartermasterLocked' };
   }
   return (
     gateFromCapability(p, 'quartermasterMutateCrew') ?? gateRequiresCaptain(p)

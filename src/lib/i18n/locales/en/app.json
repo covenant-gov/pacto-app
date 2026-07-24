@@ -1,0 +1,6 @@
+{
+	"app.dm.empty": "Select a conversation or start a new chat",
+	"app.loading.channel": "Loading channel…",
+	"app.loading.squad": "Loading squad…",
+	"app.selectSquadChannel": "Select a squad channel"
+}

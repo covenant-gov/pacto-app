@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../../lib/utils/profile';
   import { profiles } from '../../../stores/profiles';
 
@@ -8,13 +9,13 @@
 </script>
 
 {#if open}
-  <aside class="members-panel" aria-label="Channel members">
+  <aside class="members-panel" aria-label={$t('governance.membersPanel.ariaLabel')}>
     <div class="members-panel-header">
-      <h3 class="members-panel-title">Members</h3>
+      <h3 class="members-panel-title">{$t('governance.membersPanel.title')}</h3>
     </div>
     <div class="members-panel-list">
       {#if loadingMembers}
-        <p class="members-panel-loading">Loading…</p>
+        <p class="members-panel-loading">{$t('governance.membersPanel.loading')}</p>
       {:else}
         {#each channelMembers as member (member)}
           {@const npub = member as string}

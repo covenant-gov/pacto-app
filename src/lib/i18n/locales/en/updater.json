@@ -1,0 +1,15 @@
+{
+	"updater.available": "Update {version} is available.",
+	"updater.youHave": "You have {version}.",
+	"updater.downloading": "Update {version} is downloading.",
+	"updater.installing": "Update {version} is installing.",
+	"updater.downloadedInstalling": "Downloaded. Installing update…",
+	"updater.installed": "Update {version} is installed.",
+	"updater.relaunchPrompt": "Relaunch Pacto to start the new version.",
+	"updater.relaunchNow": "Relaunch now",
+	"updater.updateCheckFailed": "Update check failed.",
+	"updater.primary.downloading": "Downloading…",
+	"updater.primary.installing": "Installing…",
+	"updater.primary.retry": "Retry",
+	"updater.primary.downloadAndInstall": "Download and install"
+}

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import { showToast } from '../../stores/toast';
   import type { CommonsBroadcastLocalState } from '../../lib/commons/types';
@@ -22,7 +24,9 @@
   export let squad: PublicSquadBroadcastTarget;
   export let onClose: () => void;
   export let broadcastAllowed = true;
-  export let broadcastDeniedReason = 'Role required soon.';
+  export let broadcastDeniedReason = get(t)('commons.broadcast.deniedReason');
+
+  const tFn = get(t);
 
   let tags: string[] = [];
   let message = '';
@@ -96,7 +100,7 @@
       }
       activeBroadcast = null;
       cooldownLabel = '';
-      showToast('Broadcast terminated. You can publish a new one now.');
+      showToast(tFn('commons.broadcast.terminatedToast'));
     } finally {
       cancelling = false;
     }
@@ -120,7 +124,7 @@
         submitError = result.error;
         return;
       }
-      showToast(`Broadcast published for ${squad.name}.`);
+      showToast(tFn('commons.broadcast.squadPublishToast', { values: { squadName: squad.name } }));
       onClose();
     } finally {
       publishing = false;
@@ -134,19 +138,19 @@
   onClose={onClose}
   dismissible={!busy}
 >
-  <h2 id="broadcast-squad-title">Broadcast squad</h2>
+  <h2 id="broadcast-squad-title">{$t('commons.broadcast.squadTitle')}</h2>
 
   {#if loadingActive}
-    <p class="broadcast-muted">Checking active broadcast…</p>
+    <p class="broadcast-muted">{$t('commons.broadcast.checkingActive')}</p>
   {:else if hasActiveBroadcast && activeBroadcast}
     <p id="broadcast-squad-description" class="broadcast-modal-lead">
-      A broadcast is live for <strong>{squad.name}</strong> in Commons.
+      {$t('commons.broadcast.liveLead', { values: { squadName: squad.name } })}
     </p>
     <div class="broadcast-live-card" role="status">
       <p class="broadcast-live-duration">
         {formatCommonsBroadcastDuration(activeBroadcast.durationHours)}
         {#if cooldownLabel}
-          · {cooldownLabel} remaining
+          · {cooldownLabel} {$t('commons.broadcast.remaining')}
         {/if}
       </p>
       <p class="broadcast-live-message">“{activeBroadcast.message}”</p>
@@ -170,38 +174,38 @@
         on:click={handleTerminate}
         disabled={busy}
       >
-        {cancelling ? 'Terminating…' : 'Terminate'}
+        {cancelling ? $t('commons.broadcast.terminating') : $t('commons.broadcast.terminate')}
       </button>
     </div>
   {:else}
     <p id="broadcast-squad-description" class="broadcast-modal-lead">
-      Publish a public message for <strong>{squad.name}</strong> in Commons.
+      {$t('commons.broadcast.publishLead', { values: { squadName: squad.name } })}
     </p>
     {#if !roleAllowed}
       <p class="broadcast-role-denied" role="status">{broadcastDeniedReason}</p>
     {/if}
     <form on:submit|preventDefault={handleSubmit}>
-      <span class="broadcast-label">Tags (exactly 3)</span>
+      <span class="broadcast-label">{$t('commons.broadcast.tagsLabel')}</span>
       <CommonsTagPicker
         bind:selected={tags}
         maxTags={3}
         disabled={busy || !roleAllowed}
-        placeholder="Search tags…"
+        placeholder={$t('commons.broadcast.searchTags')}
       />
 
-      <label class="broadcast-label" for="broadcast-squad-message">Message</label>
+      <label class="broadcast-label" for="broadcast-squad-message">{$t('commons.broadcast.messageLabel')}</label>
       <textarea
         id="broadcast-squad-message"
         class="broadcast-textarea"
         rows="4"
-        placeholder="What should people know before they request to join?"
+        placeholder={$t('commons.broadcast.squadPlaceholder')}
         bind:value={message}
         disabled={busy}
         required
       ></textarea>
 
-      <span class="broadcast-label">Duration</span>
-      <div class="broadcast-duration" role="radiogroup" aria-label="Broadcast duration">
+      <span class="broadcast-label">{$t('commons.broadcast.durationLabel')}</span>
+      <div class="broadcast-duration" role="radiogroup" aria-label={$t('commons.broadcast.durationAriaLabel')}>
         {#each COMMONS_BROADCAST_DURATION_ROWS as row, rowIndex (rowIndex)}
           <div class="broadcast-duration-row">
             {#each row as opt (opt.hours)}
@@ -225,9 +229,9 @@
       {/if}
 
       <div class="broadcast-actions">
-        <button type="button" class="broadcast-btn-cancel" on:click={onClose} disabled={busy}>Cancel</button>
+        <button type="button" class="broadcast-btn-cancel" on:click={onClose} disabled={busy}>{$t('commons.broadcast.cancel')}</button>
         <button type="submit" class="broadcast-btn-submit" disabled={!canSubmit}>
-          {publishing ? 'Publishing…' : 'Broadcast'}
+          {publishing ? $t('commons.broadcast.publishing') : $t('commons.broadcast.broadcast')}
         </button>
       </div>
     </form>

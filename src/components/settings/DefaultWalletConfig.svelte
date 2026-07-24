@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
   import {
     listPreferredNetworkOptions,
     loadPreferredNetwork,
@@ -54,7 +58,7 @@
   }
 
   function shortAddr(a: string | null): string {
-    if (!a) return 'Not set';
+    if (!a) return tFn('wallet.notSet');
     const t = a.trim();
     if (t.length < 18) return t;
     return `${t.slice(0, 10)}…${t.slice(-8)}`;
@@ -75,7 +79,7 @@
   async function saveEdit() {
     if (saving || !accountNpub) return;
     if (!editSignerId || !editReceiverId) {
-      showToast('Choose a signer and receiver from your squad accounts.');
+      showToast(tFn('wallet.chooseSignerAndReceiver'));
       return;
     }
 
@@ -97,11 +101,11 @@
       await onSaved();
       showToast(
         receiverChanged
-          ? 'Receiving address saved. Publishing profile metadata…'
-          : 'Wallet config saved.',
+          ? tFn('wallet.receivingAddressSaved')
+          : tFn('wallet.walletConfigSaved'),
       );
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not save wallet config.'));
+      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSaveWalletConfig')));
     } finally {
       saving = false;
     }
@@ -116,38 +120,38 @@
 </script>
 
 <section class="dwc" aria-labelledby="wallet-default-evm-heading">
-  <h2 id="wallet-default-evm-heading" class="dwc-title">Default EVM account</h2>
+  <h2 id="wallet-default-evm-heading" class="dwc-title">{$t('wallet.defaultEvmAccountTitle')}</h2>
 
   <p class="dwc-hint">
-    Preferred network, default signing address, and published receiving address for DMs, profile, and squad operations.
+    {$t('wallet.defaultEvmAccountHint')}
   </p>
 
   <div class="dwc-summary">
     <dl class="dwc-summary-list">
       <div class="dwc-summary-row">
-        <dt>Preferred network</dt>
+        <dt>{$t('wallet.preferredNetworkLabel')}</dt>
         <dd>{preferredNetworkLabel}</dd>
       </div>
       <div class="dwc-summary-row">
-        <dt>Signer</dt>
+        <dt>{$t('wallet.signerLabel')}</dt>
         <dd><code>{shortAddr(signerAddress)}</code></dd>
       </div>
       <div class="dwc-summary-row">
-        <dt>Receiver</dt>
+        <dt>{$t('wallet.receiverLabel')}</dt>
         <dd><code>{shortAddr(receiverAddress)}</code></dd>
       </div>
     </dl>
     <EditIconButton
       disabled={accountsLoading || squadAccounts.length === 0}
-      ariaLabel="Edit default EVM account"
-      title="Edit default EVM account"
+      ariaLabel={$t('wallet.editDefaultEvmAccount')}
+      title={$t('wallet.editDefaultEvmAccount')}
       className="dwc-summary-edit"
       on:click={openEdit}
     />
   </div>
 
   {#if squadAccounts.length === 0 && !accountsLoading}
-    <p class="dwc-hint dwc-hint-tight">Add a squad EVM account below before editing defaults.</p>
+    <p class="dwc-hint dwc-hint-tight">{$t('wallet.addSquadAccountFirst')}</p>
   {/if}
 </section>
 
@@ -155,10 +159,10 @@
   <div use:portal>
   <div class="dwc-modal-backdrop" role="presentation" on:click={closeEdit}></div>
   <div class="dwc-modal" role="dialog" aria-labelledby="wallet-default-evm-edit-title" aria-modal="true">
-    <h2 id="wallet-default-evm-edit-title" class="dwc-title">Edit default EVM account</h2>
-    <p class="dwc-hint">Only derived squad accounts can be signer or receiver.</p>
+    <h2 id="wallet-default-evm-edit-title" class="dwc-title">{$t('wallet.editDefaultEvmAccountTitle')}</h2>
+    <p class="dwc-hint">{$t('wallet.onlyDerivedSquadAccounts')}</p>
 
-    <label class="dwc-label" for="wallet-default-network">Preferred network</label>
+    <label class="dwc-label" for="wallet-default-network">{$t('wallet.preferredNetworkLabel')}</label>
     <select
       id="wallet-default-network"
       class="dwc-input"
@@ -170,7 +174,7 @@
       {/each}
     </select>
 
-    <label class="dwc-label" for="wallet-default-signer">Signer</label>
+    <label class="dwc-label" for="wallet-default-signer">{$t('wallet.signerLabel')}</label>
     <select
       id="wallet-default-signer"
       class="dwc-input"
@@ -182,7 +186,7 @@
       {/each}
     </select>
 
-    <label class="dwc-label" for="wallet-default-receiver">Receiver</label>
+    <label class="dwc-label" for="wallet-default-receiver">{$t('wallet.receiverLabel')}</label>
     <select
       id="wallet-default-receiver"
       class="dwc-input"
@@ -196,10 +200,10 @@
 
     <div class="dwc-modal-actions">
       <button type="button" class="dwc-btn dwc-btn-secondary" disabled={saving} on:click={closeEdit}>
-        Cancel
+        {$t('wallet.cancel')}
       </button>
       <button type="button" class="dwc-btn" disabled={saving} on:click={saveEdit}>
-        {saving ? 'Saving…' : 'Save'}
+        {saving ? $t('wallet.saving') : $t('wallet.save')}
       </button>
     </div>
   </div>

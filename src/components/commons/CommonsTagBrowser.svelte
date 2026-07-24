@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import {
     COMMONS_TAG_TREE,
     commonsCategoryLiveCount,
     commonsTagArtSrc,
     commonsTagGradient,
+    localizeCommonsTagCategory,
     type CommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
 
@@ -12,11 +14,13 @@
   /** Active broadcast count per leaf tag. */
   export let countsByTag: Record<string, number> = {};
   export let onSelectCategory: (categoryId: string) => void = () => {};
+
+  $: localizedCategories = categories.map((c) => localizeCommonsTagCategory($t, c));
 </script>
 
 <div class="commons-browser">
   <ul class="commons-browser-grid" role="list">
-    {#each categories as category (category.id)}
+    {#each localizedCategories as category (category.id)}
       {@const art = commonsTagArtSrc(category)}
       {@const count = commonsCategoryLiveCount(category, countsByTag)}
       {@const isActive = activeCategoryId === category.id}
@@ -38,7 +42,7 @@
             <span class="commons-browser-desc">{category.description}</span>
           </span>
           {#if count > 0}
-            <span class="commons-browser-badge">{count} live</span>
+            <span class="commons-browser-badge">{$t('commons.tagBrowser.liveBadge', { values: { count } })}</span>
           {/if}
           <span class="commons-browser-frame" aria-hidden="true"></span>
         </button>

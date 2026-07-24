@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../../ui/Modal.svelte';
 
   export let open = false;
@@ -14,23 +15,21 @@
     descriptionId="rotate-squad-key-description"
     onClose={onClose}
   >
-    <h2 id="rotate-squad-key-title">Rotate personal signer key for this Squad</h2>
-    <p id="rotate-squad-key-description" class="rotate-modal-lead">
-      Choose how to update the EVM address members see for you in this squad.
-    </p>
+    <h2 id="rotate-squad-key-title">{$t('governance.rotateKey.title')}</h2>
+    <p id="rotate-squad-key-description" class="rotate-modal-lead">{$t('governance.rotateKey.lead')}</p>
     <div class="rotate-modal-options">
       <button
         type="button"
         class="rotate-option"
         disabled={!GENERATE_NEW_KEY_ENABLED}
-        title={GENERATE_NEW_KEY_ENABLED ? undefined : 'Coming soon'}
+        title={GENERATE_NEW_KEY_ENABLED ? undefined : $t('governance.rotateKey.comingSoon')}
       >
-        <span class="rotate-option-label">Generate new key</span>
-        <span class="rotate-option-hint">New squad-purpose derived address for this squad only.</span>
+        <span class="rotate-option-label">{$t('governance.rotateKey.generate')}</span>
+        <span class="rotate-option-hint">{$t('governance.rotateKey.generateHint')}</span>
       </button>
     </div>
     <div class="rotate-modal-actions">
-      <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+      <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
     </div>
   </Modal>
 {/if}

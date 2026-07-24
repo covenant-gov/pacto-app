@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import {
     getSquadSponsorWithdrawable,
@@ -24,6 +26,8 @@
 
   const titleId = 'sponsor-withdraw-title';
   const descId = 'sponsor-withdraw-desc';
+
+  const tFn = get(t);
 
   let accounts: EvmAccountRow[] = [];
   let accountsLoading = false;
@@ -72,7 +76,7 @@
         selectedAccountId = preferred.id;
       }
     } catch (e) {
-      error = getInvokeErrorMessage(e, 'Could not load EVM keys.');
+      error = getInvokeErrorMessage(e, tFn('governance.withdraw.error.loadKeys'));
       accounts = [];
     } finally {
       accountsLoading = false;
@@ -100,9 +104,9 @@
   }
 
   function optionLabel(acc: EvmAccountRow): string {
-    const name = acc.label?.trim() || (acc.isDefaultShared ? 'Default' : 'Unnamed');
+    const name = acc.label?.trim() || (acc.isDefaultShared ? tFn('governance.withdraw.accountDefault') : tFn('governance.withdraw.accountUnnamed'));
     const short = `${acc.address.slice(0, 6)}…${acc.address.slice(-4)}`;
-    return `${name} · ${short} (${evmAccountPurposeLabel(acc.purpose)}, ${evmAccountSchemeLabel(acc.scheme)})`;
+    return `${name} · ${short} (${tFn(evmAccountPurposeLabel(acc.purpose))}, ${tFn(evmAccountSchemeLabel(acc.scheme))})`;
   }
 
   async function submit() {
@@ -116,11 +120,11 @@
         accountId: selectedAccountId,
         sponsorAddress: sponsorAddress.trim() || null,
       });
-      showToast('Sponsor pool withdraw confirmed.');
+      showToast(tFn('governance.withdraw.toast.confirmed'));
       onSubmitted();
       onClose();
     } catch (e) {
-      let raw = getInvokeErrorMessage(e, 'Withdraw failed.');
+      let raw = getInvokeErrorMessage(e, tFn('governance.withdraw.toast.error'));
       const parsed = parseWalletOpError(raw);
       if (parsed?.message) raw = parsed.message;
       error = raw;
@@ -132,17 +136,16 @@
 
 {#if open}
   <Modal {titleId} descriptionId={descId} onClose={onClose} dismissible={!acting} contentClass="sponsor-withdraw-modal">
-    <h2 id={titleId} class="modal-title">Withdraw from sponsor pool</h2>
+    <h2 id={titleId} class="modal-title">{$t('governance.withdraw.title')}</h2>
     <p id={descId} class="modal-lead muted">
-      Choose the EVM key that deposited (holds sponsor shares). Withdraw burns that key’s shares and
-      returns its pro-rata ETH. The selected key also pays gas, so it needs a little native balance.
+      {$t('governance.withdraw.description')}
     </p>
 
-    <label class="field-label" for="sponsor-withdraw-account">Depositing key</label>
+    <label class="field-label" for="sponsor-withdraw-account">{$t('governance.withdraw.accountLabel')}</label>
     {#if accountsLoading}
-      <p class="muted">Loading keys…</p>
+      <p class="muted">{$t('governance.common.loadingKeys')}</p>
     {:else if accounts.length === 0}
-      <p class="err" role="alert">No EVM keys found. Add one under Settings.</p>
+      <p class="err" role="alert">{$t('governance.withdraw.noKeys')}</p>
     {:else}
       <select
         id="sponsor-withdraw-account"
@@ -159,14 +162,13 @@
     {#if selected}
       <p class="withdrawable muted" aria-live="polite">
         {#if withdrawableLoading}
-          Withdrawable: …
+          {$t('governance.withdraw.withdrawableLoading')}
         {:else if withdrawableWei != null}
-          Withdrawable:
           <strong>
-            {formatEther(BigInt(withdrawableWei))} ETH
+            {$t('governance.withdraw.withdrawableAmount', { values: { amount: formatEther(BigInt(withdrawableWei)) } })}
           </strong>
         {:else}
-          Withdrawable: unavailable
+          {$t('governance.withdraw.withdrawableUnavailable')}
         {/if}
       </p>
     {/if}
@@ -176,14 +178,14 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>Cancel</button>
+      <button type="button" class="btn-secondary" disabled={acting} on:click={onClose}>{$t('governance.common.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
         disabled={acting || !selectedAccountId || accounts.length === 0}
         on:click={submit}
       >
-        {acting ? 'Withdrawing…' : 'Confirm withdraw'}
+        {acting ? $t('governance.withdraw.action.withdrawing') : $t('governance.withdraw.action.confirm')}
       </button>
     </div>
   </Modal>

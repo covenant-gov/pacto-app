@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { initI18n, DEFAULT_LOCALE } from '../i18n';
 import {
   validateRelayUrlInput,
   relayModeLabel,
@@ -15,8 +16,9 @@ vi.mock('@tauri-apps/api/core');
 
 const mockedInvoke = vi.mocked(invoke);
 
-beforeEach(() => {
+beforeEach(async () => {
   mockedInvoke.mockReset();
+  await initI18n(DEFAULT_LOCALE);
 });
 
 

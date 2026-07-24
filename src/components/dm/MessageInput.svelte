@@ -11,6 +11,7 @@
   } from '../../lib/messaging/mention-autocomplete';
   import type { NostrProfile } from '../../lib/api/nostr';
   import type { Mention } from '../../lib/messaging/mentions';
+  import { t } from 'svelte-i18n';
 
   export let channelName: string = "";
   /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
@@ -29,7 +30,7 @@
   /** When true, input and send are disabled (e.g. channel still being created). */
   export let disabled: boolean = false;
 
-  $: inputPlaceholder = placeholderOverride ?? `Message #${channelName}`;
+  $: inputPlaceholder = placeholderOverride ?? $t('messaging.messageInput.placeholder', { values: { channelName } });
   const fullEmojiList = getEmojiList();
 
   let messageText = "";
@@ -281,10 +282,10 @@
         type="button"
         class="emoji-trigger-btn"
         disabled={disabled}
-        aria-label="Insert emoji"
+        aria-label={$t('messaging.messageInput.insertEmoji')}
         aria-expanded={emojiPickerOpen}
         aria-haspopup="grid"
-        title="Insert emoji"
+        title={$t('messaging.messageInput.insertEmoji')}
         on:click={toggleEmojiPicker}
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
@@ -303,24 +304,24 @@
         <div
           class="emoji-picker"
           role="dialog"
-          aria-label="Emoji picker"
+          aria-label={$t('messaging.messageInput.emojiPicker')}
           on:pointerdown|stopPropagation
         >
           <div class="emoji-picker-search">
             <input
               type="text"
               class="emoji-search-input"
-              placeholder="Search emoji…"
+              placeholder={$t('messaging.messageInput.searchEmojiPlaceholder')}
               bind:value={emojiSearchQuery}
               on:click|stopPropagation
               on:keydown={handleEmojiSearchKeydown}
-              aria-label="Search emoji"
+              aria-label={$t('messaging.messageInput.searchEmojiAria')}
             />
             <button
               type="button"
               class="emoji-picker-close"
-              aria-label="Close emoji picker"
-              title="Close"
+              aria-label={$t('messaging.messageInput.closeEmojiPicker')}
+              title={$t('messaging.messageInput.close')}
               on:click|stopPropagation={() => closeEmojiPicker({ refocusComposer: true })}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -342,7 +343,7 @@
                       type="button"
                       class="emoji-picker-item"
                       role="gridcell"
-                      aria-label="Insert {entry.emoji}"
+                      aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
                       on:click={() => insertEmoji(entry.emoji)}
                     >
                       {entry.emoji}
@@ -350,23 +351,23 @@
                   {/each}
                 </div>
                 {#if searchResults.length >= EMOJI_SEARCH_LIMIT}
-                  <p class="emoji-picker-hint">Showing top {EMOJI_SEARCH_LIMIT} matches — refine your search</p>
+                  <p class="emoji-picker-hint">{$t('messaging.messageInput.emojiSearchHint', { values: { limit: EMOJI_SEARCH_LIMIT } })}</p>
                 {/if}
               {:else}
-                <p class="emoji-picker-empty">No emojis found for "{emojiSearchQuery.trim()}"</p>
+                <p class="emoji-picker-empty">{$t('messaging.messageInput.noEmojisFound', { values: { query: emojiSearchQuery.trim() } })}</p>
               {/if}
             </div>
           {:else}
             {#if recentEmojis.length > 0}
               <div class="emoji-picker-section">
-                <span class="emoji-picker-label">Recent</span>
+                <span class="emoji-picker-label">{$t('messaging.messageInput.recent')}</span>
                 <div class="emoji-picker-row">
                   {#each recentEmojis as entry (entry.emoji)}
                     <button
                       type="button"
                       class="emoji-picker-item"
                       role="gridcell"
-                      aria-label="Insert {entry.emoji}"
+                      aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
                       on:click={() => insertEmoji(entry.emoji)}
                     >
                       {entry.emoji}
@@ -376,21 +377,21 @@
               </div>
             {/if}
             <div class="emoji-picker-section">
-              <span class="emoji-picker-label">Smileys &amp; more</span>
+              <span class="emoji-picker-label">{$t('messaging.messageInput.smileysAndMore')}</span>
               <div class="emoji-picker-grid">
                 {#each EMOJI_GRID_BROWSE as emoji (emoji)}
                   <button
                     type="button"
                     class="emoji-picker-item"
                     role="gridcell"
-                    aria-label="Insert {emoji}"
+                    aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji } })}
                     on:click={() => insertEmoji(emoji)}
                   >
                     {emoji}
                   </button>
                 {/each}
               </div>
-              <p class="emoji-picker-hint">Search for more emojis</p>
+              <p class="emoji-picker-hint">{$t('messaging.messageInput.searchForMore')}</p>
             </div>
           {/if}
         </div>
@@ -399,12 +400,12 @@
         <div
           class="mention-picker"
           role="dialog"
-          aria-label="Mention member"
+          aria-label={$t('messaging.messageInput.mentionMember')}
           style={getMentionPickerStyle()}
           on:pointerdown|stopPropagation
         >
           {#if filteredMentions.length > 0}
-            <ul class="mention-list" role="listbox" aria-label="Mention candidates">
+            <ul class="mention-list" role="listbox" aria-label={$t('messaging.messageInput.mentionCandidates')}>
               {#each filteredMentions as candidate, i (candidate.npub)}
                 <li
                   role="option"
@@ -432,7 +433,7 @@
               {/each}
             </ul>
           {:else}
-            <p class="mention-empty">No members found for "{mentionQuery}"</p>
+            <p class="mention-empty">{$t('messaging.messageInput.noMembersFound', { values: { query: mentionQuery } })}</p>
           {/if}
         </div>
       {/if}
@@ -440,7 +441,7 @@
         type="button"
         class="send-button"
         disabled={disabled || !messageText.trim()}
-        aria-label="Send message"
+        aria-label={$t('messaging.messageInput.sendMessage')}
         on:click={handleSubmit}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">

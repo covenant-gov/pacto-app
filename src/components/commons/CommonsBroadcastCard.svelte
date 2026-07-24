@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { CommonsBroadcastDto } from '../../lib/commons/types';
   import { profiles } from '../../stores/profiles';
   import { squads } from '../../stores/squads';
@@ -17,6 +19,8 @@
 
   export let broadcast: CommonsBroadcastDto;
 
+  const tFn = get(t);
+
   let detailOpen = false;
   let messageBusy = false;
   let joinBusy = false;
@@ -24,13 +28,13 @@
 
   function formatExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
-    if (ms <= 0) return 'Expired';
+    if (ms <= 0) return tFn('commons.duration.expired');
     const totalMinutes = Math.floor(ms / 60000);
-    if (totalMinutes < 60) return `${Math.max(totalMinutes, 1)}m left`;
+    if (totalMinutes < 60) return tFn('commons.duration.minutesLeft', { values: { minutes: Math.max(totalMinutes, 1) } });
     const h = Math.floor(totalMinutes / 60);
-    if (h < 24) return `${h}h left`;
+    if (h < 24) return tFn('commons.duration.hoursLeft', { values: { hours: h } });
     const d = Math.floor(h / 24);
-    return `${d}d left`;
+    return tFn('commons.duration.daysLeft', { values: { days: d } });
   }
 
   $: isSquad = broadcast.subject === 'squad';
@@ -42,18 +46,18 @@
       : isUser
         ? broadcast.authorNpub.slice(0, 16) + '…'
         : '';
-  $: squadLabel = broadcast.squadName ?? 'Squad';
+  $: squadLabel = broadcast.squadName ?? tFn('commons.card.squadDefault');
   $: title = isSquad ? squadLabel : userLabel;
   $: coverImage = isSquad ? broadcast.squadIconUrl : getProfileAvatarSrc(userProfile);
   $: coverSeed = isSquad ? broadcast.squadId ?? squadLabel : broadcast.authorNpub;
   $: subtitle = (() => {
     if (isUser && broadcast.audience) {
-      return broadcast.audience === 'new_user' ? 'New user' : 'Active user';
+      return broadcast.audience === 'new_user' ? tFn('commons.card.newUser') : tFn('commons.card.activeUser');
     }
     if (isSquad) {
-      return broadcast.squadKind === 'squad-pair' ? 'Partner squad' : 'Squad';
+      return broadcast.squadKind === 'squad-pair' ? tFn('commons.card.partnerSquad') : tFn('commons.card.squadDefault');
     }
-    return 'User';
+    return tFn('commons.card.user');
   })();
   $: localSquadIds = $squads.map((s) => s.id);
   $: myNpub = $currentUser?.npub;
@@ -109,7 +113,7 @@
         return;
       }
       actionError = '';
-      showToast(`Join request sent to ${squadLabel}.`);
+      showToast(tFn('commons.card.joinToast', { values: { squadLabel } }));
     } finally {
       joinBusy = false;
     }
@@ -121,7 +125,7 @@
   class:commons-tile-squad={isSquad}
   class:commons-tile-user={isUser}
   tabindex="0"
-  aria-label="View broadcast from {title}"
+  aria-label={$t('commons.card.ariaLabel', { values: { title } })}
   on:click={handleCardClick}
   on:keydown={handleCardKeydown}
 >
@@ -141,7 +145,7 @@
     <h3 class="commons-tile-title">{title}</h3>
     <p class="commons-tile-message">
       <span class="commons-tile-message-text">
-        {previewMessage}{messageTruncated ? '…' : ''}
+        {previewMessage}{#if messageTruncated}{$t('commons.ellipsis')}{/if}
       </span>
     </p>
 
@@ -162,7 +166,7 @@
             disabled={messageBusy}
             on:click|stopPropagation={handleRequestDm}
           >
-            {messageBusy ? 'Opening…' : 'Request DM'}
+            {messageBusy ? $t('commons.card.opening') : $t('commons.card.requestDm')}
           </button>
         {/if}
         {#if canJoin}
@@ -172,7 +176,7 @@
             disabled={joinBusy}
             on:click|stopPropagation={handleJoinRequest}
           >
-            {joinBusy ? 'Sending…' : 'Request to join'}
+            {joinBusy ? $t('commons.card.sending') : $t('commons.card.requestJoin')}
           </button>
         {:else if isSquad && joinBlockReason && myNpub && broadcast.authorNpub !== myNpub}
           <p class="commons-tile-note muted">{joinBlockReason}</p>

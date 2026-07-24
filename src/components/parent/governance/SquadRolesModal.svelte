@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import {
@@ -26,6 +28,8 @@
 
   const titleId = 'squad-roles-modal-title';
   const descId = 'squad-roles-modal-desc';
+
+  const tFn = get(t);
 
   let roleLabel = '';
   let executorAddress = '';
@@ -74,7 +78,7 @@
   function runAction(fn: () => Promise<unknown>, successMessage: string) {
     actionError = '';
     runOnChainInBackground({
-      startedToast: 'Transaction submitted. Confirmation continues in the background.',
+      startedToast: tFn('governance.squadRoles.toast.submitted'),
       job: fn,
       onSuccess: async () => {
         showToast(successMessage);
@@ -89,7 +93,7 @@
   async function createRole() {
     const label = roleLabel.trim();
     if (!label) {
-      actionError = 'Enter a role label (max 32 ASCII characters).';
+      actionError = tFn('governance.squadRoles.error.noRoleLabel');
       return;
     }
     if (!saGate.enabled) {
@@ -104,7 +108,7 @@
           squadAdminProxy,
           roleLabel: label,
         }),
-      `Role "${label}" registered on-chain.`,
+      tFn('governance.squadRoles.toast.roleCreated', { values: { label } }),
     );
   }
 
@@ -112,11 +116,11 @@
     const label = roleLabel.trim();
     const exec = executorAddress.trim();
     if (!label) {
-      actionError = 'Enter the role label to enable.';
+      actionError = tFn('governance.squadRoles.error.noRoleToEnable');
       return;
     }
     if (!/^0x[a-fA-F0-9]{40}$/.test(exec)) {
-      actionError = 'Pick or enter a valid executor address.';
+      actionError = tFn('governance.squadRoles.error.invalidExecutor');
       return;
     }
     if (!saGate.enabled) {
@@ -132,14 +136,14 @@
           executorAddress: exec,
           roleLabel: label,
         }),
-      `Executor enabled for role "${label}".`,
+      tFn('governance.squadRoles.toast.executorEnabled', { values: { label } }),
     );
   }
 
   async function enableFull() {
     const exec = executorAddress.trim();
     if (!/^0x[a-fA-F0-9]{40}$/.test(exec)) {
-      actionError = 'Pick or enter a valid executor address.';
+      actionError = tFn('governance.squadRoles.error.invalidExecutor');
       return;
     }
     if (!saGate.enabled) {
@@ -155,29 +159,28 @@
           executorAddress: exec,
           enable: grantFullPermission,
         }),
-      grantFullPermission ? 'Full permission granted.' : 'Full permission revoked.',
+      grantFullPermission ? tFn('governance.squadRoles.toast.fullGranted') : tFn('governance.squadRoles.toast.fullRevoked'),
     );
   }
 </script>
 
 {#if open}
   <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="squad-roles-modal-panel">
-    <h2 id={titleId}>Squad Admin roles</h2>
+    <h2 id={titleId}>{$t('governance.squadRoles.title')}</h2>
     <p id={descId} class="squad-roles-modal-desc">
-      Register app roles and assign executors on <code>{squadAdminProxy}</code>. Role labels are left-padded bytes32
-      keys (for example <code>TREASURY</code> or <code>SETTINGS</code>).
+      {$t('governance.squadRoles.description', { values: { proxy: squadAdminProxy } })}
     </p>
     {#if !saGate.enabled}
-      <p class="input-error" role="status">{saGate.reason}</p>
+      <p class="input-error" role="status">{$t(saGate.reason)}</p>
     {/if}
 
     <div class="squad-roles-field">
-      <label class="squad-roles-label" for="squad-role-label">Role label</label>
+      <label class="squad-roles-label" for="squad-role-label">{$t('governance.squadRoles.roleLabel')}</label>
       <input
         id="squad-role-label"
         type="text"
         class="squad-roles-input"
-        placeholder="e.g. TREASURY"
+        placeholder={$t('governance.squadRoles.rolePlaceholder')}
         bind:value={roleLabel}
         maxlength="32"
         autocomplete="off"
@@ -185,7 +188,7 @@
     </div>
 
     <div class="squad-roles-field">
-      <label class="squad-roles-label" for="squad-role-executor">Executor address</label>
+      <label class="squad-roles-label" for="squad-role-executor">{$t('governance.squadRoles.executorLabel')}</label>
       {#if memberEvmOptions.length > 0}
         <select
           id="squad-role-executor"
@@ -201,7 +204,7 @@
           id="squad-role-executor"
           type="text"
           class="squad-roles-input"
-          placeholder="0x…"
+          placeholder={$t('governance.squadRoles.executorPlaceholder')}
           bind:value={executorAddress}
           autocomplete="off"
         />
@@ -209,30 +212,30 @@
     </div>
 
     {#if actionError}
-      <p class="input-error" role="alert">{actionError}</p>
+      <p class="input-error" role="alert">{$t(actionError)}</p>
     {/if}
 
     <div class="squad-roles-actions">
       <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={createRole}>
-        Create role
+        {$t('governance.squadRoles.action.createRole')}
       </button>
       <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableExecutor}>
-        Enable executor
+        {$t('governance.squadRoles.action.enableExecutor')}
       </button>
     </div>
 
     <div class="squad-roles-full-row">
       <label class="squad-roles-check">
         <input type="checkbox" bind:checked={grantFullPermission} disabled={!saGate.enabled} />
-        Grant FULL sentinel (all roles)
+        {$t('governance.squadRoles.grantFull')}
       </label>
       <button type="button" class="btn-secondary" disabled={!saGate.enabled} on:click={enableFull}>
-        Apply FULL
+        {$t('governance.squadRoles.action.applyFull')}
       </button>
     </div>
 
     <div class="squad-roles-modal-actions">
-      <button type="button" class="btn-primary" on:click={onClose}>Close</button>
+      <button type="button" class="btn-primary" on:click={onClose}>{$t('governance.common.close')}</button>
     </div>
   </Modal>
 {/if}

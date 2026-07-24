@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
 
   export let open: boolean;
@@ -22,14 +23,14 @@
 
 {#if open && address.trim()}
   <Modal {titleId} descriptionId={descId} {onClose}>
-    <h2 id={titleId}>Receive</h2>
+    <h2 id={titleId}>{$t('wallet.receiveTitle')}</h2>
     <p id={descId} class="receive-desc">
-      Share this address to receive ETH and supported tokens on EVM networks where your wallet is active.
+      {$t('wallet.receiveDesc')}
     </p>
 
     <div class="receive-address-row">
       <code class="receive-address">{address.trim()}</code>
-      <button type="button" class="receive-copy" on:click={copyAddress}>{copied ? 'Copied' : 'Copy'}</button>
+      <button type="button" class="receive-copy" on:click={copyAddress}>{copied ? $t('wallet.copied') : $t('wallet.copy')}</button>
     </div>
   </Modal>
 {/if}

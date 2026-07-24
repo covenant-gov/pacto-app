@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
+import { initI18n, DEFAULT_LOCALE } from '../i18n';
 import {
   WALLET_ASSETS_CHAIN_IDS,
   WALLET_CHAIN_GROUPS,
@@ -9,6 +10,10 @@ import {
   explorerTxLinkLabel,
   listWalletAssetOptionsForChain,
 } from './assets';
+
+beforeEach(async () => {
+  await initI18n(DEFAULT_LOCALE);
+});
 
 describe('WALLET_ASSETS_CHAIN_IDS', () => {
   it('is exactly the trimmed set in canonical order', () => {

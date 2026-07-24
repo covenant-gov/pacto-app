@@ -42,6 +42,7 @@ import {
 import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
+import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
 
 export {
@@ -148,4 +149,5 @@ export function loadAccountState(npub: string): void {
   hydrateSafeStateCacheFromDisk(npub, (rows) => {
     safeStateByTreasuryId.update((cur) => ({ ...cur, ...rows }));
   });
+  hydrateLocale(npub);
 }

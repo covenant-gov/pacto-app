@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
@@ -17,9 +18,9 @@
 
   export let parent: Squad;
 
-  const VIEWS: { id: MyDashboardChannelMode; label: string }[] = [
-    { id: 'status', label: 'Status' },
-    { id: 'alerts', label: 'Alerts' },
+  const VIEWS: MyDashboardChannelMode[] = [
+    'status',
+    'alerts',
   ];
 
   $: dashboardView = $myDashboardChannelMode;
@@ -54,19 +55,19 @@
       <h3 class="dashboard-channel-name">{MY_DASHBOARD_CHANNEL_NAME}</h3>
     </div>
   </div>
-  <div class="dashboard-view-nav" role="tablist" aria-label="My dashboard section">
-    <span class="dashboard-view-nav-label" aria-hidden="true">Mode</span>
+  <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.myDashboardSection')}>
+    <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
     <div class="dashboard-mode-switcher" role="group">
-      {#each VIEWS as v (v.id)}
+      {#each VIEWS as v (v)}
         <button
           type="button"
           role="tab"
           class="dashboard-mode-segment"
-          class:active={dashboardView === v.id}
-          aria-selected={dashboardView === v.id}
-          on:click={() => selectView(v.id)}
+          class:active={dashboardView === v}
+          aria-selected={dashboardView === v}
+          on:click={() => selectView(v)}
         >
-          {v.label}
+          {$t(`governance.dashboardView.${v}`)}
         </button>
       {/each}
     </div>
@@ -80,13 +81,13 @@
           {squadMemberEvmByNpub}
         />
       {:catch}
-        <p class="tab-error" role="alert">Could not load Status.</p>
+        <p class="tab-error" role="alert">{$t('governance.tabLoadError.statusShort')}</p>
       {/await}
     {:else}
       {#await loadMyDashboardAlertsTab() then AlertsTab}
         <AlertsTab {parentId} {announcementsGroupId} />
       {:catch}
-        <p class="tab-error" role="alert">Could not load Alerts.</p>
+        <p class="tab-error" role="alert">{$t('governance.tabLoadError.alerts')}</p>
       {/await}
     {/if}
   </div>

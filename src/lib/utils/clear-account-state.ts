@@ -127,6 +127,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
   STARTUP_CHECK_PREFIX,
+  'pacto_locale_v1',
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {

@@ -12,6 +12,7 @@
   import pinIcon from '../../icons/pin.svg';
   import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import {
     squads,
     activeSquadId,
@@ -62,6 +63,8 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
 
+  const translate = get(t);
+
   function selectSquad(squadId: string) {
     activateSquadHub(squadId);
   }
@@ -85,20 +88,20 @@
     activeHubChannelName.set(null);
   }
 
-  const addButtonLabels: Partial<Record<TopNavTab, string>> = {
-    commons: 'Start Broadcast',
-    dms: 'Start DM',
-    squads: 'Organize Squad',
+  const addButtonLabelKeys: Record<TopNavTab, string> = {
+    commons: 'nav.navbar.addButton.commons',
+    dms: 'nav.navbar.addButton.dms',
+    squads: 'nav.navbar.addButton.squads',
   };
-  $: addButtonLabel = addButtonLabels[$activeTopNavTab];
+  $: addButtonLabel = showAddButton ? $t(addButtonLabelKeys[$activeTopNavTab]) : '';
   $: showAddButton =
     $activeTopNavTab === 'commons' || $activeTopNavTab === 'dms' || $activeTopNavTab === 'squads';
 
   $: commonsStartBroadcastDisabled =
     $activeTopNavTab === 'commons' && $commonsUserHasActiveBroadcast;
   $: commonsAddButtonLabel = commonsStartBroadcastDisabled
-    ? 'Broadcast active'
-    : (addButtonLabel ?? '');
+    ? $t('nav.navbar.addButton.broadcastActive')
+    : addButtonLabel;
 
   let commonsActiveBroadcastSyncKey = '';
   $: {
@@ -242,7 +245,7 @@
         if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
         pendingReadyToast.set({
-          text: `${name} is ready!`,
+          text: translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
           goTo: {
             type: 'squad',
             name,
@@ -277,7 +280,7 @@
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => ({
           ...m,
-          [tempId]: friendlyMessage(getInvokeErrorMessage(e, 'Failed to create squad announcements channel')),
+          [tempId]: friendlyMessage(getInvokeErrorMessage(e, translate('nav.navbar.organizeSquad.createAnnouncementsError'))),
         }));
         squads.update((list) => list.filter((s) => s.id !== tempId));
         if (get(activeSquadId) === tempId) {
@@ -297,7 +300,7 @@
     const myNpub = $currentUser?.npub;
     const memberIds = (organizeSquadMembers || []).filter((n) => n !== myNpub);
     if (memberIds.length === 0) {
-      organizeSquadError = 'Select at least one other member to create a squad.';
+      organizeSquadError = translate('nav.navbar.organizeSquad.noMembersError');
       return;
     }
     if (organizeSquadVisibility === 'public') {
@@ -311,7 +314,7 @@
     try {
       commons = resolveSquadCommonsOnCreate(organizeSquadVisibility, organizeSquadTags);
     } catch (e) {
-      organizeSquadTagError = e instanceof Error ? e.message : 'Invalid tags.';
+      organizeSquadTagError = e instanceof Error ? e.message : translate('nav.navbar.organizeSquad.invalidTags');
       return;
     }
     showOrganizeSquadModal = false;
@@ -333,6 +336,27 @@
     (organizeSquadVisibility !== 'public' || organizeSquadTags.length === 3);
   $: organizeMemberList = [...$pinnedList, ...$dmList];
 
+  $: organizeSquadTitle = $t('nav.navbar.organizeSquad.title');
+  $: organizeSquadDescription = $t('nav.navbar.organizeSquad.description');
+  $: squadNameLabel = $t('nav.navbar.organizeSquad.nameLabel');
+  $: squadNamePlaceholder = $t('nav.navbar.organizeSquad.namePlaceholder');
+  $: iconUrlLabel = $t('nav.navbar.organizeSquad.iconLabel');
+  $: iconUrlPlaceholder = $t('nav.navbar.organizeSquad.iconPlaceholder');
+  $: organizeMembersLabel = $t('nav.navbar.organizeSquad.membersLabel');
+  $: organizeMembersEmpty = $t('nav.navbar.organizeSquad.membersEmpty');
+  $: organizeNetworkLabel = $t('nav.navbar.organizeSquad.networkLabel');
+  $: organizeNetworkNone = $t('nav.navbar.organizeSquad.networkNone');
+  $: organizeCancel = $t('nav.navbar.organizeSquad.cancel');
+  $: organizeCreate = $t('nav.navbar.organizeSquad.create');
+  $: organizeCreateAria = $t('nav.navbar.organizeSquad.createAria');
+
+  $: pinnedTabLabel = $t('nav.navbar.dmTabs.pinned');
+  $: friendsTabLabel = $t('nav.navbar.dmTabs.friends');
+  $: requestsTabLabel = $t('nav.navbar.dmTabs.requests');
+  $: pendingTabLabel = $t('nav.navbar.dmTabs.pending');
+  $: searchTabLabel = $t('nav.navbar.dmTabs.search');
+  $: settingsTabLabel = $t('nav.navbar.settings');
+
   $: if (showOrganizeSquadModal) {
     setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
   }
@@ -348,7 +372,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Pinned" icon={pinIcon} active={$activeView === 'hub' && $activeDmTab === 'pinned'} hasUnreadDot={$dmTabHasUnread.pinned} />
+        <Tab label={pinnedTabLabel} icon={pinIcon} active={$activeView === 'hub' && $activeDmTab === 'pinned'} hasUnreadDot={$dmTabHasUnread.pinned} />
       </div>
       <div
         on:click={() => selectDmTab('friends')}
@@ -356,7 +380,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Friends" icon={friendsIcon} active={$activeView === 'hub' && $activeDmTab === 'friends'} hasUnreadDot={$dmTabHasUnread.friends} />
+        <Tab label={friendsTabLabel} icon={friendsIcon} active={$activeView === 'hub' && $activeDmTab === 'friends'} hasUnreadDot={$dmTabHasUnread.friends} />
       </div>
       <div
         on:click={() => selectDmTab('requests')}
@@ -364,7 +388,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Requests" icon={requestsIcon} active={$activeView === 'hub' && $activeDmTab === 'requests'} hasUnreadDot={$dmTabHasUnread.requests} />
+        <Tab label={requestsTabLabel} icon={requestsIcon} active={$activeView === 'hub' && $activeDmTab === 'requests'} hasUnreadDot={$dmTabHasUnread.requests} />
       </div>
       <div
         on:click={() => selectDmTab('pending')}
@@ -372,7 +396,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Pending" icon={pendingIcon} active={$activeView === 'hub' && $activeDmTab === 'pending'} hasUnreadDot={$dmTabHasUnread.pending} />
+        <Tab label={pendingTabLabel} icon={pendingIcon} active={$activeView === 'hub' && $activeDmTab === 'pending'} hasUnreadDot={$dmTabHasUnread.pending} />
       </div>
       <div
         on:click={() => selectDmTab('search')}
@@ -380,7 +404,7 @@
         role="button"
         tabindex="0"
       >
-        <Tab label="Search" icon={searchIcon} active={$activeView === 'hub' && $activeDmTab === 'search'} />
+        <Tab label={searchTabLabel} icon={searchIcon} active={$activeView === 'hub' && $activeDmTab === 'search'} />
       </div>
     {:else if $activeTopNavTab === 'squads'}
       {#each $squads as squad (squad.id)}
@@ -424,36 +448,36 @@
       role="button"
       tabindex="0"
     >
-      <Tab label="Settings" icon={settingsIcon} active={$activeView === 'profile'} />
+      <Tab label={settingsTabLabel} icon={settingsIcon} active={$activeView === 'profile'} />
     </div>
   </div>
 </div>
 
 {#if showOrganizeSquadModal}
   <Modal titleId="organize-squad-title" descriptionId="organize-squad-description" onClose={closeOrganizeSquadModal}>
-    <h2 id="organize-squad-title">Organize Squad</h2>
+    <h2 id="organize-squad-title">{organizeSquadTitle}</h2>
     <p id="organize-squad-description" class="organize-modal-subtitle">
-      Create a squad with an announcements channel. Select at least one member.
+      {organizeSquadDescription}
     </p>
     <form on:submit|preventDefault={handleCreateSquad}>
-      <label class="organize-label" for="squad-name">Squad name</label>
+      <label class="organize-label" for="squad-name">{squadNameLabel}</label>
       <input
         id="squad-name"
         type="text"
         class="organize-input"
-        placeholder="e.g. Team Alpha"
+        placeholder={squadNamePlaceholder}
         bind:value={organizeSquadName}
         required
       />
-      <label class="organize-label" for="squad-icon">Icon URL (optional)</label>
+      <label class="organize-label" for="squad-icon">{iconUrlLabel}</label>
       <input
         id="squad-icon"
         type="url"
         class="organize-input"
-        placeholder="https://…"
+        placeholder={iconUrlPlaceholder}
         bind:value={organizeSquadIconUrl}
       />
-      <span class="organize-label">Members for announcements (select at least one)</span>
+      <span class="organize-label">{organizeMembersLabel}</span>
       <div class="organize-members">
         {#each organizeMemberList as entry (entry.npub)}
           <label class="organize-member-row">
@@ -467,20 +491,20 @@
         {/each}
       </div>
       {#if organizeMemberList.length === 0}
-        <p class="organize-members-empty">Add friends in DMs first to create a squad with them.</p>
+        <p class="organize-members-empty">{organizeMembersEmpty}</p>
       {/if}
-      <label class="organize-label" for="squad-network">Network</label>
+      <label class="organize-label" for="squad-network">{organizeNetworkLabel}</label>
       <select id="squad-network" class="organize-input organize-select" bind:value={organizeSquadNetwork}>
         {#each squadNetworkOptions as opt (opt.id)}
           <option value={opt.id}>{opt.label}</option>
         {/each}
-        <option value="">none (choose later)</option>
+        <option value="">{organizeNetworkNone}</option>
       </select>
       <p class="organize-network-hint">
         {#if organizeSquadNetwork}
-          Network for this squad's on-chain deployments. Defaults to {squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label}; change it later in the squad's Settings.
+          {$t('nav.navbar.organizeSquad.networkHint.withNetwork', { values: { network: squadNetworkOptions.find((o) => o.id === organizeSquadNetwork)?.label ?? '' } })}
         {:else}
-          No network yet — pick one later in the squad's Settings before deploying on-chain infra.
+          {$t('nav.navbar.organizeSquad.networkHint.noNetwork')}
         {/if}
       </p>
       <SquadCommonsVisibilityFields
@@ -494,11 +518,11 @@
         <p class="organize-error" role="alert">{organizeSquadError}</p>
       {/if}
       <div class="organize-actions">
-        <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} aria-label="Cancel">
-          Cancel
+        <button type="button" class="organize-btn-cancel" on:click={closeOrganizeSquadModal} aria-label={organizeCancel}>
+          {organizeCancel}
         </button>
-        <button type="submit" class="organize-btn-create" disabled={!canCreateSquad} aria-label="Create squad">
-          Create
+        <button type="submit" class="organize-btn-create" disabled={!canCreateSquad} aria-label={organizeCreateAria}>
+          {organizeCreate}
         </button>
       </div>
     </form>

@@ -1,5 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
   import {
     bindingsByAccountId,
     listEvmAccountSquadBindings,
@@ -84,7 +88,7 @@
     const t = address.trim();
     if (!t) return;
     const ok = await copyTextToClipboard(t);
-    showToast(ok ? 'Address copied' : 'Could not copy address');
+    showToast(ok ? tFn('wallet.copyAddress') : tFn('wallet.couldNotCopyHash'));
   }
 
   function squadForParentId(parentId: string): Squad | undefined {
@@ -95,7 +99,7 @@
   }
 
   function squadName(parentId: string): string {
-    return squadForParentId(parentId)?.name?.trim() || 'Unnamed squad';
+    return squadForParentId(parentId)?.name?.trim() || tFn('wallet.unnamedSquad');
   }
 
   function squadBindingsFor(acc: EvmAccountRow): EvmAccountSquadBinding[] {
@@ -126,7 +130,7 @@
       id={embeddedInSettings ? 'wallet-squad-evm-heading' : 'wallet-evm-accounts-heading'}
       class="wallet-view-h2"
     >
-      {embeddedInSettings ? 'Squad EVM accounts' : 'EVM accounts'}
+      {embeddedInSettings ? $t('wallet.squadEvmAccountsTitle') : $t('wallet.evmAccountsTitle')}
     </h2>
     <div class="wallet-view-account-actions">
       <button
@@ -135,7 +139,7 @@
         disabled={!evmAddress}
         on:click={onAddSquad}
       >
-        {embeddedInSettings ? 'Add squad account' : 'Add new account'}
+        {embeddedInSettings ? $t('wallet.addSquadAccount') : $t('wallet.addNewAccount')}
       </button>
       {#if !embeddedInSettings}
         <button
@@ -144,7 +148,7 @@
           disabled={!evmAddress}
           on:click={onAddAdvanced}
         >
-          Add advanced account
+          {$t('wallet.addAdvancedAccount')}
         </button>
         <button
           type="button"
@@ -152,7 +156,7 @@
           disabled={!evmAddress}
           on:click={onImportKey}
         >
-          Import private key
+          {$t('wallet.importPrivateKey')}
         </button>
       {/if}
     </div>
@@ -160,21 +164,19 @@
 
   <p class="wallet-view-hint">
     {#if embeddedInSettings}
-      Derived squad keys are assigned per squad for roster, treasury, and governance. Set your default signer and receiver
-      in <strong>Default EVM account</strong> above.
+      {$t('wallet.squadEvmAccountsHint', { values: { defaultEvmAccount: $t('wallet.defaultEvmAccountTitle') } })}
     {:else}
-      Derived squad keys power DM wallet, roster shares, treasury deploy, and governance. Advanced imported keys are for
-      experimental contract calls only.
+      {$t('wallet.evmAccountsHint')}
     {/if}
   </p>
 
   {#if accountsLoading && displayRows.length === 0}
-    <p class="wallet-view-empty">Loading accounts…</p>
+    <p class="wallet-view-empty">{$t('wallet.loadingAccounts')}</p>
   {:else if displayRows.length === 0}
     <p class="wallet-view-empty">
       {embeddedInSettings
-        ? 'No squad EVM accounts yet. Unlock your wallet or add one from your recovery phrase.'
-        : 'No EVM accounts yet. Unlock your wallet or add one from your recovery phrase.'}
+        ? $t('wallet.noSquadEvmAccounts')
+        : $t('wallet.noEvmAccounts')}
     </p>
   {:else}
     <ul class="wallet-view-account-list evm-accounts-list">
@@ -189,7 +191,7 @@
               <code class="wallet-view-account-addr evm-account-addr-full" title={acc.address}>{acc.address}</code>
               <div class="evm-account-meta-row">
                 <div class="evm-account-badges">
-                  <span class="wallet-view-account-scheme">{evmAccountSchemeLabel(acc.scheme)}</span>
+                  <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                   {#if acc.hdIndex != null}
                     <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
                   {/if}
@@ -204,12 +206,12 @@
                     disabled={accountsLoading}
                     on:click={() => openExportModal(acc)}
                   >
-                    Export key
+                    {$t('wallet.exportKey')}
                   </button>
                   <EditIconButton
                     disabled={accountsLoading}
-                    ariaLabel="Edit account name"
-                    title="Edit display name"
+                    ariaLabel={$t('wallet.editAccountName')}
+                    title={$t('wallet.editDisplayName')}
                     className="evm-account-edit-btn"
                     on:click={() => onEditAccount(acc)}
                   />
@@ -217,8 +219,8 @@
                     type="button"
                     class="wallet-view-account-copy-icon-btn"
                     disabled={accountsLoading || !acc.address?.trim()}
-                    aria-label="Copy address to clipboard"
-                    title="Copy address"
+                    aria-label={$t('wallet.copyAddressToClipboard')}
+                    title={$t('wallet.copyAddress')}
                     on:click|stopPropagation={() => copyAddress(acc.address)}
                   >
                     <svg
@@ -242,11 +244,11 @@
             </div>
 
             <div class="evm-account-squad-block">
-              <span class="evm-account-squad-heading">Squads</span>
+              <span class="evm-account-squad-heading">{$t('wallet.squadsLabel')}</span>
               {#if bindingsLoading}
-                <span class="evm-account-squad-muted">Loading…</span>
+                <span class="evm-account-squad-muted">{$t('wallet.loading')}</span>
               {:else if linkedSquads.length === 0}
-                <span class="evm-account-squad-muted">None assigned</span>
+                <span class="evm-account-squad-muted">{$t('wallet.noneAssigned')}</span>
               {:else}
                 <ul class="evm-account-squad-list">
                   {#each linkedSquads as link (link.parentId)}
@@ -275,7 +277,7 @@
                   isAdvancedRow(acc) ? onSetActiveAdvancedAccount(acc.id) : onSetActiveAccount(acc.id)}
               />
               <span class="wallet-view-account-meta">
-                <span class="wallet-view-account-scheme">{evmAccountSchemeLabel(acc.scheme)}</span>
+                <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                 {#if acc.hdIndex != null}
                   <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
                 {/if}
@@ -288,18 +290,18 @@
             <code class="wallet-view-account-addr" title={acc.address}>{shortAddr(acc.address)}</code>
             <div class="wallet-view-account-tools">
               {#if acc.isActive && !isAdvancedRow(acc)}
-                <span class="wallet-view-account-badge">Signer</span>
+                <span class="wallet-view-account-badge">{$t('wallet.signerBadge')}</span>
               {/if}
               {#if acc.isDefaultShared && !isAdvancedRow(acc)}
-                <span class="wallet-view-account-badge">Receiver</span>
+                <span class="wallet-view-account-badge">{$t('wallet.receiverBadge')}</span>
               {/if}
               {#if acc.isActiveAdvanced && isAdvancedRow(acc)}
-                <span class="wallet-view-account-badge">Advanced signer</span>
+                <span class="wallet-view-account-badge">{$t('wallet.advancedSignerBadge')}</span>
               {/if}
               <EditIconButton
                 disabled={accountsLoading}
-                ariaLabel="Edit account name"
-                title="Edit display name"
+                ariaLabel={$t('wallet.editAccountName')}
+                title={$t('wallet.editDisplayName')}
                 className="evm-account-edit-btn"
                 on:click={() => onEditAccount(acc)}
               />
@@ -307,8 +309,8 @@
                 type="button"
                 class="wallet-view-account-copy-icon-btn"
                 disabled={accountsLoading || !acc.address?.trim()}
-                aria-label="Copy address to clipboard"
-                title="Copy address"
+                aria-label={$t('wallet.copyAddressToClipboard')}
+                title={$t('wallet.copyAddress')}
                 on:click|stopPropagation={() => copyAddress(acc.address)}
               >
                 <svg
@@ -336,9 +338,9 @@
 
   {#if embeddedInSettings}
     <div class="evm-advanced-actions">
-      <h3 class="evm-advanced-actions-title">Advanced EVM accounts</h3>
+      <h3 class="evm-advanced-actions-title">{$t('wallet.advancedEvmAccountsTitle')}</h3>
       <p class="wallet-view-hint evm-advanced-actions-hint">
-        Experimental keys for opaque contract calls — not linked to squads or your profile.
+        {$t('wallet.advancedEvmAccountsHint')}
       </p>
       <div class="wallet-view-account-actions">
         <button
@@ -347,7 +349,7 @@
           disabled={!evmAddress}
           on:click={onAddAdvanced}
         >
-          Add advanced account
+          {$t('wallet.addAdvancedAccount')}
         </button>
         <button
           type="button"
@@ -355,7 +357,7 @@
           disabled={!evmAddress}
           on:click={onImportKey}
         >
-          Import private key
+          {$t('wallet.importPrivateKey')}
         </button>
       </div>
       {#if advancedList.length > 0}
@@ -366,7 +368,7 @@
               <div class="evm-account-meta-row">
                 <div class="evm-account-badges">
                   {#if acc.isActiveAdvanced}
-                    <span class="wallet-view-account-badge">Advanced signer</span>
+                    <span class="wallet-view-account-badge">{$t('wallet.advancedSignerBadge')}</span>
                   {/if}
                   {#if acc.label?.trim()}
                     <span class="wallet-view-account-name">{acc.label.trim()}</span>
@@ -379,12 +381,12 @@
                   disabled={accountsLoading}
                   on:click={() => openExportModal(acc)}
                 >
-                  Export key
+                  {$t('wallet.exportKey')}
                 </button>
                 <EditIconButton
                   disabled={accountsLoading}
-                  ariaLabel="Edit account name"
-                  title="Edit display name"
+                  ariaLabel={$t('wallet.editAccountName')}
+                  title={$t('wallet.editDisplayName')}
                   className="evm-account-edit-btn"
                   on:click={() => onEditAccount(acc)}
                 />

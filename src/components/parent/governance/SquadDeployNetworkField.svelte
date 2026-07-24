@@ -2,30 +2,32 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import { t } from 'svelte-i18n';
 
   export let id: string;
   /** When set, the squad network is established: pin the selection and show it read-only. */
   export let squadNetwork: SupportedChainId | null = null;
   /** Bound selection; forced to `squadNetwork` when pinned, otherwise the user's pick. */
   export let value: SupportedChainId | '' = '';
-  export let labelText = 'Network';
+  export let labelText = '';
   export let labelClass = '';
   export let selectClass = '';
 
   const options = listSquadDeployNetworkOptions();
 
+  $: resolvedLabel = labelText || $t('governance.field.network');
   $: if (squadNetwork && value !== squadNetwork) value = squadNetwork;
 </script>
 
-<label class={labelClass} for={id}>{labelText}</label>
+<label class={labelClass} for={id}>{resolvedLabel}</label>
 {#if squadNetwork}
   <p {id} class="squad-deploy-pinned">
     {getWalletNetworkDisplayName(squadNetwork)}
-    <span class="squad-deploy-pinned-note">· squad network</span>
+    <span class="squad-deploy-pinned-note">{$t('governance.field.squadNetworkSuffix')}</span>
   </p>
 {:else}
   <select {id} class={selectClass} bind:value>
-    <option value="" disabled>Select network…</option>
+    <option value="" disabled>{$t('governance.field.networkPlaceholder')}</option>
     {#each options as opt (opt.id)}
       <option value={opt.id}>{opt.label}</option>
     {/each}

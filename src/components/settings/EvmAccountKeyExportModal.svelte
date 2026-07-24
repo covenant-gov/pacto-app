@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { loadAndDecryptKey } from '../../lib/api/encryption';
   import { exportEvmAccountKeyPlaintext, exportRecoveryPhrase } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -14,6 +16,8 @@
   /** Shown in PIN step when `variant` is `nostr`. */
   export let npub = '';
   export let onClose: () => void = () => {};
+
+  const tFn = get(t);
 
   type Phase = 'pin' | 'key';
 
@@ -58,7 +62,7 @@
     if (variant === 'evm' && !account) return;
     const pinValue = pinDigits.join('');
     if (pinValue.length !== 6) {
-      pinError = 'PIN must be 6 digits';
+      pinError = tFn('auth.pinMustBeSixDigits');
       return;
     }
 
@@ -78,16 +82,16 @@
       copied = false;
       phase = 'key';
     } catch (e) {
-      pinError = 'Incorrect PIN or export failed';
+      pinError = tFn('auth.incorrectPinOrExportFailed');
       console.error('Key export failed:', e);
       showToast(
         getInvokeErrorMessage(
           e,
           variant === 'nostr'
-            ? 'Could not export nsec.'
+            ? tFn('export.error.couldNotExportNsec')
             : variant === 'seed'
-              ? 'Could not export seed phrase.'
-              : 'Could not export private key.'
+              ? tFn('export.error.couldNotExportSeedPhrase')
+              : tFn('export.error.couldNotExportPrivateKey')
         )
       );
       pinDigits = ['', '', '', '', '', ''];
@@ -141,27 +145,21 @@
 
   async function copyPrivateKey() {
     if (!privateKey) return;
+    const labelKey =
+      variant === 'nostr'
+        ? 'export.modal.label.nsec'
+        : variant === 'seed'
+          ? 'export.modal.label.seedPhrase'
+          : 'export.modal.label.privateKey';
     const ok = await copyTextToClipboard(privateKey);
     if (ok) {
       copied = true;
-      showToast(
-        variant === 'nostr'
-          ? 'nsec copied'
-          : variant === 'seed'
-            ? 'Seed phrase copied'
-            : 'Private key copied'
-      );
+      showToast(tFn('export.toast.copied', { values: { label: tFn(labelKey) } }));
       setTimeout(() => {
         copied = false;
       }, 2000);
     } else {
-      showToast(
-        variant === 'nostr'
-          ? 'Could not copy nsec'
-          : variant === 'seed'
-            ? 'Could not copy seed phrase'
-            : 'Could not copy private key'
-      );
+      showToast(tFn('export.toast.couldNotCopy', { values: { label: tFn(labelKey) } }));
     }
   }
 </script>
@@ -184,17 +182,14 @@
       tabindex="0"
     >
       {#if phase === 'pin'}
-        <h2 id="evm-export-modal-title">Enter PIN</h2>
+        <h2 id="evm-export-modal-title">{$t('auth.pinEnterTitle')}</h2>
         <p class="modal-subtitle">
           {#if variant === 'nostr'}
-            Enter your PIN to export the nsec private key for
-            <code class="modal-addr">{npub || 'this account'}</code>.
+            {$t('export.modal.pinSubtitle.nsec', { values: { account: npub || tFn('export.modal.fallback.thisAccount') } })}
           {:else if variant === 'seed'}
-            Enter your PIN to export the recovery seed phrase for this account.
+            {$t('export.modal.pinSubtitle.seed')}
           {:else}
-            Enter your PIN to export the private key for
-            <code class="modal-addr">{account?.address}</code>
-            ({evmAccountSchemeLabel(account!.scheme)}).
+            {$t('export.modal.pinSubtitle.evm', { values: { address: account?.address, scheme: $t(evmAccountSchemeLabel(account!.scheme)) } })}
           {/if}
         </p>
 
@@ -212,7 +207,7 @@
               class="pin-box"
               value={digit}
               disabled={busy}
-              aria-label="PIN digit {i + 1}"
+              aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
               on:input={(e) => handlePinInput(i, e)}
               on:keydown={(e) => handlePinKeydown(i, e)}
               on:paste={handlePinPaste}
@@ -221,39 +216,39 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>Cancel</button>
+          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
           <button
             type="button"
             class="btn-confirm"
             on:click={handlePinSubmit}
             disabled={busy || pinDigits.some((d) => d === '')}
           >
-            {busy ? 'Verifying…' : 'Continue'}
+            {busy ? $t('commons.verifying') : $t('auth.continue')}
           </button>
         </div>
       {:else}
         <h2 id="evm-export-modal-title">
-          {variant === 'nostr' ? 'Export nsec' : variant === 'seed' ? 'Export seed phrase' : 'Export private key'}
+          {variant === 'nostr' ? $t('export.modal.title.nsec') : variant === 'seed' ? $t('export.modal.title.seed') : $t('export.modal.title.privateKey')}
         </h2>
         <p class="modal-subtitle">
           {#if variant === 'nostr'}
-            Nostr private key (nsec) for this account.
+            {$t('export.modal.subtitle.nsec')}
           {:else if variant === 'seed'}
-            BIP-39 recovery phrase — use on another device to restore this account.
+            {$t('export.modal.subtitle.seed')}
           {:else}
             {account?.label?.trim() || account?.address}
             {#if account?.hdIndex != null}
-              · Derived #{account.hdIndex}
+              {$t('export.modal.subtitle.derived', { values: { hdIndex: account.hdIndex } })}
             {/if}
           {/if}
         </p>
         <p class="modal-warning">
           {#if variant === 'nostr'}
-            Anyone with this nsec controls your Nostr identity and linked Pacto account. Store it offline and never share it.
+            {$t('export.modal.warning.nsec')}
           {:else if variant === 'seed'}
-            Anyone with this seed phrase can restore your full account on another device. Write it down offline and never share it.
+            {$t('export.modal.warning.seed')}
           {:else}
-            Anyone with this key controls the account. Store it offline and never share it.
+            {$t('export.modal.warning.privateKey')}
           {/if}
         </p>
 
@@ -272,16 +267,16 @@
               aria-pressed={revealed}
               aria-label={revealed
                 ? variant === 'nostr'
-                  ? 'Hide nsec'
+                  ? $t('export.modal.hide.nsec')
                   : variant === 'seed'
-                    ? 'Hide seed phrase'
-                    : 'Hide private key'
+                    ? $t('export.modal.hide.seedPhrase')
+                    : $t('export.modal.hide.privateKey')
                 : variant === 'nostr'
-                  ? 'Reveal nsec'
+                  ? $t('export.modal.reveal.nsec')
                   : variant === 'seed'
-                    ? 'Reveal seed phrase'
-                    : 'Reveal private key'}
-              title={revealed ? 'Hide' : 'Reveal'}
+                    ? $t('export.modal.reveal.seedPhrase')
+                    : $t('export.modal.reveal.privateKey')}
+              title={revealed ? $t('commons.hide') : $t('commons.reveal')}
               on:click={() => (revealed = !revealed)}
             >
               {#if revealed}
@@ -298,8 +293,8 @@
             <button
               type="button"
               class="btn-copy"
-              aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-              title={copied ? 'Copied' : 'Copy'}
+              aria-label={copied ? $t('settings.copied') : $t('export.modal.aria.copyToClipboard')}
+              title={copied ? $t('settings.copied') : $t('settings.copy')}
               on:click={copyPrivateKey}
             >
               <svg
@@ -322,7 +317,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-close" on:click={handleClose}>Close</button>
+          <button type="button" class="btn-close" on:click={handleClose}>{$t('commons.close')}</button>
         </div>
       {/if}
     </div>
@@ -365,11 +360,6 @@
     color: var(--text-muted);
     font-size: 0.9375rem;
     line-height: 1.5;
-  }
-
-  .modal-addr {
-    font-size: 0.8125rem;
-    word-break: break-all;
   }
 
   .modal-warning {

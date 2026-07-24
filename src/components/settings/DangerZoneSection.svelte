@@ -3,6 +3,7 @@
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { portal } from '../../lib/utils/portal';
+  import { t } from 'svelte-i18n';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
 
   let isLoggingOut = false;
@@ -23,16 +24,20 @@
       showLogoutConfirm = false;
     } catch (e) {
       console.error('Logout failed:', e);
-      showToast(getInvokeErrorMessage(e, 'Could not log out.'));
+      showToast(getInvokeErrorMessage(e, $t('settings.toast.couldNotLogoutFallback')));
     } finally {
       isLoggingOut = false;
     }
   }
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-dangerzone" title="Dangerzone" sectionClass="settings-section--dangerzone">
+<SettingsCollapsibleSection
+  sectionId="settings-dangerzone"
+  title={$t('settings.dangerZoneTitle')}
+  sectionClass="settings-section--dangerzone"
+>
   <p class="dangerzone-lead">
-    Log out removes this account's data from this device (chats, keys, and MLS data). The app will restart.
+    {$t('settings.dangerZoneLead')}
   </p>
   <button
     type="button"
@@ -40,7 +45,7 @@
     on:click={openLogoutConfirm}
     disabled={isLoggingOut}
   >
-    {isLoggingOut ? 'Logging out…' : 'Logout'}
+    {isLoggingOut ? $t('settings.loggingOut') : $t('settings.logout')}
   </button>
 </SettingsCollapsibleSection>
 
@@ -61,17 +66,16 @@
         on:click|stopPropagation
         on:keydown={(e) => e.key === 'Escape' && closeLogoutConfirm()}
       >
-        <h2 id="logout-modal-title">Logout</h2>
+        <h2 id="logout-modal-title">{$t('settings.logoutModalTitle')}</h2>
         <p class="modal-subtitle">
-          Logout will remove this account's data from this device (chats, keys, and MLS data). The app will restart.
-          You can create a new account or log in with a different key after that.
+          {$t('settings.logoutModalSubtitle')}
         </p>
         <div class="modal-actions">
           <button type="button" class="btn-cancel" on:click={closeLogoutConfirm} disabled={isLoggingOut}>
-            Cancel
+            {$t('settings.cancel')}
           </button>
           <button type="button" class="btn-confirm btn-logout-confirm" on:click={handleLogout} disabled={isLoggingOut}>
-            {isLoggingOut ? 'Logging out…' : 'Logout'}
+            {isLoggingOut ? $t('settings.loggingOut') : $t('settings.logout')}
           </button>
         </div>
       </div>

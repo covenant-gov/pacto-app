@@ -28,6 +28,8 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { withReadPlaneLimit } from '../../../lib/evm/read-plane-limiter';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let network: string;
   export let parentId: string;
@@ -42,6 +44,8 @@
     tokenBalances: Record<string, string>;
     loadError: string;
   };
+
+  const tFn = get(t);
 
   let rows: SquadTrackedTokenRow[] = [];
   let nativeDecimal = '';
@@ -132,7 +136,7 @@
       applySnapshot(snap);
     } catch (e) {
       if (hydrateKey !== `${parentId.trim()}|${safeAddress.trim()}|${network.trim()}`) return;
-      const msg = getInvokeErrorMessage(e, 'Could not load Safe balances.');
+      const msg = getInvokeErrorMessage(e, tFn('governance.error.couldNotLoadSafeBalances'));
       if (!peeked) {
         loadError = msg;
         nativeDecimal = '';
@@ -163,7 +167,7 @@
     if (!requireBackupVerified()) return;
     const addr = addAddress.trim();
     if (!isAddress(addr)) {
-      showToast('Paste a valid ERC-20 contract address.');
+      showToast(tFn('governance.error.invalidERC20'));
       return;
     }
     addBusy = true;
@@ -192,10 +196,10 @@
         }
       }
       addAddress = '';
-      showToast(`${row.symbol} added as squad tracked coin.`);
+      showToast(tFn('governance.toast.trackedCoinAdded', { values: { symbol: row.symbol } }));
       await refreshAll(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not add tracked coin.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.error.couldNotAddTrackedCoin')));
     } finally {
       addBusy = false;
     }
@@ -223,10 +227,10 @@
           throw announceErr;
         }
       }
-      showToast(`${row.symbol} removed from squad tracked coins.`);
+      showToast(tFn('governance.toast.trackedCoinRemoved', { values: { symbol: row.symbol } }));
       await refreshAll(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not remove tracked coin.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.error.couldNotRemoveTrackedCoin')));
     }
   }
 
@@ -239,28 +243,27 @@
 
 <div class="safe-balances">
   <p class="muted">
-    Shared vault used as Zodiac avatar for Treasury Authority. Balances are reads only; tracked ERC-20s sync to
-    squad members via announcements.
+    {$t('governance.info.safeVaultDescription')}
   </p>
 
   <div class="balances-head">
-    <h5 class="balances-title">Balances</h5>
+    <h5 class="balances-title">{$t('governance.title.balances')}</h5>
     <RefreshIconButton
       spinning={refreshing}
       disabled={loading || refreshing}
-      ariaLabel={refreshing ? 'Refreshing Safe balances' : 'Refresh Safe balances'}
+      ariaLabel={refreshing ? $t('governance.aria.refreshingSafeBalances') : $t('governance.aria.refreshSafeBalances')}
       on:click={() => void refreshAll(true)}
     />
   </div>
 
   {#if loading && !nativeDecimal && rows.length === 0}
-    <p class="muted" role="status">Loading balances…</p>
+    <p class="muted" role="status">{$t('governance.status.loadingBalances')}</p>
   {:else if loadError && !nativeDecimal}
     <p class="error" role="alert">{loadError}</p>
   {:else}
     <ul class="bal-list">
       <li class="bal-row">
-        <span class="bal-sym">{nativeSymbol || 'Native'}</span>
+        <span class="bal-sym">{nativeSymbol || tFn('governance.fallback.native')}</span>
         <span class="bal-amt">{nativeDecimal || '—'}</span>
       </li>
       {#each rows.filter((r) => r.chain.trim().toLowerCase() === String(chainKey).toLowerCase()) as row (row.id)}
@@ -269,7 +272,7 @@
           <span class="bal-amt">{tokenBalances[row.id] ?? '…'}</span>
           <code class="bal-addr">{shortAddr(row.tokenAddress)}</code>
           {#if manageGate.enabled}
-            <button type="button" class="btn-link" on:click={() => void removeToken(row)}>Remove</button>
+            <button type="button" class="btn-link" on:click={() => void removeToken(row)}>{tFn('governance.action.remove')}</button>
           {/if}
         </li>
       {/each}
@@ -277,13 +280,13 @@
   {/if}
 
   <div class="add-block">
-    <label class="add-label" for="safe-tracked-token">Add squad tracked ERC-20</label>
+    <label class="add-label" for="safe-tracked-token">{$t('governance.field.addTrackedToken')}</label>
     <div class="add-row">
       <input
         id="safe-tracked-token"
         class="add-input"
         type="text"
-        placeholder="0x… contract address"
+        placeholder={$t('governance.field.trackedTokenPlaceholder')}
         bind:value={addAddress}
         disabled={!manageGate.enabled || addBusy}
       />
@@ -291,14 +294,14 @@
         type="button"
         class="btn-primary"
         disabled={!manageGate.enabled || addBusy || !addAddress.trim()}
-        title={manageGate.enabled ? undefined : manageGate.reason}
+        title={manageGate.enabled ? undefined : $t(manageGate.reason)}
         on:click={() => void addToken()}
       >
-        {addBusy ? 'Adding…' : 'Add'}
+        {addBusy ? tFn('governance.trackedToken.adding') : tFn('governance.action.add')}
       </button>
     </div>
     {#if !manageGate.enabled}
-      <p class="hint muted">{manageGate.reason}</p>
+      <p class="hint muted">{$t(manageGate.reason)}</p>
     {/if}
   </div>
 </div>

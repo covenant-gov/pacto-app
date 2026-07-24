@@ -5,11 +5,17 @@
   import { isAuthenticated, currentUser, checkSession } from '../stores/auth';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
   import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
+  import { locale } from '../stores/locale';
 
   // Before first paint: clear any leftover auth state. The backend session check on mount
   // is the authoritative source of truth, so never assume the session is still valid.
   isAuthenticated.set(false);
   currentUser.set(null);
+
+  $: if ($locale) {
+    document.documentElement.lang = $locale;
+    document.documentElement.dir = 'ltr';
+  }
 
   onMount(() => {
     // Confirm the backend session on every layout mount; drop auth state if locked.

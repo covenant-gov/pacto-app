@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import Modal from '../ui/Modal.svelte';
   import type { ParentPoll, ParentPollOption } from '../../lib/parent/parent-polls';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -40,12 +43,12 @@
   async function submit(): Promise<void> {
     const t = title.trim();
     if (!t) {
-      error = 'Enter a title.';
+      error = tFn('governance.createPoll.errorTitle');
       return;
     }
     const labels = optionRows.map((s) => s.trim()).filter(Boolean);
     if (labels.length < 2) {
-      error = 'Add at least two choices.';
+      error = tFn('governance.createPoll.errorOptions');
       return;
     }
     saving = true;
@@ -75,7 +78,7 @@
       reset();
       onClose();
     } catch (e) {
-      error = getInvokeErrorMessage(e, 'Could not publish poll.');
+      error = getInvokeErrorMessage(e, tFn('governance.createPoll.errorPublish'));
     } finally {
       saving = false;
     }
@@ -84,13 +87,10 @@
 
 {#if open}
   <Modal {titleId} descriptionId={descId} onClose={() => (!saving ? onClose() : undefined)} dismissible={!saving}>
-    <h2 id={titleId}>Create poll</h2>
-    <p id={descId} class="create-poll-lead">
-      The poll is announced in #announcements and tallies sync for members of this channel. You can still share the poll ID
-      elsewhere if you like.
-    </p>
+    <h2 id={titleId}>{$t('governance.createPoll.title')}</h2>
+    <p id={descId} class="create-poll-lead">{$t('governance.createPoll.lead')}</p>
 
-    <label class="modal-field-label" for="poll-title">Title</label>
+    <label class="modal-field-label" for="poll-title">{$t('governance.createPoll.titleLabel')}</label>
     <input
       id="poll-title"
       type="text"
@@ -98,20 +98,20 @@
       bind:value={title}
       disabled={saving}
       autocomplete="off"
-      placeholder="e.g. Treasury allocation"
+      placeholder={$t('governance.createPoll.titlePlaceholder')}
     />
 
-    <label class="modal-field-label" for="poll-description">Description (optional)</label>
+    <label class="modal-field-label" for="poll-description">{$t('governance.createPoll.descriptionLabel')}</label>
     <textarea
       id="poll-description"
       class="create-poll-textarea"
       bind:value={description}
       disabled={saving}
       rows="3"
-      placeholder="Context for voters…"
+      placeholder={$t('governance.createPoll.descriptionPlaceholder')}
     ></textarea>
 
-    <p class="modal-field-label">Choices</p>
+    <p class="modal-field-label">{$t('governance.createPoll.choicesLabel')}</p>
     <ul class="create-poll-options" role="list">
       {#each optionRows as _, i (i)}
         <li class="create-poll-option-row">
@@ -124,8 +124,8 @@
               optionRows = optionRows;
             }}
             disabled={saving}
-            placeholder="Option {i + 1}"
-            aria-label="Poll option {i + 1}"
+            placeholder={$t('governance.createPoll.optionPlaceholder', { values: { n: i + 1 } })}
+            aria-label={$t('governance.createPoll.optionAriaLabel', { values: { n: i + 1 } })}
           />
           {#if optionRows.length > 2}
             <button
@@ -133,16 +133,16 @@
               class="create-poll-remove"
               disabled={saving}
               on:click={() => removeOption(i)}
-              aria-label="Remove option {i + 1}"
+              aria-label={$t('governance.createPoll.removeOptionAriaLabel', { values: { n: i + 1 } })}
             >
-              Remove
+              {$t('governance.createPoll.removeOption')}
             </button>
           {/if}
         </li>
       {/each}
     </ul>
     <button type="button" class="create-poll-add-opt" disabled={saving} on:click={addOption}>
-      Add choice
+      {$t('governance.createPoll.addChoice')}
     </button>
 
     {#if error}
@@ -150,8 +150,8 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" disabled={saving} on:click={onClose}>Cancel</button>
-      <button type="button" class="btn-primary" disabled={saving} on:click={submit}>Create poll</button>
+      <button type="button" class="btn-secondary" disabled={saving} on:click={onClose}>{$t('governance.createPoll.cancel')}</button>
+      <button type="button" class="btn-primary" disabled={saving} on:click={submit}>{$t('governance.createPoll.create')}</button>
     </div>
   </Modal>
 {/if}

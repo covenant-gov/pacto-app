@@ -4,7 +4,12 @@ import {
   COMMONS_CATEGORY_TAG_MIN,
   COMMONS_TAG_GROUPS,
   COMMONS_TAG_TREE,
+  getLocalizedCommonsTagTree,
+  type CommonsTagTranslator,
 } from './tag-catalog';
+import enTags from '../i18n/locales/en/tags.json';
+
+const testT: CommonsTagTranslator = (key) => (enTags as Record<string, string>)[key] ?? key;
 
 describe('COMMONS_TAG_TREE', () => {
   it('gives each category between 4 and 6 leaf tags', () => {
@@ -16,7 +21,8 @@ describe('COMMONS_TAG_TREE', () => {
   });
 
   it('sorts leaf tags A–Z by title within each category', () => {
-    for (const category of COMMONS_TAG_TREE) {
+    const tree = getLocalizedCommonsTagTree(testT);
+    for (const category of tree) {
       const titles = category.children.map((c) => c.title);
       const sorted = [...titles].sort((a, b) =>
         a.localeCompare(b, undefined, { sensitivity: 'base' })

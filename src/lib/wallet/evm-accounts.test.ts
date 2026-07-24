@@ -73,15 +73,15 @@ describe('evm account purpose helpers', () => {
 });
 
 describe('evm account label helpers', () => {
-  it('labels the known schemes', () => {
-    expect(evmAccountSchemeLabel('bip44_v1')).toBe('Derived');
-    expect(evmAccountSchemeLabel('imported_private_key')).toBe('Imported');
+  it('returns i18n keys for the known schemes', () => {
+    expect(evmAccountSchemeLabel('bip44_v1')).toBe('wallet.accountScheme.derived');
+    expect(evmAccountSchemeLabel('imported_private_key')).toBe('wallet.accountScheme.imported');
     expect(evmAccountSchemeLabel('other')).toBe('other');
   });
 
-  it('labels squad and advanced purposes', () => {
-    expect(evmAccountPurposeLabel('squad')).toBe('Squad');
-    expect(evmAccountPurposeLabel('advanced')).toBe('Advanced');
+  it('returns i18n keys for squad and advanced purposes', () => {
+    expect(evmAccountPurposeLabel('squad')).toBe('wallet.accountPurpose.squad');
+    expect(evmAccountPurposeLabel('advanced')).toBe('wallet.accountPurpose.advanced');
   });
 });
 

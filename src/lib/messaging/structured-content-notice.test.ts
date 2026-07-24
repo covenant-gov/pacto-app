@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeAll } from 'vitest';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
+import { initI18n } from '../i18n';
 import {
   isStructuredProductContent,
   summarizeStructuredMessageContent,
 } from './structured-content-notice';
 
+beforeAll(async () => {
+  await initI18n('en');
+});
+
 describe('summarizeStructuredMessageContent', () => {
+  const tFn = () => get(t);
+
   it('returns null for plain text', () => {
-    expect(summarizeStructuredMessageContent('hello')).toBeNull();
+    expect(summarizeStructuredMessageContent('hello', tFn())).toBeNull();
   });
 
   it('summarizes join response with status', () => {
@@ -16,7 +25,8 @@ describe('summarizeStructuredMessageContent', () => {
           schema: 'pacto.squad.bot_join_response.v1',
           squadName: 'zzz',
           status: 'accepted',
-        })
+        }),
+        tFn()
       )
     ).toBe('Join request for zzz was accepted');
   });
@@ -24,7 +34,8 @@ describe('summarizeStructuredMessageContent', () => {
   it('summarizes allowlist type', () => {
     expect(
       summarizeStructuredMessageContent(
-        JSON.stringify({ type: 'squad_contract_allowlist_updated', payload: {} })
+        JSON.stringify({ type: 'squad_contract_allowlist_updated', payload: {} }),
+        tFn()
       )
     ).toBe('Contract allowlist updated');
   });
@@ -35,7 +46,8 @@ describe('summarizeStructuredMessageContent', () => {
         JSON.stringify({
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'sepolia' },
-        })
+        }),
+        tFn()
       )
     ).toBe('Squad network updated to Sepolia');
     expect(
@@ -43,7 +55,8 @@ describe('summarizeStructuredMessageContent', () => {
         JSON.stringify({
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'local' },
-        })
+        }),
+        tFn()
       )
     ).toBe('Squad network updated to Local Anvil');
   });
