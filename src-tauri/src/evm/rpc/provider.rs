@@ -6,7 +6,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::{TransactionReceipt, TransactionRequest};
 
 use crate::evm::wallet_security;
-use super::config::RECEIPT_WAIT_TIMEOUT;
+use super::config::{RECEIPT_WAIT_TIMEOUT, RPC_CONNECT_TIMEOUT};
 use super::errors::{wallet_err_json, wallet_err_json_with_tx_hash};
 
 pub async fn connect_read_provider(
@@ -18,9 +18,15 @@ pub async fn connect_read_provider(
             last_err = "invalid RPC URL".to_string();
             continue;
         }
-        match ProviderBuilder::new().connect(url_s.as_str()).await {
-            Ok(p) => return Ok(p),
-            Err(e) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
+        match tokio::time::timeout(
+            RPC_CONNECT_TIMEOUT,
+            ProviderBuilder::new().connect(url_s.as_str()),
+        )
+        .await
+        {
+            Ok(Ok(p)) => return Ok(p),
+            Ok(Err(e)) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
+            Err(_) => last_err = "RPC connect timeout".to_string(),
         }
     }
     Err(wallet_err_json(
@@ -40,13 +46,17 @@ pub async fn connect_signing_provider(
             last_err = "invalid RPC URL".to_string();
             continue;
         }
-        match ProviderBuilder::new()
-            .wallet(wallet.clone())
-            .connect(url_s.as_str())
-            .await
+        match tokio::time::timeout(
+            RPC_CONNECT_TIMEOUT,
+            ProviderBuilder::new()
+                .wallet(wallet.clone())
+                .connect(url_s.as_str()),
+        )
+        .await
         {
-            Ok(p) => return Ok(p),
-            Err(e) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
+            Ok(Ok(p)) => return Ok(p),
+            Ok(Err(e)) => last_err = wallet_security::redact_urls_in_text(&e.to_string()),
+            Err(_) => last_err = "RPC connect timeout".to_string(),
         }
     }
     Err(wallet_err_json(

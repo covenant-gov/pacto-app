@@ -37,10 +37,18 @@ function isSupportedChainId(raw: string): raw is SupportedChainId {
   return (WALLET_ASSETS_CHAIN_IDS as readonly string[]).includes(raw);
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+}
+
+/** https anywhere; http only for loopback (Anvil). Matches backend sanitize_rpc_urls. */
 export function isValidRpcUrl(raw: string): boolean {
   try {
     const u = new URL(raw.trim());
-    return u.protocol === 'http:' || u.protocol === 'https:';
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:') return isLoopbackHostname(u.hostname);
+    return false;
   } catch {
     return false;
   }

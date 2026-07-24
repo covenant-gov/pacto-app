@@ -60,10 +60,14 @@ describe('rpc prefs', () => {
 
   it('validates and normalizes RPC URLs', () => {
     expect(isValidRpcUrl('https://example.com/rpc')).toBe(true);
+    expect(isValidRpcUrl('http://localhost:8545')).toBe(true);
+    expect(isValidRpcUrl('http://127.0.0.1:8545')).toBe(true);
+    expect(isValidRpcUrl('http://example.com/rpc')).toBe(false);
     expect(isValidRpcUrl('ftp://example.com')).toBe(false);
     expect(isValidRpcUrl('not a url')).toBe(false);
     expect(normalizeRpcUrl(' https://example.com/rpc/ ')).toBe('https://example.com/rpc');
     expect(normalizeRpcUrl('ftp://example.com')).toBeNull();
+    expect(normalizeRpcUrl('http://example.com/rpc')).toBeNull();
     expect(formatRpcDisplay('https://short.example/rpc')).toBe('https://short.example/rpc');
     expect(
       formatRpcDisplay('https://very-long-rpc-provider.example.com/v2/with-a-long-path-and-key'),
