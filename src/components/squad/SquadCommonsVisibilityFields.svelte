@@ -33,7 +33,7 @@
 
 {#if visibility === 'public'}
   <span class="commons-tags-label">{$t('commons.broadcast.tagsLabel')}</span>
-  <CommonsTagPicker bind:selected={tags} maxTags={3} {disabled} placeholder={$t('commons.tagPicker.searchPlaceholder')} />
+  <CommonsTagPicker bind:selected={tags} {disabled} placeholder={$t('commons.tagPicker.searchPlaceholder')} />
   {#if tagError}
     <p class="commons-tags-error" role="alert">{tagError}</p>
   {/if}

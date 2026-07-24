@@ -16,6 +16,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { runOnChainInBackground } from '../../../lib/evm/on-chain-background';
   import { showToast } from '../../../stores/toast';
+  import { appConfig } from '../../../stores/app-config';
 
   export let open = false;
   export let onClose: () => void;
@@ -37,6 +38,8 @@
   let actionError = '';
   let loadedPrivilege: GovernancePrivilege | null = null;
   let privilegeLoadKey = '';
+
+  $: roleLabelMaxLength = $appConfig.roleLabelMaxLength;
 
   $: effectivePrivilege = privilege ?? loadedPrivilege;
   $: saGate = effectivePrivilege
@@ -98,7 +101,7 @@
   async function createRole() {
     const label = roleLabel.trim();
     if (!label) {
-      actionError = tFn('governance.squadRoles.error.noRoleLabel');
+      actionError = tFn('governance.squadRoles.error.noRoleLabel', { values: { max: roleLabelMaxLength } });
       return;
     }
     if (!saGate.enabled) {
@@ -187,7 +190,7 @@
         class="squad-roles-input"
         placeholder={$t('governance.squadRoles.rolePlaceholder')}
         bind:value={roleLabel}
-        maxlength="32"
+        maxlength={roleLabelMaxLength}
         autocomplete="off"
       />
     </div>

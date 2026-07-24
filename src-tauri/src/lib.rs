@@ -11,6 +11,8 @@ use rand::distributions::Alphanumeric;
 
 mod crypto;
 
+mod app_config;
+
 mod test_sandbox;
 
 mod squad_catalog;
@@ -5561,6 +5563,12 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     if name.is_empty() {
         return Err("Group name must not be empty".to_string());
     }
+    if name.len() > crate::app_config::SQUAD_NAME_MAX_LENGTH {
+        return Err(format!(
+            "Group name must be at most {} characters",
+            crate::app_config::SQUAD_NAME_MAX_LENGTH
+        ));
+    }
     if member_ids.is_empty() {
         return Err("Select at least one member to create a group".to_string());
     }
@@ -6761,7 +6769,9 @@ pub fn run() {
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
             whisper::delete_whisper_model,
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
-            whisper::list_models
+            whisper::list_models,
+            // Runtime configuration / feature flags
+            app_config::get_app_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

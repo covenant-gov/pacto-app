@@ -12,6 +12,7 @@
     type CatalogSearchEntry,
     type WatchedErc20Row,
   } from '../../lib/wallet/watched-tokens';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   export let onClose: () => void;
@@ -33,6 +34,8 @@
   let customDecimalsStr = '18';
 
   let lastOpened = false;
+
+  $: customTokenSymbolMaxLength = $appConfig.customTokenSymbolMaxLength;
 
   $: catalog = buildCatalogSearchEntries();
 
@@ -84,7 +87,7 @@
     if (!accountNpub) return;
     const sym = customSymbol.trim().toUpperCase();
     const dec = Number.parseInt(customDecimalsStr, 10);
-    if (!sym || sym.length > 16 || !/^[A-Z0-9]+$/.test(sym)) return;
+    if (!sym || sym.length > customTokenSymbolMaxLength || !/^[A-Z0-9]+$/.test(sym)) return;
     if (!isHexAddress(customAddress)) return;
     if (!Number.isInteger(dec) || dec < 0 || dec > 36) return;
     const id = customTokenId(customNetwork, customAddress);
@@ -111,7 +114,7 @@
     return Number.isInteger(d) && d >= 0 && d <= 36;
   })();
 
-  $: customSymbolValid = /^[A-Z0-9]{1,16}$/.test(customSymbol.trim().toUpperCase());
+  $: customSymbolValid = customSymbol.trim().length > 0 && customSymbol.trim().length <= customTokenSymbolMaxLength && /^[A-Z0-9]+$/.test(customSymbol.trim().toUpperCase());
 
   $: canSaveCustom =
     accountNpub != null &&
@@ -215,7 +218,7 @@
             type="text"
             placeholder={$t('wallet.symbolPlaceholder')}
             bind:value={customSymbol}
-            maxlength="16"
+            maxlength={customTokenSymbolMaxLength}
             autocomplete="off"
           />
         </label>

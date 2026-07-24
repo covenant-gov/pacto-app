@@ -6,10 +6,11 @@
     findCommonsTagGroup,
     getLocalizedCommonsTagGroups,
   } from '../../lib/commons/tag-catalog';
+  import { appConfig } from '../../stores/app-config';
 
   /** Selected leaf tags (bindable). */
   export let selected: string[] = [];
-  export let maxTags = 3;
+  export let maxTags: number | undefined = undefined;
   export let disabled = false;
   export let placeholder = $t('commons.tagPicker.searchPlaceholder');
 
@@ -21,7 +22,8 @@
   let container: HTMLDivElement;
   let blurCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
-  $: atMax = selected.length >= maxTags;
+  $: resolvedMaxTags = maxTags ?? $appConfig.commonsMaxTags;
+  $: atMax = selected.length >= resolvedMaxTags;
   $: q = query.trim().toLowerCase();
   $: activeSet = new Set(selected);
 
@@ -160,7 +162,7 @@
   </div>
 
   {#if atMax}
-    <p class="tag-picker-hint">{$t('commons.tagPicker.maxTagsHint', { values: { maxTags } })}</p>
+    <p class="tag-picker-hint">{$t('commons.tagPicker.maxTagsHint', { values: { maxTags: resolvedMaxTags } })}</p>
   {/if}
 
   {#if categoryBrowse}

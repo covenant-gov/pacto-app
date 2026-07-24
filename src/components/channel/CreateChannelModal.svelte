@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-
+  import { appConfig } from '../../stores/app-config';
   export let open = false;
   export let parentName = '';
   export let subtitle = '';
@@ -23,6 +23,8 @@
   export let onCreateClosed: () => void = () => {};
   export let onToggleMember: (npub: string) => void = () => {};
   export let getMemberDisplayName: (npub: string) => string = (npub) => npub;
+
+  $: maxChannelNameLength = $appConfig.channelNameMaxLength;
 
   const titleId = 'create-channel-modal-title';
   const resolvedInputId = inputId ?? 'create-channel-name';
@@ -58,6 +60,7 @@
         class="create-channel-input"
         placeholder={$t('messaging.channel.namePlaceholder')}
         bind:value={channelName}
+        maxlength={maxChannelNameLength}
         required
         disabled={creating}
       />

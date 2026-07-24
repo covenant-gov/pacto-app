@@ -68,6 +68,7 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
+  import { appConfig } from '../../stores/app-config';
 
   const translate = get(t);
   $: orderedSquads = orderSquads($squads, $squadNavOrder);
@@ -279,6 +280,7 @@
   $: addButtonLabel = showAddButton ? $t(addButtonLabelKeys[$activeTopNavTab]) : '';
   $: showAddButton =
     $activeTopNavTab === 'commons' || $activeTopNavTab === 'dms' || $activeTopNavTab === 'squads';
+  $: maxSquadNameLength = $appConfig.squadNameMaxLength;
 
   $: commonsStartBroadcastDisabled =
     $activeTopNavTab === 'commons' && $commonsUserHasActiveBroadcast;
@@ -483,6 +485,10 @@
     if (!requireBackupVerified()) return;
     const name = organizeSquadName.trim();
     if (!name) return;
+    if (name.length > maxSquadNameLength) {
+      organizeSquadError = 'Squad name must be at most ' + maxSquadNameLength + ' characters.';
+      return;
+    }
     organizeSquadError = '';
     const myNpub = $currentUser?.npub;
     const memberIds = (organizeSquadMembers || []).filter((n) => n !== myNpub);
@@ -685,6 +691,7 @@
         class="organize-input"
         placeholder={squadNamePlaceholder}
         bind:value={organizeSquadName}
+        maxlength={maxSquadNameLength}
         required
       />
       <label class="organize-label" for="squad-icon">{iconUrlLabel}</label>

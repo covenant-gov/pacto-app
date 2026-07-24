@@ -15,7 +15,6 @@ pub const COMMONS_BROADCAST_SCHEMA: &str = "pacto.commons.broadcast.v1";
 pub const COMMONS_CLIENT_TAG: &str = "pacto";
 pub const COMMONS_MAX_LOOKBACK_SECS: u64 = 72 * 3600;
 const EXPIRY_SKEW_SECS: i64 = 60;
-const MAX_TAGS: usize = 3;
 /// Reserved tags applied by the app (e.g. `#new` for fresh users/squads), allowed
 /// in addition to the author-selectable tags. Users cannot self-select these.
 const RESERVED_TAGS: [&str; 1] = ["new"];
@@ -127,8 +126,11 @@ pub fn normalize_commons_tags(raw: &[String]) -> Result<Vec<String>, String> {
         }
         if !is_reserved_tag(&t) {
             author_tags += 1;
-            if author_tags > MAX_TAGS {
-                return Err(format!("At most {MAX_TAGS} tags allowed"));
+            if author_tags > crate::app_config::COMMONS_MAX_TAGS {
+                return Err(format!(
+                    "At most {} tags allowed",
+                    crate::app_config::COMMONS_MAX_TAGS
+                ));
             }
         }
         out.push(t);

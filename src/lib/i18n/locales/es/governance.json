@@ -358,7 +358,7 @@
 	"governance.squadRoles.rolePlaceholder": "ej. TREASURY",
 	"governance.squadRoles.executorLabel": "Dirección del ejecutor",
 	"governance.squadRoles.executorPlaceholder": "0x…",
-	"governance.squadRoles.error.noRoleLabel": "Ingresa una etiqueta de rol (máx. 32 caracteres ASCII).",
+	"governance.squadRoles.error.noRoleLabel": "Ingresa una etiqueta de rol (máx. {max} caracteres ASCII).",
 	"governance.squadRoles.error.noRoleToEnable": "Ingresa la etiqueta del rol a habilitar.",
 	"governance.squadRoles.error.invalidExecutor": "Elige o ingresa una dirección de ejecutor válida.",
 	"governance.squadRoles.toast.submitted": "Transacción enviada. La confirmación continúa en segundo plano.",

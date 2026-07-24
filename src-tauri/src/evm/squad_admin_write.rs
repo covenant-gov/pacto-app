@@ -26,8 +26,11 @@ pub fn bytes32_role_tag(label: &str) -> Result<B256, String> {
     if trimmed.is_empty() {
         return Err("role label must be non-empty".to_string());
     }
-    if trimmed.len() > 32 {
-        return Err("role label must be at most 32 ASCII characters".to_string());
+    if trimmed.len() > crate::app_config::ROLE_LABEL_MAX_LENGTH as usize {
+        return Err(format!(
+            "role label must be at most {} ASCII characters",
+            crate::app_config::ROLE_LABEL_MAX_LENGTH
+        ));
     }
     if !trimmed.is_ascii() {
         return Err("role label must be ASCII".to_string());
@@ -249,7 +252,7 @@ mod tests {
     #[test]
     fn bytes32_role_tag_rejects_empty_and_overlong() {
         assert!(bytes32_role_tag("").is_err());
-        assert!(bytes32_role_tag(&"a".repeat(33)).is_err());
+        assert!(bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err());
         assert!(bytes32_role_tag("FULL").is_ok());
     }
 }

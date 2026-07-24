@@ -6,6 +6,7 @@
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
+  import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
@@ -15,6 +16,8 @@
   let firstPin: string = '';
   let error: string | null = null;
   let unlockInFlight = false;
+
+  $: pinDigitCount = $appConfig.pinDigitCount;
 
   // Check if user has stored encrypted key on mount, and confirm backend session state.
   onMount(async () => {
@@ -164,6 +167,7 @@
         onErrorClear={() => { error = null; clearAuthError(); }}
         onBack={handlePinCreateBack}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>
@@ -175,6 +179,7 @@
         onErrorClear={() => { error = null; clearAuthError(); }}
         onBack={handlePinConfirmBack}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>
@@ -185,6 +190,7 @@
         onComplete={handlePinUnlock}
         onErrorClear={() => { error = null; clearAuthError(); }}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>
