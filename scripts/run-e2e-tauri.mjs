@@ -192,10 +192,33 @@ async function main() {
       throw new Error(`MCP driver session did not connect; status=${JSON.stringify(statusResult)}`);
     }
 
-    // Give the webview a moment to load before driving it. The MCP server will
-    // wait for the webview to be ready, but a short pause helps on slower hosts.
-    log('waiting for webview load');
-    await sleep(3000);
+    // Wait until the webview has loaded the Tauri IPC bridge.
+    log('waiting for webview __TAURI__');
+    const tauriReadyDeadline = Date.now() + 30_000;
+    let tauriReady = false;
+    while (Date.now() < tauriReadyDeadline) {
+      try {
+        const probe = await callTool(client, 'webview_execute_js', {
+          script: '(() => !!(window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke))()',
+          windowId: 'main',
+        });
+        const ready =
+          probe === true ||
+          probe?.data === true ||
+          (typeof probe === 'object' && probe?.success !== false && probe?.data === true);
+        if (ready) {
+          tauriReady = true;
+          break;
+        }
+      } catch {
+        // webview may not be ready yet
+      }
+      await sleep(250);
+    }
+    if (!tauriReady) {
+      throw new Error('webview __TAURI__.core.invoke was not ready within 30s');
+    }
+    log('webview __TAURI__ ready');
 
     const specPath = path.join(repoRoot, 'e2e-tauri', 'message-send.spec.mjs');
     if (!existsSync(specPath)) {
