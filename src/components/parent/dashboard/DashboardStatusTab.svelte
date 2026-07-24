@@ -36,9 +36,9 @@
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
   export let squadRpcConfig: SquadRpcConfig | null = null;
-  export let onSetSquadRpcPrimary: (url: string) => string | void = () => {};
-  export let onSetSquadRpcBackup: (url: string) => string | void = () => {};
-  export let onClearSquadRpcPrimary: () => void = () => {};
+  export let onSetSquadRpcPrimary: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onSetSquadRpcBackup: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onClearSquadRpcPrimary: () => void | Promise<void> = () => {};
   export let hasGovernance = false;
   export let hasSquadAdmin = false;
   export let captainWearers: string[] = [];
@@ -54,6 +54,7 @@
   let editingRpc: 'primary' | 'backup' | null = null;
   let rpcUrlDraft = '';
   let rpcFormError = '';
+  let rpcPublishing = false;
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
@@ -103,14 +104,32 @@
     rpcFormError = '';
   }
 
-  function applyRpcEdit() {
-    const err =
-      editingRpc === 'backup' ? onSetSquadRpcBackup(rpcUrlDraft) : onSetSquadRpcPrimary(rpcUrlDraft);
-    if (typeof err === 'string' && err.trim()) {
-      rpcFormError = err;
-      return;
+  async function applyRpcEdit() {
+    if (rpcPublishing || !editingRpc) return;
+    rpcPublishing = true;
+    rpcFormError = '';
+    try {
+      const err = await Promise.resolve(
+        editingRpc === 'backup' ? onSetSquadRpcBackup(rpcUrlDraft) : onSetSquadRpcPrimary(rpcUrlDraft),
+      );
+      if (typeof err === 'string' && err.trim()) {
+        rpcFormError = err;
+        return;
+      }
+      cancelRpcEdit();
+    } finally {
+      rpcPublishing = false;
     }
-    cancelRpcEdit();
+  }
+
+  async function clearRpcPrimary() {
+    if (rpcPublishing) return;
+    rpcPublishing = true;
+    try {
+      await Promise.resolve(onClearSquadRpcPrimary());
+    } finally {
+      rpcPublishing = false;
+    }
   }
 </script>
 
@@ -212,10 +231,15 @@
       placeholder="https://…"
       aria-label={editingRpc === 'backup' ? 'Backup squad RPC URL' : 'Primary squad RPC URL'}
     />
-    <button type="button" class="btn-text" disabled={!rpcUrlDraft.trim()} on:click={applyRpcEdit}>
-      Save
+    <button
+      type="button"
+      class="btn-text"
+      disabled={!rpcUrlDraft.trim() || rpcPublishing}
+      on:click={applyRpcEdit}
+    >
+      {rpcPublishing ? 'Saving…' : 'Save'}
     </button>
-    <button type="button" class="btn-text muted" on:click={cancelRpcEdit}>Cancel</button>
+    <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={cancelRpcEdit}>Cancel</button>
     {#if rpcFormError}
       <span class="rpc-error" role="alert">{rpcFormError}</span>
     {/if}
@@ -233,14 +257,14 @@
 </div>
 {#if !editingRpc}
   <div class="rpc-actions">
-    <button type="button" class="btn-text" on:click={() => openRpcEdit('primary')}>
+    <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('primary')}>
       Add custom RPC
     </button>
     {#if rpcPrimaryIsCustom}
-      <button type="button" class="btn-text" on:click={() => openRpcEdit('backup')}>
+      <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('backup')}>
         Add backup RPC
       </button>
-      <button type="button" class="btn-text muted" on:click={onClearSquadRpcPrimary}>
+      <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={clearRpcPrimary}>
         Use public node
       </button>
     {/if}

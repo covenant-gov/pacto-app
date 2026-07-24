@@ -205,27 +205,29 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     void publishSquadNetworkUpdated(gid);
   }
 
-  function handleSetSquadRpcPrimary(url: string): string | void {
+  async function handleSetSquadRpcPrimary(url: string): Promise<string | void> {
     const npub = $currentUser?.npub;
     if (!npub || !parentId?.trim() || !squadNetwork) return 'Select a squad network first.';
     const res = setSquadRpcPrimary(npub, parentId.trim(), squadNetwork, url);
     if (!res.ok) return res.error;
-    void publishSquadRpcUpdated(parentId.trim());
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return 'Saved locally, but could not share the RPC update with the squad.';
   }
 
-  function handleSetSquadRpcBackup(url: string): string | void {
+  async function handleSetSquadRpcBackup(url: string): Promise<string | void> {
     const npub = $currentUser?.npub;
     if (!npub || !parentId?.trim() || !squadNetwork) return 'Select a squad network first.';
     const res = setSquadRpcBackup(npub, parentId.trim(), squadNetwork, url);
     if (!res.ok) return res.error;
-    void publishSquadRpcUpdated(parentId.trim());
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return 'Saved locally, but could not share the RPC update with the squad.';
   }
 
-  function handleClearSquadRpcPrimary(): void {
+  async function handleClearSquadRpcPrimary(): Promise<void> {
     const npub = $currentUser?.npub;
     if (!npub || !parentId?.trim() || !squadNetwork) return;
     clearSquadRpcPrimary(npub, parentId.trim(), squadNetwork);
-    void publishSquadRpcUpdated(parentId.trim());
+    await publishSquadRpcUpdated(parentId.trim());
   }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {

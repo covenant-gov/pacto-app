@@ -40,7 +40,7 @@
   export let qmPendingError = '';
   export let mutinyMode = false;
   export let onRefreshProposals: () => void = () => {};
-  export let onExecuteMutiny: () => void = () => {};
+  export let onExecuteMutiny: () => void | Promise<void> = () => {};
   export let fundingHint = '';
 
   const tFn = get(t);
@@ -109,11 +109,21 @@
     }
   }
 
+  async function runMutinyExecute() {
+    if (acting) return;
+    acting = true;
+    try {
+      await onExecuteMutiny();
+    } finally {
+      acting = false;
+    }
+  }
+
   function executeForCard(card: GovProcessCard) {
     if (card.kind === 'treasury') {
       void runTreasuryExecute(card.proposal.proposalId);
     } else if (card.kind === 'mutiny') {
-      onExecuteMutiny();
+      void runMutinyExecute();
     } else {
       void runCrewExecute(card);
     }
