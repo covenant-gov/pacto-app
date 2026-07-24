@@ -1,21 +1,14 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { get } from 'svelte/store';
-import { t } from 'svelte-i18n';
-import { initI18n } from '../i18n';
+import { describe, expect, it } from 'vitest';
 import {
   isStructuredProductContent,
   summarizeStructuredMessageContent,
 } from './structured-content-notice';
 
-beforeAll(async () => {
-  await initI18n('en');
-});
-
 describe('summarizeStructuredMessageContent', () => {
-  const tFn = () => get(t);
+  const tFn = (key: string) => key;
 
   it('returns null for plain text', () => {
-    expect(summarizeStructuredMessageContent('hello', tFn())).toBeNull();
+    expect(summarizeStructuredMessageContent('hello', tFn)).toBeNull();
   });
 
   it('summarizes join response with status', () => {
@@ -26,18 +19,24 @@ describe('summarizeStructuredMessageContent', () => {
           squadName: 'zzz',
           status: 'accepted',
         }),
-        tFn()
+        tFn
       )
-    ).toBe('Join request for zzz was accepted');
+    ).toBe('messaging.structuredNotice.joinRequestAccepted');
   });
 
   it('summarizes allowlist type', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ type: 'squad_contract_allowlist_updated', payload: {} }),
-        tFn()
+        tFn
       )
-    ).toBe('Contract allowlist updated');
+    ).toBe('messaging.structuredNotice.contractAllowlistUpdated');
+  });
+
+  it('summarizes squad rpc update', () => {
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_rpc_updated', payload: {} }), tFn)
+    ).toBe('messaging.structuredNotice.squadRpcUpdated');
   });
 
   it('summarizes squad network update with display name', () => {
@@ -47,22 +46,50 @@ describe('summarizeStructuredMessageContent', () => {
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'sepolia' },
         }),
-        tFn()
+        tFn
       )
-    ).toBe('Squad network updated to Sepolia');
+    ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'local' },
         }),
-        tFn()
+        tFn
       )
-    ).toBe('Squad network updated to Local Anvil');
+    ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
   });
 
   it('detects structured product content', () => {
     expect(isStructuredProductContent('{"type":"governance_updated"}')).toBe(true);
     expect(isStructuredProductContent('hi')).toBe(false);
+    expect(isStructuredProductContent('{"kind":"pacto.mentions.envelope.v1"}')).toBe(false);
+  });
+
+  it('summarizes new outbound-invite and channels catalog types', () => {
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' }), tFn)
+    ).toBe('messaging.structuredNotice.squadInvitePending');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' }), tFn)
+    ).toBe('messaging.structuredNotice.squadMemberAdmit');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' }), tFn)
+    ).toBe('messaging.structuredNotice.squadChannelsUpdated');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn)
+    ).toBe('messaging.structuredNotice.squadInviteAccepted');
+  });
+
+  it('covers schema/type fallbacks and invalid JSON', () => {
+    expect(summarizeStructuredMessageContent(null, tFn)).toBeNull();
+    expect(summarizeStructuredMessageContent(undefined, tFn)).toBeNull();
+    expect(summarizeStructuredMessageContent('{', tFn)).toBeNull();
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' }), tFn)
+    ).toBe('messaging.structuredNotice.squadUpdate');
+    expect(summarizeStructuredMessageContent(JSON.stringify({ type: 'unknown_type' }), tFn)).toBe(
+      'messaging.structuredNotice.squadUpdate'
+    );
   });
 });
