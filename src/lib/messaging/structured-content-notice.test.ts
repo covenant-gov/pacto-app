@@ -81,5 +81,48 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' })),
     ).toBe('Squad join update');
   });
+
+  it('covers schema/type fallbacks and invalid JSON', () => {
+    expect(summarizeStructuredMessageContent(null)).toBeNull();
+    expect(summarizeStructuredMessageContent(undefined)).toBeNull();
+    expect(summarizeStructuredMessageContent('{')).toBeNull();
+    expect(isStructuredProductContent(null)).toBe(false);
+    expect(isStructuredProductContent('{')).toBe(false);
+
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({
+          schema: 'pacto.squad.bot_join_response.v1',
+          status: 'rejected',
+        }),
+      ),
+    ).toBe('Join request for squad was rejected');
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({
+          schema: 'pacto.squad.bot_join_response.v1',
+          squadName: 'zzz',
+          status: 'pending',
+        }),
+      ),
+    ).toBe('Join update for zzz');
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({ schema: 'pacto.squad.bot_join_dm.v1', squadName: 'Crew' }),
+      ),
+    ).toBe('Join request for Crew');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' })),
+    ).toBe('Squad update');
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({ type: 'squad_network_updated', payload: { chain: 'not-a-chain' } }),
+      ),
+    ).toBe('Squad network updated');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'totally_unknown' })),
+    ).toBe('Squad update');
+    expect(summarizeStructuredMessageContent(JSON.stringify({ foo: 1 }))).toBeNull();
+  });
 });
 

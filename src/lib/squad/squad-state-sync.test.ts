@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 const {
   sendDmMessage,
@@ -108,6 +108,7 @@ vi.mock('../../stores/auth', () => ({
 
 import {
   formatSquadStateSyncRequest,
+  maybeAutoRequestSquadStateSyncAfterJoin,
   parseSquadStateSyncRequest,
   requestSquadStateSync,
   resetSquadStateSyncRespondStateForTests,
@@ -128,6 +129,25 @@ describe('squad-state-sync', () => {
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
+    const session = new Map<string, string>();
+    vi.stubGlobal('sessionStorage', {
+      getItem: (k: string) => session.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        session.set(k, v);
+      },
+      removeItem: (k: string) => {
+        session.delete(k);
+      },
+      clear: () => session.clear(),
+      key: () => null,
+      get length() {
+        return session.size;
+      },
+    } as Storage);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('formats and parses a sync request', () => {
@@ -153,6 +173,53 @@ describe('squad-state-sync', () => {
     });
   });
 
+  it('rejects invalid sync request envelopes', () => {
+    expect(parseSquadStateSyncRequest(null)).toBeNull();
+    expect(parseSquadStateSyncRequest(undefined)).toBeNull();
+    expect(parseSquadStateSyncRequest(12 as unknown as string)).toBeNull();
+    expect(parseSquadStateSyncRequest('plain')).toBeNull();
+    expect(parseSquadStateSyncRequest('{')).toBeNull();
+    expect(parseSquadStateSyncRequest('null')).toBeNull();
+    expect(parseSquadStateSyncRequest(JSON.stringify({ type: 'other' }))).toBeNull();
+    expect(
+      parseSquadStateSyncRequest(JSON.stringify({ type: SQUAD_STATE_SYNC_REQUEST_TYPE, payload: null })),
+    ).toBeNull();
+    expect(
+      parseSquadStateSyncRequest(
+        JSON.stringify({
+          type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+          payload: { parent_id: '', request_id: 'r', requester_npub: 'n' },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseSquadStateSyncRequest(
+        JSON.stringify({
+          type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+          payload: {
+            parent_id: 'p',
+            request_id: 'r',
+            requester_npub: 'n',
+            requested: ['evm', 2, 'infra'],
+          },
+        }),
+      ),
+    ).toEqual({
+      parent_id: 'p',
+      request_id: 'r',
+      requester_npub: 'n',
+      requested: ['evm', 'infra'],
+    });
+    expect(
+      parseSquadStateSyncRequest(
+        JSON.stringify({
+          type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+          payload: { parent_id: 'p', request_id: 'r', requester_npub: 'n' },
+        }),
+      )?.requested,
+    ).toBeUndefined();
+  });
+
   it('publishes a request via requestSquadStateSync', async () => {
     await expect(requestSquadStateSync('ann-gid')).resolves.toBe(true);
     expect(syncMlsGroupsNow).toHaveBeenCalledWith('ann-gid');
@@ -162,6 +229,25 @@ describe('squad-state-sync', () => {
       '',
       { virtualBucket: 'announcements' },
     );
+  });
+
+  it('requestSquadStateSync handles empty gid, missing user, and publish failures', async () => {
+    await expect(requestSquadStateSync('  ')).resolves.toBe(false);
+    currentUser.set(null);
+    await expect(requestSquadStateSync('ann-gid')).resolves.toBe(false);
+    currentUser.set({ npub: 'npub1responder' });
+    syncMlsGroupsNow.mockRejectedValueOnce(new Error('offline'));
+    sendDmMessage.mockRejectedValueOnce(new Error('relay down'));
+    await expect(requestSquadStateSync('ann-gid')).resolves.toBe(false);
+  });
+
+  it('maybeAutoRequestSquadStateSyncAfterJoin runs once per session', async () => {
+    await maybeAutoRequestSquadStateSyncAfterJoin('  ');
+    expect(sendDmMessage).not.toHaveBeenCalled();
+    await maybeAutoRequestSquadStateSyncAfterJoin('ann-gid');
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+    await maybeAutoRequestSquadStateSyncAfterJoin('ann-gid');
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
   });
 
   it('ignores own sync request when responding', async () => {
@@ -251,5 +337,28 @@ describe('squad-state-sync', () => {
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
     expect(publishSquadMemberEvmShare).toHaveBeenCalledTimes(2);
+  });
+
+  it('responds to infra-only requests and skips admit when already a member', async () => {
+    listSquadInfra.mockResolvedValueOnce([]);
+    getMlsGroupMembers.mockResolvedValueOnce({
+      group_id: 'g-ops',
+      members: ['npub1joiner'],
+      admins: [],
+    });
+    const raw = JSON.stringify({
+      type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+      payload: {
+        parent_id: 'ann-gid',
+        request_id: 'req-infra',
+        requester_npub: 'npub1joiner',
+        requested: ['infra', 'channels'],
+      },
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
+    expect(publishSquadChannelsCatalog).toHaveBeenCalled();
+    expect(inviteMemberToGroup).not.toHaveBeenCalled();
   });
 });
