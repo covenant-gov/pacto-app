@@ -12,6 +12,7 @@ vi.mock('../squad-hub-nav', () => ({
 import { invoke } from '@tauri-apps/api/core';
 import { restoreSquadsHubSelection } from '../squad-hub-nav';
 import { squads } from '../../stores/squads';
+import { squadNavOrder } from '../../stores/navigation';
 import {
   hydrateSquadsFromDb,
   listSquads,
@@ -35,10 +36,12 @@ describe('squad-catalog', () => {
     vi.mocked(invoke).mockReset();
     vi.mocked(restoreSquadsHubSelection).mockReset();
     squads.set([]);
+    squadNavOrder.set([]);
   });
 
   afterEach(() => {
     squads.set([]);
+    squadNavOrder.set([]);
   });
 
   it('hydrateSquadsFromDb loads rows from list_squads', async () => {
@@ -48,6 +51,41 @@ describe('squad-catalog', () => {
     expect(get(squads)).toHaveLength(1);
     expect(get(squads)[0]?.name).toBe('Alpha');
     expect(restoreSquadsHubSelection).toHaveBeenCalled();
+  });
+
+  it('hydrateSquadsFromDb seeds empty nav order by createdAt', async () => {
+    vi.mocked(invoke).mockResolvedValue([
+      { ...sampleRow, id: 'newer', createdAtMs: 200, updatedAtMs: 900 },
+      { ...sampleRow, id: 'older', createdAtMs: 100, updatedAtMs: 50 },
+    ]);
+    squadNavOrder.set([]);
+    await hydrateSquadsFromDb();
+    expect(get(squadNavOrder)).toEqual(['older', 'newer']);
+  });
+
+  it('hydrateSquadsFromDb preserves manual order and appends newcomers', async () => {
+    vi.mocked(invoke).mockResolvedValue([
+      { ...sampleRow, id: 'a', createdAtMs: 1, updatedAtMs: 9 },
+      { ...sampleRow, id: 'b', createdAtMs: 2, updatedAtMs: 8 },
+      { ...sampleRow, id: 'c', createdAtMs: 3, updatedAtMs: 7 },
+    ]);
+    squadNavOrder.set(['c', 'gone', 'a']);
+    await hydrateSquadsFromDb();
+    expect(get(squadNavOrder)).toEqual(['c', 'a', 'b']);
+  });
+
+  it('persistSquad appends id to squadNavOrder', async () => {
+    vi.mocked(invoke).mockResolvedValue(sampleRow);
+    squadNavOrder.set(['other']);
+    await persistSquad({
+      id: 'squad-1',
+      name: 'Alpha',
+      channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+      kind: 'squad',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(get(squadNavOrder)).toEqual(['other', 'squad-1']);
   });
 
   it('backfills default hub channel rows on hydrate', async () => {

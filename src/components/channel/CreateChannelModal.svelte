@@ -9,29 +9,25 @@
   export let memberList: string[] = [];
   export let loading = false;
   export let selectedNpubs: string[] = [];
-  export let selectAllLabel = '';
   export let emptyMessage = '';
   export let error = '';
   export let creating = false;
-  export let canCreate = false;
+  /** When true, show closed-channel member picker. */
+  export let showMemberPicker = false;
+  export let canCreateClosed = false;
   export let inputId: string | undefined = undefined;
 
-  $: resolvedSelectAllLabel = selectAllLabel || $t('messaging.channel.addEveryone');
-
   export let onClose: () => void = () => {};
-  export let onCreate: () => void = () => {};
+  export let onOpenChannel: () => void = () => {};
+  export let onChooseClosed: () => void = () => {};
+  export let onCreateClosed: () => void = () => {};
   export let onToggleMember: (npub: string) => void = () => {};
-  export let onToggleSelectAll: () => void = () => {};
-  /** Used to display each member's name in the list. */
   export let getMemberDisplayName: (npub: string) => string = (npub) => npub;
-
-  $: allSelected =
-    memberList.length > 0 &&
-    selectedNpubs.length === memberList.length &&
-    memberList.every((n) => selectedNpubs.includes(n));
 
   const titleId = 'create-channel-modal-title';
   const resolvedInputId = inputId ?? 'create-channel-name';
+
+  $: nameReady = channelName.trim().length > 0;
 </script>
 
 {#if open}
@@ -55,25 +51,54 @@
     >
       <h2 id={titleId}>{$t('messaging.channel.createTitle')}</h2>
       <p class="create-channel-subtitle">{subtitle}</p>
-      <form on:submit|preventDefault={onCreate}>
-        <label class="create-channel-label" for={resolvedInputId}>{$t('messaging.channel.nameLabel')}</label>
-        <input
-          id={resolvedInputId}
-          type="text"
-          class="create-channel-input"
-          placeholder={$t('messaging.channel.namePlaceholder')}
-          bind:value={channelName}
-          required
-        />
+      <label class="create-channel-label" for={resolvedInputId}>{$t('messaging.channel.nameLabel')}</label>
+      <input
+        id={resolvedInputId}
+        type="text"
+        class="create-channel-input"
+        placeholder={$t('messaging.channel.namePlaceholder')}
+        bind:value={channelName}
+        required
+        disabled={creating}
+      />
+
+      {#if !showMemberPicker}
+        <p class="create-channel-hint">
+          {$t('messaging.channel.openClosedHint')}
+        </p>
+        {#if error}
+          <p class="create-channel-error" role="alert">{error}</p>
+        {/if}
+        <div class="create-channel-path-actions">
+          <button
+            type="button"
+            class="create-channel-btn-create"
+            disabled={!nameReady || creating}
+            on:click={onOpenChannel}
+          >
+            {creating ? $t('messaging.channel.creating') : $t('messaging.channel.openChannel')}
+          </button>
+          <button
+            type="button"
+            class="create-channel-btn-secondary"
+            disabled={!nameReady || creating}
+            on:click={onChooseClosed}
+          >
+            {$t('messaging.channel.closedChannel')}
+          </button>
+        </div>
+        <div class="create-channel-actions">
+          <button
+            type="button"
+            class="create-channel-btn-cancel"
+            on:click={onClose}
+            disabled={creating}
+          >
+            {$t('messaging.channel.cancel')}
+          </button>
+        </div>
+      {:else}
         <span class="create-channel-label">{membersLabel}</span>
-        <label class="create-channel-select-everyone">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            on:change={onToggleSelectAll}
-          />
-          {resolvedSelectAllLabel}
-        </label>
         <div class="create-channel-members">
           {#if loading}
             <p class="create-channel-loading">{$t('messaging.channel.loading')}</p>
@@ -84,6 +109,7 @@
                   type="checkbox"
                   checked={selectedNpubs.includes(npub)}
                   on:change={() => onToggleMember(npub)}
+                  disabled={creating}
                 />
                 <span class="create-channel-member-name">{getMemberDisplayName(npub)}</span>
               </label>
@@ -106,14 +132,15 @@
             {$t('messaging.channel.cancel')}
           </button>
           <button
-            type="submit"
+            type="button"
             class="create-channel-btn-create"
-            disabled={!canCreate || creating}
+            disabled={!canCreateClosed || creating}
+            on:click={onCreateClosed}
           >
             {creating ? $t('messaging.channel.creating') : $t('messaging.channel.create')}
           </button>
         </div>
-      </form>
+      {/if}
     </div>
   </div>
 {/if}
@@ -157,25 +184,18 @@
     margin: 0 0 24px 0;
   }
 
+  .create-channel-hint {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+  }
+
   .create-channel-label {
     display: block;
     color: var(--text-secondary);
     font-size: 0.875rem;
     margin-bottom: 6px;
-  }
-
-  .create-channel-select-everyone {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .create-channel-select-everyone input {
-    cursor: pointer;
   }
 
   .create-channel-input {
@@ -240,11 +260,18 @@
     font-size: 0.875rem;
   }
 
+  .create-channel-path-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
   .create-channel-actions {
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    margin-top: 24px;
+    margin-top: 8px;
   }
 
   .create-channel-btn-cancel {
@@ -262,21 +289,41 @@
     color: var(--text-primary);
   }
 
-  .create-channel-btn-create {
-    padding: 8px 16px;
-    background: var(--accent);
-    border: none;
+  .create-channel-btn-create,
+  .create-channel-btn-secondary {
+    padding: 10px 16px;
     border-radius: 8px;
-    color: #fff;
     font-size: 0.9375rem;
     cursor: pointer;
+    width: 100%;
+  }
+
+  .create-channel-btn-create {
+    background: var(--accent);
+    border: none;
+    color: #fff;
   }
 
   .create-channel-btn-create:hover:not(:disabled) {
     background: var(--accent-hover);
   }
 
-  .create-channel-btn-create:disabled {
+  .create-channel-btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+  }
+
+  .create-channel-btn-secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+
+  .create-channel-actions .create-channel-btn-create {
+    width: auto;
+  }
+
+  .create-channel-btn-create:disabled,
+  .create-channel-btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

@@ -191,4 +191,107 @@ describe('onMlsStructuredMessage', () => {
     );
     expect(syncJoinRequestsForSquad).toHaveBeenCalledWith('g1');
   });
+
+  it('handles safe/evm announces, outbound invite types, and nonce fallbacks', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+
+    onMlsStructuredMessage(null, 'g1', handlers);
+    onMlsStructuredMessage('{', 'g1', handlers);
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_safe_updated',
+        payload: { squad_id: 'safe-parent', safe_address: '0x1' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeTreasurySafesForParent).toHaveBeenCalledWith('safe-parent');
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_member_evm_share',
+        payload: { parent_id: 'evm-parent', evm_address: '0xabc' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(handlers.mergeSquadMemberEvmForAnnouncementsGroup).toHaveBeenCalledWith('evm-parent');
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_outbound_invite',
+        payload: {
+          parent_id: 'g1',
+          invite_id: 'i1',
+          invitee_npub: 'npub1bob',
+          squad_name: 'Alpha',
+        },
+        pacto_virtual_bucket: 'announcements',
+      }),
+      'g1',
+      handlers,
+    );
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_admit_needed',
+        payload: { parent_id: 'g1', invite_id: 'i1', invitee_npub: 'npub1bob' },
+        pacto_virtual_bucket: 'announcements',
+      }),
+      'g1',
+      handlers,
+    );
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_channels_catalog',
+        payload: { parent_id: 'g1', channels: [] },
+        pacto_virtual_bucket: 'announcements',
+      }),
+      'g1',
+      handlers,
+    );
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_contract_allowlist_updated',
+        payload: { action: 'upsert' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(get(squadAllowlistNonceByParentId).g1).toBe(1);
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'squad_tracked_tokens_updated',
+        payload: { action: 'upsert' },
+      }),
+      '  ',
+      handlers,
+    );
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        schema: 'pacto.squad_bot.meta.v1',
+        squad_id: 'bot-squad',
+      }),
+      'g1',
+      handlers,
+    );
+    expect(get(squadBotMetaNonceBySquadId)['bot-squad']).toBe(1);
+
+    onMlsStructuredMessage(
+      JSON.stringify({
+        schema: 'pacto.squad.join_request_response.v1',
+        squad_id: 'join-squad',
+      }),
+      'g1',
+      handlers,
+    );
+    expect(syncJoinRequestsForSquad).toHaveBeenCalledWith('join-squad');
+  });
 });

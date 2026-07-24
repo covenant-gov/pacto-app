@@ -85,6 +85,12 @@ pub fn normalize_virtual_bucket_for_message(kind: u16, content: &str, tags: &[Ve
             if ty == Some("squad_network_updated") || ty == Some("squad_state_sync_request") {
                 return Some("announcements".to_string());
             }
+            if matches!(
+                ty,
+                Some("squad_outbound_invite" | "squad_admit_needed" | "squad_channels_catalog")
+            ) {
+                return Some("announcements".to_string());
+            }
         }
     }
 

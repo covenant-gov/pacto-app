@@ -28,3 +28,7 @@ landing/public/pacto-release.json
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# Build artifacts
+*.AppImage
+src-tauri/target/

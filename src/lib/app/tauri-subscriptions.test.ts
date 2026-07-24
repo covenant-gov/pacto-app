@@ -50,6 +50,7 @@ const mocks = vi.hoisted(() => {
     bumpMembershipVersion: vi.fn(),
     handleMlsWelcomeAccepted: vi.fn(),
     handleChannelAddedToSquad: vi.fn(),
+    notifyPendingInviteWelcome: vi.fn(),
     updateChannelNameIfPlaceholder: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
@@ -124,6 +125,8 @@ vi.mock('../invites/accept-invite', () => ({
     mocks.mockFunctions.handleChannelAddedToSquad(...args),
   handleMlsWelcomeAccepted: (...args: unknown[]) =>
     mocks.mockFunctions.handleMlsWelcomeAccepted(...args),
+  notifyPendingInviteWelcome: (...args: unknown[]) =>
+    mocks.mockFunctions.notifyPendingInviteWelcome(...args),
 }));
 
 vi.mock('../squad/squad-catalog', () => ({
@@ -512,6 +515,14 @@ describe('subscribeAppEvents', () => {
       await Promise.resolve();
       expect(mocks.mockFunctions.listPendingMlsWelcomes).toHaveBeenCalled();
       expect(mocks.mockStores.pendingMlsWelcomes.get()).toEqual([{ group_id: 'g1' }]);
+      expect(mocks.mockFunctions.notifyPendingInviteWelcome).toHaveBeenCalledWith(null);
+    });
+
+    it('mls_invite_received wakes accept waiters with group_id', async () => {
+      mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_invite_received', { group_id: 'g-ann' });
+      expect(mocks.mockFunctions.notifyPendingInviteWelcome).toHaveBeenCalledWith('g-ann');
     });
 
     it('mls_welcome_accepted refreshes welcomes and handles acceptance', async () => {

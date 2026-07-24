@@ -110,10 +110,10 @@ describe('encodePaymasterAndData (golden vectors)', () => {
 
   it('Sepolia addresses match the protocol address book redeploy', () => {
     expect(vectors.sepolia.squadSponsorFactory.toLowerCase()).toBe(
-      '0x032e84cff3b32c221f8F93e4839Fa5715638ae08'.toLowerCase(),
+      '0x05F0130889dC678304D11cCA71983edB220A4c74'.toLowerCase(),
     );
     expect(vectors.sepolia.pactoSponsorPaymaster.toLowerCase()).toBe(
-      '0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8'.toLowerCase(),
+      '0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6'.toLowerCase(),
     );
   });
 });

@@ -86,11 +86,14 @@ export const LAST_SQUAD_ID_PREFIX = 'pacto_last_squad_id';
 export const LAST_CHANNEL_ID_PREFIX = 'pacto_last_channel_id';
 export const LAST_CHANNEL_BY_SQUAD_PREFIX = 'pacto_last_channel_by_squad';
 export const LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX = 'pacto_last_hub_channel_name_by_squad';
+export const SQUAD_NAV_ORDER_PREFIX = 'pacto_squad_nav_order';
 
 export const lastOpenedSquadId = writable<string | null>(null);
 export const lastOpenedChannelId = writable<string | null>(null);
 export const lastChannelBySquadId = writable<Record<string, string>>({});
 export const lastHubChannelNameBySquadId = writable<Record<string, string>>({});
+/** Manual Discord-style squad rail order (squad ids, top → bottom). */
+export const squadNavOrder = writable<string[]>([]);
 
 lastOpenedSquadId.subscribe((id) => {
   if (typeof localStorage === 'undefined') return;
@@ -122,6 +125,16 @@ lastHubChannelNameBySquadId.subscribe((map) => {
   if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify(map));
+  } catch {
+    // ignore quota
+  }
+});
+squadNavOrder.subscribe((ids) => {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(SQUAD_NAV_ORDER_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(ids));
   } catch {
     // ignore quota
   }

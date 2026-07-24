@@ -131,7 +131,12 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   if (rec['type'] === 'squad_network_updated') {
     return 'announcements';
   }
-  if (rec['type'] === 'squad_rpc_updated') {
+  if (
+    rec['type'] === 'squad_rpc_updated' ||
+    rec['type'] === 'squad_outbound_invite' ||
+    rec['type'] === 'squad_admit_needed' ||
+    rec['type'] === 'squad_channels_catalog'
+  ) {
     return 'announcements';
   }
 

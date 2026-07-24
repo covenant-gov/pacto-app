@@ -23,6 +23,7 @@ import {
   activeSquadId,
   activeChannelId,
   activeHubChannelName,
+  squadNavOrder,
 } from '../../stores/navigation';
 import { currentNpubForPersistence } from '../../stores/persistence-context';
 
@@ -45,6 +46,7 @@ describe('runExitParent', () => {
     vi.mocked(leaveMlsGroup).mockReset().mockResolvedValue(undefined);
     vi.mocked(clearParentDashboardCaches).mockReset();
     squads.set([squad]);
+    squadNavOrder.set(['parent-1', 'other']);
     activeSquadId.set(squad.id);
     activeChannelId.set('parent-1');
     activeHubChannelName.set('announcements');
@@ -53,6 +55,7 @@ describe('runExitParent', () => {
 
   afterEach(() => {
     squads.set([]);
+    squadNavOrder.set([]);
     activeSquadId.set(null);
     activeChannelId.set(null);
     activeHubChannelName.set(null);
@@ -63,6 +66,7 @@ describe('runExitParent', () => {
     const onFailure = vi.fn();
     runExitParent({ squad, wasActive: true, previousChannelId: 'parent-1', onFailure });
     expect(get(squads)).toHaveLength(0);
+    expect(get(squadNavOrder)).toEqual(['other']);
     expect(get(activeSquadId)).toBeNull();
     expect(get(activeChannelId)).toBeNull();
     expect(get(activeHubChannelName)).toBeNull();
@@ -86,6 +90,7 @@ describe('runExitParent', () => {
     expect(persistSquad).toHaveBeenCalledWith(squad);
     expect(get(squads)).toHaveLength(1);
     expect(get(squads)[0]?.id).toBe('parent-1');
+    expect(get(squadNavOrder)).toContain('parent-1');
     expect(get(activeSquadId)).toBe('parent-1');
   });
 

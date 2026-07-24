@@ -9,7 +9,7 @@ import { safeStateByTreasuryId } from './safe';
 import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-key-choice';
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
-import { setCurrentNpubForPersistence } from './persistence-context';
+import { setCurrentNpubForPersistence, persistenceKey } from './persistence-context';
 import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
@@ -22,11 +22,14 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   LAST_SQUAD_ID_PREFIX,
   LAST_CHANNEL_ID_PREFIX,
   LAST_CHANNEL_BY_SQUAD_PREFIX,
   LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX,
+  SQUAD_NAV_ORDER_PREFIX,
 } from './navigation';
+import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
 import {
   activeDmId,
   pinnedDmNpubs,
@@ -44,6 +47,7 @@ import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
+import { loadMlsHistoryWelcome } from './mls-history-welcome';
 
 export {
   currentNpubForPersistence,
@@ -55,6 +59,20 @@ export {
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
   void loadBackupVerified();
+  loadMlsHistoryWelcome(npub);
+  // Nav order must load before hydrate reconciles / seeds the rail.
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const navKey = persistenceKey(SQUAD_NAV_ORDER_PREFIX);
+      if (navKey) {
+        squadNavOrder.set(parseSquadNavOrder(localStorage.getItem(navKey)));
+      } else {
+        squadNavOrder.set([]);
+      }
+    } catch {
+      squadNavOrder.set([]);
+    }
+  }
   void hydrateSquadsFromDb().then(async () => {
     const { reconcileStaleInviteDecisions } = await import('../lib/invites/accept-invite');
     reconcileStaleInviteDecisions();

@@ -700,7 +700,7 @@ mod tests {
     #[test]
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
-        let paymaster = address!("0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8");
+        let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
         let squad_id =
             b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");

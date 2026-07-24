@@ -301,11 +301,11 @@ mod tests {
         let sp = squad_sponsor_deploy_addresses("sepolia").expect("sponsor book");
         assert_eq!(
             sp.squad_sponsor_factory,
-            address!("0x032e84cff3b32c221f8F93e4839Fa5715638ae08")
+            address!("0x05F0130889dC678304D11cCA71983edB220A4c74")
         );
         assert_eq!(
             sp.pacto_sponsor_paymaster,
-            address!("0xF7f557a9443671EB0f5a3F1b233Ac44A9eDa24B8")
+            address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6")
         );
 
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
