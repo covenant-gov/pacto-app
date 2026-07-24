@@ -1,17 +1,54 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 const persistSquadPatchMock = vi.fn();
+const persistSquadMock = vi.fn();
 
 vi.mock('../squad/squad-catalog', () => ({
   persistSquadPatch: (...args: unknown[]) => persistSquadPatchMock(...args),
-  persistSquad: vi.fn(),
+  persistSquad: (...args: unknown[]) => persistSquadMock(...args),
 }));
 
-import { handleChannelAddedToSquad, reconcileStaleInviteDecisions, squadInviteResolvedByMembership } from './accept-invite';
+vi.mock('../api/nostr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/nostr')>();
+  return {
+    ...actual,
+    listPendingMlsWelcomes: vi.fn(),
+    acceptMlsWelcome: vi.fn(),
+    syncMlsGroupsNow: vi.fn(),
+  };
+});
+
+vi.mock('../../stores/backup-verification', () => ({
+  requireBackupVerified: () => true,
+}));
+
+vi.mock('../utils/dm-debug', () => ({
+  dmError: vi.fn(),
+}));
+
+vi.mock('../squad/squad-state-sync', () => ({
+  maybeAutoRequestSquadStateSyncAfterJoin: vi.fn(),
+}));
+
+vi.mock('../squad/squad-outbound-invite', () => ({
+  publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
+}));
+
+import {
+  handleChannelAddedToSquad,
+  reconcileStaleInviteDecisions,
+  squadInviteResolvedByMembership,
+  waitForAnnouncementsWelcome,
+  notifyPendingInviteWelcome,
+  resetInviteAcceptState,
+  acceptAnnouncementsInvite,
+} from './accept-invite';
+import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
 import { squads, type Squad } from '../../stores/squads';
 import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
 import { pactoAppInboxMessages } from '../../stores/dm';
+import { squadNavOrder } from '../../stores/navigation';
 
 const parent: Squad = {
   id: 'parent-1',
@@ -22,10 +59,32 @@ const parent: Squad = {
   updatedAt: 1,
 };
 
+const pendingWelcome = {
+  id: 'welcome-1',
+  wrapper_event_id: 'ev1',
+  nostr_group_id: 'new-squad',
+  group_name: 'Joined',
+  group_description: null,
+  group_admin_pubkeys: [] as string[],
+  group_relays: [] as string[],
+  welcomer: 'npub1x',
+  member_count: 1,
+};
+
 describe('accept-invite channel persistence', () => {
   beforeEach(() => {
+    resetInviteAcceptState();
     persistSquadPatchMock.mockReset().mockResolvedValue(parent);
+    persistSquadMock.mockReset().mockImplementation(async (squad: Squad) => squad);
+    vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([pendingWelcome]);
+    vi.mocked(acceptMlsWelcome).mockReset().mockResolvedValue(true);
+    vi.mocked(syncMlsGroupsNow).mockReset().mockResolvedValue({ synced: 0, total: 0 });
     squads.set([parent]);
+    squadNavOrder.set(['parent-1']);
+  });
+
+  afterEach(() => {
+    resetInviteAcceptState();
   });
 
   it('handleChannelAddedToSquad persists merged channels', () => {
@@ -79,5 +138,44 @@ describe('accept-invite channel persistence', () => {
     ]);
     reconcileStaleInviteDecisions();
     expect(get(acceptedSquadInviteIds)).toEqual(['invite-msg-1']);
+  });
+
+  it('acceptAnnouncementsInvite appends the new squad id to nav order', async () => {
+    await acceptAnnouncementsInvite({ groupId: 'new-squad', name: 'Joined' }, 'msg-join');
+    expect(persistSquadMock).toHaveBeenCalled();
+    expect(get(squadNavOrder)).toEqual(['parent-1', 'new-squad']);
+    expect(get(squads).some((s) => s.id === 'new-squad')).toBe(true);
+  });
+
+  it('finalize does not await post-accept syncMlsGroupsNow', async () => {
+    let call = 0;
+    let resolveHang: (() => void) | undefined;
+    vi.mocked(syncMlsGroupsNow).mockImplementation(() => {
+      call += 1;
+      if (call === 1) {
+        // Initial one-group probe before accept.
+        return Promise.resolve({ synced: 0, total: 0 });
+      }
+      // Post-finalize sync must be fire-and-forget.
+      return new Promise((resolve) => {
+        resolveHang = () => resolve({ synced: 0, total: 0 });
+      });
+    });
+    await acceptAnnouncementsInvite({ groupId: 'new-squad', name: 'Joined' }, 'msg-join');
+    expect(get(squads).some((s) => s.id === 'new-squad')).toBe(true);
+    expect(call).toBeGreaterThanOrEqual(2);
+    resolveHang?.();
+  });
+
+  it('waitForAnnouncementsWelcome lists only and wakes on notify', async () => {
+    vi.mocked(listPendingMlsWelcomes)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([pendingWelcome]);
+    const waited = waitForAnnouncementsWelcome('new-squad', 10_000);
+    await vi.waitFor(() => expect(listPendingMlsWelcomes).toHaveBeenCalled());
+    expect(syncMlsGroupsNow).not.toHaveBeenCalled();
+    notifyPendingInviteWelcome('new-squad');
+    await expect(waited).resolves.toMatchObject({ id: 'welcome-1', nostr_group_id: 'new-squad' });
+    expect(vi.mocked(syncMlsGroupsNow).mock.calls.some((c) => c[0] === null)).toBe(false);
   });
 });

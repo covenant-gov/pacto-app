@@ -64,5 +64,22 @@ describe('summarizeStructuredMessageContent', () => {
   it('detects structured product content', () => {
     expect(isStructuredProductContent('{"type":"governance_updated"}')).toBe(true);
     expect(isStructuredProductContent('hi')).toBe(false);
+    expect(isStructuredProductContent('{"kind":"pacto.mentions.envelope.v1"}')).toBe(false);
+  });
+
+  it('summarizes new outbound-invite and channels catalog types', () => {
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' })),
+    ).toBe('Squad invite pending');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' })),
+    ).toBe('Squad member admit');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' })),
+    ).toBe('Squad channels updated');
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' })),
+    ).toBe('Squad join update');
   });
 });
+

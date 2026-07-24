@@ -6,7 +6,11 @@ import {
   isPactoAppRoutableInviteContent,
   resolveInviteInviterNpub,
 } from '../pacto-app-inbox';
-import { handleChannelAddedToSquad, handleMlsWelcomeAccepted } from '../invites/accept-invite';
+import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
+import {
+  handleInviteeConsentForAdmit,
+  parseSquadInviteAccepted,
+} from '../squad/squad-outbound-invite';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { get } from 'svelte/store';
@@ -106,6 +110,11 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     if (!chat_id.startsWith('npub1')) return;
     const content = message.content ?? '';
+    const inviteAccepted = parseSquadInviteAccepted(content);
+    if (inviteAccepted && !message.mine) {
+      void handleInviteeConsentForAdmit(inviteAccepted, { broadcastAdmitNeeded: true });
+      return;
+    }
     const isPactoRoutableInvite = isPactoAppRoutableInviteContent(content);
     const m = normalizeDmPayload(message);
     if (isPactoRoutableInvite) {
@@ -277,9 +286,14 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
 
   refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));
 
-  register(unsubs, 'mls_invite_received', () => {
+  register(unsubs, 'mls_invite_received', (event) => {
     console.log('[Squad/Invite] mls_invite_received event: refreshing pending welcomes');
     refreshPendingWelcomes().catch((e) => dmError('mls_invite_received refresh', e));
+    const groupId =
+      event?.payload && typeof event.payload === 'object' && 'group_id' in event.payload
+        ? String((event.payload as { group_id?: string }).group_id ?? '')
+        : '';
+    notifyPendingInviteWelcome(groupId || null);
   });
 
   register(unsubs, 'mls_welcome_accepted', (event) => {

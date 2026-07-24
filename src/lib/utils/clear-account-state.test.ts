@@ -12,6 +12,7 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   showMembersPanel,
   squadDashboardChannelMode,
   DEFAULT_TOP_NAV_TAB,
@@ -104,6 +105,7 @@ describe('clearAccountState', () => {
     storage.set(`pacto_pinned_dm_npubs_${npub}`, 'value');
     storage.set(`pacto_wallet_ui_enabled_chains_v1_${npub}`, 'value');
     storage.set(`pacto_locale_v1_${npub}`, 'es');
+    storage.set(`pacto_squad_nav_order_${npub}`, '["s1"]');
     storage.set('unrelated_key', 'keep');
 
     clearAccountState(npub);
@@ -112,6 +114,7 @@ describe('clearAccountState', () => {
     expect(storage.has(`pacto_pinned_dm_npubs_${npub}`)).toBe(false);
     expect(storage.has(`pacto_wallet_ui_enabled_chains_v1_${npub}`)).toBe(false);
     expect(storage.has(`pacto_locale_v1_${npub}`)).toBe(false);
+    expect(storage.has(`pacto_squad_nav_order_${npub}`)).toBe(false);
     expect(storage.get('unrelated_key')).toBe('keep');
   });
 
@@ -130,6 +133,7 @@ describe('clearAccountState', () => {
     activeTopNavTab.set('dms');
     squadDashboardChannelMode.set('treasury');
     showMembersPanel.set(true);
+    squadNavOrder.set(['squad-1', 'squad-2']);
 
     clearAccountState('npub1abcdef');
 
@@ -140,6 +144,7 @@ describe('clearAccountState', () => {
     expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
     expect(get(squadDashboardChannelMode)).toBe('status');
     expect(get(showMembersPanel)).toBe(false);
+    expect(get(squadNavOrder)).toEqual([]);
   });
 
   it('resets DM stores to defaults', () => {

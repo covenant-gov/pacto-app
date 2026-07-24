@@ -23,10 +23,12 @@ import {
   activeTopNavTab,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
 } from '../stores/navigation';
 import { pendingReadyToast } from '../stores/toast';
 import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broadcast';
 import { persistCreatedSquad } from './squad/squad-catalog';
+import { appendSquadNavId, removeSquadNavId } from './squad/squad-nav-order';
 import { initSquadBot } from './squad/squad-bot';
 import type { PairedSquads } from './squad-pair';
 
@@ -145,6 +147,7 @@ export function runSquadPairCreateFlow(
   addParentCreatingAnnouncements(squadPair.id);
   parentPendingCreateMembers.update((m) => ({ ...m, [squadPair.id]: memberNpubs }));
   squads.update((list) => [...list, squadPair]);
+  squadNavOrder.update((order) => appendSquadNavId(order, squadPair.id));
   activeSquadId.set(tempId);
   activeChannelId.set(null);
   activeHubChannelName.set(null);
@@ -215,6 +218,7 @@ export function runSquadPairCreateFlow(
         ),
       }));
       squads.update((list) => list.filter((s) => s.id !== tempId));
+      squadNavOrder.update((order) => removeSquadNavId(order, tempId));
       if (get(activeSquadId) === tempId) {
         activeSquadId.set(anchor.id);
         activeChannelId.set(null);

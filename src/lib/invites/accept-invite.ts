@@ -10,6 +10,7 @@ import { defaultChannelRowsForGroupId } from '../parent-navbar';
 import { pactoAppInboxMessages } from '../../stores/dm';
 import { normalizeStoredSquad } from '../squad-pair';
 import { persistSquad, persistSquadPatch } from '../squad/squad-catalog';
+import { appendSquadNavId } from '../squad/squad-nav-order';
 import { dmError } from '../utils/dm-debug';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import {
@@ -23,12 +24,15 @@ import {
   acceptedChannelInviteMessageIds,
   bumpMembershipVersion,
   ANNOUNCEMENTS_CHANNEL_NAME,
+  squadNavOrder,
   type DmMessage,
   type Squad,
 } from '../../stores/app';
 import { pendingReadyToast, showToast } from '../../stores/toast';
 import { maybeAutoRequestSquadStateSyncAfterJoin } from '../squad/squad-state-sync';
+import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { requireBackupVerified } from '../../stores/backup-verification';
+import { currentUser } from '../../stores/auth';
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
 const acceptedSquadInviteGroupIds = new Set<string>();
@@ -36,12 +40,19 @@ const acceptedSquadInviteGroupIds = new Set<string>();
 /** Maps channel group id → parent squad while welcome accept is in flight. */
 const channelInvitePendingAccept = new Map<string, { parentId: string; channelName: string }>();
 
+/** In-flight consent-first Accept waiters keyed by announcements group id (lowercase). */
+const pendingWelcomeWaiters = new Map<string, Set<() => void>>();
+
+export const ACCEPT_WELCOME_POLL_MS = 400;
+export const ACCEPT_WELCOME_DEADLINE_MS = 90_000;
+
 export const acceptingSquadInviteId = writable<string | null>(null);
 export const acceptingChannelInSquadId = writable<string | null>(null);
 
 export function resetInviteAcceptState(): void {
   acceptedSquadInviteGroupIds.clear();
   channelInvitePendingAccept.clear();
+  pendingWelcomeWaiters.clear();
   acceptingSquadInviteId.set(null);
   acceptingChannelInSquadId.set(null);
 }
@@ -62,23 +73,91 @@ function findPendingWelcomeForGroup(
   return welcomes.find((w) => sameMlsGroupId(w.nostr_group_id, groupId));
 }
 
-async function resolvePendingWelcomeForGroup(groupId: string): Promise<PendingMlsWelcome | undefined> {
+/** Light probe: list pending welcomes only (no all-groups sync). */
+export async function listPendingWelcomeForGroup(
+  groupId: string
+): Promise<PendingMlsWelcome | undefined> {
+  const welcomes = await listPendingMlsWelcomes();
+  return findPendingWelcomeForGroup(welcomes, groupId);
+}
+
+/**
+ * First Accept attempt only: optional one-group sync, then list.
+ * Poll / event wake use {@link listPendingWelcomeForGroup} instead.
+ */
+async function resolvePendingWelcomeForGroupInitial(
+  groupId: string
+): Promise<PendingMlsWelcome | undefined> {
   try {
     await syncMlsGroupsNow(groupId);
   } catch (e) {
     dmError('syncMlsGroupsNow before accept invite', e);
   }
-  let welcomes = await listPendingMlsWelcomes();
-  const welcome = findPendingWelcomeForGroup(welcomes, groupId);
-  if (welcome) return welcome;
+  return listPendingWelcomeForGroup(groupId);
+}
 
-  try {
-    await syncMlsGroupsNow(null);
-  } catch (e) {
-    dmError('syncMlsGroupsNow (all) before accept invite', e);
+function registerWelcomeWaiter(groupId: string, wake: () => void): () => void {
+  const key = groupId.trim().toLowerCase();
+  let set = pendingWelcomeWaiters.get(key);
+  if (!set) {
+    set = new Set();
+    pendingWelcomeWaiters.set(key, set);
   }
-  welcomes = await listPendingMlsWelcomes();
-  return findPendingWelcomeForGroup(welcomes, groupId);
+  set.add(wake);
+  return () => {
+    set!.delete(wake);
+    if (set!.size === 0) pendingWelcomeWaiters.delete(key);
+  };
+}
+
+/** Called when MLS emits a new invite/welcome — nudge in-flight Accept polls. */
+export function notifyPendingInviteWelcome(groupId?: string | null): void {
+  if (groupId?.trim()) {
+    const set = pendingWelcomeWaiters.get(groupId.trim().toLowerCase());
+    if (set) {
+      for (const wake of [...set]) wake();
+    }
+    return;
+  }
+  for (const set of pendingWelcomeWaiters.values()) {
+    for (const wake of [...set]) wake();
+  }
+}
+
+/**
+ * Check membership / pending welcome first, then sleep (event-wake or backoff).
+ * Shared by consent-first Accept after claim DMs are sent.
+ */
+export async function waitForAnnouncementsWelcome(
+  groupId: string,
+  deadlineMs: number = ACCEPT_WELCOME_DEADLINE_MS
+): Promise<PendingMlsWelcome | 'already_member' | null> {
+  const deadline = Date.now() + deadlineMs;
+
+  while (Date.now() < deadline) {
+    if (squadInviteResolvedByMembership(groupId)) return 'already_member';
+    const welcome = await listPendingWelcomeForGroup(groupId);
+    if (welcome) return welcome;
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const waitMs = Math.min(ACCEPT_WELCOME_POLL_MS, remaining);
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        unregister();
+        resolve();
+      };
+      const unregister = registerWelcomeWaiter(groupId, finish);
+      const timer = setTimeout(finish, waitMs);
+    });
+  }
+
+  if (squadInviteResolvedByMembership(groupId)) return 'already_member';
+  return (await listPendingWelcomeForGroup(groupId)) ?? null;
 }
 
 export function channelInSquadInviteResolvedByMembership(
@@ -106,14 +185,24 @@ export function reconcileStaleInviteDecisions(): void {
   });
 }
 
-function addChannelToParent(parentId: string, channelGroupId: string, channelName: string): void {
+function addChannelToParent(
+  parentId: string,
+  channelGroupId: string,
+  channelName: string,
+  access?: 'open' | 'closed'
+): void {
   void persistSquadPatch(parentId, (squad) => {
     if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
     return {
       ...squad,
       channels: [
         ...squad.channels,
-        { name: channelName, groupId: channelGroupId, order: squad.channels.length },
+        {
+          name: channelName,
+          groupId: channelGroupId,
+          order: squad.channels.length,
+          ...(access ? { access } : {}),
+        },
       ],
     };
   });
@@ -127,7 +216,8 @@ export interface AnnouncementsInvitePayload {
 
 export async function acceptAnnouncementsInvite(
   payload: AnnouncementsInvitePayload,
-  messageId: string
+  messageId: string,
+  inviteMeta?: { inviteId?: string; admitterNpubs?: string[]; invitedByNpub?: string }
 ): Promise<void> {
   if (squadInviteResolvedByMembership(payload.groupId)) {
     acceptedSquadInviteIds.update((ids: string[]) =>
@@ -136,14 +226,70 @@ export async function acceptAnnouncementsInvite(
     return;
   }
   if (!requireBackupVerified()) return;
-  const welcome = await resolvePendingWelcomeForGroup(payload.groupId);
-  if (!welcome) {
+
+  const welcome = await resolvePendingWelcomeForGroupInitial(payload.groupId);
+  if (welcome) {
+    acceptedSquadInviteGroupIds.add(payload.groupId);
+    await acceptMlsWelcome(welcome.id);
+    await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
+    return;
+  }
+
+  // Consent-first: no welcome yet — claim to admitters, then wait for welcome.
+  const me = get(currentUser)?.npub?.trim();
+  if (!me) throw new Error('Not signed in');
+
+  const admitters = [
+    ...new Set(
+      [
+        ...(inviteMeta?.admitterNpubs ?? []),
+        inviteMeta?.invitedByNpub,
+      ].filter((n): n is string => typeof n === 'string' && n.startsWith('npub1'))
+    ),
+  ];
+  const inviteId =
+    inviteMeta?.inviteId?.trim() ||
+    `legacy-${payload.groupId}-${messageId}`;
+
+  if (admitters.length === 0) {
     const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
     err.noWelcome = true;
     throw err;
   }
-  acceptedSquadInviteGroupIds.add(payload.groupId);
-  await acceptMlsWelcome(welcome.id);
+
+  showToast('Joining squad… waiting for members to admit you.');
+  await publishInviteAcceptedClaims({
+    parentId: payload.groupId,
+    inviteId,
+    inviteeNpub: me,
+    squadName: payload.name,
+    admitterNpubs: admitters,
+  });
+
+  const waited = await waitForAnnouncementsWelcome(payload.groupId, ACCEPT_WELCOME_DEADLINE_MS);
+  if (waited === 'already_member') {
+    acceptedSquadInviteIds.update((ids: string[]) =>
+      ids.includes(messageId) ? ids : [...ids, messageId]
+    );
+    void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
+    return;
+  }
+  if (waited) {
+    acceptedSquadInviteGroupIds.add(payload.groupId);
+    await acceptMlsWelcome(waited.id);
+    await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
+    return;
+  }
+
+  const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
+  err.noWelcome = true;
+  throw err;
+}
+
+async function finalizeSquadAfterAnnouncementsWelcome(
+  payload: AnnouncementsInvitePayload,
+  messageId: string
+): Promise<void> {
   const now = Date.now();
   const defaultChannels = defaultChannelRowsForGroupId(payload.groupId);
   const isSquadPair = (payload.memberSquads?.length ?? 0) > 0;
@@ -172,6 +318,7 @@ export async function acceptAnnouncementsInvite(
   );
   try {
     await persistSquad(newSquad);
+    squadNavOrder.update((order) => appendSquadNavId(order, newSquad.id));
   } catch (e) {
     dmError('persistSquad after accept invite', e);
     squads.update((list: Squad[]) => list.filter((s) => s.id !== newSquad.id));
@@ -185,11 +332,9 @@ export async function acceptAnnouncementsInvite(
   acceptedSquadInviteIds.update((ids: string[]) =>
     ids.includes(messageId) ? ids : [...ids, messageId]
   );
-  try {
-    await syncMlsGroupsNow(payload.groupId);
-  } catch (e) {
-    dmError('syncMlsGroupsNow after accept invite', e);
-  }
+  void syncMlsGroupsNow(payload.groupId).catch((e) =>
+    dmError('syncMlsGroupsNow after accept invite', e)
+  );
   bumpMembershipVersion(payload.groupId);
   void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
   pendingReadyToast.set({
@@ -219,7 +364,12 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
             ? [...payload.pairedSquads]
             : undefined,
       },
-      msg.id
+      msg.id,
+      {
+        inviteId: payload.inviteId,
+        admitterNpubs: payload.admitterNpubs,
+        invitedByNpub: payload.invitedByNpub,
+      }
     );
   } catch (e) {
     const payload = parseSquadInviteMessage(msg.content);
@@ -235,7 +385,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
     }
     dmError('Accept squad invite failed', e);
     if ((e as Error & { noWelcome?: boolean }).noWelcome) {
-      showToast('No squad invite found yet. Wait a moment and try Accept again.');
+      showToast('Still waiting for the squad to admit you. Try Accept again in a moment.');
       return;
     }
     showToast(getInvokeErrorMessage(e, 'Could not accept squad invite.'));

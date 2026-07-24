@@ -16,7 +16,7 @@
     removePendingJoinRequest,
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
-  import { runInviteMembersToParent } from '../../lib/parent/invite-members-flow';
+  import { runAdmitMembersToSquad } from '../../lib/parent/admit-member';
   import type { Squad } from '../../stores/squads';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
@@ -92,16 +92,16 @@
       return;
     }
 
-    runInviteMembersToParent({
+    runAdmitMembersToSquad({
       parent: squad,
-      npubsToInvite: [request.requesterNpub],
+      npubs: [request.requesterNpub],
       onErrorBanner: (message) => showToast(message),
-      onComplete: (invitedNpubs) => {
+      onComplete: (admittedNpubs) => {
         actingOn = null;
-        if (!invitedNpubs.includes(request.requesterNpub)) return;
+        if (!admittedNpubs.includes(request.requesterNpub)) return;
         removePendingJoinRequest(squad.id, request.eventId);
         const name = getProfileDisplayName($profiles[request.requesterNpub]) || tFn('squad.joinRequests.memberFallback');
-        showToast(tFn('squad.joinRequests.inviteToast', { values: { name } }));
+        showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
       },
     });
   }
@@ -190,42 +190,23 @@
 
 <style>
   .join-requests-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 20px 24px;
-    min-height: 0;
-    overflow: auto;
+    padding: 16px;
   }
 
   .join-requests-header {
-    margin: 0;
+    margin-bottom: 16px;
   }
 
   .join-requests-title {
-    margin: 0 0 6px;
+    margin: 0 0 4px 0;
     font-size: 1.125rem;
-    font-weight: 600;
     color: var(--text-primary);
   }
 
   .join-requests-lead {
     margin: 0;
-    font-size: 0.875rem;
     color: var(--text-muted);
-    line-height: 1.45;
-  }
-
-  .join-requests-muted {
-    margin: 0;
     font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .join-requests-error {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--danger, #e55);
   }
 
   .join-requests-list {
@@ -238,92 +219,64 @@
   }
 
   .join-request-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    background: var(--bg-elevated);
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
+    flex-direction: column;
     gap: 12px;
-    padding: 14px 16px;
-    border: 1px solid var(--border-subtle);
-    border-left: 3px solid var(--accent);
-    border-radius: 8px;
-    background: var(--bg-panel);
-  }
-
-  .join-request-main {
-    min-width: 200px;
-    flex: 1;
   }
 
   .join-request-badge {
-    margin: 0 0 4px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-muted);
+    display: inline-block;
+    margin: 0 0 4px 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-subtle);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 500;
+    width: fit-content;
   }
 
   .join-request-name {
-    margin: 0 0 4px;
-    font-size: 0.9375rem;
+    margin: 0;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .join-request-meta {
-    margin: 0 0 4px;
+  .join-request-meta,
+  .join-request-npub {
+    margin: 2px 0 0 0;
+    color: var(--text-muted);
     font-size: 0.8125rem;
-    color: var(--text-secondary);
   }
 
   .join-request-npub {
-    margin: 0;
-    font-size: 0.75rem;
-    color: var(--text-muted);
+    font-family: monospace;
     word-break: break-all;
   }
 
   .join-request-actions {
     display: flex;
     gap: 8px;
-    flex-shrink: 0;
   }
 
   .join-request-btn {
-    padding: 8px 14px;
+    flex: 1;
+    padding: 8px 12px;
     border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
     font-size: 0.8125rem;
     cursor: pointer;
   }
 
-  .join-request-btn.is-mute {
-    background: transparent;
-    border: 1px solid var(--border-subtle);
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    padding: 8px 10px;
-  }
-
-  .join-request-btn.is-mute:hover:not(:disabled) {
-    color: var(--text-secondary);
-  }
-
-  .join-request-btn.is-reject {
-    background: transparent;
-    border: 1px solid var(--border-subtle);
-    color: var(--text-secondary);
-  }
-
-  .join-request-btn.is-reject:hover:not(:disabled) {
-    border-color: var(--danger, #e55);
-    color: var(--danger, #e55);
-  }
-
-  .join-request-btn.is-accept {
-    background: var(--accent);
-    border: none;
-    color: var(--accent-contrast, #fff);
+  .join-request-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .join-request-btn:disabled {
@@ -331,8 +284,43 @@
     cursor: not-allowed;
   }
 
+  .join-request-btn.is-accept {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .join-request-btn.is-accept:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .join-request-btn.is-reject {
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .join-request-btn.is-mute {
+    color: var(--text-muted);
+    border-style: dashed;
+  }
+
+  .join-requests-muted,
+  .join-requests-error {
+    margin: 8px 0;
+    font-size: 0.875rem;
+  }
+
+  .join-requests-muted {
+    color: var(--text-muted);
+  }
+
+  .join-requests-error {
+    color: var(--danger);
+  }
+
   .join-requests-footer {
     display: flex;
-    justify-content: flex-start;
+    justify-content: flex-end;
+    margin-top: 16px;
   }
 </style>

@@ -16,6 +16,7 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   showMembersPanel,
   squadDashboardChannelMode,
   myDashboardChannelMode,
@@ -106,6 +107,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_channel_id',
   'pacto_last_channel_by_squad',
   'pacto_last_hub_channel_name_by_squad',
+  'pacto_squad_nav_order',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_app_inbox',
@@ -183,6 +185,7 @@ export function clearAccountState(npub?: string): void {
   lastOpenedChannelId.set(null);
   lastChannelBySquadId.set({});
   lastHubChannelNameBySquadId.set({});
+  squadNavOrder.set([]);
   activeSquadId.set(null);
   activeChannelId.set(null);
   activeHubChannelName.set(null);

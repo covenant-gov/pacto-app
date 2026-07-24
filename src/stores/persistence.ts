@@ -22,11 +22,14 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   LAST_SQUAD_ID_PREFIX,
   LAST_CHANNEL_ID_PREFIX,
   LAST_CHANNEL_BY_SQUAD_PREFIX,
   LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX,
+  SQUAD_NAV_ORDER_PREFIX,
 } from './navigation';
+import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
 import {
   activeDmId,
   pinnedDmNpubs,
@@ -55,6 +58,14 @@ export {
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
   void loadBackupVerified();
+  // Nav order must load before hydrate reconciles / seeds the rail.
+  if (typeof localStorage !== 'undefined') {
+    try {
+      squadNavOrder.set(parseSquadNavOrder(localStorage.getItem(`${SQUAD_NAV_ORDER_PREFIX}_${npub}`)));
+    } catch {
+      squadNavOrder.set([]);
+    }
+  }
   void hydrateSquadsFromDb().then(async () => {
     const { reconcileStaleInviteDecisions } = await import('../lib/invites/accept-invite');
     reconcileStaleInviteDecisions();

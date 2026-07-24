@@ -131,6 +131,13 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
   if (rec['type'] === 'squad_network_updated') {
     return 'announcements';
   }
+  if (
+    rec['type'] === 'squad_outbound_invite' ||
+    rec['type'] === 'squad_admit_needed' ||
+    rec['type'] === 'squad_channels_catalog'
+  ) {
+    return 'announcements';
+  }
 
   const ann = parseAnnouncement(trimmed);
   if (ann?.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED) return 'announcements';

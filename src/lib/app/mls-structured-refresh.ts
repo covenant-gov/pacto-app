@@ -12,6 +12,16 @@ import {
 } from '../squad/squad-state-sync';
 import { parseSquadNetworkUpdated } from '../squad/squad-network-share';
 import { saveSquadNetworkOverride } from '../squad/squad-network';
+import {
+  onMlsAdmitNeeded,
+  onMlsOutboundInviteAnnounce,
+  parseSquadAdmitNeeded,
+  parseSquadOutboundInvite,
+} from '../squad/squad-outbound-invite';
+import {
+  applySquadChannelsCatalog,
+  parseSquadChannelsCatalog,
+} from '../squad/squad-channels-catalog';
 import { currentUser } from '../../stores/auth';
 import {
   squadAllowlistNonceByParentId,
@@ -72,6 +82,16 @@ export function onMlsStructuredMessage(
 
   if (parseSquadStateSyncRequest(raw)) {
     void respondToSquadStateSyncRequest(raw, gid);
+  }
+
+  if (parseSquadOutboundInvite(raw)) {
+    onMlsOutboundInviteAnnounce(raw);
+  }
+  if (parseSquadAdmitNeeded(raw)) {
+    onMlsAdmitNeeded(raw, gid);
+  }
+  if (parseSquadChannelsCatalog(raw)) {
+    applySquadChannelsCatalog(raw, gid);
   }
 
   const networkUpdate = parseSquadNetworkUpdated(raw);

@@ -4,6 +4,7 @@ import {
   type NostrProfile,
   type SquadInvitePayload,
 } from '../api/nostr';
+import { parseSquadInviteAccepted } from '../squad/squad-outbound-invite';
 import {
   parseWalletPeerInfoDecline,
   parseWalletPeerInfoGrant,
@@ -54,8 +55,13 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   const tFn = get(t);
   if (msg.is_local_announcement) return { kind: 'local-announcement' };
   const content = msg.content ?? '';
-  const channelInSquad = parseChannelInSquadMessage(content);
-  if (channelInSquad) return { kind: 'channel-in-squad', payload: channelInSquad };
+  // Channel joins are under-the-hood; never show as invite cards.
+  if (parseChannelInSquadMessage(content)) {
+    return { kind: 'structured-notice', text: 'Channel join' };
+  }
+  if (parseSquadInviteAccepted(content)) {
+    return { kind: 'structured-notice', text: 'Squad join update' };
+  }
   const invite = parseSquadInviteMessage(content);
   if (invite) {
     return invite.kind === 'squad-pair'
@@ -113,11 +119,7 @@ export function getInviterDisplay(
 }
 
 export function isInvitePresentation(p: DmMessagePresentation): boolean {
-  return (
-    p.kind === 'channel-in-squad' ||
-    p.kind === 'squad-invite' ||
-    p.kind === 'squad-pair-invite'
-  );
+  return p.kind === 'squad-invite' || p.kind === 'squad-pair-invite';
 }
 
 export function buildPlainMessageProps(

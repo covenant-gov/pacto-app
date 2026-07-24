@@ -433,6 +433,7 @@ impl MlsService {
                 );
             }
             let min_len = std::cmp::min(welcome_rumors.len(), invited_recipients.len());
+            let mut welcome_failures = 0usize;
             for i in 0..min_len {
                 let welcome = welcome_rumors[i].clone(); // UnsignedEvent
                 let target = invited_recipients[i];
@@ -451,6 +452,7 @@ impl MlsService {
                         );
                     }
                     Err(e) => {
+                        welcome_failures += 1;
                         let recipient = target.to_bech32().unwrap_or_default();
                         eprintln!(
                             "[MLS][welcome][publish_error] recipient={}, relays={:?}, err={}",
@@ -461,11 +463,22 @@ impl MlsService {
                     }
                 }
             }
+            if invited_count > 0 && welcome_failures > 0 {
+                return Err(MlsError::NetworkError(format!(
+                    "Failed to deliver MLS welcome to {} of {} members",
+                    welcome_failures, invited_count
+                )));
+            }
         } else {
             println!(
                 "[MLS] No welcome rumors (invited={}, self-only path likely)",
                 invited_count
             );
+            if invited_count > 0 {
+                return Err(MlsError::NetworkError(
+                    "MLS group create returned no welcomes for invited members".to_string(),
+                ));
+            }
         }
 
         // Persist encrypted "mls_groups"
@@ -620,17 +633,33 @@ impl MlsService {
         };
 
         // Send welcome before merging commit (welcome is created for current epoch)
+        let mut welcomeSendFailed = false;
         if let Some(welcome_rumors) = welcome_rumors {
+            if welcome_rumors.is_empty() {
+                welcomeSendFailed = true;
+                eprintln!("[MLS] add_member_device: empty welcome rumors");
+            }
             for welcome in welcome_rumors {
                 if let Err(e) = client.gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &member_pk, welcome, []).await {
                     eprintln!("[MLS] Failed to send welcome: {}", e);
+                    welcomeSendFailed = true;
                 }
             }
+        } else {
+            welcomeSendFailed = true;
+            eprintln!("[MLS] add_member_device: no welcome rumors returned");
+        }
+
+        if welcomeSendFailed {
+            return Err(MlsError::NetworkError(
+                "Failed to deliver MLS welcome to the new member".to_string(),
+            ));
         }
 
         // Publish evolution event (commit) to the relay
         if let Err(e) = client.send_event(&evolution_event).await {
             eprintln!("[MLS] Failed to publish commit: {}", e);
+            return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
         }
 
         // NOW merge the pending commit after welcome and evolution event are sent

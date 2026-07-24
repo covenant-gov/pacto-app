@@ -1,10 +1,16 @@
 /**
  * Late-joiner catch-up: sync request on #announcements; peers silently republish
- * roster EVM, known governance announces, and squad network selection.
+ * roster EVM, known governance announces, squad network selection, and open channels.
  */
 
 import { get } from 'svelte/store';
-import { sendDmMessage, syncMlsGroupsNow } from '../api/nostr';
+import {
+  getMlsGroupMembers,
+  inviteMemberToGroup,
+  sendDmMessage,
+  syncMlsGroupsNow,
+  formatChannelInSquadMessage,
+} from '../api/nostr';
 import {
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
   buildAnnounceContent,
@@ -17,6 +23,10 @@ import {
 import { currentUser } from '../../stores/auth';
 import { publishSquadMemberEvmShare } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
+import { publishSquadChannelsCatalog } from './squad-channels-catalog';
+import { openCustomChannelTargets } from '../parent/channel-access';
+import { getAnnouncementsChannel } from '../parent-navbar';
+import { squads } from '../../stores/squads';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
@@ -26,6 +36,9 @@ const RESPONDED_KEYS_CAP = 200;
 /** Insertion-ordered keys for prune (Set iteration is insertion order). */
 const respondedRequestKeys = new Set<string>();
 const lastRespondAtByParent = new Map<string, number>();
+/** Single-responder admit dedupe: request_id + channel + requester */
+const channelAdmitKeys = new Set<string>();
+const CHANNEL_ADMIT_CAP = 400;
 
 export type SquadStateSyncRequestPayload = {
   parent_id: string;
@@ -46,7 +59,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network'],
+      requested: ['evm', 'infra', 'network', 'channels'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -84,6 +97,15 @@ export function parseSquadStateSyncRequest(
 export function resetSquadStateSyncRespondStateForTests(): void {
   respondedRequestKeys.clear();
   lastRespondAtByParent.clear();
+  channelAdmitKeys.clear();
+}
+
+function pruneChannelAdmitKeys(): void {
+  while (channelAdmitKeys.size > CHANNEL_ADMIT_CAP) {
+    const oldest = channelAdmitKeys.values().next().value;
+    if (oldest === undefined) break;
+    channelAdmitKeys.delete(oldest);
+  }
 }
 
 function autoRequestStorageKey(npub: string, announcementsGroupId: string): string {
@@ -187,6 +209,7 @@ export async function respondToSquadStateSyncRequest(
   const wantEvm = !req.requested?.length || req.requested.includes('evm');
   const wantInfra = !req.requested?.length || req.requested.includes('infra');
   const wantNetwork = !req.requested?.length || req.requested.includes('network');
+  const wantChannels = !req.requested?.length || req.requested.includes('channels');
 
   let anyOk = false;
 
@@ -232,7 +255,7 @@ export async function respondToSquadStateSyncRequest(
         anyOk = true;
       }
       // Infra requested but nothing to publish still counts as a handled attempt when list succeeded.
-      if (!wantEvm && !wantNetwork && rows.length === 0) anyOk = true;
+      if (!wantEvm && !wantNetwork && !wantChannels && rows.length === 0) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] infra republish failed', e);
     }
@@ -244,6 +267,56 @@ export async function respondToSquadStateSyncRequest(
       if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] network republish failed', e);
+    }
+  }
+
+  if (wantChannels) {
+    const parent =
+      get(squads).find((s) => s.id === parentId) ??
+      get(squads).find((s) => getAnnouncementsChannel(s).groupId === parentId);
+    if (parent) {
+      try {
+        const ok = await publishSquadChannelsCatalog(parent);
+        if (ok) anyOk = true;
+      } catch (e) {
+        console.warn('[squad-state-sync] channels catalog republish failed', e);
+      }
+
+      const requester = req.requester_npub;
+      for (const ch of openCustomChannelTargets(parent.channels)) {
+        const admitKey = `${req.request_id}:${ch.groupId}:${requester}`;
+        if (channelAdmitKeys.has(admitKey)) continue;
+        try {
+          const members = await getMlsGroupMembers(ch.groupId);
+          if ((members.members ?? []).includes(requester)) {
+            channelAdmitKeys.add(admitKey);
+            pruneChannelAdmitKeys();
+            anyOk = true;
+            continue;
+          }
+          await inviteMemberToGroup(ch.groupId, requester);
+          channelAdmitKeys.add(admitKey);
+          pruneChannelAdmitKeys();
+          const announcements = getAnnouncementsChannel(parent);
+          try {
+            await sendDmMessage(
+              requester,
+              formatChannelInSquadMessage({
+                type: 'channel_in_squad',
+                squadName: parent.name,
+                announcementsGroupId: announcements.groupId,
+                channelGroupId: ch.groupId,
+                channelName: ch.name,
+              }),
+            );
+          } catch (e) {
+            console.warn('[squad-state-sync] channel notify failed', e);
+          }
+          anyOk = true;
+        } catch (e) {
+          console.warn('[squad-state-sync] open channel admit failed', ch.groupId.slice(0, 12), e);
+        }
+      }
     }
   }
 

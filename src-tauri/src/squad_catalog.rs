@@ -15,6 +15,9 @@ pub struct SquadChannelRow {
     pub name: String,
     pub group_id: String,
     pub order: i32,
+    /// Custom channels: "open" | "closed". Omitted on hub rows / legacy rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -288,7 +291,7 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
     let mut stmt = conn
         .prepare(
             "SELECT id, name, icon_url, kind, visibility, commons_tags, paired_squads, channels, created_at_ms, updated_at_ms
-             FROM squads ORDER BY updated_at_ms DESC",
+             FROM squads ORDER BY created_at_ms ASC, id ASC",
         )
         .map_err(|e| format!("Failed to prepare list squads: {e}"))?;
     let rows = stmt
@@ -444,11 +447,13 @@ mod tests {
                 name: "announcements".to_string(),
                 group_id: "grp-announce".to_string(),
                 order: 0,
+                access: None,
             },
             SquadChannelRow {
                 name: "personal-alerts".to_string(),
                 group_id: "grp-announce".to_string(),
                 order: 1,
+                access: None,
             },
         ]
     }
@@ -538,18 +543,26 @@ mod tests {
     }
 
     #[test]
-    fn list_squads_orders_by_updated_at_desc() {
+    fn list_squads_orders_by_created_at_asc() {
         let conn = test_conn();
         let mut older = prepare_row(sample_upsert("s-old", "Old")).expect("prepare");
-        older.updated_at_ms = 1000;
+        older.created_at_ms = 1000;
+        older.updated_at_ms = 9000;
         upsert_squad_inner(&conn, &older).expect("upsert old");
         let mut newer = prepare_row(sample_upsert("s-new", "New")).expect("prepare");
+        newer.created_at_ms = 5000;
         newer.updated_at_ms = 5000;
         upsert_squad_inner(&conn, &newer).expect("upsert new");
+        // Mutation bumps older updated_at further; list order must stay created_at.
+        let mut bumped = get_squad_inner(&conn, "s-old").expect("get").expect("row");
+        bumped.updated_at_ms = 99_000;
+        bumped.name = "Old-bumped".into();
+        upsert_squad_inner(&conn, &bumped).expect("bump");
         let listed = list_squads_inner(&conn).expect("list");
         assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].id, "s-new");
-        assert_eq!(listed[1].id, "s-old");
+        assert_eq!(listed[0].id, "s-old");
+        assert_eq!(listed[1].id, "s-new");
+        assert_eq!(listed[0].name, "Old-bumped");
     }
 
     #[test]
@@ -706,11 +719,11 @@ mod tests {
     #[test]
     fn validate_channels_rejects_blank_fields() {
         let mut input = sample_upsert("grp", "Squad");
-        input.channels = vec![SquadChannelRow { name: "  ".to_string(), group_id: "g".to_string(), order: 0 }];
+        input.channels = vec![SquadChannelRow { name: "  ".to_string(), group_id: "g".to_string(), order: 0, access: None }];
         assert!(prepare_row(input).is_err());
 
         let mut input = sample_upsert("grp", "Squad");
-        input.channels = vec![SquadChannelRow { name: "n".to_string(), group_id: "  ".to_string(), order: 0 }];
+        input.channels = vec![SquadChannelRow { name: "n".to_string(), group_id: "  ".to_string(), order: 0, access: None }];
         assert!(prepare_row(input).is_err());
     }
 

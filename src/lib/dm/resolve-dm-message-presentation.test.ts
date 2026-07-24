@@ -148,12 +148,11 @@ describe('resolveDmMessagePresentation', () => {
     });
   });
 
-  it('classifies channel-in-squad JSON', () => {
+  it('treats channel-in-squad JSON as structured notice (no invite card)', () => {
     const p = resolveDmMessagePresentation(msg({ content: CHANNEL_IN_SQUAD }));
-    expect(p.kind).toBe('channel-in-squad');
-    if (p.kind === 'channel-in-squad') {
-      expect(p.payload.channelGroupId).toBe('cg1');
-      expect(p.payload.channelName).toBe('general');
+    expect(p.kind).toBe('structured-notice');
+    if (p.kind === 'structured-notice') {
+      expect(p.text).toBe('Channel join');
     }
   });
 
@@ -224,7 +223,7 @@ describe('resolveDmMessagePresentation', () => {
 
 describe('isInvitePresentation', () => {
   it('covers invite kinds only', () => {
-    expect(isInvitePresentation({ kind: 'channel-in-squad', payload: {} as never })).toBe(true);
+    expect(isInvitePresentation({ kind: 'channel-in-squad', payload: {} as never })).toBe(false);
     expect(isInvitePresentation({ kind: 'squad-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'squad-pair-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'plain' })).toBe(false);

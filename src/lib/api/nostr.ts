@@ -404,6 +404,10 @@ export interface SquadInvitePayload {
   kind?: 'squad' | 'squad-pair';
   pairedSquads?: [{ id: string; name: string }, { id: string; name: string }];
   invitedByNpub?: string;
+  /** Consent claim correlation; admitters match this after Accept. */
+  inviteId?: string;
+  /** Announcements members who may run admit when invitee Accepts. */
+  admitterNpubs?: string[];
 }
 
 const SQUAD_INVITE_TYPE = 'squad_invite';
@@ -415,6 +419,9 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
       const p = parsed as { squadName?: string; groupId?: string };
       if (typeof p.squadName === 'string' && typeof p.groupId === 'string') {
         const raw = parsed as SquadInvitePayload;
+        const admitterNpubs = Array.isArray(raw.admitterNpubs)
+          ? raw.admitterNpubs.filter((n): n is string => typeof n === 'string' && n.startsWith('npub1'))
+          : undefined;
         return {
           type: SQUAD_INVITE_TYPE,
           squadName: raw.squadName,
@@ -422,6 +429,8 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
           kind: raw.kind === 'squad-pair' ? 'squad-pair' : raw.kind === 'squad' ? 'squad' : undefined,
           pairedSquads: raw.pairedSquads,
           invitedByNpub: typeof raw.invitedByNpub === 'string' ? raw.invitedByNpub : undefined,
+          inviteId: typeof raw.inviteId === 'string' ? raw.inviteId : undefined,
+          admitterNpubs: admitterNpubs?.length ? admitterNpubs : undefined,
         };
       }
     }

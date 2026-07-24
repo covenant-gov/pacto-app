@@ -7,6 +7,9 @@ const {
   publishSquadNetworkUpdated,
   listSquadInfra,
   currentUser,
+  publishSquadChannelsCatalog,
+  getMlsGroupMembers,
+  inviteMemberToGroup,
 } = vi.hoisted(() => {
   /** Minimal writable stand-in so hoisted mocks avoid `require('svelte/store')`. */
   function makeStore<T>(initial: T) {
@@ -35,6 +38,9 @@ const {
     publishSquadMemberEvmShare: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
+    publishSquadChannelsCatalog: vi.fn(),
+    getMlsGroupMembers: vi.fn(),
+    inviteMemberToGroup: vi.fn(),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
   };
 });
@@ -42,8 +48,39 @@ const {
 vi.mock('../api/nostr', () => ({
   sendDmMessage: (...args: unknown[]) => sendDmMessage(...args),
   syncMlsGroupsNow: (...args: unknown[]) => syncMlsGroupsNow(...args),
+  getMlsGroupMembers: (...args: unknown[]) => getMlsGroupMembers(...args),
+  inviteMemberToGroup: (...args: unknown[]) => inviteMemberToGroup(...args),
+  formatChannelInSquadMessage: () => 'channel-notify',
 }));
 
+vi.mock('./squad-channels-catalog', () => ({
+  publishSquadChannelsCatalog: (...args: unknown[]) => publishSquadChannelsCatalog(...args),
+}));
+
+vi.mock('../parent-navbar', () => ({
+  getAnnouncementsChannel: () => ({ name: 'announcements', groupId: 'ann-gid', order: 0 }),
+}));
+
+vi.mock('../../stores/squads', () => ({
+  squads: {
+    subscribe: (run: (v: unknown) => void) => {
+      run([
+        {
+          id: 'ann-gid',
+          name: 'Alpha',
+          channels: [
+            { name: 'announcements', groupId: 'ann-gid', order: 0 },
+            { name: 'ops', groupId: 'g-ops', order: 1, access: 'open' },
+          ],
+          kind: 'squad',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ]);
+      return () => {};
+    },
+  },
+}));
 vi.mock('./squad-member-evm-share', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./squad-member-evm-share')>();
   return {
@@ -87,6 +124,9 @@ describe('squad-state-sync', () => {
     sendDmMessage.mockResolvedValue(undefined);
     publishSquadMemberEvmShare.mockResolvedValue(true);
     publishSquadNetworkUpdated.mockResolvedValue(true);
+    publishSquadChannelsCatalog.mockResolvedValue(true);
+    getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
+    inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
   });
 
@@ -109,7 +149,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network'],
+      requested: ['evm', 'infra', 'network', 'channels'],
     });
   });
 
@@ -200,6 +240,8 @@ describe('squad-state-sync', () => {
   it('allows retry when republish fails without recording cooldown', async () => {
     publishSquadMemberEvmShare.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     publishSquadNetworkUpdated.mockResolvedValue(false);
+    publishSquadChannelsCatalog.mockResolvedValue(false);
+    inviteMemberToGroup.mockRejectedValue(new Error('skip'));
     listSquadInfra.mockResolvedValue([]);
     const raw = formatSquadStateSyncRequest({
       parentId: 'ann-gid',

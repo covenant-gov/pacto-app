@@ -30,10 +30,14 @@ export {
   normalizeHubChannelName,
 };
 
+export type ChannelAccess = 'open' | 'closed';
+
 export interface Channel {
   name: string;
   groupId: string;
   order: number;
+  /** Custom channels only; hub rows omit. Missing on custom → treat as closed. */
+  access?: ChannelAccess;
 }
 
 export const squadInfraByParentId = writable<Record<string, SquadInfraDto[]>>({});
@@ -43,9 +47,15 @@ export const squadMemberEvmByParentId = writable<Record<string, Record<string, s
 export type { TreasurySafeEntry };
 export type { SquadInfraDto };
 
-export function normalizeStoredChannel(ch: { name: string; groupId: string; order: number }): Channel {
+export function normalizeStoredChannel(ch: {
+  name: string;
+  groupId: string;
+  order: number;
+  access?: ChannelAccess;
+}): Channel {
   const name = normalizeHubChannelName(ch.name) ?? ch.name;
-  return { name, groupId: ch.groupId, order: ch.order };
+  const access = ch.access === 'open' || ch.access === 'closed' ? ch.access : undefined;
+  return access ? { name, groupId: ch.groupId, order: ch.order, access } : { name, groupId: ch.groupId, order: ch.order };
 }
 
 function normalizeParentChannels(channels: Channel[]): Channel[] {

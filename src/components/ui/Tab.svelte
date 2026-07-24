@@ -77,6 +77,7 @@
     box-shadow: none;
     position: relative;
     user-select: none;
+    -webkit-user-select: none;
   }
 
   .tab-unread-dot {
@@ -92,10 +93,18 @@
   }
 
   .server-button.active,
-  .server-button:focus,
   .server-button:hover {
     background: var(--accent);
     box-shadow: 0 2px 8px rgba(80,100,255,0.2);
+  }
+
+  .server-button:focus {
+    outline: none;
+  }
+
+  .server-button:focus-visible {
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--accent);
   }
 
   .label {
@@ -108,6 +117,8 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .tab-image {
