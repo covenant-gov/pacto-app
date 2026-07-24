@@ -88,6 +88,9 @@ mod migration;
 // Backend session manager and idle auto-lock (U4)
 mod session;
 
+// Application-wide configuration constants and IPC snapshot.
+mod app_config;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -6505,6 +6508,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_config::get_app_config,
             db::get_theme,
             db::get_pkey,
             db::set_pkey,
