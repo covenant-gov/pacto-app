@@ -8,18 +8,14 @@
 
 import assert from 'node:assert';
 
-const WINDOW_LABEL = 'main';
-
 async function invokeTauri(callTool, command, args = {}) {
-  const script = `return await window.__TAURI__.core.invoke('${command}', ${JSON.stringify(args)});`;
-  const result = await callTool('webview_execute_js', { script, windowLabel: WINDOW_LABEL });
-  // webview_execute_js returns the raw invocation result. The Tauri backend may
-  // wrap errors in { success: false, error } on failure, but success payloads
-  // are returned directly.
-  if (result && result.success === false) {
-    throw new Error(`invoke ${command} failed: ${JSON.stringify(result)}`);
+  // Prefer ipc_execute_command over webview_execute_js: async invoke return values
+  // are flaky on Linux WebKitGTK (command can succeed while JS sees null).
+  const wrapped = await callTool('ipc_execute_command', { command, args });
+  if (!wrapped || wrapped.success === false) {
+    throw new Error(`invoke ${command} failed: ${JSON.stringify(wrapped)}`);
   }
-  return result;
+  return wrapped.result ?? wrapped;
 }
 
 export async function run({ callTool, saveArtifact }) {

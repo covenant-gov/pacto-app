@@ -159,9 +159,24 @@ async function main() {
     await waitForPort(MCP_BRIDGE_PORT);
 
     log('starting Hypothesi MCP server');
+    // Use the lockfile-pinned local install. `npx -y` can resolve a different
+    // published version than CI's pnpm install.
+    const mcpServerEntry = path.join(
+      repoRoot,
+      'node_modules',
+      '@hypothesi',
+      'tauri-mcp-server',
+      'dist',
+      'index.js',
+    );
+    if (!existsSync(mcpServerEntry)) {
+      throw new Error(
+        `Hypothesi MCP server not found at ${mcpServerEntry}. Run 'pnpm install' first.`,
+      );
+    }
     const transport = new StdioClientTransport({
-      command: 'npx',
-      args: ['-y', '@hypothesi/tauri-mcp-server'],
+      command: process.execPath,
+      args: [mcpServerEntry],
       env,
     });
     client = new Client({ name: 'pacto-e2e', version: '0.1.0' });
