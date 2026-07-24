@@ -44,10 +44,16 @@ describe('i18n', () => {
 		expect(tFn('test.items', { values: { count: 2 } })).toBe('2 elementos');
 	});
 
-	it('falls back to English for a missing Spanish key', async () => {
+	it('resolves messaging keys in English and Spanish', async () => {
+		const tFn = get(t);
+		expect(tFn('messaging.messageInput.placeholder', { values: { channelName: 'general' } })).toBe(
+			'Message #general',
+		);
+
 		locale.set('es');
 		await waitLocale();
-		expect(get(t)('test.hello')).toBe('Hola');
-		expect(get(t)('missing.only.en', { default: 'Fallback' })).toBe('Fallback');
+		expect(get(t)('messaging.messageInput.placeholder', { values: { channelName: 'general' } })).toBe(
+			'Mensaje #general',
+		);
 	});
 });

@@ -129,6 +129,7 @@ cd src-tauri && cargo test
 - **State:** One store file per domain. Re-export from `src/stores/app.ts` when cross-cutting. Reset stores in `beforeEach`/`afterEach` in tests.
 - **Persistence:** Any new `localStorage` key must be npub-scoped via `persistenceKey(prefix)` from `src/stores/persistence-context.ts`. Call `loadAccountState(npub)` after login and `clearAccountState(npub)` on logout.
 - **Error handling:** Use `getInvokeErrorMessage` / `friendlyMessage` from `src/lib/utils/tauri-errors.ts` to extract user-facing messages from Tauri rejections.
+- **Internationalization (i18n):** All user-facing strings must be translatable. Use `import { t } from 'svelte-i18n'` and render with `$t('namespace.key')` in Svelte templates or `get(t)('namespace.key')` in TypeScript logic. Add new keys to the appropriate catalog under `src/lib/i18n/locales/<locale>/`. The namespace prefix must match the locale file name (e.g., `messaging.messageInput.placeholder` lives in `src/lib/i18n/locales/en/messaging.json`). Currently only English (`en`) and Spanish (`es`) catalogs are maintained; additional locales will be added later. Do not hardcode user-facing English text in components; keep raw-text lint warnings at zero for any new work.
 - **Naming:** TypeScript camelCase; backend commands snake_case; DTO types often end in `Dto`.
 - **Async patterns:** Fire-and-forget async work is prefixed with `void`. Debug logging uses `dmLog`/`dmError` from `src/lib/utils/dm-debug.ts`.
 
@@ -175,7 +176,7 @@ cd src-tauri && cargo test
 | `src-tauri/src/evm/contracts/` | Alloy bindings for pacto_gov, pacto_sponsor, safe, erc20, hats. |
 | `src/lib/wallet/wallet-assets.json` | Compile-time wallet chain/asset config shared with frontend. |
 | `src/lib/evm/pacto-protocol-addresses.json` | Compile-time protocol address book shared with frontend. |
-| `src/lib/api/nostr.ts` | Typed wrappers for Nostr/MLS/DM commands. |
+| `src/lib/i18n/locales/<locale>/*.json` | Translation catalogs per locale. Namespace prefixes match file names (e.g., `messaging.json` → `messaging.xxx`). Currently maintained for `en` and `es`. |
 | `src/lib/app/tauri-subscriptions.ts` | Central backend → UI event listener wiring. |
 | `src/stores/auth.ts` | Auth state, login/create/import/unlock/logout. |
 | `src/stores/persistence.ts` | Loads npub-scoped account state from `localStorage`. |
