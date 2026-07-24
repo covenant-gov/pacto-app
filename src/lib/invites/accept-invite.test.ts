@@ -49,6 +49,11 @@ import { squads, type Squad } from '../../stores/squads';
 import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
 import { pactoAppInboxMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
+import {
+  resetMlsHistoryWelcomeForTests,
+  shouldShowMlsHistoryWelcome,
+} from '../../stores/mls-history-welcome';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 
 const parent: Squad = {
   id: 'parent-1',
@@ -74,6 +79,8 @@ const pendingWelcome = {
 describe('accept-invite channel persistence', () => {
   beforeEach(() => {
     resetInviteAcceptState();
+    resetMlsHistoryWelcomeForTests();
+    setCurrentNpubForPersistence('npub1test');
     persistSquadPatchMock.mockReset().mockResolvedValue(parent);
     persistSquadMock.mockReset().mockImplementation(async (squad: Squad) => squad);
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([pendingWelcome]);
@@ -85,6 +92,8 @@ describe('accept-invite channel persistence', () => {
 
   afterEach(() => {
     resetInviteAcceptState();
+    resetMlsHistoryWelcomeForTests();
+    setCurrentNpubForPersistence(null);
   });
 
   it('handleChannelAddedToSquad persists merged channels', () => {
@@ -98,6 +107,7 @@ describe('accept-invite channel persistence', () => {
       groupId: 'chan-new',
       order: 1,
     });
+    expect(shouldShowMlsHistoryWelcome('chan-new')).toBe(true);
   });
 
   it('skips duplicate channel group ids', () => {
@@ -145,6 +155,7 @@ describe('accept-invite channel persistence', () => {
     expect(persistSquadMock).toHaveBeenCalled();
     expect(get(squadNavOrder)).toEqual(['parent-1', 'new-squad']);
     expect(get(squads).some((s) => s.id === 'new-squad')).toBe(true);
+    expect(shouldShowMlsHistoryWelcome('new-squad')).toBe(true);
   });
 
   it('finalize does not await post-accept syncMlsGroupsNow', async () => {

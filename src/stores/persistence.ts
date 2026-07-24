@@ -47,6 +47,7 @@ import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';
 import { loadStartupCheckPreference } from './startup-check';
+import { loadMlsHistoryWelcome } from './mls-history-welcome';
 
 export {
   currentNpubForPersistence,
@@ -58,6 +59,7 @@ export {
 export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
   void loadBackupVerified();
+  loadMlsHistoryWelcome(npub);
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {
     try {

@@ -15,6 +15,7 @@ import { get } from 'svelte/store';
 import { squads } from '../../stores/squads';
 import { ANNOUNCEMENTS_CHANNEL_NAME, POLLS_CHANNEL_NAME } from './hub-channel-names';
 import { dmError } from '../utils/dm-debug';
+import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 
 export const SQUAD_CHANNELS_CATALOG_TYPE = 'squad_channels_catalog';
 
@@ -96,6 +97,7 @@ async function acceptPendingWelcomesForCatalog(
     if (!welcome) continue;
     try {
       await acceptMlsWelcome(welcome.id);
+      markMlsHistoryWelcome(row.groupId);
     } catch (e) {
       dmError('acceptMlsWelcome after channels catalog', e);
     }

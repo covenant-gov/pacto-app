@@ -47,6 +47,7 @@
     SQUAD_DASHBOARD_CHANNEL_ID,
     MY_DASHBOARD_CHANNEL_ID,
     membershipVersionByGroupId,
+    mlsHistoryWelcomeGroupIds,
     type DmMessage,
     type Squad,
   } from '../../stores/app';
@@ -118,6 +119,10 @@
   $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel;
   $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
+  $: showMlsHistoryWelcome =
+    !isChannelCreating &&
+    !!activeChannel?.groupId &&
+    $mlsHistoryWelcomeGroupIds.includes(activeChannel.groupId.trim().toLowerCase());
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
 
@@ -782,6 +787,16 @@
                       </button>
                     </div>
                   {/if}
+                  {#if showMlsHistoryWelcome}
+                    <div class="mls-history-welcome" role="note">
+                      <p class="mls-history-welcome-title">Welcome to this channel</p>
+                      <p class="mls-history-welcome-body">
+                        Your decryptable MLS history starts here. Messages from before you joined
+                        can’t be decrypted on this device—that’s how MLS works, not a sync failure.
+                        New messages in this group will appear below.
+                      </p>
+                    </div>
+                  {/if}
                   {#each virtualTimelineMessages as message, i (message.id)}
                     {@const props = toMessageProps(message)}
                     <Message
@@ -833,6 +848,16 @@
               >
                 {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
               </button>
+            </div>
+          {/if}
+          {#if showMlsHistoryWelcome}
+            <div class="mls-history-welcome" role="note">
+              <p class="mls-history-welcome-title">Welcome to this channel</p>
+              <p class="mls-history-welcome-body">
+                Your decryptable MLS history starts here. Messages from before you joined can’t be
+                decrypted on this device—that’s how MLS works, not a sync failure. New messages in
+                this group will appear below.
+              </p>
             </div>
           {/if}
           {#each virtualTimelineMessages as message, i (message.id)}
@@ -1431,6 +1456,28 @@
     padding: 24px 16px;
     color: var(--text-muted);
     font-size: 0.9375rem;
+  }
+
+  .mls-history-welcome {
+    margin: 16px 16px 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+  }
+
+  .mls-history-welcome-title {
+    margin: 0 0 6px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .mls-history-welcome-body {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    line-height: 1.45;
   }
 
   .channel-send-error {

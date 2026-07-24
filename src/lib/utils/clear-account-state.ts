@@ -99,6 +99,10 @@ import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { backupVerified } from '../../stores/backup-verification';
+import {
+  MLS_HISTORY_WELCOME_PREFIX,
+  mlsHistoryWelcomeGroupIds,
+} from '../../stores/mls-history-welcome';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -130,6 +134,7 @@ const SCOPED_KEY_PREFIXES = [
   ...INVITE_DECISION_SCOPED_PREFIXES,
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
+  MLS_HISTORY_WELCOME_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -197,6 +202,7 @@ export function clearAccountState(npub?: string): void {
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
+  mlsHistoryWelcomeGroupIds.set([]);
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
   groupSendError.set(null);

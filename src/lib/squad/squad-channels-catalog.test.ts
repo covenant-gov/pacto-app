@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 vi.mock('../api/nostr', () => ({
@@ -46,6 +46,11 @@ import { sendDmMessage, listPendingMlsWelcomes, acceptMlsWelcome } from '../api/
 import { persistSquadPatch } from './squad-catalog';
 import { squads, type Squad } from '../../stores/squads';
 import {
+  resetMlsHistoryWelcomeForTests,
+  shouldShowMlsHistoryWelcome,
+} from '../../stores/mls-history-welcome';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import {
   applySquadChannelsCatalog,
   formatSquadChannelsCatalog,
   parseSquadChannelsCatalog,
@@ -54,6 +59,8 @@ import {
 
 describe('squad-channels-catalog', () => {
   beforeEach(() => {
+    resetMlsHistoryWelcomeForTests();
+    setCurrentNpubForPersistence('npub1test');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([]);
     vi.mocked(acceptMlsWelcome).mockReset().mockResolvedValue(true);
@@ -71,6 +78,11 @@ describe('squad-channels-catalog', () => {
         updatedAt: 1,
       },
     ]);
+  });
+
+  afterEach(() => {
+    resetMlsHistoryWelcomeForTests();
+    setCurrentNpubForPersistence(null);
   });
 
   it('parses catalog and matches parent_id case-insensitively on apply', async () => {
@@ -174,5 +186,6 @@ describe('squad-channels-catalog', () => {
     await vi.waitFor(() => {
       expect(acceptMlsWelcome).toHaveBeenCalledWith('w1');
     });
+    expect(shouldShowMlsHistoryWelcome('g-ops')).toBe(true);
   });
 });

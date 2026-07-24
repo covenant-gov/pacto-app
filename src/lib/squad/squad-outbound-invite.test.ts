@@ -290,6 +290,7 @@ describe('squad-outbound-invite flows', () => {
       maxInFlight = Math.max(maxInFlight, inFlight);
       await gate.promise;
       inFlight -= 1;
+      return true;
     });
     const done = publishInviteAcceptedClaims({
       parentId: 'g-ann',

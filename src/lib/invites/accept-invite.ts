@@ -33,6 +33,7 @@ import { maybeAutoRequestSquadStateSyncAfterJoin } from '../squad/squad-state-sy
 import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { requireBackupVerified } from '../../stores/backup-verification';
 import { currentUser } from '../../stores/auth';
+import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
 const acceptedSquadInviteGroupIds = new Set<string>();
@@ -191,6 +192,7 @@ function addChannelToParent(
   channelName: string,
   access?: 'open' | 'closed'
 ): void {
+  markMlsHistoryWelcome(channelGroupId);
   void persistSquadPatch(parentId, (squad) => {
     if (squad.channels.some((ch) => ch.groupId === channelGroupId)) return squad;
     return {
@@ -332,6 +334,7 @@ async function finalizeSquadAfterAnnouncementsWelcome(
   acceptedSquadInviteIds.update((ids: string[]) =>
     ids.includes(messageId) ? ids : [...ids, messageId]
   );
+  markMlsHistoryWelcome(payload.groupId);
   void syncMlsGroupsNow(payload.groupId).catch((e) =>
     dmError('syncMlsGroupsNow after accept invite', e)
   );
@@ -431,6 +434,7 @@ export async function acceptChannelInSquadInvite(
     });
     acceptedSquadInviteGroupIds.add(payload.channelGroupId);
     await acceptMlsWelcome(welcome.id);
+    markMlsHistoryWelcome(payload.channelGroupId);
     acceptedChannelInviteMessageIds.update((ids: string[]) =>
       ids.includes(msg.id) ? ids : [...ids, msg.id]
     );
