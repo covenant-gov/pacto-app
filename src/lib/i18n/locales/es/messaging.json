@@ -179,7 +179,7 @@
 	"messaging.squadRosterKey.useDefaultBusy": "Configurando…",
 	"messaging.squadRosterKey.useNew": "Generar nueva clave para este escuadrón",
 	"messaging.squadRosterKey.useNewBusy": "Creando…",
-	"messaging.structuredNotice.channelJoin": "Unión a canal",
+	"messaging.structuredNotice.channelJoin": "Unión al canal",
 	"messaging.structuredNotice.commonsBroadcast": "Difusión común",
 	"messaging.structuredNotice.contractAllowlistUpdated": "Lista de permitidos de contratos actualizada",
 	"messaging.structuredNotice.dashboardPollCreated": "Encuesta del panel creada",
