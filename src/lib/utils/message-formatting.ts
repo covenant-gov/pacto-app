@@ -19,6 +19,9 @@ declare global {
 
 import type { Mention } from '../messaging/mentions';
 import type { NostrProfile } from '../api/nostr';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
+import { locale } from '$lib/i18n';
 
 function getDOMPurify(): Window['DOMPurify'] {
   return typeof window !== 'undefined' ? window.DOMPurify : undefined;
@@ -36,13 +39,16 @@ function getMarked() {
     extensions: [spoilerExtension],
     renderer: {
       code(token: unknown) {
-        const t = token as { text?: string; lang?: string };
-        const raw = t.text ?? '';
-        const lang = t.lang ?? 'plaintext';
+        const codeToken = token as { text?: string; lang?: string };
+        const raw = codeToken.text ?? '';
+        const lang = codeToken.lang ?? 'plaintext';
         const highlighted = highlightCode(raw, lang);
         const langClass = lang ? `language-${escapeHtml(lang)}` : '';
         const dataRaw = escapeAttr(raw);
-        return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="Copy code" title="Copy code">Copy</button></div>`;
+        const tFn = get(t);
+        const copyCode = tFn('messaging.message.copyCode');
+        const copy = tFn('messaging.message.copy');
+        return `<div class="code-block-wrapper" data-raw-code="${dataRaw}"><pre><code class="hljs ${langClass}">${highlighted}</code></pre><button type="button" class="code-copy-btn" aria-label="${escapeAttr(copyCode)}" title="${escapeAttr(copyCode)}">${escapeHtml(copy)}</button></div>`;
       },
     },
   });
@@ -465,6 +471,7 @@ export function formatMessageTimestamp(isoString: string): string {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) return '';
   const now = new Date();
+  const localeValue = get(locale) ?? 'en-US';
   const dateOpts: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
@@ -472,8 +479,8 @@ export function formatMessageTimestamp(isoString: string): string {
   if (date.getFullYear() !== now.getFullYear()) {
     dateOpts.year = 'numeric';
   }
-  const datePart = date.toLocaleDateString('en-US', dateOpts);
-  const timePart = date.toLocaleTimeString('en-US', {
+  const datePart = date.toLocaleDateString(localeValue, dateOpts);
+  const timePart = date.toLocaleTimeString(localeValue, {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,

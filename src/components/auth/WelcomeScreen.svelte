@@ -9,8 +9,10 @@
   <div class="welcome-content">
     <div class="welcome-header">
       <div class="logo-placeholder">
-        <span class="logo-text">P</span>
+        <!-- eslint-disable-next-line @intlify/svelte/no-raw-text -- brand logo initial -->
+      <span class="logo-text">P</span>
       </div>
+      <!-- eslint-disable-next-line @intlify/svelte/no-raw-text -- brand name -->
       <h1 class="app-title">Pacto</h1>
       <p class="app-subtitle">{$t('auth.welcomeSubtitle')}</p>
     </div>

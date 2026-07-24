@@ -352,7 +352,7 @@
       <dt>{$t('wallet.toLabel')}</dt>
       <dd><code>{toAddress.trim()}</code></dd>
       <dt>{$t('wallet.valueLabel')}</dt>
-      <dd>{valueEth.trim() || '0'} ETH ({ethAmountToWeiString(valueEth)} wei)</dd>
+      <dd>{$t('wallet.ethAndWeiValue', { values: { eth: valueEth.trim() || '0', wei: ethAmountToWeiString(valueEth) } })}</dd>
       <dt>{$t('wallet.calldataLabel')}</dt>
       <dd><code class="wallet-advanced-code-break">{calldataMode === 'raw' ? normalizeCalldataHex(dataHex) : builtCalldata}</code></dd>
     </dl>

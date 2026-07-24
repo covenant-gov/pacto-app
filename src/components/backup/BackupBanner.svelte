@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import { isAuthenticated } from '../../stores/auth';
   import {
     backupVerified,
@@ -11,7 +12,7 @@
 {#if $backupVerified === false && $isAuthenticated && !dismissed}
   <div class="backup-banner" role="status">
     <span class="backup-banner-text">
-      Your account backup isn't verified. Back it up now so you can recover your account if you lose access.
+      {$t('backup.banner.unverifiedWarning')}
     </span>
     <div class="backup-banner-actions">
       <button
@@ -19,13 +20,13 @@
         class="backup-banner-cta"
         on:click={() => backupVerificationModalOpen.set(true)}
       >
-        Back up now
+        {$t('backup.banner.cta')}
       </button>
       <button
         type="button"
         class="backup-banner-dismiss"
-        aria-label="Dismiss reminder"
-        title="Dismiss"
+        aria-label={$t('backup.banner.dismissReminder')}
+        title={$t('commons.dismiss')}
         on:click={() => (dismissed = true)}
       >
         ×

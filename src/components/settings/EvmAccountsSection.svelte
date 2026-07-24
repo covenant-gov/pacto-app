@@ -191,7 +191,7 @@
               <code class="wallet-view-account-addr evm-account-addr-full" title={acc.address}>{acc.address}</code>
               <div class="evm-account-meta-row">
                 <div class="evm-account-badges">
-                  <span class="wallet-view-account-scheme">{evmAccountSchemeLabel(acc.scheme)}</span>
+                  <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                   {#if acc.hdIndex != null}
                     <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
                   {/if}
@@ -277,7 +277,7 @@
                   isAdvancedRow(acc) ? onSetActiveAdvancedAccount(acc.id) : onSetActiveAccount(acc.id)}
               />
               <span class="wallet-view-account-meta">
-                <span class="wallet-view-account-scheme">{evmAccountSchemeLabel(acc.scheme)}</span>
+                <span class="wallet-view-account-scheme">{$t(evmAccountSchemeLabel(acc.scheme))}</span>
                 {#if acc.hdIndex != null}
                   <span class="wallet-view-account-idx">#{acc.hdIndex}</span>
                 {/if}

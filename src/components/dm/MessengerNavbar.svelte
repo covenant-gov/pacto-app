@@ -132,7 +132,9 @@
             on:keydown={(ev) => ev.key === 'Enter' && selectDm(PACTO_APP_DM_THREAD_ID)}
           >
             <span class="dm-avatar dm-avatar-pacto-app">
+              <!-- eslint-disable @intlify/svelte/no-raw-text -->
               <span class="dm-avatar-pacto-app-letter" aria-hidden="true">I</span>
+              <!-- eslint-enable @intlify/svelte/no-raw-text -->
             </span>
             <span class="dm-name-block">
               <span class="dm-name">{PACTO_APP_DISPLAY_NAME}</span>

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { theme, setTheme, THEME_OPTIONS } from '../../stores/theme';
   import { startupCheckEnabled } from '../../stores/startup-check';
   import {
@@ -12,6 +14,8 @@
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import { getSessionTimeout, setSessionTimeout } from '../../lib/api/auth';
   import { locale, setLocale, LOCALE_OPTIONS } from '../../stores/locale';
+
+  const tFn = get(t);
 
   $: isDev = $updateStatus.status === 'dev-disabled';
   $: isChecking = $updateStatus.status === 'checking';
@@ -29,19 +33,19 @@
       case 'idle':
         return '';
       case 'checking':
-        return 'Checking…';
+        return tFn('settings.updateStatusChecking');
       case 'no-update':
-        return 'You’re on the latest version.';
+        return tFn('settings.updateStatusNoUpdate');
       case 'available':
       case 'downloading':
       case 'installing':
-        return `Update ${$updateStatus.availableVersion ?? ''} available`;
+        return tFn('settings.updateStatusAvailable', { values: { version: $updateStatus.availableVersion ?? '' } });
       case 'installed':
-        return 'Update installed — relaunch to apply.';
+        return tFn('settings.updateStatusInstalled');
       case 'error':
-        return $updateStatus.error ?? 'Update check failed.';
+        return $updateStatus.error ?? tFn('settings.updateStatusError');
       case 'dev-disabled':
-        return 'Updates are only available in release builds.';
+        return tFn('settings.updateStatusDevDisabled');
     }
     return '';
   }
@@ -51,12 +55,12 @@
   }
 
   const TIMEOUT_OPTIONS = [
-    { minutes: 1, label: '1 minute' },
-    { minutes: 5, label: '5 minutes' },
-    { minutes: 15, label: '15 minutes' },
-    { minutes: 30, label: '30 minutes' },
-    { minutes: 60, label: '1 hour' },
-    { minutes: 0, label: 'Never' },
+    { minutes: 1, key: 'settings.timeout1Minute' },
+    { minutes: 5, key: 'settings.timeout5Minutes' },
+    { minutes: 15, key: 'settings.timeout15Minutes' },
+    { minutes: 30, key: 'settings.timeout30Minutes' },
+    { minutes: 60, key: 'settings.timeout1Hour' },
+    { minutes: 0, key: 'settings.timeoutNever' },
   ];
 
   let selectedTimeout = 15;
@@ -78,13 +82,13 @@
     try {
       await setSessionTimeout(minutes);
       selectedTimeout = minutes;
-      savedTimeoutMessage = 'Saved';
+      savedTimeoutMessage = tFn('settings.timeoutSaved');
       globalThis.setTimeout(() => {
         savedTimeoutMessage = null;
       }, 2000);
     } catch (error) {
       console.error('Failed to set session timeout:', error);
-      savedTimeoutMessage = 'Failed to save';
+      savedTimeoutMessage = tFn('settings.timeoutFailedToSave');
     } finally {
       savingTimeout = false;
     }
@@ -96,12 +100,12 @@
   }
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-app" title="App settings">
+<SettingsCollapsibleSection sectionId="settings-app" title={$t('settings.appSettingsTitle')}>
   <div class="app-settings">
     <div class="language-section" aria-labelledby="language-heading">
-      <h3 id="language-heading" class="theme-subheading">Language</h3>
-      <span class="theme-label">Display language</span>
-      <div class="theme-options" role="radiogroup" aria-label="App language">
+      <h3 id="language-heading" class="theme-subheading">{$t('settings.languageTitle')}</h3>
+      <span class="theme-label">{$t('settings.displayLanguageLabel')}</span>
+      <div class="theme-options" role="radiogroup" aria-label={$t('settings.displayLanguageLabel')}>
         {#each LOCALE_OPTIONS as opt (opt.value)}
           <label class="theme-option">
             <input
@@ -120,9 +124,9 @@
     <hr class="app-settings-divider" />
 
     <div class="theme-section" aria-labelledby="theme-heading">
-      <h3 id="theme-heading" class="theme-subheading">Appearance</h3>
-      <span class="theme-label">Theme</span>
-      <div class="theme-options" role="radiogroup" aria-label="App theme">
+      <h3 id="theme-heading" class="theme-subheading">{$t('settings.appearanceTitle')}</h3>
+      <span class="theme-label">{$t('settings.themeLabel')}</span>
+      <div class="theme-options" role="radiogroup" aria-label={$t('settings.themeLabel')}>
         {#each THEME_OPTIONS as opt (opt.value)}
           <label class="theme-option">
             <input
@@ -141,10 +145,10 @@
     <hr class="app-settings-divider" />
 
     <div class="updates-section" aria-labelledby="updates-heading">
-      <h3 id="updates-heading" class="theme-subheading">Updates</h3>
+      <h3 id="updates-heading" class="theme-subheading">{$t('settings.updatesTitle')}</h3>
 
       <p class="update-current-version">
-        Current version: {versionLabel()}
+        {$t('settings.currentVersionLabel', { values: { version: versionLabel() } })}
       </p>
 
       <button
@@ -153,7 +157,7 @@
         disabled={isChecking}
         on:click={handleCheck}
       >
-        {isChecking ? 'Checking…' : (isDev ? 'Release-build only' : 'Check for Updates')}
+        {isChecking ? $t('settings.checkingForUpdatesButton') : (isDev ? $t('settings.releaseBuildOnlyButton') : $t('settings.checkForUpdatesButton'))}
       </button>
 
       {#if $updateStatus.status !== 'idle'}
@@ -174,12 +178,12 @@
           checked={$startupCheckEnabled}
           on:change={handleToggleStartupCheck}
         />
-        <span>Check for updates on startup</span>
+        <span>{$t('settings.checkForUpdatesOnStartup')}</span>
       </label>
 
       {#if isDev}
         <p class="dev-build-note">
-          The in-app updater is disabled in dev builds. Use a release build to check for and install published updates.
+          {$t('settings.devBuildNote')}
         </p>
       {/if}
     </div>
@@ -187,10 +191,10 @@
     <hr class="app-settings-divider" />
 
     <div class="security-section" aria-labelledby="security-heading">
-      <h3 id="security-heading" class="theme-subheading">Security</h3>
+      <h3 id="security-heading" class="theme-subheading">{$t('settings.securityTitle')}</h3>
 
-      <span class="security-label">Auto-lock after inactivity</span>
-      <div class="timeout-options" role="radiogroup" aria-label="Session idle timeout">
+      <span class="security-label">{$t('settings.autoLockAfterInactivity')}</span>
+      <div class="timeout-options" role="radiogroup" aria-label={$t('settings.autoLockAfterInactivity')}>
         {#each TIMEOUT_OPTIONS as opt (opt.minutes)}
           <label class="timeout-option">
             <input
@@ -201,12 +205,12 @@
               disabled={savingTimeout}
               on:change={() => handleTimeoutChange(opt.minutes)}
             />
-            <span class="timeout-option-label">{opt.label}</span>
+            <span class="timeout-option-label">{$t(opt.key)}</span>
           </label>
         {/each}
       </div>
       {#if savedTimeoutMessage}
-        <p class="timeout-status" class:timeout-status--error={savedTimeoutMessage === 'Failed to save'}>{savedTimeoutMessage}</p>
+        <p class="timeout-status" class:timeout-status--error={savedTimeoutMessage === tFn('settings.timeoutFailedToSave')}>{savedTimeoutMessage}</p>
       {/if}
     </div>
   </div>

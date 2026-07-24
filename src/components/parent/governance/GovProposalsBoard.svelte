@@ -87,7 +87,7 @@
             type="button"
             class="execute-btn"
             disabled={acting || !execGate.enabled}
-            title={execGate.enabled ? tFn('governance.action.executeMutiny') : execGate.reason}
+            title={execGate.enabled ? tFn('governance.action.executeMutiny') : $t(execGate.reason)}
             on:click={onExecuteMutiny}
           >
             {tFn('governance.action.executeMutiny')}
@@ -110,7 +110,7 @@
           {proposal}
           showExecute
           executePending={acting}
-          executeDisabledReason={execGate.enabled ? '' : execGate.reason}
+          executeDisabledReason={execGate.enabled ? '' : $t(execGate.reason)}
           onExecute={() => runExecute(proposal.proposalId)}
         />
       {/each}

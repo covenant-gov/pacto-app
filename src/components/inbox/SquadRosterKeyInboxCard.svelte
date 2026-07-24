@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { bindDefaultSquadSigner, bindNewSquadKey } from '../../lib/squad/squad-roster-binding';
   import {
     clearDeferredSquadRosterKeyChoice,
@@ -16,15 +18,16 @@
   async function useDefault(): Promise<void> {
     if (busy) return;
     busy = 'default';
+    const tFn = get(t);
     try {
       const ok = await bindDefaultSquadSigner(announcementsGroupId);
       if (!ok) {
-        showToast('Could not bind default squad signer. Check Settings → Default wallet config.');
+        showToast(tFn('messaging.squadRosterKey.defaultError'));
         return;
       }
       clearDeferredSquadRosterKeyChoice(parentId);
       setPersonalAlertNeeded(parentId, false);
-      showToast('Squad roster signer set (default account).');
+      showToast(tFn('messaging.squadRosterKey.defaultSuccess'));
       onComplete();
     } finally {
       busy = null;
@@ -34,15 +37,16 @@
   async function useNewKey(): Promise<void> {
     if (busy) return;
     busy = 'new';
+    const tFn = get(t);
     try {
       const ok = await bindNewSquadKey(announcementsGroupId);
       if (!ok) {
-        showToast('Could not create a squad key for this group.');
+        showToast(tFn('messaging.squadRosterKey.newError'));
         return;
       }
       clearDeferredSquadRosterKeyChoice(parentId);
       setPersonalAlertNeeded(parentId, false);
-      showToast('New squad key created for this group. Your DM wallet signer is unchanged.');
+      showToast(tFn('messaging.squadRosterKey.newSuccess'));
       onComplete();
     } finally {
       busy = null;
@@ -56,20 +60,19 @@
   }
 </script>
 
-<div class="roster-key-card" role="region" aria-label="Squad roster signer setup">
-  <p class="roster-key-title">Set your squad roster signer</p>
+<div class="roster-key-card" role="region" aria-label={$t('messaging.squadRosterKey.ariaLabel')}>
+  <p class="roster-key-title">{$t('messaging.squadRosterKey.title')}</p>
   <p class="roster-key-desc">
-    Choose which squad-purpose EVM address members see for this group. This does not change your DM
-    wallet signer unless you pick the default account.
+    {$t('messaging.squadRosterKey.description')}
   </p>
   <div class="roster-key-actions">
     <button type="button" class="btn-primary" disabled={!!busy} on:click={() => void useDefault()}>
-      {busy === 'default' ? 'Setting…' : 'Use default squad signer'}
+      {busy === 'default' ? $t('messaging.squadRosterKey.useDefaultBusy') : $t('messaging.squadRosterKey.useDefault')}
     </button>
     <button type="button" class="btn-secondary" disabled={!!busy} on:click={() => void useNewKey()}>
-      {busy === 'new' ? 'Creating…' : 'Generate new key for this squad'}
+      {busy === 'new' ? $t('messaging.squadRosterKey.useNewBusy') : $t('messaging.squadRosterKey.useNew')}
     </button>
-    <button type="button" class="btn-link" disabled={!!busy} on:click={defer}>Defer</button>
+    <button type="button" class="btn-link" disabled={!!busy} on:click={defer}>{$t('messaging.squadRosterKey.defer')}</button>
   </div>
 </div>
 

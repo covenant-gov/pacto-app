@@ -4,6 +4,7 @@ import { persistenceKey } from './persistence-context';
 import { DEFAULT_LOCALE, type SupportedLocale, initI18n } from '../lib/i18n';
 
 export const LOCALE_PREFIX = 'pacto_locale_v1';
+export const LOCALE_LAST_KEY = 'pacto_locale_v1_last';
 
 /** Ordered supported locales with native labels. */
 export const LOCALE_OPTIONS: { value: SupportedLocale; label: string }[] = [
@@ -41,10 +42,13 @@ export function persistLocale(value: SupportedLocale | null): void {
 /** Reactive store for the active locale. Mirrors svelte-i18n locale. */
 export const locale: Writable<SupportedLocale> = writable(DEFAULT_LOCALE);
 
-/** Set the active locale, update svelte-i18n, and persist per npub. */
+/** Set the active locale, update svelte-i18n, and persist per npub and as a global fallback for the login screen. */
 export async function setLocale(value: SupportedLocale): Promise<void> {
 	if (!isSupportedLocale(value)) return;
 	persistLocale(value);
+	if (typeof localStorage !== 'undefined') {
+		localStorage.setItem(LOCALE_LAST_KEY, value);
+	}
 	svelteLocale.set(value);
 	locale.set(value);
 	await waitLocale();
@@ -53,7 +57,13 @@ export async function setLocale(value: SupportedLocale): Promise<void> {
 /** Initialize the locale store. Should be called once on app startup. */
 export async function initLocaleStore(): Promise<void> {
 	const stored = getStoredLocale();
-	const initial = stored ?? DEFAULT_LOCALE;
+	let initial: SupportedLocale = stored ?? DEFAULT_LOCALE;
+	if (initial === DEFAULT_LOCALE && typeof localStorage !== 'undefined') {
+		const last = localStorage.getItem(LOCALE_LAST_KEY);
+		if (last && isSupportedLocale(last)) {
+			initial = last;
+		}
+	}
 	await initI18n(initial);
 	locale.set(initial);
 }
@@ -61,8 +71,15 @@ export async function initLocaleStore(): Promise<void> {
 /** Hydrate the locale for an account after login/import/unlock. */
 export function hydrateLocale(npub: string): void {
 	const key = `${LOCALE_PREFIX}_${npub}`;
-	if (typeof localStorage === 'undefined') return;
-	const raw = localStorage.getItem(key);
-	const value = raw && isSupportedLocale(raw) ? raw : DEFAULT_LOCALE;
+	let value: SupportedLocale = DEFAULT_LOCALE;
+	if (typeof localStorage !== 'undefined') {
+		const raw = localStorage.getItem(key);
+		if (raw && isSupportedLocale(raw)) {
+			value = raw;
+		} else {
+			const last = localStorage.getItem(LOCALE_LAST_KEY);
+			if (last && isSupportedLocale(last)) value = last;
+		}
+	}
 	void setLocale(value);
 }

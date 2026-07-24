@@ -216,7 +216,7 @@
             </div>
             <p class="commons-personal-message muted">
               <span class="commons-personal-message-text">
-                “{messageExpanded ? fullMessage : previewMessage}{messageTruncated && !messageExpanded ? '…' : ''}”
+                “{messageExpanded ? fullMessage : previewMessage}{#if messageTruncated && !messageExpanded}{$t('commons.ellipsis')}{/if}”
               </span>
               {#if messageTruncated}
                 <button

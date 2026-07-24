@@ -2,7 +2,10 @@
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import CommonsTagMenu from './CommonsTagMenu.svelte';
-  import { COMMONS_TAG_GROUPS, findCommonsTagGroup } from '../../lib/commons/tag-catalog';
+  import {
+    findCommonsTagGroup,
+    getLocalizedCommonsTagGroups,
+  } from '../../lib/commons/tag-catalog';
 
   /** Selected leaf tags (bindable). */
   export let selected: string[] = [];
@@ -22,7 +25,7 @@
   $: q = query.trim().toLowerCase();
   $: activeSet = new Set(selected);
 
-  $: flatMatches = COMMONS_TAG_GROUPS.filter((g) => {
+  $: flatMatches = getLocalizedCommonsTagGroups($t).filter((g) => {
     if (!q) return true;
     return g.title.toLowerCase().includes(q) || g.tag.includes(q);
   });
@@ -169,6 +172,7 @@
       class="tag-picker-menu"
       id="commons-tag-picker-flat-list"
       role="listbox"
+      tabindex="-1"
       on:mousedown|preventDefault
     >
       {#if flatMatches.length === 0}

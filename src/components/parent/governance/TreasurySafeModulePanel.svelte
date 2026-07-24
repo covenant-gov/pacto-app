@@ -294,14 +294,14 @@
         type="button"
         class="btn-primary"
         disabled={!manageGate.enabled || addBusy || !addAddress.trim()}
-        title={manageGate.enabled ? undefined : manageGate.reason}
+        title={manageGate.enabled ? undefined : $t(manageGate.reason)}
         on:click={() => void addToken()}
       >
         {addBusy ? tFn('governance.trackedToken.adding') : tFn('governance.action.add')}
       </button>
     </div>
     {#if !manageGate.enabled}
-      <p class="hint muted">{manageGate.reason}</p>
+      <p class="hint muted">{$t(manageGate.reason)}</p>
     {/if}
   </div>
 </div>

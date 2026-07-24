@@ -19,7 +19,7 @@
   } from '../../../lib/governance/squad-sponsor-summary-cache';
   import { explorerAddressUrl, parseSupportedChainId } from '../../../lib/wallet/chains';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { friendlyMessage, getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { getActiveSquadEvmSignerAddress } from '../../../lib/wallet/evm-accounts';
   import {
     amountExceedsBalance,
@@ -317,7 +317,7 @@
   {:else if loading && !summary}
     <p class="muted">{$t('governance.status.loadingSponsorBalance')}</p>
   {:else if loadError}
-    <p class="sponsor-error" role="alert">{loadError}</p>
+    <p class="sponsor-error" role="alert">{$t(friendlyMessage(loadError, 'generic'))}</p>
     <button type="button" class="btn-secondary" on:click={() => refreshSummary(true)}>{tFn('governance.action.retry')}</button>
   {:else if summary}
     <p class="sponsor-lead muted">{$t('governance.info.sponsorLead', { values: { chain: summary.chain } })}</p>

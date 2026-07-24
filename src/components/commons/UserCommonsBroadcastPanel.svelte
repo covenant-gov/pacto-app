@@ -140,7 +140,7 @@
               bind:group={durationHours}
               disabled={onCooldown || publishing}
             />
-            <span>{opt.label}</span>
+            <span>{$t(opt.label, { values: { hours: opt.hours } })}</span>
           </label>
         {/each}
       </div>

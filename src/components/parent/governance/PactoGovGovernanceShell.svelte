@@ -272,7 +272,7 @@
 
 <div class="gov-shell">
   <div class="role-chip" role="status">
-    {$t('governance.shell.you')} · <strong>{privilege.roleLabel}</strong>
+    {$t('governance.shell.you')} · <strong>{$t(privilege.roleLabel)}</strong>
     {#if privilege.myAddress}
       <code class="role-addr">{shortAddr(privilege.myAddress)}</code>
     {/if}

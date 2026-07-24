@@ -2,6 +2,8 @@
   import { afterUpdate } from 'svelte';
   import { formatMessageContent, formatMessageContentWithMentions } from '../../lib/utils/message-formatting';
   import { openExternalUrl } from '../../lib/utils/open-external';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { Mention } from '../../lib/messaging/mentions';
   import type { NostrProfile } from '../../lib/api/nostr';
 
@@ -59,11 +61,14 @@
       const raw = wrapper?.getAttribute?.('data-raw-code');
       if (raw != null) {
         navigator.clipboard.writeText(raw).then(() => {
+          const tFn = get(t);
+          const copied = tFn('messaging.message.copied');
           const label = copyBtn.getAttribute('aria-label');
-          copyBtn.textContent = 'Copied';
-          copyBtn.setAttribute('aria-label', 'Copied');
+          copyBtn.textContent = copied;
+          copyBtn.setAttribute('aria-label', copied);
           setTimeout(() => {
-            copyBtn.textContent = 'Copy';
+            const copy = tFn('messaging.message.copy');
+            copyBtn.textContent = copy;
             if (label) copyBtn.setAttribute('aria-label', label);
           }, 2000);
         });
@@ -95,7 +100,7 @@
   on:click={handleClick}
   on:keydown={handleKeydown}
   role="document"
-  aria-label="Message content"
+  aria-label={$t('messaging.message.messageContent')}
 >
   {#if content?.trim()}
     <!-- eslint-disable svelte/no-at-html-tags -->

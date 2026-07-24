@@ -171,7 +171,7 @@
       {$t('governance.squadRoles.description', { values: { proxy: squadAdminProxy } })}
     </p>
     {#if !saGate.enabled}
-      <p class="input-error" role="status">{saGate.reason}</p>
+      <p class="input-error" role="status">{$t(saGate.reason)}</p>
     {/if}
 
     <div class="squad-roles-field">
@@ -212,7 +212,7 @@
     </div>
 
     {#if actionError}
-      <p class="input-error" role="alert">{actionError}</p>
+      <p class="input-error" role="alert">{$t(actionError)}</p>
     {/if}
 
     <div class="squad-roles-actions">

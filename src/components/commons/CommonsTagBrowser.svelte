@@ -5,6 +5,7 @@
     commonsCategoryLiveCount,
     commonsTagArtSrc,
     commonsTagGradient,
+    localizeCommonsTagCategory,
     type CommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
 
@@ -13,11 +14,13 @@
   /** Active broadcast count per leaf tag. */
   export let countsByTag: Record<string, number> = {};
   export let onSelectCategory: (categoryId: string) => void = () => {};
+
+  $: localizedCategories = categories.map((c) => localizeCommonsTagCategory($t, c));
 </script>
 
 <div class="commons-browser">
   <ul class="commons-browser-grid" role="list">
-    {#each categories as category (category.id)}
+    {#each localizedCategories as category (category.id)}
       {@const art = commonsTagArtSrc(category)}
       {@const count = commonsCategoryLiveCount(category, countsByTag)}
       {@const isActive = activeCategoryId === category.id}

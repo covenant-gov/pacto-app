@@ -5,7 +5,7 @@
     CommonsBrowseMode,
     CommonsSubjectFilter,
   } from '../../lib/commons/commons-feed';
-  import { findCommonsTagCategory } from '../../lib/commons/tag-catalog';
+  import { getLocalizedCommonsTagCategory } from '../../lib/commons/tag-catalog';
 
   export let tags: string[] = [];
   export let categoryId: string | null = null;
@@ -18,7 +18,9 @@
   export let onRemoveTag: ((tag: string) => void) | undefined = undefined;
   export let onClearCategory: (() => void) | undefined = undefined;
 
-  $: categoryLabel = categoryId ? (findCommonsTagCategory(categoryId)?.title ?? categoryId) : null;
+  $: categoryLabel = categoryId
+    ? (getLocalizedCommonsTagCategory($t, categoryId)?.title ?? categoryId)
+    : null;
 
   function removeTag(tag: string) {
     if (onRemoveTag) onRemoveTag(tag);

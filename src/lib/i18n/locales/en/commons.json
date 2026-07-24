@@ -1,5 +1,6 @@
 {
 	"commons.duration.hours": "{hours} h",
+	"commons.ellipsis": "…",
 	"commons.duration.week": "1 week",
 	"commons.duration.fortnight": "2 weeks",
 	"commons.duration.month": "1 month",
@@ -91,6 +92,10 @@
 	"commons.topFilters.active": "Active",
 	"commons.topFilters.removeCategoryFilter": "Remove ALL-{categoryLabel} filter",
 	"commons.topFilters.removeTagFilter": "Remove tag {tag}",
+	"commons.visibility.legend": "Commons",
+	"commons.visibility.off": "Commons off",
+	"commons.visibility.on": "Commons on",
+	"commons.visibility.hint": "Your squad stays private and encrypted. Commons only posts a public discovery card with 3 tags while you broadcast.",
 	"commons.view.title": "Commons",
 	"commons.view.refreshSyncing": "Refreshing feed",
 	"commons.view.refresh": "Refresh feed",
@@ -105,5 +110,12 @@
 	"commons.errors.messageRequired": "Message is required.",
 	"commons.errors.tagCountInvalid": "Choose exactly 3 valid tags.",
 	"commons.errors.broadcastStillActive": "A broadcast is still active for this squad.",
-	"commons.errors.publishBroadcastFailed": "Failed to publish Commons broadcast."
+	"commons.errors.publishBroadcastFailed": "Failed to publish Commons broadcast.",
+	"commons.close": "Close",
+	"commons.dismiss": "Dismiss",
+	"commons.goTo": "Go to",
+	"commons.hide": "Hide",
+	"commons.reveal": "Reveal",
+	"commons.verify": "Verify",
+	"commons.verifying": "Verifying…"
 }

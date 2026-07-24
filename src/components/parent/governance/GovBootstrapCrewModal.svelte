@@ -133,7 +133,7 @@
     {/if}
 
     {#if !captainGate.enabled}
-      <p class="err">{captainGate.reason}</p>
+      <p class="err">{$t(captainGate.reason)}</p>
     {/if}
     {#if error}
       <p class="err" role="alert">{error}</p>

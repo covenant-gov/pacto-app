@@ -25,7 +25,7 @@
     commonsFeedSyncing,
     refreshCommonsBroadcasts,
   } from '../../lib/commons/commons-prefetch';
-  import { COMMONS_TAG_GROUPS, findCommonsTagCategory } from '../../lib/commons/tag-catalog';
+  import { COMMONS_TAG_GROUPS, getLocalizedCommonsTagCategory } from '../../lib/commons/tag-catalog';
   import { activeTopNavTab } from '../../stores/navigation';
   import {
     commonsBroadcastModalClosedNonce,
@@ -68,7 +68,8 @@
     browseMode === 'categories' && !tagMenuOpen && focusedCategoryId == null && !hasTagFilters;
   $: categoryAllMode = focusedCategoryId != null && filterCategoryId != null && filterTags.length === 0;
   $: focusedCategoryTitle = focusedCategoryId
-    ? (findCommonsTagCategory(focusedCategoryId)?.title ?? focusedCategoryId.toUpperCase())
+    ? (getLocalizedCommonsTagCategory($t, focusedCategoryId)?.title ??
+      focusedCategoryId.toUpperCase())
     : null;
 
   $: if ($commonsBroadcastModalClosedNonce !== lastModalClosedNonce) {

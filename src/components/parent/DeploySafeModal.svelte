@@ -299,7 +299,7 @@
               >{getProfileDisplayName($profiles[npub]) ||
                 (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
             >
-            <span class="deploy-safe-member-evm muted">{addr ? shortAddress(addr) : ''}</span>
+            <span class="deploy-safe-member-evm muted">{#if addr}{shortAddress(addr)}{/if}</span>
           </div>
         </li>
       {/each}

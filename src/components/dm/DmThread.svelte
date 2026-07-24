@@ -350,8 +350,12 @@
     <div class="dm-thread-header-avatar" class:pacto-app-avatar={isPactoAppThread}>
       {#if contactAvatarSrc}
         <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
+      {:else if isPactoAppThread}
+        <!-- eslint-disable @intlify/svelte/no-raw-text -->
+        <span class="dm-thread-header-avatar-placeholder">I</span>
+        <!-- eslint-enable @intlify/svelte/no-raw-text -->
       {:else}
-        <span class="dm-thread-header-avatar-placeholder">{isPactoAppThread ? 'I' : contactDisplayName.charAt(0).toUpperCase()}</span>
+        <span class="dm-thread-header-avatar-placeholder">{contactDisplayName.charAt(0).toUpperCase()}</span>
       {/if}
     </div>
     <div class="dm-thread-header-info">

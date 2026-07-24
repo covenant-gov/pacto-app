@@ -59,7 +59,7 @@
   {:else if structureSummary === null}
     <p class="dashboard-placeholder-text dashboard-placeholder-lead">
       {$t('governance.roles.leadPrefix')}
-      <strong>Pacto Gov</strong>
+      <strong>{$t('governance.roles.leadBrand')}</strong>
       {$t('governance.roles.leadSuffix')}
     </p>
   {:else}

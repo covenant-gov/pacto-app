@@ -15,7 +15,7 @@ describe('resolveGovernancePrivilege', () => {
     });
     expect(p.wearsCaptain).toBe(true);
     expect(p.wearsCrew).toBe(false);
-    expect(p.roleLabel).toBe('Captain');
+    expect(p.roleLabel).toBe('governance.roleLabel.captain');
   });
 
   it('detects Safe-as-captain', () => {
@@ -28,7 +28,7 @@ describe('resolveGovernancePrivilege', () => {
     expect(p.captainIsSafe).toBe(true);
     expect(p.wearsCrew).toBe(true);
     expect(gateRequiresCaptain(p).enabled).toBe(false);
-    expect(gateRequiresCaptain(p).reason).toMatch(/Safe/i);
+    expect(gateRequiresCaptain(p).reason).toBe('governance.gate.captainHatOnSafe');
     expect(gateRequiresCrew(p).enabled).toBe(true);
   });
 });

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { profiles, loadProfile } from '../../stores/profiles';
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
@@ -24,6 +26,8 @@
   let refreshError = '';
   let profileLoadToken = 0;
 
+  const tFn = get(t);
+
   $: requests = $pendingJoinRequestsBySquadId[squad.id] ?? [];
   $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
   $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
@@ -47,14 +51,14 @@
     try {
       await syncJoinRequestsForSquad(squad.id);
     } catch (e) {
-      refreshError = e instanceof Error ? e.message : 'Could not load join requests.';
+      refreshError = e instanceof Error ? e.message : tFn('squad.joinRequests.loadError');
     }
   }
 
   async function handleMute(request: CommonsJoinRequestDto) {
     muteJoinRequester(squad.id, request.requesterNpub);
     removePendingJoinRequest(squad.id, request.eventId);
-    showToast('Requester muted for this squad.');
+    showToast(tFn('squad.joinRequests.muteToast'));
   }
 
   async function handleReject(request: CommonsJoinRequestDto) {
@@ -71,7 +75,7 @@
       return;
     }
     removePendingJoinRequest(squad.id, request.eventId);
-    showToast('Join request rejected.');
+    showToast(tFn('squad.joinRequests.rejectToast'));
   }
 
   async function handleAccept(request: CommonsJoinRequestDto) {
@@ -96,8 +100,8 @@
         actingOn = null;
         if (!invitedNpubs.includes(request.requesterNpub)) return;
         removePendingJoinRequest(squad.id, request.eventId);
-        const name = getProfileDisplayName($profiles[request.requesterNpub]) || 'Member';
-        showToast(`Invite sent to ${name}.`);
+        const name = getProfileDisplayName($profiles[request.requesterNpub]) || tFn('squad.joinRequests.memberFallback');
+        showToast(tFn('squad.joinRequests.inviteToast', { values: { name } }));
       },
     });
   }
@@ -110,36 +114,36 @@
     const ms = createdAt * 1000 - Date.now();
     const abs = Math.abs(ms);
     const minutes = Math.floor(abs / 60000);
-    if (minutes < 60) return `${Math.max(minutes, 1)}m ago`;
+    if (minutes < 60) return tFn('squad.joinRequests.minutesAgo', { values: { minutes: Math.max(minutes, 1) } });
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+    if (hours < 24) return tFn('squad.joinRequests.hoursAgo', { values: { hours } });
+    return tFn('squad.joinRequests.daysAgo', { values: { days: Math.floor(hours / 24) } });
   }
 </script>
 
-<section class="join-requests-panel" aria-label="Commons join requests">
+<section class="join-requests-panel" aria-label={$t('squad.joinRequests.ariaLabel')}>
   <header class="join-requests-header">
-    <h2 class="join-requests-title">Join requests</h2>
+    <h2 class="join-requests-title">{$t('squad.joinRequests.title')}</h2>
     <p class="join-requests-lead">
-      People who requested to join <strong>{squad.name}</strong> via the squad bot inbox.
+      {$t('squad.joinRequests.lead', { values: { squadName: squad.name } })}
     </p>
   </header>
 
   {#if loading}
-    <p class="join-requests-muted" role="status">Loading join requests…</p>
+    <p class="join-requests-muted" role="status">{$t('squad.joinRequests.loading')}</p>
   {:else if loadError}
     <p class="join-requests-error" role="alert">{loadError}</p>
   {:else if requests.length === 0}
-    <p class="join-requests-muted">No pending join requests.</p>
+    <p class="join-requests-muted">{$t('squad.joinRequests.empty')}</p>
   {:else}
     <ul class="join-requests-list" role="list">
       {#each requests as request (request.eventId)}
         <li class="join-request-card">
           <div class="join-request-main">
-            <p class="join-request-badge">Commons join request</p>
+            <p class="join-request-badge">{$t('squad.joinRequests.badge')}</p>
             <p class="join-request-name">{requesterLabel(request.requesterNpub)}</p>
             <p class="join-request-meta">
-              Requested {relativeCreated(request.createdAt)} · from broadcast
+              {$t('squad.joinRequests.requestedTime', { values: { time: relativeCreated(request.createdAt) } })}
             </p>
             <p class="join-request-npub">{request.requesterNpub}</p>
           </div>
@@ -150,7 +154,7 @@
               disabled={!!actingOn}
               on:click={() => handleMute(request)}
             >
-              Mute
+              {$t('squad.joinRequests.mute')}
             </button>
             <button
               type="button"
@@ -158,7 +162,7 @@
               disabled={!!actingOn}
               on:click={() => handleReject(request)}
             >
-              {actingOn === request.eventId ? 'Working…' : 'Reject'}
+              {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.reject')}
             </button>
             <button
               type="button"
@@ -166,7 +170,7 @@
               disabled={!!actingOn}
               on:click={() => handleAccept(request)}
             >
-              {actingOn === request.eventId ? 'Working…' : 'Accept'}
+              {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.accept')}
             </button>
           </div>
         </li>
@@ -178,7 +182,7 @@
     <RefreshIconButton
       disabled={syncing}
       spinning={syncing}
-      ariaLabel={syncing ? 'Refreshing join requests' : 'Refresh join requests'}
+      ariaLabel={syncing ? $t('squad.joinRequests.refreshingAria') : $t('squad.joinRequests.refreshAria')}
       on:click={() => refresh()}
     />
   </div>

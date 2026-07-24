@@ -20,8 +20,10 @@ import {
   type SquadBotJoinDmDto,
   type SquadBotJoinResponseDmDto,
 } from '../squad/squad-join-mls';
-import { summarizeStructuredMessageContent } from '../messaging/structured-content-notice';
+import { summarizeStructuredMessageContent, type MessageFormatter } from '../messaging/structured-content-notice';
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   isPactoAppThreadId,
   resolveInviteInviterNpub,
@@ -49,6 +51,7 @@ export type DmMessagePresentation =
   | { kind: 'plain' };
 
 export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentation {
+  const tFn = get(t);
   if (msg.is_local_announcement) return { kind: 'local-announcement' };
   const content = msg.content ?? '';
   const channelInSquad = parseChannelInSquadMessage(content);
@@ -73,7 +76,7 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
   if (botJoinResponse) return { kind: 'bot-join-response', payload: botJoinResponse };
   const botJoinDm = parseBotJoinDm(content);
   if (botJoinDm) return { kind: 'bot-join-dm', payload: botJoinDm };
-  const structuredNotice = summarizeStructuredMessageContent(content);
+  const structuredNotice = summarizeStructuredMessageContent(content, tFn);
   if (structuredNotice) return { kind: 'structured-notice', text: structuredNotice };
   return { kind: 'plain' };
 }
@@ -90,9 +93,10 @@ export function inviteInviterNpub(msg: DmMessage, threadId: string): string | nu
 
 export function getInviterDisplayFromNpub(
   inviterNpub: string | null | undefined,
-  profilesMap: Record<string, NostrProfile | undefined>
+  profilesMap: Record<string, NostrProfile | undefined>,
+  tFn: MessageFormatter = get(t)
 ): { inviterName: string; inviterAvatarSrc: string | null } {
-  if (!inviterNpub) return { inviterName: 'Someone', inviterAvatarSrc: null };
+  if (!inviterNpub) return { inviterName: tFn('messaging.message.someone'), inviterAvatarSrc: null };
   const profile = profilesMap[inviterNpub];
   const inviterName = getProfileDisplayName(profile ?? null) || inviterNpub.slice(0, 12) + '…';
   const inviterAvatarSrc = profile ? getProfileAvatarSrc(profile) : null;
@@ -120,7 +124,8 @@ export function buildPlainMessageProps(
   msg: DmMessage,
   threadNpub: string,
   profilesMap: Record<string, NostrProfile | undefined>,
-  currentUserNpub: string | undefined
+  currentUserNpub: string | undefined,
+  tFn: MessageFormatter = get(t)
 ) {
   const currentUserProfile = currentUserNpub ? profilesMap[currentUserNpub] : null;
   const base = {
@@ -134,7 +139,7 @@ export function buildPlainMessageProps(
     replyPreview: undefined as string | undefined,
   };
   if (msg.mine) {
-    base.authorName = 'You';
+    base.authorName = tFn('messaging.message.authorYou');
     base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
   } else {
     const senderNpub = msg.npub ?? threadNpub;
@@ -146,16 +151,16 @@ export function buildPlainMessageProps(
     const replyNpub = msg.replied_to_npub ?? undefined;
     base.replyAuthorName =
       replyNpub && currentUserNpub && replyNpub === currentUserNpub
-        ? 'You'
+        ? tFn('messaging.message.authorYou')
         : replyNpub
           ? getProfileDisplayName(profilesMap[replyNpub] ?? null)
-          : 'Unknown';
+          : tFn('messaging.message.replyUnknown');
     base.replyPreview =
       msg.replied_to_has_attachment === true
-        ? 'Attachment'
+        ? tFn('messaging.message.attachment')
         : msg.replied_to_content != null && msg.replied_to_content.length > 0
           ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
-          : 'Message';
+          : tFn('messaging.message.messageFallback');
   }
   return base;
 }

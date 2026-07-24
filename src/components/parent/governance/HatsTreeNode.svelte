@@ -11,6 +11,7 @@
   import { profiles } from '../../../stores/profiles';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { localizeRoleLabel } from '../../../lib/governance/governance-privilege';
 
   export let node: HatTreeNodeDto;
   export let roleLabelByHatId: Record<string, string> = {};
@@ -28,7 +29,6 @@
   $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
   $: prettyId = prettyHatId(node.hatId) ?? node.hatId;
   $: humanDetails = humanHatDetails(node.details);
-  $: title = roleLabel || humanDetails || tFn('governance.hats.untitled');
   /** Extra line only when role label and a distinct human details string both exist. */
   $: detailsSubtitle =
     roleLabel && humanDetails && humanDetails !== roleLabel ? humanDetails : '';
@@ -83,7 +83,7 @@
   <div class="hats-tree-node-card" class:has-wearers={hasWearers} class:inactive={!node.active}>
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>
-      <span class="hats-tree-node-title">{title}</span>
+      <span class="hats-tree-node-title">{$t(localizeRoleLabel(roleLabel)) || humanDetails || $t('governance.hats.untitled')}</span>
       {#if detailsSubtitle}
         <span class="hats-tree-node-details muted">{detailsSubtitle}</span>
       {/if}

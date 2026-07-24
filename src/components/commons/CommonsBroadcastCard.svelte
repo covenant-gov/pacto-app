@@ -145,7 +145,7 @@
     <h3 class="commons-tile-title">{title}</h3>
     <p class="commons-tile-message">
       <span class="commons-tile-message-text">
-        {previewMessage}{messageTruncated ? '…' : ''}
+        {previewMessage}{#if messageTruncated}{$t('commons.ellipsis')}{/if}
       </span>
     </p>
 

@@ -79,5 +79,8 @@ export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'g
   if (raw.includes(MIGRATION_GATE_MESSAGE)) {
     return get(t)('errors.migrationGate');
   }
+  if (raw.includes('no sponsor clone registered for this squad id')) {
+    return get(t)('governance.error.noSponsorCloneRegistered');
+  }
   return raw;
 }

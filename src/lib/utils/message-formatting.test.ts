@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll } from 'vitest';
+import { initI18n } from '../i18n';
 import {
   emojiToTwemojiFilename,
   parseMarkdown,
@@ -10,6 +11,10 @@ import {
 } from './message-formatting';
 import type { Mention } from '../messaging/mentions';
 import type { NostrProfile } from '../api/nostr';
+
+beforeAll(async () => {
+  await initI18n('en');
+});
 
 describe('emojiToTwemojiFilename', () => {
   it('returns null for empty input', () => {

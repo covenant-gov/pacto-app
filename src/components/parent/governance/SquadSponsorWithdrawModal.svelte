@@ -106,7 +106,7 @@
   function optionLabel(acc: EvmAccountRow): string {
     const name = acc.label?.trim() || (acc.isDefaultShared ? tFn('governance.withdraw.accountDefault') : tFn('governance.withdraw.accountUnnamed'));
     const short = `${acc.address.slice(0, 6)}…${acc.address.slice(-4)}`;
-    return `${name} · ${short} (${evmAccountPurposeLabel(acc.purpose)}, ${evmAccountSchemeLabel(acc.scheme)})`;
+    return `${name} · ${short} (${tFn(evmAccountPurposeLabel(acc.purpose))}, ${tFn(evmAccountSchemeLabel(acc.scheme))})`;
   }
 
   async function submit() {

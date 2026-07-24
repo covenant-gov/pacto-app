@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { CtaGate } from '../../../lib/governance/governance-privilege';
 
   export let label: string;
@@ -8,7 +9,7 @@
   export let onClick: () => void = () => {};
 
   $: disabled = acting || !gate.enabled;
-  $: title = gate.enabled ? label : gate.reason;
+  $: title = gate.enabled ? label : $t(gate.reason);
 </script>
 
 <div class="gov-cta-wrap">
@@ -28,7 +29,7 @@
     {label}
   </button>
   {#if !gate.enabled && gate.reason}
-    <p class="gov-cta-reason muted">{gate.reason}</p>
+    <p class="gov-cta-reason muted">{$t(gate.reason)}</p>
   {/if}
 </div>
 

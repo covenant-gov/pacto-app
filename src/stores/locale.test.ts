@@ -7,6 +7,7 @@ import {
 	getStoredLocale,
 	persistLocale,
 	LOCALE_PREFIX,
+	LOCALE_LAST_KEY,
 	LOCALE_OPTIONS,
 	initLocaleStore,
 } from './locale';
@@ -51,7 +52,14 @@ describe('locale store', () => {
 		expect(LOCALE_OPTIONS.map((o) => o.value)).toEqual(['en', 'es']);
 	});
 
-	it('initializes to default when nothing is stored', async () => {
+	it('initializes to the globally stored last locale when no npub context exists', async () => {
+		storage.set(LOCALE_LAST_KEY, 'es');
+		await initLocaleStore();
+		expect(get(locale)).toBe('es');
+		expect(get(svelteLocale)).toBe('es');
+	});
+
+	it('initializes to default when no locale is stored and no global last locale exists', async () => {
 		await initLocaleStore();
 		expect(get(locale)).toBe('en');
 		expect(get(svelteLocale)).toBe('en');
@@ -65,12 +73,13 @@ describe('locale store', () => {
 		expect(get(locale)).toBe('es');
 	});
 
-	it('persists locale changes per npub', async () => {
+	it('persists locale changes per npub and as a global fallback', async () => {
 		const npub = 'npub1test';
 		setCurrentNpubForPersistence(npub);
 		await initLocaleStore();
 		await setLocale('es');
 		expect(storage.get(`${LOCALE_PREFIX}_${npub}`)).toBe('es');
+		expect(storage.get(LOCALE_LAST_KEY)).toBe('es');
 		expect(get(locale)).toBe('es');
 		expect(get(svelteLocale)).toBe('es');
 	});

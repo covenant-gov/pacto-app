@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   /**
    * Resizable sidebar: owns width state, resize handle, and window listeners.
@@ -71,7 +73,7 @@
   <button
     class="resize-handle"
     type="button"
-    aria-label="Resize sidebar"
+    aria-label={get(t)('messaging.dm.navbar.resizeSidebar')}
     on:mousedown={startResize}
   ></button>
 </div>

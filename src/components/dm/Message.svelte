@@ -25,7 +25,7 @@
   export let replyPreview: string | undefined = undefined;
 
   $: displayContent = body || content;
-  $: structuredNotice = summarizeStructuredMessageContent(displayContent);
+  $: structuredNotice = summarizeStructuredMessageContent(displayContent, $t);
 
   function jumpToReply() {
     if (!replyToId) return;
