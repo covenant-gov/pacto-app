@@ -117,6 +117,16 @@ describe('buildSquadInvokeRpcUrls tertiary user default', () => {
     expect(cfg?.rpc1.kind).toBe('default_public');
     expect(cfg?.rpc2.kind).toBe('unset');
   });
+
+  it('effectiveSquadRpcConfig resets slots when stored chain mismatches', () => {
+    setSquadRpcPrimary(npub, parentId, 'sepolia', 'https://sepolia.example/rpc');
+    const cfg = effectiveSquadRpcConfig(npub, parentId, 'local');
+    expect(cfg).toEqual({
+      chain: 'local',
+      rpc1: { kind: 'default_public' },
+      rpc2: { kind: 'unset' },
+    });
+  });
 });
 
 function loadRaw(): string | null {

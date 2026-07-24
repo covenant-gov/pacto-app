@@ -191,7 +191,7 @@
             buildTrackedTokenAnnouncePayload({ parentId: parentId.trim(), action: 'upsert', row }),
           );
         } catch (announceErr) {
-          await removeSquadTrackedToken(parentId.trim(), row.id);
+          await removeSquadTrackedToken(parentId.trim(), row.id, row.chain);
           throw announceErr;
         }
       }
@@ -209,7 +209,7 @@
     if (!manageGate.enabled) return;
     if (!requireBackupVerified()) return;
     try {
-      await removeSquadTrackedToken(parentId.trim(), row.id);
+      await removeSquadTrackedToken(parentId.trim(), row.id, row.chain);
       if (announcementsGroupId.trim()) {
         try {
           await publishSquadTrackedTokenAnnounce(

@@ -154,7 +154,7 @@ export function effectiveSquadRpcConfig(
   if (stored) {
     return stored.chain === chain
       ? stored
-      : { chain, rpc1: stored.rpc1, rpc2: stored.rpc2 };
+      : { chain, rpc1: defaultPublicSlot(), rpc2: unsetSlot() };
   }
   return { chain, rpc1: defaultPublicSlot(), rpc2: unsetSlot() };
 }
