@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { initI18n, DEFAULT_LOCALE } from '../i18n';
 import { getInvokeErrorMessage, friendlyMessage } from './tauri-errors';
+
+beforeEach(async () => {
+  await initI18n(DEFAULT_LOCALE);
+});
 
 describe('getInvokeErrorMessage', () => {
   it('returns fallback for null/undefined', () => {

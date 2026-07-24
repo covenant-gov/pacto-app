@@ -5,6 +5,8 @@
  */
 
 import type { Address } from 'viem';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import type { SupportedChainId } from './chains';
 
 import walletAssetsJson from './wallet-assets.json';
@@ -58,10 +60,10 @@ export const WALLET_CHAIN_GROUPS: ReadonlyArray<{
   label: string;
   chains: readonly SupportedChainId[];
 }> = [
-  { id: 'l1', label: 'L1', chains: ['mainnet'] },
-  { id: 'l2', label: 'L2', chains: ['arbitrum'] },
-  { id: 'testnet', label: 'Testnet', chains: ['sepolia'] },
-  { id: 'local', label: 'Local', chains: ['local'] },
+  { id: 'l1', label: 'lib.chainGroup.l1', chains: ['mainnet'] },
+  { id: 'l2', label: 'lib.chainGroup.l2', chains: ['arbitrum'] },
+  { id: 'testnet', label: 'lib.chainGroup.testnet', chains: ['sepolia'] },
+  { id: 'local', label: 'lib.chainGroup.local', chains: ['local'] },
 ];
 
 export function getWalletAssetsForChain(chainId: SupportedChainId): WalletNetworkAssets | undefined {
@@ -83,12 +85,12 @@ export function getExplorerTxUrl(chainId: SupportedChainId, txHash: string): str
 /** User-facing explorer link label derived from configured `explorerTxPath` hostname (e.g. sepolia.etherscan.io). */
 export function explorerTxLinkLabel(chainId: SupportedChainId): string {
   const path = WALLET_ASSETS.networks[chainId]?.explorerTxPath;
-  if (!path) return 'View on block explorer';
+  if (!path) return get(t)('lib.explorer.viewOnBlockExplorer');
   try {
     const host = new URL(path).hostname.replace(/^www\./, '');
-    return `View on ${host}`;
+    return get(t)('lib.explorer.viewOn', { values: { host } });
   } catch {
-    return 'View on block explorer';
+    return get(t)('lib.explorer.viewOnBlockExplorer');
   }
 }
 

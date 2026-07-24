@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { invoke } from './index';
 
 export type RelayMode = 'read' | 'write' | 'both';
@@ -31,17 +33,17 @@ export interface CustomRelay {
 /** Client-side check before invoking add_custom_relay. Returns an error message or null if OK. */
 export function validateRelayUrlInput(url: string): string | null {
   const trimmed = url.trim();
-  if (!trimmed) return 'Enter a relay URL.';
+  if (!trimmed) return get(t)('lib.relay.url.empty');
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
+    return get(t)('lib.relay.url.invalidProtocol');
   }
 
-  if (!parsed.host) return 'Relay URL must include a host.';
-  if (parsed.username || parsed.password) return 'Relay URL must not contain userinfo.';
+  if (!parsed.host) return get(t)('lib.relay.url.noHost');
+  if (parsed.username || parsed.password) return get(t)('lib.relay.url.userinfo');
 
   if (parsed.protocol === 'wss:') return null;
 
@@ -52,40 +54,40 @@ export function validateRelayUrlInput(url: string): string | null {
     if (isLocalhost || isLoopback) return null;
   }
 
-  return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
+  return get(t)('lib.relay.url.invalidProtocol');
 }
 
 export function relayModeLabel(mode: string): string {
   switch (mode) {
     case 'read':
-      return 'Read only';
+      return get(t)('lib.relay.mode.read');
     case 'write':
-      return 'Write only';
+      return get(t)('lib.relay.mode.write');
     default:
-      return 'Read & write';
+      return get(t)('lib.relay.mode.both');
   }
 }
 
 export function relayStatusLabel(status: string): string {
   switch (status) {
     case 'connected':
-      return 'Connected';
+      return get(t)('lib.relay.status.connected');
     case 'connecting':
-      return 'Connecting';
+      return get(t)('lib.relay.status.connecting');
     case 'pending':
-      return 'Pending';
+      return get(t)('lib.relay.status.pending');
     case 'initialized':
-      return 'Initialized';
+      return get(t)('lib.relay.status.initialized');
     case 'disconnected':
-      return 'Disconnected';
+      return get(t)('lib.relay.status.disconnected');
     case 'terminated':
-      return 'Terminated';
+      return get(t)('lib.relay.status.terminated');
     case 'banned':
-      return 'Banned';
+      return get(t)('lib.relay.status.banned');
     case 'sleeping':
-      return 'Sleeping';
+      return get(t)('lib.relay.status.sleeping');
     case 'disabled':
-      return 'Disabled';
+      return get(t)('lib.relay.status.disabled');
     default:
       return status;
   }

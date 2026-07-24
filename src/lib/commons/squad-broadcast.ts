@@ -1,3 +1,5 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import {
   cancelCommonsBroadcast,
   getLocalActiveCommonsBroadcast,
@@ -18,11 +20,13 @@ import {
 import { normalizeSquadBroadcastTags } from './tags';
 import { ensureSquadBot } from '../squad/squad-bot';
 
+const tFn = get(t);
+
 async function requireBotHolder(squadId: string): Promise<string | null> {
   const state = await ensureSquadBot(squadId);
-  if (!state) return 'Squad bot is not initialized. Open Join inbox settings first.';
+  if (!state) return tFn('commons.errors.squadBotNotInitialized');
   if (!state.iAmHolder || !state.hasLocalSecret) {
-    return 'Only bot key holders with a local secret can publish or cancel squad Commons broadcasts.';
+    return tFn('commons.errors.squadBotHolderRequired');
   }
   return null;
 }
@@ -51,9 +55,13 @@ export function formatBroadcastCooldownRemaining(
   if (remaining <= 0) return '';
   const hours = Math.floor(remaining / 3600);
   const minutes = Math.floor((remaining % 3600) / 60);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m`;
-  return 'under 1m';
+  if (hours > 0) {
+    return get(t)('commons.duration.hoursMinutes', { values: { hours, minutes } });
+  }
+  if (minutes > 0) {
+    return get(t)('commons.duration.minutesOnly', { values: { minutes } });
+  }
+  return get(t)('commons.duration.underOneMinute');
 }
 
 export async function cancelSquadCommonsBroadcast(
@@ -66,7 +74,7 @@ export async function cancelSquadCommonsBroadcast(
     clearCommonsBroadcastLocalState('squad', squadId);
     return { ok: true };
   } catch (e: unknown) {
-    return { ok: false, error: getInvokeErrorMessage(e, 'Failed to cancel broadcast.') };
+    return { ok: false, error: getInvokeErrorMessage(e, tFn('commons.errors.cancelBroadcastFailed')) };
   }
 }
 
@@ -83,12 +91,12 @@ export async function publishSquadCommonsBroadcast(
   }
 ): Promise<{ ok: true; skipped?: boolean } | { ok: false; error: string }> {
   if (!isPublicSquadForCommonsBroadcast(squad)) {
-    return { ok: false, error: 'Turn Commons on for this squad before broadcasting.' };
+    return { ok: false, error: tFn('commons.errors.commonsNotEnabled') };
   }
 
   const message = options.message.trim();
   if (!message) {
-    return { ok: false, error: 'Message is required.' };
+    return { ok: false, error: tFn('commons.errors.messageRequired') };
   }
 
   const gate = await requireBotHolder(squad.id);
@@ -97,12 +105,12 @@ export async function publishSquadCommonsBroadcast(
   const active = await fetchActiveSquadCommonsBroadcast(squad.id);
   if (active) {
     if (options.skipIfActive) return { ok: true, skipped: true };
-    return { ok: false, error: 'A broadcast is still active for this squad.' };
+    return { ok: false, error: tFn('commons.errors.broadcastStillActive') };
   }
 
   const normalized = normalizeSquadBroadcastTags(options.tags ?? squad.commonsTags ?? []);
   if (!normalized) {
-    return { ok: false, error: 'Choose exactly 3 valid tags.' };
+    return { ok: false, error: tFn('commons.errors.tagCountInvalid') };
   }
   const tags = [...normalized, ...(options.extraTags ?? [])];
 
@@ -124,7 +132,7 @@ export async function publishSquadCommonsBroadcast(
   } catch (e: unknown) {
     return {
       ok: false,
-      error: getInvokeErrorMessage(e, 'Failed to publish Commons broadcast.'),
+      error: getInvokeErrorMessage(e, tFn('commons.errors.publishBroadcastFailed')),
     };
   }
 }

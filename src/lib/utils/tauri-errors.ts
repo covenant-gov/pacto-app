@@ -1,3 +1,6 @@
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
+
 /** Unwrap stringified `{ code, message }` wallet errors (and similar) to the human message. */
 function unwrapJsonErrorString(raw: string): string | null {
   const trimmed = raw.trim();
@@ -18,7 +21,7 @@ function unwrapJsonErrorString(raw: string): string | null {
  * Handles common shapes: Error, { message }, { error }, plain string, nested payloads,
  * and stringified wallet_err_json (`{"code":"…","message":"…"}`).
  */
-export function getInvokeErrorMessage(e: unknown, fallback = 'Something went wrong'): string {
+export function getInvokeErrorMessage(e: unknown, fallback = get(t)('errors.fallback')): string {
   if (e == null) return fallback;
   if (typeof e === 'string') {
     const trimmed = e.trim();
@@ -67,14 +70,14 @@ export function friendlyMessage(raw: string, context: 'dm_send' | 'generic' = 'g
   const lower = raw.toLowerCase();
   if (context === 'dm_send') {
     if (lower.includes('invalid npub') || lower.includes('invalid pubkey'))
-      return 'Please enter a valid npub (starts with npub1).';
+      return get(t)('errors.dm.invalidNpub');
     if (lower.includes('not initialized') || lower.includes('client not initialized'))
-      return 'Please log in first.';
+      return get(t)('errors.dm.notInitialized');
     if (lower.includes('missing required key') || lower.includes('invalid args'))
-      return 'Invalid request. Please try again.';
+      return get(t)('errors.dm.invalidRequest');
   }
   if (raw.includes(MIGRATION_GATE_MESSAGE)) {
-    return 'Please unlock to update account security.';
+    return get(t)('errors.migrationGate');
   }
   return raw;
 }
