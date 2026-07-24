@@ -12,7 +12,9 @@ import {
   activeChannelId,
   activeHubChannelName,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
 } from '../../stores/navigation';
+import { appendSquadNavId, removeSquadNavId } from '../squad/squad-nav-order';
 
 /** Remove parent locally, delete catalog row, then leave MLS groups; revert on failure. */
 export function runExitParent(opts: {
@@ -24,6 +26,7 @@ export function runExitParent(opts: {
   const { squad, wasActive, previousChannelId, onFailure } = opts;
 
   squads.update((list) => list.filter((s) => s.id !== squad.id));
+  squadNavOrder.update((order) => removeSquadNavId(order, squad.id));
   if (wasActive) {
     activeSquadId.set(null);
     activeChannelId.set(null);
@@ -44,6 +47,7 @@ export function runExitParent(opts: {
       } catch {
         // store-only revert if catalog write fails
       }
+      squadNavOrder.update((order) => appendSquadNavId(order, squad.id));
       squads.update((list) => (list.some((s) => s.id === squad.id) ? list : [...list, squad]));
       if (wasActive) {
         activeSquadId.set(squad.id);

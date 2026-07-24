@@ -12,7 +12,7 @@ export interface SquadChannelInviteContext {
   channelName: string;
 }
 
-/** MLS invite + channel-in-squad DM so invitees get the channel in their sidebar. */
+/** MLS invite + under-the-hood notify (no invite card when already in squad). */
 export function runInviteMemberToChannel(opts: {
   groupId: string;
   memberNpub: string;
@@ -21,18 +21,12 @@ export function runInviteMemberToChannel(opts: {
 }): void {
   const { groupId, memberNpub, squad, onError } = opts;
   void (async () => {
-    let mlsOk = false;
     try {
       await inviteMemberToGroup(groupId, memberNpub);
       bumpMembershipVersion(groupId);
-      mlsOk = true;
     } catch (e) {
-      const msg = friendlyMessage(getInvokeErrorMessage(e, 'Failed to invite'));
-      if (!squad) {
-        onError(msg);
-        return;
-      }
-      console.warn('[invite-channel] MLS invite failed; sending channel_in_squad DM anyway', msg);
+      onError(friendlyMessage(getInvokeErrorMessage(e, 'Failed to invite')));
+      return;
     }
 
     if (!squad) return;
@@ -47,14 +41,15 @@ export function runInviteMemberToChannel(opts: {
       });
       await sendDmMessage(memberNpub, payload);
     } catch (e) {
-      console.warn('[invite-channel] channel_in_squad DM failed for', memberNpub.slice(0, 20) + '…', e);
-      const dmMsg = friendlyMessage(
-        getInvokeErrorMessage(
-          e,
-          'The channel invite notification could not be sent. They may not see the channel until you retry.',
+      console.warn('[invite-channel] channel notify failed for', memberNpub.slice(0, 20) + '…', e);
+      onError(
+        friendlyMessage(
+          getInvokeErrorMessage(
+            e,
+            'Added to the channel, but the join notification could not be sent. Ask them to use Request sync.',
+          ),
         ),
       );
-      onError(mlsOk ? dmMsg : `Could not add them to the channel or send the invite notification. ${dmMsg}`);
     }
   })();
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSquadBotAnnounceMessage } from './squad-bot-announce';
+import { parseSquadBotAnnounceMessage, shortNpub } from './squad-bot-announce';
 
 describe('parseSquadBotAnnounceMessage', () => {
   it('parses squad bot meta for announcements timeline', () => {
@@ -34,8 +34,87 @@ describe('parseSquadBotAnnounceMessage', () => {
     expect(parsed.payload.rotatedByNpub).toBe('npub1a');
   });
 
-  it('returns null for unrelated JSON', () => {
+  it('accepts snake_case fields and string epochs', () => {
+    const meta = parseSquadBotAnnounceMessage(
+      JSON.stringify({
+        schema: 'pacto.squad_bot.meta.v1',
+        squad_id: 's1',
+        bot_npub: 'npub1bot',
+        holders: [' npub1a ', '', 3],
+        key_epoch: '4',
+        updated_at: '5',
+      }),
+    );
+    expect(meta).toEqual({
+      kind: 'meta',
+      payload: {
+        squadId: 's1',
+        botNpub: 'npub1bot',
+        holders: ['npub1a'],
+        keyEpoch: 4,
+        updatedAt: 5,
+      },
+    });
+
+    const rotated = parseSquadBotAnnounceMessage(
+      JSON.stringify({
+        schema: 'pacto.squad_bot.key_rotated.v1',
+        squad_id: 's1',
+        bot_npub: 'npub1bot',
+        key_epoch: 2,
+        rotated_by_npub: 'npub1a',
+        updated_at: 9,
+      }),
+    );
+    expect(rotated?.kind).toBe('key_rotated');
+  });
+
+  it('returns null for invalid envelopes and incomplete payloads', () => {
     expect(parseSquadBotAnnounceMessage('{"type":"governance_updated","payload":{}}')).toBeNull();
     expect(parseSquadBotAnnounceMessage('hello')).toBeNull();
+    expect(parseSquadBotAnnounceMessage('{')).toBeNull();
+    expect(parseSquadBotAnnounceMessage('null')).toBeNull();
+    expect(
+      parseSquadBotAnnounceMessage(
+        JSON.stringify({
+          schema: 'pacto.squad_bot.meta.v1',
+          squadId: 's1',
+          botNpub: 'npub1bot',
+          holders: 'nope',
+          keyEpoch: 1,
+          updatedAt: 1,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseSquadBotAnnounceMessage(
+        JSON.stringify({
+          schema: 'pacto.squad_bot.key_rotated.v1',
+          squadId: 's1',
+          botNpub: 'npub1bot',
+          keyEpoch: 1,
+          updatedAt: 1,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseSquadBotAnnounceMessage(
+        JSON.stringify({
+          schema: 'pacto.squad_bot.meta.v1',
+          squadId: '  ',
+          botNpub: 'npub1bot',
+          holders: [],
+          keyEpoch: 1,
+          updatedAt: 1,
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('shortNpub', () => {
+  it('shortens long npubs and leaves short ones alone', () => {
+    expect(shortNpub('npub1short')).toBe('npub1short');
+    expect(shortNpub('npub1abcdefghijklmnop')).toMatch(/…/);
   });
 });

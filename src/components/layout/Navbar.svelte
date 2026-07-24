@@ -13,6 +13,7 @@
   import searchIcon from '../../icons/search.svg';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import { onDestroy } from 'svelte';
   import {
     squads,
     activeSquadId,
@@ -26,6 +27,7 @@
     lastOpenedChannelId,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
+    squadNavOrder,
     composingNewChat,
     dmList,
     pinnedList,
@@ -53,6 +55,7 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
+  import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads, removeSquadNavId } from '../../lib/squad/squad-nav-order';
   import { initSquadBot } from '../../lib/squad/squad-bot';
   import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -61,12 +64,190 @@
   } from '../../lib/squad/squad-network';
   import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
   import { getProfileDisplayName } from '../../lib/utils/profile';
+  import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
 
   const translate = get(t);
+  $: orderedSquads = orderSquads($squads, $squadNavOrder);
+
+  const SQUAD_DRAG_THRESHOLD_PX = 6;
+  let squadRailEl: HTMLDivElement | null = null;
+  let squadDragFromId: string | null = null;
+  /** Visual gap index in `orderedSquads` (0 = before first, length = after last). */
+  let squadDropGapIndex: number | null = null;
+  let squadDragMoved = false;
+  let squadDropApplied = false;
+  let squadPointerId: number | null = null;
+  let squadPointerStartY = 0;
+  let squadPendingDragId: string | null = null;
+  let squadGhost: { x: number; y: number; name: string; image: string } | null = null;
+  let squadWindowListenersBound = false;
 
   function selectSquad(squadId: string) {
+    if (squadDragMoved) {
+      squadDragMoved = false;
+      return;
+    }
     activateSquadHub(squadId);
+  }
+
+  function railGhostX(): number {
+    if (!squadRailEl) return 36;
+    const rect = squadRailEl.getBoundingClientRect();
+    return rect.left + rect.width / 2;
+  }
+
+  function clampGhostY(clientY: number): number {
+    if (!squadRailEl) return clientY;
+    const rect = squadRailEl.getBoundingClientRect();
+    const half = 24;
+    return Math.min(Math.max(clientY, rect.top + half), Math.max(rect.top + half, rect.bottom - half));
+  }
+
+  function updateSquadDropGapFromY(clientY: number) {
+    if (!squadRailEl) return;
+    const items = Array.from(squadRailEl.querySelectorAll<HTMLElement>('.squad-nav-item'));
+    if (items.length === 0) {
+      squadDropGapIndex = 0;
+      return;
+    }
+    for (let i = 0; i < items.length; i++) {
+      const rect = items[i]!.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) {
+        squadDropGapIndex = i;
+        return;
+      }
+    }
+    squadDropGapIndex = items.length;
+  }
+
+  function beginSquadGhost(squadId: string, clientY: number) {
+    const squad = orderedSquads.find((s) => s.id === squadId);
+    if (!squad) {
+      squadGhost = null;
+      return;
+    }
+    squadGhost = {
+      x: railGhostX(),
+      y: clampGhostY(clientY),
+      name: squad.name,
+      image: squad.iconUrl ?? '',
+    };
+    document.body.classList.add('pacto-squad-nav-dragging');
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      // ignore
+    }
+  }
+
+  function moveSquadGhost(clientY: number) {
+    if (!squadGhost) return;
+    squadGhost = { ...squadGhost, x: railGhostX(), y: clampGhostY(clientY) };
+  }
+
+  function applySquadDrop(): boolean {
+    if (squadDropApplied) return false;
+    const fromId = squadDragFromId;
+    const gap = squadDropGapIndex;
+    if (!fromId || gap == null) return false;
+    const ids = orderedSquads.map((s) => s.id);
+    if (!ids.includes(fromId)) return false;
+    const next = moveSquadNavIdToGapIndex(ids, fromId, gap);
+    if (next.length === ids.length && next.every((id, i) => id === ids[i])) return false;
+    squadDropApplied = true;
+    squadNavOrder.set(next);
+    return true;
+  }
+
+  function bindSquadWindowListeners() {
+    if (squadWindowListenersBound) return;
+    squadWindowListenersBound = true;
+    window.addEventListener('pointermove', onWindowSquadPointerMove, { passive: false });
+    window.addEventListener('pointerup', onWindowSquadPointerUp, true);
+    window.addEventListener('pointercancel', onWindowSquadPointerCancel, true);
+    window.addEventListener('selectstart', onSquadSelectStart, true);
+  }
+
+  function unbindSquadWindowListeners() {
+    if (!squadWindowListenersBound) return;
+    squadWindowListenersBound = false;
+    window.removeEventListener('pointermove', onWindowSquadPointerMove);
+    window.removeEventListener('pointerup', onWindowSquadPointerUp, true);
+    window.removeEventListener('pointercancel', onWindowSquadPointerCancel, true);
+    window.removeEventListener('selectstart', onSquadSelectStart, true);
+  }
+
+  function onSquadSelectStart(e: Event) {
+    if (squadDragFromId || squadPendingDragId) e.preventDefault();
+  }
+
+  function clearSquadPointerDrag(commit: boolean) {
+    unbindSquadWindowListeners();
+    if (commit && squadDragFromId && squadDragMoved) applySquadDrop();
+    squadDragFromId = null;
+    squadDropGapIndex = null;
+    squadPointerId = null;
+    squadPendingDragId = null;
+    squadDropApplied = false;
+    squadGhost = null;
+    document.body.classList.remove('pacto-squad-nav-dragging');
+  }
+
+  onDestroy(() => {
+    clearSquadPointerDrag(false);
+    unbindSquadWindowListeners();
+  });
+
+  function onSquadPointerDown(e: PointerEvent, squadId: string) {
+    if (e.button !== 0) return;
+    squadPendingDragId = squadId;
+    squadPointerId = e.pointerId;
+    squadPointerStartY = e.clientY;
+    squadDragFromId = null;
+    squadDropGapIndex = null;
+    squadDragMoved = false;
+    squadDropApplied = false;
+    squadGhost = null;
+    bindSquadWindowListeners();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  function onWindowSquadPointerMove(e: PointerEvent) {
+    if (squadPointerId !== e.pointerId || !squadPendingDragId) return;
+    if (!squadDragFromId) {
+      if (Math.abs(e.clientY - squadPointerStartY) < SQUAD_DRAG_THRESHOLD_PX) return;
+      squadDragFromId = squadPendingDragId;
+      squadDragMoved = true;
+      beginSquadGhost(squadDragFromId, e.clientY);
+    } else {
+      moveSquadGhost(e.clientY);
+    }
+    e.preventDefault();
+    updateSquadDropGapFromY(e.clientY);
+  }
+
+  function onWindowSquadPointerUp(e: PointerEvent) {
+    if (squadPointerId !== e.pointerId) return;
+    const suppressClick = squadDragMoved && !!squadDragFromId;
+    updateSquadDropGapFromY(e.clientY);
+    clearSquadPointerDrag(true);
+    if (suppressClick) {
+      squadDragMoved = true;
+      setTimeout(() => {
+        squadDragMoved = false;
+      }, 0);
+    }
+  }
+
+  function onWindowSquadPointerCancel(e: PointerEvent) {
+    if (squadPointerId !== e.pointerId) return;
+    clearSquadPointerDrag(false);
+    squadDragMoved = false;
   }
 
   function selectDmTab(tab: DmTab) {
@@ -192,6 +373,7 @@
     addParentCreatingAnnouncements(squad.id);
     parentPendingCreateMembers.update((m) => ({ ...m, [squad.id]: memberNpubs }));
     squads.update((list) => [...list, squad]);
+    squadNavOrder.update((order) => appendSquadNavId(order, squad.id));
     activeSquadId.set(squad.id);
     activeChannelId.set(null);
     activeHubChannelName.set(null);
@@ -283,6 +465,7 @@
           [tempId]: friendlyMessage(getInvokeErrorMessage(e, translate('nav.navbar.organizeSquad.createAnnouncementsError'))),
         }));
         squads.update((list) => list.filter((s) => s.id !== tempId));
+        squadNavOrder.update((order) => removeSquadNavId(order, tempId));
         if (get(activeSquadId) === tempId) {
           activeSquadId.set(null);
           activeChannelId.set(null);
@@ -364,7 +547,10 @@
 
 <div class="navbar">
   {#if $activeView !== 'profile' && $activeTopNavTab !== 'commons'}
-  <div class="tab-list">
+  <div
+    class="tab-list"
+    class:squad-rail-dragging={squadDragFromId != null}
+  >
     {#if $activeTopNavTab === 'dms'}
       <div
         on:click={() => selectDmTab('pinned')}
@@ -407,20 +593,33 @@
         <Tab label={searchTabLabel} icon={searchIcon} active={$activeView === 'hub' && $activeDmTab === 'search'} />
       </div>
     {:else if $activeTopNavTab === 'squads'}
-      {#each $squads as squad (squad.id)}
-        <div
-          on:click={() => selectSquad(squad.id)}
-          on:keydown={(e) => e.key === 'Enter' && selectSquad(squad.id)}
-          role="button"
-          tabindex="0"
-        >
-          <Tab
-            label={squad.name}
-            image={squad.iconUrl ?? ''}
-            active={$activeView === 'hub' && $activeSquadId === squad.id}
-          />
-        </div>
-      {/each}
+      <div
+        class="squad-rail"
+        role="list"
+        bind:this={squadRailEl}
+      >
+        {#each orderedSquads as squad, index (squad.id)}
+          <div
+            class="squad-nav-item"
+            class:is-dragging={squadDragFromId === squad.id}
+            class:drop-gap-before={squadDropGapIndex === index && squadDragFromId != null}
+            role="listitem"
+            on:pointerdown={(e) => onSquadPointerDown(e, squad.id)}
+            on:click={() => selectSquad(squad.id)}
+            on:keydown={(e) => e.key === 'Enter' && selectSquad(squad.id)}
+            tabindex="0"
+          >
+            <Tab
+              label={squad.name}
+              image={squad.iconUrl ?? ''}
+              active={$activeView === 'hub' && $activeSquadId === squad.id}
+            />
+          </div>
+        {/each}
+        {#if squadDragFromId != null && squadDropGapIndex === orderedSquads.length}
+          <div class="squad-drop-gap-end" aria-hidden="true"></div>
+        {/if}
+      </div>
     {/if}
   </div>
   {/if}
@@ -452,6 +651,21 @@
     </div>
   </div>
 </div>
+
+{#if squadGhost}
+  <div
+    class="squad-drag-ghost"
+    style="transform: translate3d({squadGhost.x - 24}px, {squadGhost.y - 24}px, 0);"
+    use:portal
+    aria-hidden="true"
+  >
+    {#if squadGhost.image}
+      <img src={squadGhost.image} alt="" />
+    {:else}
+      <span>{squadGhost.name.charAt(0).toUpperCase()}</span>
+    {/if}
+  </div>
+{/if}
 
 {#if showOrganizeSquadModal}
   <Modal titleId="organize-squad-title" descriptionId="organize-squad-description" onClose={closeOrganizeSquadModal}>
@@ -691,5 +905,114 @@
   .organize-btn-create:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .squad-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .squad-nav-item {
+    position: relative;
+    cursor: grab;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .squad-nav-item:active {
+    cursor: grabbing;
+  }
+
+  /* Nested Tab button steals focus/drop in WebKit — route pointer to the wrapper. */
+  .squad-nav-item :global(.server-button) {
+    pointer-events: none;
+  }
+
+  .squad-nav-item.is-dragging {
+    opacity: 0.2;
+    cursor: grabbing;
+  }
+
+  .squad-nav-item.is-dragging :global(.server-button) {
+    background: var(--border-subtle);
+    box-shadow: none;
+  }
+
+  .squad-nav-item.drop-gap-before::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: -1px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .squad-drop-gap-end {
+    width: calc(100% - 20px);
+    height: 3px;
+    margin: 2px 0 6px;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    flex-shrink: 0;
+  }
+
+  /* While dragging, don't paint every hovered pill as "active". */
+  .tab-list.squad-rail-dragging .squad-nav-item:not(.is-dragging) :global(.server-button:hover) {
+    background: var(--border-subtle);
+    box-shadow: none;
+  }
+
+  .tab-list.squad-rail-dragging .squad-nav-item:not(.is-dragging) :global(.server-button.active) {
+    background: var(--accent);
+  }
+
+  .squad-drag-ghost {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 100000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    will-change: transform;
+  }
+
+  .squad-drag-ghost img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  :global(body.pacto-squad-nav-dragging),
+  :global(body.pacto-squad-nav-dragging *) {
+    cursor: grabbing !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
   }
 </style>

@@ -16,6 +16,7 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   showMembersPanel,
   squadDashboardChannelMode,
   myDashboardChannelMode,
@@ -98,6 +99,10 @@ import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { backupVerified } from '../../stores/backup-verification';
+import {
+  MLS_HISTORY_WELCOME_PREFIX,
+  mlsHistoryWelcomeGroupIds,
+} from '../../stores/mls-history-welcome';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -106,6 +111,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_channel_id',
   'pacto_last_channel_by_squad',
   'pacto_last_hub_channel_name_by_squad',
+  'pacto_squad_nav_order',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
   'pacto_app_inbox',
@@ -128,6 +134,7 @@ const SCOPED_KEY_PREFIXES = [
   ...INVITE_DECISION_SCOPED_PREFIXES,
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
+  MLS_HISTORY_WELCOME_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -183,6 +190,7 @@ export function clearAccountState(npub?: string): void {
   lastOpenedChannelId.set(null);
   lastChannelBySquadId.set({});
   lastHubChannelNameBySquadId.set({});
+  squadNavOrder.set([]);
   activeSquadId.set(null);
   activeChannelId.set(null);
   activeHubChannelName.set(null);
@@ -194,6 +202,7 @@ export function clearAccountState(npub?: string): void {
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
+  mlsHistoryWelcomeGroupIds.set([]);
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
   groupSendError.set(null);

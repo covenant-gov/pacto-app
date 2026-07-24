@@ -34,6 +34,10 @@ const TYPE_KEYS: Record<string, string> = {
 	squad_safe_updated: 'messaging.structuredNotice.treasurySafeUpdated',
 	safe_proposal: 'messaging.structuredNotice.safeProposal',
 	dashboard_poll_created: 'messaging.structuredNotice.dashboardPollCreated',
+	squad_outbound_invite: 'messaging.structuredNotice.squadInvitePending',
+	squad_admit_needed: 'messaging.structuredNotice.squadMemberAdmit',
+	squad_channels_catalog: 'messaging.structuredNotice.squadChannelsUpdated',
+	squad_invite_accepted: 'messaging.structuredNotice.squadInviteAccepted',
 };
 
 function tryParseObject(content: string): Record<string, unknown> | null {

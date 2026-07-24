@@ -251,6 +251,49 @@ describe('formatMessageContentWithMentions', () => {
     expect(result).toContain('@alice');
     expect(result).not.toContain('class="mention"');
   });
+
+  it('uses nickname/name fallbacks and Set roster membership', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', { DOMPurify: purify, marked: undefined, twemoji: undefined });
+    const nickProfiles = { [ALICE_NPUB]: { nickname: 'Nicky' } as NostrProfile };
+    expect(
+      formatMessageContentWithMentions('hi @alice', [ALICE], nickProfiles, new Set([ALICE_NPUB])),
+    ).toContain('@Nicky');
+
+    const nameProfiles = { [ALICE_NPUB]: { name: 'Named' } as NostrProfile };
+    expect(
+      formatMessageContentWithMentions('hi @alice', [ALICE], nameProfiles, [ALICE_NPUB]),
+    ).toContain('@Named');
+
+    const emptyProfiles = { [ALICE_NPUB]: {} as NostrProfile };
+    const withFallback = formatMessageContentWithMentions(
+      'hi @alice',
+      [ALICE],
+      emptyProfiles,
+      [ALICE_NPUB],
+    );
+    expect(withFallback).toContain('@alice');
+    expect(withFallback).not.toContain('mention-trust');
+
+    const renamed = {
+      [ALICE_NPUB]: { display_name: 'Alice X' } as NostrProfile,
+    };
+    const trusted = formatMessageContentWithMentions('hi @alice', [ALICE], renamed, [ALICE_NPUB]);
+    expect(trusted).toContain('mention-trust');
+    expect(trusted).toMatch(/npub1ali/i);
+  });
+
+  it('skips mid-token @mentions', () => {
+    const purify = createIdentityPurify();
+    vi.stubGlobal('window', { DOMPurify: purify, marked: undefined, twemoji: undefined });
+    const result = formatMessageContentWithMentions(
+      'email@alice and @alice_extra @alice',
+      [ALICE],
+      ALICE_PROFILES,
+      ALICE_ROSTER,
+    );
+    expect((result.match(/class="mention"/g) ?? []).length).toBe(1);
+  });
 });
 
 describe('mentionSanitizeAttributeHook', () => {
@@ -288,5 +331,11 @@ describe('mentionSanitizeAttributeHook', () => {
     const data = fakeData('evil123');
     mentionSanitizeAttributeHook(fakeNode('SPAN', 'mention'), data, {});
     expect(data.keepAttr).toBe(false);
+  });
+
+  it('ignores non data-npub attributes', () => {
+    const data = { attrName: 'href', attrValue: 'https://x', keepAttr: true };
+    mentionSanitizeAttributeHook(fakeNode('SPAN', 'mention'), data, {});
+    expect(data.keepAttr).toBe(true);
   });
 });

@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   addPersonalRpc,
+  formatRpcDisplay,
+  isValidRpcUrl,
   loadDefaultRpc,
   loadRpcPrefs,
   listDefaultRpcOptions,
   listPersonalRpcs,
+  normalizeRpcUrl,
+  removePersonalRpc,
   resolveUserRpcUrls,
   saveDefaultRpc,
   WALLET_RPC_PREFS_PREFIX,
@@ -38,6 +42,11 @@ describe('rpc prefs', () => {
         return store.size;
       },
     } as Storage;
+    // Seed valid empty prefs so load never returns the shared EMPTY_PREFS shallow copy.
+    store.set(
+      `${WALLET_RPC_PREFS_PREFIX}_${NPUB}`,
+      JSON.stringify({ v: 1, personal: {}, defaultRpc: {} }),
+    );
   });
 
   afterEach(() => {
@@ -49,11 +58,30 @@ describe('rpc prefs', () => {
     delete (globalThis as unknown as { localStorage?: Storage }).localStorage;
   });
 
+  it('validates and normalizes RPC URLs', () => {
+    expect(isValidRpcUrl('https://example.com/rpc')).toBe(true);
+    expect(isValidRpcUrl('ftp://example.com')).toBe(false);
+    expect(isValidRpcUrl('not a url')).toBe(false);
+    expect(normalizeRpcUrl(' https://example.com/rpc/ ')).toBe('https://example.com/rpc');
+    expect(normalizeRpcUrl('ftp://example.com')).toBeNull();
+    expect(formatRpcDisplay('https://short.example/rpc')).toBe('https://short.example/rpc');
+    expect(
+      formatRpcDisplay('https://very-long-rpc-provider.example.com/v2/with-a-long-path-and-key'),
+    ).toContain('…');
+  });
+
   it('stores personal RPCs per chain', () => {
     const url = 'https://arb-mainnet.g.alchemy.com/v2/demo-key';
     const result = addPersonalRpc(NPUB, 'arbitrum', url);
     expect(result.ok).toBe(true);
     expect(listPersonalRpcs(NPUB, 'arbitrum')).toEqual([url.replace(/\/+$/, '')]);
+  });
+
+  it('rejects invalid and duplicate personal RPCs', () => {
+    expect(addPersonalRpc(NPUB, 'sepolia', 'ftp://x').ok).toBe(false);
+    const url = 'https://example.com/rpc';
+    expect(addPersonalRpc(NPUB, 'sepolia', url).ok).toBe(true);
+    expect(addPersonalRpc(NPUB, 'sepolia', url).ok).toBe(false);
   });
 
   it('lists personal and curated options for default picker', () => {
@@ -70,6 +98,46 @@ describe('rpc prefs', () => {
     saveDefaultRpc(NPUB, 'arbitrum', url);
     expect(loadDefaultRpc(NPUB, 'arbitrum')).toBe(url);
     expect(resolveUserRpcUrls('arbitrum', NPUB)[0]).toBe(url);
+  });
+
+  it('clears defaults and removes personal RPCs', () => {
+    const url = 'https://example.com/rpc';
+    addPersonalRpc(NPUB, 'arbitrum', url);
+    saveDefaultRpc(NPUB, 'arbitrum', url);
+    saveDefaultRpc(NPUB, 'arbitrum', null);
+    expect(loadDefaultRpc(NPUB, 'arbitrum')).toBeNull();
+    saveDefaultRpc(NPUB, 'arbitrum', url);
+    removePersonalRpc(NPUB, 'arbitrum', url);
+    expect(listPersonalRpcs(NPUB, 'arbitrum')).toEqual([]);
+    expect(loadDefaultRpc(NPUB, 'arbitrum')).toBeNull();
+  });
+
+  it('ignores corrupt storage and disallowed defaults', () => {
+    expect(loadRpcPrefs(undefined).personal).toEqual({});
+    store.set(`${WALLET_RPC_PREFS_PREFIX}_${NPUB}`, '{');
+    expect(loadRpcPrefs(NPUB).defaultRpc).toEqual({});
+    store.set(
+      `${WALLET_RPC_PREFS_PREFIX}_${NPUB}`,
+      JSON.stringify({
+        v: 999,
+        personal: { sepolia: ['https://example.com'] },
+      }),
+    );
+    expect(Object.keys(loadRpcPrefs(NPUB).personal)).toEqual([]);
+    store.set(
+      `${WALLET_RPC_PREFS_PREFIX}_${NPUB}`,
+      JSON.stringify({
+        v: 1,
+        personal: { nope: ['https://example.com'], sepolia: ['ftp://x', 'https://ok.example', 3] },
+        defaultRpc: { sepolia: 'https://not-allowed.example', arbitrum: 12 },
+      }),
+    );
+    expect(listPersonalRpcs(NPUB, 'sepolia')).toEqual(['https://ok.example']);
+    expect(loadDefaultRpc(NPUB, 'sepolia')).toBeNull();
+    saveDefaultRpc(NPUB, 'sepolia', 'https://not-allowed.example');
+    expect(loadDefaultRpc(NPUB, 'sepolia')).toBeNull();
+    expect(resolveUserRpcUrls('sepolia', NPUB)[0]).not.toBe('https://not-allowed.example');
+    expect(resolveUserRpcUrls('sepolia', null).length).toBeGreaterThan(0);
   });
 
   it('persists under scoped storage key', () => {

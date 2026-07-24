@@ -27,6 +27,10 @@ vi.mock('../squad/squad-catalog', () => ({
   persistSquadPatch: vi.fn(),
 }));
 
+vi.mock('../squad/squad-channels-catalog', () => ({
+  publishSquadChannelsCatalog: vi.fn(),
+}));
+
 vi.mock('../../stores/squads', () => ({
   squads: createMockWritable<Squad[]>([]),
   SQUAD_DASHBOARD_CHANNEL_ID: '__squad_dashboard__',
@@ -45,6 +49,7 @@ import { createGroupChat, formatChannelInSquadMessage, sendDmMessage } from '../
 import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar';
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { persistSquadPatch } from '../squad/squad-catalog';
+import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
 import { squads, type Squad } from '../../stores/squads';
 import {
   activeChannelId,
@@ -68,7 +73,7 @@ function createMockWritable<T>(initial: T) {
     },
     update: (fn: (v: T) => T) => {
       value = fn(value);
-      subscribers.forEach((fn) => fn(value));
+      subscribers.forEach((sub) => sub(value));
     },
     subscribe: (fn: (v: T) => void) => {
       fn(value);
@@ -83,7 +88,7 @@ const parent: Squad = {
   name: 'Alpha',
   channels: [
     { name: 'announcements', groupId: 'g-announce', order: 0 },
-    { name: 'general', groupId: 'g-general', order: 1 },
+    { name: 'general', groupId: 'g-general', order: 1, access: 'open' },
   ],
   kind: 'squad',
   createdAt: 1,
@@ -111,6 +116,7 @@ describe('runCreateChannelInParent', () => {
     vi.mocked(createGroupChat).mockReset().mockResolvedValue('g-new-channel');
     vi.mocked(formatChannelInSquadMessage).mockReset().mockReturnValue('channel-in-squad-payload');
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
+    vi.mocked(publishSquadChannelsCatalog).mockReset().mockResolvedValue(true);
     vi.mocked(getAnnouncementsChannel).mockReset().mockReturnValue({
       name: 'announcements',
       groupId: 'g-announce',
@@ -134,13 +140,14 @@ describe('runCreateChannelInParent', () => {
     lastHubChannelNameBySquadId.set({});
   });
 
-  it('optimistically creates a placeholder channel and updates navigation', async () => {
+  it('optimistically creates a placeholder channel with access', async () => {
     const onErrorBanner = vi.fn();
     runCreateChannelInParent({
       parent,
       squadId: 'parent-1',
       name: 'new-channel',
       selectedNpubs: ['npub-a'],
+      access: 'open',
       onErrorBanner,
     });
 
@@ -148,22 +155,17 @@ describe('runCreateChannelInParent', () => {
     expect(state[0]?.channels).toHaveLength(3);
     const placeholder = state[0]?.channels.find((c) => c.name === 'new-channel');
     expect(placeholder?.groupId).toMatch(/^creating-\d+$/);
-    expect(placeholder?.order).toBe(2);
-
-    expect(get(activeChannelId)).toBe(placeholder?.groupId);
-    expect(get(activeHubChannelName)).toBe('new-channel');
-    expect(get(activeView)).toBe('hub');
-    expect(get(lastChannelBySquadId)['parent-1']).toBe(placeholder?.groupId);
-    expect(get(lastHubChannelNameBySquadId)['parent-1']).toBe('new-channel');
+    expect(placeholder?.access).toBe('open');
   });
 
-  it('replaces the placeholder after MLS create and sends DMs', async () => {
+  it('persists open channel and publishes catalog', async () => {
     const onErrorBanner = vi.fn();
     runCreateChannelInParent({
       parent,
       squadId: 'parent-1',
       name: 'new-channel',
       selectedNpubs: ['npub-a', 'npub-b'],
+      access: 'open',
       onErrorBanner,
     });
 
@@ -172,53 +174,35 @@ describe('runCreateChannelInParent', () => {
     });
 
     await vi.waitFor(() => {
-      expect(persistSquadPatch).toHaveBeenCalled();
+      expect(publishSquadChannelsCatalog).toHaveBeenCalled();
     });
 
     const state = get(squads);
-    expect(state[0]?.channels).toHaveLength(3);
-    expect(state[0]?.channels.some((c) => c.groupId === 'g-new-channel')).toBe(true);
-    expect(state[0]?.channels.some((c) => c.groupId.startsWith('creating-'))).toBe(false);
-
-    expect(formatChannelInSquadMessage).toHaveBeenCalledWith({
-      type: 'channel_in_squad',
-      squadName: 'Alpha',
-      announcementsGroupId: 'g-announce',
-      channelGroupId: 'g-new-channel',
-      channelName: 'new-channel',
-    });
-
-    await vi.waitFor(() => {
-      expect(sendDmMessage).toHaveBeenCalledTimes(2);
-    });
-
-    expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
-    expect(sendDmMessage).toHaveBeenCalledWith('npub-b', 'channel-in-squad-payload');
-
+    expect(state[0]?.channels.some((c) => c.groupId === 'g-new-channel' && c.access === 'open')).toBe(
+      true
+    );
     expect(onErrorBanner).not.toHaveBeenCalled();
   });
 
-  it('continues sending DMs when one recipient fails', async () => {
-    vi.mocked(sendDmMessage)
-      .mockRejectedValueOnce(new Error('dm failed'))
-      .mockResolvedValue(true);
-    const onErrorBanner = vi.fn();
-
+  it('does not publish catalog for closed channels', async () => {
     runCreateChannelInParent({
       parent,
       squadId: 'parent-1',
-      name: 'new-channel',
-      selectedNpubs: ['npub-a', 'npub-b'],
-      onErrorBanner,
+      name: 'secret',
+      selectedNpubs: ['npub-a'],
+      access: 'closed',
+      onErrorBanner: vi.fn(),
     });
 
     await vi.waitFor(() => {
-      expect(sendDmMessage).toHaveBeenCalledTimes(2);
+      expect(createGroupChat).toHaveBeenCalled();
     });
 
-    expect(sendDmMessage).toHaveBeenCalledWith('npub-a', 'channel-in-squad-payload');
-    expect(sendDmMessage).toHaveBeenCalledWith('npub-b', 'channel-in-squad-payload');
-    expect(onErrorBanner).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(sendDmMessage).toHaveBeenCalled();
+    });
+
+    expect(publishSquadChannelsCatalog).not.toHaveBeenCalled();
   });
 
   it('rolls back on error and shows a banner', async () => {
@@ -230,6 +214,7 @@ describe('runCreateChannelInParent', () => {
       squadId: 'parent-1',
       name: 'new-channel',
       selectedNpubs: ['npub-a'],
+      access: 'open',
       onErrorBanner,
     });
 

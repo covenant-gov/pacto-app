@@ -21,3 +21,4 @@ export * from './dm';
 export * from './dm-unread';
 export * from './squads';
 export * from './mls-chat';
+export * from './mls-history-welcome';
