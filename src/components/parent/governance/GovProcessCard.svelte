@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { GovProcessCard } from '../../../lib/governance/gov-process';
   import { govProcessToolLabel } from '../../../lib/governance/gov-process';
   import { treasuryProposalStatusLabel } from '../../../lib/governance/pacto-gov-payload';
@@ -15,7 +16,7 @@
   export let executeDisabledReason = '';
   export let onExecute: (() => void) | undefined = undefined;
 
-  $: tool = govProcessToolLabel(card);
+  $: tool = $t(govProcessToolLabel(card));
   $: isActive =
     card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
   $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
@@ -27,24 +28,29 @@
         : card.status === 'executable';
   $: title =
     card.kind === 'treasury'
-      ? `Proposal #${card.proposal.proposalId}`
+      ? $t('governance.proposal.title', { values: { id: card.proposal.proposalId } })
       : card.kind === 'mutiny'
-        ? `Mutiny #${card.status.activeMutinyId}`
+        ? $t('governance.proposal.mutinyTitle', { values: { id: card.status.activeMutinyId } })
         : card.kind === 'crew_add'
-          ? 'Add crew member'
-          : 'Remove crew member';
+          ? $t('governance.proposal.addCrewTitle')
+          : $t('governance.proposal.removeCrewTitle');
   $: statusLabel =
     card.kind === 'treasury'
       ? treasuryProposalStatusLabel(card.proposal.status)
       : card.kind === 'mutiny'
         ? isMutinyExecutable(card.status)
-          ? 'Ready to execute'
-          : 'Active'
+          ? $t('governance.proposal.readyToExecute')
+          : $t('governance.proposal.active')
         : card.status === 'executable'
-          ? 'Ready to execute'
-          : 'Timelock';
+          ? $t('governance.proposal.readyToExecute')
+          : $t('governance.proposal.timelock');
   $: outcome =
     card.kind === 'treasury' ? treasuryProposalOutcomeLabel(card.proposal.status) : '';
+  $: executeTitle = executeDisabledReason
+    ? executeDisabledReason.startsWith('governance.')
+      ? $t(executeDisabledReason)
+      : executeDisabledReason
+    : $t('governance.common.execute');
 </script>
 
 <li
@@ -66,32 +72,46 @@
 
   {#if card.kind === 'treasury'}
     <p class="proposal-card-meta muted">
-      Yeas {card.proposal.yeas} / nays {card.proposal.nays} · snapshot {card.proposal.snapshot} · deadline
-      {new Date(card.proposal.deadline * 1000).toLocaleString()}
+      {$t('governance.proposal.meta', {
+        values: {
+          yeas: card.proposal.yeas,
+          nays: card.proposal.nays,
+          snapshot: card.proposal.snapshot,
+          deadline: new Date(card.proposal.deadline * 1000).toLocaleString(),
+        },
+      })}
     </p>
     {#if card.proposal.captainApproved}
-      <p class="proposal-card-meta muted">Captain approved</p>
+      <p class="proposal-card-meta muted">{$t('governance.proposal.captainApproved')}</p>
     {:else if card.proposal.captainDefeated}
-      <p class="proposal-card-meta muted">Captain vetoed</p>
+      <p class="proposal-card-meta muted">{$t('governance.proposal.captainVetoed')}</p>
     {/if}
     <p class="proposal-card-target muted">
-      Target <code class="proposal-card-ref">{card.proposal.to}</code>
+      {$t('governance.proposal.target')} <code class="proposal-card-ref">{card.proposal.to}</code>
     </p>
   {:else if card.kind === 'mutiny'}
     <p class="proposal-card-meta muted">
-      Toward <code class="proposal-card-ref">{card.status.proposedNewCaptain || '—'}</code>
-      · yeas {card.status.yeas} / snapshot {card.status.snapshot}
+      {$t('governance.proposal.mutinyMeta', {
+        values: {
+          candidate: card.status.proposedNewCaptain || '—',
+          yeas: card.status.yeas,
+          snapshot: card.status.snapshot,
+        },
+      })}
     </p>
     <p class="proposal-card-meta muted">
-      Captain <code class="proposal-card-ref">{card.status.captain || '—'}</code>
+      {$t('governance.proposal.captainLine')}
+      <code class="proposal-card-ref">{card.status.captain || '—'}</code>
     </p>
   {:else}
     <p class="proposal-card-meta muted">
-      {card.kind === 'crew_add' ? 'Candidate' : 'Member'}
+      {card.kind === 'crew_add' ? $t('governance.proposal.candidate') : $t('governance.proposal.member')}
       <code class="proposal-card-ref">{card.address}</code>
     </p>
     <p class="proposal-card-meta muted">
-      Executable {new Date(card.executableAt * 1000).toLocaleString()}
+      {$t('governance.proposal.executableAt', {
+        values: { when: new Date(card.executableAt * 1000).toLocaleString() },
+      })}
     </p>
   {/if}
 
@@ -100,10 +120,10 @@
       type="button"
       class="execute-btn"
       disabled={executePending || !!executeDisabledReason}
-      title={executeDisabledReason || 'Execute'}
+      title={executeTitle}
       on:click={() => onExecute()}
     >
-      Execute
+      {$t('governance.common.execute')}
     </button>
   {/if}
 </li>

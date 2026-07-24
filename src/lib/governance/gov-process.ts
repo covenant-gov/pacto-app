@@ -57,6 +57,7 @@ export function buildGovProcessCards(params: {
   }
 
   for (const row of params.qmPending) {
+    if (row.kind !== 'add' && row.kind !== 'remove') continue;
     const executableAt = parseExecutableAt(row.executableAt);
     if (!executableAt || !row.address?.trim()) continue;
     const kind: CrewPendingKind = row.kind === 'remove' ? 'crew_remove' : 'crew_add';
@@ -98,15 +99,16 @@ export function countOpenGovProcesses(cards: GovProcessCard[]): number {
   return cards.filter(isGovProcessActive).length;
 }
 
+/** i18n key for the process tool badge. */
 export function govProcessToolLabel(card: GovProcessCard): string {
   switch (card.kind) {
     case 'treasury':
-      return 'Treasury Authority';
+      return 'governance.title.treasuryAuthority';
     case 'mutiny':
-      return 'Mutiny';
+      return 'governance.title.mutiny';
     case 'crew_add':
     case 'crew_remove':
-      return 'Quartermaster';
+      return 'governance.title.quartermaster';
   }
 }
 

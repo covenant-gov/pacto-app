@@ -182,12 +182,12 @@ export function gatePermissionlessSigner(p: GovernancePrivilege): CtaGate {
 /** Timelocked crew execute — ACL `quartermasterExecute` or any linked squad EVM. */
 export function gateQuartermasterExecute(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
   if (mutinyMode) {
-    return { enabled: false, reason: 'Quartermaster locked while mutiny is active.' };
+    return { enabled: false, reason: 'governance.gate.quartermasterLocked' };
   }
   return (
     gateFromCapability(p, 'quartermasterExecute') ??
     (() => {
-      if (!p.myAddress) return { enabled: false, reason: 'Link a squad EVM address to sign.' };
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToSign' };
       return { enabled: true, reason: '' };
     })()
   );

@@ -166,7 +166,7 @@ export function setSquadRpcPrimary(
   rawUrl: string,
 ): { ok: true; config: SquadRpcConfig } | { ok: false; error: string } {
   const slot = urlSlot(rawUrl);
-  if (!slot) return { ok: false, error: 'Enter a valid http(s) RPC URL.' };
+  if (!slot) return { ok: false, error: 'squad.rpc.error.invalidUrl' };
   const config: SquadRpcConfig = {
     chain,
     rpc1: slot,
@@ -183,7 +183,7 @@ export function setSquadRpcBackup(
   rawUrl: string,
 ): { ok: true; config: SquadRpcConfig } | { ok: false; error: string } {
   const slot = urlSlot(rawUrl);
-  if (!slot) return { ok: false, error: 'Enter a valid http(s) RPC URL.' };
+  if (!slot) return { ok: false, error: 'squad.rpc.error.invalidUrl' };
   const existing = loadSquadRpcConfig(accountNpub, parentId);
   const rpc1 =
     existing?.rpc1.kind === 'url'
@@ -192,7 +192,7 @@ export function setSquadRpcBackup(
         ? existing.rpc1
         : null;
   if (!rpc1 || rpc1.kind !== 'url') {
-    return { ok: false, error: 'Set a custom primary RPC before adding a backup.' };
+    return { ok: false, error: 'squad.rpc.error.backupNeedsPrimary' };
   }
   const config: SquadRpcConfig = {
     chain,
@@ -282,17 +282,18 @@ export function buildSquadInvokeRpcUrls(
   return out;
 }
 
+/** Host for custom URLs, otherwise an i18n key under `squad.rpc.label.*`. */
 export function formatSquadRpcLabel(config: SquadRpcConfig | null): string {
-  if (!config) return 'Not set';
-  if (config.rpc1.kind === 'default_public') return 'Public node';
+  if (!config) return 'squad.rpc.label.notSet';
+  if (config.rpc1.kind === 'default_public') return 'squad.rpc.label.publicNode';
   if (config.rpc1.kind === 'url') {
     try {
       return new URL(config.rpc1.url).host;
     } catch {
-      return 'Custom';
+      return 'squad.rpc.label.custom';
     }
   }
-  return 'Not set';
+  return 'squad.rpc.label.notSet';
 }
 
 export function squadRpcHasBackup(config: SquadRpcConfig | null): boolean {

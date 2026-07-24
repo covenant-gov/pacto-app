@@ -49,4 +49,16 @@ describe('squad-rpc-share', () => {
       ),
     ).toBeNull();
   });
+
+  it('rejects mismatched payload version', () => {
+    const rpc1 = urlSlot('https://primary.example/rpc')!;
+    const rpc2 = defaultPublicSlot();
+    const raw = formatSquadRpcUpdated({
+      parentId: 'gid-1',
+      config: { chain: 'sepolia', rpc1, rpc2 },
+    });
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed.version = 999;
+    expect(parseSquadRpcUpdated(JSON.stringify(parsed))).toBeNull();
+  });
 });

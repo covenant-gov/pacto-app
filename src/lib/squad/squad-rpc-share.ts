@@ -7,6 +7,7 @@ import { get } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
 import { currentUser } from '../../stores/auth';
 import type { SupportedChainId } from '../wallet/chains';
+import { dmWarn } from '../utils/dm-debug';
 import { isSquadDeployableChain, loadSquadNetworkOverride } from './squad-network';
 import {
   effectiveSquadRpcConfig,
@@ -59,6 +60,7 @@ export function parseSquadRpcUpdated(
   if (!parsed || typeof parsed !== 'object') return null;
   const root = parsed as Record<string, unknown>;
   if (root.type !== SQUAD_RPC_UPDATED_TYPE) return null;
+  if (root.version !== SQUAD_RPC_UPDATED_VERSION) return null;
   const payload = root.payload;
   if (!payload || typeof payload !== 'object') return null;
   const p = payload as Record<string, unknown>;
@@ -95,7 +97,7 @@ export async function publishSquadRpcUpdated(announcementsGroupId: string): Prom
     await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
     return true;
   } catch (e) {
-    console.warn('[squad-rpc] publish failed', e);
+    dmWarn('[squad-rpc] publish failed', e);
     return false;
   }
 }

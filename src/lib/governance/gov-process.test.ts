@@ -94,8 +94,23 @@ describe('gov-process helpers', () => {
       qmPending: [],
     });
     expect(cards).toHaveLength(1);
-    expect(govProcessToolLabel(cards[0])).toBe('Treasury Authority');
+    expect(govProcessToolLabel(cards[0])).toBe('governance.title.treasuryAuthority');
     expect(govProcessCardKey(cards[0])).toBe('treasury:1');
+  });
+
+  it('skips unknown quartermaster pending kinds', () => {
+    const cards = buildGovProcessCards({
+      treasuryProposals: [],
+      mutinyStatus: null,
+      qmPending: [
+        { kind: 'add', address: '0xADD', executableAt: '200' },
+        // @ts-expect-error intentional invalid wire kind
+        { kind: 'weird', address: '0xBAD', executableAt: '200' },
+      ],
+      nowSec: 200,
+    });
+    expect(cards).toHaveLength(1);
+    expect(cards[0].kind).toBe('crew_add');
   });
 
   it('sortGovProcessCards puts active before past', () => {

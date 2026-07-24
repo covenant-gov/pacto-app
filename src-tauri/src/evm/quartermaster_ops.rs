@@ -24,6 +24,7 @@ use super::rpc::logs::{
     get_logs_chunked, resolve_lookback_range, DEFAULT_LOG_CHUNK_BLOCKS, DEFAULT_LOG_LOOKBACK_BLOCKS,
 };
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
+use super::squad_sponsor_common::require_parent_member;
 
 fn encode_request_add_crew(candidate: &str) -> Result<Vec<u8>, String> {
     let addr = parse_address(candidate.trim())
@@ -230,53 +231,17 @@ pub async fn get_quartermaster_pending<R: Runtime>(
     })
 }
 
-/// Discover still-pending crew add/remove via QM event logs, verified with `pending*At` views.
-#[tauri::command]
-pub async fn list_quartermaster_pending<R: Runtime>(
-    _app: AppHandle<R>,
-    network: String,
-    quartermaster: String,
-    from_block: Option<u64>,
-    rpc_urls: Option<Vec<String>>,
-) -> Result<Vec<QuartermasterPendingActionDto>, String> {
-    let qm = parse_address(quartermaster.trim())
-        .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let (from, to) =
-        resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
-    let logs = get_logs_chunked(
-        &provider,
-        qm,
-        from,
-        to,
-        DEFAULT_LOG_CHUNK_BLOCKS,
-        Some(&qm_crew_lifecycle_topic0s()),
-    )
-    .await?;
-    let (add_addrs, remove_addrs) = collect_qm_pending_candidates_from_logs(&logs);
+/// True when two address strings match after trim + ASCII case fold.
+fn addresses_equal_normalized(a: &str, b: &str) -> bool {
+    a.trim().eq_ignore_ascii_case(b.trim())
+}
 
+/// Keep nonzero `executable_at` rows and sort for stable UI ordering.
+fn fold_qm_pending_verifies(
+    rows: impl IntoIterator<Item = (QmPendingKind, Address, U256)>,
+) -> Vec<QuartermasterPendingActionDto> {
     let mut out = Vec::new();
-    for (kind, addr) in add_addrs
-        .into_iter()
-        .map(|a| (QmPendingKind::Add, a))
-        .chain(remove_addrs.into_iter().map(|a| (QmPendingKind::Remove, a)))
-    {
-        let executable_at: U256 = match kind {
-            QmPendingKind::Add => eth_call_decode(
-                &provider,
-                qm,
-                &pendingCrewAddAtCall { _candidate: addr },
-            )
-            .await
-            .map_err(|e| wallet_err_json("QM_READ", e, None))?,
-            QmPendingKind::Remove => eth_call_decode(
-                &provider,
-                qm,
-                &pendingCrewRemoveAtCall { _crew: addr },
-            )
-            .await
-            .map_err(|e| wallet_err_json("QM_READ", e, None))?,
-        };
+    for (kind, addr, executable_at) in rows {
         if executable_at.is_zero() {
             continue;
         }
@@ -295,7 +260,74 @@ pub async fn list_quartermaster_pending<R: Runtime>(
             .then_with(|| a.address.cmp(&b.address))
             .then_with(|| a.kind.cmp(&b.kind))
     });
-    Ok(out)
+    out
+}
+
+/// Discover still-pending crew add/remove via QM event logs, verified with `pending*At` views.
+#[tauri::command]
+pub async fn list_quartermaster_pending<R: Runtime>(
+    app: AppHandle<R>,
+    network: String,
+    parent_id: String,
+    quartermaster: String,
+    from_block: Option<u64>,
+    rpc_urls: Option<Vec<String>>,
+) -> Result<Vec<QuartermasterPendingActionDto>, String> {
+    require_parent_member(&app, &parent_id).await?;
+    let qm = parse_address(quartermaster.trim())
+        .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
+    // Bind quartermaster address to this parent via stored infra (rejects mismatches).
+    let _parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
+
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
+    let (from, to) =
+        resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
+    let logs = get_logs_chunked(
+        &provider,
+        qm,
+        from,
+        to,
+        DEFAULT_LOG_CHUNK_BLOCKS,
+        Some(&qm_crew_lifecycle_topic0s()),
+    )
+    .await?;
+    let (add_addrs, remove_addrs) = collect_qm_pending_candidates_from_logs(&logs);
+
+    let candidates: Vec<(QmPendingKind, Address)> = add_addrs
+        .into_iter()
+        .map(|a| (QmPendingKind::Add, a))
+        .chain(remove_addrs.into_iter().map(|a| (QmPendingKind::Remove, a)))
+        .collect();
+
+    let verifies = futures_util::future::join_all(candidates.into_iter().map(|(kind, addr)| {
+        let provider = provider.clone();
+        async move {
+            let executable_at: U256 = match kind {
+                QmPendingKind::Add => eth_call_decode(
+                    &provider,
+                    qm,
+                    &pendingCrewAddAtCall { _candidate: addr },
+                )
+                .await
+                .map_err(|e| wallet_err_json("QM_READ", e, None))?,
+                QmPendingKind::Remove => eth_call_decode(
+                    &provider,
+                    qm,
+                    &pendingCrewRemoveAtCall { _crew: addr },
+                )
+                .await
+                .map_err(|e| wallet_err_json("QM_READ", e, None))?,
+            };
+            Ok::<_, String>((kind, addr, executable_at))
+        }
+    }))
+    .await;
+
+    let mut rows = Vec::with_capacity(verifies.len());
+    for row in verifies {
+        rows.push(row?);
+    }
+    Ok(fold_qm_pending_verifies(rows))
 }
 
 async fn qm_write<R: Runtime>(
@@ -483,8 +515,9 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_qm_pending_candidates_from_logs, encode_bootstrap_crew, encode_execute_add_crew,
-        encode_request_add_crew, encode_request_remove_crew, qm_crew_lifecycle_topic0s,
+        addresses_equal_normalized, collect_qm_pending_candidates_from_logs, encode_bootstrap_crew,
+        encode_execute_add_crew, encode_request_add_crew, encode_request_remove_crew,
+        fold_qm_pending_verifies, qm_crew_lifecycle_topic0s, QmPendingKind,
     };
     use alloy::primitives::{keccak256, Address, U256};
     use alloy::rpc::types::Log;
@@ -597,5 +630,30 @@ mod tests {
         assert!(adds.is_empty());
         assert_eq!(removes.len(), 1);
         assert!(removes.contains(&b));
+    }
+
+    #[test]
+    fn addresses_equal_normalized_trims_and_ignores_case() {
+        assert!(addresses_equal_normalized(
+            " 0xAbCDEF0000000000000000000000000000000001 ",
+            "0xabcdef0000000000000000000000000000000001"
+        ));
+        assert!(!addresses_equal_normalized(ADDR_A, ADDR_B));
+    }
+
+    #[test]
+    fn fold_qm_pending_verifies_drops_zero_and_sorts() {
+        let a = parse_address(ADDR_A).unwrap();
+        let b = parse_address(ADDR_B).unwrap();
+        let out = fold_qm_pending_verifies([
+            (QmPendingKind::Add, a, U256::ZERO),
+            (QmPendingKind::Remove, b, U256::from(50u64)),
+            (QmPendingKind::Add, a, U256::from(10u64)),
+        ]);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].kind, "add");
+        assert_eq!(out[0].executable_at, "10");
+        assert_eq!(out[1].kind, "remove");
+        assert_eq!(out[1].executable_at, "50");
     }
 }

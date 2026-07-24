@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import {
@@ -206,21 +207,23 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   async function handleSetSquadRpcPrimary(url: string): Promise<string | void> {
+    const tFn = get(t);
     const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim() || !squadNetwork) return 'Select a squad network first.';
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
     const res = setSquadRpcPrimary(npub, parentId.trim(), squadNetwork, url);
-    if (!res.ok) return res.error;
+    if (!res.ok) return tFn(res.error);
     const published = await publishSquadRpcUpdated(parentId.trim());
-    if (!published) return 'Saved locally, but could not share the RPC update with the squad.';
+    if (!published) return tFn('squad.rpc.error.publishFailed');
   }
 
   async function handleSetSquadRpcBackup(url: string): Promise<string | void> {
+    const tFn = get(t);
     const npub = $currentUser?.npub;
-    if (!npub || !parentId?.trim() || !squadNetwork) return 'Select a squad network first.';
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
     const res = setSquadRpcBackup(npub, parentId.trim(), squadNetwork, url);
-    if (!res.ok) return res.error;
+    if (!res.ok) return tFn(res.error);
     const published = await publishSquadRpcUpdated(parentId.trim());
-    if (!published) return 'Saved locally, but could not share the RPC update with the squad.';
+    if (!published) return tFn('squad.rpc.error.publishFailed');
   }
 
   async function handleClearSquadRpcPrimary(): Promise<void> {

@@ -197,16 +197,18 @@ describe('fetchTreasuryProposals', () => {
 
 describe('fetchQuartermasterPendingActions', () => {
   it('returns pending actions on success', async () => {
-    const pending = [{ kind: 'add', address: '0xadd', executableAt: '99' }];
+    const pending = [{ kind: 'add' as const, address: '0xadd', executableAt: '99' }];
     mockedListQuartermasterPending.mockResolvedValueOnce(pending);
 
     const result = await fetchQuartermasterPendingActions({
       network: 'sepolia',
       quartermaster: '0xqm',
+      parentId: 'parent1',
     });
 
     expect(mockedListQuartermasterPending).toHaveBeenCalledWith({
       network: 'sepolia',
+      parentId: 'parent1',
       quartermaster: '0xqm',
     });
     expect(result.pending).toEqual(pending);
@@ -219,6 +221,7 @@ describe('fetchQuartermasterPendingActions', () => {
     const result = await fetchQuartermasterPendingActions({
       network: 'sepolia',
       quartermaster: '0xqm',
+      parentId: 'parent1',
     });
 
     expect(result.pending).toEqual([]);

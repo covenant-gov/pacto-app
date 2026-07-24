@@ -794,7 +794,7 @@ export interface QuartermasterPendingDto {
 
 /** Pending crew add/remove discovered via QM logs + `pending*At` verify. */
 export interface QuartermasterPendingActionDto {
-  kind: 'add' | 'remove' | string;
+  kind: 'add' | 'remove';
   address: string;
   executableAt: string;
 }
@@ -827,12 +827,13 @@ export async function getQuartermasterPending(params: {
 
 export async function listQuartermasterPending(params: {
   network: string;
+  parentId: string;
   quartermaster: string;
   fromBlock?: number;
-  parentId?: string | null;
 }): Promise<QuartermasterPendingActionDto[]> {
   return (await invoke('list_quartermaster_pending', {
     network: params.network,
+    parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     fromBlock: params.fromBlock ?? null,
     rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),

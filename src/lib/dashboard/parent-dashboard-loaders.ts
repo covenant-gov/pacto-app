@@ -141,13 +141,13 @@ export async function fetchTreasuryProposals(params: {
 export async function fetchQuartermasterPendingActions(params: {
   network: string;
   quartermaster: string;
-  parentId?: string | null;
+  parentId: string;
 }): Promise<{ pending: QuartermasterPendingActionDto[]; error: string }> {
   try {
     const pending = await listQuartermasterPending({
       network: params.network,
-      quartermaster: params.quartermaster,
       parentId: params.parentId,
+      quartermaster: params.quartermaster,
     });
     return { pending, error: '' };
   } catch (e) {

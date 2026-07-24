@@ -60,7 +60,8 @@
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
   $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
-  $: rpcLabel = formatSquadRpcLabel(squadRpcConfig);
+  $: rpcLabelRaw = formatSquadRpcLabel(squadRpcConfig);
+  $: rpcLabel = rpcLabelRaw.startsWith('squad.rpc.') ? $t(rpcLabelRaw) : rpcLabelRaw;
   $: rpcHasBackup = squadRpcHasBackup(squadRpcConfig);
   $: rpcPrimaryIsCustom = squadRpcConfig?.rpc1.kind === 'url';
   $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
@@ -222,14 +223,14 @@
 </div>
 
 <div class="status-fact-row" id="squad-status-rpc">
-  <span class="meta-label">RPC</span>
+  <span class="meta-label">{$t('squad.rpc.label')}</span>
   {#if editingRpc}
     <input
       class="rpc-input"
       type="url"
       bind:value={rpcUrlDraft}
-      placeholder="https://…"
-      aria-label={editingRpc === 'backup' ? 'Backup squad RPC URL' : 'Primary squad RPC URL'}
+      placeholder={$t('squad.rpc.placeholder')}
+      aria-label={editingRpc === 'backup' ? $t('squad.rpc.backupAria') : $t('squad.rpc.primaryAria')}
     />
     <button
       type="button"
@@ -237,20 +238,22 @@
       disabled={!rpcUrlDraft.trim() || rpcPublishing}
       on:click={applyRpcEdit}
     >
-      {rpcPublishing ? 'Saving…' : 'Save'}
+      {rpcPublishing ? $t('squad.rpc.saving') : $t('squad.rpc.save')}
     </button>
-    <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={cancelRpcEdit}>Cancel</button>
+    <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={cancelRpcEdit}>
+      {$t('squad.rpc.cancel')}
+    </button>
     {#if rpcFormError}
       <span class="rpc-error" role="alert">{rpcFormError}</span>
     {/if}
   {:else}
     <span class="network-value">{rpcLabel}</span>
     {#if rpcHasBackup}
-      <span class="muted network-hint">+ backup</span>
+      <span class="muted network-hint">{$t('squad.rpc.backupHint')}</span>
     {/if}
     <EditIconButton
-      ariaLabel="Edit squad RPC"
-      title="Edit RPC"
+      ariaLabel={$t('squad.rpc.editAria')}
+      title={$t('squad.rpc.editTitle')}
       on:click={() => openRpcEdit('primary')}
     />
   {/if}
@@ -258,14 +261,14 @@
 {#if !editingRpc}
   <div class="rpc-actions">
     <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('primary')}>
-      Add custom RPC
+      {$t('squad.rpc.addCustom')}
     </button>
     {#if rpcPrimaryIsCustom}
       <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('backup')}>
-        Add backup RPC
+        {$t('squad.rpc.addBackup')}
       </button>
       <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={clearRpcPrimary}>
-        Use public node
+        {$t('squad.rpc.usePublic')}
       </button>
     {/if}
     <a
@@ -274,11 +277,11 @@
       target="_blank"
       rel="noopener noreferrer"
     >
-      Need an RPC provider?
+      {$t('squad.rpc.needProvider')}
     </a>
   </div>
   <p class="muted rpc-share-note">
-    Squad RPC endpoints are shared with all members. Your Settings default is a private fallback only.
+    {$t('squad.rpc.shareNote')}
   </p>
 {/if}
 

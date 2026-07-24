@@ -91,7 +91,7 @@
           quartermaster,
           candidate: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeAddCrew') } }));
+        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeAdd') } }));
       } else {
         await quartermasterExecuteRemoveCrew({
           network,
@@ -99,7 +99,7 @@
           quartermaster,
           crew: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeRemoveCrew') } }));
+        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeRemove') } }));
       }
       onRefreshProposals();
     } catch (e) {
