@@ -18,6 +18,7 @@ use super::rpc::{
 use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::squad_sponsor_read::read_sponsor_pool;
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -55,6 +56,7 @@ pub async fn get_squad_sponsor_withdrawable<R: Runtime>(
     parent_id: String,
     account_address: String,
     sponsor_address: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<String, String> {
     let pid = require_non_empty_parent_id(&parent_id)?;
     require_parent_member(&app, pid).await?;
@@ -64,7 +66,7 @@ pub async fn get_squad_sponsor_withdrawable<R: Runtime>(
     let net = require_network_config(&network)?;
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
@@ -95,6 +97,7 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
     parent_id: String,
     account_id: String,
     sponsor_address: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorWithdrawResult, String> {
     let pid = require_non_empty_parent_id(&parent_id)?;
     require_parent_member(&app, pid).await?;
@@ -103,7 +106,7 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
 
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }

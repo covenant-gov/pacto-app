@@ -18,6 +18,7 @@ use super::rpc::signer::{
     require_treasury_signing_allowed,
 };
 use super::squad_sponsor_common::require_sponsor_or_pacto_gov_infra_for_parent;
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -39,6 +40,7 @@ pub async fn safe_deploy_proxy<R: Runtime>(
     threshold: u32,
     salt_nonce: Option<String>,
     parent_id: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SafeDeployProxyResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     if let Some(pid) = parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -71,7 +73,7 @@ pub async fn safe_deploy_proxy<R: Runtime>(
 
     let calldata = encode_create_proxy_call(addrs.singleton, initializer, salt);
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",

@@ -6694,6 +6694,7 @@ pub fn run() {
             evm::mutiny_ops::mutiny_captain_resign,
             evm::quartermaster_ops::get_quartermaster_status,
             evm::quartermaster_ops::get_quartermaster_pending,
+            evm::quartermaster_ops::list_quartermaster_pending,
             evm::quartermaster_ops::quartermaster_request_add_crew,
             evm::quartermaster_ops::quartermaster_cancel_add_crew,
             evm::quartermaster_ops::quartermaster_execute_add_crew,

@@ -20,6 +20,7 @@ use super::squad_sponsor_common::{
     squad_id_from_parent_id,
 };
 use super::squad_sponsor_read::read_sponsor_pool;
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use super::pacto_chain_config;
 
@@ -103,6 +104,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     amount_wei: String,
     sponsor_address: Option<String>,
     signer_wallet: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorDepositResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let pid = require_non_empty_parent_id(&parent_id)?;
@@ -115,7 +117,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json(
             "RPC_CONFIG",

@@ -83,6 +83,7 @@ pub async fn get_nave_pirata_deployment<R: Runtime>(
     _app: AppHandle<R>,
     network: String,
     top_hat_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<NavePirataDeploymentDto, String> {
     let top_hat = parse_top_hat_id(top_hat_id.as_str())
         .map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
@@ -98,6 +99,6 @@ pub async fn get_nave_pirata_deployment<R: Runtime>(
         ));
     };
 
-    let (provider, ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     read_nave_pirata_deployment(&provider, registry, top_hat, ctx.key.as_str(), ctx.chain_id).await
 }

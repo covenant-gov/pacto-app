@@ -11,6 +11,7 @@
     getSquadCapabilities,
     type SquadCapabilitiesDto,
     type MutinyStatusDto,
+    type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
@@ -27,6 +28,7 @@
   } from '../../../lib/governance/governance-privilege';
   import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
@@ -65,6 +67,11 @@
   let qmStatus: QuartermasterStatusDto | null = null;
   let qmHydrateKey = '';
 
+  let qmPending: QuartermasterPendingActionDto[] = [];
+  let qmPendingLoading = false;
+  let qmPendingError = '';
+  let qmPendingHydrateKey = '';
+
   let rosterBalanceRaw = '0';
   let rosterBalanceKnown = false;
   let fundingBalanceKey = '';
@@ -102,9 +109,13 @@
     hasSponsorInfra: hasSponsor,
   });
 
-  $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
-    capabilitiesLoadKey = parentId.trim();
-    void loadCapabilities(parentId.trim());
+  $: {
+    const pid = parentId.trim();
+    const key = `${pid}|${network}`;
+    if (pid && key !== capabilitiesLoadKey) {
+      capabilitiesLoadKey = key;
+      void loadCapabilities(pid);
+    }
   }
 
   $: {
@@ -123,13 +134,22 @@
     }
   }
 
+  $: {
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|pending`;
+    if (key !== qmPendingHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
+      qmPendingHydrateKey = key;
+      void reloadQmPending();
+    }
+  }
+
   async function loadCapabilities(pid: string) {
+    const key = `${pid}|${network}`;
     try {
-      const snap = await getSquadCapabilities(pid);
-      if (pid !== capabilitiesLoadKey) return;
+      const snap = await getSquadCapabilities(pid, network);
+      if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {
-      if (pid !== capabilitiesLoadKey) return;
+      if (key !== capabilitiesLoadKey) return;
       capabilities = null;
     }
   }
@@ -176,7 +196,7 @@
         key,
         parentId,
         async () => {
-          const next = await getMutinyStatus({ network, mutinyModule });
+          const next = await getMutinyStatus({ network, mutinyModule, parentId });
           let voted = false;
           if (next.activeMutinyId !== '0' && privilege.myAddress) {
             voted = await mutinyHasVoted({
@@ -184,6 +204,7 @@
               mutinyModule,
               mutinyId: next.activeMutinyId,
               voter: privilege.myAddress,
+              parentId,
             });
           }
           return { status: next, hasVoted: voted };
@@ -222,7 +243,7 @@
       const next = await fetchGovModuleReadCached(
         key,
         parentId,
-        () => getQuartermasterStatus({ network, quartermaster }),
+        () => getQuartermasterStatus({ network, quartermaster, parentId }),
         { force: force || !!peeked },
       );
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
@@ -231,6 +252,29 @@
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
       if (!peeked) qmStatus = null;
     }
+  }
+
+  async function reloadQmPending() {
+    const quartermaster = payload.quartermaster?.trim();
+    if (!quartermaster) {
+      qmPending = [];
+      qmPendingError = '';
+      return;
+    }
+    const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
+    qmPendingLoading = qmPending.length === 0;
+    const result = await fetchQuartermasterPendingActions({ network, quartermaster, parentId });
+    if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
+    qmPendingLoading = false;
+    qmPending = result.pending;
+    qmPendingError = result.error;
+  }
+
+  function refreshAllProposals() {
+    onRefreshProposals();
+    void reloadMutiny(true);
+    void reloadQm(true);
+    void reloadQmPending();
   }
 
   async function executeMutinyFromBoard() {
@@ -251,9 +295,10 @@
   }
 
   onMount(() => {
-    if (parentId.trim()) {
-      capabilitiesLoadKey = parentId.trim();
-      void loadCapabilities(parentId.trim());
+    const pid = parentId.trim();
+    if (pid) {
+      capabilitiesLoadKey = `${pid}|${network}`;
+      void loadCapabilities(pid);
     }
   });
 
@@ -299,14 +344,18 @@
         {network}
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
-        mutinyModule={payload.mutinyModule ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
         {privilege}
         proposals={treasuryProposals}
         proposalsLoading={treasuryProposalsLoading}
         proposalsError={treasuryProposalsError}
         {mutinyStatus}
         {mutinyLoading}
-        {onRefreshProposals}
+        {qmPending}
+        {qmPendingLoading}
+        {qmPendingError}
+        mutinyMode={!!qmStatus?.mutinyActive || !!(mutinyStatus && mutinyStatus.activeMutinyId !== '0' && !mutinyStatus.executed)}
+        onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
       />
@@ -320,7 +369,7 @@
         proposals={treasuryProposals}
         {mutinyStatus}
         mutinyHasVotedFlag={mutinyHasVotedFlag}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
       />
@@ -337,9 +386,12 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
-        onRefreshQm={() => reloadQm(true)}
+        onRefreshQm={() => {
+          void reloadQm(true);
+          void reloadQmPending();
+        }}
         {fundingHint}
       />
     {/if}

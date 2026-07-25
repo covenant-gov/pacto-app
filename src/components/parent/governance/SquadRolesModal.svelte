@@ -47,15 +47,20 @@
     executorAddress = memberEvmOptions[0].address;
   }
 
-  $: if (open && parentId.trim() && parentId.trim() !== privilegeLoadKey) {
-    privilegeLoadKey = parentId.trim();
-    void loadPrivilege(parentId.trim());
+  $: if (open && parentId.trim()) {
+    const pid = parentId.trim();
+    const key = `${pid}|${network}`;
+    if (key !== privilegeLoadKey) {
+      privilegeLoadKey = key;
+      void loadPrivilege(pid);
+    }
   }
 
   async function loadPrivilege(pid: string) {
+    const key = `${pid}|${network}`;
     try {
-      const snap = await getSquadCapabilities(pid);
-      if (!open || pid !== privilegeLoadKey) return;
+      const snap = await getSquadCapabilities(pid, network);
+      if (!open || key !== privilegeLoadKey) return;
       loadedPrivilege = resolveGovernancePrivilege({
         myAddress: snap.rosterAddress,
         safeAddress: null,
@@ -64,7 +69,7 @@
         capabilities: snap,
       });
     } catch {
-      if (!open || pid !== privilegeLoadKey) return;
+      if (!open || key !== privilegeLoadKey) return;
       loadedPrivilege = null;
     }
   }

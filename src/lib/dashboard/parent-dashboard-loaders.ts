@@ -1,11 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { getMlsGroupMembers } from '../api/nostr';
-import type { HatTreeNodeDto, TreasuryProposalDto } from '../governance/api';
+import type {
+  HatTreeNodeDto,
+  QuartermasterPendingActionDto,
+  TreasuryProposalDto,
+} from '../governance/api';
 import {
   getHatsTree,
   getMemberHatWearers,
   getNavePirataDeployment,
   getSquadAdminExecutorRoles,
+  listQuartermasterPending,
   listTreasuryProposals,
   treasuryProposalHasVoted,
 } from '../governance/api';
@@ -113,11 +118,13 @@ export async function fetchTreasuryProposalVoteMap(params: {
 export async function fetchTreasuryProposals(params: {
   network: SupportedChainId;
   treasuryAuthority: string;
+  parentId?: string | null;
 }): Promise<{ proposals: TreasuryProposalDto[]; error: string }> {
   try {
     const rows = await listTreasuryProposals({
       network: params.network,
       treasuryAuthority: params.treasuryAuthority,
+      parentId: params.parentId,
     });
     return {
       proposals: [...rows].sort((a, b) => Number(b.proposalId) - Number(a.proposalId)),
@@ -131,12 +138,37 @@ export async function fetchTreasuryProposals(params: {
   }
 }
 
+export async function fetchQuartermasterPendingActions(params: {
+  network: string;
+  quartermaster: string;
+  parentId: string;
+}): Promise<{ pending: QuartermasterPendingActionDto[]; error: string }> {
+  try {
+    const pending = await listQuartermasterPending({
+      network: params.network,
+      parentId: params.parentId,
+      quartermaster: params.quartermaster,
+    });
+    return { pending, error: '' };
+  } catch (e) {
+    return {
+      pending: [],
+      error: getInvokeErrorMessage(e, 'Could not load pending crew changes.'),
+    };
+  }
+}
+
 export async function fetchHatsTree(params: {
   network: SupportedChainId;
   topHatId: string;
+  parentId?: string | null;
 }): Promise<{ tree: HatTreeNodeDto | null; error: string }> {
   try {
-    const tree = await getHatsTree({ network: params.network, topHatId: params.topHatId });
+    const tree = await getHatsTree({
+      network: params.network,
+      topHatId: params.topHatId,
+      parentId: params.parentId,
+    });
     return { tree, error: '' };
   } catch (e) {
     return {
@@ -151,6 +183,7 @@ export async function fetchExecutorRolesByAddress(params: {
   squadAdminProxy: string;
   squadAdminChain: string | null;
   evmAddresses: string[];
+  parentId?: string | null;
 }): Promise<Record<string, string>> {
   if (params.evmAddresses.length === 0) return {};
   const roleNetwork = parseSupportedChainId(params.squadAdminChain?.trim() || params.network);
@@ -161,6 +194,7 @@ export async function fetchExecutorRolesByAddress(params: {
           network: roleNetwork,
           squadAdminProxy: params.squadAdminProxy,
           executorAddress: addr,
+          parentId: params.parentId,
         });
         return {
           address: addr.toLowerCase(),
@@ -184,6 +218,7 @@ export async function fetchRolesTreeAnnotations(params: {
   squadMemberEvmByNpub: Record<string, string>;
   squadAdminProxy?: string | null;
   squadAdminChain?: string | null;
+  parentId?: string | null;
   /** Pacto Gov module addresses that may wear role hats. */
   protocolWearerCandidates?: string[];
 }): Promise<{
@@ -211,6 +246,7 @@ export async function fetchRolesTreeAnnotations(params: {
     const deployment = await getNavePirataDeployment({
       network: params.network,
       topHatId: params.topHatId,
+      parentId: params.parentId,
     });
     let assignments: Awaited<ReturnType<typeof getMemberHatWearers>> = [];
     if (wearerCandidates.length > 0) {
@@ -218,6 +254,7 @@ export async function fetchRolesTreeAnnotations(params: {
         network: params.network,
         memberAddresses: wearerCandidates,
         hatChecks: hatChecksForRolesTree(deployment, params.topHatId),
+        parentId: params.parentId,
       });
     }
     let executorRolesByAddress: Record<string, string> = {};
@@ -228,6 +265,7 @@ export async function fetchRolesTreeAnnotations(params: {
         squadAdminProxy,
         squadAdminChain: params.squadAdminChain ?? null,
         evmAddresses: memberAddresses,
+        parentId: params.parentId,
       });
     }
     const maps = mergeRolesTreeAnnotationMaps(deployment, assignments, params.topHatId);

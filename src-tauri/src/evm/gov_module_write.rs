@@ -19,6 +19,7 @@ use super::sponsor_userop::{
     send_sponsored_gov_userop, wait_for_user_operation_tx_hash, FALLBACK_CALL_GAS_LIMIT,
     FALLBACK_MAX_FEE,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -29,6 +30,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     to: Address,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls_override: Option<Vec<String>>,
 ) -> Result<(String, String, u64), String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -39,7 +41,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     };
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls_override.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
@@ -53,7 +55,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
-    require_capability(&app, pid, capability).await?;
+    require_capability(&app, pid, capability, rpc_urls_override).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let _write_guard = with_gov_write_lock(pid).await;

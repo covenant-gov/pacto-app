@@ -83,6 +83,7 @@ pub async fn get_member_hat_wearers<R: Runtime>(
     hats_contract: Option<String>,
     member_addresses: Vec<String>,
     hat_checks: Vec<HatCheckInput>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<Vec<MemberHatAssignmentDto>, String> {
     let net_key = network.to_lowercase();
     let hats = if let Some(raw) = hats_contract.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -108,7 +109,7 @@ pub async fn get_member_hat_wearers<R: Runtime>(
         })
         .collect();
 
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     let mut out = Vec::new();
 
     for raw in member_addresses {
@@ -141,13 +142,14 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
     network: String,
     squad_admin_proxy: String,
     executor_address: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminExecutorRolesDto, String> {
     let admin = parse_address(squad_admin_proxy.trim())
         .map_err(|e| wallet_err_json("INVALID_SQUAD_ADMIN", e, None))?;
     let exec = parse_address(executor_address.trim())
         .map_err(|e| wallet_err_json("INVALID_EXECUTOR", e, None))?;
 
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
 
     let full: bool = eth_call_decode(
         &provider,

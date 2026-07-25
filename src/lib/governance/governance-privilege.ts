@@ -179,6 +179,20 @@ export function gatePermissionlessSigner(p: GovernancePrivilege): CtaGate {
   );
 }
 
+/** Timelocked crew execute — ACL `quartermasterExecute` or any linked squad EVM. */
+export function gateQuartermasterExecute(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
+  if (mutinyMode) {
+    return { enabled: false, reason: 'governance.gate.quartermasterLocked' };
+  }
+  return (
+    gateFromCapability(p, 'quartermasterExecute') ??
+    (() => {
+      if (!p.myAddress) return { enabled: false, reason: 'governance.gate.linkSquadEvmAddressToSign' };
+      return { enabled: true, reason: '' };
+    })()
+  );
+}
+
 export function gateBlockedByMutinyMode(p: GovernancePrivilege, mutinyMode: boolean): CtaGate {
   if (mutinyMode) {
     return { enabled: false, reason: 'governance.gate.quartermasterLocked' };

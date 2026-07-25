@@ -44,26 +44,32 @@
     capabilities,
   }) as GovernancePrivilege;
 
-  $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
-    capabilitiesLoadKey = parentId.trim();
-    void loadCapabilities(parentId.trim());
+  $: {
+    const pid = parentId.trim();
+    const key = `${pid}|${network}`;
+    if (pid && key !== capabilitiesLoadKey) {
+      capabilitiesLoadKey = key;
+      void loadCapabilities(pid);
+    }
   }
 
   async function loadCapabilities(pid: string) {
+    const key = `${pid}|${network}`;
     try {
-      const snap = await getSquadCapabilities(pid);
-      if (pid !== capabilitiesLoadKey) return;
+      const snap = await getSquadCapabilities(pid, network);
+      if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {
-      if (pid !== capabilitiesLoadKey) return;
+      if (key !== capabilitiesLoadKey) return;
       capabilities = null;
     }
   }
 
   onMount(() => {
-    if (parentId.trim()) {
-      capabilitiesLoadKey = parentId.trim();
-      void loadCapabilities(parentId.trim());
+    const pid = parentId.trim();
+    if (pid) {
+      capabilitiesLoadKey = `${pid}|${network}`;
+      void loadCapabilities(pid);
     }
   });
 

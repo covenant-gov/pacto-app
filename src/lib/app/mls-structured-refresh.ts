@@ -12,6 +12,7 @@ import {
 } from '../squad/squad-state-sync';
 import { parseSquadNetworkUpdated } from '../squad/squad-network-share';
 import { saveSquadNetworkOverride } from '../squad/squad-network';
+import { applySquadRpcUpdated, parseSquadRpcUpdated } from '../squad/squad-rpc-share';
 import {
   onMlsAdmitNeeded,
   onMlsOutboundInviteAnnounce,
@@ -99,6 +100,14 @@ export function onMlsStructuredMessage(
     const me = get(currentUser)?.npub?.trim();
     if (me) {
       saveSquadNetworkOverride(me, networkUpdate.parent_id, networkUpdate.chain);
+    }
+  }
+
+  const rpcUpdate = parseSquadRpcUpdated(raw);
+  if (rpcUpdate && rpcUpdate.parent_id === gid) {
+    const me = get(currentUser)?.npub?.trim();
+    if (me) {
+      applySquadRpcUpdated(rpcUpdate, me);
     }
   }
 

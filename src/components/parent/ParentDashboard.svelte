@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import {
@@ -38,6 +39,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
   import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
+  import {
+    clearSquadRpcPrimary,
+    effectiveSquadRpcConfig,
+    setSquadRpcBackup,
+    setSquadRpcPrimary,
+    squadRpcTick,
+    type SquadRpcConfig,
+  } from '../../lib/squad/squad-rpc';
+  import { publishSquadRpcUpdated } from '../../lib/squad/squad-rpc-share';
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -173,6 +183,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
   /** Established squad network (override → infra chain), or null until the first deploy picks one. */
   $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+  let squadRpcConfig: SquadRpcConfig | null = null;
+  $: {
+    void $squadRpcTick;
+    squadRpcConfig = effectiveSquadRpcConfig($currentUser?.npub, parentId, squadNetwork);
+  }
   $: governanceTreasurySafe = governanceTreasurySafeForParent(
     treasurySafes ?? [],
     parentId ?? '',
@@ -189,6 +204,33 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     const gid = parentId.trim();
     saveSquadNetworkOverride(npub, gid, chain);
     void publishSquadNetworkUpdated(gid);
+  }
+
+  async function handleSetSquadRpcPrimary(url: string): Promise<string | void> {
+    const tFn = get(t);
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
+    const res = setSquadRpcPrimary(npub, parentId.trim(), squadNetwork, url);
+    if (!res.ok) return tFn(res.error);
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return tFn('squad.rpc.error.publishFailed');
+  }
+
+  async function handleSetSquadRpcBackup(url: string): Promise<string | void> {
+    const tFn = get(t);
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
+    const res = setSquadRpcBackup(npub, parentId.trim(), squadNetwork, url);
+    if (!res.ok) return tFn(res.error);
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return tFn('squad.rpc.error.publishFailed');
+  }
+
+  async function handleClearSquadRpcPrimary(): Promise<void> {
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return;
+    clearSquadRpcPrimary(npub, parentId.trim(), squadNetwork);
+    await publishSquadRpcUpdated(parentId.trim());
   }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {
@@ -260,7 +302,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       treasuryProposalsRefreshing = false;
     }
     treasuryProposalsError = '';
-    const result = await fetchTreasuryProposals({ network: pactoNetwork, treasuryAuthority: ta });
+    const result = await fetchTreasuryProposals({
+      network: pactoNetwork,
+      treasuryAuthority: ta,
+      parentId,
+    });
     if (isSupersededLoaderKey(treasuryProposalsKey, key)) return;
     treasuryProposalsLoading = false;
     treasuryProposalsRefreshing = false;
@@ -310,7 +356,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       hatsTreeRefreshing = false;
     }
     hatsTreeError = '';
-    const result = await fetchHatsTree({ network: pactoNetwork, topHatId: topHat });
+    const result = await fetchHatsTree({ network: pactoNetwork, topHatId: topHat, parentId });
     if (isSupersededLoaderKey(hatsTreeKey, key)) return;
     hatsTreeLoading = false;
     hatsTreeRefreshing = false;
@@ -364,6 +410,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       squadMemberEvmByNpub,
       squadAdminProxy: squadAdminCtx?.proxy ?? null,
       squadAdminChain: squadAdminCtx?.chain ?? null,
+      parentId,
       protocolWearerCandidates: protocolCandidates,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
@@ -679,6 +726,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {squadNetwork}
               squadNetworkFromInfra={infraSquadChain != null}
               onSetSquadNetwork={setSquadNetwork}
+              {squadRpcConfig}
+              onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
+              onSetSquadRpcBackup={handleSetSquadRpcBackup}
+              onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
               hasGovernance={hasPactoGov}
               {hasSquadAdmin}
               {captainWearers}

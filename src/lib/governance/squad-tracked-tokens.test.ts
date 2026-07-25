@@ -80,6 +80,7 @@ describe('squad tracked tokens', () => {
       tokenAddress: ROW.tokenAddress,
       symbol: 'USDC',
       decimals: 6,
+      rpcUrls: expect.any(Array),
     });
 
     mockedInvoke.mockResolvedValueOnce(undefined);
@@ -87,6 +88,7 @@ describe('squad tracked tokens', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('remove_squad_tracked_token', {
       parentId: PARENT,
       id: ROW.id,
+      rpcUrls: expect.any(Array),
     });
   });
 

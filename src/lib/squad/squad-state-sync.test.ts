@@ -5,6 +5,7 @@ const {
   syncMlsGroupsNow,
   publishSquadMemberEvmShare,
   publishSquadNetworkUpdated,
+  publishSquadRpcUpdated,
   listSquadInfra,
   currentUser,
   publishSquadChannelsCatalog,
@@ -37,6 +38,7 @@ const {
     syncMlsGroupsNow: vi.fn(),
     publishSquadMemberEvmShare: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
+    publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
     publishSquadChannelsCatalog: vi.fn(),
     getMlsGroupMembers: vi.fn(),
@@ -97,6 +99,10 @@ vi.mock('./squad-network-share', async (importOriginal) => {
   };
 });
 
+vi.mock('./squad-rpc-share', () => ({
+  publishSquadRpcUpdated: (...args: unknown[]) => publishSquadRpcUpdated(...args),
+}));
+
 vi.mock('../governance/api', () => ({
   listSquadInfra: (...args: unknown[]) => listSquadInfra(...args),
   squadInfraLegacyProvider: (t: string) => (t === 'standalone_safe' ? 'gnosis_safe' : t),
@@ -125,6 +131,7 @@ describe('squad-state-sync', () => {
     sendDmMessage.mockResolvedValue(undefined);
     publishSquadMemberEvmShare.mockResolvedValue(true);
     publishSquadNetworkUpdated.mockResolvedValue(true);
+    publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
@@ -169,7 +176,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'channels'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels'],
     });
   });
 
@@ -326,6 +333,7 @@ describe('squad-state-sync', () => {
   it('allows retry when republish fails without recording cooldown', async () => {
     publishSquadMemberEvmShare.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     publishSquadNetworkUpdated.mockResolvedValue(false);
+    publishSquadRpcUpdated.mockResolvedValue(false);
     publishSquadChannelsCatalog.mockResolvedValue(false);
     inviteMemberToGroup.mockRejectedValue(new Error('skip'));
     listSquadInfra.mockResolvedValue([]);

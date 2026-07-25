@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
+import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 
 export {
   pactoGovInfraId,
@@ -120,6 +121,7 @@ export async function depositSquadSponsor(params: {
     amountWei: params.amountWei.trim(),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
     signerWallet: params.signerWallet ?? 'default',
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorDepositResultDto;
 }
 
@@ -144,6 +146,7 @@ export async function withdrawSquadSponsor(params: {
     parentId: params.parentId,
     accountId: params.accountId.trim(),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorWithdrawResultDto;
 }
 
@@ -159,6 +162,7 @@ export async function getSquadSponsorWithdrawable(params: {
     parentId: params.parentId,
     accountAddress: params.accountAddress.trim(),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as string;
 }
 
@@ -216,6 +220,7 @@ export async function deploySquadSponsorForParent(params: {
     parentId: params.parentId,
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
     signerWallet: params.signerWallet ?? 'default',
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorDeployResultDto;
 }
 
@@ -233,6 +238,7 @@ export async function deploySquadSponsorHatsForParent(params: {
     topHatId: params.topHatId.trim(),
     initialDepositWei: params.initialDepositWei?.trim() ? params.initialDepositWei.trim() : null,
     signerWallet: params.signerWallet ?? 'squad',
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorDeployResultDto;
 }
 
@@ -272,6 +278,7 @@ export async function getSquadSponsorSummary(params: {
     network: params.network,
     parentId: params.parentId,
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorSummaryDto;
 }
 
@@ -305,6 +312,7 @@ export async function getSquadSponsorExtStatus(params: {
     parentId: params.parentId,
     memberAddresses: params.memberAddresses.map((a) => a.trim()).filter(Boolean),
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorExtStatusDto;
 }
 
@@ -331,6 +339,7 @@ export async function squadSponsorSetPermittedAddress(params: {
     memberAddress: params.memberAddress.trim(),
     permitted: params.permitted,
     sponsorAddress: params.sponsorAddress?.trim() ? params.sponsorAddress.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadSponsorSetPermittedResultDto;
 }
 
@@ -450,6 +459,7 @@ export async function deployNavePirataForParent(params: {
     saltNonce: params.saltNonce?.trim() ? params.saltNonce.trim() : null,
     signerWallet: params.signerWallet ?? 'squad',
     altParentId: params.altParentId?.trim() ? params.altParentId.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as NavePirataDeployResultDto;
 }
 
@@ -476,10 +486,12 @@ export interface NavePirataDeploymentDto {
 export async function getNavePirataDeployment(params: {
   network: string;
   topHatId: string;
+  parentId?: string | null;
 }): Promise<NavePirataDeploymentDto> {
   return (await invoke('get_nave_pirata_deployment', {
     network: params.network,
     topHatId: params.topHatId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as NavePirataDeploymentDto;
 }
 
@@ -505,11 +517,13 @@ export async function listTreasuryProposals(params: {
   network: string;
   treasuryAuthority: string;
   maxScan?: number | null;
+  parentId?: string | null;
 }): Promise<TreasuryProposalDto[]> {
   return (await invoke('list_treasury_proposals', {
     network: params.network,
     treasuryAuthority: params.treasuryAuthority.trim(),
     maxScan: params.maxScan ?? null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as TreasuryProposalDto[];
 }
 
@@ -518,12 +532,14 @@ export async function treasuryProposalHasVoted(params: {
   treasuryAuthority: string;
   proposalId: string;
   voter: string;
+  parentId?: string | null;
 }): Promise<boolean> {
   return (await invoke('treasury_proposal_has_voted', {
     network: params.network,
     treasuryAuthority: params.treasuryAuthority.trim(),
     proposalId: params.proposalId.trim(),
     voter: params.voter.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as boolean;
 }
 
@@ -554,6 +570,7 @@ export async function treasuryAuthorityPropose(params: {
     valueWei: params.valueWei?.trim() || '0',
     dataHex: params.dataHex?.trim() || '0x',
     operation: params.operation?.trim() || 'call',
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -570,6 +587,7 @@ export async function treasuryAuthorityCrewVote(params: {
     treasuryAuthority: params.treasuryAuthority.trim(),
     proposalId: params.proposalId.trim(),
     support: params.support,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -586,6 +604,7 @@ export async function treasuryAuthorityCaptainVote(params: {
     treasuryAuthority: params.treasuryAuthority.trim(),
     proposalId: params.proposalId.trim(),
     support: params.support,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -600,6 +619,7 @@ export async function treasuryAuthorityExecute(params: {
     parentId: params.parentId.trim(),
     treasuryAuthority: params.treasuryAuthority.trim(),
     proposalId: params.proposalId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -616,10 +636,12 @@ export interface MutinyStatusDto {
 export async function getMutinyStatus(params: {
   network: string;
   mutinyModule: string;
+  parentId?: string | null;
 }): Promise<MutinyStatusDto> {
   return (await invoke('get_mutiny_status', {
     network: params.network,
     mutinyModule: params.mutinyModule.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as MutinyStatusDto;
 }
 
@@ -628,12 +650,14 @@ export async function mutinyHasVoted(params: {
   mutinyModule: string;
   mutinyId: string;
   voter: string;
+  parentId?: string | null;
 }): Promise<boolean> {
   return (await invoke('mutiny_has_voted', {
     network: params.network,
     mutinyModule: params.mutinyModule.trim(),
     mutinyId: params.mutinyId.trim(),
     voter: params.voter.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as boolean;
 }
 
@@ -648,6 +672,7 @@ export async function mutinyStartToCrewMember(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     proposed: params.proposed.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -662,6 +687,7 @@ export async function mutinyStartToCommittee(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     proposed: params.proposed.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -676,6 +702,7 @@ export async function mutinyStartToArbitraryEoa(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     proposed: params.proposed.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -690,6 +717,7 @@ export async function mutinyStartToArbitraryContract(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     proposed: params.proposed.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -702,6 +730,7 @@ export async function mutinyStartToPauseCaptain(params: {
     network: params.network,
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -716,6 +745,7 @@ export async function mutinyCastVote(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     mutinyId: params.mutinyId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -730,6 +760,7 @@ export async function mutinyExecute(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     mutinyId: params.mutinyId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -744,6 +775,7 @@ export async function mutinyCaptainResign(params: {
     parentId: params.parentId.trim(),
     mutinyModule: params.mutinyModule.trim(),
     newCaptain: params.newCaptain.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -760,13 +792,22 @@ export interface QuartermasterPendingDto {
   pendingRemoveAt: string;
 }
 
+/** Pending crew add/remove discovered via QM logs + `pending*At` verify. */
+export interface QuartermasterPendingActionDto {
+  kind: 'add' | 'remove';
+  address: string;
+  executableAt: string;
+}
+
 export async function getQuartermasterStatus(params: {
   network: string;
   quartermaster: string;
+  parentId?: string | null;
 }): Promise<QuartermasterStatusDto> {
   return (await invoke('get_quartermaster_status', {
     network: params.network,
     quartermaster: params.quartermaster.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as QuartermasterStatusDto;
 }
 
@@ -774,12 +815,29 @@ export async function getQuartermasterPending(params: {
   network: string;
   quartermaster: string;
   address: string;
+  parentId?: string | null;
 }): Promise<QuartermasterPendingDto> {
   return (await invoke('get_quartermaster_pending', {
     network: params.network,
     quartermaster: params.quartermaster.trim(),
     address: params.address.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as QuartermasterPendingDto;
+}
+
+export async function listQuartermasterPending(params: {
+  network: string;
+  parentId: string;
+  quartermaster: string;
+  fromBlock?: number;
+}): Promise<QuartermasterPendingActionDto[]> {
+  return (await invoke('list_quartermaster_pending', {
+    network: params.network,
+    parentId: params.parentId.trim(),
+    quartermaster: params.quartermaster.trim(),
+    fromBlock: params.fromBlock ?? null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
+  })) as QuartermasterPendingActionDto[];
 }
 
 export async function quartermasterRequestAddCrew(params: {
@@ -793,6 +851,7 @@ export async function quartermasterRequestAddCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     candidate: params.candidate.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -807,6 +866,7 @@ export async function quartermasterCancelAddCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     candidate: params.candidate.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -821,6 +881,7 @@ export async function quartermasterExecuteAddCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     candidate: params.candidate.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -835,6 +896,7 @@ export async function quartermasterBootstrapCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     candidates: params.candidates.map((c) => c.trim()).filter(Boolean),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -849,6 +911,7 @@ export async function quartermasterRequestRemoveCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     crew: params.crew.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -863,6 +926,7 @@ export async function quartermasterCancelRemoveCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     crew: params.crew.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -877,6 +941,7 @@ export async function quartermasterExecuteRemoveCrew(params: {
     parentId: params.parentId.trim(),
     quartermaster: params.quartermaster.trim(),
     crew: params.crew.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as GovernanceWriteResultDto;
 }
 
@@ -895,12 +960,14 @@ export async function getHatsTree(params: {
   topHatId: string;
   maxDepth?: number | null;
   maxNodes?: number | null;
+  parentId?: string | null;
 }): Promise<HatTreeNodeDto> {
   return (await invoke('get_hats_tree', {
     network: params.network,
     topHatId: params.topHatId.trim(),
     maxDepth: params.maxDepth ?? null,
     maxNodes: params.maxNodes ?? null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as HatTreeNodeDto;
 }
 
@@ -919,12 +986,14 @@ export async function getMemberHatWearers(params: {
   hatsContract?: string | null;
   memberAddresses: string[];
   hatChecks: { hatId: string; label: string }[];
+  parentId?: string | null;
 }): Promise<MemberHatAssignmentDto[]> {
   return (await invoke('get_member_hat_wearers', {
     network: params.network,
     hatsContract: params.hatsContract?.trim() ? params.hatsContract.trim() : null,
     memberAddresses: params.memberAddresses,
     hatChecks: params.hatChecks,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as MemberHatAssignmentDto[];
 }
 
@@ -939,11 +1008,13 @@ export async function getSquadAdminExecutorRoles(params: {
   network: string;
   squadAdminProxy: string;
   executorAddress: string;
+  parentId?: string | null;
 }): Promise<SquadAdminExecutorRolesDto> {
   return (await invoke('get_squad_admin_executor_roles', {
     network: params.network,
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminExecutorRolesDto;
 }
 
@@ -1000,6 +1071,7 @@ export async function deploySquadAdminForParent(params: {
     variant: params.variant,
     owner: params.owner?.trim() ? params.owner.trim() : null,
     captainHatId: params.captainHatId?.trim() ? params.captainHatId.trim() : null,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminDeployResultDto;
 }
 
@@ -1022,6 +1094,7 @@ export async function squadAdminCreateRole(params: {
     parentId: params.parentId.trim(),
     squadAdminProxy: params.squadAdminProxy.trim(),
     roleLabel: params.roleLabel.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminWriteResultDto;
 }
 
@@ -1038,6 +1111,7 @@ export async function squadAdminEnableExecutor(params: {
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     roleLabel: params.roleLabel.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminWriteResultDto;
 }
 
@@ -1054,6 +1128,7 @@ export async function squadAdminEnableFullPermission(params: {
     squadAdminProxy: params.squadAdminProxy.trim(),
     executorAddress: params.executorAddress.trim(),
     enable: params.enable,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
   })) as SquadAdminWriteResultDto;
 }
 
@@ -1075,9 +1150,13 @@ export interface SquadCapabilitiesDto {
 }
 
 /** Backend: `get_squad_capabilities`. */
-export async function getSquadCapabilities(parentId: string): Promise<SquadCapabilitiesDto> {
+export async function getSquadCapabilities(
+  parentId: string,
+  network?: string | null,
+): Promise<SquadCapabilitiesDto> {
   return (await invoke('get_squad_capabilities', {
     parentId: parentId.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(parentId, network),
   })) as SquadCapabilitiesDto;
 }
 

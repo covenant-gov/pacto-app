@@ -112,6 +112,13 @@ sol! {
         function pendingCrewAddAt(address _candidate) external view returns (uint256 _executableAt);
         function pendingCrewRemoveAt(address _crew) external view returns (uint256 _executableAt);
         function crewHatId() external view returns (uint256 _crewHatId);
+
+        event CrewAddRequested(address indexed _candidate, uint256 _executableAt);
+        event CrewAddCancelled(address indexed _candidate);
+        event CrewAddExecuted(address indexed _candidate);
+        event CrewRemoveRequested(address indexed _crew, uint256 _executableAt);
+        event CrewRemoveCancelled(address indexed _crew);
+        event CrewRemoveExecuted(address indexed _crew);
     }
 
     interface ISquadAdminBase {

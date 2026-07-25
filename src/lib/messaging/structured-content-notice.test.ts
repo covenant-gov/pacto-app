@@ -19,8 +19,8 @@ describe('summarizeStructuredMessageContent', () => {
           squadName: 'zzz',
           status: 'accepted',
         }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.joinRequestAccepted');
   });
 
@@ -28,9 +28,15 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ type: 'squad_contract_allowlist_updated', payload: {} }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.contractAllowlistUpdated');
+  });
+
+  it('summarizes squad rpc update', () => {
+    expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_rpc_updated', payload: {} }), tFn)
+    ).toBe('messaging.structuredNotice.squadRpcUpdated');
   });
 
   it('summarizes squad network update with display name', () => {
@@ -40,8 +46,8 @@ describe('summarizeStructuredMessageContent', () => {
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'sepolia' },
         }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
     expect(
       summarizeStructuredMessageContent(
@@ -49,8 +55,8 @@ describe('summarizeStructuredMessageContent', () => {
           type: 'squad_network_updated',
           payload: { parent_id: 'g1', chain: 'local' },
         }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.squadNetworkUpdatedTo');
   });
 
@@ -62,16 +68,16 @@ describe('summarizeStructuredMessageContent', () => {
 
   it('summarizes new outbound-invite and channels catalog types', () => {
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_outbound_invite' }), tFn)
     ).toBe('messaging.structuredNotice.squadInvitePending');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_admit_needed' }), tFn)
     ).toBe('messaging.structuredNotice.squadMemberAdmit');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' }), tFn)
     ).toBe('messaging.structuredNotice.squadChannelsUpdated');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn)
     ).toBe('messaging.structuredNotice.squadInviteAccepted');
   });
 
@@ -88,8 +94,8 @@ describe('summarizeStructuredMessageContent', () => {
           schema: 'pacto.squad.bot_join_response.v1',
           status: 'rejected',
         }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.joinRequestRejected');
     expect(
       summarizeStructuredMessageContent(
@@ -98,28 +104,27 @@ describe('summarizeStructuredMessageContent', () => {
           squadName: 'zzz',
           status: 'pending',
         }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.joinUpdateFor');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ schema: 'pacto.squad.bot_join_dm.v1', squadName: 'Crew' }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.joinRequestFor');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ schema: 'pacto.unknown.v1' }), tFn)
     ).toBe('messaging.structuredNotice.squadUpdate');
     expect(
       summarizeStructuredMessageContent(
         JSON.stringify({ type: 'squad_network_updated', payload: { chain: 'not-a-chain' } }),
-        tFn,
-      ),
+        tFn
+      )
     ).toBe('messaging.structuredNotice.squadNetworkUpdated');
     expect(
-      summarizeStructuredMessageContent(JSON.stringify({ type: 'totally_unknown' }), tFn),
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'totally_unknown' }), tFn)
     ).toBe('messaging.structuredNotice.squadUpdate');
     expect(summarizeStructuredMessageContent(JSON.stringify({ foo: 1 }), tFn)).toBeNull();
   });
 });
-

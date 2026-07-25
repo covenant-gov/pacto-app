@@ -79,10 +79,11 @@ pub async fn get_mutiny_status<R: Runtime>(
     _app: AppHandle<R>,
     network: String,
     mutiny_module: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyStatusDto, String> {
     let module = parse_address(mutiny_module.trim())
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
 
     let active_id: U256 = eth_call_decode(&provider, module, &activeMutinyIdCall {})
         .await
@@ -125,6 +126,7 @@ pub async fn mutiny_has_voted<R: Runtime>(
     mutiny_module: String,
     mutiny_id: String,
     voter: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<bool, String> {
     let module = parse_address(mutiny_module.trim())
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
@@ -132,7 +134,7 @@ pub async fn mutiny_has_voted<R: Runtime>(
         parse_address(voter.trim()).map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
     let mid = U256::from_str_radix(mutiny_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_MUTINY_ID", e.to_string(), None))?;
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     eth_call_decode(
         &provider,
         module,
@@ -152,12 +154,14 @@ async fn mutiny_write<R: Runtime>(
     mutiny_module: String,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let module = parse_address(mutiny_module.trim())
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", module))?;
     let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, module, calldata, capability).await?;
+        send_gov_module_call(app, network, parent, module, calldata, capability, rpc_urls)
+            .await?;
     Ok(MutinyWriteResult {
         tx_hash,
         chain,
@@ -173,6 +177,7 @@ pub async fn mutiny_start_to_crew_member<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = encode_start_to_crew_member(&proposed)?;
     mutiny_write(
@@ -182,6 +187,7 @@ pub async fn mutiny_start_to_crew_member<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::StartMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -193,6 +199,7 @@ pub async fn mutiny_start_to_committee<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr = parse_address(proposed.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -207,6 +214,7 @@ pub async fn mutiny_start_to_committee<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::StartMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -218,6 +226,7 @@ pub async fn mutiny_start_to_arbitrary_eoa<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr = parse_address(proposed.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -232,6 +241,7 @@ pub async fn mutiny_start_to_arbitrary_eoa<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::StartMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -243,6 +253,7 @@ pub async fn mutiny_start_to_arbitrary_contract<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     proposed: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let addr = parse_address(proposed.trim())
         .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
@@ -257,6 +268,7 @@ pub async fn mutiny_start_to_arbitrary_contract<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::StartMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -267,6 +279,7 @@ pub async fn mutiny_start_to_pause_captain<R: Runtime>(
     network: String,
     parent_id: String,
     mutiny_module: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = startMutinyToPauseCaptainCall {}.abi_encode();
     mutiny_write(
@@ -276,6 +289,7 @@ pub async fn mutiny_start_to_pause_captain<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::StartMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -287,6 +301,7 @@ pub async fn mutiny_cast_vote<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     mutiny_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = encode_cast_vote(&mutiny_id)?;
     mutiny_write(
@@ -296,6 +311,7 @@ pub async fn mutiny_cast_vote<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::CastMutinyVote,
+        rpc_urls,
     )
     .await
 }
@@ -307,6 +323,7 @@ pub async fn mutiny_execute<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     mutiny_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = encode_execute_mutiny(&mutiny_id)?;
     mutiny_write(
@@ -316,6 +333,7 @@ pub async fn mutiny_execute<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::ExecuteMutiny,
+        rpc_urls,
     )
     .await
 }
@@ -327,6 +345,7 @@ pub async fn mutiny_captain_resign<R: Runtime>(
     parent_id: String,
     mutiny_module: String,
     new_captain: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
     let calldata = encode_captain_resign(&new_captain)?;
     mutiny_write(
@@ -336,6 +355,7 @@ pub async fn mutiny_captain_resign<R: Runtime>(
         mutiny_module,
         calldata,
         GovCapability::CaptainResign,
+        rpc_urls,
     )
     .await
 }

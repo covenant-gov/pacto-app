@@ -1,6 +1,6 @@
 /**
  * Late-joiner catch-up: sync request on #announcements; peers silently republish
- * roster EVM, known governance announces, squad network selection, and open channels.
+ * roster EVM, known governance announces, squad network/RPC selection, and open channels.
  */
 
 import { get } from 'svelte/store';
@@ -23,9 +23,11 @@ import {
 import { currentUser } from '../../stores/auth';
 import { publishSquadMemberEvmShare } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
+import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
 import { openCustomChannelTargets } from '../parent/channel-access';
 import { getAnnouncementsChannel } from '../parent-navbar';
+import { dmWarn } from '../utils/dm-debug';
 import { squads } from '../../stores/squads';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
@@ -59,7 +61,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'channels'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -209,6 +211,7 @@ export async function respondToSquadStateSyncRequest(
   const wantEvm = !req.requested?.length || req.requested.includes('evm');
   const wantInfra = !req.requested?.length || req.requested.includes('infra');
   const wantNetwork = !req.requested?.length || req.requested.includes('network');
+  const wantRpc = !req.requested?.length || req.requested.includes('rpc');
   const wantChannels = !req.requested?.length || req.requested.includes('channels');
 
   let anyOk = false;
@@ -255,7 +258,7 @@ export async function respondToSquadStateSyncRequest(
         anyOk = true;
       }
       // Infra requested but nothing to publish still counts as a handled attempt when list succeeded.
-      if (!wantEvm && !wantNetwork && !wantChannels && rows.length === 0) anyOk = true;
+      if (!wantEvm && !wantNetwork && !wantRpc && !wantChannels && rows.length === 0) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] infra republish failed', e);
     }
@@ -267,6 +270,15 @@ export async function respondToSquadStateSyncRequest(
       if (ok) anyOk = true;
     } catch (e) {
       console.warn('[squad-state-sync] network republish failed', e);
+    }
+  }
+
+  if (wantRpc) {
+    try {
+      const ok = await publishSquadRpcUpdated(parentId);
+      if (ok) anyOk = true;
+    } catch (e) {
+      dmWarn('[squad-state-sync] rpc republish failed', e);
     }
   }
 

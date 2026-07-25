@@ -9,6 +9,11 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import {
+    formatSquadRpcLabel,
+    squadRpcHasBackup,
+    type SquadRpcConfig,
+  } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
@@ -30,6 +35,10 @@
   export let squadNetwork: SupportedChainId | null = null;
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
+  export let squadRpcConfig: SquadRpcConfig | null = null;
+  export let onSetSquadRpcPrimary: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onSetSquadRpcBackup: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onClearSquadRpcPrimary: () => void | Promise<void> = () => {};
   export let hasGovernance = false;
   export let hasSquadAdmin = false;
   export let captainWearers: string[] = [];
@@ -42,10 +51,19 @@
   let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
   $: if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
 
+  let editingRpc: 'primary' | 'backup' | null = null;
+  let rpcUrlDraft = '';
+  let rpcFormError = '';
+  let rpcPublishing = false;
+
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
   $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
+  $: rpcLabelRaw = formatSquadRpcLabel(squadRpcConfig);
+  $: rpcLabel = rpcLabelRaw.startsWith('squad.rpc.') ? $t(rpcLabelRaw) : rpcLabelRaw;
+  $: rpcHasBackup = squadRpcHasBackup(squadRpcConfig);
+  $: rpcPrimaryIsCustom = squadRpcConfig?.rpc1.kind === 'url';
   $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
   $: govState = binaryInfraState(hasGovernance);
   $: adminState = binaryInfraState(hasSquadAdmin);
@@ -73,6 +91,46 @@
   function cancelNetworkEdit() {
     squadNetworkChoice = squadNetwork ?? '';
     editingNetwork = false;
+  }
+
+  function openRpcEdit(mode: 'primary' | 'backup') {
+    editingRpc = mode;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  function cancelRpcEdit() {
+    editingRpc = null;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  async function applyRpcEdit() {
+    if (rpcPublishing || !editingRpc) return;
+    rpcPublishing = true;
+    rpcFormError = '';
+    try {
+      const err = await Promise.resolve(
+        editingRpc === 'backup' ? onSetSquadRpcBackup(rpcUrlDraft) : onSetSquadRpcPrimary(rpcUrlDraft),
+      );
+      if (typeof err === 'string' && err.trim()) {
+        rpcFormError = err;
+        return;
+      }
+      cancelRpcEdit();
+    } finally {
+      rpcPublishing = false;
+    }
+  }
+
+  async function clearRpcPrimary() {
+    if (rpcPublishing) return;
+    rpcPublishing = true;
+    try {
+      await Promise.resolve(onClearSquadRpcPrimary());
+    } finally {
+      rpcPublishing = false;
+    }
   }
 </script>
 
@@ -163,6 +221,69 @@
     />
   {/if}
 </div>
+
+<div class="status-fact-row" id="squad-status-rpc">
+  <span class="meta-label">{$t('squad.rpc.label')}</span>
+  {#if editingRpc}
+    <input
+      class="rpc-input"
+      type="url"
+      bind:value={rpcUrlDraft}
+      placeholder={$t('squad.rpc.placeholder')}
+      aria-label={editingRpc === 'backup' ? $t('squad.rpc.backupAria') : $t('squad.rpc.primaryAria')}
+    />
+    <button
+      type="button"
+      class="btn-text"
+      disabled={!rpcUrlDraft.trim() || rpcPublishing}
+      on:click={applyRpcEdit}
+    >
+      {rpcPublishing ? $t('squad.rpc.saving') : $t('squad.rpc.save')}
+    </button>
+    <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={cancelRpcEdit}>
+      {$t('squad.rpc.cancel')}
+    </button>
+    {#if rpcFormError}
+      <span class="rpc-error" role="alert">{rpcFormError}</span>
+    {/if}
+  {:else}
+    <span class="network-value">{rpcLabel}</span>
+    {#if rpcHasBackup}
+      <span class="muted network-hint">{$t('squad.rpc.backupHint')}</span>
+    {/if}
+    <EditIconButton
+      ariaLabel={$t('squad.rpc.editAria')}
+      title={$t('squad.rpc.editTitle')}
+      on:click={() => openRpcEdit('primary')}
+    />
+  {/if}
+</div>
+{#if !editingRpc}
+  <div class="rpc-actions">
+    <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('primary')}>
+      {$t('squad.rpc.addCustom')}
+    </button>
+    {#if rpcPrimaryIsCustom}
+      <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('backup')}>
+        {$t('squad.rpc.addBackup')}
+      </button>
+      <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={clearRpcPrimary}>
+        {$t('squad.rpc.usePublic')}
+      </button>
+    {/if}
+    <a
+      class="rpc-provider-link"
+      href="https://www.alchemy.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {$t('squad.rpc.needProvider')}
+    </a>
+  </div>
+  <p class="muted rpc-share-note">
+    {$t('squad.rpc.shareNote')}
+  </p>
+{/if}
 
 <SquadBroadcastSettingsSection {squad} />
 
@@ -272,6 +393,39 @@
 
   .network-hint {
     font-size: 0.75rem;
+  }
+  .rpc-input {
+    flex: 1 1 12rem;
+    min-width: 10rem;
+    font-size: 0.8125rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+  .rpc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 0 0 4px;
+    margin: -2px 0 0;
+    padding-left: calc(5.5rem + 12px);
+  }
+  .rpc-provider-link {
+    font-size: 0.8125rem;
+    color: var(--accent);
+  }
+  .rpc-share-note {
+    margin: 0 0 8px;
+    padding-left: calc(5.5rem + 12px);
+    font-size: 0.75rem;
+  }
+  .rpc-error {
+    flex: 1 1 100%;
+    font-size: 0.75rem;
+    color: var(--danger, #f87171);
   }
 
   .muted {

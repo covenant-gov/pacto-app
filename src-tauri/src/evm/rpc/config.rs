@@ -2,6 +2,10 @@ use alloy::primitives::U256;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const RECEIPT_WAIT_TIMEOUT: Duration = Duration::from_secs(180);
+pub const RPC_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+pub const GET_LOGS_CHUNK_TIMEOUT: Duration = Duration::from_secs(15);
+pub const GET_LOGS_INTER_CHUNK_DELAY: Duration = Duration::from_millis(50);
+pub const BLOCK_NUMBER_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn parse_salt_nonce(raw: Option<String>) -> Result<U256, String> {
     let Some(s) = raw.filter(|x| !x.trim().is_empty()) else {

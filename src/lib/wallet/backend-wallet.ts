@@ -3,6 +3,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SupportedChainId } from './chains';
 import type { WalletUsdSpotPrices } from './pricing';
 import type { WatchedErc20Wire } from './watched-tokens';
@@ -257,6 +258,7 @@ export async function safeDeployProxy(
       threshold,
       saltNonce: saltNonce ?? null,
       parentId: parentId?.trim() ? parentId.trim() : null,
+      rpcUrls: squadRpcUrlsForInvoke(parentId, network),
     });
     return { ok: true, result };
   } catch (e) {
