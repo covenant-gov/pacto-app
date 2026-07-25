@@ -57,25 +57,25 @@
   .message-actions-menu {
     display: flex;
     flex-direction: column;
-    min-width: 160px;
+    min-width: 180px;
     padding: 6px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.15);
   }
 
   .menu-item {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
-    padding: 8px 10px;
+    padding: 10px 12px;
     background: none;
     border: none;
-    border-radius: 6px;
+    border-radius: 7px;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     text-align: left;
     cursor: pointer;
     transition: background 0.1s, color 0.1s;
