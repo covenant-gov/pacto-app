@@ -12,7 +12,7 @@ const MAX_CONCURRENT_FETCHES = 3;
 let inFlight = 0;
 const queue: Array<() => void> = [];
 
-function runQueued(fn: () => Promise<void>): void {
+function runQueued(fn: () => Promise<unknown>): void {
   const start = () => {
     inFlight++;
     fn().finally(() => {

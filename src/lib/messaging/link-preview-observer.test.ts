@@ -35,8 +35,9 @@ function msg(overrides: Partial<DmMessage> = {}): DmMessage {
   };
 }
 
-type GlobalWithIntersectionObserver = typeof globalThis & { IntersectionObserver?: unknown };
-const globalWithIO = global as GlobalWithIntersectionObserver;
+/** Narrow view of the global so the test can install a fake and delete it; `typeof globalThis`
+ * types `IntersectionObserver` as required, which blocks both. */
+const globalWithIO = global as unknown as { IntersectionObserver?: unknown };
 
 /** Fresh module import per test so the module-level observer singleton doesn't leak state. */
 async function loadObserveLinkPreview() {
