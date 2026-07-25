@@ -40,6 +40,7 @@
   import EvmWalletExtras from '../settings/EvmWalletExtras.svelte';
   import { portal } from '../../lib/utils/portal';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
+  import { appConfig } from '../../stores/app-config';
 
   const tFn = get(t);
 
@@ -52,6 +53,8 @@
   let watchedRows: WatchedErc20Row[] = [];
   let enabledSet = new Set<SupportedChainId>(defaultWalletEnabledChains());
   let tokenNetworkFilter: 'all' | SupportedChainId = DEFAULT_PREFERRED_NETWORK;
+
+  $: walletAccountLabelMaxLength = $appConfig.walletAccountLabelMaxLength;
 
   $: accountNpub = $currentUser?.npub ?? null;
 
@@ -448,7 +451,7 @@
       id="account-form-name"
       type="text"
       class="wallet-view-add-account-input"
-      maxlength="64"
+      maxlength={walletAccountLabelMaxLength}
       placeholder={$t('wallet.accountNamePlaceholder')}
       bind:value={accountFormLabel}
       disabled={accountFormBusy}

@@ -201,6 +201,17 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
 export const settingFixtures: Record<string, MockCommandHandler> = {
   get_sql_setting: () => null,
   set_sql_setting: () => undefined,
+  get_app_config: () => ({
+    squadNameMaxLength: 50,
+    channelNameMaxLength: 50,
+    commonsMaxTags: 3,
+    deploySafeMaxSigners: 10,
+    roleLabelMaxLength: 32,
+    walletAccountLabelMaxLength: 64,
+    customTokenSymbolMaxLength: 16,
+    pinDigitCount: 6,
+    analyticsEnabled: false,
+  }),
 };
 
 export const encryptionFixtures: Record<string, MockCommandHandler> = {

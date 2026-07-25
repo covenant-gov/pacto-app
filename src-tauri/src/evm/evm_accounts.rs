@@ -591,6 +591,12 @@ pub async fn add_evm_account<R: Runtime>(
     }
     let phrase = get_mnemonic_for_hd(handle.clone()).await?;
     let label_trimmed = label.trim().to_string();
+    if label_trimmed.len() > crate::app_config::WALLET_ACCOUNT_LABEL_MAX_LENGTH {
+        return Err(format!(
+            "Account label must be at most {} characters",
+            crate::app_config::WALLET_ACCOUNT_LABEL_MAX_LENGTH
+        ));
+    }
 
     let conn = account_manager::get_db_connection(&handle)?;
     let max_idx: Option<i64> = conn
@@ -738,6 +744,12 @@ pub async fn update_evm_account<R: Runtime>(
 ) -> Result<EvmAccountRow, String> {
     ensure_ready(handle.clone()).await?;
     let label_trimmed = label.trim().to_string();
+    if label_trimmed.len() > crate::app_config::WALLET_ACCOUNT_LABEL_MAX_LENGTH {
+        return Err(format!(
+            "Account label must be at most {} characters",
+            crate::app_config::WALLET_ACCOUNT_LABEL_MAX_LENGTH
+        ));
+    }
     let conn = account_manager::get_db_connection(&handle)?;
     let n: i64 = conn
         .query_row(

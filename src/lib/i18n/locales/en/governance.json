@@ -358,7 +358,7 @@
 	"governance.squadRoles.rolePlaceholder": "e.g. TREASURY",
 	"governance.squadRoles.executorLabel": "Executor address",
 	"governance.squadRoles.executorPlaceholder": "0x…",
-	"governance.squadRoles.error.noRoleLabel": "Enter a role label (max 32 ASCII characters).",
+	"governance.squadRoles.error.noRoleLabel": "Enter a role label (max {max} ASCII characters).",
 	"governance.squadRoles.error.noRoleToEnable": "Enter the role label to enable.",
 	"governance.squadRoles.error.invalidExecutor": "Pick or enter a valid executor address.",
 	"governance.squadRoles.toast.submitted": "Transaction submitted. Confirmation continues in the background.",

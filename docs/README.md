@@ -21,6 +21,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
 | **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
+| **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |
 | **[testing/](./testing/)** | Test coverage status and backend phased testing plan ([README](./testing/README.md)) |

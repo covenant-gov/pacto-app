@@ -188,7 +188,6 @@
       <span class="broadcast-label">{$t('commons.broadcast.tagsLabel')}</span>
       <CommonsTagPicker
         bind:selected={tags}
-        maxTags={3}
         disabled={busy || !roleAllowed}
         placeholder={$t('commons.broadcast.searchTags')}
       />

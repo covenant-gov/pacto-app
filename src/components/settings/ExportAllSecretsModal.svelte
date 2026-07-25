@@ -8,6 +8,7 @@
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { portal } from '../../lib/utils/portal';
   import { showToast } from '../../stores/toast';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   export let npub = '';
@@ -31,7 +32,7 @@
   }
 
   let phase: Phase = 'pin';
-  let pinDigits = ['', '', '', '', '', ''];
+  let pinDigits = Array(6).fill('');
   let pinError = '';
   let busy = false;
   let bundle: ExportBundle | null = null;
@@ -39,6 +40,9 @@
   let pinInputs: HTMLInputElement[] = [];
 
   let wasOpen = false;
+
+  $: pinDigitCount = $appConfig.pinDigitCount;
+  $: if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
 
   $: {
     if (open && !wasOpen && phase === 'pin') {
@@ -52,7 +56,7 @@
 
   function resetState() {
     phase = 'pin';
-    pinDigits = ['', '', '', '', '', ''];
+    pinDigits = Array(pinDigitCount).fill('');
     pinError = '';
     busy = false;
     bundle = null;
@@ -115,8 +119,8 @@
   async function handlePinSubmit() {
     if (busy) return;
     const pinValue = pinDigits.join('');
-    if (pinValue.length !== 6) {
-      pinError = tFn('auth.pinMustBeSixDigits');
+    if (pinValue.length !== pinDigitCount) {
+      pinError = tFn('auth.pinMustBeSixDigits', { values: { count: pinDigitCount } });
       return;
     }
 
@@ -130,7 +134,7 @@
       pinError = tFn('auth.incorrectPinOrExportFailed');
       console.error('Export all failed:', e);
       showToast(getInvokeErrorMessage(e, tFn('export.error.couldNotExportSecrets')));
-      pinDigits = ['', '', '', '', '', ''];
+      pinDigits = Array(pinDigitCount).fill('');
       setTimeout(() => pinInputs[0]?.focus(), 100);
     } finally {
       busy = false;
@@ -146,7 +150,7 @@
     }
     pinDigits[index] = value;
     pinError = '';
-    if (value && index < 5) pinInputs[index + 1]?.focus();
+    if (value && index < pinDigitCount - 1) pinInputs[index + 1]?.focus();
     if (pinDigits.every((d) => d !== '')) void handlePinSubmit();
   }
 
@@ -161,7 +165,7 @@
       event.preventDefault();
     } else if (event.key === 'ArrowLeft' && index > 0) {
       pinInputs[index - 1]?.focus();
-    } else if (event.key === 'ArrowRight' && index < 5) {
+    } else if (event.key === 'ArrowRight' && index < pinDigitCount - 1) {
       pinInputs[index + 1]?.focus();
     } else if (event.key === 'Enter') {
       void handlePinSubmit();
@@ -170,13 +174,13 @@
 
   function handlePinPaste(event: ClipboardEvent) {
     event.preventDefault();
-    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, 6);
+    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, pinDigitCount);
     digits.forEach((digit, i) => {
-      if (i < 6) pinDigits[i] = digit;
+      if (i < pinDigitCount) pinDigits[i] = digit;
     });
-    const lastIndex = Math.min(digits.length - 1, 5);
+    const lastIndex = Math.min(digits.length - 1, pinDigitCount - 1);
     pinInputs[lastIndex]?.focus();
-    if (digits.length === 6) void handlePinSubmit();
+    if (digits.length === pinDigitCount) void handlePinSubmit();
   }
 
   function evmRowLabel(row: EvmSecretRow): string {

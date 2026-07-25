@@ -113,8 +113,11 @@ fn normalize_commons_tags(raw: Option<&[String]>, visibility: &str) -> Result<Op
     if tags.is_empty() {
         return Ok(None);
     }
-    if tags.len() > 3 {
-        return Err("commonsTags must contain 1 to 3 tags".to_string());
+    if tags.len() > crate::app_config::COMMONS_MAX_TAGS {
+        return Err(format!(
+            "commonsTags must contain 1 to {} tags",
+            crate::app_config::COMMONS_MAX_TAGS
+        ));
     }
     let mut out: Vec<String> = Vec::new();
     for item in tags {
@@ -416,6 +419,14 @@ pub fn get_squad<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<
 #[command]
 pub fn upsert_squad<R: Runtime>(handle: AppHandle<R>, squad: SquadUpsert) -> Result<SquadRow, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
+    let mut squad = squad;
+    squad.name = squad.name.trim().to_string();
+    if squad.name.len() > crate::app_config::SQUAD_NAME_MAX_LENGTH {
+        return Err(format!(
+            "Squad name must be at most {} characters",
+            crate::app_config::SQUAD_NAME_MAX_LENGTH
+        ));
+    }
     let mut row = prepare_row(squad)?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     if let Some(existing) = get_squad_inner(&conn, row.id.as_str())? {

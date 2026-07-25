@@ -100,7 +100,7 @@
 
 <form class="user-broadcast-panel" on:submit|preventDefault={handleSubmit}>
   <span class="broadcast-label">{$t('commons.broadcast.tagsLabelPersonal')}</span>
-  <CommonsTagPicker bind:selected={tags} maxTags={3} disabled={onCooldown || publishing} />
+  <CommonsTagPicker bind:selected={tags} disabled={onCooldown || publishing} />
 
   {#if loadingActive}
     <p class="broadcast-muted">{$t('commons.broadcast.checkingActive')}</p>

@@ -17,7 +17,8 @@
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
-  import { DEPLOY_SAFE_MAX_SIGNERS, TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
+  import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
+  import { appConfig } from '../../stores/app-config';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
   import { runOnChainInBackground } from '../../lib/evm/on-chain-background';
 
@@ -108,7 +109,8 @@
   $: ownerCount = ownerAddresses.length;
   $: thresholdNum = Math.max(1, parseInt(thresholdInput, 10) || 1);
   $: thresholdValid = ownerCount > 0 && thresholdNum >= 1 && thresholdNum <= ownerCount;
-  $: ownerOverMax = ownerCount > DEPLOY_SAFE_MAX_SIGNERS;
+  $: maxSafeSigners = $appConfig.deploySafeMaxSigners;
+  $: ownerOverMax = ownerCount > maxSafeSigners;
 
   function toggleMember(npub: string): void {
     const evm = effectiveEvm(npub);
@@ -124,7 +126,7 @@
     }
     would.set(evm.toLowerCase(), evm);
     if (includeMeAsOwner && myEvm) would.set(myEvm.toLowerCase(), myEvm);
-    if (would.size > DEPLOY_SAFE_MAX_SIGNERS) return;
+    if (would.size > maxSafeSigners) return;
     selectedMemberNpubs = [...selectedMemberNpubs, npub];
   }
 
@@ -202,8 +204,8 @@
       deployError = tFn('governance.deploySafe.errorNoSigners');
       return;
     }
-    if (owners.length > DEPLOY_SAFE_MAX_SIGNERS) {
-      deployError = tFn('governance.deploySafe.errorMaxOwners', { values: { max: DEPLOY_SAFE_MAX_SIGNERS } });
+    if (owners.length > maxSafeSigners) {
+      deployError = tFn('governance.deploySafe.errorMaxOwners', { values: { max: maxSafeSigners } });
       return;
     }
     const th = Math.max(1, parseInt(thresholdInput, 10) || 1);
@@ -275,7 +277,7 @@
 
     <p class="deploy-safe-signers-caption">{$t('governance.deploySafe.signersCaption')}</p>
     <p class="deploy-safe-signers-hint muted">
-      {$t('governance.deploySafe.signersHint', { values: { max: DEPLOY_SAFE_MAX_SIGNERS } })}
+      {$t('governance.deploySafe.signersHint', { values: { max: maxSafeSigners } })}
     </p>
     <ul class="deploy-safe-member-list" role="list">
       {#each signersListNpubs as npub (npub)}
@@ -340,7 +342,7 @@
     <p class="deploy-safe-owner-count muted">{$t('governance.deploySafe.ownerCount', { values: { count: ownerCount } })}</p>
     {#if ownerOverMax}
       <p class="input-error" role="alert">
-        {$t('governance.deploySafe.ownerOverMax', { values: { max: DEPLOY_SAFE_MAX_SIGNERS } })}
+        {$t('governance.deploySafe.ownerOverMax', { values: { max: maxSafeSigners } })}
       </p>
     {/if}
 
