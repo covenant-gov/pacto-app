@@ -354,7 +354,7 @@ async fn process_file_attachment(
     
     // Resolve the directory path
     let dir = handle.path()
-        .resolve("vector", base_directory)
+        .resolve("pacto", base_directory)
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     
     // Grab the reported file size

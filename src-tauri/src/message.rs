@@ -730,12 +730,12 @@ pub async fn message(
             };
 
             // Resolve the directory path using the determined base directory
-            let dir = handle.path().resolve("vector", base_directory).unwrap();
+            let dir = handle.path().resolve("pacto", base_directory).unwrap();
 
             // Store the hash-based file name on-disk for future reference
             let hash_file_path = dir.join(format!("{}.{}", &file_hash, &attached_file.extension));
 
-            // Create the vector directory if it doesn't exist
+            // Create the pacto directory if it doesn't exist
             std::fs::create_dir_all(&dir).unwrap();
 
             // Save the hash-named file

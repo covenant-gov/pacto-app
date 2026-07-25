@@ -8,7 +8,6 @@
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
-  import { requestLinkPreview } from '../../lib/messaging/link-preview';
   import {
     groupTimelineKey,
     defaultTrioSharesSingleMlsGroup,
@@ -269,6 +268,7 @@
       reactions: msg.reactions,
       attachments: msg.attachments,
       previewMetadata: msg.preview_metadata,
+      pending: msg.pending,
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -384,7 +384,6 @@
         const list = byGroup[groupId] ?? [];
         const ids = new Set(list.map((m) => m.id));
         const newMsgs = (older as DmMessage[]).filter((m) => !ids.has(m.id));
-        newMsgs.forEach((m) => requestLinkPreview(groupId, m));
         return { ...byGroup, [groupId]: [...newMsgs, ...list].sort((a, b) => a.at - b.at) };
       });
       loadedOffsetByChat.update((by) => ({ ...by, [groupId]: offset + older.length }));

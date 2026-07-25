@@ -142,6 +142,7 @@ export function buildPlainMessageProps(
     reactions: msg.reactions,
     attachments: msg.attachments,
     previewMetadata: msg.preview_metadata,
+    pending: msg.pending,
   };
   if (msg.mine) {
     base.authorName = tFn('messaging.message.authorYou');

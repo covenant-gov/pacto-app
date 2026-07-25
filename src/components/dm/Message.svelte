@@ -13,7 +13,8 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import type { NostrProfile } from '../../lib/api/nostr';
   import { t } from 'svelte-i18n';
-  import type { Attachment, Reaction, PreviewMetadata } from '../../stores/dm';
+  import type { Attachment, Reaction, PreviewMetadata, DmMessage } from '../../stores/dm';
+  import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
 
   export let id: string = '';
   export let authorName: string = '';
@@ -36,11 +37,16 @@
   export let attachments: Attachment[] | undefined = undefined;
   export let previewMetadata: PreviewMetadata | null | undefined = undefined;
   export let chatId: string = '';
+  export let pending: boolean = false;
   export let onReact: (messageId: string, emoji: string) => void = () => {};
   export let onCopy: (messageId: string, text: string) => void = () => {};
   export let onReply: (messageId: string) => void = () => {};
 
   $: displayContent = body || content;
+  /** Only fields `requestLinkPreview` reads are populated; viewport-triggered via `observeLinkPreview`. */
+  $: linkPreviewParams = chatId && id
+    ? { chatId, message: { id, content, pending, preview_metadata: previewMetadata } as DmMessage }
+    : undefined;
   $: structuredNotice = summarizeStructuredMessageContent(displayContent, $t);
   $: aggregated = aggregateReactions(reactions ?? [], currentUserNpub ?? '');
   /** Telegram-style reactions overlay onto the last attachment when it's an image/video tile; otherwise they sit in normal flow below the content. */
@@ -309,6 +315,7 @@
   class:mentioned={isMentioned}
   id={id ? `msg-${id}` : undefined}
   bind:this={menuAnchorEl}
+  use:observeLinkPreview={linkPreviewParams}
   on:contextmenu={handleContextMenu}
   on:pointerdown={handlePointerDown}
   on:pointermove={handlePointerMove}

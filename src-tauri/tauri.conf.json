@@ -30,8 +30,8 @@
         "enable": true,
         "scope": [
           "$APPDATA/cache/**",
-          "$DOWNLOAD/vector/**",
-          "$DOCUMENT/vector/**"
+          "$DOWNLOAD/pacto/**",
+          "$DOCUMENT/pacto/**"
         ]
       }
     }

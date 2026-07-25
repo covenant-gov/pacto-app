@@ -3735,12 +3735,12 @@ async fn decrypt_and_save_attachment<R: tauri::Runtime>(
     };
 
     // Resolve the directory path using the determined base directory
-    let dir = handle.path().resolve("vector", base_directory).unwrap();
+    let dir = handle.path().resolve("pacto", base_directory).unwrap();
     
     // Use hash-based filename
     let file_path = dir.join(format!("{}.{}", file_hash, attachment.extension));
 
-    // Create the vector directory if it doesn't exist
+    // Create the pacto directory if it doesn't exist
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     // Save the file to disk
@@ -3830,7 +3830,7 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                             tauri::path::BaseDirectory::Download
                         };
                         
-                        if let Ok(vector_dir) = handle.path().resolve("vector", base_directory) {
+                        if let Ok(vector_dir) = handle.path().resolve("pacto", base_directory) {
                             let file_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
                             if file_path.exists() {
                                 // File already exists! Update the state and return success
@@ -4149,7 +4149,7 @@ async fn save_attachment_as(
     } else {
         tauri::path::BaseDirectory::Download
     };
-    let vector_dir = handle.path().resolve("vector", base_directory)
+    let vector_dir = handle.path().resolve("pacto", base_directory)
         .map_err(|e| format!("Failed to resolve download directory: {}", e))?;
     let expected_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
 
@@ -4758,14 +4758,14 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Delete the downloads folder (vector folder in Downloads or Documents on iOS)
+    // Delete the downloads folder (pacto folder in Downloads or Documents on iOS)
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {
         tauri::path::BaseDirectory::Download
     };
     
-    if let Ok(downloads_dir) = handle.path().resolve("vector", base_directory) {
+    if let Ok(downloads_dir) = handle.path().resolve("pacto", base_directory) {
         if downloads_dir.exists() {
             let _ = std::fs::remove_dir_all(&downloads_dir);
         }
@@ -5194,9 +5194,9 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
         tauri::path::BaseDirectory::Download
     };
     
-    // Resolve the vector directory path
-    let vector_dir = handle.path().resolve("vector", base_directory)
-        .map_err(|e| format!("Failed to resolve vector directory: {}", e))?;
+    // Resolve the pacto directory path
+    let vector_dir = handle.path().resolve("pacto", base_directory)
+        .map_err(|e| format!("Failed to resolve pacto directory: {}", e))?;
     
     // Check if directory exists
     if !vector_dir.exists() {

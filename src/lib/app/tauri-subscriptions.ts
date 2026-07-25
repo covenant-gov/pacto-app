@@ -1,7 +1,6 @@
 import { listen, type UnlistenFn } from '../api';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
-import { requestLinkPreview } from '../messaging/link-preview';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
   isPactoAppRoutableInviteContent,
@@ -164,7 +163,6 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         };
         return { ...map, [chat_id]: next };
       });
-      requestLinkPreview(chat_id, m);
     }
     const clearTimeoutId = typingClearTimeouts.get(chat_id);
     if (clearTimeoutId) {
@@ -210,7 +208,6 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
             [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
           };
         });
-        requestLinkPreview(chat_id, m);
       }
     } else {
       backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
@@ -221,7 +218,6 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
           [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
         };
       });
-      requestLinkPreview(chat_id, m);
       onMlsStructuredMessage(m.content, chat_id, handlers);
     }
   });

@@ -88,4 +88,35 @@ describe('requestLinkPreview', () => {
     await Promise.resolve();
     expect(mockDmError).toHaveBeenCalledWith('fetchMsgMetadata', expect.any(Error));
   });
+
+  it('caps concurrent fetches and drains the queue as earlier ones resolve', async () => {
+    const resolvers: Array<() => void> = [];
+    mockFetchMsgMetadata.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvers.push(() => resolve());
+        })
+    );
+
+    const messages = Array.from({ length: 5 }, (_, i) =>
+      msg({ id: `q${i}`, content: `https://example.com/${i}` })
+    );
+    messages.forEach((m) => requestLinkPreview('chat1', m));
+
+    // MAX_CONCURRENT_FETCHES is 3: only the first 3 fire immediately, the rest queue.
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(3);
+
+    resolvers[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(4);
+
+    resolvers[1]();
+    resolvers[2]();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(5);
+  });
 });

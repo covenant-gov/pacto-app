@@ -173,7 +173,7 @@ attachment directory:
 ```json
 "assetProtocol": {
   "enable": true,
-  "scope": ["$APPDATA/cache/**", "$DOWNLOAD/vector/**", "$DOCUMENT/vector/**"]
+  "scope": ["$APPDATA/cache/**", "$DOWNLOAD/pacto/**", "$DOCUMENT/pacto/**"]
 }
 ```
 

@@ -33,7 +33,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     deleteDmChatBackend,
     addParentTreasurySafe,
   } from '../lib/api/nostr';
-  import { requestLinkPreview } from '../lib/messaging/link-preview';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
   import { parseSupportedChainId } from '../lib/wallet/chains';
@@ -624,7 +623,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       .then((msgs) => {
         dmLog('open conversation: messages loaded', { npub: npub.slice(0, 20) + '…', count: msgs.length });
         const loaded = filterPeerThreadMessages(msgs as DmMessage[]);
-        loaded.forEach((m) => requestLinkPreview(npub, m));
         backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
           const existing = byNpub[npub] ?? [];
           const loadedIds = new Set(loaded.map((m) => m.id));
@@ -664,7 +662,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     getDmMessages(groupId, PAGE_SIZE, 0)
       .then((msgs) => {
         dmLog('open channel: messages loaded', { groupId: groupId.slice(0, 20) + '…', count: msgs.length });
-        (msgs as DmMessage[]).forEach((m) => requestLinkPreview(groupId, m));
         backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => ({
           ...byGroup,
           [groupId]: msgs as DmMessage[],
@@ -688,7 +685,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         const list = byNpub[npub] ?? [];
         const ids = new Set(list.map((m) => m.id));
         const newMsgs = filterPeerThreadMessages(older as DmMessage[]).filter((m) => !ids.has(m.id));
-        newMsgs.forEach((m) => requestLinkPreview(npub, m));
         if (newMsgs.length === 0) return byNpub;
         dmLog('loadOlder: prepending', { count: newMsgs.length });
         return { ...byNpub, [npub]: [...newMsgs, ...list] };
