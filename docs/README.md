@@ -11,6 +11,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
 | **[messaging/ATTACHMENTS.md](./messaging/ATTACHMENTS.md)** | Encrypted attachment uploads: Blossom blob vs media servers, host-visible metadata, caveats |
+| **[messaging/SYNC_STATUS.md](./messaging/SYNC_STATUS.md)** | Gift-wrap backfill loop (modes, slices, events) and the header sync dot it drives |
 | **[nostr/](./nostr/)** | Relay-facing behavior, rumor pipeline, module index |
 | **[mls/](./mls/)** | MDK engine, storage split, invites, eviction & leave |
 | **[storage-layout/](./storage-layout/)** | SQLite schema, paths, logout, local message encryption |

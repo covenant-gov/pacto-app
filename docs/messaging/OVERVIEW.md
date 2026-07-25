@@ -2,7 +2,7 @@
 
 End-to-end view of **direct messages** vs **MLS group** chats: same inner rumor kinds, different wire transport and chat identifiers.
 
-**Related:** [`ATTACHMENTS.md`](./ATTACHMENTS.md), [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`docs/mls/`](../mls/), [`docs/storage-layout/`](../storage-layout/).
+**Related:** [`ATTACHMENTS.md`](./ATTACHMENTS.md), [`SYNC_STATUS.md`](./SYNC_STATUS.md), [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`docs/mls/`](../mls/), [`docs/storage-layout/`](../storage-layout/).
 
 ---
 
@@ -54,7 +54,7 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 
 ### Sync
 
-- **DM:** `fetch_messages` loads Gift Wraps; **`handle_event`** fills state + DB.
+- **DM:** `fetch_messages` loads Gift Wraps; **`handle_event`** fills state + DB. The windowed backfill loop and its `sync_progress` / `sync_slice_finished` / `sync_finished` events are documented in [`SYNC_STATUS.md`](./SYNC_STATUS.md).
 - **MLS:** after DM sync / init, **`sync_mls_groups_now`** (per-group cursors, Kind 444 history).
 
 ### In-memory state

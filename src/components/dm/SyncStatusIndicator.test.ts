@@ -4,34 +4,38 @@ import { render, screen } from '@testing-library/svelte';
 import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 
 describe('SyncStatusIndicator', () => {
-  it('renders idle state by default', () => {
+  it('renders no dot when idle', () => {
     render(SyncStatusIndicator);
     const status = screen.getByRole('status');
-    expect(status).toBeTruthy();
-    expect(status.textContent?.trim()).toBe('Idle');
+    expect(status.getAttribute('data-state')).toBe('idle');
+    expect(status.querySelector('.sync-dot')).toBeNull();
   });
 
-  it('renders syncing with a spinner', () => {
+  it('renders a dot while syncing', () => {
     render(SyncStatusIndicator, { props: { status: 'syncing' } });
     const status = screen.getByRole('status');
-    expect(status.textContent?.trim()).toBe('Syncing…');
-    expect(status.querySelector('svg')).toBeTruthy();
+    expect(status.getAttribute('data-state')).toBe('syncing');
+    expect(status.querySelector('.sync-dot')).toBeTruthy();
   });
 
-  it('renders stalled state when stalled is true', () => {
-    render(SyncStatusIndicator, { props: { status: 'syncing', stalled: true } });
-    const status = screen.getByRole('status');
-    expect(status.textContent?.trim()).toBe('Stalled');
-    expect(status.getAttribute('aria-label')).toBe('Sync status: stalled');
-  });
-
-  it('renders finished state', () => {
+  it('renders a dot when finished', () => {
     render(SyncStatusIndicator, { props: { status: 'finished' } });
-    expect(screen.getByRole('status').textContent?.trim()).toBe('Synced');
+    const status = screen.getByRole('status');
+    expect(status.getAttribute('data-state')).toBe('finished');
+    expect(status.querySelector('.sync-dot')).toBeTruthy();
   });
 
-  it('stalled overrides finished status', () => {
+  it('stalled overrides the status', () => {
     render(SyncStatusIndicator, { props: { status: 'finished', stalled: true } });
-    expect(screen.getByRole('status').textContent?.trim()).toBe('Stalled');
+    const status = screen.getByRole('status');
+    expect(status.getAttribute('data-state')).toBe('stalled');
+    expect(status.querySelector('.sync-dot')).toBeTruthy();
+  });
+
+  it('exposes the state as a tooltip and to assistive tech only', () => {
+    render(SyncStatusIndicator, { props: { status: 'syncing' } });
+    const status = screen.getByRole('status');
+    expect(status.getAttribute('title')).toBe('Syncing…');
+    expect(status.querySelector('.sync-label')?.textContent).toBe('Syncing…');
   });
 });
