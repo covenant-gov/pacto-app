@@ -353,24 +353,22 @@ export async function downloadAttachment(
   return ok;
 }
 
-/** Save an attachment's decrypted file to a chosen destination path. Backend: save_attachment_as. */
+/** Save an attachment's decrypted file via a native save dialog. Backend: save_attachment_as.
+ * Returns the saved path, or an empty string if the user cancelled the dialog. */
 export async function saveAttachmentAs(
   chatId: string,
   messageId: string,
-  attachmentId: string,
-  destPath: string
+  attachmentId: string
 ): Promise<string> {
   dmLog('save_attachment_as', {
     chatId: chatId.slice(0, 20) + '…',
     messageId: messageId.slice(0, 20) + '…',
     attachmentId,
-    destPath,
   });
   const path = (await invoke('save_attachment_as', {
     npub: chatId,
     msgId: messageId,
     attachmentId,
-    destPath,
   })) as string;
   dmLog('save_attachment_as result', { path });
   return path;

@@ -61,9 +61,20 @@ describe('MessageInput', () => {
     await fireEvent.input(input, { target: { value: 'hello world' } });
     await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
     await waitFor(() => {
-      expect(onSend).toHaveBeenCalledWith('hello world');
+      expect(onSend).toHaveBeenCalledWith('hello world', undefined);
     });
     expect(input.value).toBe('');
+  });
+
+  it('forwards repliedTo to onSend when replying to a message', async () => {
+    const onSend = vi.fn();
+    render(MessageInput, { props: { channelName: 'general', onSend, repliedTo: 'msg-123' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    await fireEvent.input(input, { target: { value: 'hello world' } });
+    await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalledWith('hello world', 'msg-123');
+    });
   });
 
   it('opens the attachment menu when paperclip is clicked', async () => {

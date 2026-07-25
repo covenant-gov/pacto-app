@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import { createEventDispatcher } from 'svelte';
+  import { onDestroy, createEventDispatcher } from 'svelte';
   import { revealInFolder, canRevealInFolder } from '../../lib/utils/reveal-in-folder';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { saveAttachmentAs } from '../../lib/api/nostr';
@@ -115,6 +115,11 @@
     window.removeEventListener('pointerup', handlePointerUp);
   }
 
+  onDestroy(() => {
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerUp);
+  });
+
   async function handleReveal() {
     if (!localPath) return;
     try {
@@ -151,19 +156,14 @@
     close();
   }
 
-  /** Prompts for a destination and copies the (already downloaded + decrypted) image there. */
+  /** Copies the (already downloaded + decrypted) image to a destination chosen via native dialog. */
   async function handleDownload() {
     if (savingAs || !chatId || !messageId || !attachmentId) return;
     if (typeof window === 'undefined' || !(window as Window & { __TAURI__?: unknown }).__TAURI__) return;
     savingAs = true;
     try {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const destPath = await save({
-        title: $t('messaging.attachment.saveDialogTitle'),
-        defaultPath: alt || undefined,
-      });
-      if (!destPath) return;
-      const savedPath = await saveAttachmentAs(chatId, messageId, attachmentId, destPath);
+      const savedPath = await saveAttachmentAs(chatId, messageId, attachmentId);
+      if (!savedPath) return;
       showToast($t('messaging.attachment.saved', { values: { path: savedPath } }));
     } catch (err) {
       showToast(err instanceof Error ? err.message : $t('messaging.attachment.saveFailed'), undefined, undefined, {

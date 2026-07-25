@@ -61,6 +61,7 @@
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -674,17 +675,18 @@
   function onReact(messageId: string, emoji: string) {
     const chatId = $activeChannelId;
     if (!chatId) return;
-    reactToMessage(messageId, chatId, emoji).catch((e: unknown) =>
-      showToast(e instanceof Error ? e.message : 'Could not add reaction')
-    );
+    reactToMessage(messageId, chatId, emoji).catch((e: unknown) => {
+      clearPendingReactions(messageId);
+      showToast(e instanceof Error ? e.message : tFn('messaging.channel.reactionFailed'));
+    });
   }
 
   function onCopy(_messageId: string, text: string) {
     if (!navigator.clipboard) {
-      showToast('Copy not available on this device');
+      showToast(tFn('messaging.channel.copyUnavailable'));
       return;
     }
-    navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
+    navigator.clipboard.writeText(text).catch(() => showToast(tFn('messaging.channel.copyFailed')));
   }
 
   function onReply(messageId: string) {
@@ -692,11 +694,11 @@
     if (!msg) return;
     replyToMessageId = messageId;
     replyPreview =
-      msg.replied_to_has_attachment === true
-        ? 'Attachment'
+      msg.attachments && msg.attachments.length > 0
+        ? tFn('messaging.message.attachment')
         : msg.content && msg.content.length > 0
           ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
-          : 'Message';
+          : tFn('messaging.message.messageFallback');
   }
 
   function cancelReply() {

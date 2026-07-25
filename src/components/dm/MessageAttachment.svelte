@@ -153,21 +153,16 @@
     handleImageClick(event);
   }
 
-  /** Prompts for a destination and copies the (downloaded + decrypted) attachment there. */
+  /** Copies the (downloaded + decrypted) attachment to a destination chosen via native dialog. */
   async function handleSaveAs(event?: MouseEvent) {
     event?.stopPropagation();
     if (savingAs) return;
-    // No Tauri dialog plugin outside the desktop shell (web preview, tests without a mock).
+    // No Tauri backend outside the desktop shell (web preview, tests without a mock).
     if (typeof window === 'undefined' || !(window as Window & { __TAURI__?: unknown }).__TAURI__) return;
     savingAs = true;
     try {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const destPath = await save({
-        title: $t('messaging.attachment.saveDialogTitle'),
-        defaultPath: displayName,
-      });
-      if (!destPath) return;
-      const savedPath = await saveAttachmentAs(chatId, messageId, attachment.id, destPath);
+      const savedPath = await saveAttachmentAs(chatId, messageId, attachment.id);
+      if (!savedPath) return;
       showToast($t('messaging.attachment.saved', { values: { path: savedPath } }));
     } catch (err) {
       showToast(err instanceof Error ? err.message : $t('messaging.attachment.saveFailed'), undefined, undefined, {

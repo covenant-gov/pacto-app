@@ -791,7 +791,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     }, 400);
   }
 
-  async function handleDmSend(content: string): Promise<boolean> {
+  async function handleDmSend(content: string, repliedTo?: string): Promise<boolean> {
     const id = $activeDmId;
     if (!id || isPactoAppThreadId(id)) return false;
     if (!(await maybeRequireSession())) {
@@ -804,7 +804,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
     $dmSendError = null;
     try {
-      const ok = await sendDmMessage(id, content);
+      const ok = await sendDmMessage(id, content, repliedTo ?? '');
       dmLog('handleDmSend result', { ok });
       if (!ok) {
         $dmSendError = friendlyMessage(

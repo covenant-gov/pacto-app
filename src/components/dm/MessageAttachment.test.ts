@@ -25,11 +25,6 @@ vi.mock('../../lib/utils/reveal-in-folder', () => ({
   revealInFolder: vi.fn(),
 }));
 
-const mockedSave = vi.fn();
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  save: (...args: unknown[]) => mockedSave(...args),
-}));
-
 const mockedDownload = vi.mocked(downloadAttachment);
 const mockedDecodeBlurhash = vi.mocked(decodeBlurhash);
 const mockedSaveAttachmentAs = vi.mocked(saveAttachmentAs);
@@ -254,7 +249,6 @@ describe('MessageAttachment', () => {
   });
 
   it('saves the attachment to the chosen destination when Save as… succeeds', async () => {
-    mockedSave.mockResolvedValueOnce('/dest/quarterly-report.pdf');
     const attachment: Attachment = {
       ...baseAttachment,
       extension: 'pdf',
@@ -268,17 +262,12 @@ describe('MessageAttachment', () => {
     await fireEvent.click(screen.getByLabelText('Save as…'));
 
     await waitFor(() => {
-      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith(
-        'npub1abc',
-        'm1',
-        'abc123',
-        '/dest/quarterly-report.pdf',
-      );
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
     });
   });
 
-  it('does nothing when the Save as… dialog is dismissed', async () => {
-    mockedSave.mockResolvedValueOnce(null);
+  it('does nothing when the native save dialog is cancelled', async () => {
+    mockedSaveAttachmentAs.mockResolvedValueOnce('');
     const attachment: Attachment = {
       ...baseAttachment,
       extension: 'pdf',
@@ -291,9 +280,8 @@ describe('MessageAttachment', () => {
     await fireEvent.click(screen.getByLabelText('Save as…'));
 
     await waitFor(() => {
-      expect(mockedSave).toHaveBeenCalled();
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
     });
-    expect(mockedSaveAttachmentAs).not.toHaveBeenCalled();
   });
 
   it('does not offer Save as… on a file card until the attachment is on disk', () => {
@@ -304,7 +292,6 @@ describe('MessageAttachment', () => {
   });
 
   it('offers Save as… from the row corner button once a downloaded audio attachment is on disk', async () => {
-    mockedSave.mockResolvedValueOnce('/dest/abc123.mp3');
     const attachment: Attachment = {
       ...baseAttachment,
       extension: 'mp3',
@@ -317,7 +304,7 @@ describe('MessageAttachment', () => {
     await fireEvent.click(screen.getByLabelText('Save as…'));
 
     await waitFor(() => {
-      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123', '/dest/abc123.mp3');
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
     });
   });
 
@@ -345,14 +332,13 @@ describe('MessageAttachment', () => {
   });
 
   it('saves the attachment when the tile corner button is clicked, once it is on disk', async () => {
-    mockedSave.mockResolvedValueOnce('/dest/abc123.png');
     const attachment: Attachment = { ...baseAttachment, path: '/dl/vector/abc123.png', downloaded: true };
     render(MessageAttachment, { props: { attachment, chatId: 'npub1abc', messageId: 'm1' } });
 
     await fireEvent.click(screen.getByLabelText('Save as…'));
 
     await waitFor(() => {
-      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123', '/dest/abc123.png');
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'abc123');
     });
   });
 

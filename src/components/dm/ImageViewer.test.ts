@@ -15,11 +15,6 @@ vi.mock('../../lib/api/nostr', () => ({
   saveAttachmentAs: vi.fn().mockResolvedValue('/dest/saved-path'),
 }));
 
-const mockedSave = vi.fn();
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  save: (...args: unknown[]) => mockedSave(...args),
-}));
-
 const mockedCanReveal = vi.mocked(canRevealInFolder);
 const mockedReveal = vi.mocked(revealInFolder);
 const mockedSaveAttachmentAs = vi.mocked(saveAttachmentAs);
@@ -122,8 +117,7 @@ describe('ImageViewer', () => {
     expect(document.querySelector('.viewer-sender')).toBeNull();
   });
 
-  it('saves the image via the download control, prompting for a destination', async () => {
-    mockedSave.mockResolvedValueOnce('/dest/img.png');
+  it('saves the image via the download control', async () => {
     render(ImageViewer, {
       props: {
         open: true,
@@ -138,13 +132,12 @@ describe('ImageViewer', () => {
     await fireEvent.click(screen.getByLabelText('Download'));
 
     await waitFor(() => {
-      expect(mockedSave).toHaveBeenCalled();
-      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'att1', '/dest/img.png');
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'att1');
     });
   });
 
-  it('does nothing on download when the save dialog is dismissed', async () => {
-    mockedSave.mockResolvedValueOnce(null);
+  it('does nothing on download when the native save dialog is cancelled', async () => {
+    mockedSaveAttachmentAs.mockResolvedValueOnce('');
     render(ImageViewer, {
       props: {
         open: true,
@@ -159,9 +152,8 @@ describe('ImageViewer', () => {
     await fireEvent.click(screen.getByLabelText('Download'));
 
     await waitFor(() => {
-      expect(mockedSave).toHaveBeenCalled();
+      expect(mockedSaveAttachmentAs).toHaveBeenCalledWith('npub1abc', 'm1', 'att1');
     });
-    expect(mockedSaveAttachmentAs).not.toHaveBeenCalled();
   });
 
   it('opens and closes the "..." menu', async () => {
@@ -242,4 +234,20 @@ describe('ImageViewer', () => {
     await fireEvent.click(screen.getByLabelText('More options'));
     expect(screen.queryByLabelText('Show in folder')).toBeNull();
   });
+
+  it('removes window pointer listeners on destroy even mid-drag', async () => {
+    const { unmount } = render(ImageViewer, {
+      props: { open: true, src: 'https://example.com/img.png', alt: 'test' },
+    });
+    const img = document.querySelector('.viewer-image') as HTMLImageElement;
+    await fireEvent.pointerDown(img, { clientX: 10, clientY: 10 });
+
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    unmount();
+
+    expect(removeSpy).toHaveBeenCalledWith('pointermove', expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith('pointerup', expect.any(Function));
+    removeSpy.mockRestore();
+  });
+
 });

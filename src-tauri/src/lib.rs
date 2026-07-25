@@ -4119,14 +4119,14 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
     }
 }
 
-/// Downloads and decrypts an attachment if it is not already on disk, then
-/// copies the plaintext file to `dest_path`. Returns the path written.
+/// Downloads and decrypts an attachment if it is not already on disk, then opens a
+/// native save dialog and copies the plaintext file to the chosen destination.
+/// Returns the saved path, or an empty string if the user cancelled the dialog.
 #[tauri::command]
 async fn save_attachment_as(
     npub: String,
     msg_id: String,
     attachment_id: String,
-    dest_path: String,
 ) -> Result<String, String> {
     let handle = TAURI_APP.get().ok_or("App handle not available")?;
 
@@ -4212,8 +4212,29 @@ async fn save_attachment_as(
         decrypted_path
     };
 
+    // Open a native save dialog on the Rust side — the destination path is never
+    // trusted from the webview, closing off arbitrary-path writes via IPC.
+    use tauri_plugin_dialog::DialogExt;
+    let handle_clone = handle.clone();
+    let default_name = format!("{}.{}", attachment.id, attachment.extension);
+    let dialog_result = tokio::task::spawn_blocking(move || {
+        handle_clone
+            .dialog()
+            .file()
+            .set_file_name(&default_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?;
+
+    let dest = match dialog_result {
+        Some(path) => path.as_path()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "Invalid destination path".to_string())?,
+        None => return Ok(String::new()),
+    };
+
     // Create the destination directory if needed, then copy the plaintext file there.
-    let dest = std::path::PathBuf::from(&dest_path);
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)

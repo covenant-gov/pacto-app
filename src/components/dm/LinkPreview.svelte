@@ -7,7 +7,16 @@
 
   $: displayTitle = metadata?.og_title || metadata?.title || '';
   $: displayDescription = metadata?.og_description || metadata?.description || '';
-  $: displayImage = metadata?.og_image || '';
+  function isHttpUrl(url: string | null | undefined): boolean {
+    try {
+      const parsed = new URL(url ?? '');
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  $: displayImage = isHttpUrl(metadata?.og_image) ? (metadata?.og_image ?? '') : '';
   $: linkUrl = metadata?.og_url || metadata?.domain || '';
   $: displayDomain = (metadata?.domain ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   $: hasContent = Boolean(displayTitle || displayDescription || displayImage);
@@ -41,7 +50,7 @@
     {/if}
     <div class="link-preview-body">
       <div class="link-preview-domain">
-        {#if metadata?.favicon && !faviconError}
+        {#if metadata?.favicon && isHttpUrl(metadata.favicon) && !faviconError}
           <img class="link-preview-favicon" src={metadata.favicon} alt="" on:error={() => (faviconError = true)} />
         {/if}
         <span>{displayDomain}</span>

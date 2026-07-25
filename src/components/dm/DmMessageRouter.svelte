@@ -36,6 +36,7 @@
   } from '../../lib/dm/resolve-dm-message-presentation';
   import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
   import { reactToMessage } from '../../lib/api/nostr';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
 
   export let msg: DmMessage;
   export let npub: string;
@@ -80,6 +81,7 @@
     try {
       await reactToMessage(messageId, npub, emoji);
     } catch (e: unknown) {
+      clearPendingReactions(messageId);
       showToast(e instanceof Error ? e.message : 'Could not add reaction');
     }
   }

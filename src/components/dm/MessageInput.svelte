@@ -38,9 +38,9 @@
   export let channelName: string = "";
   /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
   export let placeholderOverride: string | undefined = undefined;
-  export let onSend: (content: string) => void = () => {};
+  export let onSend: (content: string, repliedTo?: string) => void = () => {};
   /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
-  export let onSendMentions: ((body: string, mentions: Mention[]) => void) | undefined = undefined;
+  export let onSendMentions: ((body: string, mentions: Mention[], repliedTo?: string) => void) | undefined = undefined;
   /** Optional: called with the bytes of a pending file attachment when the user sends it. */
   export let onSendFile:
     | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
@@ -210,9 +210,9 @@
     if (!body) return;
     const pruned = removeStaleMentions(body);
     if (onSendMentions && squadMlsGroupId) {
-      onSendMentions(body, pruned);
+      onSendMentions(body, pruned, repliedTo);
     } else {
-      onSend(body);
+      onSend(body, repliedTo);
     }
     messageText = "";
     mentions = [];
@@ -661,8 +661,8 @@
           <button
             type="button"
             class="reply-preview-cancel"
-            aria-label="Cancel reply"
-            title="Cancel reply"
+            aria-label={$t('messaging.messageInput.cancelReplyAria')}
+            title={$t('messaging.messageInput.cancelReplyAria')}
             on:click={onCancelReply}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -678,7 +678,7 @@
       </div>
     {/if}
     {#if $pendingFilePreview}
-      <div class="attachment-preview" role="region" aria-label="Pending attachment">
+      <div class="attachment-preview" role="region" aria-label={$t('messaging.messageInput.pendingAttachmentAria')}>
         {#if $pendingFilePreview.previewUrl && isImageFile($pendingFilePreview.fileName)}
           <img
             src={$pendingFilePreview.previewUrl}
@@ -697,8 +697,8 @@
         <button
           type="button"
           class="attachment-preview-remove"
-          aria-label="Remove attachment"
-          title="Remove attachment"
+          aria-label={$t('messaging.messageInput.removeAttachmentAria')}
+          title={$t('messaging.messageInput.removeAttachmentAria')}
           disabled={isSendingAttachment}
           on:click={clearPendingAttachment}
         >
@@ -769,10 +769,10 @@
         type="button"
         class="emoji-trigger-btn"
         disabled={disabled || isSendingAttachment}
-        aria-label="Insert emoji or GIF"
+        aria-label={$t('messaging.messageInput.insertEmojiAria')}
         aria-expanded={emojiPanelOpen}
         aria-haspopup="dialog"
-        title="Insert emoji or GIF"
+        title={$t('messaging.messageInput.insertEmojiAria')}
         on:click={openEmojiPanel}
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
@@ -781,7 +781,7 @@
         <div
           class="emoji-panel"
           role="dialog"
-          aria-label="Insert emoji or GIF"
+          aria-label={$t('messaging.messageInput.insertEmojiAria')}
           on:pointerdown|stopPropagation
         >
           <div class="emoji-panel-search">
@@ -792,13 +792,13 @@
               bind:value={emojiSearchQuery}
               on:click|stopPropagation
               on:keydown={handleEmojiSearchKeydown}
-              aria-label={emojiPanelTab === 'gifs' ? 'Search GIFs' : 'Search emoji'}
+              aria-label={emojiPanelTab === 'gifs' ? 'Search GIFs' : $t('messaging.messageInput.searchEmojiAria')}
             />
             <button
               type="button"
               class="emoji-picker-close"
-              aria-label="Close panel"
-              title="Close"
+              aria-label={$t('messaging.messageInput.closePanelAria')}
+              title={$t('messaging.messageInput.close')}
               on:click|stopPropagation={() => closeEmojiPanel({ refocusComposer: true })}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -822,7 +822,7 @@
                           type="button"
                           class="emoji-picker-item"
                           role="gridcell"
-                          aria-label="Insert {entry.emoji}"
+                          aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
                           on:click={() => insertEmoji(entry.emoji)}
                         >
                           {entry.emoji}
@@ -846,7 +846,7 @@
                           type="button"
                           class="emoji-picker-item"
                           role="gridcell"
-                          aria-label="Insert {entry.emoji}"
+                          aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
                           on:click={() => insertEmoji(entry.emoji)}
                         >
                           {entry.emoji}
@@ -863,7 +863,7 @@
                         type="button"
                         class="emoji-picker-item"
                         role="gridcell"
-                        aria-label="Insert {emoji}"
+                        aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji } })}
                         on:click={() => insertEmoji(emoji)}
                       >
                         {emoji}
@@ -879,7 +879,7 @@
               </div>
             {/if}
           </div>
-          <div class="emoji-panel-tabs" role="tablist" aria-label="Media panel tabs">
+          <div class="emoji-panel-tabs" role="tablist" aria-label={$t('messaging.messageInput.mediaPanelTabsAria')}>
             <button
               type="button"
               class="emoji-panel-tab"

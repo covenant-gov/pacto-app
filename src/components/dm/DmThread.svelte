@@ -89,7 +89,7 @@
     if (!msg) return;
     replyToMessageId = messageId;
     replyPreview =
-      msg.replied_to_has_attachment === true
+      msg.attachments && msg.attachments.length > 0
         ? 'Attachment'
         : msg.content && msg.content.length > 0
           ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
