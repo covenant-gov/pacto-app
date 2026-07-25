@@ -2,7 +2,7 @@
 
 End-to-end view of **direct messages** vs **MLS group** chats: same inner rumor kinds, different wire transport and chat identifiers.
 
-**Related:** [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`docs/mls/`](../mls/), [`docs/storage-layout/`](../storage-layout/).
+**Related:** [`ATTACHMENTS.md`](./ATTACHMENTS.md), [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`docs/mls/`](../mls/), [`docs/storage-layout/`](../storage-layout/).
 
 ---
 

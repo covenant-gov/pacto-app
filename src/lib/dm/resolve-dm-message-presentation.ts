@@ -139,6 +139,9 @@ export function buildPlainMessageProps(
     replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
     replyAuthorName: undefined as string | undefined,
     replyPreview: undefined as string | undefined,
+    reactions: msg.reactions,
+    attachments: msg.attachments,
+    previewMetadata: msg.preview_metadata,
   };
   if (msg.mine) {
     base.authorName = tFn('messaging.message.authorYou');

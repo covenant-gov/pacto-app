@@ -686,6 +686,7 @@ pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Res
                 bytes,
                 img_meta: None,
                 extension,
+                file_name: None,
             }
         }
         #[cfg(target_os = "android")]
@@ -701,7 +702,7 @@ pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Res
     // Upload the file to the server using Blossom with automatic failover and progress
     let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
-    let servers = crate::get_blossom_servers();
+    let servers = crate::get_blossom_media_servers();
 
     // Create progress callback that emits events to frontend
     let handle_clone = handle.clone();

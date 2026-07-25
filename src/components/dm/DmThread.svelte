@@ -36,6 +36,8 @@
     appendDmThreadAnnouncement,
     reciprocatedWalletPeerInfoRequestIds,
   } from '../../stores/app';
+  import { dmSyncStatus } from '../../stores/dm';
+  import SyncStatusIndicator from './SyncStatusIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
@@ -48,7 +50,10 @@
   export let canLoadOlder = false;
   export let loadingOlder = false;
   export let onLoadOlder: () => void = () => {};
-  export let onSend: (content: string) => void | boolean | Promise<boolean> = () => {};
+  export let onSend: (content: string, repliedTo?: string) => void | boolean | Promise<boolean> = () => {};
+  export let onSendFile:
+    | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
+    | undefined = undefined;
   export let onTyping: () => void = () => {};
   export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
   export let onAcceptChannelInSquad: (
@@ -74,6 +79,52 @@
   export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
   /** Called when the user scrolls to the bottom — marks messages read up to `messageId`. */
   export let onMarkReadUpTo: (messageId: string) => void = () => {};
+
+  let replyToMessageId: string | null = null;
+  let replyPreview: string | undefined = undefined;
+
+  function onReply(event: CustomEvent<{ messageId: string }>) {
+    const messageId = event.detail.messageId;
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    replyToMessageId = messageId;
+    replyPreview =
+      msg.replied_to_has_attachment === true
+        ? 'Attachment'
+        : msg.content && msg.content.length > 0
+          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
+          : 'Message';
+  }
+
+  function cancelReply() {
+    replyToMessageId = null;
+    replyPreview = undefined;
+  }
+
+  async function handleSend(content: string, repliedTo?: string) {
+    const result = await Promise.resolve(onSend(content, repliedTo ?? ''));
+    if (result !== false) {
+      cancelReply();
+    }
+    return result;
+  }
+
+  async function handleSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    if (!onSendFile) return;
+    await onSendFile(bytes, fileName, repliedTo, useCompression);
+    cancelReply();
+  }
+
+  let prevNpubForReply: string | null = null;
+  $: if (npub !== prevNpubForReply) {
+    prevNpubForReply = npub;
+    cancelReply();
+  }
 
   function lastReadableMessageId(): string | null {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -382,6 +433,7 @@
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
+            <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
             {#if showOptionsMenu && !isPactoAppThread}
               <div class="dm-thread-header-actions">
                 <button
@@ -511,6 +563,7 @@
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
           compact={shouldStackWithPrevious(messages[i - 1], msg)}
+          on:reply={onReply}
         />
       {/each}
     {:else}
@@ -528,8 +581,12 @@
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
     disabled={peerBlockedByMe}
-    onSend={onSend}
+    onSend={handleSend}
+    onSendFile={handleSendFile}
     onTyping={onTyping}
+    repliedTo={replyToMessageId ?? undefined}
+    repliedToPreview={replyPreview}
+    onCancelReply={cancelReply}
   />
   {/if}
 </div>

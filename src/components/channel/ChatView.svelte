@@ -8,6 +8,7 @@
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
   import { resolvePollsMlsGroupId, getAnnouncementsChannel } from '../../lib/parent-navbar';
+  import { requestLinkPreview } from '../../lib/messaging/link-preview';
   import {
     groupTimelineKey,
     defaultTrioSharesSingleMlsGroup,
@@ -51,7 +52,9 @@
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow } from '../../lib/api/nostr';
+  import { dmSyncStatus } from '../../stores/dm';
+  import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
+  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -262,6 +265,9 @@
       replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
       replyAuthorName: undefined as string | undefined,
       replyPreview: undefined as string | undefined,
+      reactions: msg.reactions,
+      attachments: msg.attachments,
+      previewMetadata: msg.preview_metadata,
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -342,7 +348,7 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
-  async function handleSendMessage(body: string, mentions?: Mention[]) {
+  async function handleSendMessage(body: string, mentions?: Mention[], repliedTo?: string) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
@@ -352,9 +358,10 @@
       ? buildMentionEnvelope(body, mentions, virtualBucket)
       : body;
     try {
-      await sendDmMessage(groupId, content, '', { virtualBucket });
+      const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
+      if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
@@ -376,6 +383,7 @@
         const list = byGroup[groupId] ?? [];
         const ids = new Set(list.map((m) => m.id));
         const newMsgs = (older as DmMessage[]).filter((m) => !ids.has(m.id));
+        newMsgs.forEach((m) => requestLinkPreview(groupId, m));
         return { ...byGroup, [groupId]: [...newMsgs, ...list].sort((a, b) => a.at - b.at) };
       });
       loadedOffsetByChat.update((by) => ({ ...by, [groupId]: offset + older.length }));
@@ -653,6 +661,74 @@
       clearMentionAlert(activeSquad.id, activeChannel.name);
     }
   }
+
+  let replyToMessageId: string | null = null;
+  let replyPreview: string | undefined = undefined;
+
+  let prevChannelIdForReply: string | null = null;
+  $: if ($activeChannelId !== prevChannelIdForReply) {
+    prevChannelIdForReply = $activeChannelId;
+    cancelReply();
+  }
+
+  function onReact(messageId: string, emoji: string) {
+    const chatId = $activeChannelId;
+    if (!chatId) return;
+    reactToMessage(messageId, chatId, emoji).catch((e: unknown) =>
+      showToast(e instanceof Error ? e.message : 'Could not add reaction')
+    );
+  }
+
+  function onCopy(_messageId: string, text: string) {
+    if (!navigator.clipboard) {
+      showToast('Copy not available on this device');
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
+  }
+
+  function onReply(messageId: string) {
+    const msg = virtualTimelineMessages.find((m) => m.id === messageId);
+    if (!msg) return;
+    replyToMessageId = messageId;
+    replyPreview =
+      msg.replied_to_has_attachment === true
+        ? 'Attachment'
+        : msg.content && msg.content.length > 0
+          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
+          : 'Message';
+  }
+
+  function cancelReply() {
+    replyToMessageId = null;
+    replyPreview = undefined;
+  }
+
+  async function handleSendText(body: string, repliedTo?: string) {
+    return handleSendMessage(body, undefined, repliedTo);
+  }
+
+  async function handleSendMentions(body: string, mentions: Mention[], repliedTo?: string) {
+    return handleSendMessage(body, mentions, repliedTo);
+  }
+
+  async function handleSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    const groupId = $activeChannelId;
+    if (!groupId) return;
+    groupSendError.set(null);
+    try {
+      const ok = await sendFileBytes(groupId, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      if (ok) cancelReply();
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      groupSendError.set(friendlyMessage(raw, 'dm_send'));
+    }
+  }
 </script>
 
 <svelte:window
@@ -678,6 +754,7 @@
       <div class="channel-info">
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
+        <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
@@ -789,11 +866,9 @@
                   {/if}
                   {#if showMlsHistoryWelcome}
                     <div class="mls-history-welcome" role="note">
-                      <p class="mls-history-welcome-title">Welcome to this channel</p>
+                      <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
                       <p class="mls-history-welcome-body">
-                        Your decryptable MLS history starts here. Messages from before you joined
-                        can’t be decrypted on this device—that’s how MLS works, not a sync failure.
-                        New messages in this group will appear below.
+                        {$t('messaging.channel.mlsWelcomeBody')}
                       </p>
                     </div>
                   {/if}
@@ -801,6 +876,10 @@
                     {@const props = toMessageProps(message)}
                     <Message
                       {...props}
+                      chatId={$activeChannelId ?? ''}
+                      {onReact}
+                      {onCopy}
+                      {onReply}
                       compact={shouldStackChannelWithPrevious(
                         virtualTimelineMessages[i - 1],
                         message,
@@ -816,13 +895,17 @@
             {/if}
             <MessageInput
               channelName={channelName}
-              onSend={handleSendMessage}
-              onSendMentions={handleSendMessage}
+              onSend={handleSendText}
+              onSendMentions={handleSendMentions}
+              onSendFile={handleSendFile}
               squadMlsGroupId={effectiveMembersGroupId ?? undefined}
               squadRosterNpubs={panelMembers}
               squadProfiles={$profiles}
               {currentUserNpub}
               disabled={isChannelCreating}
+              repliedTo={replyToMessageId ?? undefined}
+              repliedToPreview={replyPreview}
+              onCancelReply={cancelReply}
             />
           </div>
         {:else}
@@ -852,11 +935,9 @@
           {/if}
           {#if showMlsHistoryWelcome}
             <div class="mls-history-welcome" role="note">
-              <p class="mls-history-welcome-title">Welcome to this channel</p>
+              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
               <p class="mls-history-welcome-body">
-                Your decryptable MLS history starts here. Messages from before you joined can’t be
-                decrypted on this device—that’s how MLS works, not a sync failure. New messages in
-                this group will appear below.
+                {$t('messaging.channel.mlsWelcomeBody')}
               </p>
             </div>
           {/if}
@@ -886,6 +967,10 @@
             {:else}
               <Message
                 {...props}
+                chatId={$activeChannelId ?? ''}
+                {onReact}
+                {onCopy}
+                {onReply}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,
@@ -902,13 +987,17 @@
     {/if}
     <MessageInput
       channelName={channelName}
-      onSend={handleSendMessage}
-      onSendMentions={handleSendMessage}
+      onSend={handleSendText}
+      onSendMentions={handleSendMentions}
+      onSendFile={handleSendFile}
       squadMlsGroupId={effectiveMembersGroupId ?? undefined}
       squadRosterNpubs={panelMembers}
       squadProfiles={$profiles}
       {currentUserNpub}
       disabled={isChannelCreating}
+      repliedTo={replyToMessageId ?? undefined}
+      repliedToPreview={replyPreview}
+      onCancelReply={cancelReply}
     />
     {/if}
 

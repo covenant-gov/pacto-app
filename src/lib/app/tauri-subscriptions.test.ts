@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { subscribeAppEvents, type AppEventHandlers } from './tauri-subscriptions';
+import { clearLinkPreviewRequests } from '../messaging/link-preview';
 import type { DmMessage } from '../../stores/dm';
 
 const mocks = vi.hoisted(() => {
@@ -54,6 +55,7 @@ const mocks = vi.hoisted(() => {
     updateChannelNameIfPlaceholder: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
+    fetchMsgMetadata: vi.fn(),
     parseSquadInviteMessage: vi.fn(),
     syncMlsGroupsNow: vi.fn(),
     parseAnnouncement: vi.fn(),
@@ -94,6 +96,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 vi.mock('../api/nostr', () => ({
   listPendingMlsWelcomes: (...args: unknown[]) => mocks.mockFunctions.listPendingMlsWelcomes(...args),
   fetchMessages: (...args: unknown[]) => mocks.mockFunctions.fetchMessages(...args),
+  fetchMsgMetadata: (...args: unknown[]) => mocks.mockFunctions.fetchMsgMetadata(...args),
   parseSquadInviteMessage: (...args: unknown[]) => mocks.mockFunctions.parseSquadInviteMessage(...args),
   syncMlsGroupsNow: (...args: unknown[]) => mocks.mockFunctions.syncMlsGroupsNow(...args),
 }));
@@ -213,6 +216,8 @@ describe('subscribeAppEvents', () => {
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
     mocks.mockFunctions.fetchMessages.mockResolvedValue(undefined);
+    mocks.mockFunctions.fetchMsgMetadata.mockResolvedValue(true);
+    clearLinkPreviewRequests();
   });
 
   afterEach(() => {
@@ -344,6 +349,63 @@ describe('subscribeAppEvents', () => {
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ pending: true }) });
       const stored = mocks.mockStores.backendDmMessages.get()['npub1chat']![0];
       expect(stored.pending).toBe(false);
+    });
+  });
+
+  describe('link preview fetch trigger', () => {
+    it('requests metadata for a new message with an https URL and no existing preview', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1chat',
+        message: dmMessage({ id: 'm1', content: 'check https://example.com out' }),
+      });
+      expect(mocks.mockFunctions.fetchMsgMetadata).toHaveBeenCalledWith('npub1chat', 'm1');
+    });
+
+    it('does not request metadata when the message already has preview metadata', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1chat',
+        message: dmMessage({
+          id: 'm1',
+          content: 'check https://example.com out',
+          preview_metadata: { domain: 'https://example.com/' },
+        }),
+      });
+      expect(mocks.mockFunctions.fetchMsgMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does not request metadata for content without a URL', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ id: 'm1', content: 'no links here' }) });
+      expect(mocks.mockFunctions.fetchMsgMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does not request metadata for a pending message', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1chat',
+        message: dmMessage({ id: 'm1', content: 'https://example.com', pending: true }),
+      });
+      expect(mocks.mockFunctions.fetchMsgMetadata).not.toHaveBeenCalled();
+    });
+
+    it('requests metadata once per message id across duplicate events', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      const message = dmMessage({ id: 'm1', content: 'https://example.com' });
+      emit('message_new', { chat_id: 'npub1chat', message });
+      emit('message_update', { chat_id: 'npub1chat', old_id: 'm1', message });
+      expect(mocks.mockFunctions.fetchMsgMetadata).toHaveBeenCalledTimes(1);
+    });
+
+    it('requests metadata for a confirmed group message with a URL', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_update', {
+        chat_id: 'group1',
+        old_id: 'pending1',
+        message: dmMessage({ id: 'm1', content: 'https://example.com' }),
+      });
+      expect(mocks.mockFunctions.fetchMsgMetadata).toHaveBeenCalledWith('group1', 'm1');
     });
   });
 

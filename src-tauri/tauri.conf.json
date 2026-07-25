@@ -27,8 +27,11 @@
     "security": {
       "csp": null,
       "assetProtocol": {
+        "enable": true,
         "scope": [
-          "$APPDATA/cache/**"
+          "$APPDATA/cache/**",
+          "$DOWNLOAD/vector/**",
+          "$DOCUMENT/vector/**"
         ]
       }
     }

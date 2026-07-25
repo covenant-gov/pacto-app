@@ -288,6 +288,117 @@ export async function sendDmMessage(
   return ok;
 }
 
+/** React to a message with an emoji. Backend: react_to_message. */
+export async function reactToMessage(
+  referenceId: string,
+  chatId: string,
+  emoji: string
+): Promise<boolean> {
+  dmLog('react_to_message', {
+    referenceId: referenceId.slice(0, 20) + '…',
+    chatId: chatId.slice(0, 20) + '…',
+    emoji,
+  });
+  const ok = (await invoke('react_to_message', { referenceId, chatId, emoji })) as boolean;
+  dmLog('react_to_message result', { ok });
+  return ok;
+}
+
+/** Fetch OpenGraph/link-preview metadata for a message containing a URL. Backend: fetch_msg_metadata. */
+export async function fetchMsgMetadata(chatId: string, msgId: string): Promise<boolean> {
+  dmLog('fetch_msg_metadata', { chatId: chatId.slice(0, 20) + '…', msgId: msgId.slice(0, 12) });
+  const ok = (await invoke('fetch_msg_metadata', { chatId, msgId })) as boolean;
+  dmLog('fetch_msg_metadata result', { ok });
+  return ok;
+}
+
+/** Send a file as an attachment. Backend: send_file_bytes. */
+export async function sendFileBytes(
+  receiver: string,
+  repliedTo: string,
+  fileBytes: number[] | Uint8Array,
+  fileName: string,
+  useCompression: boolean
+): Promise<boolean> {
+  dmLog('send_file_bytes', {
+    receiver: receiver.slice(0, 20) + '…',
+    fileName,
+    fileBytesLen: fileBytes.length,
+    useCompression,
+  });
+  const ok = (await invoke('send_file_bytes', {
+    receiver,
+    repliedTo,
+    fileBytes,
+    fileName,
+    useCompression,
+  })) as boolean;
+  dmLog('send_file_bytes result', { ok });
+  return ok;
+}
+
+/** Download an attachment for a message. Backend: download_attachment. */
+export async function downloadAttachment(
+  npub: string,
+  msgId: string,
+  attachmentId: string
+): Promise<boolean> {
+  dmLog('download_attachment', {
+    npub: npub.slice(0, 20) + '…',
+    msgId: msgId.slice(0, 20) + '…',
+    attachmentId,
+  });
+  const ok = (await invoke('download_attachment', { npub, msgId, attachmentId })) as boolean;
+  dmLog('download_attachment result', { ok });
+  return ok;
+}
+
+/** Save an attachment's decrypted file to a chosen destination path. Backend: save_attachment_as. */
+export async function saveAttachmentAs(
+  chatId: string,
+  messageId: string,
+  attachmentId: string,
+  destPath: string
+): Promise<string> {
+  dmLog('save_attachment_as', {
+    chatId: chatId.slice(0, 20) + '…',
+    messageId: messageId.slice(0, 20) + '…',
+    attachmentId,
+    destPath,
+  });
+  const path = (await invoke('save_attachment_as', {
+    npub: chatId,
+    msgId: messageId,
+    attachmentId,
+    destPath,
+  })) as string;
+  dmLog('save_attachment_as result', { path });
+  return path;
+}
+
+/** Fetch or cache a remote image locally. Backend: get_or_cache_image. Returns local path or null. */
+export async function getOrCacheImage(
+  url: string,
+  imageType: string
+): Promise<string | null> {
+  dmLog('get_or_cache_image', { url: url.slice(0, 60) + '…', imageType });
+  const path = (await invoke('get_or_cache_image', { url, imageType })) as string | null;
+  dmLog('get_or_cache_image result', { cached: !!path });
+  return path;
+}
+
+/** Decode a blurhash to a base64 data URL. Backend: decode_blurhash. */
+export async function decodeBlurhash(
+  blurhash: string,
+  width: number,
+  height: number
+): Promise<string> {
+  dmLog('decode_blurhash', { blurhash: blurhash.slice(0, 12) + '…', width, height });
+  const dataUrl = (await invoke('decode_blurhash', { blurhash, width, height })) as string;
+  dmLog('decode_blurhash result', { hasDataUrl: !!dataUrl });
+  return dataUrl;
+}
+
 // --- MLS / Squads ---
 
 /** Pending MLS welcome (invite). Backend: SimpleWelcome. */

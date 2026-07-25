@@ -250,6 +250,12 @@ pub fn get_db_connection<R: Runtime>(handle: &AppHandle<R>) -> Result<rusqlite::
     // This is important for existing databases that may not have new columns
     crate::migrations::run_migrations(&mut conn)?;
 
+    // One-time repair for reaction rows persisted before the author_id hex/bech32
+    // fix (pacto-app-rmq.2); idempotent, no-op after the first successful run.
+    if let Err(e) = crate::db::repair_legacy_hex_reaction_npubs(&conn) {
+        eprintln!("[Account Manager] Failed to repair legacy reaction npubs: {}", e);
+    }
+
     Ok(conn)
 }
 
