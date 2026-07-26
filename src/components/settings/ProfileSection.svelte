@@ -3,7 +3,7 @@
   import { t } from 'svelte-i18n';
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
-  import { updateProfile, uploadAvatar } from '../../lib/api/nostr';
+  import { updateProfile } from '../../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -13,6 +13,7 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import AvatarCropModal from './AvatarCropModal.svelte';
   import { requireBackupVerified } from '../../stores/backup-verification';
 
   $: userNpub = $currentUser?.npub || '';
@@ -32,7 +33,8 @@
   let editAvatarUrl = '';
   let saveError: string | null = null;
   let savingProfile = false;
-  let uploadingAvatar = false;
+  let cropModalOpen = false;
+  let cropFilepath = '';
 
   let copiedNpub = false;
   let exportSeedModalOpen = false;
@@ -77,7 +79,7 @@
   }
 
   async function handleChangeAvatar() {
-    if (!profile || uploadingAvatar) return;
+    if (!profile) return;
     try {
       const selected = await openFileDialog({
         title: $t('profile.chooseAvatarImage'),
@@ -85,16 +87,21 @@
         multiple: false,
       });
       if (selected == null) return;
-      uploadingAvatar = true;
-      saveError = null;
-      const url = await uploadAvatar(selected, 'avatar');
-      editAvatarUrl = url;
+      cropFilepath = selected;
+      cropModalOpen = true;
     } catch (e) {
-      console.error('Upload avatar failed:', e);
+      console.error('Choose avatar image failed:', e);
       saveError = e instanceof Error ? e.message : $t('profile.failedUploadAvatar');
-    } finally {
-      uploadingAvatar = false;
     }
+  }
+
+  function handleCropConfirm(url: string) {
+    editAvatarUrl = url;
+    cropModalOpen = false;
+  }
+
+  function handleCropCancel() {
+    cropModalOpen = false;
   }
 
   async function handleSaveProfile() {
@@ -219,9 +226,10 @@
               disabled={savingProfile}
             ></textarea>
             <div class="edit-image-buttons">
-              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={uploadingAvatar || savingProfile}>
-                {uploadingAvatar ? $t('profile.uploading') : $t('profile.changeAvatar')}
+              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={savingProfile}>
+                {$t('profile.changeAvatar')}
               </button>
+              <p class="avatar-guidance">{$t('profile.crop.guidance')}</p>
             </div>
             <div class="edit-actions">
               <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>{$t('profile.cancel')}</button>
@@ -342,6 +350,13 @@
   open={exportAllModalOpen}
   npub={userNpub}
   onClose={() => (exportAllModalOpen = false)}
+/>
+
+<AvatarCropModal
+  open={cropModalOpen}
+  filepath={cropFilepath}
+  onConfirm={handleCropConfirm}
+  onCancel={handleCropCancel}
 />
 
 <style>
@@ -605,8 +620,16 @@
 
   .edit-image-buttons {
     display: flex;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     margin-top: 16px;
+  }
+
+  .avatar-guidance {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
   }
 
   .btn-edit-image {

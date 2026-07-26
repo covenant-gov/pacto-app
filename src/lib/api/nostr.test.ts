@@ -12,6 +12,7 @@ import {
   syncAllProfiles,
   updateProfile,
   uploadAvatar,
+  getImagePreviewBase64,
   setNickname,
   toggleDmBlock,
   queueProfileSync,
@@ -184,14 +185,32 @@ describe('updateProfile', () => {
 });
 
 describe('uploadAvatar', () => {
-  it('invokes upload_avatar with filepath and upload_type', async () => {
+  it('invokes upload_avatar with bytes and uploadType', async () => {
     mockedInvoke.mockResolvedValueOnce('https://url');
-    const result = await uploadAvatar('/path/to/img', 'avatar');
+    const base64Bytes = 'ZmFrZWJhc2U2NA==';
+    const result = await uploadAvatar(base64Bytes, 'avatar');
     expect(mockedInvoke).toHaveBeenCalledWith('upload_avatar', {
-      filepath: '/path/to/img',
-      upload_type: 'avatar',
+      bytes: base64Bytes,
+      uploadType: 'avatar',
     });
     expect(result).toBe('https://url');
+  });
+
+  it('propagates invoke rejection', async () => {
+    mockedInvoke.mockRejectedValueOnce(new Error('upload failed'));
+    await expect(uploadAvatar('ZmFrZWJhc2U2NA==', 'avatar')).rejects.toThrow('upload failed');
+  });
+});
+
+describe('getImagePreviewBase64', () => {
+  it('invokes get_image_preview_base64 with filePath and quality', async () => {
+    mockedInvoke.mockResolvedValueOnce('data:image/jpeg;base64,abc123');
+    const result = await getImagePreviewBase64('/path/to/img.jpg', 100);
+    expect(mockedInvoke).toHaveBeenCalledWith('get_image_preview_base64', {
+      filePath: '/path/to/img.jpg',
+      quality: 100,
+    });
+    expect(result).toBe('data:image/jpeg;base64,abc123');
   });
 });
 
