@@ -67,7 +67,7 @@ describe('app-config store', () => {
   it('DEFAULT_APP_CONFIG matches the Rust default_app_config() constants', () => {
     expect(DEFAULT_APP_CONFIG).toEqual({
       squadNameMaxLength: 50,
-      channelNameMaxLength: 50,
+      channelNameMaxLength: 35,
       commonsMaxTags: 3,
       deploySafeMaxSigners: 10,
       roleLabelMaxLength: 32,

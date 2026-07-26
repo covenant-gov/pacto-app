@@ -21,7 +21,7 @@ export type AppConfig = z.infer<typeof AppConfigSchema>;
 /** Compiled fallback; must match `default_app_config()` in `src-tauri/src/app_config.rs`. */
 export const DEFAULT_APP_CONFIG: AppConfig = {
   squadNameMaxLength: 50,
-  channelNameMaxLength: 50,
+  channelNameMaxLength: 35,
   commonsMaxTags: 3,
   deploySafeMaxSigners: 10,
   roleLabelMaxLength: 32,
