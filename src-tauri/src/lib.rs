@@ -5682,7 +5682,8 @@ async fn create_mls_group(
 }
 
 /// Create an MLS group from a group name + member npubs (multi-device aware)
-/// - Validates non-empty group name and at least one member
+/// - Validates non-empty group name (channel name; squad display name is a separate
+///   field validated in `squad_catalog::upsert_squad`) and at least one member
 /// - For each member npub, refreshes their latest device keypackage(s)
 /// - If any member fails refresh or has zero keypackages, aborts with a clear error
 /// - Creates the MLS group and persists metadata so it's immediately discoverable
@@ -5715,10 +5716,10 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     if name.is_empty() {
         return Err("Group name must not be empty".to_string());
     }
-    if name.len() > crate::app_config::SQUAD_NAME_MAX_LENGTH {
+    if name.len() > crate::app_config::CHANNEL_NAME_MAX_LENGTH {
         return Err(format!(
-            "Group name must be at most {} characters",
-            crate::app_config::SQUAD_NAME_MAX_LENGTH
+            "Channel name must be at most {} characters",
+            crate::app_config::CHANNEL_NAME_MAX_LENGTH
         ));
     }
     if member_ids.is_empty() {

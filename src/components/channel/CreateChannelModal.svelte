@@ -63,7 +63,13 @@
         maxlength={maxChannelNameLength}
         required
         disabled={creating}
+        aria-describedby="{resolvedInputId}-char-count"
       />
+      <p id="{resolvedInputId}-char-count" class="create-channel-char-count">
+        {$t('messaging.channel.nameCharCount', {
+          values: { count: channelName.length, max: maxChannelNameLength },
+        })}
+      </p>
 
       {#if !showMemberPicker}
         <p class="create-channel-hint">
@@ -205,12 +211,19 @@
     width: 100%;
     box-sizing: border-box;
     padding: 10px 12px;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-primary);
     font-size: 0.9375rem;
+  }
+
+  .create-channel-char-count {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin: 0 0 16px 0;
+    text-align: right;
   }
 
   .create-channel-members {

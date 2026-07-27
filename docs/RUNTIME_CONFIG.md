@@ -8,8 +8,8 @@ Backend-owned limits and feature flags, fetched by the frontend over Tauri IPC i
 
 | Rust constant | AppConfig field (camelCase) | Default | Enforced in |
 |---|---|---|---|
-| `SQUAD_NAME_MAX_LENGTH` | `squadNameMaxLength` | 50 | `create_group_chat`, `squad_catalog::upsert_squad` |
-| `CHANNEL_NAME_MAX_LENGTH` | `channelNameMaxLength` | 50 | UI only (channels are created inside an already-capped squad) |
+| `SQUAD_NAME_MAX_LENGTH` | `squadNameMaxLength` | 50 | `squad_catalog::upsert_squad` |
+| `CHANNEL_NAME_MAX_LENGTH` | `channelNameMaxLength` | 35 | `create_group_chat` (channel creation; squad root always uses the fixed `announcements` name) |
 | `COMMONS_MAX_TAGS` | `commonsMaxTags` | 3 | `commons::normalize_commons_tags`, `squad_catalog::normalize_commons_tags` |
 | `DEPLOY_SAFE_MAX_SIGNERS` | `deploySafeMaxSigners` | 10 | UI only (Safe contract itself allows more) |
 | `ROLE_LABEL_MAX_LENGTH` | `roleLabelMaxLength` | 32 | `evm::squad_admin_write::bytes32_role_tag` (bytes32 packing) |

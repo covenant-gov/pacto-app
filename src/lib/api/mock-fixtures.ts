@@ -203,7 +203,7 @@ export const settingFixtures: Record<string, MockCommandHandler> = {
   set_sql_setting: () => undefined,
   get_app_config: () => ({
     squadNameMaxLength: 50,
-    channelNameMaxLength: 50,
+    channelNameMaxLength: 35,
     commonsMaxTags: 3,
     deploySafeMaxSigners: 10,
     roleLabelMaxLength: 32,

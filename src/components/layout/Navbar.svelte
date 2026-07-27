@@ -486,7 +486,9 @@
     const name = organizeSquadName.trim();
     if (!name) return;
     if (name.length > maxSquadNameLength) {
-      organizeSquadError = 'Squad name must be at most ' + maxSquadNameLength + ' characters.';
+      organizeSquadError = translate('nav.navbar.organizeSquad.nameTooLong', {
+        values: { max: maxSquadNameLength },
+      });
       return;
     }
     organizeSquadError = '';
@@ -688,12 +690,18 @@
       <input
         id="squad-name"
         type="text"
-        class="organize-input"
+        class="organize-input organize-input-with-count"
         placeholder={squadNamePlaceholder}
         bind:value={organizeSquadName}
         maxlength={maxSquadNameLength}
         required
+        aria-describedby="squad-name-char-count"
       />
+      <p id="squad-name-char-count" class="organize-char-count">
+        {$t('nav.navbar.organizeSquad.nameCharCount', {
+          values: { count: organizeSquadName.length, max: maxSquadNameLength },
+        })}
+      </p>
       <label class="organize-label" for="squad-icon">{iconUrlLabel}</label>
       <input
         id="squad-icon"
@@ -821,6 +829,17 @@
 
   .organize-input::placeholder {
     color: var(--text-muted);
+  }
+
+  .organize-input-with-count {
+    margin-bottom: 6px;
+  }
+
+  .organize-char-count {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin: 0 0 16px 0;
+    text-align: right;
   }
 
   .organize-select {

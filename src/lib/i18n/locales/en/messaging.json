@@ -46,6 +46,7 @@
 	"messaging.channel.membersTitle": "Members",
 	"messaging.channel.mlsWelcomeBody": "Your decryptable MLS history starts here. Messages from before you joined can’t be decrypted on this device—that’s how MLS works, not a sync failure. New messages in this group will appear below.",
 	"messaging.channel.mlsWelcomeTitle": "Welcome to this channel",
+	"messaging.channel.nameCharCount": "{count}/{max} characters",
 	"messaging.channel.nameLabel": "Channel name",
 	"messaging.channel.namePlaceholder": "e.g. general",
 	"messaging.channel.openChannel": "Open channel",
