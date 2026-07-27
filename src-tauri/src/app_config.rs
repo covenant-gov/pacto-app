@@ -10,11 +10,13 @@ use serde::Serialize;
 /// Maximum length of a squad or channel name.
 pub const SQUAD_NAME_MAX_LENGTH: usize = 50;
 
-/// Maximum length of a channel name.
+/// Maximum length of a channel name, enforced in `create_group_chat` (the only
+/// caller of that command with a user-typed name; squad root creation always
+/// passes the fixed `announcements` constant).
 ///
-/// Channels are created inside squads, so this is the same cap as squad names
-/// for v1.
-pub const CHANNEL_NAME_MAX_LENGTH: usize = 50;
+/// Independently configurable from squad names; tighter default fits the
+/// channel list/header UI better than the squad name cap.
+pub const CHANNEL_NAME_MAX_LENGTH: usize = 35;
 
 /// Maximum number of author-selectable Commons tags on a squad or broadcast.
 pub const COMMONS_MAX_TAGS: usize = 3;

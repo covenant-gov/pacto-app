@@ -60,6 +60,7 @@
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
   import { refreshPersonalAlertForSquad } from '../../stores/squad-hub-alerts';
+  import { appConfig } from '../../stores/app-config';
 
   const translate = get(t);
 
@@ -211,6 +212,8 @@
   $: canShowParentMenuActions =
     !!activeParent && !creating && activeParent.channels.length > 0;
 
+  $: maxChannelNameLength = $appConfig.channelNameMaxLength;
+
   $: createChannelSubtitle = $t('nav.parentNavbar.createChannel.subtitle', {
     values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
   });
@@ -320,6 +323,12 @@
   function startCreateChannel(access: 'open' | 'closed', members: string[]) {
     const name = createChannelName.trim();
     if (!name) return;
+    if (name.length > maxChannelNameLength) {
+      createChannelError = translate('nav.parentNavbar.createChannel.nameTooLong', {
+        values: { max: maxChannelNameLength },
+      });
+      return;
+    }
 
     const parent = activeParent;
     const squadId = $activeSquadId;
