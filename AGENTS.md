@@ -124,7 +124,13 @@ cd src-tauri && cargo test
 ## Code Conventions & Common Patterns
 
 ### Frontend
-- **Svelte style:** Svelte 5 is installed, but the codebase uses **legacy Svelte 4 patterns** (`writable`/`derived`, `$` auto-subscriptions, `$:` reactive statements). Do **not** introduce `$state`/`$derived` runes unless migrating the whole project.
+- **Svelte style:** Svelte 5 is installed and the codebase is migrating to runes. **Author every new `.svelte` file in runes mode**, and convert a file to runes when you rewrite it substantially. Do not write new legacy-syntax components.
+  - **Runes mode is all-or-nothing per file.** `export let` beside `$props()` is a compile error (`legacy_export_invalid`), so a file converts whole or not at all. Never half-convert.
+  - **Use:** `$props()` for props, `$state` for local mutable state, `$derived` for computed values, `$effect` only for genuine side effects, `$bindable()` on props a parent two-way binds, event attributes (`onclick`), and snippets with `{@render children()}`.
+  - **Do not use in new files:** `export let`, `$:`, `on:` directives, `<slot>`, `createEventDispatcher`.
+  - **Stores stay on `svelte/store`.** The 44 modules in `src/stores/` are deliberately out of scope. `$store` auto-subscription works in runes-mode components and is not deprecated — read stores with `$store` and do not convert them to `$state` or `.svelte.ts`.
+  - **Do not opportunistically convert unrelated legacy files** while working a feature. Conversion runs in planned domain batches; see `docs/plans/2026-07-25-001-refactor-svelte-5-runes-migration-plan.md`.
+  - **Exception — the three god components.** `src/routes/+page.svelte`, `src/components/channel/ChatView.svelte`, and `src/components/parent/ParentDashboard.svelte` stay legacy shells. When a feature touches one, carve the new functionality into a runes child component rather than converting the shell. A legacy parent hosting a runes child is fully supported.
 - **Backend calls:** Use `import { invoke } from '@tauri-apps/api/core'` and type as `invoke<T>('command_name', { arg1, arg2 })`. Command names are `snake_case`; payload keys are `camelCase` and converted by Tauri v2.
 - **State:** One store file per domain. Re-export from `src/stores/app.ts` when cross-cutting. Reset stores in `beforeEach`/`afterEach` in tests.
 - **Persistence:** Any new `localStorage` key must be npub-scoped via `persistenceKey(prefix)` from `src/stores/persistence-context.ts`. Call `loadAccountState(npub)` after login and `clearAccountState(npub)` on logout.
