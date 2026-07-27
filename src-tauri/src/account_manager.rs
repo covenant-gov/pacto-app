@@ -77,10 +77,15 @@ pub fn get_mls_directory<R: Runtime>(
 /// List all existing accounts by scanning directories
 ///
 /// Returns: Vec of full npubs that have valid pkeys (not just directories)
-/// Also cleans up invalid account directories without pkeys
+/// Also cleans up invalid account directories without pkeys, skipping the
+/// current and pending account so a directory mid-creation (pkey not
+/// written yet) is never deleted out from under it.
 pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
     let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let current = get_current_account().ok();
+    let pending = get_pending_account().ok().flatten();
 
     let mut accounts = Vec::new();
 
@@ -90,6 +95,9 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                 if let Some(name) = entry.file_name().to_str() {
                     // Check if it looks like an npub directory
                     if name.starts_with("npub1") {
+                        if is_in_flight_account(name, current.as_deref(), pending.as_deref()) {
+                            continue;
+                        }
                         // Validate that this account has a valid pkey in its database
                         if let Ok(has_pkey) = account_has_valid_pkey(handle, name) {
                             if has_pkey {
@@ -111,6 +119,13 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
     }
 
     Ok(accounts)
+}
+
+/// Whether `name` is the current or pending account and must be skipped by the
+/// orphan-directory cleanup in `list_accounts`, regardless of whether it has a
+/// pkey yet (account creation writes the directory/database before the pkey).
+fn is_in_flight_account(name: &str, current: Option<&str>, pending: Option<&str>) -> bool {
+    current == Some(name) || pending == Some(name)
 }
 
 /// Check if an account has a valid pkey in its database
@@ -363,4 +378,42 @@ pub async fn switch_account<R: Runtime>(
     // This will be done when we update the MLS module
 
     Ok(())
+}
+
+#[cfg(test)]
+mod is_in_flight_account_tests {
+    use super::*;
+
+    /// Regression test for a race where the boot-time `list_accounts` scan
+    /// (invoked by the login screen's `check_any_account_exists`) deleted an
+    /// account's directory while it was still mid-creation — the directory
+    /// exists with a fresh, pkey-less database at that point. `list_accounts`
+    /// must never treat the current or pending account as an orphan.
+    ///
+    /// This tests the pure predicate directly rather than the full
+    /// `list_accounts` scan: that function reads real global statics
+    /// (`CURRENT_ACCOUNT`/`PENDING_ACCOUNT`) and the shared OS app-data
+    /// directory, both of which are mutated concurrently by every other test
+    /// in this file's `#[tokio::test]` suite.
+    #[test]
+    fn protects_current_and_pending_independently() {
+        let current = "npub1current";
+        let pending = "npub1pending";
+        let orphan = "npub1orphan";
+
+        // Logged into `current` while a second account `pending` is mid-creation
+        // (e.g. "add account" while already signed in) — both must be protected.
+        assert!(is_in_flight_account(current, Some(current), Some(pending)));
+        assert!(is_in_flight_account(pending, Some(current), Some(pending)));
+        assert!(!is_in_flight_account(orphan, Some(current), Some(pending)));
+
+        // No account logged in yet; only a pending fixture/first-run account exists.
+        assert!(is_in_flight_account(pending, None, Some(pending)));
+        assert!(!is_in_flight_account(orphan, None, Some(pending)));
+
+        // Steady state: no pending creation in flight.
+        assert!(is_in_flight_account(current, Some(current), None));
+        assert!(!is_in_flight_account(orphan, Some(current), None));
+        assert!(!is_in_flight_account(orphan, None, None));
+    }
 }

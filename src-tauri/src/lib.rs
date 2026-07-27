@@ -4337,9 +4337,14 @@ async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_js
         st.profiles.push(profile);
     }
 
-    // Initialize the sandboxed profile database and mark the account as active.
+    // Mark the account pending before touching the filesystem so a concurrent
+    // `list_accounts` scan (e.g. the login screen's boot-time account check)
+    // can't treat the in-flight directory as an orphan and delete it before
+    // the pkey is written.
+    account_manager::set_pending_account(npub.clone())?;
     account_manager::init_profile_database(&handle, &npub).await?;
     account_manager::set_current_account(npub.clone())?;
+    account_manager::clear_pending_account()?;
 
     // Set up key-derivation version 2 so test sessions can use commands that
     // normally require a PIN-protected account (e.g. sending messages).
