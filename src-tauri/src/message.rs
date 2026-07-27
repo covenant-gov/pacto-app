@@ -2131,9 +2131,22 @@ pub fn get_image_preview_base64(file_path: String, quality: u32) -> Result<Strin
     {
         let bytes = std::fs::read(&file_path)
             .map_err(|e| format!("Failed to read file: {}", e))?;
-        
-        let img = ::image::load_from_memory(&bytes)
+
+        // image::load_from_memory / ImageReader::decode() never apply EXIF orientation on their
+        // own (the crate only exposes it via ImageDecoder::orientation()), so a sideways phone
+        // photo would otherwise preview/crop rotated. Read the orientation off the decoder before
+        // consuming it, then apply it to the decoded pixels.
+        let reader = ::image::ImageReader::new(std::io::Cursor::new(bytes.as_slice()))
+            .with_guessed_format()
+            .map_err(|e| format!("Failed to read image data: {}", e))?;
+        let mut decoder = reader
+            .into_decoder()
             .map_err(|e| format!("Failed to decode image: {}", e))?;
+        let orientation = ::image::ImageDecoder::orientation(&mut decoder)
+            .unwrap_or(::image::metadata::Orientation::NoTransforms);
+        let mut img = ::image::DynamicImage::from_decoder(decoder)
+            .map_err(|e| format!("Failed to decode image: {}", e))?;
+        img.apply_orientation(orientation);
         
         let (width, height) = (img.width(), img.height());
         let new_width = ((width * quality) / 100).max(1);
@@ -3281,5 +3294,75 @@ mod extract_mention_notification_body_tests {
     fn malformed_json_returns_original() {
         let content = "not { valid json";
         assert_eq!(extract_mention_notification_body(content), content);
+    }
+}
+
+#[cfg(test)]
+mod get_image_preview_base64_exif_tests {
+    use super::get_image_preview_base64;
+
+    /// `image::load_from_memory` / `ImageReader::decode()` never apply EXIF orientation on their
+    /// own; `get_image_preview_base64` must read it off the decoder and apply it explicitly, or a
+    /// sideways phone photo previews (and then crops) rotated.
+    #[test]
+    fn applies_exif_orientation_before_resizing() {
+        use ::image::{codecs::jpeg::JpegEncoder, ExtendedColorType, ImageEncoder};
+
+        // A narrow portrait raster (2x4): orientation-agnostic decoding would keep it 2x4.
+        let (raw_width, raw_height): (u32, u32) = (2, 4);
+        let rgb = vec![0u8; (raw_width * raw_height * 3) as usize];
+
+        let mut jpeg_bytes = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut jpeg_bytes);
+            let mut encoder = JpegEncoder::new_with_quality(&mut cursor, 90);
+            // Minimal little-endian TIFF IFD with a single Orientation=6 (Rotate90 CW) tag.
+            let exif_chunk: Vec<u8> = vec![
+                0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // "II", magic 42, IFD @ offset 8
+                0x01, 0x00, // 1 IFD entry
+                0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, // Orientation(0x0112)=SHORT,1,6
+                0x00, 0x00, 0x00, 0x00, // next IFD offset = none
+            ];
+            encoder
+                .set_exif_metadata(exif_chunk)
+                .expect("jpeg encoder must support embedding exif metadata");
+            encoder
+                .write_image(&rgb, raw_width, raw_height, ExtendedColorType::Rgb8)
+                .expect("failed to encode synthetic test jpeg");
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "pacto-exif-orientation-test-{}-{:?}.jpg",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&path, &jpeg_bytes).expect("failed to write synthetic test jpeg");
+
+        let result = get_image_preview_base64(path.to_string_lossy().to_string(), 100);
+        let _ = std::fs::remove_file(&path);
+        let data_uri = result.expect("get_image_preview_base64 should succeed on a valid jpeg");
+
+        let b64_payload = data_uri
+            .split(',')
+            .nth(1)
+            .expect("data URI must carry a base64 payload");
+        use base64::Engine;
+        let decoded_bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64_payload)
+            .expect("preview payload must be valid base64");
+        let decoded_img =
+            ::image::load_from_memory(&decoded_bytes).expect("preview payload must decode as an image");
+
+        // Rotate90 swaps width and height; failing this means EXIF orientation was ignored.
+        assert_eq!(
+            decoded_img.width(),
+            raw_height,
+            "preview width should equal the source height once the 90° EXIF rotation is applied"
+        );
+        assert_eq!(
+            decoded_img.height(),
+            raw_width,
+            "preview height should equal the source width once the 90° EXIF rotation is applied"
+        );
     }
 }

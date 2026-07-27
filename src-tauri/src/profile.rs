@@ -1,14 +1,11 @@
 use nostr_sdk::prelude::*;
 use tauri::Emitter;
-use tauri_plugin_fs::FsExt;
 
 use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
 
-#[cfg(target_os = "android")]
-use crate::android::filesystem;
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(default)]
@@ -660,42 +657,72 @@ pub async fn update_status(status: String) -> bool {
         Err(_) => false,
     }
 }
-/// Uploads an avatar or banner image with progress reporting
-/// `upload_type` should be "avatar" or "banner" to specify which is being uploaded
+/// Validates decoded avatar bytes before upload: size cap, then dimensions via a
+/// bounded decoder (guards against decompression bombs — a small file whose header
+/// declares an oversized image can't force a huge pixel-buffer allocation before the
+/// declared dimensions are checked), then format, then an explicit dimension re-check.
+fn validate_avatar_bytes(bytes: &[u8]) -> Result<(), String> {
+    const MAX_AVATAR_BYTES: usize = 500_000;
+    const MAX_AVATAR_DIMENSION: u32 = 512;
+
+    if bytes.len() > MAX_AVATAR_BYTES {
+        return Err("Avatar image exceeds the 500KB size limit".to_string());
+    }
+
+    let mut limits = ::image::Limits::default();
+    limits.max_image_width = Some(MAX_AVATAR_DIMENSION);
+    limits.max_image_height = Some(MAX_AVATAR_DIMENSION);
+
+    let mut reader = ::image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Could not read avatar image data".to_string())?;
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
+        .map_err(|e| format!("Failed to decode avatar image: {}", e))?;
+
+    if !matches!(::image::guess_format(bytes), Ok(::image::ImageFormat::Jpeg)) {
+        return Err("Avatar image must be a JPEG".to_string());
+    }
+
+    let (width, height) = (img.width(), img.height());
+    if width > MAX_AVATAR_DIMENSION || height > MAX_AVATAR_DIMENSION {
+        return Err(format!(
+            "Avatar image dimensions {}x{} exceed the {}x{} limit",
+            width, height, MAX_AVATAR_DIMENSION, MAX_AVATAR_DIMENSION
+        ));
+    }
+
+    Ok(())
+}
+
+/// Uploads an avatar or banner image with progress reporting.
+/// `bytes` is base64-encoded image data (JPEG for avatars). `upload_type` should be
+/// "avatar" or "banner" to specify which is being uploaded.
 #[tauri::command]
-pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Result<String, String> {
+pub async fn upload_avatar(bytes: String, upload_type: Option<String>) -> Result<String, String> {
+    use base64::Engine;
+
     let handle = TAURI_APP.get().unwrap();
     let upload_type = upload_type.unwrap_or_else(|| "avatar".to_string());
 
-    // Grab the file as AttachmentFile
-    let attachment_file = {
-        #[cfg(not(target_os = "android"))]
-        {
-            // Read file bytes
-            let bytes = handle.fs().read(std::path::Path::new(&filepath))
-                .map_err(|_| "Image couldn't be loaded from disk")?;
+    let decoded_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&bytes)
+        .map_err(|_| "Invalid base64 image data".to_string())?;
 
-            // Extract extension from filepath
-            let extension = filepath
-                .rsplit('.')
-                .next()
-                .unwrap_or("bin")
-                .to_lowercase();
+    if upload_type == "avatar" {
+        validate_avatar_bytes(&decoded_bytes)?;
+    }
 
-            AttachmentFile {
-                bytes,
-                img_meta: None,
-                extension,
-                file_name: None,
-            }
-        }
-        #[cfg(target_os = "android")]
-        {
-            filesystem::read_android_uri(filepath)?
-        }
+    let attachment_file = AttachmentFile {
+        bytes: decoded_bytes,
+        img_meta: None,
+        extension: "jpg".to_string(),
+        file_name: None,
     };
 
-    // Format a Mime Type from the file extension
+    // Format a Mime Type from the file extension (always "jpg" -> "image/jpeg" for avatars)
     let mime_type = crate::util::mime_from_extension_safe(&attachment_file.extension, true)
         .map_err(|_| "File type is not allowed for avatars (only images are permitted)")?;
 
@@ -857,5 +884,107 @@ mod kind0_evm_tests {
         let json = kind0_metadata_json_without_evm(&contaminated).unwrap();
         assert!(!json.contains("evm_address"));
         assert!(json.contains("alice"));
+    }
+}
+
+#[cfg(test)]
+mod avatar_validation_tests {
+    use super::validate_avatar_bytes;
+    use ::image::ImageEncoder;
+    use base64::Engine;
+
+    /// Encodes a solid-color square RGB image to JPEG bytes at the given dimension.
+    fn jpeg_bytes(dimension: u32) -> Vec<u8> {
+        let img = ::image::RgbImage::from_pixel(dimension, dimension, ::image::Rgb([128, 64, 200]));
+        let mut data = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut data);
+        let encoder = ::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 85);
+        encoder
+            .write_image(img.as_raw(), dimension, dimension, ::image::ExtendedColorType::Rgb8)
+            .unwrap();
+        data
+    }
+
+    /// Encodes a solid-color square RGB image to PNG bytes at the given dimension.
+    fn png_bytes(dimension: u32) -> Vec<u8> {
+        let img = ::image::RgbImage::from_pixel(dimension, dimension, ::image::Rgb([10, 200, 40]));
+        let mut data = Vec::new();
+        ::image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut data), ::image::ImageFormat::Png)
+            .unwrap();
+        data
+    }
+
+    #[test]
+    fn accepts_valid_small_jpeg() {
+        let bytes = jpeg_bytes(512);
+        assert!(bytes.len() < 500_000);
+        assert!(validate_avatar_bytes(&bytes).is_ok());
+    }
+
+    #[test]
+    fn rejects_oversized_dimensions() {
+        let bytes = jpeg_bytes(600);
+        assert!(validate_avatar_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_byte_count_before_decode() {
+        // Valid dimensions, but padded past the 500KB cap; the size check runs
+        // before any decode attempt, so the padding need not stay valid JPEG.
+        let mut bytes = jpeg_bytes(512);
+        assert!(bytes.len() < 500_000);
+        let pad = 500_001 - bytes.len();
+        bytes.extend(std::iter::repeat(0u8).take(pad));
+        assert!(bytes.len() > 500_000);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(err.contains("500KB"));
+    }
+
+    #[test]
+    fn rejects_malformed_bytes_without_panicking() {
+        let bytes = b"this is not an image".to_vec();
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn rejects_non_jpeg_format() {
+        let bytes = png_bytes(256);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(err.contains("JPEG"));
+    }
+
+    #[test]
+    fn rejects_declared_oversized_dimensions_without_full_decode() {
+        // Patch a small real JPEG's SOF0 header to claim ~50000x50000 dimensions.
+        // Header/marker parsing is cheap and unaffected by the fake dimensions;
+        // the bounded decode must reject on the declared size before allocating a
+        // full-resolution pixel buffer, so this returns an error quickly instead
+        // of hanging or exhausting memory.
+        let mut bytes = jpeg_bytes(8);
+        let sof0 = bytes
+            .windows(2)
+            .position(|w| w == [0xFF, 0xC0])
+            .expect("encoded JPEG should contain a baseline SOF0 marker");
+        // After the marker: 2-byte segment length, 1-byte precision, then
+        // 2-byte height and 2-byte width fields.
+        let height_offset = sof0 + 5;
+        let width_offset = height_offset + 2;
+        let fake_dim: u16 = 50_000;
+        bytes[height_offset..height_offset + 2].copy_from_slice(&fake_dim.to_be_bytes());
+        bytes[width_offset..width_offset + 2].copy_from_slice(&fake_dim.to_be_bytes());
+
+        assert!(bytes.len() < 500_000);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn base64_decode_rejects_malformed_input() {
+        // Exercises the same decode step `upload_avatar` runs before validation;
+        // malformed base64 must error, not panic.
+        let result = base64::engine::general_purpose::STANDARD.decode("not-valid-base64!!!");
+        assert!(result.is_err());
     }
 }

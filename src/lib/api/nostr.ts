@@ -195,16 +195,27 @@ export async function updateProfile(params: {
  * Backend: upload_avatar. Emits profile_upload_progress.
  */
 export async function uploadAvatar(
-  filepath: string,
+  bytes: string,
   uploadType: 'avatar' | 'banner'
 ): Promise<string> {
   dmLog('upload_avatar', { uploadType });
   const url = (await invoke('upload_avatar', {
-    filepath,
-    upload_type: uploadType,
+    bytes,
+    uploadType,
   })) as string;
   dmLog('upload_avatar result', { urlLen: url?.length ?? 0 });
   return url;
+}
+
+/**
+ * Get a resized/compressed preview of a local image as a base64 data URI.
+ * Backend: get_image_preview_base64.
+ */
+export async function getImagePreviewBase64(filePath: string, quality: number): Promise<string> {
+  return (await invoke('get_image_preview_base64', {
+    filePath,
+    quality,
+  })) as string;
 }
 
 /**
