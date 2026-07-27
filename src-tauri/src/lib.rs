@@ -11,8 +11,6 @@ use rand::distributions::Alphanumeric;
 
 mod crypto;
 
-mod app_config;
-
 mod test_sandbox;
 
 mod squad_catalog;
@@ -90,6 +88,9 @@ mod migration;
 // Backend session manager and idle auto-lock (U4)
 mod session;
 
+// Application-wide configuration constants and IPC snapshot.
+mod app_config;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -104,21 +105,43 @@ pub(crate) static TRUSTED_RELAYS: &[&str] = &[
 
 /// # Blossom Media Servers
 ///
-/// A list of Blossom servers for file uploads with automatic failover.
-/// The system will try each server in order until one succeeds.
-static BLOSSOM_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
+/// Two ordered lists with automatic failover: the first server that accepts wins.
+///
+/// The split exists because message attachments are AES-256-GCM ciphertext, and
+/// most public Blossom servers sniff the blob and whitelist media types — they
+/// reject opaque bytes with 415 regardless of the `Content-Type` header. Profile
+/// media is plaintext and is published to public nostr profiles, so it prefers a
+/// widely mirrored CDN that serves a real media extension.
+/// See `docs/messaging/ATTACHMENTS.md`.
+static BLOSSOM_BLOB_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
+static BLOSSOM_MEDIA_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
 
-/// Initialize default Blossom servers
-fn init_blossom_servers() -> Vec<String> {
+/// Servers that accept opaque blobs (encrypted message attachments).
+fn init_blossom_blob_servers() -> Vec<String> {
+    vec!["https://nostr.download".to_string()]
+}
+
+/// Servers for plaintext profile media (avatars, banners).
+fn init_blossom_media_servers() -> Vec<String> {
     vec![
         "https://blossom.primal.net".to_string(),
+        "https://nostr.download".to_string(),
     ]
 }
 
-/// Get the list of Blossom servers (internal function)
-pub(crate) fn get_blossom_servers() -> Vec<String> {
-    BLOSSOM_SERVERS
-        .get_or_init(|| std::sync::Mutex::new(init_blossom_servers()))
+/// Upload targets for encrypted attachments.
+pub(crate) fn get_blossom_blob_servers() -> Vec<String> {
+    BLOSSOM_BLOB_SERVERS
+        .get_or_init(|| std::sync::Mutex::new(init_blossom_blob_servers()))
+        .lock()
+        .unwrap()
+        .clone()
+}
+
+/// Upload targets for plaintext profile media.
+pub(crate) fn get_blossom_media_servers() -> Vec<String> {
+    BLOSSOM_MEDIA_SERVERS
+        .get_or_init(|| std::sync::Mutex::new(init_blossom_media_servers()))
         .lock()
         .unwrap()
         .clone()
@@ -2902,7 +2925,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
 /// Get the list of Blossom media servers (Tauri command)
 #[tauri::command]
 async fn get_media_servers() -> Vec<String> {
-    get_blossom_servers()
+    get_blossom_media_servers()
 }
 
 // ============================================================================
@@ -3712,12 +3735,12 @@ async fn decrypt_and_save_attachment<R: tauri::Runtime>(
     };
 
     // Resolve the directory path using the determined base directory
-    let dir = handle.path().resolve("vector", base_directory).unwrap();
+    let dir = handle.path().resolve("pacto", base_directory).unwrap();
     
     // Use hash-based filename
     let file_path = dir.join(format!("{}.{}", file_hash, attachment.extension));
 
-    // Create the vector directory if it doesn't exist
+    // Create the pacto directory if it doesn't exist
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     // Save the file to disk
@@ -3807,7 +3830,7 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                             tauri::path::BaseDirectory::Download
                         };
                         
-                        if let Ok(vector_dir) = handle.path().resolve("vector", base_directory) {
+                        if let Ok(vector_dir) = handle.path().resolve("pacto", base_directory) {
                             let file_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
                             if file_path.exists() {
                                 // File already exists! Update the state and return success
@@ -4094,6 +4117,135 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
             true
         }
     }
+}
+
+/// Downloads and decrypts an attachment if it is not already on disk, then opens a
+/// native save dialog and copies the plaintext file to the chosen destination.
+/// Returns the saved path, or an empty string if the user cancelled the dialog.
+#[tauri::command]
+async fn save_attachment_as(
+    npub: String,
+    msg_id: String,
+    attachment_id: String,
+) -> Result<String, String> {
+    let handle = TAURI_APP.get().ok_or("App handle not available")?;
+
+    // Locate the attachment the same way `download_attachment` does.
+    let attachment = {
+        let state = STATE.lock().await;
+        state.chats.iter()
+            .find(|chat| match &chat.chat_type {
+                ChatType::MlsGroup => chat.id == npub,
+                ChatType::DirectMessage => chat.has_participant(&npub),
+            })
+            .and_then(|chat| chat.messages.iter().find(|m| m.id == msg_id))
+            .and_then(|message| message.attachments.iter().find(|a| a.id == attachment_id))
+            .cloned()
+    }.ok_or_else(|| format!("Attachment not found: {} in message {}", attachment_id, msg_id))?;
+
+    // Choose the appropriate base directory based on platform (matches `download_attachment`).
+    let base_directory = if cfg!(target_os = "ios") {
+        tauri::path::BaseDirectory::Document
+    } else {
+        tauri::path::BaseDirectory::Download
+    };
+    let vector_dir = handle.path().resolve("pacto", base_directory)
+        .map_err(|e| format!("Failed to resolve download directory: {}", e))?;
+    let expected_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
+
+    // Reuse the already-decrypted file on disk if present; otherwise fetch and decrypt it,
+    // reusing the same download + decrypt helpers as `download_attachment`.
+    let source_path = if expected_path.exists() {
+        expected_path
+    } else {
+        let encrypted_data = net::download(&attachment.url, handle, &attachment.id, None)
+            .await
+            .map_err(|e| format!("Failed to download attachment: {}", e))?;
+
+        if encrypted_data.len() < 16 {
+            return Err(format!(
+                "Downloaded file too small ({} bytes). URL may be invalid or expired.",
+                encrypted_data.len()
+            ));
+        }
+
+        let decrypted_path = decrypt_and_save_attachment(handle, &encrypted_data, &attachment).await?;
+
+        // Bring shared state and the DB in sync so the app treats this attachment as downloaded,
+        // matching the bookkeeping `download_attachment` performs on success.
+        let file_hash = decrypted_path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&attachment_id)
+            .to_string();
+        let updated_message = {
+            let mut state = STATE.lock().await;
+            let mut updated = None;
+            for chat in &mut state.chats {
+                let is_target_chat = match &chat.chat_type {
+                    ChatType::MlsGroup => chat.id == npub,
+                    ChatType::DirectMessage => chat.has_participant(&npub),
+                };
+                if is_target_chat {
+                    if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
+                        if let Some(att) = message.attachments.iter_mut().find(|a| a.id == attachment_id) {
+                            att.id = file_hash.clone();
+                            att.downloading = false;
+                            att.downloaded = true;
+                            att.path = decrypted_path.to_string_lossy().to_string();
+                        }
+                        updated = Some(message.clone());
+                    }
+                    break;
+                }
+            }
+            updated
+        };
+        if let Some(message) = updated_message {
+            handle.emit("message_update", serde_json::json!({
+                "old_id": &message.id,
+                "message": &message,
+                "chat_id": &npub
+            })).ok();
+            let _ = db::save_message(handle.clone(), &npub, &message).await;
+        }
+
+        decrypted_path
+    };
+
+    // Open a native save dialog on the Rust side — the destination path is never
+    // trusted from the webview, closing off arbitrary-path writes via IPC.
+    use tauri_plugin_dialog::DialogExt;
+    let handle_clone = handle.clone();
+    let default_name = format!("{}.{}", attachment.id, attachment.extension);
+    let dialog_result = tokio::task::spawn_blocking(move || {
+        handle_clone
+            .dialog()
+            .file()
+            .set_file_name(&default_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?;
+
+    let dest = match dialog_result {
+        Some(path) => path.as_path()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "Invalid destination path".to_string())?,
+        None => return Ok(String::new()),
+    };
+
+    // Create the destination directory if needed, then copy the plaintext file there.
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+        }
+    }
+
+    std::fs::copy(&source_path, &dest)
+        .map_err(|e| format!("Failed to copy attachment to destination: {}", e))?;
+
+    Ok(dest.to_string_lossy().to_string())
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -4606,14 +4758,14 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Delete the downloads folder (vector folder in Downloads or Documents on iOS)
+    // Delete the downloads folder (pacto folder in Downloads or Documents on iOS)
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {
         tauri::path::BaseDirectory::Download
     };
     
-    if let Ok(downloads_dir) = handle.path().resolve("vector", base_directory) {
+    if let Ok(downloads_dir) = handle.path().resolve("pacto", base_directory) {
         if downloads_dir.exists() {
             let _ = std::fs::remove_dir_all(&downloads_dir);
         }
@@ -5042,9 +5194,9 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
         tauri::path::BaseDirectory::Download
     };
     
-    // Resolve the vector directory path
-    let vector_dir = handle.path().resolve("vector", base_directory)
-        .map_err(|e| format!("Failed to resolve vector directory: {}", e))?;
+    // Resolve the pacto directory path
+    let vector_dir = handle.path().resolve("pacto", base_directory)
+        .map_err(|e| format!("Failed to resolve pacto directory: {}", e))?;
     
     // Check if directory exists
     if !vector_dir.exists() {
@@ -6612,6 +6764,7 @@ pub fn run() {
             generate_blurhash_preview,
             decode_blurhash,
             download_attachment,
+            save_attachment_as,
             login,
             login_with_recovery_phrase,
             #[cfg(debug_assertions)]

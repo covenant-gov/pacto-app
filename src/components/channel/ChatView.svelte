@@ -51,13 +51,16 @@
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow } from '../../lib/api/nostr';
+  import { dmSyncStatus } from '../../stores/dm';
+  import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
+  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
@@ -262,6 +265,10 @@
       replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
       replyAuthorName: undefined as string | undefined,
       replyPreview: undefined as string | undefined,
+      reactions: msg.reactions,
+      attachments: msg.attachments,
+      previewMetadata: msg.preview_metadata,
+      pending: msg.pending,
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -342,7 +349,7 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
-  async function handleSendMessage(body: string, mentions?: Mention[]) {
+  async function handleSendMessage(body: string, mentions?: Mention[], repliedTo?: string) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
@@ -352,9 +359,10 @@
       ? buildMentionEnvelope(body, mentions, virtualBucket)
       : body;
     try {
-      await sendDmMessage(groupId, content, '', { virtualBucket });
+      const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
+      if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
@@ -653,6 +661,75 @@
       clearMentionAlert(activeSquad.id, activeChannel.name);
     }
   }
+
+  let replyToMessageId: string | null = null;
+  let replyPreview: string | undefined = undefined;
+
+  let prevChannelIdForReply: string | null = null;
+  $: if ($activeChannelId !== prevChannelIdForReply) {
+    prevChannelIdForReply = $activeChannelId;
+    cancelReply();
+  }
+
+  function onReact(messageId: string, emoji: string) {
+    const chatId = $activeChannelId;
+    if (!chatId) return;
+    reactToMessage(messageId, chatId, emoji).catch((e: unknown) => {
+      clearPendingReactions(messageId);
+      showToast(e instanceof Error ? e.message : tFn('messaging.channel.reactionFailed'));
+    });
+  }
+
+  function onCopy(_messageId: string, text: string) {
+    if (!navigator.clipboard) {
+      showToast(tFn('messaging.channel.copyUnavailable'));
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(() => showToast(tFn('messaging.channel.copyFailed')));
+  }
+
+  function onReply(messageId: string) {
+    const msg = virtualTimelineMessages.find((m) => m.id === messageId);
+    if (!msg) return;
+    replyToMessageId = messageId;
+    replyPreview =
+      msg.attachments && msg.attachments.length > 0
+        ? tFn('messaging.message.attachment')
+        : msg.content && msg.content.length > 0
+          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
+          : tFn('messaging.message.messageFallback');
+  }
+
+  function cancelReply() {
+    replyToMessageId = null;
+    replyPreview = undefined;
+  }
+
+  async function handleSendText(body: string, repliedTo?: string) {
+    return handleSendMessage(body, undefined, repliedTo);
+  }
+
+  async function handleSendMentions(body: string, mentions: Mention[], repliedTo?: string) {
+    return handleSendMessage(body, mentions, repliedTo);
+  }
+
+  async function handleSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    const groupId = $activeChannelId;
+    if (!groupId) return;
+    groupSendError.set(null);
+    try {
+      const ok = await sendFileBytes(groupId, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      if (ok) cancelReply();
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      groupSendError.set(friendlyMessage(raw, 'dm_send'));
+    }
+  }
 </script>
 
 <svelte:window
@@ -678,6 +755,7 @@
       <div class="channel-info">
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
+        <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
@@ -789,11 +867,9 @@
                   {/if}
                   {#if showMlsHistoryWelcome}
                     <div class="mls-history-welcome" role="note">
-                      <p class="mls-history-welcome-title">Welcome to this channel</p>
+                      <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
                       <p class="mls-history-welcome-body">
-                        Your decryptable MLS history starts here. Messages from before you joined
-                        can’t be decrypted on this device—that’s how MLS works, not a sync failure.
-                        New messages in this group will appear below.
+                        {$t('messaging.channel.mlsWelcomeBody')}
                       </p>
                     </div>
                   {/if}
@@ -801,6 +877,10 @@
                     {@const props = toMessageProps(message)}
                     <Message
                       {...props}
+                      chatId={$activeChannelId ?? ''}
+                      {onReact}
+                      {onCopy}
+                      {onReply}
                       compact={shouldStackChannelWithPrevious(
                         virtualTimelineMessages[i - 1],
                         message,
@@ -816,13 +896,17 @@
             {/if}
             <MessageInput
               channelName={channelName}
-              onSend={handleSendMessage}
-              onSendMentions={handleSendMessage}
+              onSend={handleSendText}
+              onSendMentions={handleSendMentions}
+              onSendFile={handleSendFile}
               squadMlsGroupId={effectiveMembersGroupId ?? undefined}
               squadRosterNpubs={panelMembers}
               squadProfiles={$profiles}
               {currentUserNpub}
               disabled={isChannelCreating}
+              repliedTo={replyToMessageId ?? undefined}
+              repliedToPreview={replyPreview}
+              onCancelReply={cancelReply}
             />
           </div>
         {:else}
@@ -852,11 +936,9 @@
           {/if}
           {#if showMlsHistoryWelcome}
             <div class="mls-history-welcome" role="note">
-              <p class="mls-history-welcome-title">Welcome to this channel</p>
+              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
               <p class="mls-history-welcome-body">
-                Your decryptable MLS history starts here. Messages from before you joined can’t be
-                decrypted on this device—that’s how MLS works, not a sync failure. New messages in
-                this group will appear below.
+                {$t('messaging.channel.mlsWelcomeBody')}
               </p>
             </div>
           {/if}
@@ -886,6 +968,10 @@
             {:else}
               <Message
                 {...props}
+                chatId={$activeChannelId ?? ''}
+                {onReact}
+                {onCopy}
+                {onReply}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,
@@ -902,13 +988,17 @@
     {/if}
     <MessageInput
       channelName={channelName}
-      onSend={handleSendMessage}
-      onSendMentions={handleSendMessage}
+      onSend={handleSendText}
+      onSendMentions={handleSendMentions}
+      onSendFile={handleSendFile}
       squadMlsGroupId={effectiveMembersGroupId ?? undefined}
       squadRosterNpubs={panelMembers}
       squadProfiles={$profiles}
       {currentUserNpub}
       disabled={isChannelCreating}
+      repliedTo={replyToMessageId ?? undefined}
+      repliedToPreview={replyPreview}
+      onCancelReply={cancelReply}
     />
     {/if}
 

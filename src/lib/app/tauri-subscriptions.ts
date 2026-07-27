@@ -57,6 +57,9 @@ function normalizeDmPayload(message: DmMessage): DmMessage {
     replied_to_npub: (message as { replied_to_npub?: string | null }).replied_to_npub,
     replied_to_has_attachment: (message as { replied_to_has_attachment?: boolean | null })
       .replied_to_has_attachment,
+    attachments: message.attachments,
+    reactions: message.reactions,
+    preview_metadata: message.preview_metadata,
   };
   const ann = parseWalletTxAnnouncement(message.content ?? '');
   if (ann?.block_number) {

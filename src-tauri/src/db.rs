@@ -9,6 +9,8 @@ use crate::{Profile, Status, Message, Chat, ChatType, Attachment, Reaction};
 use crate::message::EditEntry;
 use crate::crypto::{internal_encrypt, internal_decrypt};
 use crate::stored_event::{StoredEvent, event_kind};
+use nostr_sdk::ToBech32;
+use crate::net::SiteMetadata;
 
 /// In-memory cache for chat_identifier → integer ID mappings
 /// This avoids database lookups on every message operation
@@ -3717,6 +3719,14 @@ fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>
         }
     }
 
+    // Add link preview metadata as JSON tag, if present (see also save_link_preview_metadata,
+    // which UPDATEs this tag after an async fetch since the event row already exists by then)
+    if let Some(preview) = &message.preview_metadata {
+        if let Ok(preview_json) = serde_json::to_string(preview) {
+            tags.push(vec!["link_preview".to_string(), preview_json]);
+        }
+    }
+
     let virtual_bucket = message.virtual_bucket.clone().or_else(|| {
         crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(kind, &message.content, &tags)
     });
@@ -4496,6 +4506,116 @@ pub fn update_attachment_downloaded_status<R: Runtime>(
     Ok(())
 }
 
+/// Persist link-preview metadata fetched asynchronously after a message was already saved.
+///
+/// The initial `save_message` call happens before the OpenGraph fetch resolves, so the event
+/// row already exists and a second `save_message` is a silent no-op (`INSERT OR IGNORE`).
+/// This updates the existing row's `tags` in place so the preview survives app restarts.
+pub fn save_link_preview_metadata<R: Runtime>(
+    handle: &AppHandle<R>,
+    msg_id: &str,
+    metadata: &SiteMetadata,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+
+    let tags_json: String = conn.query_row(
+        "SELECT tags FROM events WHERE id = ?1",
+        rusqlite::params![msg_id],
+        |row| row.get(0)
+    ).map_err(|e| format!("Event not found: {}", e))?;
+
+    let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
+
+    let metadata_json = serde_json::to_string(metadata)
+        .map_err(|e| format!("Failed to serialize link preview: {}", e))?;
+
+    let link_preview_tag_idx = tags.iter().position(|tag| {
+        tag.first().map(|s| s.as_str()) == Some("link_preview")
+    });
+
+    if let Some(idx) = link_preview_tag_idx {
+        tags[idx] = vec!["link_preview".to_string(), metadata_json];
+    } else {
+        tags.push(vec!["link_preview".to_string(), metadata_json]);
+    }
+
+    let updated_tags_json = serde_json::to_string(&tags)
+        .map_err(|e| format!("Failed to serialize tags: {}", e))?;
+
+    conn.execute(
+        "UPDATE events SET tags = ?1 WHERE id = ?2",
+        rusqlite::params![updated_tags_json, msg_id],
+    ).map_err(|e| format!("Failed to update event: {}", e))?;
+
+    crate::account_manager::return_db_connection(conn);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod link_preview_persistence_tests {
+    use super::*;
+    use crate::net::SiteMetadata;
+
+    /// Regression test: an OpenGraph preview fetched after the message was already saved
+    /// must still be there after a fresh load from the DB (simulating an app restart),
+    /// not just in the in-memory STATE.
+    #[tokio::test]
+    async fn link_preview_survives_reload_from_db() {
+        let test_npub = "npub1linkpreviewreloadtest";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([9u8; 32]);
+
+        let chat_id = "npub1linkpreviewreloadpeer";
+        let message = Message {
+            id: "link-preview-reload-test-msg".to_string(),
+            content: "check https://example.com out".to_string(),
+            mine: true,
+            at: 1_700_000_000_000,
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &message).await.unwrap();
+
+        let metadata = SiteMetadata {
+            domain: "example.com".to_string(),
+            og_title: Some("Example title".to_string()),
+            og_description: Some("Example description".to_string()),
+            og_image: Some("https://example.com/img.png".to_string()),
+            og_url: None,
+            og_type: None,
+            title: None,
+            description: None,
+            favicon: None,
+        };
+        save_link_preview_metadata(app.handle(), &message.id, &metadata).unwrap();
+
+        // Simulate an app restart: reload purely from the DB, bypassing in-memory STATE.
+        let chat_int_id = get_or_create_chat_id(app.handle(), chat_id).unwrap();
+        let loaded = get_message_views(app.handle(), chat_int_id, 10, 0, None).await.unwrap();
+        let loaded_msg = loaded
+            .iter()
+            .find(|m| m.id == message.id)
+            .expect("message should be loaded from DB");
+
+        assert_eq!(loaded_msg.preview_metadata.as_ref(), Some(&metadata));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+}
+
 /// Vacuum the database to reclaim space and optimize performance
 pub fn vacuum_database<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
@@ -5184,6 +5304,239 @@ pub async fn populate_reply_context<R: Runtime>(
     Ok(())
 }
 
+/// One-time repair for reaction rows persisted before the author_id hex/bech32 fix
+/// (pacto-app-rmq.2): `react_to_message`/`process_reaction` used to store the
+/// reactor's raw hex pubkey in the `npub` column instead of a bech32 npub, which
+/// breaks reactor identity resolution (profile lookup, "own reaction" detection,
+/// the reactor tooltip). Hex pubkeys are always 64 hex chars; bech32 npubs are 63
+/// chars (`npub1` + data + checksum), so the length alone reliably distinguishes
+/// them. Idempotent and cheap to call on every connection open: the scan matches
+/// nothing once a database has been repaired once.
+pub fn repair_legacy_hex_reaction_npubs(conn: &rusqlite::Connection) -> Result<(), String> {
+    let rows: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, npub FROM events WHERE kind = ?1 AND npub IS NOT NULL AND length(npub) = 64")
+            .map_err(|e| format!("Failed to prepare legacy reaction npub scan: {}", e))?;
+        let result: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![event_kind::REACTION], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to scan legacy reaction npubs: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        result
+    };
+
+    for (id, hex_npub) in rows {
+        let Ok(pubkey) = nostr_sdk::PublicKey::from_hex(&hex_npub) else { continue };
+        let Ok(bech32) = pubkey.to_bech32() else { continue };
+        conn.execute(
+            "UPDATE events SET npub = ?1 WHERE id = ?2",
+            rusqlite::params![bech32, id],
+        )
+        .map_err(|e| format!("Failed to repair legacy reaction npub for {}: {}", id, e))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod legacy_reaction_npub_repair_tests {
+    use super::*;
+
+    fn insert_reaction_event(conn: &rusqlite::Connection, id: &str, npub: &str) {
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 0)",
+            [],
+        )
+        .expect("chat");
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine, npub)
+             VALUES (?1, ?2, 1, '👍', '[]', 1000, 1000, 0, ?3)",
+            rusqlite::params![id, event_kind::REACTION, npub],
+        )
+        .expect("event");
+    }
+
+    #[test]
+    fn converts_hex_reaction_npub_to_bech32() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        let keys = nostr_sdk::Keys::generate();
+        let hex = keys.public_key().to_hex();
+        let bech32 = keys.public_key().to_bech32().unwrap();
+        insert_reaction_event(&conn, "reaction-1", &hex);
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row("SELECT npub FROM events WHERE id = 'reaction-1'", [], |row| row.get(0))
+            .expect("row");
+        assert_eq!(stored, bech32);
+    }
+
+    #[test]
+    fn leaves_already_bech32_reaction_npub_untouched() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        let keys = nostr_sdk::Keys::generate();
+        let bech32 = keys.public_key().to_bech32().unwrap();
+        insert_reaction_event(&conn, "reaction-2", &bech32);
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row("SELECT npub FROM events WHERE id = 'reaction-2'", [], |row| row.get(0))
+            .expect("row");
+        assert_eq!(stored, bech32);
+    }
+
+    #[test]
+    fn ignores_hex_npub_on_non_reaction_events() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 0)",
+            [],
+        )
+        .expect("chat");
+        let keys = nostr_sdk::Keys::generate();
+        let hex = keys.public_key().to_hex();
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine, npub)
+             VALUES ('msg-1', ?1, 1, 'hi', '[]', 1000, 1000, 1, ?2)",
+            rusqlite::params![event_kind::PRIVATE_DIRECT_MESSAGE, hex],
+        )
+        .expect("event");
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row("SELECT npub FROM events WHERE id = 'msg-1'", [], |row| row.get(0))
+            .expect("row");
+        assert_eq!(stored, hex, "non-reaction rows must be left untouched even if npub happens to be hex-shaped");
+    }
+}
+
+#[cfg(test)]
+mod reply_context_fallback_tests {
+    use super::*;
+
+    /// Regression test for pacto-app-rmq.1: `message::message()`'s in-memory
+    /// optimistic reply-context lookup only searches `STATE.chats[].messages`
+    /// and can miss the original message entirely (e.g. it was loaded into the
+    /// frontend via pagination/history but was never pushed into that
+    /// in-memory vec). `message()` now falls back to `populate_reply_context`
+    /// (this function) in that case, so the sender's own optimistic echo still
+    /// gets a real reply preview instead of staying permanently empty. This
+    /// test exercises that fallback directly against a message that exists
+    /// ONLY in the DB, mirroring the actual gap.
+    #[tokio::test]
+    async fn populate_reply_context_fills_fields_for_text_reply_not_in_memory_state() {
+        let test_npub = "npub1replycontextfallbacktext";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        // Persist the original message directly to the DB, simulating a message
+        // that is not present in the backend's in-memory `STATE.chats` (the gap
+        // that made the sender's own reply preview stay empty).
+        let chat_id = "npub1replycontextfallbackpeer";
+        let original = Message {
+            id: "reply-context-fallback-original".to_string(),
+            content: "the original quoted message".to_string(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &original).await.unwrap();
+
+        let mut reply = Message {
+            id: "reply-context-fallback-reply".to_string(),
+            content: "replying".to_string(),
+            replied_to: original.id.clone(),
+            mine: true,
+            ..Default::default()
+        };
+
+        populate_reply_context(app.handle(), &mut reply).await.unwrap();
+
+        assert_eq!(reply.replied_to_content.as_deref(), Some("the original quoted message"));
+        assert_eq!(reply.replied_to_npub.as_deref(), Some(chat_id));
+        assert_eq!(reply.replied_to_has_attachment, Some(false));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+
+    /// Same DB-only-original scenario, but the original message is a file
+    /// attachment: the reply preview must flag `replied_to_has_attachment`
+    /// instead of leaving content blank.
+    #[tokio::test]
+    async fn populate_reply_context_flags_attachment_for_file_reply_not_in_memory_state() {
+        let test_npub = "npub1replycontextfallbackfile";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        let chat_id = "npub1replycontextfallbackfilepeer";
+        let original = Message {
+            id: "reply-context-fallback-file-original".to_string(),
+            content: String::new(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            attachments: vec![Attachment { extension: "png".to_string(), ..Default::default() }],
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &original).await.unwrap();
+
+        let mut reply = Message {
+            id: "reply-context-fallback-file-reply".to_string(),
+            content: "replying to the file".to_string(),
+            replied_to: original.id.clone(),
+            mine: true,
+            ..Default::default()
+        };
+
+        populate_reply_context(app.handle(), &mut reply).await.unwrap();
+
+        assert_eq!(reply.replied_to_has_attachment, Some(true));
+        assert_eq!(reply.replied_to_npub.as_deref(), Some(chat_id));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+}
+
 /// Get message events with their reactions composed (materialized view)
 ///
 /// This function performs a single efficient query to get messages and their
@@ -5317,6 +5670,8 @@ pub async fn get_message_views<R: Runtime>(
     for event in message_events {
         // Calculate derived values before moving ownership
         let replied_to = event.get_reply_reference().unwrap_or("").to_string();
+        let preview_metadata = event.get_tag("link_preview")
+            .and_then(|json| serde_json::from_str::<SiteMetadata>(json).ok());
         let at = event.timestamp_ms();
         let reactions = reactions_by_msg.remove(&event.id).unwrap_or_default();
 
@@ -5375,7 +5730,7 @@ pub async fn get_message_views<R: Runtime>(
             replied_to_content: None, // Populated below
             replied_to_npub: None,    // Populated below
             replied_to_has_attachment: None, // Populated below
-            preview_metadata: None, // TODO: Parse from tags if needed
+            preview_metadata,
             attachments,
             reactions,
             at,

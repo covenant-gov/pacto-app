@@ -192,6 +192,52 @@ export function addPendingDm(npub: string): void {
   setDmChatState(npub, { hasFromMe: true, hasFromThem: false, lastAt: Math.floor(Date.now() / 1000) });
 }
 
+export interface AttachmentImageMeta {
+  blurhash: string;
+  width: number;
+  height: number;
+}
+
+export interface Attachment {
+  id: string;
+  key: string;
+  nonce: string;
+  extension: string;
+  url: string;
+  /** Local file path when downloaded; may be empty until cached. */
+  path: string;
+  /** File size in bytes. */
+  size: number;
+  img_meta?: AttachmentImageMeta | null;
+  /** True while the attachment is being downloaded. */
+  downloading?: boolean;
+  /** True once the attachment has been written locally. */
+  downloaded?: boolean;
+  /** Original file name from the sender, when supplied. Never the SHA-256 id. */
+  file_name?: string | null;
+}
+
+export interface Reaction {
+  id: string;
+  /** The message/event id this reaction references. */
+  reference_id: string;
+  /** Nostr npub of the reaction author. */
+  author_id: string;
+  emoji: string;
+}
+
+export interface PreviewMetadata {
+  domain: string;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  og_url?: string | null;
+  og_type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  favicon?: string | null;
+}
+
 export interface DmMessage {
   id: string;
   content: string;
@@ -206,6 +252,9 @@ export interface DmMessage {
   replied_to_content?: string | null;
   replied_to_npub?: string | null;
   replied_to_has_attachment?: boolean | null;
+  attachments?: Attachment[];
+  reactions?: Reaction[];
+  preview_metadata?: PreviewMetadata | null;
 }
 
 export interface DmChatSnapshot {

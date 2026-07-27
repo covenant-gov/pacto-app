@@ -104,6 +104,9 @@ import {
   MLS_HISTORY_WELCOME_PREFIX,
   mlsHistoryWelcomeGroupIds,
 } from '../../stores/mls-history-welcome';
+import { clearPendingReactions } from '../messaging/reactions';
+import { clearPendingAttachment } from '../messaging/attachment-composer';
+import { clearLinkPreviewRequests } from '../messaging/link-preview';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -165,6 +168,9 @@ export function clearAccountState(npub?: string): void {
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetMlsGroupMembersStores();
+  clearPendingReactions();
+  clearPendingAttachment();
+  clearLinkPreviewRequests();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();

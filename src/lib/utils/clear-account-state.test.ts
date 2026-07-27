@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+const mockFetchMsgMetadata = vi.fn();
+
+vi.mock('../api/nostr', () => ({
+  fetchMsgMetadata: (...args: unknown[]) => mockFetchMsgMetadata(...args),
+}));
 import { get } from 'svelte/store';
 import { clearAccountState } from './clear-account-state';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
@@ -30,6 +36,7 @@ import {
   pactoAppInboxMessages,
   dmThreadAnnouncementsByNpub,
   type DmChatState,
+  type DmMessage,
 } from '../../stores/dm';
 import {
   acceptedSquadInviteIds,
@@ -44,6 +51,7 @@ import {
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
 import { dmLastReadByNpub, dmUnreadByNpub, pactoAppInboxLastReadId } from '../../stores/dm-unread';
+import { requestLinkPreview } from '../messaging/link-preview';
 
 describe('clearAccountState', () => {
   let storage: Map<string, string>;
@@ -235,5 +243,30 @@ describe('clearAccountState', () => {
     expect(get(ungroupedChannels)).toEqual([]);
     expect(get(channelMessages)).toEqual({});
     expect(get(recentEmojisStore)).toEqual([]);
+  });
+
+  it('resets link-preview dedupe tracking so a message can be re-requested after logout', () => {
+    mockFetchMsgMetadata.mockClear();
+    mockFetchMsgMetadata.mockResolvedValue(true);
+    const message: DmMessage = {
+      id: 'preview-msg-1',
+      content: 'check https://example.com out',
+      at: 1,
+      mine: false,
+    };
+
+    requestLinkPreview('chat1', message);
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(1);
+
+    // Re-requesting the same message id before logout is deduped.
+    requestLinkPreview('chat1', message);
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(1);
+
+    clearAccountState('npub1abcdef');
+
+    // clearAccountState must call clearLinkPreviewRequests() so the dedupe set is reset
+    // and the same message id can be re-requested for the next account.
+    requestLinkPreview('chat1', message);
+    expect(mockFetchMsgMetadata).toHaveBeenCalledTimes(2);
   });
 });

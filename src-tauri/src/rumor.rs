@@ -332,6 +332,14 @@ async fn process_file_attachment(
         .find(TagKind::Custom(Cow::Borrowed("file-type")))
         .and_then(|tag| tag.content())
         .ok_or("Missing file-type tag")?;
+
+    // Extract the sender's original file name, when supplied. Optional: an
+    // absent tag means None, never an error. The extension is derived from
+    // the trusted `file-type` tag above, never from this untrusted value.
+    let file_name = rumor.tags
+        .find(TagKind::Custom(Cow::Borrowed("filename")))
+        .and_then(|tag| tag.content())
+        .and_then(crate::message::sanitize_incoming_file_name);
     let extension = crate::util::extension_from_mime(mime_type);
     
     // Get the handle for path resolution
@@ -346,7 +354,7 @@ async fn process_file_attachment(
     
     // Resolve the directory path
     let dir = handle.path()
-        .resolve("vector", base_directory)
+        .resolve("pacto", base_directory)
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
     
     // Grab the reported file size
@@ -403,6 +411,7 @@ async fn process_file_attachment(
         downloading: false,
         downloaded,
         webxdc_topic: None,
+        file_name,
     };
     
     // Create the message with attachment
@@ -457,7 +466,7 @@ async fn process_reaction(
     let reaction = Reaction {
         id: rumor.id.to_hex(),
         reference_id,
-        author_id: rumor.pubkey.to_hex(),
+        author_id: rumor.pubkey.to_bech32().unwrap_or_default(),
         emoji: rumor.content,
     };
     

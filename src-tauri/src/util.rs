@@ -565,6 +565,8 @@ static EXT_TO_MIME: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     m.insert("svg", "image/svg+xml");
     m.insert("bmp", "image/bmp");
     m.insert("ico", "image/x-icon");
+    m.insert("avif", "image/avif");
+    m.insert("heic", "image/heic");
     m.insert("tif", "image/tiff");
     m.insert("tiff", "image/tiff");
 
@@ -815,6 +817,22 @@ pub fn mime_from_extension(extension: &str) -> String {
         .to_string()
 }
 
+/// Sniff the real extension and MIME type from file bytes when the extension is
+/// missing or unknown. Falls back to the supplied extension if the bytes are
+/// not recognized.
+pub fn sniff_extension_and_mime(bytes: &[u8], extension: &str) -> (String, String) {
+    let ext = extension.trim().trim_start_matches('.').to_lowercase();
+    let mut mime = mime_from_extension(&ext);
+    let mut out_ext = ext;
+    if mime == "application/octet-stream" {
+        if let Some(kind) = infer::get(bytes) {
+            out_ext = kind.extension().to_string();
+            mime = kind.mime_type().to_string();
+        }
+    }
+    (out_ext, mime)
+}
+
 /// Convert a MIME type to a file extension.
 /// Falls back to using the MIME subtype when unknown (e.g. "application/x-foo" -> "x-foo"),
 /// and "bin" if MIME is malformed.
@@ -951,6 +969,18 @@ mod tests {
         assert_eq!(mime_from_extension("png"), "image/png");
         assert_eq!(mime_from_extension(".PNG"), "image/png");
         assert_eq!(mime_from_extension("unknown"), "application/octet-stream");
+        assert_eq!(mime_from_extension("avif"), "image/avif");
+    }
+
+    #[test]
+    fn sniff_extension_and_mime_falls_back_to_bytes() {
+        // 1x1 black PNG
+        let png = general_purpose::STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+            .unwrap();
+        let (ext, mime) = sniff_extension_and_mime(&png, "");
+        assert_eq!(ext, "png");
+        assert_eq!(mime, "image/png");
     }
 
     #[test]

@@ -366,6 +366,11 @@ function sanitizeWithEmoji(html: string): string {
 
 const URL_REGEX = /(https?:\/\/[^\s<>"']+?)([.,;:!?)\]'"]*)(?=\s|$|<|>)/g;
 
+/** True when content has an https:// URL — mirrors the backend's link-preview candidate check. */
+export function containsHttpsUrl(content: string): boolean {
+  return /https:\/\/\S/.test(content);
+}
+
 function isSafeUrl(url: string): boolean {
   const t = url.toLowerCase().trim();
   return t.startsWith('http://') || t.startsWith('https://');

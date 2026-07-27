@@ -152,9 +152,14 @@ impl Message {
     }
 
     /// Add a Reaction - if it was not already added
+    ///
+    /// Dedup key is (author_id, emoji) per message, not the reaction's own
+    /// event id — the id is randomly generated per event, so relying on it
+    /// alone lets a re-processed or re-sent reaction from the same author
+    /// stack duplicate entries (e.g. after an app restart).
     pub fn add_reaction(&mut self, reaction: Reaction, chat_id: Option<&str>) -> bool {
-        // Make sure we don't add the same reaction twice
-        if !self.reactions.iter().any(|r| r.id == reaction.id) {
+        // Make sure we don't add a duplicate reaction from the same author+emoji
+        if !self.reactions.iter().any(|r| r.author_id == reaction.author_id && r.emoji == reaction.emoji) {
             self.reactions.push(reaction);
 
             // Update the frontend if a Chat ID was provided
@@ -211,6 +216,8 @@ pub struct Attachment {
     /// This is transmitted in the Nostr event and used to derive the realtime channel topic.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub webxdc_topic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
 }
 
 impl Default for Attachment {
@@ -227,6 +234,7 @@ impl Default for Attachment {
             downloading: false,
             downloaded: true,
             webxdc_topic: None,
+            file_name: None,
         }
     }
 }
@@ -238,17 +246,150 @@ pub struct AttachmentFile {
     /// Image metadata (for images only)
     pub img_meta: Option<ImageMetadata>,
     pub extension: String,
+    /// Original file name from the sender's device, when available.
+    #[serde(default)]
+    pub file_name: Option<String>,
 }
 
+/// Sanitizes a filename supplied by a remote peer (from an attachment rumor's
+/// `filename` tag) before it is ever stored or used as a save-target default.
+/// Reduces to the final path segment, strips any leftover separators and
+/// `..` markers, rejects empty results, and caps the length to 255 bytes.
+pub fn sanitize_incoming_file_name(name: &str) -> Option<String> {
+    // Reduce to the final path segment first, so a peer-supplied path can
+    // never be used to escape the intended save directory.
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+
+    // Strip any remaining separators and parent-directory markers.
+    let mut cleaned = base.replace(['/', '\\'], "");
+    while cleaned.contains("..") {
+        cleaned = cleaned.replace("..", "");
+    }
+    let cleaned = cleaned.trim().to_string();
+
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    const MAX_LEN: usize = 255;
+    if cleaned.len() <= MAX_LEN {
+        Some(cleaned)
+    } else {
+        let mut end = MAX_LEN;
+        while !cleaned.is_char_boundary(end) {
+            end -= 1;
+        }
+        Some(cleaned[..end].to_string())
+    }
+}
+
+#[cfg(test)]
+mod sanitize_incoming_file_name_tests {
+    use super::sanitize_incoming_file_name;
+
+    #[test]
+    fn keeps_a_normal_file_name() {
+        assert_eq!(
+            sanitize_incoming_file_name("vacation-photo.jpg"),
+            Some("vacation-photo.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn strips_parent_directory_segments() {
+        assert_eq!(
+            sanitize_incoming_file_name("../../etc/passwd"),
+            Some("passwd".to_string())
+        );
+    }
+
+    #[test]
+    fn strips_path_separators() {
+        assert_eq!(
+            sanitize_incoming_file_name("a/b\\c.txt"),
+            Some("c.txt".to_string())
+        );
+        assert_eq!(
+            sanitize_incoming_file_name("weird/name\\with..dots.txt"),
+            Some("withdots.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_empty_or_whitespace_names() {
+        assert_eq!(sanitize_incoming_file_name(""), None);
+        assert_eq!(sanitize_incoming_file_name("   "), None);
+        assert_eq!(sanitize_incoming_file_name(".."), None);
+        assert_eq!(sanitize_incoming_file_name("../"), None);
+    }
+
+    #[test]
+    fn truncates_overlong_names_to_255_bytes() {
+        let long_name = format!("{}.txt", "a".repeat(400));
+        let sanitized = sanitize_incoming_file_name(&long_name).unwrap();
+        assert!(sanitized.len() <= 255);
+        assert!(sanitized.starts_with("aaa"));
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct Reaction {
     pub id: String,
     /// The HEX Event ID of the message being reacted to
     pub reference_id: String,
-    /// The HEX ID of the author
+    /// The bech32 npub of the author
     pub author_id: String,
     /// The emoji of the reaction
     pub emoji: String,
+}
+
+#[cfg(test)]
+mod add_reaction_dedup_tests {
+    use super::{Message, Reaction};
+
+    fn reaction(id: &str, author_id: &str, emoji: &str) -> Reaction {
+        Reaction {
+            id: id.to_string(),
+            reference_id: "msg1".to_string(),
+            author_id: author_id.to_string(),
+            emoji: emoji.to_string(),
+        }
+    }
+
+    #[test]
+    fn rejects_duplicate_reaction_from_same_author_and_emoji_after_reload() {
+        let existing = reaction("event-id-1", "npub1author", "👍");
+        // Simulate a freshly loaded Message (e.g. after an app restart) that
+        // already has this reaction persisted in `.reactions`.
+        let mut message = Message {
+            id: "msg1".to_string(),
+            reactions: vec![existing],
+            ..Default::default()
+        };
+
+        // Same author + emoji, but a brand new random event id - as would
+        // happen if the same emoji is clicked again after a restart.
+        let duplicate = reaction("event-id-2-fresh-random", "npub1author", "👍");
+        let was_added = message.add_reaction(duplicate, None);
+
+        assert!(!was_added, "duplicate author+emoji reaction should be rejected");
+        assert_eq!(message.reactions.len(), 1, "reactions vec should be unchanged");
+    }
+
+    #[test]
+    fn allows_different_emoji_from_same_author() {
+        let existing = reaction("event-id-1", "npub1author", "👍");
+        let mut message = Message {
+            id: "msg1".to_string(),
+            reactions: vec![existing],
+            ..Default::default()
+        };
+
+        let different_emoji = reaction("event-id-2", "npub1author", "❤️");
+        let was_added = message.add_reaction(different_emoji, None);
+
+        assert!(was_added);
+        assert_eq!(message.reactions.len(), 2);
+    }
 }
 
 /// A single entry in a message's edit history
@@ -300,10 +441,8 @@ pub async fn message(
     virtual_bucket: Option<String>,
 ) -> Result<bool, String> {
     crate::session::heartbeat();
-    {
-        let handle = TAURI_APP.get().ok_or("App handle not available")?;
-        crate::migration::require_key_derivation_version_2_on_handle(handle)?;
-    }
+    let handle = TAURI_APP.get().ok_or("App handle not available")?;
+    crate::migration::require_key_derivation_version_2_on_handle(handle)?;
     // Immediately add the message to our state as "Pending" with an ID derived from the current nanosecond, we'll update it as either Sent (non-pending) or Failed in the future
     let current_time = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -332,13 +471,39 @@ pub async fn message(
         }
     };
 
-    let msg = Message {
+    // Resolve the replied-to message so the sender and receivers can render a
+    // reply preview without waiting for a DB round-trip. This in-memory
+    // lookup is a fast path only; a DB-backed fallback runs below once `msg`
+    // exists, covering messages that were never pushed into this backend's
+    // in-memory `STATE.chats` (e.g. loaded into the frontend via pagination).
+    let reply_context = if replied_to.is_empty() {
+        None
+    } else {
+        let state = STATE.lock().await;
+        state.chats
+            .iter()
+            .find(|chat| chat.id() == &receiver || chat.has_participant(&receiver))
+            .and_then(|chat| chat.messages.iter().find(|m| m.id == replied_to))
+            .map(|original| {
+                let content = if original.content.is_empty() { None } else { Some(original.content.clone()) };
+                let npub = if is_group_chat {
+                    original.npub.clone()
+                } else if original.mine {
+                    my_npub_for_msg.clone()
+                } else {
+                    Some(receiver.clone())
+                };
+                (content, npub, Some(!original.attachments.is_empty()))
+            })
+    };
+
+    let mut msg = Message {
         id: pending_id.as_ref().clone(),
         content,
         replied_to,
-        replied_to_content: None, // Will be populated when loaded from DB
-        replied_to_npub: None,
-        replied_to_has_attachment: None,
+        replied_to_content: reply_context.as_ref().and_then(|(c, _, _)| c.clone()),
+        replied_to_npub: reply_context.as_ref().and_then(|(_, n, _)| n.clone()),
+        replied_to_has_attachment: reply_context.as_ref().and_then(|(_, _, a)| *a),
         preview_metadata: None,
         at: current_time.as_millis() as u64,
         attachments: Vec::new(),
@@ -365,6 +530,17 @@ pub async fn message(
             None
         },
     };
+
+    // The in-memory lookup above only sees messages already present in this
+    // backend's live `STATE.chats`; the original message may only have been
+    // loaded into the frontend via pagination/history without ever being
+    // pushed into that in-memory vec. Fall back to the same DB-backed lookup
+    // the receive paths use (`db::populate_reply_context`) so the sender's
+    // own optimistic echo always gets a real reply preview instead of
+    // silently staying empty.
+    if reply_context.is_none() && !msg.replied_to.is_empty() {
+        let _ = db::populate_reply_context(handle, &mut msg).await;
+    }
     
     // Add message to appropriate chat type
     {
@@ -391,7 +567,6 @@ pub async fn message(
     };
 
     // Prepare the rumor
-    let handle = TAURI_APP.get().unwrap();
     let had_attachment = file.is_some();
     let mut rumor = if !had_attachment {
         // Send the text message to our frontend with appropriate event
@@ -422,7 +597,18 @@ pub async fn message(
             EventBuilder::new(Kind::from_u16(14), msg.content)
         }
     } else {
-        let attached_file = file.unwrap();
+        let mut attached_file = file.unwrap();
+
+        // Sniff the real MIME type from the file bytes so the `file-type` tag the
+        // recipient reads is correct even when the declared extension is missing or
+        // wrong. This stays inside the encrypted rumor; the upload itself declares
+        // `application/octet-stream`, which is what the ciphertext actually is.
+        // See `docs/messaging/ATTACHMENTS.md`.
+        let (sniffed_ext, mime_type) = util::sniff_extension_and_mime(
+            &attached_file.bytes,
+            &attached_file.extension,
+        );
+        attached_file.extension = sniffed_ext;
 
         // Calculate the file hash first (before encryption)
         let file_hash = calculate_file_hash(&attached_file.bytes);
@@ -483,6 +669,7 @@ pub async fn message(
                             downloading: false,
                             downloaded: false,
                             webxdc_topic: None, // Not stored in attachment index
+                            file_name: None,
                         }));
                     }
                 }
@@ -543,12 +730,12 @@ pub async fn message(
             };
 
             // Resolve the directory path using the determined base directory
-            let dir = handle.path().resolve("vector", base_directory).unwrap();
+            let dir = handle.path().resolve("pacto", base_directory).unwrap();
 
             // Store the hash-based file name on-disk for future reference
             let hash_file_path = dir.join(format!("{}.{}", &file_hash, &attached_file.extension));
 
-            // Create the vector directory if it doesn't exist
+            // Create the pacto directory if it doesn't exist
             std::fs::create_dir_all(&dir).unwrap();
 
             // Save the hash-named file
@@ -577,6 +764,7 @@ pub async fn message(
                 downloading: false,
                 downloaded: true,
                 webxdc_topic: None,
+                file_name: attached_file.file_name.clone(),
             });
 
             // Send the pending file upload to our frontend with appropriate event
@@ -594,8 +782,8 @@ pub async fn message(
             }
         }
 
-        // Format a Mime Type from the file extension
-        let mime_type = util::mime_from_extension(&attached_file.extension);
+        // MIME type was already sniffed from the file bytes at the start of the
+        // attachment branch and is reused below for the file-type tag and upload.
 
         // Check if we found an existing attachment with the same hash
         let mut should_upload = true;
@@ -646,6 +834,11 @@ pub async fn message(
                     .tag(Tag::custom(TagKind::custom("decryption-key"), [existing_attachment.key.as_str()]))
                     .tag(Tag::custom(TagKind::custom("decryption-nonce"), [existing_attachment.nonce.as_str()]))
                     .tag(Tag::custom(TagKind::custom("ox"), [file_hash.clone()]));
+                // Carry the sender's original file name inside the encrypted rumor.
+                if let Some(name) = attached_file.file_name.as_ref().filter(|n| !n.trim().is_empty()) {
+                    attachment_rumor = attachment_rumor
+                        .tag(Tag::custom(TagKind::custom("filename"), [name.as_str()]));
+                }
                 
                 // Append image metadata if available
                 if let Some(ref img_meta) = attached_file.img_meta {
@@ -670,7 +863,7 @@ pub async fn message(
             // Upload the file to the server
             let client = get_nostr_client().expect("Nostr client not initialized");
             let signer = client.signer().await.unwrap();
-            let servers = crate::get_blossom_servers();
+            let servers = crate::get_blossom_blob_servers();
             let file_size = enc_file.len();
             // Clone the Arc outside the closure for use inside a seperate-threaded progress callback
             let pending_id_for_callback = Arc::clone(&pending_id);
@@ -685,8 +878,10 @@ pub async fn message(
                 Ok(())
             });
 
-            // Upload the file with progress, retries, and automatic server failover
-            match crate::blossom::upload_blob_with_progress_and_failover(signer.clone(), servers, enc_file, Some(mime_type.as_str()), progress_callback, Some(3), Some(std::time::Duration::from_secs(2))).await {
+            // Upload the ciphertext with progress, retries, and server failover.
+            // The blob is opaque, so it is declared as such: the true media type
+            // travels only in the encrypted `file-type` tag.
+            match crate::blossom::upload_blob_with_progress_and_failover(signer.clone(), servers, enc_file, Some("application/octet-stream"), progress_callback, Some(3), Some(std::time::Duration::from_secs(2))).await {
                 Ok(url) => {
                     // Update our pending message with the uploaded URL
                     {
@@ -717,6 +912,11 @@ pub async fn message(
                         .tag(Tag::custom(TagKind::custom("decryption-key"), [params.key.as_str()]))
                         .tag(Tag::custom(TagKind::custom("decryption-nonce"), [params.nonce.as_str()]))
                         .tag(Tag::custom(TagKind::custom("ox"), [file_hash.clone()]));
+                    // Carry the sender's original file name inside the encrypted rumor.
+                    if let Some(name) = attached_file.file_name.as_ref().filter(|n| !n.trim().is_empty()) {
+                        attachment_rumor = attachment_rumor
+                            .tag(Tag::custom(TagKind::custom("filename"), [name.as_str()]));
+                    }
 
                     // Append image metadata if available
                     if let Some(ref img_meta) = attached_file.img_meta {
@@ -1020,6 +1220,7 @@ pub async fn paste_message<R: Runtime>(handle: AppHandle<R>, receiver: String, r
         bytes: encoded_bytes,
         img_meta,
         extension,
+        file_name: None,
     };
 
     // Message the file to the intended user
@@ -1033,7 +1234,8 @@ pub async fn voice_message(receiver: String, replied_to: String, bytes: Vec<u8>)
     let attachment_file = AttachmentFile {
         bytes,
         img_meta: None,
-        extension: String::from("wav")
+        extension: String::from("wav"),
+        file_name: None,
     };
 
     // Message the file to the intended user
@@ -1244,6 +1446,7 @@ pub async fn send_cached_file(receiver: String, replied_to: String, use_compress
                     bytes: compressed.bytes.clone(),
                     extension: compressed.extension.clone(),
                     img_meta: compressed.img_meta.clone(),
+                    file_name: None,
                 };
                 drop(comp_cache);
                 
@@ -1351,6 +1554,7 @@ pub async fn send_cached_file(receiver: String, replied_to: String, use_compress
         bytes,
         extension,
         img_meta,
+        file_name: None,
     };
     
     message(receiver, String::new(), replied_to, Some(attachment_file), None).await
@@ -1394,15 +1598,27 @@ pub async fn send_file_bytes(
 ) -> Result<bool, String> {
     crate::session::heartbeat();
     const MIN_SAVINGS_PERCENT: u64 = 10;
+    // Empty/whitespace names are treated as "no name supplied".
+    let file_name_opt = if file_name.trim().is_empty() { None } else { Some(file_name.clone()) };
     
-    // Extract extension from filename
-    let extension = file_name
+    // Extract extension from filename and fall back to sniffing bytes when
+    // the extension is missing or unrecognized (e.g. AVIF/HEIC with no suffix).
+    let declared_extension = file_name
         .rsplit('.')
         .next()
         .unwrap_or("")
         .to_lowercase();
-    
-    let is_image = matches!(extension.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "tif" | "ico");
+    let (extension, mime_type) = util::sniff_extension_and_mime(&file_bytes, &declared_extension);
+
+    eprintln!(
+        "[send_file_bytes] file_name={} declared_ext={} sniffed_ext={} mime={} len={}",
+        file_name, declared_extension, extension, mime_type, file_bytes.len()
+    );
+
+    let is_image = matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "tiff" | "tif" | "ico"
+    );
     
     // Try compression if requested and it's an image (not GIF)
     if use_compression && is_image && extension != "gif" {
@@ -1421,6 +1637,7 @@ pub async fn send_file_bytes(
                         bytes: compressed.bytes,
                         extension: compressed.extension,
                         img_meta: compressed.img_meta,
+                        file_name: file_name_opt.clone(),
                     };
                     
                     return message(receiver, String::new(), replied_to, Some(attachment_file), None).await;
@@ -1458,6 +1675,7 @@ pub async fn send_file_bytes(
         bytes: file_bytes,
         extension,
         img_meta,
+        file_name: file_name_opt,
     };
     
     message(receiver, String::new(), replied_to, Some(attachment_file), None).await
@@ -1614,6 +1832,7 @@ pub async fn file_message(receiver: String, replied_to: String, file_path: Strin
                 bytes,
                 img_meta: None,
                 extension,
+                file_name: None,
             }
         }
         #[cfg(target_os = "android")]
@@ -1632,6 +1851,7 @@ pub async fn file_message(receiver: String, replied_to: String, file_path: Strin
                     bytes,
                     img_meta: None,
                     extension,
+                    file_name: None,
                 }
             } else {
                 drop(cache);
@@ -2092,6 +2312,7 @@ pub async fn file_message_compressed(receiver: String, replied_to: String, file_
                 bytes,
                 img_meta: None,
                 extension,
+                file_name: None,
             }
         }
         #[cfg(target_os = "android")]
@@ -2110,6 +2331,7 @@ pub async fn file_message_compressed(receiver: String, replied_to: String, file_
                     bytes,
                     img_meta: None,
                     extension,
+                    file_name: None,
                 }
             } else {
                 drop(cache);
@@ -2330,6 +2552,7 @@ pub async fn send_cached_compressed_file(receiver: String, replied_to: String, f
                     bytes: compressed.bytes,
                     extension: compressed.extension,
                     img_meta: compressed.img_meta,
+                    file_name: None,
                 };
                 message(receiver, String::new(), replied_to, Some(attachment_file), None).await
             } else {
@@ -2373,6 +2596,7 @@ pub async fn send_cached_compressed_file(receiver: String, replied_to: String, f
                         bytes: compressed.bytes,
                         extension: compressed.extension,
                         img_meta: compressed.img_meta,
+                        file_name: None,
                     };
                     message(receiver, String::new(), replied_to, Some(attachment_file), None).await
                 } else {
@@ -2706,7 +2930,7 @@ pub async fn react_to_message(reference_id: String, chat_id: String, emoji: Stri
             let reaction = Reaction {
                 id: rumor_id,
                 reference_id: reference_id.clone(),
-                author_id: my_public_key.to_hex(),
+                author_id: my_public_key.to_bech32().map_err(|e| e.to_string())?,
                 emoji,
             };
             
@@ -2749,7 +2973,7 @@ pub async fn react_to_message(reference_id: String, chat_id: String, emoji: Stri
             let reaction = Reaction {
                 id: rumor_id,
                 reference_id: reference_id.clone(),
-                author_id: my_public_key.to_hex(),
+                author_id: my_public_key.to_bech32().map_err(|e| e.to_string())?,
                 emoji,
             };
             
@@ -2829,10 +3053,14 @@ pub async fn fetch_msg_metadata(chat_id: String, msg_id: String) -> bool {
                         "chat_id": &chat_id
                     })).unwrap();
 
-                    // Save the updated message with metadata to the DB
-                    let message_to_save = msg.clone();
-                    drop(state); // Release lock before async DB operation
-                    let _ = crate::db::save_message(handle.clone(), &chat_id, &message_to_save).await;
+                    // Persist the preview metadata to the DB. The event row already exists
+                    // (saved when the message was sent), so a plain save_message would be a
+                    // silent INSERT OR IGNORE no-op; update the tags directly instead.
+                    let preview = msg.preview_metadata.clone();
+                    drop(state); // Release lock before the DB operation
+                    if let Some(preview) = preview {
+                        let _ = crate::db::save_link_preview_metadata(handle, &msg_id, &preview);
+                    }
                     return true;
                 }
             }

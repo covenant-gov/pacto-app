@@ -2,7 +2,7 @@ use nostr_sdk::{NostrSigner, Url, Event, EventBuilder, Timestamp, JsonUtil};
 use nostr_sdk::hashes::{sha256::Hash as Sha256Hash, Hash};
 use nostr_blossom::prelude::*;
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
-use reqwest::{Body, StatusCode};
+use reqwest::Body;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use futures_util::Stream;
@@ -243,119 +243,17 @@ where
         progress_callback(Some(100), Some(total_size)).map_err(|e| e)?;
     }
     
-    // Check response status
-    match response.status() {
-        StatusCode::OK => {
-            let descriptor: BlobDescriptor = response.json().await
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
-            Ok(descriptor.url.to_string())
-        }
-        status => {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            eprintln!("[Blossom Error] Upload failed with status {}: {}", status, error_text);
-            Err(format!("Upload failed with status {}: {}", status, error_text))
-        }
+    // BUD-02 does not pin a single success code: servers return 200 or 201.
+    if response.status().is_success() {
+        let descriptor: BlobDescriptor = response.json().await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+        return Ok(descriptor.url.to_string());
     }
-}
 
-/// Simple upload without progress tracking
-pub async fn upload_blob<T>(
-    signer: T,
-    server_url: &Url,
-    file_data: Vec<u8>,
-    mime_type: Option<&str>,
-) -> Result<String, String>
-where
-    T: NostrSigner,
-{
-    let upload_url = server_url.join("upload")
-        .map_err(|e| format!("Invalid server URL: {}", e))?;
-    
-    let hash = Sha256Hash::hash(&file_data);
-    
-    // Build authorization header
-    let auth_header = build_auth_header(&signer, hash).await?;
-    
-    // Build headers
-    let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, auth_header);
-    if let Some(ct) = mime_type {
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str(ct).map_err(|e| format!("Invalid content type: {}", e))?
-        );
-    }
-    
-    // Create HTTP client
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
-    
-    // Perform the upload
-    let response = client
-        .put(upload_url)
-        .headers(headers)
-        .body(file_data)
-        .send()
-        .await
-        .map_err(|e| format!("Upload request failed: {}", e))?;
-    
-    // Check response status
-    match response.status() {
-        StatusCode::OK => {
-            let descriptor: BlobDescriptor = response.json().await
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
-            Ok(descriptor.url.to_string())
-        }
-        status => {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            Err(format!("Upload failed with status {}: {}", status, error_text))
-        }
-    }
-}
-
-/// Upload to multiple Blossom servers with automatic failover
-/// Tries each server in the list until one succeeds
-pub async fn upload_blob_with_failover<T>(
-    signer: T,
-    server_urls: Vec<String>,
-    file_data: Vec<u8>,
-    mime_type: Option<&str>,
-) -> Result<String, String>
-where
-    T: NostrSigner + Clone,
-{
-    let mut last_error = String::from("No servers available");
-    
-    for (index, server_url_str) in server_urls.iter().enumerate() {
-        let server_url = match Url::parse(server_url_str) {
-            Ok(url) => url,
-            Err(e) => {
-                eprintln!("[Blossom Error] Invalid server URL '{}': {}", server_url_str, e);
-                last_error = format!("Invalid server URL: {}", e);
-                continue;
-            }
-        };
-        
-        eprintln!("[Blossom] Attempting upload to server {} of {}: {}",
-            index + 1, server_urls.len(), server_url_str);
-        
-        match upload_blob(signer.clone(), &server_url, file_data.clone(), mime_type).await {
-            Ok(url) => {
-                eprintln!("[Blossom] Upload successful to: {}", server_url_str);
-                return Ok(url);
-            }
-            Err(e) => {
-                eprintln!("[Blossom Error] Upload failed to {}: {}", server_url_str, e);
-                last_error = e;
-                // Continue to next server
-            }
-        }
-    }
-    
-    // All servers failed
-    Err(format!("All Blossom servers failed. Last error: {}", last_error))
+    let status = response.status();
+    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+    eprintln!("[Blossom Error] Upload failed with status {}: {}", status, error_text);
+    Err(format!("Upload failed with status {}: {}", status, error_text))
 }
 
 /// Upload with progress tracking and automatic failover to multiple servers

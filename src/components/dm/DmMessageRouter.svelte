@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import Message from './Message.svelte';
   import InviteCard from './InviteCard.svelte';
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
@@ -34,6 +35,8 @@
     buildPlainMessageProps,
   } from '../../lib/dm/resolve-dm-message-presentation';
   import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
+  import { reactToMessage } from '../../lib/api/nostr';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
 
   export let msg: DmMessage;
   export let npub: string;
@@ -71,6 +74,29 @@
     isPactoAppThread && !msg.mine && inviterNpubForCard && onOpenInviterChat
       ? () => onOpenInviterChat!(inviterNpubForCard!)
       : undefined;
+
+  const dispatch = createEventDispatcher<{ reply: { messageId: string } }>();
+
+  async function onReact(messageId: string, emoji: string) {
+    try {
+      await reactToMessage(messageId, npub, emoji);
+    } catch (e: unknown) {
+      clearPendingReactions(messageId);
+      showToast(e instanceof Error ? e.message : 'Could not add reaction');
+    }
+  }
+
+  function onCopy(_messageId: string, text: string) {
+    if (!navigator.clipboard) {
+      showToast('Copy not available on this device');
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
+  }
+
+  function onReply(messageId: string) {
+    dispatch('reply', { messageId });
+  }
 </script>
 
 {#if presentation.kind === 'local-announcement'}
@@ -212,6 +238,15 @@
 {:else}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}
+    reactions={msg.reactions}
+    attachments={msg.attachments}
+    previewMetadata={msg.preview_metadata}
+    profiles={$profiles}
+    currentUserNpub={$currentUser?.npub}
+    chatId={npub}
+    {onReact}
+    {onCopy}
+    {onReply}
     {compact}
   />
 {/if}

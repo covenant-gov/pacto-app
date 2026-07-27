@@ -23,6 +23,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     getDmMessages,
     getChatMessageCount,
     sendDmMessage,
+    sendFileBytes,
     queueProfileSync,
     fetchMessages,
     markAsRead,
@@ -786,7 +787,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     }, 400);
   }
 
-  async function handleDmSend(content: string): Promise<boolean> {
+  async function handleDmSend(content: string, repliedTo?: string): Promise<boolean> {
     const id = $activeDmId;
     if (!id || isPactoAppThreadId(id)) return false;
     if (!(await maybeRequireSession())) {
@@ -799,7 +800,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
     $dmSendError = null;
     try {
-      const ok = await sendDmMessage(id, content);
+      const ok = await sendDmMessage(id, content, repliedTo ?? '');
       dmLog('handleDmSend result', { ok });
       if (!ok) {
         $dmSendError = friendlyMessage(
@@ -813,6 +814,36 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSend error', e);
       return false;
+    }
+  }
+
+  async function handleDmSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    const id = $activeDmId;
+    if (!id || isPactoAppThreadId(id)) return;
+    if (!(await maybeRequireSession())) {
+      dmLog('handleDmSendFile: session locked, aborting');
+      return;
+    }
+    dmLog('handleDmSendFile', { receiver: id.slice(0, 20) + '…', fileName });
+    $dmSendError = null;
+    try {
+      const ok = await sendFileBytes(id, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      dmLog('handleDmSendFile result', { ok });
+      if (!ok) {
+        $dmSendError = friendlyMessage(
+          'Could not deliver attachment. It may appear as pending or failed.',
+          'dm_send'
+        );
+      }
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      $dmSendError = friendlyMessage(raw, 'dm_send');
+      dmError('handleDmSendFile error', e);
     }
   }
 
@@ -992,6 +1023,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 loadingOlder={loadingOlder}
                 onLoadOlder={loadOlder}
                 onSend={handleDmSend}
+                onSendFile={handleDmSendFile}
                 onTyping={handleDmTyping}
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
