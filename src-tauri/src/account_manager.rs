@@ -128,7 +128,15 @@ fn is_in_flight_account(name: &str, current: Option<&str>, pending: Option<&str>
     current == Some(name) || pending == Some(name)
 }
 
-/// Check if an account has a valid pkey in its database
+/// Check if an account has a valid pkey in its database.
+///
+/// Returns `Ok(false)` only when the database opened successfully and the
+/// query definitively found no (or an empty) `pkey` row -- the legitimate
+/// "account setup never finished" case that `list_accounts` should clean up.
+/// Any other failure (locked/busy database, transient I/O error, mid-write
+/// schema state) returns `Err` so the caller treats validity as unknown and
+/// leaves the directory alone, instead of deleting a possibly-valid account
+/// because a query happened to fail for an unrelated reason.
 fn account_has_valid_pkey<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<bool, String> {
     // Try to get database connection for this account
     let db_path = get_database_path(handle, npub)?;
@@ -141,15 +149,31 @@ fn account_has_valid_pkey<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Resu
     // Try to open database connection
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
+    // Wait out transient locks from the main pooled connection instead of
+    // failing the read immediately, which would otherwise look identical to
+    // "no pkey" below.
+    conn.busy_timeout(std::time::Duration::from_millis(2000))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
 
     // Check if the pkey exists in settings table and is not empty
-    let result: Option<String> = conn.query_row(
+    classify_pkey_query_result(conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
         rusqlite::params!["pkey"],
-        |row| row.get(0)
-    ).ok();
+        |row| row.get::<_, String>(0),
+    ))
+}
 
-    Ok(result.map(|s| !s.is_empty()).unwrap_or(false))
+/// Turn a `pkey` settings-row lookup into a validity verdict. `Ok(false)` means
+/// the query ran and definitively found no (or an empty) pkey -- safe to treat
+/// as an unfinished/orphaned account. Any other error (locked database,
+/// transient I/O failure, mid-write schema state) is `Err`, so the caller
+/// leaves the directory alone rather than deleting a possibly-valid account.
+fn classify_pkey_query_result(result: Result<String, rusqlite::Error>) -> Result<bool, String> {
+    match result {
+        Ok(value) => Ok(!value.is_empty()),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(format!("Failed to query pkey setting: {}", e)),
+    }
 }
 
 /// Check if any account exists. If exactly one account exists and none is selected, selects it
@@ -415,5 +439,37 @@ mod is_in_flight_account_tests {
         assert!(is_in_flight_account(current, Some(current), None));
         assert!(!is_in_flight_account(orphan, Some(current), None));
         assert!(!is_in_flight_account(orphan, None, None));
+    }
+}
+
+#[cfg(test)]
+mod classify_pkey_query_result_tests {
+    use super::*;
+
+    /// Regression test for a bug where the boot-time `list_accounts` scan
+    /// deleted a fully valid, previously-completed account's directory
+    /// because a transient DB error (lock contention, disk I/O hiccup) was
+    /// swallowed by `.ok()` and treated identically to "no pkey exists yet".
+    /// Only a definitive "no rows" result may be treated as invalid/deletable;
+    /// every other error must propagate so the caller leaves the directory
+    /// alone instead of deleting a live account.
+    #[test]
+    fn only_definitive_no_rows_is_treated_as_invalid() {
+        assert_eq!(classify_pkey_query_result(Ok("nsec1somekey".to_string())), Ok(true));
+        assert_eq!(classify_pkey_query_result(Ok(String::new())), Ok(false));
+        assert_eq!(
+            classify_pkey_query_result(Err(rusqlite::Error::QueryReturnedNoRows)),
+            Ok(false)
+        );
+
+        // A locked/busy database, disk error, or any other query failure must
+        // NOT be treated as "no pkey" -- it must surface as Err so the caller
+        // skips deletion rather than wiping a possibly-valid account.
+        let transient_failure = rusqlite::Error::InvalidColumnType(
+            0,
+            "value".to_string(),
+            rusqlite::types::Type::Null,
+        );
+        assert!(classify_pkey_query_result(Err(transient_failure)).is_err());
     }
 }
