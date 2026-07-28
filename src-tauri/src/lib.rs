@@ -2079,7 +2079,8 @@ async fn notifs() -> Result<bool, String> {
     // Begin watching for notifications from our subscriptions
     match client
         .handle_notifications(|notification| async {
-            if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
+            if let RelayPoolNotification::Event { relay_url, event, subscription_id, .. } = notification {
+                record_event_received(&relay_url.to_string(), &event);
                 if subscription_id == gift_sub_id {
                     // Handle DMs/files/vector-specific + MLS welcomes inside giftwrap
                     handle_event(*event, true).await;
@@ -2806,6 +2807,68 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
     if let Ok(mut metrics) = RELAY_METRICS.write() {
         let relay_metrics = metrics.entry(normalized).or_insert_with(RelayMetrics::default);
         update_fn(relay_metrics);
+    }
+}
+
+/// Record that a relay delivered an event: increments `events_received` and adds the
+/// event's serialized size to `bytes_down`.
+fn record_event_received(relay_url: &str, event: &Event) {
+    update_relay_metrics(relay_url, |m| {
+        m.events_received += 1;
+        m.bytes_down += event.as_json().len() as u64;
+    });
+}
+
+#[cfg(test)]
+mod record_event_received_tests {
+    use super::{get_relay_metrics, record_event_received};
+    use nostr_sdk::{EventBuilder, JsonUtil, Kind, Keys};
+
+    fn test_event(content: &str) -> nostr_sdk::Event {
+        EventBuilder::new(Kind::TextNote, content)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn accumulates_events_received_and_bytes_down_for_same_relay() {
+        let url = "wss://test-record-received-accumulate.example";
+        let event_a = test_event("first");
+        let event_b = test_event("second, a little longer");
+        record_event_received(url, &event_a);
+        record_event_received(url, &event_b);
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 2);
+        assert_eq!(
+            metrics.bytes_down,
+            (event_a.as_json().len() + event_b.as_json().len()) as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn normalizes_relay_url_without_leaking_across_distinct_relays() {
+        let canonical = "wss://test-record-received-normalize.example";
+        let variant = "WSS://Test-Record-Received-Normalize.example/";
+        let other = "wss://test-record-received-other.example";
+        record_event_received(canonical, &test_event("one"));
+        record_event_received(variant, &test_event("two"));
+        record_event_received(other, &test_event("three"));
+
+        let canonical_metrics = get_relay_metrics(canonical.to_string()).await.unwrap();
+        let other_metrics = get_relay_metrics(other.to_string()).await.unwrap();
+        assert_eq!(canonical_metrics.events_received, 2);
+        assert_eq!(other_metrics.events_received, 1);
+    }
+
+    #[tokio::test]
+    async fn get_relay_metrics_reflects_recorded_events() {
+        let url = "wss://test-record-received-readpath.example";
+        record_event_received(url, &test_event("readable"));
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 1);
+        assert!(metrics.bytes_down > 0);
     }
 }
 
