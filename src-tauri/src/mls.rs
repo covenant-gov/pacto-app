@@ -657,9 +657,12 @@ impl MlsService {
         }
 
         // Publish evolution event (commit) to the relay
-        if let Err(e) = client.send_event(&evolution_event).await {
-            eprintln!("[MLS] Failed to publish commit: {}", e);
-            return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
+        match client.send_event(&evolution_event).await {
+            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
+            Err(e) => {
+                eprintln!("[MLS] Failed to publish commit: {}", e);
+                return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
+            }
         }
 
         // NOW merge the pending commit after welcome and evolution event are sent
@@ -736,8 +739,9 @@ impl MlsService {
         };
 
         // Publish the evolution event (leave proposal) to the relay
-        if let Err(e) = client.send_event(&evolution_event).await {
-            eprintln!("[MLS] Failed to publish leave proposal: {}", e);
+        match client.send_event(&evolution_event).await {
+            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
+            Err(e) => eprintln!("[MLS] Failed to publish leave proposal: {}", e),
         }
 
         // Remove the group from local metadata
@@ -825,7 +829,7 @@ impl MlsService {
 
         // Publish evolution event (commit) to the relay
         match client.send_event(&evolution_event).await {
-            Ok(_) => {}
+            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
             Err(e) => {
                 eprintln!("[MLS] Failed to publish commit: {}", e);
                 return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
@@ -914,10 +918,11 @@ impl MlsService {
                 .evolution_event
         };
 
-        client
+        let send_output = client
             .send_event(&evolution_event)
             .await
             .map_err(|e| MlsError::NetworkError(format!("Failed to publish leave commit: {}", e)))?;
+        crate::record_send_outcome(&evolution_event, &send_output);
 
         {
             let engine = self.engine()?;
@@ -2056,11 +2061,13 @@ pub async fn send_mls_message(group_id: &str, rumor: nostr_sdk::UnsignedEvent, p
                 client
                     .send_event_to(TRUSTED_RELAYS.iter().copied(), &wrapper_with_expiry)
                     .await
+                    .inspect(|output| crate::record_send_outcome(&wrapper_with_expiry, output))
             } else {
                 // Send normal wrapper without expiration
                 client
                     .send_event_to(TRUSTED_RELAYS.iter().copied(), &mls_wrapper)
                     .await
+                    .inspect(|output| crate::record_send_outcome(&mls_wrapper, output))
             };
             
             // Update pending message based on send result

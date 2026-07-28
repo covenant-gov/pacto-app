@@ -2819,6 +2819,97 @@ fn record_event_received(relay_url: &str, event: &Event) {
     });
 }
 
+/// Record the outcome of publishing an event: for every relay that accepted it, increments
+/// `events_sent` and adds the event's serialized size to `bytes_up`; for every relay that
+/// rejected it, logs the rejection reason via the existing relay-log surface. Called at
+/// each `send_event`/`send_event_to` call site with the `Output` those calls already
+/// return. Not hooked into the notification stream: this app's Nostr client runs its
+/// default in-memory database in ID-tracking-only mode (`MemoryDatabaseOptions::events`
+/// defaults to `false`, and `Client::builder()` never overrides it here), so
+/// `event_by_id` on a sent event's id always returns `None` — there is nothing to look
+/// up there for the size.
+pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
+    let size = event.as_json().len() as u64;
+    for relay_url in &output.success {
+        let url = relay_url.to_string();
+        update_relay_metrics(&url, |m| {
+            m.events_sent += 1;
+            m.bytes_up += size;
+        });
+    }
+    for (relay_url, reason) in &output.failed {
+        add_relay_log(&relay_url.to_string(), "warn", reason);
+    }
+}
+
+#[cfg(test)]
+mod record_send_outcome_tests {
+    use super::{get_relay_logs, get_relay_metrics, record_send_outcome};
+    use nostr_sdk::prelude::{EventBuilder, JsonUtil, Kind, Keys, Output, RelayUrl};
+    use std::collections::{HashMap, HashSet};
+
+    fn test_event(content: &str) -> nostr_sdk::Event {
+        EventBuilder::new(Kind::TextNote, content)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn accepted_relays_get_events_sent_and_bytes_up() {
+        let event = test_event("published");
+        let accepted = RelayUrl::parse("wss://test-send-outcome-accepted.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([accepted.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(accepted.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 1);
+        assert_eq!(metrics.bytes_up, event.as_json().len() as u64);
+    }
+
+    #[tokio::test]
+    async fn rejected_relays_get_a_warn_log_and_no_sent_count() {
+        let event = test_event("rejected");
+        let rejected = RelayUrl::parse("wss://test-send-outcome-rejected.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::new(),
+            failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(rejected.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 0);
+        assert_eq!(metrics.bytes_up, 0);
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].level, "warn");
+        assert_eq!(logs[0].message, "rate-limited");
+    }
+
+    #[tokio::test]
+    async fn multiple_accepted_relays_each_get_their_own_counters() {
+        let event = test_event("fanout");
+        let relay_a = RelayUrl::parse("wss://test-send-outcome-fanout-a.example").unwrap();
+        let relay_b = RelayUrl::parse("wss://test-send-outcome-fanout-b.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([relay_a.clone(), relay_b.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics_a = get_relay_metrics(relay_a.to_string()).await.unwrap();
+        let metrics_b = get_relay_metrics(relay_b.to_string()).await.unwrap();
+        assert_eq!(metrics_a.events_sent, 1);
+        assert_eq!(metrics_b.events_sent, 1);
+    }
+}
+
 #[cfg(test)]
 mod record_event_received_tests {
     use super::{get_relay_metrics, record_event_received};
@@ -4669,7 +4760,10 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
                     Ok(event) => {
                         // Send only to trusted relays
                         match client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await {
-                            Ok(_) => println!("Successfully broadcast invite acceptance to trusted relays"),
+                            Ok(output) => {
+                                record_send_outcome(&event, &output);
+                                println!("Successfully broadcast invite acceptance to trusted relays");
+                            }
                             Err(e) => eprintln!("Failed to broadcast invite acceptance: {}", e),
                         }
                     }
@@ -5179,7 +5273,8 @@ async fn get_or_create_invite_code() -> Result<String, String> {
     let event = client.sign_event_builder(event_builder).await.map_err(|e| e.to_string())?;
 
     // Send only to trusted relays
-    client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await.map_err(|e| e.to_string())?;
+    let send_output = client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await.map_err(|e| e.to_string())?;
+    record_send_outcome(&event, &send_output);
     
     // Store locally
     db::set_sql_setting(handle.clone(), "invite_code".to_string(), new_code.clone())
@@ -5695,10 +5790,11 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         .map_err(|e| e.to_string())?;
 
     // Publish to TRUSTED_RELAYS
-    client
+    let send_output = client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &kp_event)
         .await
         .map_err(|e| e.to_string())?;
+    record_send_outcome(&kp_event, &send_output);
 
     // Upsert into mls_keypackage_index
     {

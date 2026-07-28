@@ -547,10 +547,11 @@ pub async fn commons_publish_broadcast<R: Runtime>(
         (event, author_npub)
     };
 
-    client
+    let send_output = client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
         .await
         .map_err(|e| e.to_string())?;
+    crate::record_send_outcome(&event, &send_output);
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     ensure_commons_broadcasts_table(&conn)?;
@@ -775,10 +776,11 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
             .await
             .map_err(|e| e.to_string())?
     };
-    client
+    let send_output = client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
         .await
         .map_err(|e| e.to_string())?;
+    crate::record_send_outcome(&event, &send_output);
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
     ensure_commons_broadcasts_table(&conn)?;
