@@ -41,6 +41,8 @@
 	"settings.relayApproxBytesLabel": "Approx. data transferred",
 	"settings.relayApproxEventsLabel": "Approx. events",
 	"settings.refreshRelayDetail": "Refresh relay detail",
+	"settings.refreshingRelayDetail": "Refreshing relay detail",
+	"settings.loadingRelayDetail": "Loading relay detail…",
 	"settings.remove": "Remove",
 	"settings.copyNpub": "Copy nPub",
 	"settings.copy": "Copy",

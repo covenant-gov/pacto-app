@@ -81,10 +81,13 @@
       ...detailByUrl,
       [url]: { loading: true, error: null, metrics: previous?.metrics ?? null, logs: previous?.logs ?? [] },
     };
+    const startedAt = Date.now();
     try {
       const [metrics, logs] = await Promise.all([getRelayMetrics(url), getRelayLogs(url)]);
+      await waitForMinSpin(startedAt);
       detailByUrl = { ...detailByUrl, [url]: { loading: false, error: null, metrics, logs } };
     } catch (e) {
+      await waitForMinSpin(startedAt);
       detailByUrl = {
         ...detailByUrl,
         [url]: {
@@ -111,14 +114,27 @@
     void refreshRelays();
   });
 
+  // Keeps the refresh spinner visible long enough to register as feedback;
+  // local/cached fetches can otherwise resolve within a single frame.
+  const MIN_SPIN_MS = 400;
+
+  async function waitForMinSpin(startedAt: number) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < MIN_SPIN_MS) {
+      await new Promise((resolve) => setTimeout(resolve, MIN_SPIN_MS - elapsed));
+    }
+  }
+
   async function refreshRelays() {
     loading = true;
     loadError = null;
+    const startedAt = Date.now();
     try {
       relays = await listRelays();
     } catch (e) {
       loadError = getInvokeErrorMessage(e, $t('settings.toast.couldNotLoadRelays'));
     } finally {
+      await waitForMinSpin(startedAt);
       loading = false;
     }
   }
@@ -341,16 +357,13 @@
               {@const detail = detailByUrl[relay.url]}
               <div class="nostr-relay-detail" id="nostr-relay-detail-{relay.url}">
                 {#if detail?.loading && !detail.metrics}
-                  <p class="nostr-settings-muted">{$t('settings.loadingRelays')}</p>
+                  <p class="nostr-settings-muted">{$t('settings.loadingRelayDetail')}</p>
                 {:else}
                   <div class="nostr-relay-detail-head">
-                    {#if detail?.loading}
-                      <span class="nostr-settings-muted">{$t('settings.loadingRelays')}</span>
-                    {/if}
                     <RefreshIconButton
                       spinning={detail?.loading ?? false}
                       disabled={detail?.loading ?? false}
-                      ariaLabel={$t('settings.refreshRelayDetail')}
+                      ariaLabel={detail?.loading ? $t('settings.refreshingRelayDetail') : $t('settings.refreshRelayDetail')}
                       on:click={() => loadDetail(relay.url)}
                     />
                   </div>
