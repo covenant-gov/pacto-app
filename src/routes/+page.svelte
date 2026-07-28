@@ -109,11 +109,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     declinedWalletPeerInfoRequestMessageIds,
     dmWalletPeerExchangeTick,
   } from '../stores/app';
-  import {
-    clearDmUnread,
-    clearPactoAppInboxUnread,
-    syncUnreadCountForNpub,
-  } from '../stores/dm-unread';
+  import { clearPactoAppInboxUnread } from '../stores/unread';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import {
     closeCommonsBroadcastModal,
@@ -603,7 +599,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       clearPactoAppInboxUnread(messageId);
       return;
     }
-    clearDmUnread(id, messageId);
     markAsRead(id, messageId).catch(() => {});
   }
 
@@ -633,8 +628,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         });
         reconcilePeerThreadInvites();
         loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [npub]: PAGE_SIZE }));
-        const merged = filterPeerThreadMessages(get(backendDmMessages)[npub] ?? loaded);
-        syncUnreadCountForNpub(npub, merged);
       })
       .catch((err) => {
         dmError('open conversation: getDmMessages failed', err);

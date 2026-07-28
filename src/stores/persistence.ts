@@ -42,7 +42,7 @@ import {
   NEW_CHAT_DRAFT_NPUB_PREFIX,
   NEW_CHAT_DRAFT_MESSAGE_PREFIX,
 } from './dm';
-import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
+import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';

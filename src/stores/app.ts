@@ -18,7 +18,7 @@ export * from './persistence-context';
 export * from './persistence';
 export * from './navigation';
 export * from './dm';
-export * from './dm-unread';
+export * from './unread';
 export * from './squads';
 export * from './mls-chat';
 export * from './mls-history-welcome';

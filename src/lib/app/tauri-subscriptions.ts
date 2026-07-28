@@ -13,7 +13,6 @@ import {
 } from '../squad/squad-outbound-invite';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
-import { get } from 'svelte/store';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
 import {
   backendDmMessages,
@@ -26,12 +25,11 @@ import {
   pendingMlsWelcomes,
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
-  activeDmId,
   type DmMessage,
   type DmChatState,
   type SyncStatus,
 } from '../../stores/app';
-import { incrementDmUnread, dmThreadScrolledToBottom } from '../../stores/dm-unread';
+import { mergeUnreadCounts } from '../../stores/unread';
 
 const TYPING_EXPIRY_SEC = 15;
 
@@ -144,13 +142,6 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         });
         return { ...byNpub, [chat_id]: [...withoutDupes, m] };
       });
-      if (!m.mine) {
-        const active = get(activeDmId);
-        const atBottom = get(dmThreadScrolledToBottom);
-        if (active !== chat_id || !atBottom) {
-          incrementDmUnread(chat_id);
-        }
-      }
       dmChatsByNpub.update((map: Record<string, DmChatState>) => {
         const cur = map[chat_id];
         const next = {
@@ -285,6 +276,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     onMlsStructuredMessage(m.content, group_id, handlers);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
+  });
+
+  register(unsubs, 'unread_counts_changed', (event) => {
+    mergeUnreadCounts(event.payload as Record<string, number>);
   });
 
   refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));

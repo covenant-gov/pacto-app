@@ -3630,6 +3630,10 @@ pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str
 
     println!("[DB] Deleted chat and messages: {} (id {})", chat_identifier, chat_int_id);
 
+    if let Err(e) = crate::catch_up::delete_entries_for_chat(&conn, chat_identifier) {
+        eprintln!("[CatchUp] Failed to delete entries for chat {}: {}", chat_identifier, e);
+    }
+
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }

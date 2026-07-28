@@ -13,7 +13,7 @@
     PACTO_APP_DM_THREAD_ID,
     PACTO_APP_DISPLAY_NAME,
     pactoAppInboxUnreadCount,
-    dmUnreadByNpub,
+    unreadCountsByChat,
     type DmEntry,
     type DmTab,
     type DmSidebarCategory,
@@ -157,7 +157,7 @@
             $activeDmTab === 'search'
               ? dmSidebarCategoryForNpub(row.npub, $dmChatsByNpub, $pinnedDmNpubs)
               : null}
-          {@const unread = $dmUnreadByNpub[row.npub] ?? 0}
+          {@const unread = $unreadCountsByChat[row.npub] ?? 0}
           <li>
             <button
               type="button"

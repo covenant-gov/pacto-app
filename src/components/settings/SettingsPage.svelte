@@ -11,6 +11,7 @@
     { id: 'settings-nostr', labelKey: 'nav.settings.sections.nostr' },
     { id: 'settings-evm', labelKey: 'nav.settings.sections.evm' },
     { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
+    { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
     { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
   ] as const;
 

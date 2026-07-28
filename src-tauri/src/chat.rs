@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 use crate::Message;
 use std::collections::HashMap;
 
@@ -366,6 +367,7 @@ pub async fn mark_as_read(chat_id: String, message_id: Option<String>) -> bool {
     if result {
         // Update the badge count
         crate::update_unread_counter(handle.clone()).await;
+        crate::catch_up::resolve_chat_message_entries_for_handle(handle, &chat_id).await;
 
         // Save the updated chat to the DB
         if let Some(chat_id) = chat_id_for_save {
@@ -383,6 +385,50 @@ pub async fn mark_as_read(chat_id: String, message_id: Option<String>) -> bool {
     }
 
     result
+}
+
+/// Payload for `chat_notification_level_changed`. Deliberately excludes the rest of the
+/// chat (messages, participants) — every listener only needs the id and the new level.
+#[derive(Serialize, Clone)]
+struct NotificationLevelChangedPayload {
+    chat_id: String,
+    notification_level: NotificationLevel,
+}
+
+/// Sets a chat's notification level (R4/R5/R6). Mirrors `toggle_blocked`'s end-to-end
+/// shape: mutate state, persist through `save_chat`, emit an event every listening surface
+/// can pick up, then refresh badges synchronously. A level change flips U2's
+/// badge-contribution predicate for this chat immediately (R17), so calling the debounced
+/// arrival path here would leave a stale badge for the debounce window.
+#[tauri::command]
+pub async fn set_notification_level(chat_id: String, level: NotificationLevel) -> bool {
+    let handle = crate::TAURI_APP.get().unwrap();
+
+    let updated = {
+        let mut state = crate::STATE.lock().await;
+        match state.chats.iter_mut().find(|c| c.id == chat_id) {
+            Some(chat) => {
+                chat.notification_level = level;
+                chat.clone()
+            }
+            None => return false,
+        }
+    };
+
+    let _ = crate::db::save_chat(handle.clone(), &updated).await;
+
+    let _ = handle.emit(
+        "chat_notification_level_changed",
+        &NotificationLevelChangedPayload {
+            chat_id: updated.id.clone(),
+            notification_level: level,
+        },
+    );
+
+    // Immediate (non-debounced) recompute so badges move in the same interaction (R17).
+    crate::update_unread_counter(handle.clone()).await;
+
+    true
 }
 
 #[cfg(test)]
@@ -541,5 +587,57 @@ mod tests {
     fn unrecognized_notification_level_string_reads_back_as_mentions() {
         assert_eq!(NotificationLevel::from_db_str("bogus"), NotificationLevel::Mentions);
         assert_eq!(NotificationLevel::from_db_str(""), NotificationLevel::Mentions);
+    }
+
+    /// Exercises the exact persistence path `set_notification_level` uses once it finds the
+    /// chat in `STATE`: mutate `notification_level`, `save_chat`, then read it back as a fresh
+    /// load would after a restart. The command itself resolves its `AppHandle` from the
+    /// process-global `TAURI_APP` (bound to the real `Wry` runtime), which no test can populate
+    /// with `tauri::test::mock_app()`'s `MockRuntime` handle — but `save_chat`/`get_all_chats`
+    /// are the same generic-runtime calls the command makes, so this covers the persistence
+    /// contract the command depends on.
+    #[tokio::test]
+    async fn set_notification_level_persists_and_round_trips_on_read() {
+        let test_npub = "npub1notiflevelroundtriptest";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        let chat_id = "npub1notiflevelroundtrippeer";
+        let mut chat = Chat::new_dm(chat_id.to_string());
+        assert_eq!(chat.notification_level, NotificationLevel::Mentions);
+
+        chat.notification_level = NotificationLevel::Nothing;
+        crate::db::save_chat(app.handle().clone(), &chat).await.unwrap();
+
+        let reloaded = crate::db::get_all_chats(app.handle())
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == chat_id)
+            .expect("saved chat should read back from a fresh query");
+        assert_eq!(reloaded.notification_level, NotificationLevel::Nothing);
+
+        // Raising it again round-trips too, not just the initial non-default write.
+        chat.notification_level = NotificationLevel::All;
+        crate::db::save_chat(app.handle().clone(), &chat).await.unwrap();
+        let reloaded_again = crate::db::get_all_chats(app.handle())
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == chat_id)
+            .expect("saved chat should read back from a fresh query");
+        assert_eq!(reloaded_again.notification_level, NotificationLevel::All);
+
+        crate::account_manager::close_db_connection();
     }
 }

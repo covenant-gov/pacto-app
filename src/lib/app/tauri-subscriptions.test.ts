@@ -41,7 +41,6 @@ const mocks = vi.hoisted(() => {
     typingByChat: createMockStore<Record<string, string[]>>({}),
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
     dashboardPollReplicaNonceByParentId: createMockStore<Record<string, number>>({}),
-    activeDmId: createMockStore<string | null>(null),
   };
 
   const mockFunctions = {
@@ -60,12 +59,11 @@ const mocks = vi.hoisted(() => {
     parseWalletTxAnnouncement: vi.fn(),
     isPactoAppRoutableInviteContent: vi.fn(),
     resolveInviteInviterNpub: vi.fn(),
-    incrementDmUnread: vi.fn(),
+    mergeUnreadCounts: vi.fn(),
     dmLog: vi.fn(),
     dmError: vi.fn(),
   };
 
-  const dmThreadScrolledToBottom = createMockStore<boolean>(false);
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
   const showMigrationCompleteToast = vi.fn((message: string) => {
     migrationCompleteToast.set({ shown: true, message });
@@ -79,7 +77,6 @@ const mocks = vi.hoisted(() => {
     listen,
     mockStores,
     mockFunctions,
-    dmThreadScrolledToBottom,
     migrationCompleteToast,
     showMigrationCompleteToast,
     dropSessionState,
@@ -159,12 +156,10 @@ vi.mock('../../stores/app', () => ({
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
   bumpMembershipVersion: (...args: unknown[]) => mocks.mockFunctions.bumpMembershipVersion(...args),
   dashboardPollReplicaNonceByParentId: mocks.mockStores.dashboardPollReplicaNonceByParentId,
-  activeDmId: mocks.mockStores.activeDmId,
 }));
 
-vi.mock('../../stores/dm-unread', () => ({
-  incrementDmUnread: (...args: unknown[]) => mocks.mockFunctions.incrementDmUnread(...args),
-  dmThreadScrolledToBottom: mocks.dmThreadScrolledToBottom,
+vi.mock('../../stores/unread', () => ({
+  mergeUnreadCounts: (...args: unknown[]) => mocks.mockFunctions.mergeUnreadCounts(...args),
 }));
 
 function emit(event: string, payload: unknown): void {
@@ -206,8 +201,6 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
     mocks.mockStores.dashboardPollReplicaNonceByParentId.set({});
-    mocks.mockStores.activeDmId.set(null);
-    mocks.dmThreadScrolledToBottom.set(false);
     mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(false);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
@@ -232,6 +225,7 @@ describe('subscribeAppEvents', () => {
       'sync_finished',
       'typing-update',
       'mls_message_new',
+      'unread_counts_changed',
       'mls_invite_received',
       'mls_welcome_accepted',
       'channel_added_to_squad',
@@ -268,7 +262,6 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'group1', message: dmMessage() });
       expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
     });
 
     it('appends pacto inbox message for routable invite content from others', () => {
@@ -300,28 +293,6 @@ describe('subscribeAppEvents', () => {
       expect(chatMessages![0].id).toBe('m1');
     });
 
-    it('increments unread for inbound message when not active thread', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1other');
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
-      expect(mocks.mockFunctions.incrementDmUnread).toHaveBeenCalledWith('npub1chat');
-    });
-
-    it('does not increment unread for own message', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1chat');
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
-    });
-
-    it('does not increment unread when thread is active and scrolled to bottom', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1chat');
-      mocks.dmThreadScrolledToBottom.set(true);
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
-    });
-
     it('updates dmChatsByNpub metadata', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ at: 5000, mine: false }) });
@@ -344,6 +315,14 @@ describe('subscribeAppEvents', () => {
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ pending: true }) });
       const stored = mocks.mockStores.backendDmMessages.get()['npub1chat']![0];
       expect(stored.pending).toBe(false);
+    });
+  });
+
+  describe('unread_counts_changed', () => {
+    it('merges the payload into the unread store', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('unread_counts_changed', { npub1chat: 3, group1: 0 });
+      expect(mocks.mockFunctions.mergeUnreadCounts).toHaveBeenCalledWith({ npub1chat: 3, group1: 0 });
     });
   });
 

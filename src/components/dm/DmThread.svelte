@@ -38,6 +38,8 @@
   } from '../../stores/app';
   import { dmSyncStatus } from '../../stores/dm';
   import SyncStatusIndicator from './SyncStatusIndicator.svelte';
+  import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
@@ -435,6 +437,7 @@
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
             <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
             {#if showOptionsMenu && !isPactoAppThread}
+              <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />
               <div class="dm-thread-header-actions">
                 <button
                   type="button"
@@ -469,6 +472,7 @@
                         </button>
                       {/if}
                     {/if}
+                    <NotificationLevelMenu chatId={npub} onSelect={() => (menuOpen = false)} />
                     {#if onDeleteChat}
                       <button
                         type="button"

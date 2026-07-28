@@ -194,7 +194,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 28);
+        assert_eq!(last_version, 29);
 
         let events_table: bool = conn
             .query_row(
@@ -205,6 +205,16 @@ mod tests {
             .map(|c| c > 0)
             .unwrap_or(false);
         assert!(events_table, "events table should exist");
+
+        let catch_up_table: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'catch_up_entries'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+        assert!(catch_up_table, "catch_up_entries table should exist");
     }
 
     #[test]
@@ -222,8 +232,8 @@ mod tests {
             )
             .expect("history should exist");
         assert_eq!(
-            count, 28,
-            "27 pre-refinery migrations baselined plus V28 actually run"
+            count, 29,
+            "27 pre-refinery migrations baselined plus V28 and V29 actually run"
         );
 
         // Running migrations again should be idempotent.
@@ -304,7 +314,7 @@ mod tests {
             .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |row| row.get(0))
             .expect("history should exist");
         assert_eq!(
-            last_version, 28,
+            last_version, 29,
             "an existing history table means every migration actually runs, never gets stamped"
         );
     }
@@ -393,7 +403,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 28);
+        assert_eq!(last_version, 29);
 
         let has_virtual_bucket: bool = conn
             .query_row(

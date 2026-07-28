@@ -1,40 +1,36 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
+
+const mockGetUnreadCounts = vi.hoisted(() => vi.fn());
+vi.mock('../lib/api/notifications', () => ({
+  getUnreadCounts: (...args: unknown[]) => mockGetUnreadCounts(...args),
+}));
+
 import {
-  dmLastReadByNpub,
-  dmUnreadByNpub,
-  pactoAppInboxLastReadId,
-  dmThreadScrolledToBottom,
-  pactoAppInboxUnreadCount,
-  dmTabHasUnread,
-  unreadCountForNpub,
-  hydrateDmUnreadFromInitChats,
-  syncUnreadCountForNpub,
-  incrementDmUnread,
-  clearDmUnread,
   clearPactoAppInboxUnread,
-  unreadCountForSidebarEntry,
-  PACTO_APP_INBOX_LAST_READ_PREFIX,
   dmSidebarCategoryForNpub,
-} from './dm-unread';
-import {
-  dmChatsByNpub,
-  pinnedDmNpubs,
-  blockedDmNpubs,
-  pactoAppInboxMessages,
-  PACTO_APP_DM_THREAD_ID,
-} from './dm';
+  dmTabHasUnread,
+  dmThreadScrolledToBottom,
+  hydrateUnreadCounts,
+  mergeUnreadCounts,
+  pactoAppInboxLastReadId,
+  pactoAppInboxUnreadCount,
+  PACTO_APP_INBOX_LAST_READ_PREFIX,
+  resetUnreadStore,
+  unreadCountForChat,
+  unreadCountsByChat,
+} from './unread';
+import { blockedDmNpubs, dmChatsByNpub, pactoAppInboxMessages, pinnedDmNpubs } from './dm';
 import { setCurrentNpubForPersistence } from './persistence-context';
 
-describe('dm-unread', () => {
+describe('unread', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    dmLastReadByNpub.set({});
-    dmUnreadByNpub.set({});
+    unreadCountsByChat.set({});
     pactoAppInboxLastReadId.set('');
     dmThreadScrolledToBottom.set(false);
     dmChatsByNpub.set({});
@@ -42,16 +38,19 @@ describe('dm-unread', () => {
     blockedDmNpubs.set(new Set());
     pactoAppInboxMessages.set([]);
     setCurrentNpubForPersistence(null);
+    mockGetUnreadCounts.mockReset();
     vi.unstubAllGlobals();
   });
 
   it('has expected initial values', () => {
-    expect(get(dmLastReadByNpub)).toEqual({});
-    expect(get(dmUnreadByNpub)).toEqual({});
+    expect(get(unreadCountsByChat)).toEqual({});
     expect(get(pactoAppInboxLastReadId)).toBe('');
     expect(get(dmThreadScrolledToBottom)).toBe(false);
   });
 
+  // The Pacto App inbox is a synthetic, local-only thread with no backend count to
+  // mirror (see countUnreadPactoAppInboxMessages in unread.ts) — the sole intentional
+  // exception to "no selector computes a count from a message array".
   it('computes pacto app inbox unread count', () => {
     pactoAppInboxMessages.set([
       { id: 'a', mine: false },
@@ -65,7 +64,36 @@ describe('dm-unread', () => {
     expect(get(pactoAppInboxUnreadCount)).toBe(0);
   });
 
-  it('computes tab unread flags from peer unread counts and inbox', () => {
+  it('hydrates counts for MLS chat ids as well as npub ids', async () => {
+    mockGetUnreadCounts.mockResolvedValue({ npub1alice: 2, 'mls-group-1': 5 });
+    await hydrateUnreadCounts();
+    expect(get(unreadCountsByChat)).toEqual({ npub1alice: 2, 'mls-group-1': 5 });
+  });
+
+  it('a changed-entry event updates one chat via merge, leaving others untouched', () => {
+    unreadCountsByChat.set({ npub1alice: 1, 'mls-group-1': 4 });
+    mergeUnreadCounts({ 'mls-group-1': 7 });
+    expect(unreadCountForChat('mls-group-1')).toBe(7);
+    expect(unreadCountForChat('npub1alice')).toBe(1);
+  });
+
+  it('merging a zero entry clears that chat without affecting others', () => {
+    unreadCountsByChat.set({ npub1alice: 3, npub1bob: 2 });
+    mergeUnreadCounts({ npub1alice: 0 });
+    expect(get(unreadCountsByChat)).toEqual({ npub1alice: 0, npub1bob: 2 });
+  });
+
+  it('returns zero from unreadCountForChat for an unknown chat', () => {
+    expect(unreadCountForChat('unknown')).toBe(0);
+  });
+
+  it('resetUnreadStore clears the map', () => {
+    unreadCountsByChat.set({ npub1alice: 3 });
+    resetUnreadStore();
+    expect(get(unreadCountsByChat)).toEqual({});
+  });
+
+  it('computes tab unread flags from backend counts and inbox', () => {
     dmChatsByNpub.set({
       alice: { npub: 'alice', hasFromMe: true, hasFromThem: true, lastAt: 1 },
       bob: { npub: 'bob', hasFromMe: false, hasFromThem: true, lastAt: 1 },
@@ -73,7 +101,7 @@ describe('dm-unread', () => {
       dave: { npub: 'dave', hasFromMe: true, hasFromThem: true, lastAt: 1 },
     });
     pinnedDmNpubs.set(new Set(['alice']));
-    dmUnreadByNpub.set({ alice: 1, bob: 1, carol: 1, dave: 1 });
+    unreadCountsByChat.set({ alice: 1, bob: 1, carol: 1, dave: 1 });
 
     const flags = get(dmTabHasUnread);
     expect(flags.pinned).toBe(true);
@@ -82,39 +110,15 @@ describe('dm-unread', () => {
     expect(flags.pending).toBe(true);
   });
 
-  it('returns zero unread for an unknown npub', () => {
-    expect(unreadCountForNpub('unknown')).toBe(0);
-  });
+  it('a tab dot clears once every chat in that tab reaches zero', () => {
+    dmChatsByNpub.set({
+      dave: { npub: 'dave', hasFromMe: true, hasFromThem: true, lastAt: 1 },
+    });
+    unreadCountsByChat.set({ dave: 2 });
+    expect(get(dmTabHasUnread).friends).toBe(true);
 
-  it('hydrates unread state from init chats', () => {
-    hydrateDmUnreadFromInitChats([
-      { id: 'npub1alice', last_read: 'b', messages: [{ id: 'a', mine: false }, { id: 'b', mine: false }, { id: 'c', mine: false }] },
-      { id: 'npub1bob', messages: [{ id: 'x', mine: false }] },
-      { id: 'non-npub-squad', last_read: 'z', messages: [{ id: 'z', mine: false }] },
-    ]);
-
-    expect(get(dmLastReadByNpub)).toEqual({ 'npub1alice': 'b' });
-    expect(get(dmUnreadByNpub)).toEqual({ 'npub1alice': 1, 'npub1bob': 1 });
-  });
-
-  it('syncs unread count for a peer from messages', () => {
-    dmLastReadByNpub.set({ 'npub1alice': 'b' });
-    syncUnreadCountForNpub('npub1alice', [
-      { id: 'a', mine: false },
-      { id: 'b', mine: false },
-      { id: 'c', mine: false },
-    ]);
-    expect(unreadCountForNpub('npub1alice')).toBe(1);
-  });
-
-  it('increments and clears unread count', () => {
-    incrementDmUnread('npub1alice');
-    incrementDmUnread('npub1alice');
-    expect(unreadCountForNpub('npub1alice')).toBe(2);
-
-    clearDmUnread('npub1alice', 'msg-3');
-    expect(unreadCountForNpub('npub1alice')).toBe(0);
-    expect(get(dmLastReadByNpub)['npub1alice']).toBe('msg-3');
+    mergeUnreadCounts({ dave: 0 });
+    expect(get(dmTabHasUnread).friends).toBe(false);
   });
 
   it('clears pacto app inbox unread', () => {
@@ -138,17 +142,6 @@ describe('dm-unread', () => {
     setCurrentNpubForPersistence('npub1abc');
     pactoAppInboxLastReadId.set('msg-5');
     expect(storage.get(`${PACTO_APP_INBOX_LAST_READ_PREFIX}_npub1abc`)).toBe('msg-5');
-  });
-
-  it('returns sidebar unread count for pacto app inbox', () => {
-    pactoAppInboxMessages.set([{ id: 'a', mine: false }, { id: 'b', mine: false }] as Parameters<typeof pactoAppInboxMessages.set>[0]);
-    pactoAppInboxLastReadId.set('a');
-    expect(unreadCountForSidebarEntry(PACTO_APP_DM_THREAD_ID, {}, new Set())).toBe(1);
-  });
-
-  it('returns sidebar unread count for a peer npub', () => {
-    dmUnreadByNpub.set({ 'npub1alice': 3 });
-    expect(unreadCountForSidebarEntry('npub1alice', {}, new Set())).toBe(3);
   });
 
   it('re-exports dmSidebarCategoryForNpub', () => {

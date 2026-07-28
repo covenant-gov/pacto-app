@@ -384,6 +384,10 @@ pub(crate) fn delete_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -
     if pid.is_empty() {
         return Err("parentId must be non-empty".to_string());
     }
+    // Gathered before the delete below removes the row this reads from.
+    let channel_ids: Vec<String> = get_squad_inner(conn, pid)?
+        .map(|row| row.channels.into_iter().map(|c| c.group_id).collect())
+        .unwrap_or_default();
     conn.execute(
         "DELETE FROM squad_member_evm_account WHERE parent_id = ?1",
         rusqlite::params![pid],
@@ -397,6 +401,12 @@ pub(crate) fn delete_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -
     crate::squad_bot::delete_squad_bot_rows(conn, pid)?;
     conn.execute("DELETE FROM squads WHERE id = ?1", rusqlite::params![pid])
         .map_err(|e| format!("Failed to delete squad: {e}"))?;
+    // Catch up entries reference chat/channel ids, not squad ids (KD1 —
+    // references only); clean up via the channel list gathered above,
+    // never a cascade (foreign keys are not enforced on these connections).
+    if let Err(e) = crate::catch_up::delete_entries_for_chats(conn, &channel_ids) {
+        eprintln!("[CatchUp] Failed to delete entries for squad {}'s channels: {}", pid, e);
+    }
     Ok(())
 }
 
@@ -521,6 +531,14 @@ mod tests {
                 label TEXT NOT NULL DEFAULT '',
                 imported_enc TEXT,
                 purpose TEXT NOT NULL DEFAULT 'squad'
+            );
+            CREATE TABLE catch_up_entries (
+                id TEXT PRIMARY KEY NOT NULL,
+                source_event_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                resolved_at INTEGER
             );",
         )
         .expect("schema");

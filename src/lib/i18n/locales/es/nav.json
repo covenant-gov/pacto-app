@@ -73,5 +73,6 @@
 	"nav.settings.sections.nostr": "Nostr",
 	"nav.settings.sections.evm": "EVM",
 	"nav.settings.sections.app": "App",
+	"nav.settings.sections.notifications": "Notificaciones",
 	"nav.settings.sections.dangerzone": "Zona de peligro"
 }

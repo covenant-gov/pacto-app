@@ -1,0 +1,32 @@
+{
+	"notifications.title": "Notifications",
+	"notifications.loading": "Loading notification settings…",
+	"notifications.loadError": "Could not load notification settings.",
+	"notifications.saveError": "Could not save notification settings.",
+	"notifications.previewError": "Could not preview that sound.",
+
+	"notifications.soundSectionTitle": "Sound",
+	"notifications.soundLabel": "Notification sound",
+	"notifications.soundOptionDefault": "Prélude (default)",
+	"notifications.soundOptionTechno": "Techno ping",
+	"notifications.soundOptionNone": "Silent",
+	"notifications.soundOptionCustom": "Custom sound",
+	"notifications.soundOptionCustomWithFile": "Custom: {file}",
+	"notifications.previewButton": "Preview",
+	"notifications.chooseFileButton": "Choose file…",
+	"notifications.choosingFile": "Choosing…",
+	"notifications.customSoundTooLarge": "That file is too large — pick something under 1 MB.",
+	"notifications.selectSoundError": "Could not set the custom sound.",
+
+	"notifications.muteSectionTitle": "Mute",
+	"notifications.muteLabel": "Mute all notification sounds",
+	"notifications.muteHint": "Chats keep counting unread messages — this only silences the sound.",
+
+	"notifications.permissionSectionTitle": "Notification permission",
+	"notifications.permissionStateLabel": "Status: {state}",
+	"notifications.permissionGranted": "Granted",
+	"notifications.permissionDenied": "Denied",
+	"notifications.permissionDefault": "Not yet determined",
+	"notifications.permissionUnsupported": "Not available on this platform",
+	"notifications.permissionHint": "Your operating system controls whether Pacto can show notifications — Pacto can't turn this on for you. If alerts aren't showing up, check the OS notification settings for Pacto."
+}

@@ -6,6 +6,7 @@
   import ProfileSection from '../settings/ProfileSection.svelte';
   import NostrSettingsSection from '../settings/NostrSettingsSection.svelte';
   import AppSettingsSection from '../settings/AppSettingsSection.svelte';
+  import NotificationsSection from '../settings/NotificationsSection.svelte';
   import DangerZoneSection from '../settings/DangerZoneSection.svelte';
   import WalletView from '../wallet/WalletView.svelte';
   import SettingsCollapsibleSection from '../settings/SettingsCollapsibleSection.svelte';
@@ -33,6 +34,7 @@
       </SettingsCollapsibleSection>
 
       <AppSettingsSection />
+      <NotificationsSection />
     {/if}
 
     <DangerZoneSection />

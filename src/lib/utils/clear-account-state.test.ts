@@ -50,7 +50,7 @@ import {
 } from '../../stores/invite-decisions';
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
-import { dmLastReadByNpub, dmUnreadByNpub, pactoAppInboxLastReadId } from '../../stores/dm-unread';
+import { pactoAppInboxLastReadId, unreadCountsByChat } from '../../stores/unread';
 import { requestLinkPreview } from '../messaging/link-preview';
 
 describe('clearAccountState', () => {
@@ -101,8 +101,7 @@ describe('clearAccountState', () => {
     dmSendError.set(null);
     pactoAppInboxMessages.set([]);
     dmThreadAnnouncementsByNpub.set({});
-    dmLastReadByNpub.set({});
-    dmUnreadByNpub.set({});
+    unreadCountsByChat.set({});
     pactoAppInboxLastReadId.set('');
     recentEmojisStore.set([]);
   });
@@ -209,15 +208,13 @@ describe('clearAccountState', () => {
     expect(get(reciprocatedWalletPeerInfoRequestIds)).toEqual([]);
   });
 
-  it('resets DM read state stores', () => {
-    dmLastReadByNpub.set({ npub1: 'id' });
-    dmUnreadByNpub.set({ npub1: 1 });
+  it('resets unread state stores', () => {
+    unreadCountsByChat.set({ npub1: 1 });
     pactoAppInboxLastReadId.set('last-read');
 
     clearAccountState('npub1abcdef');
 
-    expect(get(dmLastReadByNpub)).toEqual({});
-    expect(get(dmUnreadByNpub)).toEqual({});
+    expect(get(unreadCountsByChat)).toEqual({});
     expect(get(pactoAppInboxLastReadId)).toBe('');
   });
 
