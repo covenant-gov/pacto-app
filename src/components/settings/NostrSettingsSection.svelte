@@ -60,6 +60,10 @@
     logs: RelayLog[];
   };
 
+  function relaySlug(url: string): string {
+    return url.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
   let openUrls = new Set<string>();
   let detailByUrl: Record<string, RelayDetailState> = {};
 
@@ -304,13 +308,14 @@
     {:else}
       <ul class="nostr-relay-list">
         {#each relays as relay (relay.url)}
+          {@const relayDetailId = `nostr-relay-detail-${relaySlug(relay.url)}`}
           <li class="nostr-relay-row-wrap">
             <div class="nostr-relay-row">
               <button
                 type="button"
                 class="nostr-relay-detail-toggle"
                 aria-expanded={openUrls.has(relay.url)}
-                aria-controls="nostr-relay-detail-{relay.url}"
+                aria-controls={relayDetailId}
                 aria-label={$t('settings.relayDetailToggle')}
                 on:click={() => toggleDetail(relay.url)}
               >
@@ -355,7 +360,7 @@
             </div>
             {#if openUrls.has(relay.url)}
               {@const detail = detailByUrl[relay.url]}
-              <div class="nostr-relay-detail" id="nostr-relay-detail-{relay.url}">
+              <div class="nostr-relay-detail" id={relayDetailId}>
                 {#if detail?.loading && !detail.metrics}
                   <p class="nostr-settings-muted">{$t('settings.loadingRelayDetail')}</p>
                 {:else}

@@ -106,8 +106,9 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                     if name.starts_with("npub1") {
                         let in_flight =
                             is_in_flight_account(name, current.as_deref(), pending.as_deref());
-                        match account_has_valid_pkey(handle, name) {
-                            Ok(true) => {
+                        let has_pkey = account_has_valid_pkey(handle, name);
+                        match classify_account_scan(&has_pkey, in_flight) {
+                            AccountScanVerdict::Include => {
                                 let last_used = get_database_path(handle, name)
                                     .ok()
                                     .and_then(|p| std::fs::metadata(p).ok())
@@ -115,9 +116,7 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                                     .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                                 accounts.push((name.to_string(), last_used));
                             }
-                            Ok(false) if !in_flight => {
-                                // Clean up invalid account directory. In-flight
-                                // (current/pending) accounts are protected above.
+                            AccountScanVerdict::Delete => {
                                 let invalid_dir = entry.path();
                                 if let Err(e) = std::fs::remove_dir_all(&invalid_dir) {
                                     eprintln!("[Account Manager] Failed to remove invalid account directory {}: {}", invalid_dir.display(), e);
@@ -125,10 +124,7 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                                     println!("[Account Manager] Cleaned up invalid account directory: {}", invalid_dir.display());
                                 }
                             }
-                            // `Ok(false)` while in-flight, or `Err(_)` (locked
-                            // database / transient I/O failure): leave the
-                            // directory alone rather than guess.
-                            _ => {}
+                            AccountScanVerdict::Skip => {}
                         }
                     }
                 }
@@ -193,6 +189,42 @@ fn classify_pkey_query_result(result: Result<String, rusqlite::Error>) -> Result
         Ok(value) => Ok(!value.is_empty()),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
         Err(e) => Err(format!("Failed to query pkey setting: {}", e)),
+    }
+}
+
+/// Three-way verdict for a single directory scanned by `list_accounts`,
+/// derived purely from `account_has_valid_pkey`'s result and whether the
+/// directory is the current or pending account.
+///
+/// A valid pkey always means `Include`, even while in-flight: in-flight only
+/// protects a directory with *no* pkey yet (mid-creation) from cleanup, it
+/// never excludes a directory that already has one. Treating in-flight as a
+/// reason to skip a valid pkey was exactly the bug that blanked the Create
+/// Account screen -- it left a fully valid current/pending account out of
+/// the list `list_accounts` returns.
+///
+/// A query `Err` (locked/busy database, transient I/O error, mid-write
+/// schema state) always means `Skip`: validity is unknown, so the caller
+/// leaves the directory alone rather than guessing and possibly deleting a
+/// live account.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum AccountScanVerdict {
+    /// Valid pkey found; the account belongs in the returned list.
+    Include,
+    /// No pkey and not in-flight; safe to clean up the orphaned directory.
+    Delete,
+    /// In-flight with no pkey yet, or pkey validity is unknown; leave alone.
+    Skip,
+}
+
+/// Combine `account_has_valid_pkey`'s result and in-flight status into a
+/// scan verdict. See `AccountScanVerdict` for the policy this encodes.
+fn classify_account_scan(has_pkey: &Result<bool, String>, in_flight: bool) -> AccountScanVerdict {
+    match (has_pkey, in_flight) {
+        (Ok(true), _) => AccountScanVerdict::Include,
+        (Ok(false), false) => AccountScanVerdict::Delete,
+        (Ok(false), true) => AccountScanVerdict::Skip,
+        (Err(_), _) => AccountScanVerdict::Skip,
     }
 }
 
@@ -491,5 +523,51 @@ mod classify_pkey_query_result_tests {
             rusqlite::types::Type::Null,
         );
         assert!(classify_pkey_query_result(Err(transient_failure)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod account_scan_verdict_tests {
+    use super::*;
+
+    /// Regression guard for the bug that blanked the Create Account screen:
+    /// an early `continue` on in-flight accounts skipped them even when they
+    /// already had a valid pkey, so the current/pending account vanished
+    /// from `list_accounts`'s return value right after being created. The
+    /// in-flight flag must only ever protect a *missing* pkey from cleanup
+    /// -- it must never exclude an account that already has a valid one.
+    #[test]
+    fn valid_pkey_is_always_included_even_while_in_flight() {
+        assert_eq!(
+            classify_account_scan(&Ok(true), true),
+            AccountScanVerdict::Include
+        );
+        assert_eq!(
+            classify_account_scan(&Ok(true), false),
+            AccountScanVerdict::Include
+        );
+    }
+
+    #[test]
+    fn missing_pkey_and_not_in_flight_is_deleted() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), false),
+            AccountScanVerdict::Delete
+        );
+    }
+
+    #[test]
+    fn missing_pkey_while_in_flight_is_skipped() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), true),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    #[test]
+    fn query_error_is_always_skipped() {
+        let err = Err("locked database".to_string());
+        assert_eq!(classify_account_scan(&err, true), AccountScanVerdict::Skip);
+        assert_eq!(classify_account_scan(&err, false), AccountScanVerdict::Skip);
     }
 }

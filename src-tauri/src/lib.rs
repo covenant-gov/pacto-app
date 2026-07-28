@@ -1324,6 +1324,79 @@ async fn get_file_hash_index<R: Runtime>(
     db::build_file_hash_index(&handle).await
 }
 
+/// Outcome of attempting to process an MLS Welcome extracted from a gift-wrapped rumor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WelcomeOutcome {
+    /// `process_welcome` succeeded.
+    Processed,
+    /// The MDK engine gave a permanent verdict (a known replay error); retrying
+    /// will never succeed, so the wrapper can be treated as handled.
+    PermanentFailure,
+    /// Everything else (MLS service/engine init failure, task join failure, or an
+    /// unrecognized `process_welcome` error); may succeed on a later retry.
+    TransientFailure,
+}
+
+impl WelcomeOutcome {
+    /// Whether this outcome should be recorded as permanently handled so historical
+    /// resync stops retrying it.
+    fn should_mark_handled(self) -> bool {
+        matches!(self, WelcomeOutcome::Processed | WelcomeOutcome::PermanentFailure)
+    }
+}
+
+/// Classify a `process_welcome` error message as permanent (no retry will ever help)
+/// or transient (may succeed later). Once a welcome permanently fails (e.g. no
+/// matching key package after a seed restore), the MDK engine marks the wrapper
+/// event processed/failed forever; these replay errors carry no new information.
+fn classify_welcome_error(msg: &str) -> WelcomeOutcome {
+    const PERMANENT_ERRORS: [&str; 2] = [
+        "missing welcome for processed welcome",
+        "processed welcome not found",
+    ];
+    if PERMANENT_ERRORS.contains(&msg) {
+        WelcomeOutcome::PermanentFailure
+    } else {
+        WelcomeOutcome::TransientFailure
+    }
+}
+
+#[cfg(test)]
+mod welcome_outcome_tests {
+    use super::{classify_welcome_error, WelcomeOutcome};
+
+    #[test]
+    fn classifies_missing_welcome_for_processed_welcome_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("missing welcome for processed welcome"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_processed_welcome_not_found_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("processed welcome not found"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_unknown_error_as_transient() {
+        assert_eq!(
+            classify_welcome_error("database is locked"),
+            WelcomeOutcome::TransientFailure
+        );
+    }
+
+    #[test]
+    fn only_processed_and_permanent_failure_should_mark_handled() {
+        assert!(WelcomeOutcome::Processed.should_mark_handled());
+        assert!(WelcomeOutcome::PermanentFailure.should_mark_handled());
+        assert!(!WelcomeOutcome::TransientFailure.should_mark_handled());
+    }
+}
+
 #[tauri::command]
 async fn handle_event(event: Event, is_new: bool) -> bool {
     // Get the wrapper (giftwrap) event ID for duplicate detection
@@ -1407,56 +1480,54 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     let app_handle = TAURI_APP.get().cloned();
 
                     // Use blocking thread for non-Send MLS engine
-                    let processed = tokio::task::spawn_blocking(move || {
+                    let outcome = tokio::task::spawn_blocking(move || {
                         if app_handle.is_none() {
-                            return false;
+                            return WelcomeOutcome::TransientFailure;
                         }
                         let handle = app_handle.unwrap();
                         let svc = MlsService::new_persistent(&handle);
                         if let Ok(mls) = svc {
                             if let Ok(engine) = mls.engine() {
-                                match engine.process_welcome(&wrapper_id, &unsigned) {
-                                    Ok(_) => return true,
+                                return match engine.process_welcome(&wrapper_id, &unsigned) {
+                                    Ok(_) => WelcomeOutcome::Processed,
                                     Err(e) => {
                                         let msg = e.to_string();
-                                        // Once a welcome permanently fails (e.g. no matching
-                                        // key package after a seed restore), the MDK engine
-                                        // marks the wrapper event processed/failed forever;
-                                        // these replay errors carry no new information.
-                                        if msg != "missing welcome for processed welcome"
-                                            && msg != "processed welcome not found"
-                                        {
+                                        let outcome = classify_welcome_error(&msg);
+                                        // Permanent replay errors carry no new information;
+                                        // only log genuinely unexpected (transient) failures.
+                                        if outcome == WelcomeOutcome::TransientFailure {
                                             eprintln!("[MLS] Failed to process welcome: {}", msg);
                                         }
-                                        return false;
+                                        outcome
                                     }
-                                }
+                                };
                             }
                         }
-                        false
+                        WelcomeOutcome::TransientFailure
                     })
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or(WelcomeOutcome::TransientFailure);
 
                     // Mark this wrapper event as handled so historical resyncs (every login)
-                    // don't re-unwrap and re-attempt it forever, whether it succeeded or
-                    // permanently failed (e.g. a Welcome sent to a pre-restore KeyPackage).
-                    if let Some(handle) = TAURI_APP.get() {
-                        let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
-                    }
-                    {
+                    // don't re-unwrap and re-attempt it, but only once we have a permanent
+                    // verdict (success or a known-permanent MDK replay error). Transient
+                    // failures (init/engine/join errors) stay retryable on the next login.
+                    if outcome.should_mark_handled() {
+                        if let Some(handle) = TAURI_APP.get() {
+                            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                        }
                         let mut cache = WRAPPER_ID_CACHE.lock().await;
                         cache.insert(wrapper_event_id.clone());
                     }
 
-                    if processed {
+                    if outcome == WelcomeOutcome::Processed {
                         // Only notify UI after initial sync is complete
                         // During initial sync, invites are processed but not emitted to avoid UI updates before chats are loaded
                         let should_emit = {
                             let state = STATE.lock().await;
                             state.sync_mode == SyncMode::Finished || !state.is_syncing
                         };
-                        
+
                         if should_emit {
                             if let Some(app) = TAURI_APP.get() {
                                 let _ = app.emit("mls_invite_received", serde_json::json!({
