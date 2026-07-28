@@ -524,14 +524,14 @@ describe('syncMlsGroupsNow', () => {
   it('invokes sync_mls_groups_now with all groups when no groupId', async () => {
     mockedInvoke.mockResolvedValueOnce([2, 5]);
     const result = await syncMlsGroupsNow();
-    expect(mockedInvoke).toHaveBeenCalledWith('sync_mls_groups_now', { group_id: null });
+    expect(mockedInvoke).toHaveBeenCalledWith('sync_mls_groups_now', { groupId: null });
     expect(result).toEqual({ synced: 2, total: 5 });
   });
 
   it('invokes sync_mls_groups_now with a specific groupId', async () => {
     mockedInvoke.mockResolvedValueOnce([1, 1]);
     const result = await syncMlsGroupsNow('g1');
-    expect(mockedInvoke).toHaveBeenCalledWith('sync_mls_groups_now', { group_id: 'g1' });
+    expect(mockedInvoke).toHaveBeenCalledWith('sync_mls_groups_now', { groupId: 'g1' });
     expect(result).toEqual({ synced: 1, total: 1 });
   });
 });
