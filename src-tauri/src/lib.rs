@@ -1418,7 +1418,16 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                                 match engine.process_welcome(&wrapper_id, &unsigned) {
                                     Ok(_) => return true,
                                     Err(e) => {
-                                        eprintln!("[MLS] Failed to process welcome: {}", e);
+                                        let msg = e.to_string();
+                                        // Once a welcome permanently fails (e.g. no matching
+                                        // key package after a seed restore), the MDK engine
+                                        // marks the wrapper event processed/failed forever;
+                                        // these replay errors carry no new information.
+                                        if msg != "missing welcome for processed welcome"
+                                            && msg != "processed welcome not found"
+                                        {
+                                            eprintln!("[MLS] Failed to process welcome: {}", msg);
+                                        }
                                         return false;
                                     }
                                 }
@@ -1428,6 +1437,17 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     })
                     .await
                     .unwrap_or(false);
+
+                    // Mark this wrapper event as handled so historical resyncs (every login)
+                    // don't re-unwrap and re-attempt it forever, whether it succeeded or
+                    // permanently failed (e.g. a Welcome sent to a pre-restore KeyPackage).
+                    if let Some(handle) = TAURI_APP.get() {
+                        let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                    }
+                    {
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
 
                     if processed {
                         // Only notify UI after initial sync is complete
@@ -1450,6 +1470,13 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     }
                 } else {
                     eprintln!("[MLS] Failed to convert rumor to UnsignedEvent");
+                    if let Some(handle) = TAURI_APP.get() {
+                        let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                    }
+                    {
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
                     return false;
                 }
             }
