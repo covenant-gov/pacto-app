@@ -4564,7 +4564,14 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
             if profile_db.exists() {
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
-                let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                // `ensure_ready` re-encrypts the active EVM signer via `internal_encrypt`, which
+                // panics if `ENCRYPTION_KEY` isn't set yet. During a recovery-phrase restore this
+                // runs before the PIN is collected; the frontend's own `encryptAndSaveEvmKey` call
+                // right after PIN entry covers that case, so skip here and let the already-unlocked
+                // (PIN-entered) login path run it instead.
+                if crate::current_encryption_key().is_some() {
+                    let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                }
             } else if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
                 eprintln!("[Login] Failed to initialize profile database: {}", e);
             } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
