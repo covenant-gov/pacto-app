@@ -2810,12 +2810,18 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
     }
 }
 
+/// Approximate wire size of an event via its serialized JSON length.
+fn event_size(event: &Event) -> u64 {
+    event.as_json().len() as u64
+}
+
 /// Record that a relay delivered an event: increments `events_received` and adds the
 /// event's serialized size to `bytes_down`.
 fn record_event_received(relay_url: &str, event: &Event) {
+    let size = event_size(event);
     update_relay_metrics(relay_url, |m| {
         m.events_received += 1;
-        m.bytes_down += event.as_json().len() as u64;
+        m.bytes_down += size;
     });
 }
 
@@ -2829,7 +2835,7 @@ fn record_event_received(relay_url: &str, event: &Event) {
 /// `event_by_id` on a sent event's id always returns `None` — there is nothing to look
 /// up there for the size.
 pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
-    let size = event.as_json().len() as u64;
+    let size = event_size(event);
     for relay_url in &output.success {
         let url = relay_url.to_string();
         update_relay_metrics(&url, |m| {
@@ -2843,8 +2849,8 @@ pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
 }
 
 #[cfg(test)]
-mod record_send_outcome_tests {
-    use super::{get_relay_logs, get_relay_metrics, record_send_outcome};
+mod relay_metrics_tests {
+    use super::{get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome};
     use nostr_sdk::prelude::{EventBuilder, JsonUtil, Kind, Keys, Output, RelayUrl};
     use std::collections::{HashMap, HashSet};
 
@@ -2907,18 +2913,6 @@ mod record_send_outcome_tests {
         let metrics_b = get_relay_metrics(relay_b.to_string()).await.unwrap();
         assert_eq!(metrics_a.events_sent, 1);
         assert_eq!(metrics_b.events_sent, 1);
-    }
-}
-
-#[cfg(test)]
-mod record_event_received_tests {
-    use super::{get_relay_metrics, record_event_received};
-    use nostr_sdk::{EventBuilder, JsonUtil, Kind, Keys};
-
-    fn test_event(content: &str) -> nostr_sdk::Event {
-        EventBuilder::new(Kind::TextNote, content)
-            .sign_with_keys(&Keys::generate())
-            .unwrap()
     }
 
     #[tokio::test]

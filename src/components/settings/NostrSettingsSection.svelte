@@ -72,11 +72,15 @@
     }
     next.add(url);
     openUrls = next;
-    void loadDetail(url);
+    if (!detailByUrl[url]) void loadDetail(url);
   }
 
   async function loadDetail(url: string) {
-    detailByUrl = { ...detailByUrl, [url]: { loading: true, error: null, metrics: null, logs: [] } };
+    const previous = detailByUrl[url];
+    detailByUrl = {
+      ...detailByUrl,
+      [url]: { loading: true, error: null, metrics: previous?.metrics ?? null, logs: previous?.logs ?? [] },
+    };
     try {
       const [metrics, logs] = await Promise.all([getRelayMetrics(url), getRelayLogs(url)]);
       detailByUrl = { ...detailByUrl, [url]: { loading: false, error: null, metrics, logs } };

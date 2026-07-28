@@ -128,9 +128,11 @@ export interface RelayMetrics {
   events_sent: number;
 }
 
+export type RelayLogLevel = 'info' | 'warn' | 'error';
+
 export interface RelayLog {
   timestamp: number;
-  level: string;
+  level: RelayLogLevel;
   message: string;
 }
 
