@@ -118,3 +118,31 @@ export async function setRelayEnabled(relay: RelayInfo, enabled: boolean): Promi
   if (relay.is_default) return toggleDefaultRelay(relay.url, enabled);
   throw new Error('Unknown relay type');
 }
+
+export interface RelayMetrics {
+  ping_ms: number | null;
+  bytes_up: number;
+  bytes_down: number;
+  last_check: number | null;
+  events_received: number;
+  events_sent: number;
+}
+
+export interface RelayLog {
+  timestamp: number;
+  level: string;
+  message: string;
+}
+
+export async function getRelayMetrics(url: string): Promise<RelayMetrics> {
+  return invoke<RelayMetrics>('get_relay_metrics', { url });
+}
+
+export async function getRelayLogs(url: string): Promise<RelayLog[]> {
+  return invoke<RelayLog[]>('get_relay_logs', { url });
+}
+
+/** True once the health-check loop has recorded a ping or last-check time for this relay. */
+export function hasRelayHealthData(metrics: RelayMetrics): boolean {
+  return metrics.ping_ms !== null || metrics.last_check !== null;
+}

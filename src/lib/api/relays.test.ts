@@ -10,6 +10,10 @@ import {
   toggleCustomRelay,
   toggleDefaultRelay,
   setRelayEnabled,
+  getRelayMetrics,
+  getRelayLogs,
+  hasRelayHealthData,
+  type RelayMetrics,
 } from './relays';
 
 vi.mock('@tauri-apps/api/core');
@@ -142,6 +146,52 @@ describe('relay command wrappers', () => {
       enabled: false,
     });
     expect(result).toBe(true);
+  });
+
+  it('getRelayMetrics sends get_relay_metrics', async () => {
+    const metrics = {
+      ping_ms: 42,
+      bytes_up: 0,
+      bytes_down: 0,
+      last_check: 1700000000,
+      events_received: 0,
+      events_sent: 0,
+    };
+    mockedInvoke.mockResolvedValueOnce(metrics);
+    const result = await getRelayMetrics('wss://relay.example.com');
+    expect(mockedInvoke).toHaveBeenCalledWith('get_relay_metrics', { url: 'wss://relay.example.com' });
+    expect(result).toEqual(metrics);
+  });
+
+  it('getRelayLogs sends get_relay_logs', async () => {
+    const logs = [{ timestamp: 1700000000, level: 'info', message: 'Status changed to connected' }];
+    mockedInvoke.mockResolvedValueOnce(logs);
+    const result = await getRelayLogs('wss://relay.example.com');
+    expect(mockedInvoke).toHaveBeenCalledWith('get_relay_logs', { url: 'wss://relay.example.com' });
+    expect(result).toEqual(logs);
+  });
+});
+
+describe('hasRelayHealthData', () => {
+  const base: RelayMetrics = {
+    ping_ms: null,
+    bytes_up: 0,
+    bytes_down: 0,
+    last_check: null,
+    events_received: 0,
+    events_sent: 0,
+  };
+
+  it('returns false when never checked', () => {
+    expect(hasRelayHealthData(base)).toBe(false);
+  });
+
+  it('returns true when ping_ms is set', () => {
+    expect(hasRelayHealthData({ ...base, ping_ms: 42 })).toBe(true);
+  });
+
+  it('returns true when last_check is set', () => {
+    expect(hasRelayHealthData({ ...base, last_check: 1700000000 })).toBe(true);
   });
 });
 
