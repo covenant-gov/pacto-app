@@ -671,7 +671,7 @@ export async function leaveMlsGroup(groupId: string): Promise<void> {
 export async function syncMlsGroupsNow(groupId?: string | null): Promise<{ synced: number; total: number }> {
   dmLog('sync_mls_groups_now', { groupId: groupId ?? '(all)' });
   const [synced, total] = (await invoke('sync_mls_groups_now', {
-    group_id: groupId ?? null,
+    groupId: groupId ?? null,
   })) as [number, number];
   dmLog('sync_mls_groups_now result', { synced, total });
   return { synced, total };

@@ -482,7 +482,7 @@
       const inChannel = new Set(result.members ?? []);
       const myNpub = $currentUser?.npub;
       if (activeSquad && !hideChannelOverflowMenu) {
-        const ann = activeSquad.channels[0];
+        const ann = getAnnouncementsChannel(activeSquad);
         if (ann) {
           const annResult = await getMlsGroupMembers(ann.groupId);
           const squadNpubs = annResult.members ?? [];
