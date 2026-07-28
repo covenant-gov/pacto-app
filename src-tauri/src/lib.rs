@@ -2079,8 +2079,14 @@ async fn notifs() -> Result<bool, String> {
     // Begin watching for notifications from our subscriptions
     match client
         .handle_notifications(|notification| async {
-            if let RelayPoolNotification::Event { relay_url, event, subscription_id, .. } = notification {
-                record_event_received(&relay_url.to_string(), &event);
+            if let RelayPoolNotification::Message { relay_url, message: RelayMessage::Event { event, .. } } = &notification {
+                // `RelayPoolNotification::Event` below is deduplicated pool-wide (fires only the
+                // first time a given event is seen), which would undercount `events_received` for
+                // every relay that isn't first to deliver a given event. `Message` fires once per
+                // relay per delivery, so it's the correct source for per-relay receive counting.
+                record_event_received(&relay_url.to_string(), event);
+            }
+            if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
                 if subscription_id == gift_sub_id {
                     // Handle DMs/files/vector-specific + MLS welcomes inside giftwrap
                     handle_event(*event, true).await;
@@ -2793,6 +2799,12 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
 
     if let Ok(mut logs) = RELAY_LOGS.write() {
         let relay_logs = logs.entry(normalized).or_insert_with(VecDeque::new);
+        let is_repeat = relay_logs
+            .front()
+            .is_some_and(|last| last.level == log.level && last.message == log.message);
+        if is_repeat {
+            return;
+        }
         relay_logs.push_front(log);
         // Keep only last 10 logs
         while relay_logs.len() > 10 {
@@ -2825,15 +2837,10 @@ fn record_event_received(relay_url: &str, event: &Event) {
     });
 }
 
-/// Record the outcome of publishing an event: for every relay that accepted it, increments
-/// `events_sent` and adds the event's serialized size to `bytes_up`; for every relay that
-/// rejected it, logs the rejection reason via the existing relay-log surface. Called at
-/// each `send_event`/`send_event_to` call site with the `Output` those calls already
-/// return. Not hooked into the notification stream: this app's Nostr client runs its
-/// default in-memory database in ID-tracking-only mode (`MemoryDatabaseOptions::events`
-/// defaults to `false`, and `Client::builder()` never overrides it here), so
-/// `event_by_id` on a sent event's id always returns `None` — there is nothing to look
-/// up there for the size.
+/// Record the outcome of publishing an event: increments `events_sent`/`bytes_up` for each
+/// accepted relay, and logs the rejection reason for each relay that rejected it. Called at
+/// each `send_event`/`send_event_to` call site with the `Output` those calls already return —
+/// not hooked into the notification stream, since sent events aren't tracked in the local DB.
 pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
     let size = event_size(event);
     for relay_url in &output.success {
@@ -2954,6 +2961,24 @@ mod relay_metrics_tests {
         let metrics = get_relay_metrics(url.to_string()).await.unwrap();
         assert_eq!(metrics.events_received, 1);
         assert!(metrics.bytes_down > 0);
+    }
+
+    #[tokio::test]
+    async fn repeated_identical_send_failures_collapse_into_one_log_entry() {
+        let rejected = RelayUrl::parse("wss://test-send-outcome-repeated-failure.example").unwrap();
+        for i in 0..3 {
+            let event = test_event(&format!("retry {i}"));
+            let output = Output {
+                val: event.id,
+                success: HashSet::new(),
+                failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+            };
+            record_send_outcome(&event, &output);
+        }
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].message, "rate-limited");
     }
 }
 

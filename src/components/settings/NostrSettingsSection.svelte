@@ -90,8 +90,8 @@
         [url]: {
           loading: false,
           error: getInvokeErrorMessage(e, $t('settings.toast.couldNotLoadRelayDetail')),
-          metrics: null,
-          logs: [],
+          metrics: previous?.metrics ?? null,
+          logs: previous?.logs ?? [],
         },
       };
     }
@@ -342,56 +342,59 @@
               <div class="nostr-relay-detail" id="nostr-relay-detail-{relay.url}">
                 {#if detail?.loading && !detail.metrics}
                   <p class="nostr-settings-muted">{$t('settings.loadingRelays')}</p>
-                {:else if detail?.error}
-                  <p class="nostr-settings-error" role="alert">{detail.error}</p>
-                {:else if detail?.metrics}
+                {:else}
                   <div class="nostr-relay-detail-head">
-                    {#if detail.loading}
+                    {#if detail?.loading}
                       <span class="nostr-settings-muted">{$t('settings.loadingRelays')}</span>
                     {/if}
                     <RefreshIconButton
-                      spinning={detail.loading}
-                      disabled={detail.loading}
+                      spinning={detail?.loading ?? false}
+                      disabled={detail?.loading ?? false}
                       ariaLabel={$t('settings.refreshRelayDetail')}
                       on:click={() => loadDetail(relay.url)}
                     />
                   </div>
-                  {#if hasRelayHealthData(detail.metrics)}
+                  {#if detail?.error}
+                    <p class="nostr-settings-error" role="alert">{detail.error}</p>
+                  {/if}
+                  {#if detail?.metrics}
+                    {#if hasRelayHealthData(detail.metrics)}
+                      <dl class="nostr-relay-detail-stats">
+                        <div>
+                          <dt>{$t('settings.relayPingLabel')}</dt>
+                          <dd>{detail.metrics.ping_ms !== null ? `${detail.metrics.ping_ms} ms` : '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>{$t('settings.relayLastCheckedLabel')}</dt>
+                          <dd>{detail.metrics.last_check !== null ? unixToTimestamp(detail.metrics.last_check) : '—'}</dd>
+                        </div>
+                      </dl>
+                    {:else}
+                      <p class="nostr-settings-muted">{$t('settings.relayNotYetChecked')}</p>
+                    {/if}
                     <dl class="nostr-relay-detail-stats">
                       <div>
-                        <dt>{$t('settings.relayPingLabel')}</dt>
-                        <dd>{detail.metrics.ping_ms !== null ? `${detail.metrics.ping_ms} ms` : '—'}</dd>
+                        <dt>{$t('settings.relayApproxBytesLabel')}</dt>
+                        <dd>{formatFileSize(detail.metrics.bytes_up)} ↑ / {formatFileSize(detail.metrics.bytes_down)} ↓</dd>
                       </div>
                       <div>
-                        <dt>{$t('settings.relayLastCheckedLabel')}</dt>
-                        <dd>{detail.metrics.last_check !== null ? unixToTimestamp(detail.metrics.last_check) : '—'}</dd>
+                        <dt>{$t('settings.relayApproxEventsLabel')}</dt>
+                        <dd>{detail.metrics.events_sent} ↑ / {detail.metrics.events_received} ↓</dd>
                       </div>
                     </dl>
-                  {:else}
-                    <p class="nostr-settings-muted">{$t('settings.relayNotYetChecked')}</p>
-                  {/if}
-                  <dl class="nostr-relay-detail-stats">
-                    <div>
-                      <dt>{$t('settings.relayApproxBytesLabel')}</dt>
-                      <dd>{formatFileSize(detail.metrics.bytes_up)} ↑ / {formatFileSize(detail.metrics.bytes_down)} ↓</dd>
-                    </div>
-                    <div>
-                      <dt>{$t('settings.relayApproxEventsLabel')}</dt>
-                      <dd>{detail.metrics.events_sent} ↑ / {detail.metrics.events_received} ↓</dd>
-                    </div>
-                  </dl>
-                  {#if detail.logs.length > 0}
-                    <div class="nostr-relay-detail-logs">
-                      <h4 class="nostr-relay-detail-logs-title">{$t('settings.relayRecentActivityLabel')}</h4>
-                      <ul class="nostr-relay-detail-log-list">
-                        {#each detail.logs as log (log.timestamp + log.message)}
-                          <li class="nostr-relay-detail-log-entry nostr-relay-detail-log-entry--{log.level}">
-                            <span class="nostr-relay-detail-log-time">{unixToTimestamp(log.timestamp)}</span>
-                            <span class="nostr-relay-detail-log-message">{log.message}</span>
-                          </li>
-                        {/each}
-                      </ul>
-                    </div>
+                    {#if detail.logs.length > 0}
+                      <div class="nostr-relay-detail-logs">
+                        <h4 class="nostr-relay-detail-logs-title">{$t('settings.relayRecentActivityLabel')}</h4>
+                        <ul class="nostr-relay-detail-log-list">
+                          {#each detail.logs as log (log.timestamp + log.message)}
+                            <li class="nostr-relay-detail-log-entry nostr-relay-detail-log-entry--{log.level}">
+                              <span class="nostr-relay-detail-log-time">{unixToTimestamp(log.timestamp)}</span>
+                              <span class="nostr-relay-detail-log-message">{log.message}</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
                   {/if}
                 {/if}
               </div>
