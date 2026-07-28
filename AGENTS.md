@@ -126,6 +126,7 @@ cd src-tauri && cargo test
 
 ### Frontend
 - **Svelte style:** Svelte 5 is installed and the codebase is migrating to runes. **Author every new `.svelte` file in runes mode**, and convert a file to runes when you rewrite it substantially. Do not write new legacy-syntax components.
+  - **Reference:** `docs/svelte5-reference.md` is the quick lookup for runes, events, snippets, TypeScript patterns, and recent additions (5.56.x). Consult it when writing or reviewing Svelte code.
   - **Runes mode is all-or-nothing per file.** `export let` beside `$props()` is a compile error (`legacy_export_invalid`), so a file converts whole or not at all. Never half-convert.
   - **Use:** `$props()` for props, `$state` for local mutable state, `$derived` for computed values, `$effect` only for genuine side effects, `$bindable()` on props a parent two-way binds, event attributes (`onclick`), and snippets with `{@render children()}`.
   - **Do not use in new files:** `export let`, `$:`, `on:` directives, `<slot>`, `createEventDispatcher`.
@@ -159,6 +160,7 @@ cd src-tauri && cargo test
 
 | File | Purpose |
 |------|---------|
+| `docs/svelte5-reference.md` | Quick reference for Svelte 5 runes, patterns, and migration notes. |
 | `package.json` | Frontend scripts and dependencies (Tauri API/plugins, viem, SvelteKit, Vitest, Vite). |
 | `CONCEPTS.md` | Shared domain vocabulary (npub, MLS, Squad, governance terms) for humans and agents. |
 | `pnpm-workspace.yaml` | pnpm workspace definition (single-root, build allowances only). |
@@ -250,21 +252,22 @@ Use the MCP tools for verification if **all** of the following are true:
 
 - The change touches `src/components/`, `src/routes/`, `src/app.css`, or any frontend-visible code.
 - The Tauri MCP server is configured in your client (`xd://mcp__tauri_*` tools are available).
-- You can run the app in debug mode (`make dev`).
+- You can run the app in debug mode (`make dev-sandbox`).
 
 If the MCP tools are not available in your session, fall back to the existing test suite (`pnpm test`, `pnpm check`) and note the limitation in your handoff.
 
 ### Verification workflow
 
-1. **Start the app** in debug mode: `make dev`.
+1. **Start the app** in an isolated sandbox: `make dev-sandbox`. Never verify against a plain `make dev` / `pnpm tauri dev` — that data directory tends to carry a real dev account whose PIN nobody remembers, which silently blocks every step after it.
 2. **Start a driver session**: `xd://mcp__tauri_driver_session` with `{ "action": "start" }`.
-3. **Navigate to the affected screen(s)** using `xd://mcp__tauri_webview_interact` (click, scroll) or `xd://mcp__tauri_webview_execute_js` if text selectors are ambiguous.
-4. **Capture evidence**:
+3. **Authenticate** — no account exists in a fresh sandbox. Snapshot the DOM, click "Create Account", then snapshot again for the six PIN-digit input refs and send **one `xd://mcp__tauri_webview_keyboard` `type` call per digit** (each box has `maxlength="1"`; a single call with the whole string only fills the first digit). Use PIN `123456` (the project's throwaway dev PIN, also used by `e2e/login.spec.ts`). Snapshot again for the "Confirm your PIN" screen's fresh refs and repeat. Account creation runs a real Argon2id derivation plus a live MLS relay publish — poll with `webview_dom_snapshot` for 20–30 seconds before the navbar appears; don't assume failure early. (`test_login_fixture` exists for the automated `pnpm test:e2e:tauri` harness but only sets backend state — it never updates the visible UI, so it is not useful here. See `docs/TAURI_MCP_INTEGRATION.md` Step 6 for detail.)
+4. **Navigate to the affected screen(s)** using `xd://mcp__tauri_webview_interact` (click, scroll) or `xd://mcp__tauri_webview_execute_js` if text selectors are ambiguous.
+5. **Capture evidence**:
    - `xd://mcp__tauri_webview_screenshot` — save the viewport image.
    - `xd://mcp__tauri_webview_dom_snapshot` with `"type": "accessibility"` — capture the semantic UI tree.
-5. **Exercise the interaction** that changed: click the new button, open the modal, send a test message, etc.
-6. **Capture a final screenshot** showing the result.
-7. **Stop the driver session** when done: `xd://mcp__tauri_driver_session` with `{ "action": "stop" }`.
+6. **Exercise the interaction** that changed: click the new button, open the modal, send a test message, etc.
+7. **Capture a final screenshot** showing the result.
+8. **Stop the driver session** when done: `xd://mcp__tauri_driver_session` with `{ "action": "stop" }`.
 
 ### What to include in your handoff
 
@@ -278,6 +281,28 @@ If the MCP tools are not available in your session, fall back to the existing te
 - The MCP bridge is **debug-only and desktop-only**; it does not run in production, mobile, or CI release builds. Do not rely on it for release validation.
 - Do not send disruptive messages in live production channels. Use low-traffic test channels (e.g., `#pacto-app` in the `t14` squad) for message typing tests.
 - The bridge is a verification aid, not a replacement for accessibility review, security review, or product sign-off.
+
+## Beads Dependency Direction
+
+`bd` offers two ways to wire a blocking dependency and **they point opposite ways**. Getting it backwards produces an inverted graph that `bd ready` then reports confidently and wrongly — it offers leaf tasks as startable while the real prerequisite sits blocked behind them. This has bitten this repo more than once.
+
+| Form | Meaning |
+|---|---|
+| `bd dep add A B` | A depends on B |
+| `bd create X --deps <id>` | X depends on `<id>` |
+| `bd create X --deps blocks:<id>` | X **blocks** `<id>` — the inverse |
+
+- Prefer a bare id (`--deps <blocker-id>`) or wire after creation with `bd dep add <blocked> <blocker>`. Both read "depends on".
+- Avoid `blocks:` inside `--deps`. The beads skill's own example uses that form, which is where the inversion usually originates.
+- When correcting edges in bulk, remove **every** wrong edge before adding any correct one. Interleaving remove/add per edge trips a spurious `would create a cycle` error, because the not-yet-removed inverted edges still close a loop.
+
+**Always verify after wiring — this is the part that actually catches it:**
+
+```bash
+bd ready
+```
+
+The task you intend to start first must be the only ready item in that group. If leaf or late-phase tasks show up instead, the graph is inverted. `bd dep tree <id>` and `bd dep cycles` confirm the shape.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker

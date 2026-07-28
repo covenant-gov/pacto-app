@@ -128,17 +128,17 @@ Use an absolute path here because many editors run the MCP server from a differe
 - Do not use `pnpm exec` unless your MCP client has a very long startup timeout.
 - Do not point to the binary wrapper (`node_modules/.bin/mcp-server-tauri`); use the `dist/index.js` entry point directly.
 
-## Step 4: Start the app in debug mode
+## Step 4: Start the app in a sandbox
 
-The MCP bridge only exists in debug builds, so run the desktop app in dev mode:
+The MCP bridge only exists in debug builds, so run the desktop app in dev mode — but **never** point it at the default dev data directory with a plain `make dev` / `pnpm tauri dev`. That directory tends to carry a real account from prior manual testing, and if nobody remembers its PIN the app just sits on the login screen forever, blocking every step after it.
+
+Use the sandbox target instead, which redirects `app_data_dir`/`app_local_data_dir` to a throwaway `test_sandbox/manual-<timestamp>/` directory and sets `PACTO_ALLOW_TEST_AUTH=1`:
 
 ```bash
-make dev
-# or
-pnpm tauri dev
+make dev-sandbox
 ```
 
-Wait for the app window to appear and the frontend to load.
+Wait for the app window to appear and the frontend to load. Delete the leftover directory afterward with `make clean` (or just leave it — every run gets a fresh timestamped dir).
 
 ## Step 5: Connect from the agent
 
@@ -154,9 +154,24 @@ Example tool call (from the agent):
 
 If the session starts successfully, the agent will report the connected app. If it fails with "no Tauri app found at localhost:9223", the app is either not running or not built in debug mode.
 
-## Step 6: Verify the integration
+## Step 6: Get into an authenticated state
 
-A quick smoke test sequence:
+A fresh sandbox always lands on the welcome screen — there is no account yet. Create one through the real UI flow:
+
+1. Snapshot the DOM (`webview_dom_snapshot`), then click the button matching text `Create Account`.
+2. Snapshot again to get the six PIN-digit input refs under the "Create your PIN" heading. **Type one digit per input, in six separate `webview_keyboard` `type` calls** — each digit box has `maxlength="1"`, so a single call with `"text": "123456"` only fills the first box and silently drops the rest. Use PIN `123456` (the project's throwaway dev PIN, also used by `e2e/login.spec.ts`).
+3. Snapshot again — a fresh "Confirm your PIN" screen renders with new input refs. Repeat step 2's six single-digit calls against the new refs.
+4. Account creation runs for real: Argon2id key derivation plus a live MLS keypackage publish to a Nostr relay. Expect a "Processing…" status for **20–30 seconds** before the main navbar (Commons/DMs/Squads/Catch up tabs) appears — poll with `webview_dom_snapshot` rather than assuming failure early.
+
+### The `test_login_fixture` command does not update the UI
+
+`test_login_fixture` (debug-only, gated by `PACTO_ALLOW_TEST_AUTH=1`, already set by `make dev-sandbox`) creates a fresh account and returns its `npub` almost instantly — but it only writes backend state. It never emits an event or triggers a reload, so the still-mounted `Login.svelte` component keeps showing the welcome screen; a manual `location.reload()` afterward does not help either, since the fixture never persists a normal PIN-encrypted key for `checkAuthStatus()` to find. It is only useful for backend/IPC-level assertions (the pattern the `pnpm test:e2e:tauri` harness uses), never for driving the authenticated UI.
+
+It also cannot be called through `ipc_execute_command` — that tool only forwards to the bridge plugin's own built-ins (`get_window_info`, `get_backend_state`, etc.) and returns `Unsupported Tauri command` for any app command, verified against both `test_login_fixture` and ordinary commands like `get_relays`. `e2e-tauri/message-send.spec.mjs` documents this and works around it by calling `window.__TAURI__.core.invoke(...)` directly through `webview_execute_js`, polling a window-scoped slot since a single `execute_js` call is capped around 5 seconds. Reuse that `invokeTauri` helper if you need fixture auth for a backend-only assertion.
+
+## Step 7: Verify the integration
+
+A quick smoke test sequence (run after Step 6, once an account exists — an unauthenticated sandbox has no chat to type into):
 
 1. **Start a driver session** → `driver_session` with `"action": "start"`.
 2. **Take a screenshot** → `webview_screenshot`.
@@ -171,10 +186,13 @@ If the DOM updates, the screenshot reflects the change, and the typed text appea
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Transport closed` on startup | `pnpm exec` is too slow, or `type` is not `stdio` | Use `node ./node_modules/@hypothesi/tauri-mcp-server/dist/index.js` directly and set `type` to `stdio` |
-| `no Tauri app found at localhost:9223` | App is not running, or not built in debug mode | Run `make dev` and wait for the window |
+| `no Tauri app found at localhost:9223` | App is not running, or not built in debug mode | Run `make dev-sandbox` and wait for the window |
+| App stuck on the login screen; PIN unknown | Connected to the default dev data directory, which carries a real account from prior manual testing | Stop it and restart with `make dev-sandbox`, which always starts from an empty account |
 | `Element not found` when clicking | Text selector matches multiple elements or ref is stale | Use a more specific CSS selector or `webview_execute_js` |
 | Tools do not appear in agent | MCP server config is in the wrong file for your client | Check `.mcp.json` for OMP, `~/.claude/mcp.json` for Claude Code, `~/.cursor/mcp.json` for Cursor |
 | Plugin not found in production | The bridge is intentionally `debug_assertions` only | Only use MCP against dev/debug builds |
+| `webview_keyboard type` fills only the first PIN digit | Each digit box has `maxlength="1"`; a multi-character `text` value gets truncated | Send one `type` call per digit, targeting that digit's own ref |
+| `ipc_execute_command` returns `Unsupported Tauri command: <name>` | The tool only proxies the bridge plugin's own built-ins, not app commands | Call `window.__TAURI__.core.invoke(...)` via `webview_execute_js` instead (see Step 6's fixture note) |
 
 ## Multi-client notes
 

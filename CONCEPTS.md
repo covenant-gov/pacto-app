@@ -82,6 +82,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 
 ## See also
 
+- `docs/svelte5-reference.md` — Svelte 5 runes and frontend patterns used in Pacto components
 - `docs/README.md` — authoritative docs index
 - `STRATEGY.md` — why these concepts matter and what the product is trying to achieve
 - `docs/ARCHITECTURE.md` — how the concepts connect in code

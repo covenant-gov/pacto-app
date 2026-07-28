@@ -59,6 +59,28 @@ bd create "Short title" --description="Why this exists and what needs to be done
 bd close <id> --reason="Completed"
 ```
 
+## Wiring Dependencies
+
+Two forms, **opposite directions**. Inverting them builds a graph that `bd ready` then reports confidently and wrongly.
+
+| Form | Meaning |
+|---|---|
+| `bd dep add A B` | A depends on B |
+| `bd create X --deps <id>` | X depends on `<id>` |
+| `bd create X --deps blocks:<id>` | X **blocks** `<id>` — inverse |
+
+Use a bare id, or wire after creation with `bd dep add <blocked> <blocker>`. Both read "depends on". Avoid `blocks:` inside `--deps`.
+
+Correcting a graph in bulk: remove **every** wrong edge before adding any correct one. Interleaving remove/add per edge trips a spurious `would create a cycle` error, because the inverted edges still in place close the loop.
+
+Verify every time — this is what actually catches an inversion:
+
+```bash
+bd ready
+```
+
+The task intended to start first must be the only ready item in that group.
+
 ## What Belongs In Beads
 
 Use Beads for:
@@ -78,3 +100,4 @@ Use agent-local planning tools only for the current turn's execution checklist. 
 - Prefer `--json` when parsing `bd` output programmatically.
 - If hooks are installed, `bd prime` may already be injected. Run it manually when context is missing.
 - Do not auto-close or mutate tasks unless the work is actually complete.
+- After wiring dependencies, confirm with `bd ready` that the intended first task is the only ready one. An inverted graph fails silently.
