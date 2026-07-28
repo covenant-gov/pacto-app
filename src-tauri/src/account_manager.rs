@@ -74,12 +74,21 @@ pub fn get_mls_directory<R: Runtime>(
     Ok(mls_dir)
 }
 
-/// List all existing accounts by scanning directories
+/// List all existing accounts by scanning directories, most-recently-used first
 ///
-/// Returns: Vec of full npubs that have valid pkeys (not just directories)
-/// Also cleans up invalid account directories without pkeys, skipping the
-/// current and pending account so a directory mid-creation (pkey not
-/// written yet) is never deleted out from under it.
+/// Returns: Vec of full npubs that have valid pkeys (not just directories),
+/// ordered by each account's database mtime (most recent first) so callers
+/// that auto-select `accounts[0]` (see `auto_select_account`) deterministically
+/// reopen the last-used account instead of an arbitrary one from OS
+/// directory-enumeration order.
+///
+/// Also cleans up invalid account directories without pkeys. The current and
+/// pending account are never deleted by this cleanup (a directory mid-creation
+/// has no pkey yet), but -- unlike cleanup -- they are still validated and
+/// included in the returned list like any other account; otherwise the very
+/// act of auto-selecting an account at startup makes `list_accounts` (and by
+/// extension `has_any_account`/`check_any_account_exists`) blind to it on the
+/// next call, which the frontend reads as "no account exists".
 pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
     let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
@@ -87,7 +96,7 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
     let current = get_current_account().ok();
     let pending = get_pending_account().ok().flatten();
 
-    let mut accounts = Vec::new();
+    let mut accounts: Vec<(String, std::time::SystemTime)> = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(app_data) {
         for entry in entries.flatten() {
@@ -95,15 +104,20 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                 if let Some(name) = entry.file_name().to_str() {
                     // Check if it looks like an npub directory
                     if name.starts_with("npub1") {
-                        if is_in_flight_account(name, current.as_deref(), pending.as_deref()) {
-                            continue;
-                        }
-                        // Validate that this account has a valid pkey in its database
-                        if let Ok(has_pkey) = account_has_valid_pkey(handle, name) {
-                            if has_pkey {
-                                accounts.push(name.to_string());
-                            } else {
-                                // Clean up invalid account directory
+                        let in_flight =
+                            is_in_flight_account(name, current.as_deref(), pending.as_deref());
+                        match account_has_valid_pkey(handle, name) {
+                            Ok(true) => {
+                                let last_used = get_database_path(handle, name)
+                                    .ok()
+                                    .and_then(|p| std::fs::metadata(p).ok())
+                                    .and_then(|m| m.modified().ok())
+                                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                                accounts.push((name.to_string(), last_used));
+                            }
+                            Ok(false) if !in_flight => {
+                                // Clean up invalid account directory. In-flight
+                                // (current/pending) accounts are protected above.
                                 let invalid_dir = entry.path();
                                 if let Err(e) = std::fs::remove_dir_all(&invalid_dir) {
                                     eprintln!("[Account Manager] Failed to remove invalid account directory {}: {}", invalid_dir.display(), e);
@@ -111,6 +125,10 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                                     println!("[Account Manager] Cleaned up invalid account directory: {}", invalid_dir.display());
                                 }
                             }
+                            // `Ok(false)` while in-flight, or `Err(_)` (locked
+                            // database / transient I/O failure): leave the
+                            // directory alone rather than guess.
+                            _ => {}
                         }
                     }
                 }
@@ -118,7 +136,9 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
         }
     }
 
-    Ok(accounts)
+    accounts.sort_by_key(|(_, last_used)| std::cmp::Reverse(*last_used));
+
+    Ok(accounts.into_iter().map(|(npub, _)| npub).collect())
 }
 
 /// Whether `name` is the current or pending account and must be skipped by the
