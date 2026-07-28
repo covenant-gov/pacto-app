@@ -760,7 +760,10 @@
   }
 
   .nostr-relay-detail {
-    width: 100%;
+    /* No explicit width: this app has no global box-sizing:border-box reset,
+       so `width: 100%` (content-box) would add padding/border on top of the
+       container's full width and overflow past `.nostr-relay-row` above it.
+       `width: auto` (the block default) self-adjusts to match exactly. */
     margin-top: 4px;
     padding: 12px 16px;
     border: 1px solid var(--border-subtle);
