@@ -40,7 +40,6 @@
 
   export let msg: DmMessage;
   export let npub: string;
-  export let isPactoAppThread: boolean;
   export let contactDisplayName: string;
   export let fulfilledWalletRequestIds: ReadonlySet<string>;
   export let acceptingSquadInviteId: string | null = null;
@@ -71,7 +70,7 @@
     ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles)
     : { inviterName: '', inviterAvatarSrc: null };
   $: openInviter =
-    isPactoAppThread && !msg.mine && inviterNpubForCard && onOpenInviterChat
+    !msg.mine && inviterNpubForCard && inviterNpubForCard !== npub && onOpenInviterChat
       ? () => onOpenInviterChat!(inviterNpubForCard!)
       : undefined;
 

@@ -44,8 +44,6 @@ const mocks = vi.hoisted(() => {
   };
 
   const mockFunctions = {
-    appendPactoAppInboxMessage: vi.fn(),
-    reconcilePeerThreadInvites: vi.fn(),
     bumpMembershipVersion: vi.fn(),
     handleMlsWelcomeAccepted: vi.fn(),
     handleChannelAddedToSquad: vi.fn(),
@@ -57,8 +55,6 @@ const mocks = vi.hoisted(() => {
     syncMlsGroupsNow: vi.fn(),
     parseAnnouncement: vi.fn(),
     parseWalletTxAnnouncement: vi.fn(),
-    isPactoAppRoutableInviteContent: vi.fn(),
-    resolveInviteInviterNpub: vi.fn(),
     mergeUnreadCounts: vi.fn(),
     dmLog: vi.fn(),
     dmError: vi.fn(),
@@ -110,13 +106,6 @@ vi.mock('../wallet/dm-messages', () => ({
   },
 }));
 
-vi.mock('../pacto-app-inbox', () => ({
-  isPactoAppRoutableInviteContent: (...args: unknown[]) =>
-    mocks.mockFunctions.isPactoAppRoutableInviteContent(...args),
-  resolveInviteInviterNpub: (...args: unknown[]) =>
-    mocks.mockFunctions.resolveInviteInviterNpub(...args),
-}));
-
 vi.mock('../invites/accept-invite', () => ({
   handleChannelAddedToSquad: (...args: unknown[]) =>
     mocks.mockFunctions.handleChannelAddedToSquad(...args),
@@ -147,10 +136,6 @@ vi.mock('../../stores/app', () => ({
   backendDmMessages: mocks.mockStores.backendDmMessages,
   backendGroupMessages: mocks.mockStores.backendGroupMessages,
   dmChatsByNpub: mocks.mockStores.dmChatsByNpub,
-  appendPactoAppInboxMessage: (...args: unknown[]) =>
-    mocks.mockFunctions.appendPactoAppInboxMessage(...args),
-  reconcilePeerThreadInvites: (...args: unknown[]) =>
-    mocks.mockFunctions.reconcilePeerThreadInvites(...args),
   dmSyncStatus: mocks.mockStores.dmSyncStatus,
   typingByChat: mocks.mockStores.typingByChat,
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
@@ -201,11 +186,12 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
     mocks.mockStores.dashboardPollReplicaNonceByParentId.set({});
-    mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(false);
+    mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue(null);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
     mocks.mockFunctions.fetchMessages.mockResolvedValue(undefined);
+    mocks.mockFunctions.syncMlsGroupsNow.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -264,24 +250,19 @@ describe('subscribeAppEvents', () => {
       expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
     });
 
-    it('appends pacto inbox message for routable invite content from others', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
-      mocks.mockFunctions.resolveInviteInviterNpub.mockReturnValue('npub1inviter');
+    it('syncs MLS groups eagerly for an incoming squad invite DM', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
-      const message = dmMessage({ mine: false });
-      emit('message_new', { chat_id: 'npub1chat', message });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'msg1' }),
-        'npub1inviter'
-      );
-      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
+      expect(mocks.mockFunctions.syncMlsGroupsNow).toHaveBeenCalledWith('g1');
+      expect(mocks.mockStores.backendDmMessages.get()['npub1chat']).toHaveLength(1);
     });
 
-    it('does not append inbox message for own routable invite', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
+    it('does not sync MLS groups for an own outgoing squad invite DM', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).not.toHaveBeenCalled();
+      expect(mocks.mockFunctions.syncMlsGroupsNow).not.toHaveBeenCalled();
     });
 
     it('adds message to backendDmMessages for normal DM content', () => {
@@ -339,17 +320,16 @@ describe('subscribeAppEvents', () => {
       expect(list[0].id).toBe('new1');
     });
 
-    it('handles routable invite update in DM chat', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
-      mocks.mockFunctions.resolveInviteInviterNpub.mockReturnValue('npub1inviter');
+    it('syncs MLS groups eagerly for an incoming squad invite DM update', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_update', {
         chat_id: 'npub1chat',
         old_id: 'old1',
         message: dmMessage({ mine: false }),
       });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).toHaveBeenCalled();
-      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      expect(mocks.mockFunctions.syncMlsGroupsNow).toHaveBeenCalledWith('g1');
+      expect(mocks.mockStores.backendDmMessages.get()['npub1chat']).toHaveLength(1);
     });
 
     it('updates group messages for non-npub1 chat', () => {
@@ -404,11 +384,10 @@ describe('subscribeAppEvents', () => {
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('finished');
     });
 
-    it('sync_finished reconciles invites and returns to idle after timeout', () => {
+    it('sync_finished returns to idle after timeout', () => {
       vi.useFakeTimers();
       unsubscribe = subscribeAppEvents(handlers);
       emit('sync_finished', {});
-      expect(mocks.mockFunctions.reconcilePeerThreadInvites).toHaveBeenCalled();
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('finished');
       vi.advanceTimersByTime(2500);
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('idle');

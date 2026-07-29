@@ -14,13 +14,15 @@
     lastHubChannelNameBySquadId,
     MY_DASHBOARD_CHANNEL_ID,
     SQUAD_DASHBOARD_CHANNEL_ID,
+    catchUpCount,
     type TopNavTab,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
+  import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
 
   const VIRTUAL_HUB_IDS = new Set([SQUAD_DASHBOARD_CHANNEL_ID, MY_DASHBOARD_CHANNEL_ID]);
 
-  const tabs: TopNavTab[] = ['commons', 'dms', 'squads'];
+  const tabs: TopNavTab[] = ['commons', 'dms', 'squads', 'catchup'];
 
   const DEBUG = false;
   function selectTab(id: TopNavTab) {
@@ -66,9 +68,14 @@
         class:active={$activeTopNavTab === tab}
         on:click={() => selectTab(tab)}
         aria-selected={$activeTopNavTab === tab}
-        aria-label={$t(`nav.topNavbar.tabs.${tab}`)}
+        aria-label={tab === 'catchup' && $catchUpCount > 0
+          ? `${$t(`nav.topNavbar.tabs.${tab}`)} (${$catchUpCount})`
+          : $t(`nav.topNavbar.tabs.${tab}`)}
       >
         {$t(`nav.topNavbar.tabs.${tab}`)}
+        {#if tab === 'catchup' && $catchUpCount > 0}
+          <span class="mode-segment-badge">{formatUnreadBadgeCount($catchUpCount)}</span>
+        {/if}
       </button>
     {/each}
   </div>
@@ -133,5 +140,21 @@
     color: var(--text-primary);
     background: var(--bg-elevated);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .mode-segment-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    vertical-align: middle;
   }
 </style>

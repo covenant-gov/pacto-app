@@ -7,6 +7,7 @@ import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
 import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
 import { hydrateUnreadCounts } from './unread';
+import { hydrateCatchUpCount } from './catch-up';
 import { currentUser } from './auth';
 
 type InitFinishedPayload = {
@@ -53,6 +54,10 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       // Backend-owned per-chat unread map (R14): hydrate once chats are known to
       // exist, independent of whether this payload happens to include a chats array.
       hydrateUnreadCounts().catch((e) => console.error('hydrateUnreadCounts failed:', e));
+
+      // Catch up tab badge count (R14, same authority): lightweight hydrate
+      // now, full entry list loads lazily when Catch up is opened.
+      hydrateCatchUpCount().catch((e) => console.error('hydrateCatchUpCount failed:', e));
 
       if (payload.profiles) {
         const profilesMap: Record<string, NostrProfile> = {};

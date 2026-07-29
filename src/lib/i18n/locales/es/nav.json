@@ -5,6 +5,7 @@
 	"nav.topNavbar.tabs.commons": "Comunes",
 	"nav.topNavbar.tabs.dms": "Mensajes directos",
 	"nav.topNavbar.tabs.squads": "Escuadrones",
+	"nav.topNavbar.tabs.catchup": "Novedades",
 	"nav.navbar.dmTabs.pinned": "Fijados",
 	"nav.navbar.dmTabs.friends": "Amigos",
 	"nav.navbar.dmTabs.requests": "Solicitudes",

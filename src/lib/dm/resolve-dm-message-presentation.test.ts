@@ -8,7 +8,6 @@ import {
   buildPlainMessageProps,
 } from './resolve-dm-message-presentation';
 import type { DmMessage } from '../../stores/dm';
-import type { PactoAppInboxEntry } from '../pacto-app-inbox';
 import type { NostrProfile } from '../api/nostr';
 
 const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -78,7 +77,7 @@ const WALLET_TX_ANNOUNCEMENT = JSON.stringify({
   from_evm_address: EVM_A,
 });
 
-function msg(overrides: Partial<PactoAppInboxEntry> = {}): DmMessage {
+function msg(overrides: Partial<DmMessage> = {}): DmMessage {
   return {
     id: 'm1',
     content: 'hello',
@@ -232,17 +231,7 @@ describe('isInvitePresentation', () => {
 });
 
 describe('inviteInviterNpub', () => {
-  it('reads inviterNpub from Pacto App inbox entries', () => {
-    const entry = msg({ inviterNpub: `  ${NPUB_A}  ` });
-    expect(inviteInviterNpub(entry, '__pacto_app__')).toBe(NPUB_A);
-  });
-
-  it('falls back to content inviter for Pacto App entries without inviterNpub', () => {
-    const entry = msg({ content: SQUAD_INVITE });
-    expect(inviteInviterNpub(entry, '__pacto_app__')).toBe(NPUB_A);
-  });
-
-  it('resolves peer npub for non-app threads', () => {
+  it('resolves peer npub from the DM sender', () => {
     const message = msg({ npub: NPUB_B, content: 'hi' });
     expect(inviteInviterNpub(message, NPUB_B)).toBe(NPUB_B);
   });

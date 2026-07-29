@@ -33,7 +33,6 @@ import {
   composingNewChat,
   activeDmTab,
   dmSendError,
-  pactoAppInboxMessages,
   dmThreadAnnouncementsByNpub,
   type DmChatState,
   type DmMessage,
@@ -50,7 +49,7 @@ import {
 } from '../../stores/invite-decisions';
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
-import { pactoAppInboxLastReadId, unreadCountsByChat } from '../../stores/unread';
+import { unreadCountsByChat } from '../../stores/unread';
 import { requestLinkPreview } from '../messaging/link-preview';
 
 describe('clearAccountState', () => {
@@ -99,10 +98,8 @@ describe('clearAccountState', () => {
     walletSidebarOpen.set(false);
     composingNewChat.set(false);
     dmSendError.set(null);
-    pactoAppInboxMessages.set([]);
     dmThreadAnnouncementsByNpub.set({});
     unreadCountsByChat.set({});
-    pactoAppInboxLastReadId.set('');
     recentEmojisStore.set([]);
   });
 
@@ -168,9 +165,6 @@ describe('clearAccountState', () => {
     activeDmTab.set('requests');
     composingNewChat.set(true);
     dmSendError.set('boom');
-    pactoAppInboxMessages.set([
-      { id: '1', content: 'hi', at: 1, mine: false, inviterNpub: 'npub1' },
-    ]);
     dmThreadAnnouncementsByNpub.set({ npub1: [] });
 
     clearAccountState('npub1abcdef');
@@ -182,7 +176,6 @@ describe('clearAccountState', () => {
     expect(get(activeDmTab)).toBe('friends');
     expect(get(composingNewChat)).toBe(false);
     expect(get(dmSendError)).toBeNull();
-    expect(get(pactoAppInboxMessages)).toEqual([]);
     expect(get(dmThreadAnnouncementsByNpub)).toEqual({});
   });
 
@@ -210,12 +203,10 @@ describe('clearAccountState', () => {
 
   it('resets unread state stores', () => {
     unreadCountsByChat.set({ npub1: 1 });
-    pactoAppInboxLastReadId.set('last-read');
 
     clearAccountState('npub1abcdef');
 
     expect(get(unreadCountsByChat)).toEqual({});
-    expect(get(pactoAppInboxLastReadId)).toBe('');
   });
 
   it('resets squads and recent emoji stores', () => {

@@ -19,6 +19,7 @@ export * from './persistence';
 export * from './navigation';
 export * from './dm';
 export * from './unread';
+export * from './catch-up';
 export * from './squads';
 export * from './mls-chat';
 export * from './mls-history-welcome';

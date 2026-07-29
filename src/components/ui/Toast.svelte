@@ -1,38 +1,15 @@
 <script lang="ts">
   import { toastMessage, clearToast, runToastRetryAction, type ToastGoTo } from '../../stores/toast';
-  import {
-    squads,
-    activeTopNavTab,
-    activeSquadId,
-    activeChannelId,
-    activeHubChannelName,
-    activeView,
-    lastOpenedSquadId,
-    lastOpenedChannelId,
-    lastChannelBySquadId,
-    lastHubChannelNameBySquadId,
-    SQUAD_DASHBOARD_CHANNEL_ID,
-    MY_DASHBOARD_CHANNEL_ID,
-  } from '../../stores/app';
-  import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
+  import { navigateToTarget } from '../../lib/navigation/open-squad-dashboard';
   import { t } from 'svelte-i18n';
 
   function goToSpace(goTo: ToastGoTo) {
-    activeTopNavTab.set('squads');
-    activeSquadId.set(goTo.id);
-    activeChannelId.set(goTo.channelId);
-    activeView.set('hub');
-    lastOpenedSquadId.set(goTo.id);
-    lastOpenedChannelId.set(goTo.channelId);
-    lastChannelBySquadId.update((m) => ({ ...m, [goTo.id]: goTo.channelId }));
-    const squad = $squads.find((s) => s.id === goTo.id);
-    const isVirtual =
-      goTo.channelId === SQUAD_DASHBOARD_CHANNEL_ID || goTo.channelId === MY_DASHBOARD_CHANNEL_ID;
-    const hub = isVirtual
-      ? null
-      : resolveHubChannelNameForGroupSelection(squad?.channels ?? [], goTo.channelId, goTo.hubChannelName ?? null);
-    activeHubChannelName.set(hub);
-    if (hub) lastHubChannelNameBySquadId.update((m) => ({ ...m, [goTo.id]: hub }));
+    navigateToTarget({
+      kind: 'squad-channel',
+      squadId: goTo.id,
+      channelId: goTo.channelId,
+      hubChannelName: goTo.hubChannelName,
+    });
     clearToast();
   }
 </script>

@@ -20,6 +20,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use crate::notification::EventKind;
+use crate::ChatState;
 
 /// The catch-up-specific kind label. Coarser reuse of `EventKind` alone
 /// isn't enough: `Welcome` needs its own label because it alone carries the
@@ -338,9 +339,10 @@ pub fn list_unresolved_entries(
     Ok(out)
 }
 
-/// Read one entry by its source event id (test/debug helper — production
-/// callers use `list_unresolved_entries`).
-#[cfg(test)]
+/// Read one entry by its source event id. Used by production resolution
+/// paths (a caller must see an entry's `kind` before deciding whether
+/// resolving it should also advance a chat's read watermark) as well as
+/// by tests.
 fn get_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<Option<CatchUpEntry>, String> {
     conn.query_row(
         "SELECT id, source_event_id, kind, chat_id, created_at, resolved_at
@@ -361,18 +363,188 @@ fn get_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<Optio
     .map_err(|e| format!("Failed to read catch up entry: {}", e))
 }
 
-/// List unresolved entries across every chat (unfiltered).
+/// Resolves a squad id to its member chat ids (channel group ids), for the
+/// "by squad" filter (R25). `None` in means no squad filter; `None` out
+/// means "no filter" for `list_unresolved_entries`, distinct from `Some(
+/// vec![])` which that function already treats as "match nothing" — an
+/// unknown squad id correctly returns an empty list rather than falling
+/// back to unfiltered.
+fn resolve_squad_chat_ids(conn: &rusqlite::Connection, squad_id: Option<&str>) -> Result<Option<Vec<String>>, String> {
+    let Some(sid) = squad_id else { return Ok(None) };
+    let squad = crate::squad_catalog::get_squad_inner(conn, sid)?;
+    Ok(Some(squad.map(|s| s.channels.into_iter().map(|c| c.group_id).collect()).unwrap_or_default()))
+}
+
+fn parse_kind_filter(kind: Option<&str>) -> Result<Option<CatchUpKind>, String> {
+    match kind {
+        Some(k) => CatchUpKind::from_db_str(k).map(Some).ok_or_else(|| format!("Unknown catch up kind: {}", k)),
+        None => Ok(None),
+    }
+}
+
+/// List unresolved entries, optionally narrowed to one kind and/or one
+/// squad (R25 — needs-action is `kind = "action_prompt"`, mentions is
+/// `kind = "mention"`).
 #[tauri::command]
-pub async fn list_catch_up_entries<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<CatchUpEntry>, String> {
+pub async fn list_catch_up_entries<R: Runtime>(
+    handle: AppHandle<R>,
+    kind: Option<String>,
+    squad_id: Option<String>,
+) -> Result<Vec<CatchUpEntry>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
-    let out = list_unresolved_entries(&conn, None, None);
+    let out = (|| {
+        let parsed_kind = parse_kind_filter(kind.as_deref())?;
+        let chat_ids = resolve_squad_chat_ids(&conn, squad_id.as_deref())?;
+        list_unresolved_entries(&conn, parsed_kind, chat_ids.as_deref())
+    })();
     crate::account_manager::return_db_connection(conn);
     out
+}
+
+/// Pure predicate behind `catch_up_count`'s filter, isolated from `STATE`'s
+/// global lock so the "excludes Nothing" and "orphan counts" contracts are
+/// unit-testable against a local `ChatState`.
+fn entry_counts_toward_badge(state: &ChatState, chat_id: &str) -> bool {
+    state
+        .get_chat(chat_id)
+        .map(|c| c.notification_level != crate::chat::NotificationLevel::Nothing)
+        .unwrap_or(true)
+}
+
+/// Unresolved count excluding entries whose chat sits at Nothing (R24) —
+/// the same authority every other badge reads (R14), not a second count.
+/// A chat id with no matching row in `STATE` (an orphan the deletion
+/// cleanup should already prevent, per Approach #4) counts rather than
+/// silently hides a bug.
+#[tauri::command]
+pub async fn catch_up_count<R: Runtime>(handle: AppHandle<R>) -> Result<usize, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let entries = list_unresolved_entries(&conn, None, None);
+    crate::account_manager::return_db_connection(conn);
+    let entries = entries?;
+
+    let state = crate::STATE.lock().await;
+    let count = entries.iter().filter(|e| entry_counts_toward_badge(&state, &e.chat_id)).count();
+    Ok(count)
+}
+
+/// Resolve one entry by its source event id (R23's "clear individually").
+/// Mention/DirectMessage entries route through `chat::mark_as_read` so the
+/// chat's read watermark agrees with the canonical home (Approach #5) —
+/// which also cascades to every sibling message-shaped entry for that
+/// chat, not just this row. Other kinds have no watermark to move and
+/// resolve directly.
+#[tauri::command]
+pub async fn resolve_catch_up_entry<R: Runtime>(handle: AppHandle<R>, source_event_id: String) -> Result<bool, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let entry = get_entry(&conn, &source_event_id);
+    crate::account_manager::return_db_connection(conn);
+    let Some(entry) = entry? else { return Ok(false) };
+    if entry.resolved_at.is_some() {
+        return Ok(false);
+    }
+
+    if entry.kind == CatchUpKind::Mention.as_db_str() || entry.kind == CatchUpKind::DirectMessage.as_db_str() {
+        crate::chat::mark_as_read(entry.chat_id, None).await;
+        return Ok(true);
+    }
+
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let resolved = resolve_entry(&conn, &source_event_id);
+    crate::account_manager::return_db_connection(conn);
+    resolved
+}
+
+/// Resolve exactly the entries a given filter currently lists (R23's
+/// "mark the whole surface read", Approach #6) — never the whole table.
+/// Message-shaped entries resolve via `chat::mark_as_read` per chat, which
+/// stays exact because a chat only ever produces one of Mention/
+/// DirectMessage (DM chats -> DirectMessage, MLS groups -> Mention), so
+/// "mark this chat read" never reaches outside the filtered set for it.
+#[tauri::command]
+pub async fn resolve_all_catch_up_entries<R: Runtime>(
+    handle: AppHandle<R>,
+    kind: Option<String>,
+    squad_id: Option<String>,
+) -> Result<usize, String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let entries = (|| {
+        let parsed_kind = parse_kind_filter(kind.as_deref())?;
+        let chat_ids = resolve_squad_chat_ids(&conn, squad_id.as_deref())?;
+        list_unresolved_entries(&conn, parsed_kind, chat_ids.as_deref())
+    })();
+    crate::account_manager::return_db_connection(conn);
+    let entries = entries?;
+    let total = entries.len();
+
+    let mut message_chat_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut other_source_ids: Vec<String> = Vec::new();
+    for e in &entries {
+        if e.kind == CatchUpKind::Mention.as_db_str() || e.kind == CatchUpKind::DirectMessage.as_db_str() {
+            message_chat_ids.insert(e.chat_id.clone());
+        } else {
+            other_source_ids.push(e.source_event_id.clone());
+        }
+    }
+
+    for chat_id in message_chat_ids {
+        crate::chat::mark_as_read(chat_id, None).await;
+    }
+
+    if !other_source_ids.is_empty() {
+        let conn = crate::account_manager::get_db_connection(&handle)?;
+        for source_id in other_source_ids {
+            let _ = resolve_entry(&conn, &source_id);
+        }
+        crate::account_manager::return_db_connection(conn);
+    }
+
+    Ok(total)
+}
+
+/// Upsert an "action needed" entry, reopening it (`resolved_at` cleared)
+/// if it was previously resolved while the condition it describes still
+/// holds. Deliberately distinct from `insert_entry`'s conflict-tolerant
+/// no-op: an event-sourced entry (a mention, a welcome) must never reopen
+/// once resolved, but a derived-state entry has no event to re-arrive —
+/// resurfacing it on the next reconciliation pass IS how it stays correct
+/// (Approach #4).
+fn record_or_reopen_action_needed(conn: &rusqlite::Connection, chat_id: &str, source_event_id: &str) -> Result<(), String> {
+    let id = generate_id(CatchUpKind::ActionPrompt);
+    let created_at = now_epoch_seconds();
+    conn.execute(
+        "INSERT INTO catch_up_entries (id, source_event_id, kind, chat_id, created_at, resolved_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL)
+         ON CONFLICT(source_event_id) DO UPDATE SET resolved_at = NULL",
+        rusqlite::params![id, source_event_id, CatchUpKind::ActionPrompt.as_db_str(), chat_id, created_at],
+    )
+    .map_err(|e| format!("Failed to record action-needed entry: {}", e))?;
+    Ok(())
+}
+
+/// Frontend-callable counterpart for a derived "needs action" condition
+/// that has no backend event to hook (Approach #4) — currently the
+/// per-squad roster-key-choice prompt (`needsSquadRosterKeyChoice`). The
+/// caller re-evaluates its own predicate on its existing background
+/// refresh: calls this when the condition is true, and
+/// `resolve_catch_up_entry` with the same `source_event_id` when it turns
+/// false.
+#[tauri::command]
+pub async fn record_action_needed_entry<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_id: String,
+    source_event_id: String,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result = record_or_reopen_action_needed(&conn, &chat_id, &source_event_id);
+    crate::account_manager::return_db_connection(conn);
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Chat, NotificationLevel};
 
     fn migrated_conn() -> rusqlite::Connection {
         let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -684,5 +856,170 @@ mod tests {
             "squad(chat) filter must use the chat_id index, got: {by_chat}"
         );
         assert!(!by_chat.contains("SCAN catch_up_entries"), "must not fall back to a full scan, got: {by_chat}");
+    }
+
+    #[test]
+    fn parse_kind_filter_accepts_known_kinds_and_rejects_unknown() {
+        assert_eq!(parse_kind_filter(None).unwrap(), None);
+        assert_eq!(parse_kind_filter(Some("mention")).unwrap(), Some(CatchUpKind::Mention));
+        assert_eq!(parse_kind_filter(Some("action_prompt")).unwrap(), Some(CatchUpKind::ActionPrompt));
+        assert!(parse_kind_filter(Some("bogus")).is_err());
+    }
+
+    fn squad_row_with_channels(id: &str, group_ids: &[&str]) -> crate::squad_catalog::SquadRow {
+        crate::squad_catalog::SquadRow {
+            id: id.to_string(),
+            name: "Test Squad".to_string(),
+            icon_url: None,
+            channels: group_ids
+                .iter()
+                .enumerate()
+                .map(|(i, gid)| crate::squad_catalog::SquadChannelRow {
+                    name: format!("channel-{i}"),
+                    group_id: gid.to_string(),
+                    order: i as i32,
+                    access: None,
+                })
+                .collect(),
+            kind: "squad".to_string(),
+            paired_squads: None,
+            visibility: "private".to_string(),
+            commons_tags: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+        }
+    }
+
+    #[test]
+    fn resolve_squad_chat_ids_returns_the_squads_channel_group_ids() {
+        let conn = migrated_conn();
+        let squad = squad_row_with_channels("squad-1", &["chan-a", "chan-b"]);
+        crate::squad_catalog::upsert_squad_inner(&conn, &squad).unwrap();
+
+        let ids = resolve_squad_chat_ids(&conn, Some("squad-1")).unwrap();
+        assert_eq!(ids, Some(vec!["chan-a".to_string(), "chan-b".to_string()]));
+    }
+
+    #[test]
+    fn resolve_squad_chat_ids_unknown_squad_matches_nothing_rather_than_falling_back_unfiltered() {
+        let conn = migrated_conn();
+        let ids = resolve_squad_chat_ids(&conn, Some("no-such-squad")).unwrap();
+        assert_eq!(ids, Some(Vec::new()));
+    }
+
+    #[test]
+    fn resolve_squad_chat_ids_no_squad_filter_returns_none() {
+        let conn = migrated_conn();
+        assert_eq!(resolve_squad_chat_ids(&conn, None).unwrap(), None);
+    }
+
+    #[test]
+    fn the_needs_action_filter_and_the_squad_filter_each_narrow_independently() {
+        let conn = migrated_conn();
+        let squad = squad_row_with_channels("squad-1", &["chan-a"]);
+        crate::squad_catalog::upsert_squad_inner(&conn, &squad).unwrap();
+
+        insert_entry(&conn, CatchUpKind::Mention, "chan-a", "evt-mention").unwrap();
+        insert_entry(&conn, CatchUpKind::ActionPrompt, "chan-a", "evt-action").unwrap();
+        insert_entry(&conn, CatchUpKind::Mention, "chan-outside-squad", "evt-outside").unwrap();
+
+        let needs_action = list_unresolved_entries(&conn, Some(CatchUpKind::ActionPrompt), None).unwrap();
+        assert_eq!(needs_action.len(), 1);
+        assert_eq!(needs_action[0].source_event_id, "evt-action");
+
+        let squad_ids = resolve_squad_chat_ids(&conn, Some("squad-1")).unwrap();
+        let by_squad = list_unresolved_entries(&conn, None, squad_ids.as_deref()).unwrap();
+        assert_eq!(by_squad.len(), 2, "both chan-a entries, not the one outside the squad");
+        assert!(by_squad.iter().all(|e| e.chat_id == "chan-a"));
+    }
+
+    #[test]
+    fn entry_counts_toward_badge_excludes_nothing_level_chats() {
+        let mut state = ChatState::new();
+        let mut nothing_chat = Chat::new_dm("npub1nothing".to_string());
+        nothing_chat.notification_level = NotificationLevel::Nothing;
+        state.chats.push(nothing_chat);
+        let mut mentions_chat = Chat::new_dm("npub1mentions".to_string());
+        mentions_chat.notification_level = NotificationLevel::Mentions;
+        state.chats.push(mentions_chat);
+
+        assert!(!entry_counts_toward_badge(&state, "npub1nothing"));
+        assert!(entry_counts_toward_badge(&state, "npub1mentions"));
+    }
+
+    #[test]
+    fn entry_counts_toward_badge_counts_an_orphaned_chat_id_rather_than_hiding_it() {
+        let state = ChatState::new();
+        assert!(entry_counts_toward_badge(&state, "no-such-chat"));
+    }
+
+    #[test]
+    fn record_or_reopen_action_needed_creates_an_unresolved_entry() {
+        let conn = migrated_conn();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        let entry = get_entry(&conn, "roster-key:squad-1").unwrap().expect("entry should exist");
+        assert_eq!(entry.kind, "action_prompt");
+        assert_eq!(entry.chat_id, "squad-dashboard-chat");
+        assert!(entry.resolved_at.is_none());
+    }
+
+    #[test]
+    fn record_or_reopen_action_needed_resurfaces_a_resolved_entry_when_the_condition_still_holds() {
+        let conn = migrated_conn();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        let first = get_entry(&conn, "roster-key:squad-1").unwrap().unwrap();
+
+        // The member dismissed it in Catch up, or a prior reconciliation
+        // pass resolved it, but the condition is still true on this pass.
+        resolve_entry(&conn, "roster-key:squad-1").unwrap();
+        assert!(get_entry(&conn, "roster-key:squad-1").unwrap().unwrap().resolved_at.is_some());
+
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        let reopened = get_entry(&conn, "roster-key:squad-1").unwrap().unwrap();
+        assert!(reopened.resolved_at.is_none(), "must resurface, not stay silently resolved");
+        assert_eq!(reopened.id, first.id, "reopening must not fork a second row");
+        assert_eq!(reopened.created_at, first.created_at, "original creation time is preserved");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM catch_up_entries WHERE source_event_id = 'roster-key:squad-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "reopen must update the existing row, never insert a second one");
+    }
+
+    #[test]
+    fn record_or_reopen_action_needed_leaves_an_already_unresolved_entry_untouched() {
+        let conn = migrated_conn();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM catch_up_entries WHERE source_event_id = 'roster-key:squad-1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn message_shaped_kinds_never_mix_within_one_chat() {
+        // The exactness `resolve_all_catch_up_entries` relies on ("mark this
+        // chat read" never reaches outside the filtered set) depends on a
+        // DM chat only ever producing DirectMessage-kind entries and an MLS
+        // group only ever producing Mention-kind entries. Pin that mapping
+        // here so a future EventKind/CatchUpKind change that breaks it is
+        // caught in this unit, not discovered as a resolve-all over-reach.
+        let conn = migrated_conn();
+        record_admitted_event(&conn, EventKind::DirectMessage, false, false, "dm-chat", "evt-dm").unwrap();
+        record_admitted_event(&conn, EventKind::GroupMessage, false, true, "mls-chat", "evt-mention").unwrap();
+
+        let dm_entry = get_entry(&conn, "evt-dm").unwrap().unwrap();
+        assert_eq!(dm_entry.kind, CatchUpKind::DirectMessage.as_db_str());
+        let mention_entry = get_entry(&conn, "evt-mention").unwrap().unwrap();
+        assert_eq!(mention_entry.kind, CatchUpKind::Mention.as_db_str());
     }
 }

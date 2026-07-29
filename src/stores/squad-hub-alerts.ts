@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { needsSquadRosterKeyChoice } from '../lib/squad/squad-roster-key-choice';
 import { ANNOUNCEMENTS_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
+import { recordActionNeededEntry, resolveCatchUpEntry } from '../lib/api/catch-up';
 import type { Squad } from './squads';
 
 /** Per-user action needed in my-dashboard alerts (roster signer prompt). */
@@ -36,7 +37,7 @@ export function clearMentionAlert(squadId: string, channelName: string): void {
   mentionsBySquadChannel.update((m) => ({ ...m, [key]: 0 }));
 }
 
-function announcementsGroupIdForSquad(squad: Squad): string | null {
+export function announcementsGroupIdForSquad(squad: Squad): string | null {
   return (
     squad.channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.groupId?.trim() ||
     squad.channels[0]?.groupId?.trim() ||
@@ -57,7 +58,20 @@ export async function refreshPersonalAlertForSquad(squad: Squad): Promise<void> 
   if (!id) return;
   const gen = (personalAlertRefreshGenBySquadId.get(id) ?? 0) + 1;
   personalAlertRefreshGenBySquadId.set(id, gen);
-  const needed = await needsSquadRosterKeyChoice(id, announcementsGroupIdForSquad(squad));
+  const groupId = announcementsGroupIdForSquad(squad);
+  const needed = await needsSquadRosterKeyChoice(id, groupId);
   if (personalAlertRefreshGenBySquadId.get(id) !== gen) return;
   personalAlertsNeededBySquadId.update((m) => ({ ...m, [id]: needed }));
+
+  // Governance needs-action prompts have no backend event to hook (Approach
+  // #4 of U9); this reconciliation pass IS the resolution mechanism, run
+  // on the same refresh that already re-evaluates the predicate.
+  if (groupId) {
+    const sourceEventId = `roster-key:${id}`;
+    if (needed) {
+      recordActionNeededEntry(groupId, sourceEventId).catch(() => {});
+    } else {
+      resolveCatchUpEntry(sourceEventId).catch(() => {});
+    }
+  }
 }

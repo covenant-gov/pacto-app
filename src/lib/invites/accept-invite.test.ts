@@ -48,7 +48,7 @@ import {
 import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
 import { squads, type Squad } from '../../stores/squads';
 import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
-import { pactoAppInboxMessages } from '../../stores/dm';
+import { backendDmMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
 import {
   resetMlsHistoryWelcomeForTests,
@@ -140,21 +140,22 @@ describe('accept-invite channel persistence', () => {
     expect(squadInviteResolvedByMembership('missing')).toBe(false);
   });
 
-  it('reconcileStaleInviteDecisions marks inbox invites for joined squads', () => {
+  it('reconcileStaleInviteDecisions marks stale DM invites for joined squads', () => {
     acceptedSquadInviteIds.set([]);
-    pactoAppInboxMessages.set([
-      {
-        id: 'invite-msg-1',
-        content: JSON.stringify({
-          type: 'squad_invite',
-          squadName: 'Alpha',
-          groupId: 'parent-1',
-        }),
-        at: 1,
-        mine: false,
-        inviterNpub: 'npub1inviter',
-      },
-    ]);
+    backendDmMessages.set({
+      npub1inviter: [
+        {
+          id: 'invite-msg-1',
+          content: JSON.stringify({
+            type: 'squad_invite',
+            squadName: 'Alpha',
+            groupId: 'parent-1',
+          }),
+          at: 1,
+          mine: false,
+        },
+      ],
+    });
     reconcileStaleInviteDecisions();
     expect(get(acceptedSquadInviteIds)).toEqual(['invite-msg-1']);
   });

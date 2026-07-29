@@ -25,11 +25,7 @@ import { summarizeStructuredMessageContent, type MessageFormatter } from '../mes
 import { getProfileAvatarSrc, getProfileDisplayName } from '../utils/profile';
 import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
-import {
-  isPactoAppThreadId,
-  resolveInviteInviterNpub,
-  type PactoAppInboxEntry,
-} from '../pacto-app-inbox';
+import { resolveInviteInviterNpub } from '../pacto-app-inbox';
 import type { DmMessage } from '../../stores/dm';
 
 export type ChannelInSquadPayload = NonNullable<ReturnType<typeof parseChannelInSquadMessage>>;
@@ -88,10 +84,6 @@ export function resolveDmMessagePresentation(msg: DmMessage): DmMessagePresentat
 }
 
 export function inviteInviterNpub(msg: DmMessage, threadId: string): string | null {
-  if (isPactoAppThreadId(threadId)) {
-    const entry = msg as PactoAppInboxEntry;
-    if (entry.inviterNpub?.trim()) return entry.inviterNpub.trim();
-  }
   const content = msg.content ?? '';
   const resolved = resolveInviteInviterNpub(msg, threadId, content);
   return resolved?.startsWith('npub1') ? resolved : null;

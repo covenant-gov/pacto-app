@@ -55,7 +55,7 @@
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
-  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage } from '../../lib/api/nostr';
+  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -653,6 +653,7 @@
     if (lastClearedMentionKey !== key) {
       lastClearedMentionKey = key;
       clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
     }
   }
 
@@ -661,6 +662,7 @@
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (isNearBottom && activeSquad && activeChannel) {
       clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
     }
   }
 

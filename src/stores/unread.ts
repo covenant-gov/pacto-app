@@ -3,16 +3,12 @@ import { getUnreadCounts } from '../lib/api/notifications';
 import {
   dmList,
   dmSidebarCategoryForNpub,
-  pactoAppInboxMessages,
   pendingList,
   pinnedList,
   requestsList,
 } from './dm';
-import { persistenceKey } from './persistence-context';
 
 export { dmSidebarCategoryForNpub };
-
-export const PACTO_APP_INBOX_LAST_READ_PREFIX = 'pacto_app_inbox_last_read';
 
 /**
  * Backend-owned per-chat unread map (R14/R15) — keyed by npub for DMs and by
@@ -47,58 +43,14 @@ export function resetUnreadStore(): void {
   unreadCountsByChat.set({});
 }
 
-/** Last read message id for the synthetic, local-only "Pacto App" inbox thread. */
-export const pactoAppInboxLastReadId = writable<string>('');
-
-pactoAppInboxLastReadId.subscribe((id) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(PACTO_APP_INBOX_LAST_READ_PREFIX);
-  if (!key) return;
-  try {
-    if (id) localStorage.setItem(key, id);
-    else localStorage.removeItem(key);
-  } catch {
-    // ignore
-  }
-});
-
 /** True while the open thread's message scroller is pinned to the bottom. */
 export const dmThreadScrolledToBottom = writable(false);
 
-/**
- * Reverse-walk newest → oldest, stop at own message or last-read id. The Pacto
- * App inbox is a synthetic, local-only thread the backend has no concept of —
- * unlike every real chat it has no backend count to mirror, so this is the one
- * remaining message-array-derived count.
- */
-function countUnreadPactoAppInboxMessages(
-  messages: ReadonlyArray<{ id: string; mine?: boolean }>,
-  lastReadId: string,
-): number {
-  let count = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]!;
-    if (msg.mine) break;
-    if (lastReadId && msg.id === lastReadId) break;
-    count++;
-  }
-  return count;
-}
-
-export const pactoAppInboxUnreadCount = derived(
-  [pactoAppInboxMessages, pactoAppInboxLastReadId],
-  ([$msgs, $lastRead]) => countUnreadPactoAppInboxMessages($msgs, $lastRead),
-);
-
-export function clearPactoAppInboxUnread(lastMessageId: string): void {
-  pactoAppInboxLastReadId.set(lastMessageId);
-}
-
 /** Tab dot: set when any chat in that tab's membership has a nonzero backend count. */
 export const dmTabHasUnread = derived(
-  [unreadCountsByChat, pactoAppInboxUnreadCount, pinnedList, dmList, requestsList, pendingList],
-  ([$counts, $inboxUnread, $pinned, $friends, $requests, $pending]) => ({
-    pinned: $inboxUnread > 0 || $pinned.some((e) => ($counts[e.npub] ?? 0) > 0),
+  [unreadCountsByChat, pinnedList, dmList, requestsList, pendingList],
+  ([$counts, $pinned, $friends, $requests, $pending]) => ({
+    pinned: $pinned.some((e) => ($counts[e.npub] ?? 0) > 0),
     friends: $friends.some((e) => ($counts[e.npub] ?? 0) > 0),
     requests: $requests.some((e) => ($counts[e.npub] ?? 0) > 0),
     pending: $pending.some((e) => ($counts[e.npub] ?? 0) > 0),
