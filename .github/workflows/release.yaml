@@ -199,3 +199,54 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber
+
+  update-homebrew-tap:
+    # Points covenant-gov/homebrew-pacto's Cask at the DMGs just published above.
+    # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with contents:write
+    # on homebrew-pacto, since GITHUB_TOKEN here only covers this repo.
+    needs: publish-tauri
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout homebrew-pacto
+        uses: actions/checkout@v6
+        with:
+          repository: covenant-gov/homebrew-pacto
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-pacto
+
+      - name: Download macOS release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" --repo covenant-gov/pacto-app \
+            --pattern 'Pacto_*_aarch64.dmg' --pattern 'Pacto_*_x64.dmg' --dir dmgs
+
+      - name: Update Cask
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          ARM_SHA="$(sha256sum "dmgs/Pacto_${VERSION}_aarch64.dmg" | cut -d' ' -f1)"
+          INTEL_SHA="$(sha256sum "dmgs/Pacto_${VERSION}_x64.dmg" | cut -d' ' -f1)"
+          CASK=homebrew-pacto/Casks/pacto.rb
+          sed -i \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 arm:   \".*\"/  sha256 arm:   \"${ARM_SHA}\"/" \
+            -e "s/^         intel: \".*\"/         intel: \"${INTEL_SHA}\"/" \
+            -e 's|/pacto_#{version}_#{arch}\.dmg|/Pacto_#{version}_#{arch}.dmg|' \
+            "$CASK"
+          cat "$CASK"
+
+      - name: Open PR against homebrew-pacto
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-pacto
+          commit-message: "chore: bump cask to ${{ github.ref_name }}"
+          title: "chore: bump cask to ${{ github.ref_name }}"
+          body: |
+            Automated from covenant-gov/pacto-app's `${{ github.ref_name }}` release publish.
+          branch: "chore/bump-${{ github.ref_name }}"
+          base: main
+          delete-branch: true

@@ -1,0 +1,77 @@
+name: Prepare Release
+
+# Manual trigger only (Actions tab -> Prepare Release -> Run workflow). Bumps
+# package.json / src-tauri/tauri.conf.json / src-tauri/Cargo.toml, regenerates
+# CHANGELOG.md, runs the same checks scripts/bump-version.sh runs locally, and
+# opens a PR with the result. Does not create or push a git tag -- tagging
+# v<version> happens manually (or via GitHub's "Draft a new release" UI) after
+# the PR merges to main, which is what actually triggers release.yaml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+          run_install: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: install Tauri system dependencies (ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libvulkan-dev libxdo-dev libssl-dev libayatana-appindicator3-dev libwebkit2gtk-4.1-dev librsvg2-dev patchelf libasound2-dev xdg-utils glslc
+
+      - name: bump version, changelog, checks
+        run: ./scripts/bump-version.sh "${{ inputs.bump }}" --no-commit
+
+      - name: read bumped version
+        id: bumped
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
+          title: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
+          body: |
+            Automated version prep for `v${{ steps.bumped.outputs.version }}`, opened by the "Prepare Release" workflow.
+
+            - `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`/`Cargo.lock`: version bump.
+            - `CHANGELOG.md`: regenerated via `git-cliff`.
+            - `pnpm check`, `pnpm test`, `cargo check`, `cargo test` all passed in this run.
+
+            No tag is created by this PR. After merging to `main`, cut the release by pushing tag `v${{ steps.bumped.outputs.version }}` (or via GitHub's Releases -> Draft a new release UI), which triggers `release.yaml`.
+          branch: "chore/release-${{ steps.bumped.outputs.version }}"
+          base: main
+          delete-branch: true
