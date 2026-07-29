@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release-notes:
     runs-on: ubuntu-24.04
@@ -239,7 +242,7 @@ jobs:
           cat "$CASK"
 
       - name: Open PR against homebrew-pacto
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-pacto
