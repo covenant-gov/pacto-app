@@ -10,6 +10,7 @@ import {
 
 const scheduleCommonsStartupPrefetch = vi.fn();
 const apiConnect = vi.fn();
+const monitorRelayConnections = vi.fn().mockResolvedValue(undefined);
 const fetchMessages = vi.fn();
 const refreshProfileNow = vi.fn();
 const syncMlsGroupsNow = vi.fn();
@@ -19,6 +20,10 @@ const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 vi.mock('../api/auth', () => ({
   connect: (...args: unknown[]) => apiConnect(...args),
+}));
+
+vi.mock('../api/relays', () => ({
+  monitorRelayConnections: (...args: unknown[]) => monitorRelayConnections(...args),
 }));
 
 vi.mock('../api/nostr', () => ({
@@ -90,6 +95,7 @@ describe('runPostLoginNetworkSync', () => {
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
     expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     expect(dmLog).toHaveBeenCalledWith('post-login: network sync done');
+    expect(monitorRelayConnections).toHaveBeenCalled();
   });
 
   it('logs connect errors and continues', async () => {
@@ -108,6 +114,20 @@ describe('runPostLoginNetworkSync', () => {
     expect(console.error).toHaveBeenCalledWith('connect after login failed:', err);
     expect(dmSyncStatusSet).toHaveBeenCalledWith('syncing');
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
+  });
+
+  it('logs monitorRelayConnections rejection', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    const err = new Error('monitor failed');
+    monitorRelayConnections.mockRejectedValueOnce(err);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(console.error).toHaveBeenCalledWith('monitor_relay_connections failed:', err);
   });
 
   it('logs fetchMessages rejection', async () => {

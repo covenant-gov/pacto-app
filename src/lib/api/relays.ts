@@ -144,6 +144,11 @@ export async function getRelayLogs(url: string): Promise<RelayLog[]> {
   return invoke<RelayLog[]>('get_relay_logs', { url });
 }
 
+/** Starts the backend's relay status/health-check monitor loop. Safe to call multiple times; the backend dedupes. */
+export async function monitorRelayConnections(): Promise<boolean> {
+  return invoke<boolean>('monitor_relay_connections');
+}
+
 /** True once the health-check loop has recorded a ping or last-check time for this relay. */
 export function hasRelayHealthData(metrics: RelayMetrics): boolean {
   return metrics.ping_ms !== null || metrics.last_check !== null;
