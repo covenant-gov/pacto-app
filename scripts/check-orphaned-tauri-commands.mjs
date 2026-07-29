@@ -55,7 +55,7 @@ function extractInvokedCommands(srcDir) {
   const files = [];
   walk(srcDir, files);
   const invoked = new Set();
-  const pattern = /invoke(?:<[^>]*>)?\s*\(\s*['"]([a-zA-Z0-9_]+)['"]/g;
+  const pattern = /invoke(?:<(?:[^<>]|<[^<>]*>)*>)?\s*\(\s*['"]([a-zA-Z0-9_]+)['"]/g;
   for (const file of files) {
     const content = readFileSync(file, 'utf8');
     let m;
