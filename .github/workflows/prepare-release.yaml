@@ -60,7 +60,7 @@ jobs:
         id: bumped
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - uses: peter-evans/create-pull-request@v7
+      - uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
           title: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
