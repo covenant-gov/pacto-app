@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ARG="${1:-}"
+NO_COMMIT="${2:-}"
 
 if [[ -z "$ARG" ]]; then
   echo "Usage: $0 <version|patch|minor|major>"
@@ -133,13 +134,18 @@ if [[ -f "src-tauri/Cargo.lock" ]]; then
   FILES_TO_STAGE+=(src-tauri/Cargo.lock)
 fi
 
-git add "${FILES_TO_STAGE[@]}"
+if [[ "$NO_COMMIT" == "--no-commit" ]]; then
+  git add "${FILES_TO_STAGE[@]}"
+  echo ""
+  echo "Version $VERSION staged (not committed)."
+else
+  git add "${FILES_TO_STAGE[@]}"
+  git commit -m "chore(release): bump version to $VERSION"
+  git tag -a "$TAG" -m "Release $TAG"
 
-git commit -m "chore(release): bump version to $VERSION"
-git tag -a "$TAG" -m "Release $TAG"
-
-echo ""
-echo "Version $VERSION is ready. Tag $TAG created."
-echo "Next steps:"
-echo "  git push origin $(git branch --show-current)"
-echo "  git push origin $TAG"
+  echo ""
+  echo "Version $VERSION is ready. Tag $TAG created."
+  echo "Next steps:"
+  echo "  git push origin $(git branch --show-current)"
+  echo "  git push origin $TAG"
+fi
