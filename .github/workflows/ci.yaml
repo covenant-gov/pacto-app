@@ -52,6 +52,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Check Tauri command wiring
+        run: pnpm check:tauri-commands
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:

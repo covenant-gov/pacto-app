@@ -1324,6 +1324,79 @@ async fn get_file_hash_index<R: Runtime>(
     db::build_file_hash_index(&handle).await
 }
 
+/// Outcome of attempting to process an MLS Welcome extracted from a gift-wrapped rumor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WelcomeOutcome {
+    /// `process_welcome` succeeded.
+    Processed,
+    /// The MDK engine gave a permanent verdict (a known replay error); retrying
+    /// will never succeed, so the wrapper can be treated as handled.
+    PermanentFailure,
+    /// Everything else (MLS service/engine init failure, task join failure, or an
+    /// unrecognized `process_welcome` error); may succeed on a later retry.
+    TransientFailure,
+}
+
+impl WelcomeOutcome {
+    /// Whether this outcome should be recorded as permanently handled so historical
+    /// resync stops retrying it.
+    fn should_mark_handled(self) -> bool {
+        matches!(self, WelcomeOutcome::Processed | WelcomeOutcome::PermanentFailure)
+    }
+}
+
+/// Classify a `process_welcome` error message as permanent (no retry will ever help)
+/// or transient (may succeed later). Once a welcome permanently fails (e.g. no
+/// matching key package after a seed restore), the MDK engine marks the wrapper
+/// event processed/failed forever; these replay errors carry no new information.
+fn classify_welcome_error(msg: &str) -> WelcomeOutcome {
+    const PERMANENT_ERRORS: [&str; 2] = [
+        "missing welcome for processed welcome",
+        "processed welcome not found",
+    ];
+    if PERMANENT_ERRORS.contains(&msg) {
+        WelcomeOutcome::PermanentFailure
+    } else {
+        WelcomeOutcome::TransientFailure
+    }
+}
+
+#[cfg(test)]
+mod welcome_outcome_tests {
+    use super::{classify_welcome_error, WelcomeOutcome};
+
+    #[test]
+    fn classifies_missing_welcome_for_processed_welcome_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("missing welcome for processed welcome"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_processed_welcome_not_found_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("processed welcome not found"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_unknown_error_as_transient() {
+        assert_eq!(
+            classify_welcome_error("database is locked"),
+            WelcomeOutcome::TransientFailure
+        );
+    }
+
+    #[test]
+    fn only_processed_and_permanent_failure_should_mark_handled() {
+        assert!(WelcomeOutcome::Processed.should_mark_handled());
+        assert!(WelcomeOutcome::PermanentFailure.should_mark_handled());
+        assert!(!WelcomeOutcome::TransientFailure.should_mark_handled());
+    }
+}
+
 #[tauri::command]
 async fn handle_event(event: Event, is_new: bool) -> bool {
     // Get the wrapper (giftwrap) event ID for duplicate detection
@@ -1407,36 +1480,54 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     let app_handle = TAURI_APP.get().cloned();
 
                     // Use blocking thread for non-Send MLS engine
-                    let processed = tokio::task::spawn_blocking(move || {
+                    let outcome = tokio::task::spawn_blocking(move || {
                         if app_handle.is_none() {
-                            return false;
+                            return WelcomeOutcome::TransientFailure;
                         }
                         let handle = app_handle.unwrap();
                         let svc = MlsService::new_persistent(&handle);
                         if let Ok(mls) = svc {
                             if let Ok(engine) = mls.engine() {
-                                match engine.process_welcome(&wrapper_id, &unsigned) {
-                                    Ok(_) => return true,
+                                return match engine.process_welcome(&wrapper_id, &unsigned) {
+                                    Ok(_) => WelcomeOutcome::Processed,
                                     Err(e) => {
-                                        eprintln!("[MLS] Failed to process welcome: {}", e);
-                                        return false;
+                                        let msg = e.to_string();
+                                        let outcome = classify_welcome_error(&msg);
+                                        // Permanent replay errors carry no new information;
+                                        // only log genuinely unexpected (transient) failures.
+                                        if outcome == WelcomeOutcome::TransientFailure {
+                                            eprintln!("[MLS] Failed to process welcome: {}", msg);
+                                        }
+                                        outcome
                                     }
-                                }
+                                };
                             }
                         }
-                        false
+                        WelcomeOutcome::TransientFailure
                     })
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or(WelcomeOutcome::TransientFailure);
 
-                    if processed {
+                    // Mark this wrapper event as handled so historical resyncs (every login)
+                    // don't re-unwrap and re-attempt it, but only once we have a permanent
+                    // verdict (success or a known-permanent MDK replay error). Transient
+                    // failures (init/engine/join errors) stay retryable on the next login.
+                    if outcome.should_mark_handled() {
+                        if let Some(handle) = TAURI_APP.get() {
+                            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                        }
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
+
+                    if outcome == WelcomeOutcome::Processed {
                         // Only notify UI after initial sync is complete
                         // During initial sync, invites are processed but not emitted to avoid UI updates before chats are loaded
                         let should_emit = {
                             let state = STATE.lock().await;
                             state.sync_mode == SyncMode::Finished || !state.is_syncing
                         };
-                        
+
                         if should_emit {
                             if let Some(app) = TAURI_APP.get() {
                                 let _ = app.emit("mls_invite_received", serde_json::json!({
@@ -1450,6 +1541,13 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     }
                 } else {
                     eprintln!("[MLS] Failed to convert rumor to UnsignedEvent");
+                    if let Some(handle) = TAURI_APP.get() {
+                        let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                    }
+                    {
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
                     return false;
                 }
             }
@@ -2079,6 +2177,13 @@ async fn notifs() -> Result<bool, String> {
     // Begin watching for notifications from our subscriptions
     match client
         .handle_notifications(|notification| async {
+            if let RelayPoolNotification::Message { relay_url, message: RelayMessage::Event { event, .. } } = &notification {
+                // `RelayPoolNotification::Event` below is deduplicated pool-wide (fires only the
+                // first time a given event is seen), which would undercount `events_received` for
+                // every relay that isn't first to deliver a given event. `Message` fires once per
+                // relay per delivery, so it's the correct source for per-relay receive counting.
+                record_event_received(&relay_url.to_string(), event);
+            }
             if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
                 if subscription_id == gift_sub_id {
                     // Handle DMs/files/vector-specific + MLS welcomes inside giftwrap
@@ -2792,6 +2897,12 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
 
     if let Ok(mut logs) = RELAY_LOGS.write() {
         let relay_logs = logs.entry(normalized).or_insert_with(VecDeque::new);
+        let is_repeat = relay_logs
+            .front()
+            .is_some_and(|last| last.level == log.level && last.message == log.message);
+        if is_repeat {
+            return;
+        }
         relay_logs.push_front(log);
         // Keep only last 10 logs
         while relay_logs.len() > 10 {
@@ -2806,6 +2917,166 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
     if let Ok(mut metrics) = RELAY_METRICS.write() {
         let relay_metrics = metrics.entry(normalized).or_insert_with(RelayMetrics::default);
         update_fn(relay_metrics);
+    }
+}
+
+/// Approximate wire size of an event via its serialized JSON length.
+fn event_size(event: &Event) -> u64 {
+    event.as_json().len() as u64
+}
+
+/// Record that a relay delivered an event: increments `events_received` and adds the
+/// event's serialized size to `bytes_down`.
+fn record_event_received(relay_url: &str, event: &Event) {
+    let size = event_size(event);
+    update_relay_metrics(relay_url, |m| {
+        m.events_received += 1;
+        m.bytes_down += size;
+    });
+}
+
+/// Record the outcome of publishing an event: increments `events_sent`/`bytes_up` for each
+/// accepted relay, and logs the rejection reason for each relay that rejected it. Called at
+/// each `send_event`/`send_event_to` call site with the `Output` those calls already return —
+/// not hooked into the notification stream, since sent events aren't tracked in the local DB.
+pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
+    let size = event_size(event);
+    for relay_url in &output.success {
+        let url = relay_url.to_string();
+        update_relay_metrics(&url, |m| {
+            m.events_sent += 1;
+            m.bytes_up += size;
+        });
+    }
+    for (relay_url, reason) in &output.failed {
+        add_relay_log(&relay_url.to_string(), "warn", reason);
+    }
+}
+
+#[cfg(test)]
+mod relay_metrics_tests {
+    use super::{get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome};
+    use nostr_sdk::prelude::{EventBuilder, JsonUtil, Kind, Keys, Output, RelayUrl};
+    use std::collections::{HashMap, HashSet};
+
+    fn test_event(content: &str) -> nostr_sdk::Event {
+        EventBuilder::new(Kind::TextNote, content)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn accepted_relays_get_events_sent_and_bytes_up() {
+        let event = test_event("published");
+        let accepted = RelayUrl::parse("wss://test-send-outcome-accepted.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([accepted.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(accepted.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 1);
+        assert_eq!(metrics.bytes_up, event.as_json().len() as u64);
+    }
+
+    #[tokio::test]
+    async fn rejected_relays_get_a_warn_log_and_no_sent_count() {
+        let event = test_event("rejected");
+        let rejected = RelayUrl::parse("wss://test-send-outcome-rejected.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::new(),
+            failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(rejected.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 0);
+        assert_eq!(metrics.bytes_up, 0);
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].level, "warn");
+        assert_eq!(logs[0].message, "rate-limited");
+    }
+
+    #[tokio::test]
+    async fn multiple_accepted_relays_each_get_their_own_counters() {
+        let event = test_event("fanout");
+        let relay_a = RelayUrl::parse("wss://test-send-outcome-fanout-a.example").unwrap();
+        let relay_b = RelayUrl::parse("wss://test-send-outcome-fanout-b.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([relay_a.clone(), relay_b.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics_a = get_relay_metrics(relay_a.to_string()).await.unwrap();
+        let metrics_b = get_relay_metrics(relay_b.to_string()).await.unwrap();
+        assert_eq!(metrics_a.events_sent, 1);
+        assert_eq!(metrics_b.events_sent, 1);
+    }
+
+    #[tokio::test]
+    async fn accumulates_events_received_and_bytes_down_for_same_relay() {
+        let url = "wss://test-record-received-accumulate.example";
+        let event_a = test_event("first");
+        let event_b = test_event("second, a little longer");
+        record_event_received(url, &event_a);
+        record_event_received(url, &event_b);
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 2);
+        assert_eq!(
+            metrics.bytes_down,
+            (event_a.as_json().len() + event_b.as_json().len()) as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn normalizes_relay_url_without_leaking_across_distinct_relays() {
+        let canonical = "wss://test-record-received-normalize.example";
+        let variant = "WSS://Test-Record-Received-Normalize.example/";
+        let other = "wss://test-record-received-other.example";
+        record_event_received(canonical, &test_event("one"));
+        record_event_received(variant, &test_event("two"));
+        record_event_received(other, &test_event("three"));
+
+        let canonical_metrics = get_relay_metrics(canonical.to_string()).await.unwrap();
+        let other_metrics = get_relay_metrics(other.to_string()).await.unwrap();
+        assert_eq!(canonical_metrics.events_received, 2);
+        assert_eq!(other_metrics.events_received, 1);
+    }
+
+    #[tokio::test]
+    async fn get_relay_metrics_reflects_recorded_events() {
+        let url = "wss://test-record-received-readpath.example";
+        record_event_received(url, &test_event("readable"));
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 1);
+        assert!(metrics.bytes_down > 0);
+    }
+
+    #[tokio::test]
+    async fn repeated_identical_send_failures_collapse_into_one_log_entry() {
+        let rejected = RelayUrl::parse("wss://test-send-outcome-repeated-failure.example").unwrap();
+        for i in 0..3 {
+            let event = test_event(&format!("retry {i}"));
+            let output = Output {
+                val: event.id,
+                success: HashSet::new(),
+                failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+            };
+            record_send_outcome(&event, &output);
+        }
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].message, "rate-limited");
     }
 }
 
@@ -4391,7 +4662,14 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
             if profile_db.exists() {
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
-                let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                // `ensure_ready` re-encrypts the active EVM signer via `internal_encrypt`, which
+                // panics if `ENCRYPTION_KEY` isn't set yet. During a recovery-phrase restore this
+                // runs before the PIN is collected; the frontend's own `encryptAndSaveEvmKey` call
+                // right after PIN entry covers that case, so skip here and let the already-unlocked
+                // (PIN-entered) login path run it instead.
+                if crate::current_encryption_key().is_some() {
+                    let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                }
             } else if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
                 eprintln!("[Login] Failed to initialize profile database: {}", e);
             } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
@@ -4606,7 +4884,10 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
                     Ok(event) => {
                         // Send only to trusted relays
                         match client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await {
-                            Ok(_) => println!("Successfully broadcast invite acceptance to trusted relays"),
+                            Ok(output) => {
+                                record_send_outcome(&event, &output);
+                                println!("Successfully broadcast invite acceptance to trusted relays");
+                            }
                             Err(e) => eprintln!("Failed to broadcast invite acceptance: {}", e),
                         }
                     }
@@ -5116,7 +5397,8 @@ async fn get_or_create_invite_code() -> Result<String, String> {
     let event = client.sign_event_builder(event_builder).await.map_err(|e| e.to_string())?;
 
     // Send only to trusted relays
-    client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await.map_err(|e| e.to_string())?;
+    let send_output = client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await.map_err(|e| e.to_string())?;
+    record_send_outcome(&event, &send_output);
     
     // Store locally
     db::set_sql_setting(handle.clone(), "invite_code".to_string(), new_code.clone())
@@ -5632,10 +5914,11 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         .map_err(|e| e.to_string())?;
 
     // Publish to TRUSTED_RELAYS
-    client
+    let send_output = client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &kp_event)
         .await
         .map_err(|e| e.to_string())?;
+    record_send_outcome(&kp_event, &send_output);
 
     // Upsert into mls_keypackage_index
     {

@@ -74,12 +74,21 @@ pub fn get_mls_directory<R: Runtime>(
     Ok(mls_dir)
 }
 
-/// List all existing accounts by scanning directories
+/// List all existing accounts by scanning directories, most-recently-used first
 ///
-/// Returns: Vec of full npubs that have valid pkeys (not just directories)
-/// Also cleans up invalid account directories without pkeys, skipping the
-/// current and pending account so a directory mid-creation (pkey not
-/// written yet) is never deleted out from under it.
+/// Returns: Vec of full npubs that have valid pkeys (not just directories),
+/// ordered by each account's database mtime (most recent first) so callers
+/// that auto-select `accounts[0]` (see `auto_select_account`) deterministically
+/// reopen the last-used account instead of an arbitrary one from OS
+/// directory-enumeration order.
+///
+/// Also cleans up invalid account directories without pkeys. The current and
+/// pending account are never deleted by this cleanup (a directory mid-creation
+/// has no pkey yet), but -- unlike cleanup -- they are still validated and
+/// included in the returned list like any other account; otherwise the very
+/// act of auto-selecting an account at startup makes `list_accounts` (and by
+/// extension `has_any_account`/`check_any_account_exists`) blind to it on the
+/// next call, which the frontend reads as "no account exists".
 pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
     let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
@@ -87,7 +96,7 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
     let current = get_current_account().ok();
     let pending = get_pending_account().ok().flatten();
 
-    let mut accounts = Vec::new();
+    let mut accounts: Vec<(String, std::time::SystemTime)> = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(app_data) {
         for entry in entries.flatten() {
@@ -95,15 +104,19 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                 if let Some(name) = entry.file_name().to_str() {
                     // Check if it looks like an npub directory
                     if name.starts_with("npub1") {
-                        if is_in_flight_account(name, current.as_deref(), pending.as_deref()) {
-                            continue;
-                        }
-                        // Validate that this account has a valid pkey in its database
-                        if let Ok(has_pkey) = account_has_valid_pkey(handle, name) {
-                            if has_pkey {
-                                accounts.push(name.to_string());
-                            } else {
-                                // Clean up invalid account directory
+                        let in_flight =
+                            is_in_flight_account(name, current.as_deref(), pending.as_deref());
+                        let has_pkey = account_has_valid_pkey(handle, name);
+                        match classify_account_scan(&has_pkey, in_flight) {
+                            AccountScanVerdict::Include => {
+                                let last_used = get_database_path(handle, name)
+                                    .ok()
+                                    .and_then(|p| std::fs::metadata(p).ok())
+                                    .and_then(|m| m.modified().ok())
+                                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                                accounts.push((name.to_string(), last_used));
+                            }
+                            AccountScanVerdict::Delete => {
                                 let invalid_dir = entry.path();
                                 if let Err(e) = std::fs::remove_dir_all(&invalid_dir) {
                                     eprintln!("[Account Manager] Failed to remove invalid account directory {}: {}", invalid_dir.display(), e);
@@ -111,6 +124,7 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                                     println!("[Account Manager] Cleaned up invalid account directory: {}", invalid_dir.display());
                                 }
                             }
+                            AccountScanVerdict::Skip => {}
                         }
                     }
                 }
@@ -118,7 +132,9 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
         }
     }
 
-    Ok(accounts)
+    accounts.sort_by_key(|(_, last_used)| std::cmp::Reverse(*last_used));
+
+    Ok(accounts.into_iter().map(|(npub, _)| npub).collect())
 }
 
 /// Whether `name` is the current or pending account and must be skipped by the
@@ -128,7 +144,15 @@ fn is_in_flight_account(name: &str, current: Option<&str>, pending: Option<&str>
     current == Some(name) || pending == Some(name)
 }
 
-/// Check if an account has a valid pkey in its database
+/// Check if an account has a valid pkey in its database.
+///
+/// Returns `Ok(false)` only when the database opened successfully and the
+/// query definitively found no (or an empty) `pkey` row -- the legitimate
+/// "account setup never finished" case that `list_accounts` should clean up.
+/// Any other failure (locked/busy database, transient I/O error, mid-write
+/// schema state) returns `Err` so the caller treats validity as unknown and
+/// leaves the directory alone, instead of deleting a possibly-valid account
+/// because a query happened to fail for an unrelated reason.
 fn account_has_valid_pkey<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<bool, String> {
     // Try to get database connection for this account
     let db_path = get_database_path(handle, npub)?;
@@ -141,15 +165,67 @@ fn account_has_valid_pkey<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Resu
     // Try to open database connection
     let conn = rusqlite::Connection::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
+    // Wait out transient locks from the main pooled connection instead of
+    // failing the read immediately, which would otherwise look identical to
+    // "no pkey" below.
+    conn.busy_timeout(std::time::Duration::from_millis(2000))
+        .map_err(|e| format!("Failed to set busy timeout: {}", e))?;
 
     // Check if the pkey exists in settings table and is not empty
-    let result: Option<String> = conn.query_row(
+    classify_pkey_query_result(conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
         rusqlite::params!["pkey"],
-        |row| row.get(0)
-    ).ok();
+        |row| row.get::<_, String>(0),
+    ))
+}
 
-    Ok(result.map(|s| !s.is_empty()).unwrap_or(false))
+/// Turn a `pkey` settings-row lookup into a validity verdict. `Ok(false)` means
+/// the query ran and definitively found no (or an empty) pkey -- safe to treat
+/// as an unfinished/orphaned account. Any other error (locked database,
+/// transient I/O failure, mid-write schema state) is `Err`, so the caller
+/// leaves the directory alone rather than deleting a possibly-valid account.
+fn classify_pkey_query_result(result: Result<String, rusqlite::Error>) -> Result<bool, String> {
+    match result {
+        Ok(value) => Ok(!value.is_empty()),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(format!("Failed to query pkey setting: {}", e)),
+    }
+}
+
+/// Three-way verdict for a single directory scanned by `list_accounts`,
+/// derived purely from `account_has_valid_pkey`'s result and whether the
+/// directory is the current or pending account.
+///
+/// A valid pkey always means `Include`, even while in-flight: in-flight only
+/// protects a directory with *no* pkey yet (mid-creation) from cleanup, it
+/// never excludes a directory that already has one. Treating in-flight as a
+/// reason to skip a valid pkey was exactly the bug that blanked the Create
+/// Account screen -- it left a fully valid current/pending account out of
+/// the list `list_accounts` returns.
+///
+/// A query `Err` (locked/busy database, transient I/O error, mid-write
+/// schema state) always means `Skip`: validity is unknown, so the caller
+/// leaves the directory alone rather than guessing and possibly deleting a
+/// live account.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum AccountScanVerdict {
+    /// Valid pkey found; the account belongs in the returned list.
+    Include,
+    /// No pkey and not in-flight; safe to clean up the orphaned directory.
+    Delete,
+    /// In-flight with no pkey yet, or pkey validity is unknown; leave alone.
+    Skip,
+}
+
+/// Combine `account_has_valid_pkey`'s result and in-flight status into a
+/// scan verdict. See `AccountScanVerdict` for the policy this encodes.
+fn classify_account_scan(has_pkey: &Result<bool, String>, in_flight: bool) -> AccountScanVerdict {
+    match (has_pkey, in_flight) {
+        (Ok(true), _) => AccountScanVerdict::Include,
+        (Ok(false), false) => AccountScanVerdict::Delete,
+        (Ok(false), true) => AccountScanVerdict::Skip,
+        (Err(_), _) => AccountScanVerdict::Skip,
+    }
 }
 
 /// Check if any account exists. If exactly one account exists and none is selected, selects it
@@ -415,5 +491,83 @@ mod is_in_flight_account_tests {
         assert!(is_in_flight_account(current, Some(current), None));
         assert!(!is_in_flight_account(orphan, Some(current), None));
         assert!(!is_in_flight_account(orphan, None, None));
+    }
+}
+
+#[cfg(test)]
+mod classify_pkey_query_result_tests {
+    use super::*;
+
+    /// Regression test for a bug where the boot-time `list_accounts` scan
+    /// deleted a fully valid, previously-completed account's directory
+    /// because a transient DB error (lock contention, disk I/O hiccup) was
+    /// swallowed by `.ok()` and treated identically to "no pkey exists yet".
+    /// Only a definitive "no rows" result may be treated as invalid/deletable;
+    /// every other error must propagate so the caller leaves the directory
+    /// alone instead of deleting a live account.
+    #[test]
+    fn only_definitive_no_rows_is_treated_as_invalid() {
+        assert_eq!(classify_pkey_query_result(Ok("nsec1somekey".to_string())), Ok(true));
+        assert_eq!(classify_pkey_query_result(Ok(String::new())), Ok(false));
+        assert_eq!(
+            classify_pkey_query_result(Err(rusqlite::Error::QueryReturnedNoRows)),
+            Ok(false)
+        );
+
+        // A locked/busy database, disk error, or any other query failure must
+        // NOT be treated as "no pkey" -- it must surface as Err so the caller
+        // skips deletion rather than wiping a possibly-valid account.
+        let transient_failure = rusqlite::Error::InvalidColumnType(
+            0,
+            "value".to_string(),
+            rusqlite::types::Type::Null,
+        );
+        assert!(classify_pkey_query_result(Err(transient_failure)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod account_scan_verdict_tests {
+    use super::*;
+
+    /// Regression guard for the bug that blanked the Create Account screen:
+    /// an early `continue` on in-flight accounts skipped them even when they
+    /// already had a valid pkey, so the current/pending account vanished
+    /// from `list_accounts`'s return value right after being created. The
+    /// in-flight flag must only ever protect a *missing* pkey from cleanup
+    /// -- it must never exclude an account that already has a valid one.
+    #[test]
+    fn valid_pkey_is_always_included_even_while_in_flight() {
+        assert_eq!(
+            classify_account_scan(&Ok(true), true),
+            AccountScanVerdict::Include
+        );
+        assert_eq!(
+            classify_account_scan(&Ok(true), false),
+            AccountScanVerdict::Include
+        );
+    }
+
+    #[test]
+    fn missing_pkey_and_not_in_flight_is_deleted() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), false),
+            AccountScanVerdict::Delete
+        );
+    }
+
+    #[test]
+    fn missing_pkey_while_in_flight_is_skipped() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), true),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    #[test]
+    fn query_error_is_always_skipped() {
+        let err = Err("locked database".to_string());
+        assert_eq!(classify_account_scan(&err, true), AccountScanVerdict::Skip);
+        assert_eq!(classify_account_scan(&err, false), AccountScanVerdict::Skip);
     }
 }

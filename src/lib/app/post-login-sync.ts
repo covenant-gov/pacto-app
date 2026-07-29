@@ -5,6 +5,7 @@
 
 import { get } from 'svelte/store';
 import { connect as apiConnect } from '../api/auth';
+import { monitorRelayConnections } from '../api/relays';
 import { fetchMessages, refreshProfileNow, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
@@ -27,6 +28,8 @@ export function runPostLoginNetworkSync(npub: string): void {
     } catch (e) {
       console.error('connect after login failed:', e);
     }
+
+    monitorRelayConnections().catch((e) => console.error('monitor_relay_connections failed:', e));
 
     dmLog('post-login: fetchMessages(true)');
     dmSyncStatus.set('syncing');

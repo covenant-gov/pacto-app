@@ -82,6 +82,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `src-tauri/src/evm/contracts/` | `alloy::sol!` bindings for `pacto_gov`, `pacto_sponsor`, `safe`, `erc20`, `hats`. |
 | `static/` | Static assets, including twemoji SVGs. |
 | `docs/` | Authoritative tracked docs for architecture, wallet, MLS, storage, build, governance. |
+| `docs/solutions/` | Documented solutions to past bugs and workflow/process learnings, organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in a documented area. |
 | `.cursor/rules/` | Editor-enforced project policies: brief comments, no legacy shims, no issue IDs, no Cursor attribution, no unrequested deletions. |
 | `.github/workflows/` | `release.yaml` — Tauri cross-platform release builds on `v*` tags. |
 
@@ -159,6 +160,7 @@ cd src-tauri && cargo test
 | File | Purpose |
 |------|---------|
 | `package.json` | Frontend scripts and dependencies (Tauri API/plugins, viem, SvelteKit, Vitest, Vite). |
+| `CONCEPTS.md` | Shared domain vocabulary (npub, MLS, Squad, governance terms) for humans and agents. |
 | `pnpm-workspace.yaml` | pnpm workspace definition (single-root, build allowances only). |
 | `vite.config.ts` | Vite + Vitest config; port 1420, HMR on 1421 with `TAURI_DEV_HOST`, `envPrefix: ['VITE_', 'ALCHEMY_']`. |
 | `svelte.config.js` | Static adapter with SPA fallback to `index.html`. |
@@ -189,6 +191,8 @@ cd src-tauri && cargo test
 | `docs/README.md` | Docs index and navigation hub. |
 | `.cursor/rules/*.mdc` | Editor-enforced project policies. |
 | `.github/workflows/release.yaml` | Tag-driven cross-platform Tauri release CI. |
+| `.github/workflows/ci.yaml` | PR gate: typecheck, lint (incl. Tauri command wiring), unit tests, e2e, backend tests. |
+| `scripts/check-orphaned-tauri-commands.mjs` | Ratchet check: fails on NEW `generate_handler!` commands with no frontend `invoke()` call; pre-existing gaps are grandfathered in `scripts/orphaned-tauri-commands-baseline.txt`. |
 
 ## Runtime/Tooling Preferences
 
@@ -202,7 +206,7 @@ cd src-tauri && cargo test
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
 - **Whisper feature:** Enabled by default. Metal on macOS, Vulkan on Windows/Linux, excluded on Android. Feature-gated in `Cargo.toml`.
 - **MCP bridge:** `tauri-plugin-mcp-bridge` is included in debug builds only; release builds exclude it.
-- **CI:** `.github/workflows/release.yaml` publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag. Requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
+- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust `cargo test --lib`, and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
 
 ## Testing & QA
 
@@ -214,14 +218,15 @@ cd src-tauri && cargo test
   - Reset Svelte stores in `beforeEach`/`afterEach`.
   - Rust DB tests create `rusqlite::Connection::open_in_memory()` and execute the minimal schema DDL inline.
 - **Coverage:** `@vitest/coverage-v8` is available via `pnpm test:coverage:serve`; no configured thresholds.
-- **Quality gates:** The `release.yaml` workflow only builds and publishes releases; it does **not** run `pnpm test` or `cargo test`. Local verification is the current safety net.
+- **Quality gates:** `ci.yaml` runs `pnpm test:coverage` and `cargo test --lib` on every PR (see CI above); `release.yaml` only builds and publishes tagged releases and does not run tests.
 - **Manual QA:** `docs/wallet/MANUAL_E2E_CHECKLIST.md` and `docs/wallet/OPERATOR_SMOKE.md`.
 - **Security posture:** `docs/audits/README.md` states there is no independent third-party audit; treat wallet/key-handling code as alpha-grade.
 
 ## AI Assistant Notes
 
 - **Start every investigation at `docs/README.md`** and the relevant domain index before opening source files. If docs and code disagree, trust the code and update the doc.
-- **Before adding a Tauri command:** implement it in the appropriate backend module, add `#[tauri::command]`, register it in `src-tauri/src/lib.rs`, and add a typed wrapper in `src/lib/api/<domain>.ts`.
+- **Before adding a Tauri command:** implement it in the appropriate backend module, add `#[tauri::command]`, register it in `src-tauri/src/lib.rs`, and add a typed wrapper in `src/lib/api/<domain>.ts` **that is actually called from a store, component, or startup hook** — a command registered in `generate_handler!` counts as "used" to `cargo build`/clippy even if the frontend never calls it, so a whole feature (e.g. a backend polling loop) can ship dead behind a clean build. Run `pnpm check:tauri-commands` to catch this before committing.
+- **Before treating an existing-but-idle backend command or loop as "already running":** verify it, don't assume it — `grep -rn "invoke(.*'<command_name>'" src/`. A plan or comment asserting "the backend already does X" is not evidence; an empty grep means wiring it up is in scope, not an out-of-scope assumption. See `docs/solutions/logic-errors/orphaned-relay-health-monitor-command.md`.
 - **Before adding an environment variable:** verify whether it is consumed by Vite (must start with `VITE_` or `ALCHEMY_`) or by Rust (read directly from `std::env`). Public protocol addresses never go in `.env`.
 - **Before changing SQLite schema:** add a new numbered refinery migration under `src-tauri/src/migrations/` (e.g., `V28__my_change.sql` for schema changes, or a `.rs` migration if the transformation requires generated SQL). Do not edit inline DDL in tests; tests should apply the same migration set via `crate::migrations::run_migrations`.
 - **Before modifying the build or CI:** the Tauri action is the release path; changes to `vite.config.ts` or `src-tauri/tauri.conf.json` can break the desktop bundle or the updater.
