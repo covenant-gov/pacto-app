@@ -65,9 +65,9 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: 'macos-latest' # for Intel based macs.
             args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-24.04'
+          - platform: 'ubuntu-22.04' # oldest LTS providing libwebkit2gtk-4.1-dev; avoids a newer-webkit2gtk EGL/Wayland init bug on non-Ubuntu compositors and maximizes glibc compat for the AppImage/deb.
             args: '--target x86_64-unknown-linux-gnu'
-          - platform: 'ubuntu-24.04-arm'
+          - platform: 'ubuntu-24.04-arm' # stays on Noble: Ubuntu's own glslc/shaderc apt package (needed by whisper-rs/ggml-vulkan on arm64, where LunarG's SDK isn't published) only exists from 24.04 onward.
             args: '--target aarch64-unknown-linux-gnu'
           - platform: 'windows-latest'
             args: '--target x86_64-pc-windows-msvc'
@@ -125,7 +125,7 @@ jobs:
           else
             # Install Vulkan SDK with glslc compiler
             wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-            sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+            sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
             sudo apt-get update
             sudo apt-get install -y vulkan-sdk
           fi
@@ -195,7 +195,7 @@ jobs:
           uploadWorkflowArtifacts: true
 
       - name: Upload CHANGELOG to release
-        if: matrix.platform == 'ubuntu-24.04'
+        if: matrix.platform == 'ubuntu-22.04'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber
