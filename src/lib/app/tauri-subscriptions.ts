@@ -2,10 +2,6 @@ import { listen, type UnlistenFn } from '../api';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
-import {
-  isPactoAppRoutableInviteContent,
-  resolveInviteInviterNpub,
-} from '../pacto-app-inbox';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
 import {
   handleInviteeConsentForAdmit,
@@ -13,25 +9,21 @@ import {
 } from '../squad/squad-outbound-invite';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
-import { get } from 'svelte/store';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
 import {
   backendDmMessages,
   backendGroupMessages,
   dmChatsByNpub,
-  appendPactoAppInboxMessage,
-  reconcilePeerThreadInvites,
   dmSyncStatus,
   typingByChat,
   pendingMlsWelcomes,
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
-  activeDmId,
   type DmMessage,
   type DmChatState,
   type SyncStatus,
 } from '../../stores/app';
-import { incrementDmUnread, dmThreadScrolledToBottom } from '../../stores/dm-unread';
+import { mergeUnreadCounts } from '../../stores/unread';
 
 const TYPING_EXPIRY_SEC = 15;
 
@@ -118,51 +110,39 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       void handleInviteeConsentForAdmit(inviteAccepted, { broadcastAdmitNeeded: true });
       return;
     }
-    const isPactoRoutableInvite = isPactoAppRoutableInviteContent(content);
     const m = normalizeDmPayload(message);
-    if (isPactoRoutableInvite) {
-      if (!m.mine) {
-        appendPactoAppInboxMessage(m, resolveInviteInviterNpub(m, chat_id, content));
-        const invite = parseSquadInviteMessage(content);
-        if (invite?.groupId) {
-          void syncMlsGroupsNow(invite.groupId).catch((e) =>
-            dmError('syncMlsGroupsNow after squad invite DM', e)
-          );
+    backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
+      const list = byNpub[chat_id] ?? [];
+      if (list.some((x) => x.id === m.id)) return byNpub;
+      const incomingHash = walletTxAnnouncementHash(m.content ?? '');
+      const withoutDupes = list.filter((x) => {
+        if (x.id === m.id) return false;
+        if (incomingHash) {
+          return walletTxAnnouncementHash(x.content ?? '') !== incomingHash;
         }
-      }
-    } else {
-      backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
-        const list = byNpub[chat_id] ?? [];
-        if (list.some((x) => x.id === m.id)) return byNpub;
-        const incomingHash = walletTxAnnouncementHash(m.content ?? '');
-        const withoutDupes = list.filter((x) => {
-          if (x.id === m.id) return false;
-          if (incomingHash) {
-            return walletTxAnnouncementHash(x.content ?? '') !== incomingHash;
-          }
-          return !(x.id.startsWith('opt-') && x.mine && x.content === m.content);
-        });
-        return { ...byNpub, [chat_id]: [...withoutDupes, m] };
+        return !(x.id.startsWith('opt-') && x.mine && x.content === m.content);
       });
-      if (!m.mine) {
-        const active = get(activeDmId);
-        const atBottom = get(dmThreadScrolledToBottom);
-        if (active !== chat_id || !atBottom) {
-          incrementDmUnread(chat_id);
-        }
+      return { ...byNpub, [chat_id]: [...withoutDupes, m] };
+    });
+    dmChatsByNpub.update((map: Record<string, DmChatState>) => {
+      const cur = map[chat_id];
+      const next = {
+        npub: chat_id,
+        name: cur?.name,
+        avatar: cur?.avatar,
+        hasFromMe: (cur?.hasFromMe ?? false) || m.mine,
+        hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
+        lastAt: Math.max(cur?.lastAt ?? 0, m.at),
+      };
+      return { ...map, [chat_id]: next };
+    });
+    if (!m.mine) {
+      const invite = parseSquadInviteMessage(content);
+      if (invite?.groupId) {
+        void syncMlsGroupsNow(invite.groupId).catch((e) =>
+          dmError('syncMlsGroupsNow after squad invite DM', e)
+        );
       }
-      dmChatsByNpub.update((map: Record<string, DmChatState>) => {
-        const cur = map[chat_id];
-        const next = {
-          npub: chat_id,
-          name: cur?.name,
-          avatar: cur?.avatar,
-          hasFromMe: (cur?.hasFromMe ?? false) || m.mine,
-          hasFromThem: (cur?.hasFromThem ?? false) || !m.mine,
-          lastAt: Math.max(cur?.lastAt ?? 0, m.at),
-        };
-        return { ...map, [chat_id]: next };
-      });
     }
     const clearTimeoutId = typingClearTimeouts.get(chat_id);
     if (clearTimeoutId) {
@@ -188,26 +168,21 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     const m = normalizeDmPayload(message);
     if (chat_id.startsWith('npub1')) {
-      const msgContent = m.content ?? '';
-      if (isPactoAppRoutableInviteContent(msgContent)) {
-        if (!m.mine) {
-          appendPactoAppInboxMessage(m, resolveInviteInviterNpub(m, chat_id, msgContent));
-          const invite = parseSquadInviteMessage(msgContent);
-          if (invite?.groupId) {
-            void syncMlsGroupsNow(invite.groupId).catch((e) =>
-              dmError('syncMlsGroupsNow after squad invite DM update', e)
-            );
-          }
+      backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
+        const list = byNpub[chat_id] ?? [];
+        const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
+        return {
+          ...byNpub,
+          [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
+        };
+      });
+      if (!m.mine) {
+        const invite = parseSquadInviteMessage(m.content ?? '');
+        if (invite?.groupId) {
+          void syncMlsGroupsNow(invite.groupId).catch((e) =>
+            dmError('syncMlsGroupsNow after squad invite DM update', e)
+          );
         }
-      } else {
-        backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
-          const list = byNpub[chat_id] ?? [];
-          const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
-          return {
-            ...byNpub,
-            [chat_id]: [...out, m].sort((a: DmMessage, b: DmMessage) => a.at - b.at),
-          };
-        });
       }
     } else {
       backendGroupMessages.update((byGroup: Record<string, DmMessage[]>) => {
@@ -236,7 +211,6 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
 
   register(unsubs, 'sync_finished', () => {
     dmLog('sync_finished (historical sync complete)');
-    reconcilePeerThreadInvites();
     dmSyncStatus.set('finished');
     setTimeout(() => dmSyncStatus.set('idle'), 2500);
   });
@@ -285,6 +259,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     onMlsStructuredMessage(m.content, group_id, handlers);
     if (group_name) updateChannelNameIfPlaceholder(group_id, group_name);
+  });
+
+  register(unsubs, 'unread_counts_changed', (event) => {
+    mergeUnreadCounts(event.payload as Record<string, number>);
   });
 
   refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));

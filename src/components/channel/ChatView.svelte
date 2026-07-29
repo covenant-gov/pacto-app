@@ -53,7 +53,9 @@
   } from '../../stores/app';
   import { dmSyncStatus } from '../../stores/dm';
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
-  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage } from '../../lib/api/nostr';
+  import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
+  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -651,6 +653,7 @@
     if (lastClearedMentionKey !== key) {
       lastClearedMentionKey = key;
       clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
     }
   }
 
@@ -659,6 +662,7 @@
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     if (isNearBottom && activeSquad && activeChannel) {
       clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
     }
   }
 
@@ -756,6 +760,9 @@
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
         <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
+        {#if !hideChannelOverflowMenu}
+          <NotificationLevelIndicator chatId={$activeChannelId ?? ''} onOpen={() => (channelMenuOpen = true)} />
+        {/if}
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
@@ -809,6 +816,7 @@
                 {$t('messaging.channel.leaveChannel')}
               </button>
             {/if}
+            <NotificationLevelMenu chatId={$activeChannelId ?? ''} onSelect={() => (channelMenuOpen = false)} />
           </div>
         {/if}
       </div>

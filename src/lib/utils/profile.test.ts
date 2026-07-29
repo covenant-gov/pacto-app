@@ -35,7 +35,6 @@ function makeProfile(overrides?: Partial<NostrProfile>): NostrProfile {
     about: '',
     website: '',
     nip05: '',
-    muted: false,
     bot: false,
     ...overrides,
   };

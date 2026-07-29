@@ -35,7 +35,6 @@ import {
   walletSendPrefillFromRequest,
   backendDmMessages,
   dmThreadAnnouncementsByNpub,
-  pactoAppInboxMessages,
   messageCountByChat,
   loadedOffsetByChat,
   dmSyncStatus,
@@ -43,11 +42,10 @@ import {
   dmSendError,
 } from '../../stores/dm';
 import {
-  dmLastReadByNpub,
-  dmUnreadByNpub,
-  pactoAppInboxLastReadId,
   dmThreadScrolledToBottom,
-} from '../../stores/dm-unread';
+  resetUnreadStore,
+} from '../../stores/unread';
+import { resetCatchUpStore } from '../../stores/catch-up';
 import {
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
@@ -118,7 +116,6 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_squad_nav_order',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
-  'pacto_app_inbox',
   'pacto_wallet_summary_cache_v1',
   TREASURY_SAFES_CACHE_PREFIX,
   SQUAD_INFRA_CACHE_PREFIX,
@@ -232,10 +229,8 @@ export function clearAccountState(npub?: string): void {
 
   backendDmMessages.set({});
   dmThreadAnnouncementsByNpub.set({});
-  pactoAppInboxMessages.set([]);
-  dmLastReadByNpub.set({});
-  dmUnreadByNpub.set({});
-  pactoAppInboxLastReadId.set('');
+  resetUnreadStore();
+  resetCatchUpStore();
   dmThreadScrolledToBottom.set(false);
   messageCountByChat.set({});
   loadedOffsetByChat.set({});

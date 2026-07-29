@@ -5,6 +5,7 @@ export const SETTINGS_SECTION_IDS = [
   'settings-nostr',
   'settings-evm',
   'settings-app',
+  'settings-notifications',
   'settings-dangerzone',
 ] as const;
 

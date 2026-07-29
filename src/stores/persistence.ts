@@ -8,7 +8,6 @@ import { hydrateSafeStateCacheFromDisk } from '../lib/dashboard/safe-state-disk-
 import { safeStateByTreasuryId } from './safe';
 import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-key-choice';
 import { getInviteDecisionLoadEntries } from './invite-decisions';
-import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
 import { setCurrentNpubForPersistence, persistenceKey } from './persistence-context';
 import { loadBackupVerified } from './backup-verification';
 import {
@@ -33,16 +32,13 @@ import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
 import {
   activeDmId,
   pinnedDmNpubs,
-  pactoAppInboxMessages,
   PINNED_DM_NPUBS_PREFIX,
-  PACTO_APP_INBOX_PREFIX,
   LAST_DM_NPUB_PREFIX,
   newChatDraftNpub,
   newChatDraftMessage,
   NEW_CHAT_DRAFT_NPUB_PREFIX,
   NEW_CHAT_DRAFT_MESSAGE_PREFIX,
 } from './dm';
-import { pactoAppInboxLastReadId, PACTO_APP_INBOX_LAST_READ_PREFIX } from './dm-unread';
 import { hydrateSquadsFromDb } from '../lib/squad/squad-catalog';
 import { normalizeHubChannelName } from './squads';
 import { hydrateLocale } from './locale';
@@ -86,20 +82,6 @@ export function loadAccountState(npub: string): void {
       const arr = Array.isArray(parsed) ? (parsed as string[]).filter((x) => typeof x === 'string') : [];
       pinnedDmNpubs.set(new Set(arr));
     }
-    const rawPactoInbox = localStorage.getItem(`${PACTO_APP_INBOX_PREFIX}_${npub}`);
-    if (rawPactoInbox) {
-      try {
-        const parsed = JSON.parse(rawPactoInbox) as unknown;
-        const list = Array.isArray(parsed) ? (parsed as PactoAppInboxEntry[]) : [];
-        pactoAppInboxMessages.set(list.filter((m) => typeof m?.id === 'string' && typeof m.inviterNpub === 'string'));
-      } catch {
-        pactoAppInboxMessages.set([]);
-      }
-    } else {
-      pactoAppInboxMessages.set([]);
-    }
-    const rawInboxLastRead = localStorage.getItem(`${PACTO_APP_INBOX_LAST_READ_PREFIX}_${npub}`);
-    pactoAppInboxLastReadId.set(typeof rawInboxLastRead === 'string' ? rawInboxLastRead : '');
     const lastDm = localStorage.getItem(`${LAST_DM_NPUB_PREFIX}_${npub}`)?.trim();
     if (lastDm) activeDmId.set(lastDm);
     const draftNpub = localStorage.getItem(`${NEW_CHAT_DRAFT_NPUB_PREFIX}_${npub}`);

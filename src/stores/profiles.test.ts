@@ -32,6 +32,10 @@ vi.mock('../lib/api/nostr', () => ({
   type: {},
 }));
 
+vi.mock('./unread', () => ({
+  hydrateUnreadCounts: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('profiles', () => {
   const npub = 'npub1alice';
   const baseProfile: NostrProfile = {
@@ -51,7 +55,6 @@ describe('profiles', () => {
     last_updated: 0,
     typing_until: 0,
     mine: false,
-    muted: false,
     bot: false,
     avatar_cached: '',
     banner_cached: '',

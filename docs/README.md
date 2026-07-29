@@ -3,7 +3,8 @@
 These docs are **tracked in git** and are the primary map for humans and coding agents: architecture, storage, messaging, and operational behavior.
 
 | Area | Purpose |
-|------|---------|
+|------|--------|
+| **[svelte5-reference.md](./svelte5-reference.md)** | **Svelte 5 runes, patterns, events, snippets, TypeScript, and migration notes** for frontend development |
 | **[BEADS.md](./BEADS.md)** | **Issue tracking with Beads (`bd`)**: install, sync, daily workflow, and DoltHub setup |
 | **[CONCEPTS.md](../CONCEPTS.md)** | Shared vocabulary / acronyms (npub, MLS, roster EVM, ACL, …) |
 | **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |

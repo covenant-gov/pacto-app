@@ -13,7 +13,7 @@
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
-  /** Opens a DM with the inviter (Pacto App inbox). */
+  /** Opens a DM with the actual inviter, when they differ from the thread's peer. */
   export let onMessageInviter: (() => void) | undefined = undefined;
 
   $: title = (() => {

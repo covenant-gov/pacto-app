@@ -33,7 +33,6 @@ function makeProfile(overrides: Partial<NostrProfile>): NostrProfile {
     last_updated: 0,
     typing_until: 0,
     mine: false,
-    muted: false,
     ...overrides,
   } as NostrProfile;
 }

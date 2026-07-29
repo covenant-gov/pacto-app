@@ -16,7 +16,6 @@
   import { getEvmAddress } from '../../lib/api/auth';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
-  import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
   import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
@@ -38,6 +37,8 @@
   } from '../../stores/app';
   import { dmSyncStatus } from '../../stores/dm';
   import SyncStatusIndicator from './SyncStatusIndicator.svelte';
+  import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
@@ -162,7 +163,6 @@
     notifyIfAtBottom();
   }
 
-  $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
@@ -298,16 +298,14 @@
     dmThreadScrolledToBottom.set(false);
   }
 
-  $: contactProfile = isPactoAppThread ? null : npub ? $profiles[npub] : null;
+  $: contactProfile = npub ? $profiles[npub] : null;
   $: peerBlockedByMe = contactProfile?.blocked === true;
-  $: contactAvatarSrc = isPactoAppThread ? null : getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = isPactoAppThread
-    ? PACTO_APP_DISPLAY_NAME
-    : contactProfile
-      ? getProfileDisplayName(contactProfile)
-      : npub
-        ? truncateNpub(npub)
-        : $t('messaging.message.replyUnknown');
+  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
+  $: contactDisplayName = contactProfile
+    ? getProfileDisplayName(contactProfile)
+    : npub
+      ? truncateNpub(npub)
+      : $t('messaging.message.replyUnknown');
 
   let menuOpen = false;
   let showNicknameEdit = false;
@@ -398,13 +396,9 @@
 
 <div class="dm-thread">
   <div class="dm-thread-header">
-    <div class="dm-thread-header-avatar" class:pacto-app-avatar={isPactoAppThread}>
+    <div class="dm-thread-header-avatar">
       {#if contactAvatarSrc}
         <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
-      {:else if isPactoAppThread}
-        <!-- eslint-disable @intlify/svelte/no-raw-text -->
-        <span class="dm-thread-header-avatar-placeholder">I</span>
-        <!-- eslint-enable @intlify/svelte/no-raw-text -->
       {:else}
         <span class="dm-thread-header-avatar-placeholder">{contactDisplayName.charAt(0).toUpperCase()}</span>
       {/if}
@@ -434,7 +428,8 @@
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
             <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
-            {#if showOptionsMenu && !isPactoAppThread}
+            {#if showOptionsMenu}
+              <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />
               <div class="dm-thread-header-actions">
                 <button
                   type="button"
@@ -469,6 +464,7 @@
                         </button>
                       {/if}
                     {/if}
+                    <NotificationLevelMenu chatId={npub} onSelect={() => (menuOpen = false)} />
                     {#if onDeleteChat}
                       <button
                         type="button"
@@ -487,7 +483,7 @@
               </div>
             {/if}
           </div>
-          {#if showWalletButton && !isPactoAppThread}
+          {#if showWalletButton}
             <button
               type="button"
               class="dm-thread-wallet-btn"
@@ -515,7 +511,6 @@
             </button>
           {/if}
         </div>
-        {#if !isPactoAppThread}
         <div class="dm-thread-npub-row">
           <span class="dm-thread-npub">{truncateNpub(npub)}</span>
           <button
@@ -532,7 +527,6 @@
             </span>
           </button>
         </div>
-        {/if}
       {/if}
     </div>
   </div>
@@ -549,7 +543,6 @@
         <DmMessageRouter
           {msg}
           {npub}
-          {isPactoAppThread}
           {contactDisplayName}
           {fulfilledWalletRequestIds}
           {acceptingSquadInviteId}
@@ -576,7 +569,6 @@
   {#if $dmSendError}
     <p class="dm-thread-error" role="alert">{$dmSendError}</p>
   {/if}
-  {#if !isPactoAppThread}
   <MessageInput
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
@@ -588,7 +580,6 @@
     repliedToPreview={replyPreview}
     onCancelReply={cancelReply}
   />
-  {/if}
 </div>
 
 <style>

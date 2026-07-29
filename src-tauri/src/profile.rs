@@ -24,7 +24,6 @@ pub struct Profile {
     pub status: Status,
     pub last_updated: u64,
     pub mine: bool,
-    pub muted: bool,
     /// Local-only: discard incoming DMs from this npub after unwrap (relays still deliver wraps).
     #[serde(default)]
     pub blocked: bool,
@@ -58,7 +57,6 @@ impl Profile {
             status: Status::new(),
             last_updated: 0,
             mine: false,
-            muted: false,
             blocked: false,
             bot: false,
             avatar_cached: String::new(),
@@ -797,34 +795,6 @@ pub async fn toggle_blocked(npub: String) -> bool {
     db::set_profile(handle.clone(), updated).await.unwrap();
     let _ = crate::update_unread_counter(handle.clone()).await;
     new_blocked
-}
-
-/// Toggles the muted status of a profile
-#[tauri::command]
-pub async fn toggle_muted(npub: String) -> bool {
-    let handle = TAURI_APP.get().unwrap();
-
-    let muted = match STATE.lock().await.get_profile_mut(&npub) {
-        Some(profile) => {
-            profile.muted = !profile.muted;
-
-            // Update the frontend
-            handle.emit("profile_muted", serde_json::json!({
-                "profile_id": &profile.id,
-                "value": &profile.muted
-            })).unwrap();
-
-            // Save to DB
-            db::set_profile(handle.clone(), profile.clone()).await.unwrap();
-
-            profile.muted
-        }
-        None => false
-    };
-
-    // Refresh unread badge count to reflect mute changes immediately
-    let _ = crate::update_unread_counter(handle.clone()).await;
-    muted
 }
 
 /// Sets a nickname for a profile

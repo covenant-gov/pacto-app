@@ -9,7 +9,6 @@ import {
   composingNewChat,
 } from './dm';
 import { activeTopNavTab, activeView } from './navigation';
-import { PACTO_APP_DM_THREAD_ID } from '../lib/pacto-app-inbox';
 
 const PEER = 'npub1peer';
 
@@ -35,13 +34,6 @@ describe('dmWalletSidebarVisible', () => {
   it('is false on non-DM top nav even when open flag is true', () => {
     walletSidebarOpen.set(true);
     activeTopNavTab.set('commons');
-    expect(get(dmWalletSidebarVisible)).toBe(false);
-  });
-
-  it('is false for pacto-app inbox thread', () => {
-    walletSidebarOpen.set(true);
-    activeDmId.set(PACTO_APP_DM_THREAD_ID);
-    activeDmTab.set('pinned');
     expect(get(dmWalletSidebarVisible)).toBe(false);
   });
 });

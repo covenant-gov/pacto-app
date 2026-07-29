@@ -3245,6 +3245,8 @@ pub async fn edit_message(
     Ok(edit_id)
 }
 
+const MENTION_ENVELOPE_KIND: &str = "pacto.mentions.envelope.v1";
+
 #[derive(serde::Deserialize)]
 struct MentionNotificationEnvelope {
     kind: String,
@@ -3255,11 +3257,40 @@ struct MentionNotificationEnvelope {
 /// display readable text instead of the JSON envelope.
 pub fn extract_mention_notification_body(content: &str) -> String {
     if let Ok(envelope) = serde_json::from_str::<MentionNotificationEnvelope>(content) {
-        if envelope.kind == "pacto.mentions.envelope.v1" {
+        if envelope.kind == MENTION_ENVELOPE_KIND {
             return envelope.body;
         }
     }
     content.to_string()
+}
+
+#[derive(serde::Deserialize)]
+struct MentionTarget {
+    npub: String,
+}
+
+/// Deliberately separate from `MentionNotificationEnvelope`: a malformed
+/// `mentions` value (wrong type, not just absent) must never break body
+/// extraction above, so mention matching parses its own narrower view of
+/// the envelope rather than widening the shared struct.
+#[derive(serde::Deserialize)]
+struct MentionEnvelopeMentions {
+    kind: String,
+    #[serde(default)]
+    mentions: Vec<MentionTarget>,
+}
+
+/// True when the @mention envelope in `content` names `member_npub` as a
+/// target. Plain text, a different envelope kind, or malformed JSON all
+/// resolve to no match rather than an error (KTD3) — the caller has no
+/// recovery path for a badly-formed message beyond treating it as unmentioned.
+pub fn envelope_names_npub(content: &str, member_npub: &str) -> bool {
+    match serde_json::from_str::<MentionEnvelopeMentions>(content) {
+        Ok(envelope) if envelope.kind == MENTION_ENVELOPE_KIND => {
+            envelope.mentions.iter().any(|m| m.npub == member_npub)
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -3294,6 +3325,51 @@ mod extract_mention_notification_body_tests {
     fn malformed_json_returns_original() {
         let content = "not { valid json";
         assert_eq!(extract_mention_notification_body(content), content);
+    }
+}
+
+#[cfg(test)]
+mod envelope_names_npub_tests {
+    use super::envelope_names_npub;
+
+    #[test]
+    fn matches_when_envelope_names_the_member() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hi","mentions":[{"npub":"npub1me","alias":"me"},{"npub":"npub1other","alias":"other"}]}"#;
+        assert!(envelope_names_npub(content, "npub1me"));
+    }
+
+    #[test]
+    fn does_not_match_when_only_other_npubs_are_named() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hi","mentions":[{"npub":"npub1other","alias":"other"}]}"#;
+        assert!(!envelope_names_npub(content, "npub1me"));
+    }
+
+    #[test]
+    fn plain_text_never_matches() {
+        assert!(!envelope_names_npub("hi team", "npub1me"));
+    }
+
+    #[test]
+    fn wrong_envelope_kind_never_matches() {
+        let content = r#"{"kind":"pacto.other.envelope.v1","mentions":[{"npub":"npub1me","alias":"me"}]}"#;
+        assert!(!envelope_names_npub(content, "npub1me"));
+    }
+
+    #[test]
+    fn missing_mentions_key_never_matches_and_does_not_panic() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hi"}"#;
+        assert!(!envelope_names_npub(content, "npub1me"));
+    }
+
+    #[test]
+    fn malformed_mentions_value_never_matches_and_does_not_panic() {
+        let content = r#"{"kind":"pacto.mentions.envelope.v1","body":"hi","mentions":"invalid"}"#;
+        assert!(!envelope_names_npub(content, "npub1me"));
+    }
+
+    #[test]
+    fn malformed_json_never_matches_and_does_not_panic() {
+        assert!(!envelope_names_npub("not { valid json", "npub1me"));
     }
 }
 

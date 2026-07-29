@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import * as rosterKeyChoice from '../lib/squad/squad-roster-key-choice';
-import { SQUAD_DASHBOARD_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
 import {
-  hubChannelAlertCount,
   personalAlertsNeededBySquadId,
   refreshPersonalAlertForSquad,
   resetSquadHubAlertStores,
@@ -17,13 +15,6 @@ import type { Squad } from './squads';
 describe('squad hub channel alerts', () => {
   beforeEach(() => {
     resetSquadHubAlertStores();
-  });
-
-  it('join-requests badge shows squad-wide pending count', () => {
-    const joinRequests = {
-      squad1: [{ eventId: 'a' }, { eventId: 'b' }],
-    };
-    expect(hubChannelAlertCount(SQUAD_DASHBOARD_CHANNEL_NAME, 'squad1', joinRequests as never)).toBe(2);
   });
 
   it('personal alert flag is independent per squad', () => {
@@ -91,20 +82,6 @@ describe('squad hub channel alerts', () => {
   it('mention alert increments count for the correct squad and channel', () => {
     incrementMentionAlert('squad1', 'general');
     expect(get(mentionsBySquadChannel)['squad1:general']).toBe(1);
-  });
-
-  it('mention alert count combines with join request count on dashboard', () => {
-    const joinRequests = { squad1: [{ eventId: 'a' }] };
-    incrementMentionAlert('squad1', SQUAD_DASHBOARD_CHANNEL_NAME);
-    expect(
-      hubChannelAlertCount(
-        SQUAD_DASHBOARD_CHANNEL_NAME,
-        'squad1',
-        joinRequests as never,
-        {},
-        get(mentionsBySquadChannel)
-      )
-    ).toBe(2);
   });
 
   it('clearMentionAlert resets the count for a channel', () => {

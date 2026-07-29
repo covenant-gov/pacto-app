@@ -497,7 +497,6 @@
 <ParentSidebar
   parentName={activeParent?.name ?? ''}
   subheading={subheading}
-  squadId={activeParent?.id ?? null}
   channels={channels}
   activeChannelId={$activeChannelId}
   activeHubChannelName={$activeHubChannelName}

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use once_cell::sync::Lazy;
 
-use crate::{Profile, Status, Message, Chat, ChatType, Attachment, Reaction};
+use crate::{Profile, Status, Message, Chat, ChatType, Attachment, Reaction, chat::NotificationLevel};
 use crate::message::EditEntry;
 use crate::crypto::{internal_encrypt, internal_decrypt};
 use crate::stored_event::{StoredEvent, event_kind};
@@ -37,7 +37,6 @@ pub struct SlimProfile {
     website: String,
     nip05: String,
     status: Status,
-    muted: bool,
     #[serde(default)]
     blocked: bool,
     bot: bool,
@@ -61,7 +60,6 @@ impl Default for SlimProfile {
             website: String::new(),
             nip05: String::new(),
             status: Status::new(),
-            muted: false,
             blocked: false,
             bot: false,
             avatar_cached: String::new(),
@@ -85,7 +83,6 @@ impl From<&Profile> for SlimProfile {
             website: profile.website.clone(),
             nip05: profile.nip05.clone(),
             status: profile.status.clone(),
-            muted: profile.muted,
             blocked: profile.blocked,
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
@@ -112,7 +109,6 @@ impl SlimProfile {
             status: self.status.clone(),
             last_updated: 0,      // Default value
             mine: false,          // Default value
-            muted: self.muted,
             blocked: self.blocked,
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
@@ -125,13 +121,13 @@ impl SlimProfile {
 pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, blocked, bot, avatar_cached, banner_cached FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let profiles = stmt.query_map([], |row| {
         // Get cached paths and validate they exist on disk
-        let avatar_cached: String = row.get(16)?;
-        let banner_cached: String = row.get(17)?;
+        let avatar_cached: String = row.get(15)?;
+        let banner_cached: String = row.get(16)?;
 
         // Only use cached paths if the files actually exist
         let validated_avatar_cached = if !avatar_cached.is_empty() && std::path::Path::new(&avatar_cached).exists() {
@@ -162,9 +158,8 @@ pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<S
                 purpose: String::new(), // Not stored separately
                 url: row.get(12)?,
             },
-            muted: row.get::<_, i32>(13)? != 0,
-            blocked: row.get::<_, i32>(14)? != 0,
-            bot: row.get::<_, i32>(15)? != 0,
+            blocked: row.get::<_, i32>(13)? != 0,
+            bot: row.get::<_, i32>(14)? != 0,
             avatar_cached: validated_avatar_cached,
             banner_cached: validated_banner_cached,
         })
@@ -185,8 +180,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, blocked, bot, avatar_cached, banner_cached)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -200,7 +195,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             nip05 = excluded.nip05,
             status_content = excluded.status_content,
             status_url = excluded.status_url,
-            muted = excluded.muted,
             blocked = excluded.blocked,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
@@ -219,7 +213,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.nip05,
             profile.status.title,
             profile.status.url,
-            profile.muted as i32,
             profile.blocked as i32,
             profile.bot as i32,
             profile.avatar_cached,
@@ -3284,7 +3277,7 @@ pub struct SlimChatDB {
     pub last_read: String,
     pub created_at: u64,
     pub metadata: crate::ChatMetadata,
-    pub muted: bool,
+    pub notification_level: NotificationLevel,
 }
 
 /// Helper function to get or create integer chat ID from identifier
@@ -3331,8 +3324,8 @@ fn get_or_create_chat_id<R: Runtime>(
         };
 
         conn.execute(
-            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
-             VALUES (?1, ?2, ?3, '', ?4, '{}', 0)",
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata)
+             VALUES (?1, ?2, ?3, '', ?4, '{}')",
             rusqlite::params![chat_identifier, chat_type, participants_json, now as i64],
         ).map_err(|e| format!("Failed to create chat: {}", e))?;
 
@@ -3525,7 +3518,7 @@ impl From<&Chat> for SlimChatDB {
             last_read: chat.last_read().clone(),
             created_at: chat.created_at(),
             metadata: chat.metadata().clone(),
-            muted: chat.muted(),
+            notification_level: chat.notification_level(),
         }
     }
 }
@@ -3537,7 +3530,7 @@ impl SlimChatDB {
         chat.last_read = self.last_read.clone();
         chat.created_at = self.created_at;
         chat.metadata = self.metadata.clone();
-        chat.muted = self.muted;
+        chat.notification_level = self.notification_level;
         chat
     }
 }
@@ -3546,7 +3539,7 @@ impl SlimChatDB {
 pub async fn get_all_chats<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimChatDB>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT chat_identifier, chat_type, participants, last_read, created_at, metadata, muted FROM chats ORDER BY created_at DESC")
+    let mut stmt = conn.prepare("SELECT chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level FROM chats ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
     let rows = stmt.query_map([], |row| {
@@ -3566,7 +3559,7 @@ pub async fn get_all_chats<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<Slim
             last_read: row.get(3)?,
             created_at: row.get::<_, i64>(4)? as u64,
             metadata,
-            muted: row.get::<_, i32>(6)? != 0,
+            notification_level: NotificationLevel::from_db_str(&row.get::<_, String>(6)?),
         })
     })
     .map_err(|e| format!("Failed to query chats: {}", e))?;
@@ -3594,14 +3587,14 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
 
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering CASCADE delete
     conn.execute(
-        "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
+        "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(chat_identifier) DO UPDATE SET
             chat_type = excluded.chat_type,
             participants = excluded.participants,
             last_read = excluded.last_read,
             metadata = excluded.metadata,
-            muted = excluded.muted",
+            notification_level = excluded.notification_level",
         rusqlite::params![
             chat_identifier,
             chat_type_int,
@@ -3609,7 +3602,7 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
             slim_chat.last_read,
             slim_chat.created_at as i64,
             metadata_json,
-            slim_chat.muted as i32,
+            slim_chat.notification_level.as_db_str(),
         ],
     ).map_err(|e| format!("Failed to upsert chat: {}", e))?;
 
@@ -3636,6 +3629,10 @@ pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str
     }
 
     println!("[DB] Deleted chat and messages: {} (id {})", chat_identifier, chat_int_id);
+
+    if let Err(e) = crate::catch_up::delete_entries_for_chat(&conn, chat_identifier) {
+        eprintln!("[CatchUp] Failed to delete entries for chat {}: {}", chat_identifier, e);
+    }
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -5346,8 +5343,8 @@ mod legacy_reaction_npub_repair_tests {
 
     fn insert_reaction_event(conn: &rusqlite::Connection, id: &str, npub: &str) {
         conn.execute(
-            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
-             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 0)",
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 'mentions')",
             [],
         )
         .expect("chat");
@@ -5400,8 +5397,8 @@ mod legacy_reaction_npub_repair_tests {
         crate::migrations::run_migrations(&mut conn).expect("migrations");
 
         conn.execute(
-            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
-             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 0)",
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 'mentions')",
             [],
         )
         .expect("chat");
@@ -5420,6 +5417,96 @@ mod legacy_reaction_npub_repair_tests {
             .query_row("SELECT npub FROM events WHERE id = 'msg-1'", [], |row| row.get(0))
             .expect("row");
         assert_eq!(stored, hex, "non-reaction rows must be left untouched even if npub happens to be hex-shaped");
+    }
+}
+
+#[cfg(test)]
+mod chat_notification_level_schema_tests {
+    use super::*;
+
+    fn column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> bool {
+        conn.query_row(
+            &format!("SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = ?1", table),
+            rusqlite::params![column],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false)
+    }
+
+    #[test]
+    fn migrated_schema_has_notification_level_and_no_muted() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        assert!(
+            column_exists(&conn, "chats", "notification_level"),
+            "chats.notification_level should exist"
+        );
+        assert!(!column_exists(&conn, "chats", "muted"), "chats.muted should be dropped");
+        assert!(!column_exists(&conn, "profiles", "muted"), "profiles.muted should be dropped");
+    }
+
+    #[test]
+    fn a_newly_created_chat_row_defaults_to_mentions() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}')",
+            [],
+        )
+        .expect("insert chat without specifying a level");
+
+        let level: String = conn
+            .query_row("SELECT notification_level FROM chats WHERE chat_identifier = 'chat-1'", [], |row| row.get(0))
+            .expect("row");
+        assert_eq!(level, "mentions", "the column default alone must deliver Mentions (R10)");
+    }
+
+    #[test]
+    fn notification_level_round_trips_for_all_three_values() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        for (i, level) in [NotificationLevel::All, NotificationLevel::Mentions, NotificationLevel::Nothing]
+            .iter()
+            .enumerate()
+        {
+            let identifier = format!("chat-{}", i);
+            conn.execute(
+                "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+                 VALUES (?1, 0, '[]', '', 1000, '{}', ?2)",
+                rusqlite::params![identifier, level.as_db_str()],
+            )
+            .expect("insert chat");
+
+            let stored: String = conn
+                .query_row(
+                    "SELECT notification_level FROM chats WHERE chat_identifier = ?1",
+                    rusqlite::params![identifier],
+                    |row| row.get(0),
+                )
+                .expect("row");
+            assert_eq!(NotificationLevel::from_db_str(&stored), *level);
+        }
+    }
+
+    #[test]
+    fn slim_chat_payload_carries_no_muted_key() {
+        let slim_chat = SlimChatDB {
+            id: "chat-1".to_string(),
+            chat_type: ChatType::MlsGroup,
+            participants: vec![],
+            last_read: String::new(),
+            created_at: 0,
+            metadata: crate::ChatMetadata::default(),
+            notification_level: NotificationLevel::Mentions,
+        };
+        let json = serde_json::to_value(&slim_chat).expect("serialize");
+        let obj = json.as_object().expect("object");
+        assert!(!obj.contains_key("muted"), "serialized chat payload must not carry a muted key");
+        assert!(obj.contains_key("notification_level"));
     }
 }
 

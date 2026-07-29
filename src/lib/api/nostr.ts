@@ -33,7 +33,6 @@ export interface NostrProfile {
   about: string;
   website: string;
   nip05: string;
-  muted: boolean;
   /** Local-only: hidden from DM lists; incoming DMs discarded after decrypt. */
   blocked?: boolean;
   bot: boolean;

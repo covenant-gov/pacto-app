@@ -276,6 +276,7 @@
     commons: 'nav.navbar.addButton.commons',
     dms: 'nav.navbar.addButton.dms',
     squads: 'nav.navbar.addButton.squads',
+    catchup: '',
   };
   $: addButtonLabel = showAddButton ? $t(addButtonLabelKeys[$activeTopNavTab]) : '';
   $: showAddButton =

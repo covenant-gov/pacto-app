@@ -5,7 +5,6 @@ use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
 use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-use tauri_plugin_notification::NotificationExt;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 
@@ -49,13 +48,17 @@ mod message;
 pub use message::{Message, Attachment, Reaction};
 use message::extract_mention_notification_body;
 
+mod notification;
+
+mod catch_up;
+
 mod profile;
 pub use profile::{Profile, Status};
 
 mod profile_sync;
 
 mod chat;
-pub use chat::{Chat, ChatType, ChatMetadata};
+pub use chat::{Chat, ChatType, ChatMetadata, NotificationLevel};
 
 mod dashboard_poll;
 
@@ -207,11 +210,6 @@ struct PendingInviteAcceptance {
 }
 
 static PENDING_INVITE: OnceCell<PendingInviteAcceptance> = OnceCell::new();
-
-// Track which MLS welcomes we've already sent notifications for (by wrapper_event_id)
-lazy_static! {
-    static ref NOTIFIED_WELCOMES: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
-}
 
 // TEMPORARY cache of wrapper_event_ids for fast duplicate detection during INIT SYNC ONLY
 // - Populated at init with recent wrapper_ids (last 30 days) to avoid SQL queries for each historical event
@@ -396,62 +394,68 @@ impl ChatState {
         self.add_message_to_chat(&chat_id, message)
     }
     
-    /// Count unread messages across all profiles
-    fn count_unread_messages(&self) -> u32 {
-        let mut total_unread = 0;
-         
-        // Count unread messages in all chats
+    /// Per-chat unread counts (R14, R15: includes MLS groups, not only DM
+    /// peers — every entry in `self.chats` is walked the same way
+    /// regardless of type). A chat at Nothing contributes zero (R17, KD4)
+    /// via U2's badge-contribution predicate: every message this walk
+    /// counts is at least Record tier (an own message, which would be
+    /// Passive, already stops the walk below), so contribution reduces to
+    /// the chat's own level.
+    fn unread_counts_by_chat(&self) -> std::collections::HashMap<String, u32> {
+        let mut counts = std::collections::HashMap::new();
+
         for chat in &self.chats {
-            // Skip muted chats entirely
-            if chat.muted {
+            if !notification::contributes_to_badge(notification::Tier::Record, chat.notification_level) {
                 continue;
             }
 
-            // Skip chats where the corresponding profile is muted (for DMs)
-            let mut skip_for_profile_mute = false;
-            match chat.chat_type {
-                ChatType::DirectMessage => {
-                    // For DMs, chat.id is the other participant's npub
-                    if let Some(profile) = self.get_profile(&chat.id) {
-                        if profile.muted || profile.blocked {
-                            skip_for_profile_mute = true;
-                        }
+            // Skip DM chats whose peer is blocked. The old profile-level
+            // mute skip is gone (KTD6) — DM muting is the chat-level check
+            // above, since a DM chat's id is its peer's npub.
+            let mut skip_for_profile_block = false;
+            if let ChatType::DirectMessage = chat.chat_type {
+                if let Some(profile) = self.get_profile(&chat.id) {
+                    if profile.blocked {
+                        skip_for_profile_block = true;
                     }
                 }
-                ChatType::MlsGroup => {
-                    // For MLS groups, muting is handled at the chat level (already checked above)
-                    // No additional profile-level muting needed
-                }
             }
-            if skip_for_profile_mute {
+            if skip_for_profile_block {
                 continue;
             }
 
             // Find the last read message ID for this chat
             let last_read_id = &chat.last_read;
-            
+
             // Walk backwards from the end to count unread messages
             // Stop when we hit: 1) our own message, or 2) the last_read message
-            let mut unread_count = 0;
+            let mut unread_count: u32 = 0;
             for msg in chat.messages.iter().rev() {
                 // If we hit our own message, stop - we clearly read everything before it
                 if msg.mine {
                     break;
                 }
-                
+
                 // If we hit the last_read message, stop - everything at and before this is read
                 if !last_read_id.is_empty() && msg.id == *last_read_id {
                     break;
                 }
-                
+
                 // Count this message as unread
                 unread_count += 1;
             }
-            
-            total_unread += unread_count as u32;
+
+            if unread_count > 0 {
+                counts.insert(chat.id.clone(), unread_count);
+            }
         }
-        
-        total_unread
+
+        counts
+    }
+
+    /// Total unread count across every chat (feeds the OS dock badge).
+    fn count_unread_messages(&self) -> u32 {
+        self.unread_counts_by_chat().values().sum()
     }
 
     /// Find a message by its ID across all chats
@@ -474,6 +478,120 @@ impl ChatState {
         None
     }
 
+}
+
+#[cfg(test)]
+mod unread_count_tests {
+    use super::*;
+
+    fn unread_message(id: &str, mine: bool) -> Message {
+        Message { id: id.to_string(), content: "hi".to_string(), at: 1, mine, ..Default::default() }
+    }
+
+    #[test]
+    fn nothing_level_chat_contributes_zero_to_map_and_total() {
+        let mut state = ChatState::new();
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::Nothing;
+        chat.messages.push(unread_message("m1", false));
+        chat.messages.push(unread_message("m2", false));
+        state.chats.push(chat);
+
+        assert!(state.unread_counts_by_chat().is_empty());
+        assert_eq!(state.count_unread_messages(), 0);
+    }
+
+    #[test]
+    fn mentions_chat_total_ignores_nothing_chat_unread() {
+        let mut state = ChatState::new();
+
+        let mut counted = Chat::new_dm("npub1peer".to_string());
+        counted.notification_level = NotificationLevel::Mentions;
+        counted.messages.push(unread_message("m1", false));
+        counted.messages.push(unread_message("m2", false));
+        state.chats.push(counted);
+
+        let mut silenced = Chat::new_dm("npub1other".to_string());
+        silenced.notification_level = NotificationLevel::Nothing;
+        silenced.messages.push(unread_message("m3", false));
+        silenced.messages.push(unread_message("m4", false));
+        silenced.messages.push(unread_message("m5", false));
+        state.chats.push(silenced);
+
+        assert_eq!(state.count_unread_messages(), 2);
+    }
+
+    #[test]
+    fn map_includes_mls_chats_keyed_by_group_id() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group("group-abc".to_string(), vec!["npub1a".to_string(), "npub1b".to_string()]);
+        group.messages.push(unread_message("m1", false));
+        state.chats.push(group);
+
+        let counts = state.unread_counts_by_chat();
+        assert_eq!(counts.get("group-abc"), Some(&1));
+    }
+
+    #[test]
+    fn reverse_walk_stops_at_own_most_recent_message_for_mls_chats() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group("group-abc".to_string(), vec!["npub1a".to_string()]);
+        group.messages.push(unread_message("m1", false));
+        group.messages.push(unread_message("m2", true)); // own message: stop here
+        group.messages.push(unread_message("m3", false));
+        group.messages.push(unread_message("m4", false));
+        state.chats.push(group);
+
+        let counts = state.unread_counts_by_chat();
+        assert_eq!(counts.get("group-abc"), Some(&2));
+    }
+
+    #[test]
+    fn marking_mls_chat_read_drops_its_count_to_zero() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group("group-abc".to_string(), vec!["npub1a".to_string()]);
+        group.messages.push(unread_message("m1", false));
+        group.messages.push(unread_message("m2", false));
+        state.chats.push(group);
+        assert_eq!(state.unread_counts_by_chat().get("group-abc"), Some(&2));
+
+        // Same watermark logic `mark_as_read` applies: pick the last non-mine message.
+        let chat = state.chats.iter_mut().find(|c| c.id == "group-abc").unwrap();
+        assert!(chat.set_as_read());
+
+        assert!(state.unread_counts_by_chat().get("group-abc").is_none());
+        assert_eq!(state.count_unread_messages(), 0);
+    }
+
+    #[test]
+    fn raising_a_nothing_chat_to_mentions_recounts_its_already_received_messages() {
+        let mut state = ChatState::new();
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::Nothing;
+        chat.messages.push(unread_message("m1", false));
+        chat.messages.push(unread_message("m2", false));
+        state.chats.push(chat);
+        assert_eq!(state.count_unread_messages(), 0);
+
+        state.chats[0].notification_level = NotificationLevel::Mentions;
+        assert_eq!(state.count_unread_messages(), 2);
+    }
+
+    #[test]
+    fn blocked_dm_peer_contributes_zero_even_at_all_level() {
+        let mut state = ChatState::new();
+        let mut profile = Profile::new();
+        profile.id = "npub1peer".to_string();
+        profile.blocked = true;
+        state.profiles.push(profile);
+
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::All;
+        chat.messages.push(unread_message("m1", false));
+        state.chats.push(chat);
+
+        assert!(state.unread_counts_by_chat().is_empty());
+    }
 }
 
 lazy_static! {
@@ -1866,44 +1984,85 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
         // OS notification: incoming DMs, and outgoing `wallet_tx_announcement` (transfer completed)
         if is_new {
             if !is_mine {
-                let display_info = {
+                let (level, blocked, single) = {
                     let state = STATE.lock().await;
+                    let level = state.get_chat(contact)
+                        .map(|c| c.notification_level)
+                        .unwrap_or_default();
                     match state.get_profile(contact) {
                         Some(profile) => {
-                            if profile.muted || profile.blocked {
-                                None
+                            let display_name = if !profile.nickname.is_empty() {
+                                profile.nickname.clone()
+                            } else if !profile.name.is_empty() {
+                                profile.name.clone()
+                            } else if !profile.display_name.is_empty() {
+                                profile.display_name.clone()
                             } else {
-                                let display_name = if !profile.nickname.is_empty() {
-                                    profile.nickname.clone()
-                                } else if !profile.name.is_empty() {
-                                    profile.name.clone()
-                                } else if !profile.display_name.is_empty() {
-                                    profile.display_name.clone()
-                                } else {
-                                    String::from("New Message")
-                                };
-                                let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
-                                    .unwrap_or_else(|| msg.content.clone());
-                                Some((display_name, body))
-                            }
+                                String::from("New Message")
+                            };
+                            let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
+                                .unwrap_or_else(|| msg.content.clone());
+                            (level, profile.blocked, notification::SingleEventNotification { title: display_name, body })
                         }
                         None => {
                             let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
                                 .unwrap_or_else(|| msg.content.clone());
-                            Some((String::from("New Message"), body))
+                            (level, false, notification::SingleEventNotification { title: String::from("New Message"), body })
                         }
                     }
                 };
-                if let Some((display_name, content)) = display_info {
-                    let notification = NotificationData::direct_message(display_name, content);
-                    show_notification_generic(notification);
+                if !blocked {
+                    if let Some(handle) = TAURI_APP.get() {
+                        let chat_display_name = single.title.clone();
+                        notification::emit(
+                            handle,
+                            notification::EventKind::DirectMessage,
+                            level,
+                            false,
+                            false,
+                            contact,
+                            &chat_display_name,
+                            single,
+                        ).await;
+                        crate::catch_up::record_admitted_event_for_handle(
+                            handle,
+                            notification::EventKind::DirectMessage,
+                            false,
+                            false,
+                            contact,
+                            &msg.id,
+                        ).await;
+                    }
                 }
             } else if let Some(body) = {
                 let state = STATE.lock().await;
                 try_wallet_tx_announcement_notify_body(&msg.content, true, contact, &state)
             } {
-                let notification = NotificationData::dm_wallet_sent(body);
-                show_notification_generic(notification);
+                if let Some(handle) = TAURI_APP.get() {
+                    let level = {
+                        let state = STATE.lock().await;
+                        state.get_chat(contact).map(|c| c.notification_level).unwrap_or_default()
+                    };
+                    let single = notification::SingleEventNotification { title: "Transfer sent".to_string(), body };
+                    notification::emit(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        level,
+                        false,
+                        false,
+                        contact,
+                        "Transfer sent",
+                        single,
+                    ).await;
+                    crate::catch_up::record_admitted_event_for_handle(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        false,
+                        false,
+                        contact,
+                        &msg.id,
+                    ).await;
+                }
             }
         }
 
@@ -1985,30 +2144,51 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
 
         // Send OS notification for incoming files (only after confirming message is new)
         if !is_mine && is_new {
-            let display_info = {
+            let (level, blocked, single) = {
                 let state = STATE.lock().await;
+                let level = state.get_chat(contact)
+                    .map(|c| c.notification_level)
+                    .unwrap_or_default();
                 match state.get_profile(contact) {
                     Some(profile) => {
-                        if profile.muted || profile.blocked {
-                            None
+                        let display_name = if !profile.nickname.is_empty() {
+                            profile.nickname.clone()
+                        } else if !profile.name.is_empty() {
+                            profile.name.clone()
                         } else {
-                            let display_name = if !profile.nickname.is_empty() {
-                                profile.nickname.clone()
-                            } else if !profile.name.is_empty() {
-                                profile.name.clone()
-                            } else {
-                                String::from("New Message")
-                            };
-                            Some((display_name, extension.clone()))
-                        }
+                            String::from("New Message")
+                        };
+                        let file_description = "Sent a ".to_string() + &get_file_type_description(&extension);
+                        (level, profile.blocked, notification::SingleEventNotification { title: display_name, body: file_description })
                     }
-                    None => Some((String::from("New Message"), extension.clone())),
+                    None => {
+                        let file_description = "Sent a ".to_string() + &get_file_type_description(&extension);
+                        (level, false, notification::SingleEventNotification { title: String::from("New Message"), body: file_description })
+                    }
                 }
             };
-            if let Some((display_name, file_extension)) = display_info {
-                let file_description = "Sent a ".to_string() + &get_file_type_description(&file_extension);
-                let notification = NotificationData::direct_message(display_name, file_description);
-                show_notification_generic(notification);
+            if !blocked {
+                if let Some(handle) = TAURI_APP.get() {
+                    let chat_display_name = single.title.clone();
+                    notification::emit(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        level,
+                        false,
+                        false,
+                        contact,
+                        &chat_display_name,
+                        single,
+                    ).await;
+                    crate::catch_up::record_admitted_event_for_handle(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        false,
+                        false,
+                        contact,
+                        &msg.id,
+                    ).await;
+                }
             }
         }
 
@@ -2290,19 +2470,16 @@ async fn notifs() -> Result<bool, String> {
                                                                 // Clear typing indicator for this sender (they just sent a message)
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
 
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
 
                                                                     // Add message to chat
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    
-                                                                    // Check if we should send notification (not muted, not mine)
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
-                                                                    
+
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
+
                                                                     // Clear typing indicator for sender
                                                                     let typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0); // 0 = clear immediately
@@ -2310,16 +2487,15 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    
-                                                                    (added, typers, notify)
+
+                                                                    (added, typers, level)
                                                                 };
-                                                                
-                                                                // Send OS notification for new group messages
-                                                                if was_added && should_notify {
-                                                                    // Get sender name and group name for notification
+
+                                                                // Route every group text message through the single tier-aware emit (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
-                                                                        
+
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
                                                                             if !profile.nickname.is_empty() {
                                                                                 profile.nickname.clone()
@@ -2331,19 +2507,41 @@ async fn notifs() -> Result<bool, String> {
                                                                         } else {
                                                                             "Someone".to_string()
                                                                         };
-                                                                        
+
                                                                         let group = if let Some(chat) = state.get_chat(&group_id_for_persist) {
                                                                             chat.metadata.get_name().unwrap_or("Group Chat").to_string()
                                                                         } else {
                                                                             "Group Chat".to_string()
                                                                         };
-                                                                        
+
                                                                         (sender, group)
                                                                     };
-                                                                    
-                                                                    // Create notification for text message
-                                                                    let notification = NotificationData::group_message(sender_name, group_name, extract_mention_notification_body(&message.content));
-                                                                    show_notification_generic(notification);
+
+                                                                    let mention_hit = crate::message::envelope_names_npub(&message.content, &my_npub_for_block);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: extract_mention_notification_body(&message.content),
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            level,
+                                                                            message.mine,
+                                                                            mention_hit,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            message.mine,
+                                                                            mention_hit,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
                                                                 
                                                                 // Save to database if message was added
@@ -2378,19 +2576,16 @@ async fn notifs() -> Result<bool, String> {
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
                                                                 let is_file = true;
 
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
 
                                                                     // Add message to chat
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    
-                                                                    // Check if we should send notification (not muted, not mine)
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
-                                                                    
+
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
+
                                                                     // Clear typing indicator for sender
                                                                     let typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0); // 0 = clear immediately
@@ -2398,16 +2593,15 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    
-                                                                    (added, typers, notify)
+
+                                                                    (added, typers, level)
                                                                 };
-                                                                
-                                                                // Send OS notification for new group messages
-                                                                if was_added && should_notify {
-                                                                    // Get sender name and group name for notification
+
+                                                                // Route every group file message through the single tier-aware emit (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
-                                                                        
+
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
                                                                             if !profile.nickname.is_empty() {
                                                                                 profile.nickname.clone()
@@ -2419,17 +2613,16 @@ async fn notifs() -> Result<bool, String> {
                                                                         } else {
                                                                             "Someone".to_string()
                                                                         };
-                                                                        
+
                                                                         let group = if let Some(chat) = state.get_chat(&group_id_for_persist) {
                                                                             chat.metadata.get_name().unwrap_or("Group Chat").to_string()
                                                                         } else {
                                                                             "Group Chat".to_string()
                                                                         };
-                                                                        
+
                                                                         (sender, group)
                                                                     };
-                                                                    
-                                                                    // Create appropriate notification (both text and files use group_message)
+
                                                                     let content = if is_file {
                                                                         let extension = message.attachments.first()
                                                                             .map(|att| att.extension.clone())
@@ -2438,9 +2631,30 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         extract_mention_notification_body(&message.content)
                                                                     };
-                                                                    let notification = NotificationData::group_message(sender_name, group_name, content);
-                                                                    
-                                                                    show_notification_generic(notification);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: content,
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            level,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
                                                                 
                                                                 // Save to database if message was added
@@ -2510,23 +2724,22 @@ async fn notifs() -> Result<bool, String> {
                                                                     }
                                                                 }
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
                                                                     let _typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0);
                                                                         chat.get_active_typers()
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    (added, _typers, notify)
+                                                                    (added, _typers, level)
                                                                 };
-                                                                if was_added && should_notify {
+                                                                // A new poll needs every member's vote — routed as an action prompt (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
@@ -2547,12 +2760,30 @@ async fn notifs() -> Result<bool, String> {
                                                                         };
                                                                         (sender, group)
                                                                     };
-                                                                    let notification = NotificationData::group_message(
-                                                                        sender_name,
-                                                                        group_name,
-                                                                        "New poll — vote in Dashboard → Polls.".to_string(),
-                                                                    );
-                                                                    show_notification_generic(notification);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: "New poll — vote in Dashboard → Polls.".to_string(),
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::ActionPrompt,
+                                                                            level,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::ActionPrompt,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
                                                                 if was_added {
                                                                     if let Some(handle) = TAURI_APP.get() {
@@ -2577,6 +2808,7 @@ async fn notifs() -> Result<bool, String> {
                                                                             let _ = save_chat(handle.clone(), &chat).await;
                                                                             let _ = save_chat_messages(handle.clone(), &group_id_for_persist, &chat.messages).await;
                                                                         }
+                                                                        schedule_debounced_unread_recompute(handle.clone());
                                                                     }
                                                                     Some(message)
                                                                 } else {
@@ -2803,6 +3035,7 @@ async fn notifs() -> Result<bool, String> {
                                 &record.content,
                                 record.npub.as_deref(),
                             );
+                            schedule_debounced_unread_recompute(handle.clone());
                         }
                     }
                 }
@@ -3852,134 +4085,6 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     });
     
     Ok(true)
-}
-
-/// Notification type enum for different kinds of notifications
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum NotificationType {
-    DirectMessage,
-    GroupMessage,
-    GroupInvite,
-}
-
-/// Generic notification data structure
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct NotificationData {
-    notification_type: NotificationType,
-    title: String,
-    body: String,
-    /// Optional group name for group-related notifications
-    group_name: Option<String>,
-    /// Optional sender name
-    sender_name: Option<String>,
-}
-
-impl NotificationData {
-    /// Create a DM notification (works for both text and file attachments)
-    fn direct_message(sender_name: String, content: String) -> Self {
-        Self {
-            notification_type: NotificationType::DirectMessage,
-            title: sender_name.clone(),
-            body: content,
-            group_name: None,
-            sender_name: Some(sender_name),
-        }
-    }
-
-    /// Outgoing on-chain transfer announcement (`wallet_tx_announcement`); title is product-neutral.
-    fn dm_wallet_sent(body: String) -> Self {
-        Self {
-            notification_type: NotificationType::DirectMessage,
-            title: "Transfer sent".to_string(),
-            body,
-            group_name: None,
-            sender_name: None,
-        }
-    }
-
-    /// Create a group message notification (works for both text and file attachments)
-    fn group_message(sender_name: String, group_name: String, content: String) -> Self {
-        Self {
-            notification_type: NotificationType::GroupMessage,
-            title: format!("{} - {}", sender_name, group_name),
-            body: content,
-            group_name: Some(group_name),
-            sender_name: Some(sender_name),
-        }
-    }
-
-    /// Create a group invite notification
-    fn group_invite(group_name: String, inviter_name: String) -> Self {
-        Self {
-            notification_type: NotificationType::GroupInvite,
-            title: format!("Group Invite: {}", group_name),
-            body: format!("Invited by {}", inviter_name),
-            group_name: Some(group_name),
-            sender_name: Some(inviter_name),
-        }
-    }
-}
-
-/// Show an OS notification with generic notification data
-fn show_notification_generic(data: NotificationData) {
-    let handle = TAURI_APP.get().unwrap();
-
-    // Only send notifications if the app is not focused
-    if !handle
-        .webview_windows()
-        .iter()
-        .next()
-        .unwrap()
-        .1
-        .is_focused()
-        .unwrap()
-    {
-        // Play notification sound (non-blocking, desktop only)
-        #[cfg(desktop)]
-        {
-            let handle_clone = handle.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = audio::play_notification_if_enabled(&handle_clone) {
-                    eprintln!("Failed to play notification sound: {}", e);
-                }
-            });
-        }
-
-        #[cfg(target_os = "android")]
-        {
-            // Determine summary based on notification type
-            let summary = match data.notification_type {
-                NotificationType::DirectMessage => "Private Message",
-                NotificationType::GroupMessage => "Group Message",
-                NotificationType::GroupInvite => "Group Invite",
-            };
-            
-            handle
-                .notification()
-                .builder()
-                .title(&data.title)
-                .body(&data.body)
-                .large_body(&data.body)
-                .icon("ic_notification")
-                .summary(summary)
-                .large_icon("ic_large_icon")
-                .show()
-                .unwrap_or_else(|e| eprintln!("Failed to send notification: {}", e));
-        }
-        
-        #[cfg(not(target_os = "android"))]
-        {
-            handle
-                .notification()
-                .builder()
-                .title(&data.title)
-                .body(&data.body)
-                .large_body(&data.body)
-                .show()
-                .unwrap_or_else(|e| eprintln!("Failed to send notification: {}", e));
-        }
-    }
 }
 
 
@@ -5241,14 +5346,72 @@ fn relaunch_app(app_handle: AppHandle) {
     tauri::process::restart(&app_handle.env());
 }
 
+/// Last per-chat counts emitted to the frontend, so `update_unread_counter`
+/// can emit only the chats whose count actually changed (R14's single
+/// authority, without re-sending every chat on every recompute).
+static LAST_UNREAD_COUNTS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, u32>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Guards against scheduling more than one pending debounced recompute at
+/// once (KTD9): a burst of MLS messages spawns a single delayed task, not
+/// one per message.
+static UNREAD_RECOMPUTE_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Debounce window for the MLS-arrival recompute path. The DM arrival path
+/// and explicit actions (mark-as-read, a level change) call
+/// `update_unread_counter` directly instead, so they are never delayed by
+/// this window (R17's "moves badges in the same interaction").
+const UNREAD_RECOMPUTE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Returns the entries in `current` that differ from `last` (added, or a
+/// changed value) plus a zero entry for every id in `last` no longer in
+/// `current`. Pure and STATE-independent so the "only changed chats" and
+/// "removed chats zero out" contracts are unit-testable without a database
+/// or app handle.
+fn diff_unread_counts(
+    last: &std::collections::HashMap<String, u32>,
+    current: &std::collections::HashMap<String, u32>,
+) -> std::collections::HashMap<String, u32> {
+    let mut changed: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for (chat_id, count) in current {
+        if last.get(chat_id) != Some(count) {
+            changed.insert(chat_id.clone(), *count);
+        }
+    }
+    for chat_id in last.keys() {
+        if !current.contains_key(chat_id) {
+            changed.insert(chat_id.clone(), 0);
+        }
+    }
+    changed
+}
+
+/// Immediate (non-debounced) recompute: updates the OS dock badge with the
+/// total and emits `unread_counts_changed` with only the per-chat entries
+/// whose count changed since the last emission. Every explicit caller
+/// (mark-as-read, a notification-level change) wants this path; the MLS
+/// arrival handler instead goes through `schedule_debounced_unread_recompute`.
 #[tauri::command]
 async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
     // Get the count of unread messages from the state
-    let unread_count = {
+    let (unread_count, counts_by_chat) = {
         let state = STATE.lock().await;
-        state.count_unread_messages()
+        let counts_by_chat = state.unread_counts_by_chat();
+        let unread_count: u32 = counts_by_chat.values().sum();
+        (unread_count, counts_by_chat)
     };
-    
+
+    // Emit only the chats whose count changed (added, removed, or a
+    // different value) since the last emission.
+    {
+        let mut last = LAST_UNREAD_COUNTS.lock().await;
+        let changed = diff_unread_counts(&last, &counts_by_chat);
+        if !changed.is_empty() {
+            let _ = handle.emit("unread_counts_changed", &changed);
+        }
+        *last = counts_by_chat;
+    }
+
     // Get the main window
     if let Some(window) = handle.get_webview_window("main") {
         if unread_count > 0 {
@@ -5282,6 +5445,88 @@ async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
     }
     
     unread_count
+}
+
+/// Debounced recompute for the MLS arrival path (R18, KTD9): the walk
+/// contends with the rumor loop for the same global lock, and squad
+/// traffic is far heavier than DM traffic, so a recompute per message would
+/// put contention on a hot path. A burst inside the window collapses into
+/// one recompute at its end.
+fn schedule_debounced_unread_recompute<R: Runtime>(handle: AppHandle<R>) {
+    if UNREAD_RECOMPUTE_PENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return; // already scheduled
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(UNREAD_RECOMPUTE_DEBOUNCE).await;
+        UNREAD_RECOMPUTE_PENDING.store(false, std::sync::atomic::Ordering::SeqCst);
+        let _ = update_unread_counter(handle).await;
+    });
+}
+
+/// Full per-chat unread map, for the frontend's single hydrate call (R14) —
+/// no `startsWith('npub1')` filter, no client-side counting.
+#[tauri::command]
+async fn get_unread_counts() -> std::collections::HashMap<String, u32> {
+    let state = STATE.lock().await;
+    state.unread_counts_by_chat()
+}
+
+#[cfg(test)]
+mod unread_diff_and_debounce_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn map(pairs: &[(&str, u32)]) -> HashMap<String, u32> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn diff_reports_only_added_and_changed_entries() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1), ("b", 3), ("c", 5)]);
+        let changed = diff_unread_counts(&last, &current);
+        assert_eq!(changed, map(&[("b", 3), ("c", 5)]));
+    }
+
+    #[test]
+    fn diff_zeroes_out_entries_removed_from_current() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1)]);
+        let changed = diff_unread_counts(&last, &current);
+        assert_eq!(changed, map(&[("b", 0)]));
+    }
+
+    #[test]
+    fn diff_is_empty_when_nothing_changed() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1), ("b", 2)]);
+        assert!(diff_unread_counts(&last, &current).is_empty());
+    }
+
+    fn test_handle() -> AppHandle<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+            .handle()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn burst_of_calls_collapses_into_one_pending_recompute() {
+        UNREAD_RECOMPUTE_PENDING.store(false, std::sync::atomic::Ordering::SeqCst);
+        let handle = test_handle();
+
+        schedule_debounced_unread_recompute(handle.clone());
+        assert!(UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+
+        // A second call while one is already pending must not schedule another.
+        schedule_debounced_unread_recompute(handle.clone());
+        assert!(UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Once the debounce window elapses and the recompute runs, the guard clears.
+        tokio::time::sleep(UNREAD_RECOMPUTE_DEBOUNCE + std::time::Duration::from_millis(300)).await;
+        assert!(!UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+    }
 }
 
 #[cfg(all(not(target_os = "android"), feature = "whisper"))]
@@ -6371,15 +6616,20 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
     
     // Send notifications for new welcomes (outside blocking task)
     // Only notify for welcomes we haven't notified about before
-    {
-        let mut notified = NOTIFIED_WELCOMES.lock().await;
-        
-        for welcome in &welcomes {
-            // Skip if we've already notified about this welcome
-            if notified.contains(&welcome.wrapper_event_id) {
+    for welcome in &welcomes {
+        if let Some(handle) = TAURI_APP.get() {
+            // DB-backed dedup (R13): a `welcome`-kind entry already existing
+            // for this wrapper_event_id means already notified, and it holds
+            // across a restart because the row is in SQLite, not process memory.
+            let is_new = crate::catch_up::record_welcome_for_handle(
+                handle,
+                &welcome.nostr_group_id,
+                &welcome.wrapper_event_id,
+            ).await;
+            if !is_new {
                 continue;
             }
-            
+
             // Get inviter's display name
             let inviter_name = {
                 let state = STATE.lock().await;
@@ -6395,12 +6645,27 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
                     "Someone".to_string()
                 }
             };
-            
-            let notification = NotificationData::group_invite(welcome.group_name.clone(), inviter_name);
-            show_notification_generic(notification);
-            
-            // Mark this welcome as notified
-            notified.insert(welcome.wrapper_event_id.clone());
+
+            // No chat exists yet for a not-yet-accepted welcome, so there is
+            // no per-chat level to read; default (Mentions) always
+            // interrupts for an ActionPrompt, matching the prior
+            // unconditional-notify behavior. Keyed by wrapper_event_id
+            // rather than a chat id — each invite is distinct, so
+            // per-chat coalescing does not apply here.
+            let single = notification::SingleEventNotification {
+                title: format!("Group Invite: {}", welcome.group_name),
+                body: format!("Invited by {}", inviter_name),
+            };
+            notification::emit(
+                handle,
+                notification::EventKind::ActionPrompt,
+                NotificationLevel::default(),
+                false,
+                false,
+                &welcome.wrapper_event_id,
+                &welcome.group_name,
+                single,
+            ).await;
         }
     }
     
@@ -6486,10 +6751,7 @@ async fn do_accept_mls_welcome<R: Runtime>(
         }
     }
 
-    {
-        let mut notified = NOTIFIED_WELCOMES.lock().await;
-        notified.remove(&wrapper_event_id_hex);
-    }
+    crate::catch_up::resolve_welcome_for_handle(&handle, &wrapper_event_id_hex).await;
 
     if let Some(app) = TAURI_APP.get() {
         let _ = app.emit(
@@ -6979,6 +7241,11 @@ pub fn run() {
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
+            catch_up::list_catch_up_entries,
+            catch_up::catch_up_count,
+            catch_up::resolve_catch_up_entry,
+            catch_up::resolve_all_catch_up_entries,
+            catch_up::record_action_needed_entry,
             commons::commons_publish_broadcast,
             commons::commons_list_cached_broadcasts,
             commons::commons_fetch_broadcasts,
@@ -7009,7 +7276,7 @@ pub fn run() {
             profile::update_status,
             profile::upload_avatar,
             chat::mark_as_read,
-            profile::toggle_muted,
+            chat::set_notification_level,
             profile::toggle_blocked,
             profile::set_nickname,
             profile::get_profile,
@@ -7081,6 +7348,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             update_unread_counter,
+            get_unread_counts,
             logout,
             create_account,
             get_platform_features,

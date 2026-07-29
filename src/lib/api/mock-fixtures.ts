@@ -68,7 +68,6 @@ export const profileFixtures: Record<string, MockCommandHandler> = {
       last_updated: 0,
       typing_until: 0,
       mine: false,
-      muted: false,
       bot: false,
       avatar_cached: '',
       banner_cached: '',

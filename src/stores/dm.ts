@@ -1,22 +1,10 @@
 import { writable, derived, get } from 'svelte/store';
 import { activeTopNavTab, activeView } from './navigation';
 import type { SupportedChainId } from '../lib/wallet/chains';
-import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
-import {
-  isPactoAppRoutableInviteContent,
-  isPactoAppThreadId,
-  mergePactoAppInboxEntry,
-  PACTO_APP_DM_THREAD_ID,
-  resolveInviteInviterNpub,
-  toPactoAppInboxEntry,
-} from '../lib/pacto-app-inbox';
 import { persistenceKey } from './persistence-context';
 import {
   initInviteDecisionPersistence,
 } from './invite-decisions';
-
-export type { PactoAppInboxEntry };
-export { PACTO_APP_DM_THREAD_ID, PACTO_APP_DISPLAY_NAME, isPactoAppThreadId } from '../lib/pacto-app-inbox';
 
 export type DmTab = 'friends' | 'requests' | 'pending' | 'search' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
@@ -161,7 +149,6 @@ export function dmSidebarCategoryForNpub(
   chats: Record<string, DmChatState>,
   pinned: Set<string>
 ): DmSidebarCategory {
-  if (npub === PACTO_APP_DM_THREAD_ID) return 'pinned';
   const c = chats[npub];
   if (!c) return 'friends';
   if (pinned.has(npub) && c.hasFromMe && c.hasFromThem) return 'pinned';
@@ -276,8 +263,7 @@ export const dmWalletSidebarVisible = derived(
     $topNav === 'dms' &&
     $view === 'hub' &&
     ($dmTab === 'friends' || $dmTab === 'pinned') &&
-    !$composing &&
-    !isPactoAppThreadId($dmId),
+    !$composing,
 );
 
 export function toggleWalletSidebar(): void {
@@ -312,73 +298,6 @@ export const dmSendError = writable<string | null>(null);
 export const backendDmMessages = writable<Record<string, DmMessage[]>>({});
 
 export const dmThreadAnnouncementsByNpub = writable<Record<string, DmMessage[]>>({});
-
-export const PACTO_APP_INBOX_PREFIX = 'pacto_app_inbox';
-
-export const pactoAppInboxMessages = writable<PactoAppInboxEntry[]>([]);
-
-pactoAppInboxMessages.subscribe((value) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(PACTO_APP_INBOX_PREFIX);
-  if (!key) return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore quota
-  }
-});
-
-export function appendPactoAppInboxMessage(message: DmMessage, inviterNpub: string): void {
-  const entry = toPactoAppInboxEntry(message, inviterNpub);
-  pactoAppInboxMessages.update((list) => mergePactoAppInboxEntry(list, entry));
-}
-
-export function reconcilePeerThreadInvites(): void {
-  let inboxSnapshot: PactoAppInboxEntry[] = [];
-  pactoAppInboxMessages.update((list) => {
-    inboxSnapshot = [...list];
-    return list;
-  });
-  const peersEmptied: string[] = [];
-  backendDmMessages.update((byNpub) => {
-    const nextByNpub: Record<string, DmMessage[]> = {};
-    for (const [peer, msgs] of Object.entries(byNpub)) {
-      const kept: DmMessage[] = [];
-      for (const m of msgs) {
-        const content = m.content ?? '';
-        if (isPactoAppRoutableInviteContent(content)) {
-          if (!m.mine) {
-            const entry = toPactoAppInboxEntry(
-              m,
-              resolveInviteInviterNpub(m, peer, content)
-            );
-            if (!inboxSnapshot.some((x) => x.id === entry.id)) {
-              inboxSnapshot = mergePactoAppInboxEntry(inboxSnapshot, entry);
-            }
-          }
-        } else {
-          kept.push(m);
-        }
-      }
-      if (kept.length > 0) {
-        nextByNpub[peer] = kept;
-      } else if (msgs.length > 0) {
-        peersEmptied.push(peer);
-      }
-    }
-    pactoAppInboxMessages.set(inboxSnapshot);
-    return nextByNpub;
-  });
-  if (peersEmptied.length > 0) {
-    dmChatsByNpub.update((map) => {
-      const next = { ...map };
-      for (const peer of peersEmptied) {
-        delete next[peer];
-      }
-      return next;
-    });
-  }
-}
 
 /** Optimistic outbound DM row (replaced on `message_new` when content matches). */
 export function appendPendingOutboundDmMessage(npub: string, content: string): string {
