@@ -4,6 +4,70 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## Unreleased
+
+### Bug Fixes
+- Add messaging namespace to i18n translation keys
+- Consent-first squad admit, channel catch-up, and nav reorder
+- Point to current deployment for squad-sponsor
+- CR late-joiner findings for welcome fallback, i18n, nav persistence, and admit guard
+- Add rich link previews and fix social icons on landing page (#163)
+- Guard account cleanup scan against in-flight account creation
+- Send groupId (not group_id) to sync_mls_groups_now invoke
+- Guard evm ensure_ready against unset encryption key during restore
+- Stop boot-time account scan from deleting valid accounts on query error
+- Prevent relay input overflow from content-box width sizing
+- Dedupe mls welcome wrapper events on resync
+- Make relay refresh spinner visibly spin, drop flashing detail-loading text
+- Account list no longer excludes the auto-selected account
+- Retry transient mls welcome failures instead of discarding them
+- Start relay health-check monitor and catch future orphaned tauri commands in ci
+- Orphaned-tauri-commands scanner misses nested generic invoke<>()
+
+
+### Chores
+- Add i18n lint rule and locale parity tests
+- Chore: ignore AppImage build artifacts
+       - Fix issues with make lint
+
+
+### Documentation
+- Plan the svelte-5-runes migration and require runes in new files
+- Close out calm-notifications epic; dev tooling notes
+
+
+### Features
+- Scaffold svelte-i18n runtime, locale store, and persistence wiring
+- Extract auth, navigation, and messaging strings for i18n
+- Extract settings, profile, and wallet strings for i18n
+- Extract governance, commons, and announcement strings for i18n
+- Extract lib-module strings and backend error mapping for i18n
+- Complete spanish i18n coverage across app ui
+- Add missing spanish i18n locale catalogs
+- Explain mls history limits with a local channel welcome
+- Gov-event gossip for status view and custom squad-level rpc with backup to avoid rate limits (#140)
+- Add backend-owned app-config with frontend validation and enforcement
+- Messaging enhancements — reactions, attachments, image viewer, sync status (#157)
+- Crop and resize avatar images before upload
+- Cap squad and channel name length via app-config
+- Instrument events_received/bytes_down on event receipt (relays)
+- Instrument events_sent/bytes_up at send call sites (relays)
+- Add relay metrics/logs API wrappers and health-state helper (relays)
+- Add inline expandable relay health detail panel (relays)
+- Notification core — per-chat levels, severity tiers, coalesced emit
+- Notification settings, backend unread counts, catch-up store
+- Catch-up destination — counts, filters, navigation & UI
+
+
+### Other
+- Add visual identity
+- Simplify relay health instrumentation and detail panel (relays)
+- Correct receive-count undercount, relay-detail retry dead end, and log flooding (review)
+
+
+### Testing
+- Expand frontend coverage
+
 ## v0.4.0
 
 ### Bug Fixes
