@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: A Calm Notification System for Pacto</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --ink: #1a1d23;
+    --ink-2: #4b5261;
+    --border: #e3e1d8;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --accent-ink: #3730a3;
+    --ok: #047857;
+    --ok-soft: #d1fae5;
+    --warn: #b45309;
+    --warn-soft: #fef3c7;
+    --bad: #b91c1c;
+    --card: #ffffff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  .page { max-width: 920px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  .prose { max-width: 72ch; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0.2rem 0 0.6rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.35rem; margin: 2.6rem 0 0.9rem; padding-top: 1.4rem; border-top: 1px solid var(--border); }
+  h3 { font-size: 1.08rem; margin: 0 0 0.5rem; }
+  .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; font-weight: 700; color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.86em; background: #f0efe9; padding: 0.1em 0.35em; border-radius: 4px; }
+  a { color: var(--accent); }
+  strong { color: inherit; }
+  dl.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.6rem; margin: 1rem 0 0; padding: 0.9rem 1.1rem; background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  dl.meta > div { display: flex; gap: 0.45rem; }
+  dl.meta dt { font-weight: 700; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+  dl.meta dd { margin: 0; }
+  .jump { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1.2rem; margin: 0 0 1.4rem; }
+  .jump ol { margin: 0.3rem 0 0; padding-left: 1.3rem; }
+  .jump li { margin: 0.15rem 0; }
+  article.idea { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.3rem 1.5rem; margin: 1.2rem 0; }
+  article.idea h3 { font-size: 1.12rem; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.55rem 0 0.8rem; }
+  .chip { display: inline-block; font-size: 0.74rem; font-weight: 600; padding: 0.18rem 0.6rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+  .chip.axis { background: #f0efe9; color: var(--ink-2); }
+  .chip.conf-hi { background: var(--ok-soft); color: var(--ok); }
+  .chip.conf-med { background: var(--warn-soft); color: var(--warn); }
+  .field { margin: 0.55rem 0; }
+  .field .label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); display: block; margin-bottom: 0.1rem; }
+  figure { margin: 1rem 0; }
+  figure svg { display: block; max-width: 100%; height: auto; background: #fbfbfa; border: 1px solid var(--border); border-radius: 10px; }
+  figcaption { font-size: 0.8rem; color: var(--ink-2); margin-top: 0.4rem; }
+  table { border-collapse: collapse; width: 100%; margin: 0.8rem 0; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+  .callout { border-radius: 10px; padding: 0.9rem 1.2rem; margin: 1rem 0; background: var(--accent-soft); }
+  .callout .eyebrow { color: var(--accent-ink); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0.9rem 0; }
+  .col { background: #fbfbfa; border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1.1rem; }
+  .col h4 { margin: 0 0 0.5rem; font-size: 0.86rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .col.bad h4 { color: var(--bad); }
+  .col.good h4 { color: var(--ok); }
+  .col ul { margin: 0; padding-left: 1.1rem; }
+  .col li { margin: 0.25rem 0; font-size: 0.92rem; }
+  footer.composition-signal { margin-top: 3.5rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--ink-2); }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <span class="eyebrow">Ideation</span>
+  <h1>A Calm Notification System for Pacto</h1>
+  <p class="prose">Simple, doesn't annoy people, alerts people to missed items, and lets them review missed notifications easily — without a huge influx. Grounded in <a href="https://github.com/covenant-gov/pacto-app/issues/148">issue #148</a> (notification preferences: sounds, per-chat mute, mute-all).</p>
+  <dl class="meta">
+    <div><dt>Date</dt><dd><time datetime="2026-07-25">2026-07-25</time></dd></div>
+    <div><dt>Topic</dt><dd>notification-system</dd></div>
+    <div><dt>Focus</dt><dd>simple, non-annoying notifications; missed-item alerting and review (issue #148)</dd></div>
+    <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+  </dl>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<div class="prose">
+<p><strong>Codebase context.</strong> Pacto is a Tauri v2 desktop app (SvelteKit frontend, Rust backend, Nostr NIP-17 DMs + MLS group messaging, EVM governance). The striking finding: most of the notification backend already exists but is unreachable.</p>
+<ul>
+  <li><strong>Unwired backend.</strong> <code>audio.rs</code> implements <code>NotificationSettings{global_mute, sound}</code> with 4 registered commands (<code>get/set_notification_settings</code>, <code>preview_notification_sound</code>, <code>select_custom_notification_sound</code>) — zero frontend callers. <code>profile::toggle_muted</code> is registered — zero frontend invocations or listeners (while <code>toggle_blocked</code> is fully wired and serves as a template). <code>chats.muted</code> is persisted and honored by notify gating and the unread counter — but no setter command exists, so it is always false.</li>
+  <li><strong>Alert delivery.</strong> OS notifications flow through one choke point, <code>show_notification_generic</code> (<code>lib.rs:3631</code>): gated only on window focus, fired per message, no batching, no rate limit, no severity. The MLS group gate <code>!chat.muted &amp;&amp; !message.mine</code> is copy-pasted at three call sites. The frontend Web Notification path never requests <code>Notification.permission</code> and silently no-ops. In-app toasts are single-slot, auto-dismiss, zero history.</li>
+  <li><strong>Unread &amp; badges.</strong> The frontend unread store hydrates npub1-only (all MLS/squad chats dropped); MLS <code>last_read</code> stays empty forever yet feeds the OS badge; the OS badge is not recounted on MLS arrival; frontend badges ignore mute while the backend counter skips muted chats — the surfaces disagree.</li>
+  <li><strong>Missed-items review.</strong> Nothing exists. The <code>__pacto_app__</code> inbox thread ingests only squad-invite DMs; MLS welcomes are consumed silently; announce/governance cards live only in scrollback; join requests are badge-only with a 24h localStorage cooldown. Governance events are all passive: dashboard polls have no deadline field at all, and no reminder path exists anywhere.</li>
+  <li><strong>Settings shell.</strong> Section list hardcoded in <code>SettingsPage.svelte:9-15</code> + <code>settings-section-collapse.ts</code> (5 sections, none for notifications); collapsible-section and optimistic-checkbox patterns are ready to reuse.</li>
+</ul>
+<p><strong>Past learnings.</strong> None — <code>docs/solutions/</code> does not exist in this repo. This work is a candidate for the first captured learning after it lands.</p>
+<p><strong>External context</strong> (research value: high):</p>
+<ul>
+  <li><a href="https://slack.engineering/how-slack-rebuilt-notifications/">Slack's 2026 notification rebuild</a> — decouple <em>what</em> you get notified about from <em>how</em> you get interrupted; three per-channel options (All / Mentions / Mute); "off" must never silently keep badging; 5x settings engagement post-launch.</li>
+  <li><a href="https://slack.com/blog/news/slack-activity-triage-for-notifications">Slack Activity tab</a> — "A feed flows past you. An inbox waits for you, lets you process it on your terms, and feels done when you're done." One triage surface with filters, bulk-clear, mark-all-read.</li>
+  <li><a href="https://www.smashingmagazine.com/2025/07/design-guidelines-better-notifications-ux/">Notification UX design guidelines</a> — severity tiering (only high-attention earns interruption), snooze-with-expiry over permanent mute, Meta's "less is more" study (volume cuts recovered with net satisfaction gains), Element/Matrix quiet-by-default room modes.</li>
+  <li><a href="https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-ux-guidance">Windows notification UX guidance</a> — notification center as durable, dismissible storage for silent notifications.</li>
+  <li><a href="https://blog.logrocket.com/ux-design/notification-blindness-ux-strategies/">Notification blindness</a> — iOS Scheduled Notification Summary: bundle the non-urgent, let time-critical through.</li>
+</ul>
+<p><strong>Market signal.</strong> Notification overload is a top-3 support-ticket driver at Slack; mute-as-default is the norm in high-frequency products. Quiet-by-default is table stakes — the opportunity gap is the <em>review</em> experience. Governance (proposals, vote deadlines) gives Pacto genuinely time-sensitive items most messengers lack: a severity tier no chat app can copy.</p>
+</div>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ol class="prose">
+  <li><strong>Alert delivery</strong> — sounds + OS toasts: when to interrupt, batching, severity</li>
+  <li><strong>Mute &amp; preference controls</strong> — per-chat/global mute, sound prefs, settings UI</li>
+  <li><strong>Unread &amp; badge surfaces</strong> — chat-list badges, tab dots, OS counter</li>
+  <li><strong>Missed-items review</strong> — inbox/center/digest (greenfield)</li>
+  <li><strong>Governance &amp; time-sensitive events</strong> — proposals, votes, deadlines, join requests</li>
+</ol>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+
+<nav class="jump">
+  <span class="eyebrow">Jump to</span>
+  <ol>
+    <li><a href="#idea-1">Wire the mute + sound backend end-to-end (issue #148)</a></li>
+    <li><a href="#idea-2">One typed notification pipeline: durable log + severity router</a></li>
+    <li><a href="#idea-3">The Inbox becomes the missed-items surface</a></li>
+    <li><a href="#idea-4">Three-tier severity taxonomy, decided once</a></li>
+    <li><a href="#idea-5">Burst collapse: one self-updating notification per chat</a></li>
+    <li><a href="#idea-6">One watermark truth for every badge</a></li>
+    <li><a href="#idea-7">closes_at + an escalation ladder for governance deadlines</a></li>
+  </ol>
+</nav>
+
+<div class="callout">
+  <span class="eyebrow">The combination worth noticing</span>
+  <p style="margin:0.3rem 0 0">Ideas 1–5 assemble into one coherent v1 — <strong>the calm stack</strong>: the #148 wiring (idea 1) is the entry point; the severity table (idea 4) is the policy; burst collapse (idea 5) and quiet defaults keep volume low; the pipeline (idea 2) routes everything; the review surface (idea 3) guarantees nothing silent is ever lost. Each stands alone, but they were generated to interlock.</p>
+</div>
+
+<article class="idea" id="idea-1">
+  <h3>1. Wire the mute + sound backend end-to-end (issue #148)</h3>
+  <div class="chips">
+    <span class="chip axis">Mute &amp; preference controls</span>
+    <span class="chip conf-hi">Confidence 90%</span>
+    <span class="chip">Complexity: Medium</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Pacto has a fully implemented notification-preference backend that no user can touch: all four audio commands are registered with zero frontend callers, <code>toggle_muted</code> emits <code>profile_muted</code> to no listener, and <code>chats.muted</code> is honored everywhere yet has no setter — it is always false. Add the Notifications settings section (sound picker + preview + custom upload + global mute), a per-chat mute toggle in thread/channel options backed by one new chat-mute setter command, and profile mute wired by copying the <code>toggle_blocked</code> template verbatim (API wrapper, dropdown item, store listener). This is issue #148's acceptance criteria, framed as pain relief: the silence controls exist in the DB but are unreachable.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> grep over <code>src/</code> for <code>toggle_muted</code>, <code>profile_muted</code>, and the four audio commands returns no callers (verifier-confirmed); "<code>No command can ever set chat.muted; it is always false</code>" (evidence dossier, confirmed); settings sections hardcoded at <code>SettingsPage.svelte:9-15</code>; <code>toggle_blocked</code> wired end-to-end as the template (<code>nostr.ts:221-223</code>, <code>DmThread.svelte</code>).</div>
+  <div class="field"><span class="label">Rationale</span>
+  Today a user spammed by a busy MLS group has literally no recourse — not per-chat, not per-profile, not global — because every mute path dead-ends in an unwired command. This closes issue #148 entirely with effort M and low risk, and it is the enforcement half of every other idea here: severity tiers and quiet defaults are meaningless if users can't reach the controls.</div>
+  <div class="field"><span class="label">Downsides</span>
+  Pure wiring, no new capability — it makes the current (per-message, focus-gated) alert behavior mutable, not better. Muted-chat badge semantics (backend zeroes muted counts, frontend doesn't) must be decided as part of this work or the disagreement ships to users. Stringly SQL preference keys (<code>notif_global_mute</code>, <code>notif_sound</code>) get calcified a little more with each consumer unless a versioned prefs record is chosen at the same time.</div>
+  <figure>
+    <svg viewBox="0 0 780 210" role="img" aria-label="Diagram: three backend notification features exist on the left; three missing frontend surfaces on the right; dashed arrows between them marked with an X for no caller">
+      <g font-family="inherit" font-size="12">
+        <text x="30" y="24" font-weight="700" fill="#1a1d23">Backend — exists today</text>
+        <text x="560" y="24" font-weight="700" fill="#1a1d23">Frontend — missing</text>
+        <g>
+          <rect x="30" y="40" width="220" height="36" rx="8" fill="#eef2ff" stroke="#c7d2fe"/>
+          <text x="140" y="62" text-anchor="middle" fill="#3730a3">4 audio commands</text>
+          <rect x="30" y="92" width="220" height="36" rx="8" fill="#eef2ff" stroke="#c7d2fe"/>
+          <text x="140" y="114" text-anchor="middle" fill="#3730a3">profile::toggle_muted</text>
+          <rect x="30" y="144" width="220" height="36" rx="8" fill="#eef2ff" stroke="#c7d2fe"/>
+          <text x="140" y="166" text-anchor="middle" fill="#3730a3">chats.muted (persisted)</text>
+        </g>
+        <g stroke="#b91c1c" stroke-dasharray="5 4" stroke-width="1.5">
+          <line x1="262" y1="58" x2="548" y2="58"/>
+          <line x1="262" y1="110" x2="548" y2="110"/>
+          <line x1="262" y1="162" x2="548" y2="162"/>
+        </g>
+        <g font-size="15" font-weight="700" fill="#b91c1c" text-anchor="middle">
+          <text x="405" y="63">✕</text>
+          <text x="405" y="115">✕</text>
+          <text x="405" y="167">✕</text>
+        </g>
+        <text x="405" y="42" font-size="10" fill="#b91c1c" text-anchor="middle">zero callers in src/</text>
+        <g>
+          <rect x="560" y="40" width="190" height="36" rx="8" fill="none" stroke="#9aa1b0" stroke-dasharray="5 4"/>
+          <text x="655" y="62" text-anchor="middle" fill="#4b5261">Notifications settings UI</text>
+          <rect x="560" y="92" width="190" height="36" rx="8" fill="none" stroke="#9aa1b0" stroke-dasharray="5 4"/>
+          <text x="655" y="114" text-anchor="middle" fill="#4b5261">mute menu item + listener</text>
+          <rect x="560" y="144" width="190" height="36" rx="8" fill="none" stroke="#9aa1b0" stroke-dasharray="5 4"/>
+          <text x="655" y="166" text-anchor="middle" fill="#4b5261">chat-mute setter command</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>The gap idea 1 closes: every silence control exists in the backend and dead-ends before the UI.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-2">
+  <h3>2. One typed notification pipeline: durable log + severity router</h3>
+  <div class="chips">
+    <span class="chip axis">Alert delivery</span>
+    <span class="chip conf-hi">Confidence 80%</span>
+    <span class="chip">Complexity: High</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Today OS alerts, sounds, toasts, badges, and announce cards each travel their own ad-hoc path; the only shared point is <code>show_notification_generic</code> (focus-only gate, per-message, no batching or severity), and the MLS mute gate is copy-pasted at three call sites. Introduce a single <code>NotificationEvent</code> envelope (kind, actor, target chat, payload ref, timestamp) emitted by every producer — DM handlers, MLS text/file/poll handlers, welcomes, announce ingestion — into one Rust pipeline that applies visibility/mute/severity policy once, writes every accepted event to a durable per-account log, then fans out to OS toast, sound, badge recount, and the review surface. The toast stops being the notification system and becomes a disposable pointer at durable state.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> <code>show_notification_generic</code> (<code>lib.rs:3631</code>) gates only on <code>is_focused()</code>; the gate <code>!chat.muted &amp;&amp; !message.mine</code> repeats verbatim at <code>lib.rs:2171-2176, 2259-2264, 2388-2392</code>; <code>NotificationData.notification_type</code> exists but no policy consumes it; <code>showToast</code> begins with <code>clearToast()</code> and auto-dismiss records nothing (<code>toast.ts:62-81</code>). All verifier-confirmed.</div>
+  <div class="field"><span class="label">Rationale</span>
+  A choke point is the highest-leverage artifact a notification system can own: severity, batching, rate-limiting, and mute policy are written once and inherited by every current and future event type — deadline reminders and digest entries become new producers, never new gating debates. The three duplicated MLS gates are already proof of the drift this prevents. It also fixes the raw-announce-JSON leak and toast-clobbering data loss as side effects.</div>
+  <div class="field"><span class="label">Downsides</span>
+  The biggest change in the set: touches every producer call site and needs the durable log schema up front. Sequencing risk — done before ideas 3–5 it is a large refactor with no user-visible payoff until they land; done after them it means migrating their call sites a second time. The visibility signal (active thread + scroll pin) lives in the frontend today, so the router either consumes a frontend hint or duplicates that state.</div>
+  <figure>
+    <svg viewBox="0 0 820 300" role="img" aria-label="Diagram: five event producers fan into one router box labeled policy applied once; the router fans out to four outputs including a durable event log">
+      <g font-family="inherit" font-size="12">
+        <text x="30" y="24" font-weight="700" fill="#1a1d23">Producers</text>
+        <g>
+          <rect x="30" y="42" width="170" height="34" rx="8" fill="#f0efe9" stroke="#d8d5c9"/>
+          <text x="115" y="63" text-anchor="middle" fill="#1a1d23">DM handlers</text>
+          <rect x="30" y="90" width="170" height="34" rx="8" fill="#f0efe9" stroke="#d8d5c9"/>
+          <text x="115" y="111" text-anchor="middle" fill="#1a1d23">MLS text / file / poll</text>
+          <rect x="30" y="138" width="170" height="34" rx="8" fill="#f0efe9" stroke="#d8d5c9"/>
+          <text x="115" y="159" text-anchor="middle" fill="#1a1d23">MLS welcomes</text>
+          <rect x="30" y="186" width="170" height="34" rx="8" fill="#f0efe9" stroke="#d8d5c9"/>
+          <text x="115" y="207" text-anchor="middle" fill="#1a1d23">Announce ingestion</text>
+          <rect x="30" y="234" width="170" height="34" rx="8" fill="#f0efe9" stroke="#d8d5c9"/>
+          <text x="115" y="255" text-anchor="middle" fill="#1a1d23">Governance scheduler</text>
+        </g>
+        <g stroke="#4f46e5" stroke-width="1.5" fill="none">
+          <path d="M200 59 C 260 59, 280 130, 320 143"/>
+          <path d="M200 107 C 250 107, 280 133, 320 144"/>
+          <path d="M200 155 L 320 152"/>
+          <path d="M200 203 C 250 203, 280 168, 320 160"/>
+          <path d="M200 251 C 260 251, 280 175, 320 162"/>
+        </g>
+        <rect x="320" y="110" width="180" height="86" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+        <text x="410" y="140" text-anchor="middle" font-weight="700" fill="#3730a3">Severity router</text>
+        <text x="410" y="158" text-anchor="middle" font-size="10.5" fill="#3730a3">visibility · mute · tier · batch</text>
+        <text x="410" y="174" text-anchor="middle" font-size="10.5" fill="#3730a3">policy applied once</text>
+        <g stroke="#4f46e5" stroke-width="1.5" fill="none">
+          <path d="M500 128 C 560 110, 580 75, 620 67"/>
+          <path d="M500 143 C 560 135, 580 123, 620 119"/>
+          <path d="M500 163 C 560 171, 580 177, 620 181"/>
+          <path d="M500 178 C 560 200, 580 230, 620 239"/>
+        </g>
+        <g>
+          <rect x="620" y="50" width="170" height="34" rx="8" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="705" y="71" text-anchor="middle" fill="#1a1d23">OS toast (rare)</text>
+          <rect x="620" y="102" width="170" height="34" rx="8" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="705" y="123" text-anchor="middle" fill="#1a1d23">Sound</text>
+          <rect x="620" y="154" width="170" height="34" rx="8" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="705" y="175" text-anchor="middle" fill="#1a1d23">Badge recount</text>
+          <rect x="620" y="222" width="170" height="34" rx="8" fill="#d1fae5" stroke="#047857"/>
+          <text x="705" y="243" text-anchor="middle" fill="#047857">Durable event log</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>Every producer emits one envelope; policy lives in one place; the log (green) is what makes every quiet default safe.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-3">
+  <h3>3. The Inbox becomes the missed-items surface</h3>
+  <div class="chips">
+    <span class="chip axis">Missed-items review</span>
+    <span class="chip conf-hi">Confidence 85%</span>
+    <span class="chip">Complexity: Medium</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  The app already has the skeleton of a notification center — the pinned <code>__pacto_app__</code> Inbox thread with per-npub persistence, an unread watermark, and an undeletable row — but it ingests only squad-invite DMs, while everything else lands nowhere reviewable. Widen the routing predicate to typed catch-up items: MLS welcomes, join-request outcomes, governance inbox-bucket events, mentions, and a bounded toast log — each with a deep link, cleared individually or swept with mark-all-read. The inbox row's badge becomes the single "you have unread stuff" signal; interruption stays reserved for what earns it.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> the routing predicate is literally invite-only (<code>pacto-app-inbox.ts:26-29</code>, verifier-confirmed); dossier gap summary: welcomes have no UI consumer, join outcomes are one-shot DM divs, toasts are never logged, hub alerts are counts with no enumerable events, governance inbox-bucket items have no reader. <code>external:</code> Slack Activity — "An inbox waits for you, lets you process it on your terms, and feels done when you're done"; the missed-items surface is a distinct pattern from per-chat badges, not a replacement.</div>
+  <div class="field"><span class="label">Rationale</span>
+  This is the direct answer to the user's ask — "review missed notifications easily without a huge influx" — and the market gap: quiet-by-default is table stakes, the review experience is the differentiator. Reusing a pinned, persisted, watermark-cleared thread keeps it small: routing predicates, item renderers, and mark-all-read, not a new subsystem. It also makes every other quiet idea safe — silent items are never lost, they accumulate in exactly one place.</div>
+  <div class="field"><span class="label">Downsides</span>
+  Scope creep is the failure mode: which event types earn an inbox item in v1 (welcomes and join outcomes are unambiguous; toast history and mention rollups are taste calls) needs an explicit cutoff or the list becomes a second firehose. A chat-thread-shaped surface constrains richer per-item actions (snooze, dismiss) later. Two ordering models are viable — extend-the-inbox vs a dedicated surface — and the choice should be made deliberately in a brainstorm, not drifted into.</div>
+  <div class="cols">
+    <div class="col bad">
+      <h4>Today — lands nowhere</h4>
+      <ul>
+        <li>MLS welcomes → store, no UI consumer</li>
+        <li>Join-request outcomes → one-shot DM divs</li>
+        <li>Toasts → single slot, clobbered, never logged</li>
+        <li>Gov inbox-bucket events → no reader</li>
+        <li>Hub alerts → counts only, events not enumerable</li>
+      </ul>
+    </div>
+    <div class="col good">
+      <h4>After — one reviewable list</h4>
+      <ul>
+        <li>Typed items with actor / what / when</li>
+        <li>Deep links into the source surface</li>
+        <li>Cleared individually or mark-all-read</li>
+        <li>Silent by design — zero new interruptions</li>
+        <li>"Feels done when you're done"</li>
+      </ul>
+    </div>
+  </div>
+</article>
+
+<article class="idea" id="idea-4">
+  <h3>4. Three-tier severity taxonomy, decided once</h3>
+  <div class="chips">
+    <span class="chip axis">Alert delivery</span>
+    <span class="chip conf-hi">Confidence 80%</span>
+    <span class="chip">Complexity: Low</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Decide once, in one table, which event kinds are <strong>Interrupt</strong> (OS toast + sound), <strong>Record</strong> (silent; lands in the review surface + badge), and <strong>Passive</strong> (inline card only, no count). The interrupt criterion is actionability — does this demand an action from this user now? Human DMs, mentions, invites, and time-sensitive governance earn Interrupt; group chatter defaults to Record; deploy/sync announces stay Passive. Adding a new event type means assigning it a tier, not re-litigating "should this interrupt?".</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>external:</code> ICU alarm-fatigue redesigns — the structurally exact analogy (same constraints: interruption cost measured in missed critical events; same failure mode: per-event alerting trains users to ignore everything) — converged on "an alarm sounds only when it demands action from this person now"; Slack's rebuild decoupled what-notifies from how-it-interrupts (5x settings engagement). <code>direct:</code> today the only tier is implicit — every non-muted group message fires the gate at <code>lib.rs:2171-2176</code>; <code>NotificationData</code> has no severity field consumed on desktop.</div>
+  <div class="field"><span class="label">Rationale</span>
+  Severity is the compounding decision: one table turns "simple, doesn't annoy people" from taste into enforceable code, and it makes quiet defaults safe — Record-tier items are never lost, just not interrupting. Users mute whole chats to escape noise and then lose the one actionable item inside them; actionability (not source) as the criterion is what lets a busy squad stay unmuted safely.</div>
+  <div class="field"><span class="label">Downsides</span>
+  The tier assignments are product-taste calls (are squad invites Interrupt? are new polls Record or Passive?) that must be debated once in a room — the idea's deliverable is that debate happening, which some teams will experience as process. A static table can't express per-user or per-chat overrides without the preference layer from idea 1 landing first.</div>
+  <table>
+    <thead><tr><th>Tier</th><th>Behavior</th><th>Examples</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Interrupt</strong></td><td>OS toast + sound</td><td>DM from unmuted peer · mention · squad invite · governance deadline escalation</td></tr>
+      <tr><td><strong>Record</strong></td><td>Silent → review surface + badge</td><td>Group chatter · join-request outcomes · welcomes · new polls</td></tr>
+      <tr><td><strong>Passive</strong></td><td>Inline card only, no count</td><td>Deploy/sync announces · vote tallies · reactions</td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article class="idea" id="idea-5">
+  <h3>5. Burst collapse: one self-updating notification per chat</h3>
+  <div class="chips">
+    <span class="chip axis">Alert delivery</span>
+    <span class="chip conf-hi">Confidence 85%</span>
+    <span class="chip">Complexity: Low</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Every accepted message currently calls <code>show_notification_generic</code> individually — one active MLS group produces a per-message OS toast storm. Key the choke point by <code>chat_id</code> with a short quiet window: the first notifying message fires normally; subsequent arrivals update that same notification into a count ("Alice · #governance — 6 new messages") instead of stacking six banners. Mention-class items inhibit the generic burst for that chat. Persist the welcome-dedup set (<code>NOTIFIED_WELCOMES</code> is a volatile in-memory HashSet that re-fires after every restart) while in the area.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> "No rate limiting, no batching, no collapsing: every accepted new message calls show_notification_generic individually" (dossier; call pattern confirmed at <code>lib.rs:2190, 2278, 2401</code>); welcome dedup is an in-memory <code>lazy_static</code> HashSet (<code>lib.rs:189-191</code>). <code>external:</code> Prometheus Alertmanager's grouping + inhibition is the infrastructure industry's proven answer to the identical storm problem; iOS Scheduled Notification Summary validates bundling at consumer scale.</div>
+  <div class="field"><span class="label">Rationale</span>
+  Burst storms are where "annoying" is born — a single excited sender can produce a dozen banners in a minute, and notification overload is a top-3 support-ticket driver at Slack. Collapse deletes interruptions wholesale rather than tuning each one, works even for chats the user deliberately keeps unmuted, and scales from 1 message/day to 1000 with zero user configuration.</div>
+  <div class="field"><span class="label">Downsides</span>
+  Per-platform update/replace semantics in <code>tauri-plugin-notification</code> need a spike — if replacement isn't supported on a platform, collapse degrades to coalesced-delay (hold 10s, send one summary). Slightly stale previews are the price of calm. Choosing the group key (chat? sender×chat?) and window length are real taste calls.</div>
+  <figure>
+    <svg viewBox="0 0 780 200" role="img" aria-label="Before and after: six stacked toast banners on the left collapse into one self-updating summary notification on the right">
+      <g font-family="inherit" font-size="11.5">
+        <text x="30" y="22" font-weight="700" fill="#b91c1c">Today — per message</text>
+        <g fill="#fbfbfa" stroke="#d8d5c9">
+          <rect x="30" y="34" width="250" height="22" rx="6"/>
+          <rect x="30" y="60" width="250" height="22" rx="6"/>
+          <rect x="30" y="86" width="250" height="22" rx="6"/>
+          <rect x="30" y="112" width="250" height="22" rx="6"/>
+          <rect x="30" y="138" width="250" height="22" rx="6"/>
+          <rect x="30" y="164" width="250" height="22" rx="6"/>
+        </g>
+        <g fill="#4b5261">
+          <text x="42" y="49">Alice: hey</text>
+          <text x="42" y="75">Alice: did you see</text>
+          <text x="42" y="101">Alice: the proposal</text>
+          <text x="42" y="127">Bob: yes</text>
+          <text x="42" y="153">Bob: voting now</text>
+          <text x="42" y="179">Alice: same</text>
+        </g>
+        <line x1="300" y1="110" x2="380" y2="110" stroke="#4f46e5" stroke-width="1.5"/>
+        <path d="M380 110 l-8 -4 v8 z" fill="#4f46e5"/>
+        <text x="340" y="100" font-size="10" fill="#4f46e5" text-anchor="middle">collapse</text>
+        <text x="460" y="22" font-weight="700" fill="#047857">After — per burst</text>
+        <rect x="460" y="88" width="290" height="44" rx="8" fill="#d1fae5" stroke="#047857"/>
+        <text x="605" y="106" text-anchor="middle" fill="#047857" font-weight="700">Alice · #governance</text>
+        <text x="605" y="123" text-anchor="middle" fill="#047857">6 new messages — updates in place</text>
+      </g>
+    </svg>
+    <figcaption>Interruption count decouples from message volume; a mention still breaks through on its own.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-6">
+  <h3>6. One watermark truth for every badge</h3>
+  <div class="chips">
+    <span class="chip axis">Unread &amp; badge surfaces</span>
+    <span class="chip conf-hi">Confidence 85%</span>
+    <span class="chip">Complexity: Medium</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Pacto runs two divergent unread implementations that actively disagree: the frontend blind-increments DM badges with no mute check while the backend counter skips muted chats; the frontend hydrate drops every non-npub1 chat (all MLS/squad conversations); MLS <code>last_read</code> stays empty forever yet feeds the OS badge; and the OS badge is never recounted on MLS arrival. Fix it at the root: wire <code>mark_as_read</code> for MLS chats, recount on MLS arrival, hydrate all chats, and make the backend the single owner — computing mute-aware per-chat counts on every state change and pushing them to sidebar rows, tab dots, and the OS badge. The badge contract becomes: badge ⇒ an unseen item exists in a reviewable surface; muted ⇒ no badge anywhere.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> <code>if (!c.id.startsWith('npub1')) continue;</code> (<code>dm-unread.ts:69</code>) drops MLS chats from hydrate; <code>incrementDmUnread</code> is a blind <code>+1</code>; <code>update_unread_counter</code> is called only from DM handlers and mute/block toggles — never on MLS arrival; <code>mark_as_read</code> has exactly one frontend call site; the frontend/backend mute disagreement is confirmed in code. All verifier-confirmed.</div>
+  <div class="field"><span class="label">Rationale</span>
+  A badge that disagrees with itself trains users to ignore badges entirely — silently defeating every other missed-items idea in this set. One watermark is the compounding primitive: fix it once and chat-list badges, tab dots, the OS counter, and the review surface's "new since" line are all consistent by construction, and an entire bug class (cross-surface reconciliation) is deleted rather than patched forever.</div>
+  <div class="field"><span class="label">Downsides</span>
+  Recount cost per arrival on large chat sets is a real performance question (mitigable: increment-then-periodic-recount). Muted-chat badge policy (zero everywhere vs dimmed sidebar badge) is a user-visible semantics decision that must be made explicitly. Sequencing with the frontend's window-limited recount logic needs care during cutover.</div>
+  <figure>
+    <svg viewBox="0 0 800 190" role="img" aria-label="Today three surfaces count unread separately and disagree; after, one backend count fans out to all three surfaces">
+      <g font-family="inherit" font-size="11.5">
+        <text x="30" y="22" font-weight="700" fill="#b91c1c">Today — three counters, three answers</text>
+        <g>
+          <rect x="30" y="36" width="150" height="30" rx="7" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="105" y="55" text-anchor="middle" fill="#1a1d23">Sidebar badge</text>
+          <rect x="30" y="76" width="150" height="30" rx="7" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="105" y="95" text-anchor="middle" fill="#1a1d23">Tab dot</text>
+          <rect x="30" y="116" width="150" height="30" rx="7" fill="#fbfbfa" stroke="#d8d5c9"/>
+          <text x="105" y="135" text-anchor="middle" fill="#1a1d23">OS badge</text>
+          <text x="200" y="55" fill="#b91c1c">frontend +1, ignores mute</text>
+          <text x="200" y="95" fill="#b91c1c">npub1-only, MLS invisible</text>
+          <text x="200" y="135" fill="#b91c1c">stale; MLS never recounts</text>
+        </g>
+        <text x="480" y="22" font-weight="700" fill="#047857">After — one owner, three mirrors</text>
+        <rect x="480" y="56" width="130" height="52" rx="9" fill="#d1fae5" stroke="#047857"/>
+        <text x="545" y="78" text-anchor="middle" fill="#047857" font-weight="700">Backend count</text>
+        <text x="545" y="95" text-anchor="middle" font-size="10" fill="#047857">mute-aware watermark</text>
+        <g stroke="#047857" stroke-width="1.4" fill="none">
+          <path d="M610 66 C 640 60, 650 52, 668 51"/>
+          <path d="M610 82 L 668 82"/>
+          <path d="M610 98 C 640 104, 650 112, 668 113"/>
+        </g>
+        <g>
+          <rect x="670" y="36" width="110" height="30" rx="7" fill="#fbfbfa" stroke="#047857"/>
+          <text x="725" y="55" text-anchor="middle" fill="#047857">Sidebar</text>
+          <rect x="670" y="67" width="110" height="30" rx="7" fill="#fbfbfa" stroke="#047857"/>
+          <text x="725" y="86" text-anchor="middle" fill="#047857">Tab dot</text>
+          <rect x="670" y="98" width="110" height="30" rx="7" fill="#fbfbfa" stroke="#047857"/>
+          <text x="725" y="117" text-anchor="middle" fill="#047857">OS badge</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>A badge is a promise: one wrong number teaches users to verify everything manually — or to ignore all badges.</figcaption>
+  </figure>
+</article>
+
+<article class="idea" id="idea-7">
+  <h3>7. closes_at + an escalation ladder for governance deadlines</h3>
+  <div class="chips">
+    <span class="chip axis">Governance &amp; time-sensitive events</span>
+    <span class="chip conf-med">Confidence 65%</span>
+    <span class="chip">Complexity: Medium</span>
+  </div>
+  <div class="field"><span class="label">Description</span>
+  Governance is the one place Pacto has genuinely time-sensitive items, yet nothing about them is time-aware: <code>DashboardPollDto</code> has no deadline field at all, polls list forever oldest-first, on-chain proposal deadlines render as passive text, and no reminder path exists anywhere. Add a single optional <code>closes_at_ms</code> to the poll DTO and wire format (greenfield — breaking change acceptable), then attach a proximity ladder earned by time-remaining, not volume: silent review-surface entry at T-7d, badge at T-48h, exactly one OS alert in the final hours if the user still hasn't acted. On-chain proposals get the same ladder from their existing deadline field.</div>
+  <div class="field"><span class="label">Basis</span>
+  <code>direct:</code> <code>DashboardPollDto</code> fields are id/parent_id/title/description/options/created_at_ms/created_by_npub — no expiry (verifier-confirmed <code>dashboard_poll.rs:236-244</code>); polls list <code>ORDER BY created_at_ms ASC</code> with no close filter; grep finds no reminder logic anywhere; deadline renders as passive meta text. <code>external:</code> ATC trajectory alerting (MSAW) — alarm because the future intersects a floor, timed to when action still matters; iOS summaries let time-critical alerts through the batch.</div>
+  <div class="field"><span class="label">Rationale</span>
+  Missed votes and expired proposals are the costliest missed items in a governance app — far worse than a missed chat message — and today they are the least alerted. One perfectly-timed escalation per deadline is the highest signal-to-interruption ratio the system can offer, and it justifies the entire severity tier: the one interrupt no user will call annoying, and the one no competing messenger can copy.</div>
+  <div class="field"><span class="label">Downsides</span>
+  Cross-layer commitment: a wire-protocol field (MLS Kind 30078), a scheduler, and per-squad policy (default lead times, who qualifies as "hasn't acted"). Polls without <code>closes_at</code> never remind — an honest limitation users must understand. Getting the ladder wrong (too early, too repeat-happy) re-creates the annoyance problem inside the highest-stakes surface, so the escalation contract needs the same one-time debate as the severity table.</div>
+  <figure>
+    <svg viewBox="0 0 800 140" role="img" aria-label="Timeline ladder: at T minus 7 days a silent review entry, at T minus 48 hours a badge, in the final hours one OS alert if unacted, then the deadline">
+      <g font-family="inherit" font-size="11.5">
+        <line x1="60" y1="62" x2="740" y2="62" stroke="#9aa1b0" stroke-width="1.5"/>
+        <g>
+          <circle cx="130" cy="62" r="7" fill="#eef2ff" stroke="#4f46e5"/>
+          <text x="130" y="92" text-anchor="middle" fill="#3730a3">T-7d</text>
+          <text x="130" y="108" text-anchor="middle" fill="#4b5261">silent review entry</text>
+        </g>
+        <g>
+          <circle cx="360" cy="62" r="7" fill="#eef2ff" stroke="#4f46e5"/>
+          <text x="360" y="42" text-anchor="middle" fill="#3730a3">T-48h</text>
+          <text x="360" y="28" text-anchor="middle" fill="#4b5261">badge</text>
+        </g>
+        <g>
+          <circle cx="590" cy="62" r="7" fill="#fef3c7" stroke="#b45309"/>
+          <text x="590" y="92" text-anchor="middle" fill="#b45309">final hours</text>
+          <text x="590" y="108" text-anchor="middle" fill="#4b5261">one OS alert if unacted</text>
+        </g>
+        <g>
+          <circle cx="720" cy="62" r="7" fill="#b91c1c"/>
+          <text x="720" y="42" text-anchor="middle" fill="#b91c1c">deadline</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>Notify on collision course, not on arrival — the alert exists only while action is still possible, and stops the moment the user acts.</figcaption>
+  </figure>
+</article>
+
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<p class="prose">47 raw ideas across 6 frames → 26 merged survivors → 7 kept. An independent verifier checked every candidate's basis (24 sound, 2 weak, 0 refuted); both weak-verdict ideas were cut. Every axis has at least one survivor — no coverage gaps.</p>
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Conversation-aware visibility gating</td><td>Folded into idea 2 — visibility is one policy inside the router, not a separate work item.</td></tr>
+    <tr><td>2</td><td>Permission truth (request <code>Notification.permission</code>)</td><td>Real but narrow; rides inside idea 1's settings work and the trust sweep.</td></tr>
+    <tr><td>3</td><td>Zero-banner build</td><td>Provocative brainstorm variant; contradicts fixing the banner channel, redundant with the gate + permission ideas.</td></tr>
+    <tr><td>4</td><td>Interrupt budget (N focus-breaks/day by auction)</td><td>Novel but speculative; design cost too high relative to value at current scale.</td></tr>
+    <tr><td>5</td><td>Sender-pays interrupts (mention envelopes only)</td><td>A squad-norms culture decision; better as a brainstorm variant after v1.</td></tr>
+    <tr><td>6</td><td>First-run posture choice</td><td>Basis weakened by verification (Basecamp first-run analogy mischaracterized); fold into idea 1's settings design later.</td></tr>
+    <tr><td>7</td><td>Preferences at the point of pain</td><td>Duplicates idea 1 — context-menu entry points are a design detail of the same work.</td></tr>
+    <tr><td>8</td><td>Silences with expiry (time-boxed mutes)</td><td>Strong; the expiry semantics decision belongs inside idea 1's brainstorm, not a parallel track.</td></tr>
+    <tr><td>9</td><td>Quiet-by-default (groups born muted)</td><td>Subsumed by idea 4's Record-tier default plus idea 1's toggle.</td></tr>
+    <tr><td>10</td><td>Mute by event kind (bucket-level prefs)</td><td>Depends on idea 4's tiers existing; sequence after.</td></tr>
+    <tr><td>11</td><td>Adaptive posture tuning from behavior</td><td>Basis weakened (unverified Slack feature claim); needs v1 usage data first.</td></tr>
+    <tr><td>12</td><td>Versioned preferences record</td><td>Implementation detail folded into idea 1 (schema choice inside the #148 work).</td></tr>
+    <tr><td>13</td><td>Badge-is-a-promise contract</td><td>The policy half of idea 6 — decided as part of the count unification.</td></tr>
+    <tr><td>14</td><td>Badge unit reframe (obligation numbers vs chatter dots)</td><td>Depends on ideas 6 + 3; a UX bet to revisit after they land.</td></tr>
+    <tr><td>15</td><td>The Edition (scheduled finite briefing)</td><td>A view over idea 3's log, not a separate foundation.</td></tr>
+    <tr><td>16</td><td>Nothing is unread, only unresolved (open/dismiss/snooze)</td><td>Resolution semantics decided inside idea 3's brainstorm.</td></tr>
+    <tr><td>17</td><td>Quest log (persistent awaiting-you ledger)</td><td>Overlaps ideas 7 + 3; governance v2 material.</td></tr>
+    <tr><td>18</td><td>Governance-exclusive interrupt class</td><td>Too extreme versus the user's ask — chat alerts for missed items are still wanted.</td></tr>
+    <tr><td>19</td><td>Human summaries for structured content</td><td>The router's rendering step inside idea 2, not a standalone track.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<footer class="composition-signal">Composed 2026-07-25 by ce-ideate from <a href="https://github.com/covenant-gov/pacto-app/issues/148">covenant-gov/pacto-app issue #148</a> and the user's notification-system request.</footer>
+
+</div>
+</body>
+</html>

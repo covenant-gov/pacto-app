@@ -11,7 +11,7 @@ pub struct Chat {
     pub last_read: String,
     pub created_at: u64,
     pub metadata: ChatMetadata,
-    pub muted: bool,
+    pub notification_level: NotificationLevel,
     /// Typing participants for group chats (npub -> expires_at timestamp)
     /// Memory-only, never persisted to disk
     #[serde(skip)]
@@ -31,7 +31,7 @@ impl Chat {
                 .unwrap()
                 .as_secs(),
             metadata: ChatMetadata::new(),
-            muted: false,
+            notification_level: NotificationLevel::default(),
             typing_participants: HashMap::new(),
         }
     }
@@ -230,8 +230,8 @@ impl Chat {
         &self.metadata
     }
 
-    pub fn muted(&self) -> bool {
-        self.muted
+    pub fn notification_level(&self) -> NotificationLevel {
+        self.notification_level
     }
 }
 
@@ -257,6 +257,40 @@ impl ChatType {
         match value {
             1 => ChatType::MlsGroup,
             _ => ChatType::DirectMessage, // Default to DM for safety
+        }
+    }
+}
+
+/// Per-chat notification level (R4). Defaults to Mentions for existing and
+/// newly created chats alike (R10) — the column default alone delivers this,
+/// with no carry-over from the old `muted` boolean (KTD5).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationLevel {
+    All,
+    #[default]
+    Mentions,
+    Nothing,
+}
+
+impl NotificationLevel {
+    /// Column representation. Kept out of the derive so the DB and wire
+    /// formats can diverge later without one governing the other.
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            NotificationLevel::All => "all",
+            NotificationLevel::Mentions => "mentions",
+            NotificationLevel::Nothing => "nothing",
+        }
+    }
+
+    /// Permissive parse: an unrecognized stored value reads back as the
+    /// default rather than failing the row.
+    pub fn from_db_str(value: &str) -> Self {
+        match value {
+            "all" => NotificationLevel::All,
+            "nothing" => NotificationLevel::Nothing,
+            _ => NotificationLevel::Mentions,
         }
     }
 }
@@ -487,5 +521,25 @@ mod tests {
 
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1sender"));
+    }
+
+    #[test]
+    fn new_chat_defaults_to_mentions() {
+        let chat = Chat::new_dm("npub1peer".to_string());
+        assert_eq!(chat.notification_level(), NotificationLevel::Mentions);
+    }
+
+    #[test]
+    fn notification_level_db_round_trip_for_all_three_levels() {
+        for level in [NotificationLevel::All, NotificationLevel::Mentions, NotificationLevel::Nothing] {
+            let db_str = level.as_db_str();
+            assert_eq!(NotificationLevel::from_db_str(db_str), level);
+        }
+    }
+
+    #[test]
+    fn unrecognized_notification_level_string_reads_back_as_mentions() {
+        assert_eq!(NotificationLevel::from_db_str("bogus"), NotificationLevel::Mentions);
+        assert_eq!(NotificationLevel::from_db_str(""), NotificationLevel::Mentions);
     }
 }
