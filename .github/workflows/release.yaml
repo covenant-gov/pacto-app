@@ -244,6 +244,7 @@ jobs:
       - name: Open PR against homebrew-pacto
         uses: peter-evans/create-pull-request@v8
         with:
+          sign-commits: true
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: homebrew-pacto
           commit-message: "chore: bump cask to ${{ github.ref_name }}"
