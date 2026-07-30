@@ -35,7 +35,7 @@
     appendDmThreadAnnouncement,
     reciprocatedWalletPeerInfoRequestIds,
   } from '../../stores/app';
-  import { dmSyncStatus } from '../../stores/dm';
+  import { dmSyncStatusEffective } from '../../stores/dm';
   import SyncStatusIndicator from './SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
@@ -427,7 +427,7 @@
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
-            <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
+            <SyncStatusIndicator status={$dmSyncStatusEffective} />
             {#if showOptionsMenu}
               <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />
               <div class="dm-thread-header-actions">

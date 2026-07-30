@@ -52,6 +52,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { parseWalletTxRequest } from '../lib/wallet/dm-messages';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
+  import { hasRunPostLoginNetworkSyncThisSession } from '../lib/app/post-login-sync';
   import { isAuthenticated, currentUser, checkSession, sessionHeartbeat, maybeRequireSession } from '../stores/auth';
   import {
     squads,
@@ -936,9 +937,15 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   onMount(() => {
     syncSquadsHubSelection();
 
-    // Pull DMs from Nostr relays when app loads (if already authenticated)
-    if ($isAuthenticated) {
-      dmLog('onMount: authenticated, calling fetchMessages(true)');
+    // Pull DMs from Nostr relays when app loads, but only as a fallback for a session
+    // that was already authenticated before this mount (e.g. restored via Login.svelte's
+    // "backend session alive, HMR reload" branch) without going through
+    // createAccount/importAccount/unlockWithPin — those already trigger this via
+    // runPostLoginNetworkSync before +page.svelte ever mounts (mounting is gated on
+    // isAuthenticated by +layout.svelte), so re-firing here would be a redundant,
+    // overlapping init sync.
+    if ($isAuthenticated && !hasRunPostLoginNetworkSyncThisSession) {
+      dmLog('onMount: authenticated without a prior post-login sync, calling fetchMessages(true)');
       dmSyncStatus.set('syncing');
       fetchMessages(true).catch((e) => dmError('onMount: fetchMessages(true) failed', e));
       clearUngroupedChannels();

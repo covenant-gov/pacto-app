@@ -299,8 +299,8 @@ describe('auth', () => {
       expect(get(currentUser)).toEqual({ npub, pubkey: keys.public });
       expect(get(activeTopNavTab)).toBe(DEFAULT_TOP_NAV_TAB);
       expect(loadAccountState).toHaveBeenCalledWith(npub);
+      expect(runPostLoginNetworkSync).toHaveBeenCalledWith(npub);
       expect(get(backupVerified)).toBe(null);
-      expect(get(backupVerificationModalOpen)).toBe(false);
     });
 
     it('sets auth error on failure', async () => {

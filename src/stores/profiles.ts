@@ -5,7 +5,7 @@ import type { NostrProfile } from '../lib/api/nostr';
 export type { NostrProfile };
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
+import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, lastCatchUpSuccess, type DmChatState } from './dm';
 import { hydrateUnreadCounts } from './unread';
 import { hydrateCatchUpCount } from './catch-up';
 import { currentUser } from './auth';
@@ -130,8 +130,11 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       dmLog('init_finished: calling startNotifs()');
       startNotifs().catch((e) => console.error('notifs failed:', e));
 
-      // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only)
+      // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only).
+      // Set lastCatchUpSuccess here too so the behind/stalled predicate doesn't drift stale
+      // off a completion that never went through the sync_finished handler.
       dmSyncStatus.set('finished');
+      lastCatchUpSuccess.set(Date.now());
       setTimeout(() => dmSyncStatus.set('idle'), 2500);
     });
 

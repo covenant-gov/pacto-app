@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => {
     typingByChat: createMockStore<Record<string, string[]>>({}),
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
     dashboardPollReplicaNonceByParentId: createMockStore<Record<string, number>>({}),
+    lastCatchUpSuccess: createMockStore<number | null>(null),
   };
 
   const mockFunctions = {
@@ -58,6 +59,10 @@ const mocks = vi.hoisted(() => {
     mergeUnreadCounts: vi.fn(),
     dmLog: vi.fn(),
     dmError: vi.fn(),
+    listRelays: vi.fn(),
+    seedRelayHealth: vi.fn(),
+    applyRelayStatusChange: vi.fn(),
+    installSyncHealthTicker: vi.fn(() => vi.fn()),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -89,6 +94,10 @@ vi.mock('../api/nostr', () => ({
   fetchMessages: (...args: unknown[]) => mocks.mockFunctions.fetchMessages(...args),
   parseSquadInviteMessage: (...args: unknown[]) => mocks.mockFunctions.parseSquadInviteMessage(...args),
   syncMlsGroupsNow: (...args: unknown[]) => mocks.mockFunctions.syncMlsGroupsNow(...args),
+}));
+
+vi.mock('../api/relays', () => ({
+  listRelays: (...args: unknown[]) => mocks.mockFunctions.listRelays(...args),
 }));
 
 vi.mock('../announcements', () => ({
@@ -141,6 +150,10 @@ vi.mock('../../stores/app', () => ({
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
   bumpMembershipVersion: (...args: unknown[]) => mocks.mockFunctions.bumpMembershipVersion(...args),
   dashboardPollReplicaNonceByParentId: mocks.mockStores.dashboardPollReplicaNonceByParentId,
+  lastCatchUpSuccess: mocks.mockStores.lastCatchUpSuccess,
+  seedRelayHealth: (...args: unknown[]) => mocks.mockFunctions.seedRelayHealth(...args),
+  applyRelayStatusChange: (...args: unknown[]) => mocks.mockFunctions.applyRelayStatusChange(...args),
+  installSyncHealthTicker: mocks.mockFunctions.installSyncHealthTicker,
 }));
 
 vi.mock('../../stores/unread', () => ({
@@ -178,6 +191,14 @@ describe('subscribeAppEvents', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // installWakeSyncHandlers (called from subscribeAppEvents) touches window/document;
+    // this suite runs in the 'node' test environment, so stub the bare minimum it needs.
+    vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
     Object.keys(mocks.registered).forEach((k) => delete mocks.registered[k]);
     mocks.mockStores.backendDmMessages.set({});
     mocks.mockStores.backendGroupMessages.set({});
@@ -186,18 +207,22 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
     mocks.mockStores.dashboardPollReplicaNonceByParentId.set({});
+    mocks.mockStores.lastCatchUpSuccess.set(null);
     mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue(null);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
     mocks.mockFunctions.fetchMessages.mockResolvedValue(undefined);
     mocks.mockFunctions.syncMlsGroupsNow.mockResolvedValue(undefined);
+    mocks.mockFunctions.listRelays.mockResolvedValue([]);
+    mocks.mockFunctions.installSyncHealthTicker.mockReturnValue(vi.fn());
   });
 
   afterEach(() => {
     unsubscribe?.();
     unsubscribe = undefined;
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('registers expected event listeners', async () => {
@@ -209,6 +234,7 @@ describe('subscribeAppEvents', () => {
       'sync_slice_finished',
       'sync_progress',
       'sync_finished',
+      'relay_status_change',
       'typing-update',
       'mls_message_new',
       'unread_counts_changed',
@@ -391,6 +417,49 @@ describe('subscribeAppEvents', () => {
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('finished');
       vi.advanceTimersByTime(2500);
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('idle');
+    });
+
+    it('sync_finished sets lastCatchUpSuccess to now', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      const before = Date.now();
+      emit('sync_finished', {});
+      const value = mocks.mockStores.lastCatchUpSuccess.get();
+      expect(value).not.toBeNull();
+      expect(value as number).toBeGreaterThanOrEqual(before);
+    });
+  });
+
+  describe('relay_status_change', () => {
+    it('forwards url/status to applyRelayStatusChange', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('relay_status_change', { url: 'wss://relay.one', status: 'disconnected' });
+      expect(mocks.mockFunctions.applyRelayStatusChange).toHaveBeenCalledWith(
+        'wss://relay.one',
+        'disconnected'
+      );
+    });
+  });
+
+  describe('startup relay health seeding', () => {
+    it('seeds relayStatusByUrl from listRelays on subscribe', async () => {
+      mocks.mockFunctions.listRelays.mockResolvedValue([
+        { url: 'wss://relay.one', status: 'connected', is_default: true, is_custom: false, enabled: true, mode: 'both' },
+      ]);
+      unsubscribe = subscribeAppEvents(handlers);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mocks.mockFunctions.seedRelayHealth).toHaveBeenCalledWith([
+        { url: 'wss://relay.one', status: 'connected', enabled: true },
+      ]);
+    });
+
+    it('starts the sync health ticker and stops it on cleanup', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      expect(mocks.mockFunctions.installSyncHealthTicker).toHaveBeenCalled();
+      const cleanupFn = mocks.mockFunctions.installSyncHealthTicker.mock.results[0]?.value;
+      unsubscribe();
+      unsubscribe = undefined;
+      expect(cleanupFn).toHaveBeenCalled();
     });
   });
 

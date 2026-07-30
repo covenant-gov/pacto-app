@@ -216,6 +216,7 @@ export async function createAccount(pin: string): Promise<void> {
     activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
     loadAccountState(npub);
     closeWalletSidebar();
+    runPostLoginNetworkSync(npub);
 
     isAuthenticated.set(true);
     currentUser.set({
@@ -224,7 +225,7 @@ export async function createAccount(pin: string): Promise<void> {
     });
     await maybeApplyLocalDevDefaults(npub);
 
-    dmLog('createAccount: done (fetchMessages will run from +page onMount)');
+    dmLog('createAccount: done');
     authLoading.set(false);
   } catch (error: unknown) {
     console.error('Create account failed:', error);

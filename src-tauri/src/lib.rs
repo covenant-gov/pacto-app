@@ -227,6 +227,7 @@ enum SyncMode {
     ForwardSync,   // Initial sync from most recent message going backward
     BackwardSync,  // Syncing historically old messages
     DeepRescan,    // Deep rescan mode - continues until 30 days of no events
+    CatchUp,       // Bounded forward walk from last_catch_up_until to now (wake/reconnect recovery)
     Finished       // Sync complete
 }
 
@@ -240,6 +241,7 @@ struct ChatState {
     sync_mode: SyncMode,
     sync_empty_iterations: u8, // Counter for consecutive empty iterations
     sync_total_iterations: u8, // Counter for total iterations in current mode
+    last_catch_up_until: u64, // Unix timestamp of the last time an account-wide sync reached "now"
 }
 
 impl ChatState {
@@ -253,6 +255,7 @@ impl ChatState {
             sync_mode: SyncMode::Finished,
             sync_empty_iterations: 0,
             sync_total_iterations: 0,
+            last_catch_up_until: 0,
         }
     }
 
@@ -480,6 +483,57 @@ impl ChatState {
 
 }
 
+/// Grace period after a Finished account-wide sync before a `fetch_messages(false)` call
+/// (wake/reconnect trigger) is worth re-checking for missed events.
+const CATCH_UP_GRACE_SECS: u64 = 60;
+/// Overlap subtracted from `last_catch_up_until` on CatchUp entry, to avoid missing events
+/// that landed exactly at the boundary of the previous sync.
+const CATCH_UP_OVERLAP_SECS: u64 = 30;
+/// Max span of a single CatchUp slice, matching the initial login window (KTD2).
+const CATCH_UP_SLICE_SECS: u64 = 60 * 60 * 24 * 2;
+
+/// Should a Finished, account-wide sync be promoted into a bounded CatchUp walk?
+/// True once the grace window since the last successful catch-up has elapsed.
+fn should_enter_catch_up(last_catch_up_until: u64, now: u64) -> bool {
+    now.saturating_sub(last_catch_up_until) > CATCH_UP_GRACE_SECS
+}
+
+/// Computes the next CatchUp slice, walking FORWARD from `window_start` towards `now` in
+/// `CATCH_UP_SLICE_SECS`-bounded steps. `window_start` is `last_catch_up_until` on first
+/// entry (`apply_overlap = true`, to re-cover the boundary) or the previous slice's `until`
+/// on every later slice of the same walk (`apply_overlap = false`). Returns
+/// `(since, until, is_last_slice)`; `is_last_slice` is true once the slice reaches `now`.
+fn catch_up_window(window_start: u64, now: u64, apply_overlap: bool) -> (u64, u64, bool) {
+    let since = if apply_overlap {
+        window_start.saturating_sub(CATCH_UP_OVERLAP_SECS)
+    } else {
+        window_start
+    };
+    let until = std::cmp::min(now, since + CATCH_UP_SLICE_SECS);
+    let is_last_slice = until >= now;
+    (since, until, is_last_slice)
+}
+
+/// Full entry gate for promoting a Finished, account-wide sync into CatchUp. Requires no
+/// sync already in flight — the same `is_syncing` in-flight guard `ForwardSync` sets when
+/// the login sync starts — so a duplicate wake/reconnect trigger arriving while a CatchUp
+/// (or any other) walk is still running never spawns a second, parallel window.
+fn should_promote_to_catch_up(mode: SyncMode, is_syncing: bool, last_catch_up_until: u64, now: u64) -> bool {
+    mode == SyncMode::Finished && !is_syncing && should_enter_catch_up(last_catch_up_until, now)
+}
+
+/// Bounds a single-relay reconnect fetch: caps it at the 2-day `CATCH_UP_SLICE_SECS` window,
+/// but narrows it to the gap since the last recorded account-wide catch-up (with the same
+/// overlap used by `catch_up_window`) when that gap is smaller. A relay reconnecting shortly
+/// after a full catch-up therefore does not redundantly re-fetch the whole 2-day window, while
+/// a relay with no prior catch-up (`last_catch_up_until == 0`) or a long outage still gets the
+/// full 2-day cap.
+fn single_relay_fetch_since(last_catch_up_until: u64, now: u64) -> u64 {
+    let two_day_floor = now.saturating_sub(CATCH_UP_SLICE_SECS);
+    let recent_bound = last_catch_up_until.saturating_sub(CATCH_UP_OVERLAP_SECS);
+    std::cmp::max(two_day_floor, recent_bound)
+}
+
 #[cfg(test)]
 mod unread_count_tests {
     use super::*;
@@ -594,6 +648,127 @@ mod unread_count_tests {
     }
 }
 
+#[cfg(test)]
+mod catch_up_tests {
+    use super::{
+        catch_up_window, should_enter_catch_up, should_promote_to_catch_up, single_relay_fetch_since,
+        SyncMode, CATCH_UP_GRACE_SECS, CATCH_UP_OVERLAP_SECS, CATCH_UP_SLICE_SECS,
+    };
+
+    #[test]
+    fn within_grace_window_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 30; // 30s ago, well within the 60s grace window
+        assert!(!should_enter_catch_up(last_catch_up_until, now));
+    }
+
+    #[test]
+    fn promotion_blocked_while_a_sync_is_already_in_flight() {
+        // The in-flight guard: even with a stale watermark, a sync already running
+        // (is_syncing = true) must not spawn a second, parallel CatchUp window.
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago: stale enough on its own
+        assert!(!should_promote_to_catch_up(SyncMode::Finished, true, last_catch_up_until, now));
+        assert!(should_promote_to_catch_up(SyncMode::Finished, false, last_catch_up_until, now));
+    }
+
+    #[test]
+    fn promotion_only_fires_from_finished_mode() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        for mode in [SyncMode::ForwardSync, SyncMode::BackwardSync, SyncMode::DeepRescan, SyncMode::CatchUp] {
+            assert!(!should_promote_to_catch_up(mode, false, last_catch_up_until, now));
+        }
+    }
+
+    #[test]
+    fn exactly_at_grace_boundary_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - CATCH_UP_GRACE_SECS;
+        assert!(!should_enter_catch_up(last_catch_up_until, now));
+    }
+
+    #[test]
+    fn stale_last_catch_up_enters_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago (AE1)
+        assert!(should_enter_catch_up(last_catch_up_until, now));
+    }
+
+    #[test]
+    fn first_slice_covers_a_single_two_day_window_ending_at_now() {
+        // AE1: last_catch_up_until 1 hour ago fetches a single 2-day window ending at now.
+        let now = 2_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        let (since, until, is_last) = catch_up_window(last_catch_up_until, now, true);
+
+        assert_eq!(since, last_catch_up_until - 30); // overlap applied
+        assert_eq!(until, now); // capped at now, well inside the 2-day slice cap
+        assert!(is_last);
+    }
+
+    #[test]
+    fn wide_gap_produces_bounded_forward_slices_until_reaching_now() {
+        // A gap wider than one slice must walk FORWARD (not backward) in
+        // CATCH_UP_SLICE_SECS-bounded steps, ending exactly at `now`.
+        let now = 10 * CATCH_UP_SLICE_SECS + 1_000;
+        let last_catch_up_until = 500u64; // gap spans several slices
+
+        let (since1, until1, is_last1) = catch_up_window(last_catch_up_until, now, true);
+        assert_eq!(since1, last_catch_up_until - 30);
+        assert_eq!(until1, since1 + CATCH_UP_SLICE_SECS);
+        assert!(until1 < now, "first slice of a wide gap must not reach now yet");
+        assert!(!is_last1);
+
+        // Next slice continues forward from the previous slice's `until`, no overlap.
+        let (since2, until2, is_last2) = catch_up_window(until1, now, false);
+        assert_eq!(since2, until1);
+        assert!(since2 > since1, "window must advance forward, never backward");
+        assert!(!is_last2);
+
+        // Walk remaining slices until the loop terminates at `now`.
+        let mut since = since2;
+        let mut until = until2;
+        let mut is_last = is_last2;
+        let mut iterations = 1;
+        while !is_last {
+            let (s, u, last) = catch_up_window(until, now, false);
+            assert!(s >= since, "window must never move backward");
+            since = s;
+            until = u;
+            is_last = last;
+            iterations += 1;
+            assert!(iterations < 100, "catch-up walk did not terminate");
+        }
+        assert_eq!(until, now);
+    }
+
+    #[test]
+    fn single_relay_fetch_falls_back_to_two_day_cap_with_no_prior_catch_up() {
+        // last_catch_up_until == 0 (never recorded): full 2-day cap, not the recent-gap bound.
+        let now = 2_000_000_000u64;
+        assert_eq!(single_relay_fetch_since(0, now), now - CATCH_UP_SLICE_SECS);
+    }
+
+    #[test]
+    fn single_relay_fetch_narrows_to_recent_catch_up_gap() {
+        // Reconnecting 10 minutes after a full account-wide catch-up must not re-fetch 2 days.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 600;
+        let since = single_relay_fetch_since(last_catch_up_until, now);
+        assert_eq!(since, last_catch_up_until - CATCH_UP_OVERLAP_SECS);
+        assert!(since > now - CATCH_UP_SLICE_SECS, "narrowed window must be tighter than the 2-day cap");
+    }
+
+    #[test]
+    fn single_relay_fetch_stays_capped_at_two_days_for_a_long_outage() {
+        // A relay down far longer than 2 days must not walk back further than the cap.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 10 * CATCH_UP_SLICE_SECS;
+        assert_eq!(single_relay_fetch_since(last_catch_up_until, now), now - CATCH_UP_SLICE_SECS);
+    }
+}
+
 lazy_static! {
     pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
 }
@@ -612,14 +787,16 @@ async fn fetch_messages<R: Runtime>(
 
     // If relay_url is provided, this is a single-relay sync that bypasses global state
     if relay_url.is_some() {
-        // Single relay sync - always fetch last 2 days
+        // Single relay sync - bounded by the 2-day cap, narrowed to the gap since the last
+        // account-wide catch-up (KTD2). Read-only lock: does not mutate ChatState.
         let now = Timestamp::now();
-        let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
-        
+        let last_catch_up_until = STATE.lock().await.last_catch_up_until;
+        let since = single_relay_fetch_since(last_catch_up_until, now.as_u64());
+
         let filter = Filter::new()
             .pubkey(my_public_key)
             .kind(Kind::GiftWrap)
-            .since(Timestamp::from_secs(two_days_ago))
+            .since(Timestamp::from_secs(since))
             .until(now);
 
         // Fetch from specific relay only
@@ -642,7 +819,7 @@ async fn fetch_messages<R: Runtime>(
     }
 
     // Regular sync logic with global state management
-    let (since_timestamp, until_timestamp) = {
+    let (since_timestamp, until_timestamp, catch_up_is_last_slice) = {
         let mut state = STATE.lock().await;
         
         if init {
@@ -816,7 +993,8 @@ async fn fetch_messages<R: Runtime>(
 
             (
                 Timestamp::from_secs(two_days_ago),
-                now
+                now,
+                false
             )
         } else if state.sync_mode == SyncMode::ForwardSync {
             // Forward sync (filling gaps from last message to now)
@@ -832,7 +1010,8 @@ async fn fetch_messages<R: Runtime>(
 
             (
                 Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
+                Timestamp::from_secs(new_window_end),
+                false
             )
         } else if state.sync_mode == SyncMode::BackwardSync {
             // Backward sync (historically old messages)
@@ -848,7 +1027,8 @@ async fn fetch_messages<R: Runtime>(
 
             (
                 Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
+                Timestamp::from_secs(new_window_end),
+                false
             )
         } else if state.sync_mode == SyncMode::DeepRescan {
             // Deep rescan mode - scan backwards in 2-day increments until 30 days of no events
@@ -864,12 +1044,49 @@ async fn fetch_messages<R: Runtime>(
 
             (
                 Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
+                Timestamp::from_secs(new_window_end),
+                false
+            )
+        } else if state.sync_mode == SyncMode::CatchUp {
+            // Continuing a CatchUp walk: advance forward from the previous slice's `until`.
+            let now = Timestamp::now().as_u64();
+            let (since, until, is_last) = catch_up_window(state.sync_window_end, now, false);
+
+            state.sync_window_start = since;
+            state.sync_window_end = until;
+
+            (
+                Timestamp::from_secs(since),
+                Timestamp::from_secs(until),
+                is_last
+            )
+        } else if should_promote_to_catch_up(
+            state.sync_mode,
+            state.is_syncing,
+            state.last_catch_up_until,
+            Timestamp::now().as_u64(),
+        ) {
+            // Stale account-wide sync (wake/reconnect trigger past the grace window):
+            // promote into a bounded forward CatchUp walk instead of returning below.
+            let now = Timestamp::now().as_u64();
+            let (since, until, is_last) = catch_up_window(state.last_catch_up_until, now, true);
+
+            state.sync_mode = SyncMode::CatchUp;
+            state.is_syncing = true;
+            state.sync_empty_iterations = 0;
+            state.sync_total_iterations = 0;
+            state.sync_window_start = since;
+            state.sync_window_end = until;
+
+            (
+                Timestamp::from_secs(since),
+                Timestamp::from_secs(until),
+                is_last
             )
         } else {
-            // Sync finished or in unknown state
-            // Return dummy values, won't be used as we'll end sync
-            (Timestamp::now(), Timestamp::now())
+            // Finished within the grace window, or unknown state: return dummy values,
+            // won't be used since the Finished-check below will end the call.
+            (Timestamp::now(), Timestamp::now(), false)
         }
     };
 
@@ -1011,6 +1228,13 @@ async fn fetch_messages<R: Runtime>(
                 state.sync_mode = SyncMode::Finished;
                 continue_sync = false;
             }
+        } else if state.sync_mode == SyncMode::CatchUp {
+            // CatchUp terminates once the slice we just processed reached "now" (not on
+            // empty iterations — a quiet inbox is a perfectly valid CatchUp outcome).
+            if catch_up_is_last_slice {
+                state.sync_mode = SyncMode::Finished;
+                continue_sync = false;
+            }
         } else {
             continue_sync = false; // Unknown state, stop syncing
         }
@@ -1031,6 +1255,12 @@ async fn fetch_messages<R: Runtime>(
             state.is_syncing = false;
             state.sync_empty_iterations = 0;
             state.sync_total_iterations = 0;
+            // Every path reaching here is a normal completion of a full account-wide walk
+            // (BackwardSync/DeepRescan exhausting empty iterations, or CatchUp reaching
+            // "now") — advance the watermark. A failed relay query currently panics via
+            // `.unwrap()` before reaching this point, so there's no "failed" case to gate
+            // out separately; this only ever runs on a real, quiet-or-not completion.
+            state.last_catch_up_until = Timestamp::now().as_u64();
         } // Release lock before emitting event
         
         // Clear the wrapper_id cache - it's only needed during sync
@@ -3886,6 +4116,25 @@ async fn validate_relay_url_cmd(url: String) -> Result<String, String> {
 
 // ============================================================================
 
+/// Whether a relay's current status alone (not a probe outcome) warrants a
+/// forced disconnect+reconnect from the health-check loop.
+fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
+    matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
+}
+
+/// Relay URLs with a single-relay reconnect fetch currently in flight. Guards against a relay
+/// flapping Connected/Disconnected/Connected in quick succession spawning overlapping fetches
+/// for the same relay; each relay has its own independent slot.
+lazy_static! {
+    static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
+}
+
+/// Whether a relay is allowed to start a new single-relay reconnect fetch, given the set of
+/// relay URLs that currently have one in flight.
+fn relay_fetch_may_start(in_flight: &std::collections::HashSet<String>, url: &str) -> bool {
+    !in_flight.contains(url)
+}
+
 /// Monitor relay pool connection status changes
 #[tauri::command]
 async fn monitor_relay_connections() -> Result<bool, String> {
@@ -3946,13 +4195,29 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // Relay connection terminated (hard disconnect)
                         }
                         RelayStatus::Connected => {
-                            // When a relay reconnects, fetch last 2 days of messages from just that relay
+                            // When a relay reconnects, fetch its bounded catch-up window from just
+                            // that relay — skip if a fetch for this relay is already in flight so
+                            // rapid Connected/Disconnected flapping never overlaps fetches.
                             let handle_inner = handle_clone.clone();
                             let url_string = url_str.clone();
-                            tokio::spawn(async move {
-                                // fetch_messages handles both DM and MLS group syncing for single-relay reconnections
-                                fetch_messages(handle_inner, false, Some(url_string)).await;
-                            });
+                            let may_start = {
+                                let mut in_flight = RELAY_FETCH_IN_FLIGHT.lock().await;
+                                if relay_fetch_may_start(&in_flight, &url_string) {
+                                    in_flight.insert(url_string.clone());
+                                    true
+                                } else {
+                                    false
+                                }
+                            };
+                            if may_start {
+                                tokio::spawn(async move {
+                                    // fetch_messages handles both DM and MLS group syncing for single-relay reconnections
+                                    fetch_messages(handle_inner, false, Some(url_string.clone())).await;
+                                    RELAY_FETCH_IN_FLIGHT.lock().await.remove(&url_string);
+                                });
+                            } else {
+                                add_relay_log(&url_str, "info", "Skipping single-relay reconnect fetch: already in flight");
+                            }
                         }
                         _ => {}
                     }
@@ -3961,7 +4226,10 @@ async fn monitor_relay_connections() -> Result<bool, String> {
         }
     });
     
-    // Spawn aggressive health check task
+    // Spawn conservative health check task: measures/logs Connected relays but
+    // no longer force-disconnects them; only Terminated/Disconnected relays get
+    // reconnected here (the 5s poller below independently retries Terminated
+    // relays, but not Disconnected ones, so that case stays in this loop).
     let client_health = client.clone();
     let handle_health = handle.clone();
     tokio::spawn(async move {
@@ -4005,31 +4273,26 @@ async fn monitor_relay_connections() -> Result<bool, String> {
 
                     match result {
                         Ok(Ok(events)) => {
-                            // Check if we actually got events or just an empty response
+                            // Any completed round-trip is useful ping data, even an
+                            // empty/slow one — we no longer disconnect on this alone.
+                            update_relay_metrics(&url_str, |m| {
+                                m.ping_ms = Some(ping_ms);
+                                m.last_check = Some(now_secs);
+                            });
                             if events.is_empty() && elapsed.as_secs() >= 2 {
-                                // Empty response after 2+ seconds means relay is not responding properly
-                                unhealthy_relays.push((url.clone(), relay.clone()));
-                                add_relay_log(&url_str, "warn", "Health check failed: slow/empty response");
-                            } else {
-                                // Healthy - record ping time
-                                update_relay_metrics(&url_str, |m| {
-                                    m.ping_ms = Some(ping_ms);
-                                    m.last_check = Some(now_secs);
-                                });
+                                add_relay_log(&url_str, "warn", "Health check: slow/empty response");
                             }
                         }
                         Ok(Err(e)) => {
-                            // Query failed
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Query failed; no round-trip time to record.
                             add_relay_log(&url_str, "warn", &format!("Health check failed: {}", e));
                         }
                         Err(_) => {
-                            // Timeout
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Timeout; no round-trip time to record.
                             add_relay_log(&url_str, "warn", "Health check failed: timeout");
                         }
                     }
-                } else if status == RelayStatus::Terminated || status == RelayStatus::Disconnected {
+                } else if relay_needs_forced_reconnect(status) {
                     // Already disconnected, add to reconnect list
                     unhealthy_relays.push((url.clone(), relay.clone()));
                 }
@@ -4085,6 +4348,52 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     });
     
     Ok(true)
+}
+
+#[cfg(test)]
+mod relay_health_reconnect_tests {
+    use super::{relay_fetch_may_start, relay_needs_forced_reconnect};
+    use nostr_sdk::prelude::RelayStatus;
+
+    #[test]
+    fn terminated_and_disconnected_trigger_reconnect() {
+        assert!(relay_needs_forced_reconnect(RelayStatus::Terminated));
+        assert!(relay_needs_forced_reconnect(RelayStatus::Disconnected));
+    }
+
+    #[test]
+    fn connected_and_other_statuses_do_not_trigger_reconnect() {
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connected));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Initialized));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Pending));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connecting));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Banned));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Sleeping));
+    }
+
+    #[test]
+    fn same_relay_may_not_start_a_second_fetch_while_one_is_in_flight() {
+        let mut in_flight = std::collections::HashSet::new();
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+    }
+
+    #[test]
+    fn different_relay_may_start_its_own_fetch_independently() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay-a.example.com".to_string());
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay-b.example.com"));
+    }
+
+    #[test]
+    fn relay_may_start_again_once_its_in_flight_slot_is_cleared() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+        in_flight.remove("wss://relay.example.com");
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+    }
 }
 
 

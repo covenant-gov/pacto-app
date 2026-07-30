@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { runPostLoginNetworkSync } from './post-login-sync';
+import { runPostLoginNetworkSync, hasRunPostLoginNetworkSyncThisSession, resetPostLoginNetworkSyncSession } from './post-login-sync';
 import * as updateCheck from '../updater/update-check';
 import {
   startupCheckEnabled,
@@ -59,6 +59,7 @@ describe('runPostLoginNetworkSync', () => {
     vi.clearAllMocks();
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
+    resetPostLoginNetworkSyncSession();
   });
 
   afterEach(() => {
@@ -67,7 +68,9 @@ describe('runPostLoginNetworkSync', () => {
     consoleError.mockClear();
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
+    resetPostLoginNetworkSyncSession();
   });
+
 
   async function flushAsync(): Promise<void> {
     await vi.advanceTimersByTimeAsync(0);
@@ -96,6 +99,17 @@ describe('runPostLoginNetworkSync', () => {
     expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     expect(dmLog).toHaveBeenCalledWith('post-login: network sync done');
     expect(monitorRelayConnections).toHaveBeenCalled();
+  });
+
+  it('sets hasRunPostLoginNetworkSyncThisSession synchronously, before any async work starts', () => {
+    // Regression: +page.svelte's onMount fallback reads this flag right after
+    // isAuthenticated flips true (mounting is gated on it by +layout.svelte). If the flag
+    // only flipped after an await, that fallback would race ahead and fire a second,
+    // overlapping fetchMessages(true) alongside this function's own call.
+    expect(hasRunPostLoginNetworkSyncThisSession).toBe(false);
+    apiConnect.mockReturnValue(Promise.withResolvers<void>().promise); // never resolves
+    runPostLoginNetworkSync('npub1test');
+    expect(hasRunPostLoginNetworkSyncThisSession).toBe(true);
   });
 
   it('logs connect errors and continues', async () => {

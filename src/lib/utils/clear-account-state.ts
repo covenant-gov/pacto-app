@@ -38,6 +38,8 @@ import {
   messageCountByChat,
   loadedOffsetByChat,
   dmSyncStatus,
+  lastCatchUpSuccess,
+  relayStatusByUrl,
   typingByChat,
   dmSendError,
 } from '../../stores/dm';
@@ -235,6 +237,8 @@ export function clearAccountState(npub?: string): void {
   messageCountByChat.set({});
   loadedOffsetByChat.set({});
   dmSyncStatus.set('idle');
+  lastCatchUpSuccess.set(null);
+  relayStatusByUrl.set({});
   typingByChat.set({});
   dmSendError.set(null);
 

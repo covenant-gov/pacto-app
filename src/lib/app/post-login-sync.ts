@@ -18,7 +18,19 @@ import {
 } from '../../stores/startup-check';
 import { isDevBuild } from '../updater/update-check';
 
+/** True once `runPostLoginNetworkSync` has been called this process; app restart resets it. */
+export let hasRunPostLoginNetworkSyncThisSession = false;
+
+/** Reset the per-process guard. Used by tests; app restart naturally resets it. */
+export function resetPostLoginNetworkSyncSession(): void {
+  hasRunPostLoginNetworkSyncThisSession = false;
+}
+
 export function runPostLoginNetworkSync(npub: string): void {
+  // Set synchronously (not inside the async IIFE below) so a caller that checks this flag
+  // right after triggering login — e.g. +page.svelte's onMount fallback — sees it before
+  // its own mount logic runs, even though the actual sync work below is still in flight.
+  hasRunPostLoginNetworkSyncThisSession = true;
   scheduleCommonsStartupPrefetch();
   void (async () => {
     try {
