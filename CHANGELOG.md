@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Build linux amd64 release on ubuntu-22.04 to avoid appimage wayland egl crash
+- Add canonical, og:image:alt, and twitter creator metadata to landing page
+- Update create-pull-request action to v8
+- Grant release workflow contents:write permission
+
+
+### Chores
+- Automate version-bump PR and homebrew tap update
+
+
+### Other
+- Update signing public key
+
+## v0.5.0
+
+### Bug Fixes
 - Add messaging namespace to i18n translation keys
 - Consent-first squad admit, channel catch-up, and nav reorder
 - Point to current deployment for squad-sponsor
@@ -29,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add i18n lint rule and locale parity tests
 - Chore: ignore AppImage build artifacts
        - Fix issues with make lint
+- Bump version to 0.5.0 (release)
 
 
 ### Documentation
