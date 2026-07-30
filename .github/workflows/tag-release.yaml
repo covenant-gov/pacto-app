@@ -1,0 +1,49 @@
+name: Tag Release
+
+# Auto-tags after a "Prepare Release" PR merges to main. Reads the bumped
+# version out of package.json, cross-checks it against Cargo.toml /
+# tauri.conf.json, and pushes v<version> if that tag doesn't exist yet.
+# Pushing the tag is what triggers release.yaml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    if: "startsWith(github.event.head_commit.message, 'chore(release): bump version to ')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: read version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: verify version files are in sync
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CARGO_VERSION="$(sed -n '/^\[package\]$/,/^\[/p' src-tauri/Cargo.toml | sed -n 's/^version = "\([^"]*\)"/\1/p')"
+          TAURI_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json')).version")"
+          if [[ "$CARGO_VERSION" != "$VERSION" || "$TAURI_VERSION" != "$VERSION" ]]; then
+            echo "Error: version mismatch (package.json=$VERSION, Cargo.toml=$CARGO_VERSION, tauri.conf.json=$TAURI_VERSION)"
+            exit 1
+          fi
+
+      - name: create and push tag
+        env:
+          TAG: v${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --tags origin "$TAG" | grep -q "refs/tags/$TAG\$"; then
+            echo "Tag $TAG already exists, skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
