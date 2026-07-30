@@ -62,6 +62,7 @@ jobs:
 
       - uses: peter-evans/create-pull-request@v8
         with:
+          sign-commits: true
           commit-message: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
           title: "chore(release): bump version to ${{ steps.bumped.outputs.version }}"
           body: |
