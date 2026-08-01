@@ -188,16 +188,23 @@ const handlers: AppEventHandlers = {
 
 describe('subscribeAppEvents', () => {
   let unsubscribe: (() => void) | undefined;
+  const windowAddEventListener = vi.fn();
+  const windowRemoveEventListener = vi.fn();
+  const documentAddEventListener = vi.fn();
+  const documentRemoveEventListener = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     // installWakeSyncHandlers (called from subscribeAppEvents) touches window/document;
     // this suite runs in the 'node' test environment, so stub the bare minimum it needs.
-    vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    vi.stubGlobal('window', {
+      addEventListener: windowAddEventListener,
+      removeEventListener: windowRemoveEventListener,
+    });
     vi.stubGlobal('document', {
       visibilityState: 'visible',
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
+      addEventListener: documentAddEventListener,
+      removeEventListener: documentRemoveEventListener,
     });
     Object.keys(mocks.registered).forEach((k) => delete mocks.registered[k]);
     mocks.mockStores.backendDmMessages.set({});
@@ -226,7 +233,7 @@ describe('subscribeAppEvents', () => {
   });
 
   it('registers expected event listeners', async () => {
-    subscribeAppEvents(handlers);
+    unsubscribe = subscribeAppEvents(handlers);
     await Promise.resolve();
     const expected = [
       'message_new',
@@ -252,6 +259,17 @@ describe('subscribeAppEvents', () => {
       expect(mocks.registered[e], `missing listener for ${e}`).toBeDefined();
       expect(mocks.registered[e].length).toBe(1);
     }
+
+    expect(windowAddEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+    expect(documentAddEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(documentAddEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
+
+    unsubscribe();
+    unsubscribe = undefined;
+
+    expect(windowRemoveEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+    expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(documentRemoveEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
   });
 
   it('unsubscribes clears timeouts and unlisten promises', () => {

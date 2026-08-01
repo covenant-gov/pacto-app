@@ -31,6 +31,11 @@ export function runPostLoginNetworkSync(npub: string): void {
   // right after triggering login — e.g. +page.svelte's onMount fallback — sees it before
   // its own mount logic runs, even though the actual sync work below is still in flight.
   hasRunPostLoginNetworkSyncThisSession = true;
+  // Also set synchronously: wake-sync's focus/visibilitychange/resume listeners are
+  // installed in the same onMount pass and only guard against a competing catch-up
+  // fetch by checking dmSyncStatus. Setting this after `await apiConnect()` would leave
+  // a gap where a wake event landing before the connect resolves slips past that guard.
+  dmSyncStatus.set('syncing');
   scheduleCommonsStartupPrefetch();
   void (async () => {
     try {
@@ -44,7 +49,6 @@ export function runPostLoginNetworkSync(npub: string): void {
     monitorRelayConnections().catch((e) => console.error('monitor_relay_connections failed:', e));
 
     dmLog('post-login: fetchMessages(true)');
-    dmSyncStatus.set('syncing');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
 
     try {

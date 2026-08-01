@@ -458,6 +458,21 @@ export function applyRelayStatusChange(url: string, status: RelayStatus): void {
   });
 }
 
+/** Patch `enabled` on a tracked relay after a local Settings toggle, without waiting for a relogin/reseed. */
+export function setRelayEnabledLocally(url: string, enabled: boolean): void {
+  relayStatusByUrl.update((cur) => {
+    const existing = cur[url];
+    if (!existing) return cur;
+    return {
+      ...cur,
+      [url]: {
+        ...existing,
+        enabled,
+      },
+    };
+  });
+}
+
 const SYNC_BEHIND_THRESHOLD_MS = 5 * 60 * 1000;
 const SYNC_STALL_RELAY_THRESHOLD_MS = 5 * 60 * 1000;
 const SYNC_HEALTH_TICK_INTERVAL_MS = 30 * 1000;

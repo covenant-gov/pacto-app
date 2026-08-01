@@ -21,6 +21,7 @@
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
+  import { setRelayEnabledLocally } from '../../stores/dm';
   import { currentUser } from '../../stores/auth';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
@@ -170,6 +171,7 @@
 
     try {
       await setRelayEnabled(relay, enabled);
+      setRelayEnabledLocally(relay.url, enabled);
       await refreshRelays();
     } catch (e) {
       relays = relays.map((r) => (r.url === relay.url ? { ...r, enabled: previous } : r));
