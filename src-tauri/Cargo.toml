@@ -1,6 +1,6 @@
 [package]
 name = "pacto"
-version = "0.5.1"
+version = "0.5.2"
 description = "A Tauri App"
 authors = ["daopunk"]
 edition = "2021"
