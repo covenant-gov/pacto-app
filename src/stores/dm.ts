@@ -1,4 +1,5 @@
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived, get, type Readable } from 'svelte/store';
+import type { RelayStatus } from '../lib/api/relays';
 import { activeTopNavTab, activeView } from './navigation';
 import type { SupportedChainId } from '../lib/wallet/chains';
 import { persistenceKey } from './persistence-context';
@@ -397,8 +398,129 @@ export const messageCountByChat = writable<Record<string, number>>({});
 
 export const loadedOffsetByChat = writable<Record<string, number>>({});
 
-export type SyncStatus = 'idle' | 'syncing' | 'finished';
+export type SyncStatus = 'idle' | 'syncing' | 'finished' | 'behind' | 'stalled';
 export const dmSyncStatus = writable<SyncStatus>('idle');
+
+/** Wall-clock time of the most recent successful catch-up (`sync_finished`). Null until one succeeds this session. */
+export const lastCatchUpSuccess = writable<number | null>(null);
+
+export interface RelayHealthEntry {
+  status: RelayStatus;
+  /** From the user's relay list; disabled relays never contribute to `stalled`. */
+  enabled: boolean;
+  /** Wall-clock time this relay was last seen outside disconnected/terminated. */
+  lastHealthyAt: number;
+}
+
+/** Per-relay connection status + last-healthy timestamp, keyed by relay URL. Seeded from listRelays(), kept live by relay_status_change. */
+export const relayStatusByUrl = writable<Record<string, RelayHealthEntry>>({});
+
+const DOWN_RELAY_STATUSES: Partial<Record<RelayStatus, true>> = {
+  disconnected: true,
+  terminated: true,
+};
+function isRelayDown(status: RelayStatus): boolean {
+  return DOWN_RELAY_STATUSES[status] === true;
+}
+
+/** Seed relayStatusByUrl with a startup snapshot; relay_status_change only fires on transitions, not for relays already connected. */
+export function seedRelayHealth(
+  relays: Array<{ url: string; status: RelayStatus; enabled: boolean }>
+): void {
+  const now = Date.now();
+  relayStatusByUrl.update((cur) => {
+    const next = { ...cur };
+    for (const r of relays) {
+      const existing = next[r.url];
+      next[r.url] = {
+        status: r.status,
+        enabled: r.enabled,
+        lastHealthyAt: isRelayDown(r.status) ? (existing?.lastHealthyAt ?? 0) : now,
+      };
+    }
+    return next;
+  });
+}
+
+/** Apply a relay_status_change transition to the tracked per-relay health map. */
+export function applyRelayStatusChange(url: string, status: RelayStatus): void {
+  const now = Date.now();
+  relayStatusByUrl.update((cur) => {
+    const existing = cur[url];
+    return {
+      ...cur,
+      [url]: {
+        status,
+        enabled: existing?.enabled ?? true,
+        lastHealthyAt: isRelayDown(status) ? (existing?.lastHealthyAt ?? now) : now,
+      },
+    };
+  });
+}
+
+/** Patch `enabled` on a tracked relay after a local Settings toggle, without waiting for a relogin/reseed. */
+export function setRelayEnabledLocally(url: string, enabled: boolean): void {
+  relayStatusByUrl.update((cur) => {
+    const existing = cur[url];
+    if (!existing) return cur;
+    return {
+      ...cur,
+      [url]: {
+        ...existing,
+        enabled,
+      },
+    };
+  });
+}
+
+const SYNC_BEHIND_THRESHOLD_MS = 5 * 60 * 1000;
+const SYNC_STALL_RELAY_THRESHOLD_MS = 5 * 60 * 1000;
+const SYNC_HEALTH_TICK_INTERVAL_MS = 30 * 1000;
+
+/** Ticks periodically so dmSyncStatusEffective re-evaluates the 5-minute thresholds even with no new events. */
+const syncHealthTick = writable(Date.now());
+/** Handle from setInterval; aliased for readability. */
+type SyncHealthTickerHandle = ReturnType<typeof setInterval>;
+let syncHealthTickInterval: SyncHealthTickerHandle | null = null;
+
+/** Start the periodic recompute tick for dmSyncStatusEffective. Idempotent; safe to call repeatedly (HMR, multiple mounts). */
+export function installSyncHealthTicker(): () => void {
+  if (syncHealthTickInterval === null) {
+    syncHealthTickInterval = globalThis.setInterval(() => {
+      syncHealthTick.set(Date.now());
+    }, SYNC_HEALTH_TICK_INTERVAL_MS);
+  }
+  return () => {
+    if (syncHealthTickInterval !== null) {
+      clearInterval(syncHealthTickInterval);
+      syncHealthTickInterval = null;
+    }
+  };
+}
+
+/**
+ * dmSyncStatus layered with time-relative `behind`/`stalled`, derived from catch-up recency and
+ * enabled-relay health. `behind`: no successful catch-up in the last 5 minutes (and not currently
+ * syncing). `stalled`: `behind`, plus at least one enabled tracked relay has been
+ * disconnected/terminated for more than 5 minutes. Auto-clears the moment `sync_finished` resets
+ * `lastCatchUpSuccess`.
+ */
+export const dmSyncStatusEffective: Readable<SyncStatus> = derived(
+  [dmSyncStatus, lastCatchUpSuccess, relayStatusByUrl, syncHealthTick],
+  ([$status, $lastCatchUpSuccess, $relayStatusByUrl, $tick]) => {
+    if ($status === 'syncing') return $status;
+    const behind =
+      $lastCatchUpSuccess === null || $tick - $lastCatchUpSuccess > SYNC_BEHIND_THRESHOLD_MS;
+    if (!behind) return $status;
+    const relayStalled = Object.values($relayStatusByUrl).some(
+      (r) =>
+        r.enabled &&
+        isRelayDown(r.status) &&
+        $tick - r.lastHealthyAt > SYNC_STALL_RELAY_THRESHOLD_MS
+    );
+    return relayStalled ? 'stalled' : 'behind';
+  }
+);
 
 export const typingByChat = writable<Record<string, string[]>>({});
 

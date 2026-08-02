@@ -36,6 +36,12 @@ import {
   dmWalletPeerExchangeTick,
   dmSyncStatus,
   dmSendError,
+  seedRelayHealth,
+  applyRelayStatusChange,
+  setRelayEnabledLocally,
+  relayStatusByUrl,
+  dmSyncStatusEffective,
+  lastCatchUpSuccess,
   lastOpenedDmByTab,
   type DmChatSnapshot,
   type DmMessage,
@@ -92,6 +98,8 @@ describe('dm', () => {
     dmWalletPeerExchangeTick.set(0);
     dmSyncStatus.set('idle');
     dmSendError.set(null);
+    relayStatusByUrl.set({});
+    lastCatchUpSuccess.set(null);
     lastOpenedDmByTab.set({ friends: null, requests: null, pending: null, search: null, pinned: null });
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();
@@ -289,6 +297,45 @@ describe('dm', () => {
       expect(get(messageCountByChat)['alice']).toBe(3);
       expect(get(loadedOffsetByChat)['alice']).toBe(0);
       expect(get(pinnedDmNpubs).has('alice')).toBe(true);
+    });
+  });
+
+  describe('relay health', () => {
+    it('setRelayEnabledLocally patches enabled on a tracked relay without touching status', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'connected', enabled: true }]);
+
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      expect(get(relayStatusByUrl)['wss://relay.example']).toMatchObject({
+        status: 'connected',
+        enabled: false,
+      });
+    });
+
+    it('is a no-op when the relay has never been tracked', () => {
+      setRelayEnabledLocally('wss://unknown.example', false);
+      expect(get(relayStatusByUrl)['wss://unknown.example']).toBeUndefined();
+    });
+
+    it('clears the stalled indicator immediately when a down relay is disabled in Settings', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'disconnected', enabled: true }]);
+      lastCatchUpSuccess.set(null);
+      dmSyncStatus.set('idle');
+
+      expect(get(dmSyncStatusEffective)).toBe('stalled');
+
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      expect(get(dmSyncStatusEffective)).toBe('behind');
+    });
+
+    it('applyRelayStatusChange preserves the enabled flag set by setRelayEnabledLocally', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'connected', enabled: true }]);
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      applyRelayStatusChange('wss://relay.example', 'disconnected');
+
+      expect(get(relayStatusByUrl)['wss://relay.example']?.enabled).toBe(false);
     });
   });
 });

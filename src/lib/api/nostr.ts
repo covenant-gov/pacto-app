@@ -676,6 +676,18 @@ export async function syncMlsGroupsNow(groupId?: string | null): Promise<{ synce
   return { synced, total };
 }
 
+/**
+ * Force a deep rescan: re-walk up to ~30 days of DM history in 2-day slices
+ * (stops after 15 consecutive empty slices). Backend: deep_rescan.
+ * Rejects with "Already Scanning! ..." if a sync is already in progress.
+ */
+export async function deepRescan(): Promise<boolean> {
+  dmLog('deep_rescan');
+  const ok = (await invoke('deep_rescan')) as boolean;
+  dmLog('deep_rescan done', ok);
+  return ok;
+}
+
 /** Local replica row for dashboard polls (SQLite + MLS ingest). */
 export interface DashboardPollDto {
   id: string;

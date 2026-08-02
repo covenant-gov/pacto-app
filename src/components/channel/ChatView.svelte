@@ -51,7 +51,7 @@
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { dmSyncStatus } from '../../stores/dm';
+  import { dmSyncStatusEffective } from '../../stores/dm';
   import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
@@ -759,7 +759,7 @@
       <div class="channel-info">
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
-        <SyncStatusIndicator status={$dmSyncStatus} stalled={false} />
+        <SyncStatusIndicator status={$dmSyncStatusEffective} />
         {#if !hideChannelOverflowMenu}
           <NotificationLevelIndicator chatId={$activeChannelId ?? ''} onOpen={() => (channelMenuOpen = true)} />
         {/if}

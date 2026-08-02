@@ -227,6 +227,7 @@ enum SyncMode {
     ForwardSync,   // Initial sync from most recent message going backward
     BackwardSync,  // Syncing historically old messages
     DeepRescan,    // Deep rescan mode - continues until 30 days of no events
+    CatchUp,       // Bounded forward walk from last_catch_up_until to now (wake/reconnect recovery)
     Finished       // Sync complete
 }
 
@@ -240,6 +241,17 @@ struct ChatState {
     sync_mode: SyncMode,
     sync_empty_iterations: u8, // Counter for consecutive empty iterations
     sync_total_iterations: u8, // Counter for total iterations in current mode
+    last_catch_up_until: u64, // Unix timestamp of the last time an account-wide sync reached "now"
+    // Monotonic-clock reading (seconds since MONOTONIC_EPOCH, immune to wall-clock jumps) at
+    // the same moment `last_catch_up_until` was recorded. `None` until the first catch-up
+    // completes in this process. See `should_enter_catch_up`.
+    #[serde(skip)]
+    last_catch_up_monotonic: Option<u64>,
+    // True while a slice's window has been claimed (window advanced) but its fetch/processing
+    // has not yet completed. Guards the continuation branches below against a concurrent
+    // fetch_messages(false) call (e.g. a wake trigger racing the normal continuation loop)
+    // advancing sync_window_end a second time before the first call's fetch finishes.
+    slice_in_flight: bool,
 }
 
 impl ChatState {
@@ -253,6 +265,9 @@ impl ChatState {
             sync_mode: SyncMode::Finished,
             sync_empty_iterations: 0,
             sync_total_iterations: 0,
+            last_catch_up_until: 0,
+            last_catch_up_monotonic: None,
+            slice_in_flight: false,
         }
     }
 
@@ -480,6 +495,259 @@ impl ChatState {
 
 }
 
+/// Grace period after a Finished account-wide sync before a `fetch_messages(false)` call
+/// (wake/reconnect trigger) is worth re-checking for missed events.
+const CATCH_UP_GRACE_SECS: u64 = 60;
+/// Overlap subtracted from `last_catch_up_until` on CatchUp entry, to avoid missing events
+/// that landed exactly at the boundary of the previous sync.
+const CATCH_UP_OVERLAP_SECS: u64 = 30;
+/// Max span of a single CatchUp slice, matching the initial login window.
+const CATCH_UP_SLICE_SECS: u64 = 60 * 60 * 24 * 2;
+
+lazy_static! {
+    /// Arbitrary fixed point captured at process start. `Instant::elapsed()` against this is a
+    /// monotonic clock reading immune to wall-clock adjustments (NTP, manual changes, sleep/
+    /// resume skew) — used to detect catch-up staleness even when the wall clock lies.
+    static ref MONOTONIC_EPOCH: std::time::Instant = std::time::Instant::now();
+}
+
+/// Seconds elapsed since `MONOTONIC_EPOCH`. Not itself unit-tested (it reads the real clock);
+/// `should_enter_catch_up` and friends take the reading as a plain `u64` parameter so their
+/// staleness logic is.
+fn monotonic_now_secs() -> u64 {
+    MONOTONIC_EPOCH.elapsed().as_secs()
+}
+
+/// Should a Finished, account-wide sync be promoted into a bounded CatchUp walk?
+/// True once the grace window since the last successful catch-up has elapsed, judged by
+/// whichever clock shows more elapsed time: the wall clock (`now` vs. `last_catch_up_until`)
+/// or a monotonic clock reading (`now_monotonic` vs. `last_catch_up_monotonic`, seconds since
+/// an arbitrary process-start epoch). The wall clock alone is not reliable here: a backward
+/// step (NTP correction, manual clock change, or clock skew on sleep/resume) can make
+/// `now.saturating_sub(last_catch_up_until)` read small or zero even though real time — which
+/// the monotonic clock still measures correctly, being immune to wall-clock adjustments — has
+/// genuinely moved on. `last_catch_up_monotonic` is `None` before any catch-up has completed
+/// in this process; the wall-clock delta alone decides in that case (matching the already-
+/// covered "never recorded" / zero-watermark behavior).
+fn should_enter_catch_up(
+    last_catch_up_until: u64,
+    now: u64,
+    last_catch_up_monotonic: Option<u64>,
+    now_monotonic: u64,
+) -> bool {
+    let wall_clock_elapsed = now.saturating_sub(last_catch_up_until);
+    let elapsed = match last_catch_up_monotonic {
+        Some(anchor) => std::cmp::max(wall_clock_elapsed, now_monotonic.saturating_sub(anchor)),
+        None => wall_clock_elapsed,
+    };
+    elapsed > CATCH_UP_GRACE_SECS
+}
+
+/// Computes the next CatchUp slice, walking FORWARD from `window_start` towards `now` in
+/// `CATCH_UP_SLICE_SECS`-bounded steps. `window_start` is `last_catch_up_until` on first
+/// entry (`apply_overlap = true`, to re-cover the boundary) or the previous slice's `until`
+/// on every later slice of the same walk (`apply_overlap = false`). Returns
+/// `(since, until, is_last_slice)`; `is_last_slice` is true once the slice reaches `now`.
+fn catch_up_window(window_start: u64, now: u64, apply_overlap: bool) -> (u64, u64, bool) {
+    let raw_since = if apply_overlap {
+        window_start.saturating_sub(CATCH_UP_OVERLAP_SECS)
+    } else {
+        window_start
+    };
+    // A zero watermark means "no catch-up ever recorded" (fresh `ChatState`), not a
+    // decades-stale window. Floor it the same way `single_relay_fetch_since` floors its
+    // no-prior-catch-up fallback, so the first promotion on a fresh session starts at most
+    // `CATCH_UP_SLICE_SECS` back instead of walking forward from the Unix epoch.
+    let since = if window_start == 0 {
+        std::cmp::max(raw_since, now.saturating_sub(CATCH_UP_SLICE_SECS))
+    } else {
+        raw_since
+    };
+    let until = std::cmp::min(now, since + CATCH_UP_SLICE_SECS);
+    let is_last_slice = until >= now;
+    (since, until, is_last_slice)
+}
+
+/// Full entry gate for promoting a Finished, account-wide sync into CatchUp. Requires no
+/// sync already in flight — the same `is_syncing` in-flight guard `ForwardSync` sets when
+/// the login sync starts — so a duplicate wake/reconnect trigger arriving while a CatchUp
+/// (or any other) walk is still running never spawns a second, parallel window.
+fn should_promote_to_catch_up(
+    mode: SyncMode,
+    is_syncing: bool,
+    last_catch_up_until: u64,
+    now: u64,
+    last_catch_up_monotonic: Option<u64>,
+    now_monotonic: u64,
+) -> bool {
+    mode == SyncMode::Finished
+        && !is_syncing
+        && should_enter_catch_up(last_catch_up_until, now, last_catch_up_monotonic, now_monotonic)
+}
+
+/// Bounds a single-relay reconnect fetch: caps it at the 2-day `CATCH_UP_SLICE_SECS` window,
+/// but narrows it to the gap since the last recorded account-wide catch-up (with the same
+/// overlap used by `catch_up_window`) when that gap is smaller. A relay reconnecting shortly
+/// after a full catch-up therefore does not redundantly re-fetch the whole 2-day window, while
+/// a relay with no prior catch-up (`last_catch_up_until == 0`) or a long outage still gets the
+/// full 2-day cap.
+fn single_relay_fetch_since(last_catch_up_until: u64, now: u64) -> u64 {
+    let two_day_floor = now.saturating_sub(CATCH_UP_SLICE_SECS);
+    let recent_bound = last_catch_up_until.saturating_sub(CATCH_UP_OVERLAP_SECS);
+    std::cmp::max(two_day_floor, recent_bound)
+}
+
+/// Branch-selection for the next sync slice, extracted from `fetch_messages` so the
+/// ForwardSync/BackwardSync/DeepRescan/CatchUp continuation and promotion logic is
+/// unit-testable without a Tauri `AppHandle` or Nostr client. Mutates `state` to claim the
+/// returned window (and, on promotion, to enter `SyncMode::CatchUp`) exactly as the inlined
+/// version did, including setting `slice_in_flight` so a concurrent call sees the claim.
+/// Returns `None` when there is nothing to do this call: a slice is already claimed by a
+/// concurrent invocation (`slice_in_flight`), or the account-wide sync is `Finished` and
+/// still within the catch-up grace window.
+fn next_sync_slice(state: &mut ChatState, now: u64, now_monotonic: u64) -> Option<(u64, u64, bool)> {
+    if state.slice_in_flight {
+        return None;
+    }
+
+    let (since, until, is_last) = if state.sync_mode == SyncMode::ForwardSync {
+        // Forward sync (filling gaps from last message to now)
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::BackwardSync {
+        // Backward sync (historically old messages)
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::DeepRescan {
+        // Deep rescan mode - scan backwards in 2-day increments until 30 days of no events
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::CatchUp {
+        // Continuing a CatchUp walk: advance forward from the previous slice's `until`.
+        let (since, until, is_last) = catch_up_window(state.sync_window_end, now, false);
+        state.sync_window_start = since;
+        state.sync_window_end = until;
+        (since, until, is_last)
+    } else if should_promote_to_catch_up(
+        state.sync_mode,
+        state.is_syncing,
+        state.last_catch_up_until,
+        now,
+        state.last_catch_up_monotonic,
+        now_monotonic,
+    ) {
+        // Stale account-wide sync (wake/reconnect trigger past the grace window):
+        // promote into a bounded forward CatchUp walk instead of returning None below.
+        let (since, until, is_last) = catch_up_window(state.last_catch_up_until, now, true);
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_empty_iterations = 0;
+        state.sync_total_iterations = 0;
+        state.sync_window_start = since;
+        state.sync_window_end = until;
+        (since, until, is_last)
+    } else {
+        // Finished within the grace window, or unknown state: nothing to do.
+        return None;
+    };
+
+    state.slice_in_flight = true;
+    Some((since, until, is_last))
+}
+
+/// Post-fetch continue/terminate decision, extracted from `fetch_messages` for the same
+/// reason as `next_sync_slice`. `events_found` is `total_events_count` for DeepRescan and
+/// `new_messages_count` for every other mode — the caller selects which. `oldest_message_time`
+/// is the oldest message timestamp across all chats, read only for the ForwardSync ->
+/// BackwardSync transition. Always releases `slice_in_flight` before returning, whether the
+/// walk continues or terminates, so the next slice (continuation loop or a racing
+/// wake/reconnect trigger) can proceed.
+fn record_slice_result(
+    state: &mut ChatState,
+    new_messages_count: u16,
+    events_found: u16,
+    catch_up_is_last_slice: bool,
+    oldest_message_time: Option<u64>,
+    now: u64,
+    now_monotonic: u64,
+) -> bool {
+    let mut continue_sync = true;
+
+    state.sync_total_iterations += 1;
+
+    if events_found > 0 {
+        state.sync_empty_iterations = 0;
+    } else {
+        state.sync_empty_iterations += 1;
+    }
+
+    if state.sync_mode == SyncMode::ForwardSync {
+        // Forward sync transitions to backward sync after:
+        // 1. Finding messages and going 3 more iterations without messages, or
+        // 2. Going 5 iterations without finding any messages
+        let enough_empty_iterations = state.sync_empty_iterations >= 5;
+        let found_then_empty = new_messages_count > 0 && state.sync_empty_iterations >= 3;
+
+        if found_then_empty || enough_empty_iterations {
+            state.sync_mode = SyncMode::BackwardSync;
+            state.sync_empty_iterations = 0;
+            state.sync_total_iterations = 0;
+
+            if let Some(oldest_ts) = oldest_message_time {
+                state.sync_window_end = oldest_ts;
+                state.sync_window_start = oldest_ts - (60 * 60 * 24 * 2); // 2 days before oldest
+            } else {
+                // Still start backward sync, but from recent history
+                let thirty_days_ago = now - (60 * 60 * 24 * 30);
+                state.sync_window_end = thirty_days_ago;
+                state.sync_window_start = thirty_days_ago - (60 * 60 * 24 * 2);
+            }
+        }
+    } else if state.sync_mode == SyncMode::BackwardSync {
+        // For backward sync, continue until no messages found for 5 consecutive iterations
+        if state.sync_empty_iterations >= 5 {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else if state.sync_mode == SyncMode::DeepRescan {
+        // For deep rescan, continue until no messages found for 15 consecutive iterations
+        // (30 days of no events at 2 days/iteration)
+        if state.sync_empty_iterations >= 15 {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else if state.sync_mode == SyncMode::CatchUp {
+        // CatchUp terminates once the slice we just processed reached "now" (not on empty
+        // iterations — a quiet inbox is a perfectly valid CatchUp outcome).
+        if catch_up_is_last_slice {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else {
+        continue_sync = false; // Unknown state, stop syncing
+    }
+    // Every path that lands here with `continue_sync == false` is a normal completion of a
+    // full account-wide walk (BackwardSync/DeepRescan exhausting empty iterations, or CatchUp
+    // reaching "now") — advance the watermark. A failed relay event stream never reaches this
+    // function at all (it returns early with its own reset), so there's no "failed" case to
+    // gate out separately here.
+    if !continue_sync {
+        state.last_catch_up_until = now;
+        state.last_catch_up_monotonic = Some(now_monotonic);
+    }
+    state.slice_in_flight = false;
+    continue_sync
+}
+
 #[cfg(test)]
 mod unread_count_tests {
     use super::*;
@@ -594,6 +862,298 @@ mod unread_count_tests {
     }
 }
 
+#[cfg(test)]
+mod catch_up_tests {
+    use super::{
+        catch_up_window, should_enter_catch_up, should_promote_to_catch_up, single_relay_fetch_since,
+        SyncMode, CATCH_UP_GRACE_SECS, CATCH_UP_OVERLAP_SECS, CATCH_UP_SLICE_SECS,
+    };
+
+    #[test]
+    fn within_grace_window_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 30; // 30s ago, well within the 60s grace window
+        assert!(!should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn promotion_blocked_while_a_sync_is_already_in_flight() {
+        // The in-flight guard: even with a stale watermark, a sync already running
+        // (is_syncing = true) must not spawn a second, parallel CatchUp window.
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago: stale enough on its own
+        assert!(!should_promote_to_catch_up(SyncMode::Finished, true, last_catch_up_until, now, None, 0));
+        assert!(should_promote_to_catch_up(SyncMode::Finished, false, last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn promotion_only_fires_from_finished_mode() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        for mode in [SyncMode::ForwardSync, SyncMode::BackwardSync, SyncMode::DeepRescan, SyncMode::CatchUp] {
+            assert!(!should_promote_to_catch_up(mode, false, last_catch_up_until, now, None, 0));
+        }
+    }
+
+    #[test]
+    fn exactly_at_grace_boundary_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - CATCH_UP_GRACE_SECS;
+        assert!(!should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn stale_last_catch_up_enters_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago (the test name already conveys the scenario)
+        assert!(should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn zero_watermark_enters_catch_up() {
+        // A never-recorded (0) watermark is maximally stale and must enter catch-up.
+        let now = 1_000_000u64;
+        assert!(should_enter_catch_up(0, now, None, 0));
+    }
+
+    #[test]
+    fn first_slice_covers_a_single_two_day_window_ending_at_now() {
+        // last_catch_up_until 1 hour ago fetches a single 2-day window ending at now.
+        let now = 2_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        let (since, until, is_last) = catch_up_window(last_catch_up_until, now, true);
+
+        assert_eq!(since, last_catch_up_until - 30); // overlap applied
+        assert_eq!(until, now); // capped at now, well inside the 2-day slice cap
+        assert!(is_last);
+    }
+
+    #[test]
+    fn zero_watermark_floors_to_two_day_cap_instead_of_the_unix_epoch() {
+        // A fresh ChatState's last_catch_up_until is 0 (never recorded), not a genuine
+        // decades-old watermark. Mirrors single_relay_fetch_falls_back_to_two_day_cap_with_no_prior_catch_up:
+        // the walk must start no further back than the 2-day slice cap.
+        let now = 2_000_000_000u64;
+        let (since, until, is_last) = catch_up_window(0, now, true);
+
+        assert!(since >= now - CATCH_UP_SLICE_SECS);
+        assert_eq!(until, now);
+        assert!(is_last);
+    }
+
+    #[test]
+    fn zero_watermark_still_promotes_to_catch_up() {
+        let now = 2_000_000_000u64;
+        assert!(should_promote_to_catch_up(SyncMode::Finished, false, 0, now, None, 0));
+    }
+
+    #[test]
+    fn wide_gap_produces_bounded_forward_slices_until_reaching_now() {
+        // A gap wider than one slice must walk FORWARD (not backward) in
+        // CATCH_UP_SLICE_SECS-bounded steps, ending exactly at `now`.
+        let now = 10 * CATCH_UP_SLICE_SECS + 1_000;
+        let last_catch_up_until = 500u64; // gap spans several slices
+
+        let (since1, until1, is_last1) = catch_up_window(last_catch_up_until, now, true);
+        assert_eq!(since1, last_catch_up_until - 30);
+        assert_eq!(until1, since1 + CATCH_UP_SLICE_SECS);
+        assert!(until1 < now, "first slice of a wide gap must not reach now yet");
+        assert!(!is_last1);
+
+        // Next slice continues forward from the previous slice's `until`, no overlap.
+        let (since2, until2, is_last2) = catch_up_window(until1, now, false);
+        assert_eq!(since2, until1);
+        assert!(since2 > since1, "window must advance forward, never backward");
+        assert!(!is_last2);
+
+        // Walk remaining slices until the loop terminates at `now`.
+        let mut since = since2;
+        let mut until = until2;
+        let mut is_last = is_last2;
+        let mut iterations = 1;
+        while !is_last {
+            let (s, u, last) = catch_up_window(until, now, false);
+            assert!(s >= since, "window must never move backward");
+            since = s;
+            until = u;
+            is_last = last;
+            iterations += 1;
+            assert!(iterations < 100, "catch-up walk did not terminate");
+        }
+        assert_eq!(until, now);
+    }
+
+    #[test]
+    fn single_relay_fetch_falls_back_to_two_day_cap_with_no_prior_catch_up() {
+        // last_catch_up_until == 0 (never recorded): full 2-day cap, not the recent-gap bound.
+        let now = 2_000_000_000u64;
+        assert_eq!(single_relay_fetch_since(0, now), now - CATCH_UP_SLICE_SECS);
+    }
+
+    #[test]
+    fn single_relay_fetch_narrows_to_recent_catch_up_gap() {
+        // Reconnecting 10 minutes after a full account-wide catch-up must not re-fetch 2 days.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 600;
+        let since = single_relay_fetch_since(last_catch_up_until, now);
+        assert_eq!(since, last_catch_up_until - CATCH_UP_OVERLAP_SECS);
+        assert!(since > now - CATCH_UP_SLICE_SECS, "narrowed window must be tighter than the 2-day cap");
+    }
+
+    #[test]
+    fn single_relay_fetch_stays_capped_at_two_days_for_a_long_outage() {
+        // A relay down far longer than 2 days must not walk back further than the cap.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 10 * CATCH_UP_SLICE_SECS;
+        assert_eq!(single_relay_fetch_since(last_catch_up_until, now), now - CATCH_UP_SLICE_SECS);
+    }
+}
+
+#[cfg(test)]
+mod fetch_messages_state_machine_tests {
+    use super::{next_sync_slice, record_slice_result, ChatState, SyncMode, CATCH_UP_GRACE_SECS, CATCH_UP_SLICE_SECS};
+
+    #[test]
+    fn promotion_claims_a_catch_up_slice_and_marks_it_in_flight() {
+        // Fresh ChatState: Finished, not syncing, never caught up. A wake/reconnect trigger
+        // must promote into CatchUp and claim the slice.
+        let mut state = ChatState::new();
+        let now = 2_000_000_000u64;
+
+        let result = next_sync_slice(&mut state, now, 0);
+
+        assert!(result.is_some());
+        let (since, until, is_last) = result.unwrap();
+        assert!(since >= now - CATCH_UP_SLICE_SECS);
+        assert_eq!(until, now);
+        assert!(is_last);
+        assert_eq!(state.sync_mode, SyncMode::CatchUp);
+        assert!(state.is_syncing);
+        assert!(state.slice_in_flight);
+    }
+
+    #[test]
+    fn continuation_advances_the_catch_up_window_forward() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000;
+        state.sync_window_end = 5_000;
+        let now = 5_000 + CATCH_UP_SLICE_SECS * 3;
+
+        let (since, until, is_last) = next_sync_slice(&mut state, now, 0).unwrap();
+
+        // Continuation has no overlap and starts exactly where the previous slice ended.
+        assert_eq!(since, 5_000);
+        assert_eq!(until, 5_000 + CATCH_UP_SLICE_SECS);
+        assert!(!is_last);
+        assert_eq!(state.sync_window_start, since);
+        assert_eq!(state.sync_window_end, until);
+        assert!(state.slice_in_flight);
+    }
+
+    #[test]
+    fn a_concurrent_call_is_rejected_while_a_slice_is_in_flight() {
+        // This is the regression guard for the concurrency bug: a second fetch_messages(false)
+        // call (wake trigger racing the normal continuation loop, or vice versa) must not
+        // advance sync_window_end a second time while the first call's slice is still in flight.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000;
+        state.sync_window_end = 5_000;
+        state.slice_in_flight = true; // another call already claimed this slice
+
+        let result = next_sync_slice(&mut state, 50_000, 0);
+
+        assert!(result.is_none(), "a concurrent call must be rejected as a no-op duplicate");
+        // The window must be untouched: the in-flight call's own window is still authoritative.
+        assert_eq!(state.sync_window_start, 1_000);
+        assert_eq!(state.sync_window_end, 5_000);
+    }
+
+    #[test]
+    fn catch_up_terminates_on_the_last_slice_and_advances_the_watermark() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        let now = 2_000_000_000u64;
+
+        let continue_sync = record_slice_result(
+            &mut state,
+            /* new_messages_count */ 0,
+            /* events_found */ 0,
+            /* catch_up_is_last_slice */ true,
+            /* oldest_message_time */ None,
+            now,
+            0,
+        );
+
+        assert!(!continue_sync, "CatchUp reaching its last slice must terminate the walk");
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(state.last_catch_up_until, now, "a normal completion must advance the watermark");
+        assert!(!state.slice_in_flight, "the claim must be released once the slice is recorded");
+    }
+
+    #[test]
+    fn catch_up_continues_and_releases_the_in_flight_claim_when_not_the_last_slice() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        let last_catch_up_until_before = state.last_catch_up_until;
+
+        let continue_sync = record_slice_result(&mut state, 0, 0, false, None, 2_000_000_000u64, 0);
+
+        assert!(continue_sync);
+        assert_eq!(state.sync_mode, SyncMode::CatchUp, "walk keeps going until the last slice");
+        assert_eq!(state.last_catch_up_until, last_catch_up_until_before, "no watermark advance mid-walk");
+        assert!(!state.slice_in_flight, "the claim must be released so the next slice can proceed");
+    }
+
+    #[test]
+    fn backward_sync_terminates_after_five_empty_iterations_and_advances_the_watermark() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::BackwardSync;
+        state.is_syncing = true;
+        state.sync_empty_iterations = 4;
+        state.slice_in_flight = true;
+        let now = 2_000_000_000u64;
+
+        let continue_sync = record_slice_result(&mut state, 0, 0, false, None, now, 0);
+
+        assert!(!continue_sync);
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(state.last_catch_up_until, now);
+    }
+
+    #[test]
+    fn a_backward_wall_clock_jump_does_not_suppress_a_catch_up_that_was_otherwise_due() {
+        // Regression guard: an NTP correction or manual clock change stepping the wall clock
+        // backward must not make a genuinely due catch-up look fresh. The monotonic reading
+        // (immune to wall-clock adjustments) is what actually elapsed and must win.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::Finished;
+        state.is_syncing = false;
+        state.last_catch_up_until = 1_000_000; // wall clock at the last successful catch-up
+        state.last_catch_up_monotonic = Some(1_000); // monotonic reading at that same moment
+
+        // The wall clock has jumped BACKWARD: it now reads before the last catch-up watermark,
+        // so the wall-clock delta alone would saturate to 0 and hide the staleness.
+        let now_wall_clock = 999_000u64;
+        assert!(now_wall_clock < state.last_catch_up_until);
+
+        // Real (monotonic) time has genuinely moved on well past the grace window.
+        let now_monotonic = 1_000 + CATCH_UP_GRACE_SECS + 30;
+
+        let result = next_sync_slice(&mut state, now_wall_clock, now_monotonic);
+
+        assert!(result.is_some(), "monotonic elapsed time must still trigger the overdue catch-up");
+        assert_eq!(state.sync_mode, SyncMode::CatchUp);
+    }
+}
+
 lazy_static! {
     pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
 }
@@ -607,26 +1167,47 @@ async fn fetch_messages<R: Runtime>(
     let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
-    let signer = client.signer().await.unwrap();
-    let my_public_key = signer.get_public_key().await.unwrap();
+    let signer = match client.signer().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[Sync] Failed to get Nostr signer: {}", e);
+            return;
+        }
+    };
+    let my_public_key = match signer.get_public_key().await {
+        Ok(pk) => pk,
+        Err(e) => {
+            eprintln!("[Sync] Failed to get public key from signer: {}", e);
+            return;
+        }
+    };
 
     // If relay_url is provided, this is a single-relay sync that bypasses global state
     if relay_url.is_some() {
-        // Single relay sync - always fetch last 2 days
+        // Single relay sync - bounded by the 2-day cap, narrowed to the gap since the last
+        // account-wide catch-up. Read-only lock: does not mutate ChatState.
         let now = Timestamp::now();
-        let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
-        
+        let last_catch_up_until = STATE.lock().await.last_catch_up_until;
+        let since = single_relay_fetch_since(last_catch_up_until, now.as_u64());
+
         let filter = Filter::new()
             .pubkey(my_public_key)
             .kind(Kind::GiftWrap)
-            .since(Timestamp::from_secs(two_days_ago))
+            .since(Timestamp::from_secs(since))
             .until(now);
 
         // Fetch from specific relay only
-        let mut events = client
-            .stream_events_from(vec![relay_url.unwrap()], filter, std::time::Duration::from_secs(30))
+        let relay_url_str = relay_url.unwrap();
+        let mut events = match client
+            .stream_events_from(vec![relay_url_str.clone()], filter, std::time::Duration::from_secs(30))
             .await
-            .unwrap();
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[Single-Relay Sync] Failed to fetch events from {}: {}", relay_url_str, e);
+                return;
+            }
+        };
 
         // Process events without affecting global sync state
         while let Some(event) = events.next().await {
@@ -642,7 +1223,7 @@ async fn fetch_messages<R: Runtime>(
     }
 
     // Regular sync logic with global state management
-    let (since_timestamp, until_timestamp) = {
+    let (since_timestamp, until_timestamp, catch_up_is_last_slice) = {
         let mut state = STATE.lock().await;
         
         if init {
@@ -804,6 +1385,7 @@ async fn fetch_messages<R: Runtime>(
             let now = Timestamp::now();
 
             state.is_syncing = true;
+            state.slice_in_flight = true;
             state.sync_mode = SyncMode::ForwardSync;
             state.sync_empty_iterations = 0;
             state.sync_total_iterations = 0;
@@ -816,60 +1398,20 @@ async fn fetch_messages<R: Runtime>(
 
             (
                 Timestamp::from_secs(two_days_ago),
-                now
-            )
-        } else if state.sync_mode == SyncMode::ForwardSync {
-            // Forward sync (filling gaps from last message to now)
-            let window_start = state.sync_window_start;
-
-            // Adjust window for next iteration (go back in time in 2-day increments)
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
-            )
-        } else if state.sync_mode == SyncMode::BackwardSync {
-            // Backward sync (historically old messages)
-            let window_start = state.sync_window_start;
-
-            // Move window backward in time in 2-day increments
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
-            )
-        } else if state.sync_mode == SyncMode::DeepRescan {
-            // Deep rescan mode - scan backwards in 2-day increments until 30 days of no events
-            let window_start = state.sync_window_start;
-
-            // Move window backward in time in 2-day increments
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
+                now,
+                false
             )
         } else {
-            // Sync finished or in unknown state
-            // Return dummy values, won't be used as we'll end sync
-            (Timestamp::now(), Timestamp::now())
+            match next_sync_slice(&mut state, Timestamp::now().as_u64(), monotonic_now_secs()) {
+                Some((since, until, is_last)) => (
+                    Timestamp::from_secs(since),
+                    Timestamp::from_secs(until),
+                    is_last,
+                ),
+                // Nothing to do: a slice is already in flight for a concurrent call, or the
+                // sync is Finished within the catch-up grace window.
+                None => return,
+            }
         }
     };
 
@@ -903,16 +1445,38 @@ async fn fetch_messages<R: Runtime>(
 
     let mut event_stream = if let Some(url) = &relay_url {
         // Fetch from specific relay
-        client
+        match client
             .stream_events_from(vec![url], filter, std::time::Duration::from_secs(30))
             .await
-            .unwrap()
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[Sync] Relay event stream failed for {}: {}", url, e);
+                let mut state = STATE.lock().await;
+                state.is_syncing = false;
+                state.sync_mode = SyncMode::Finished;
+                state.sync_empty_iterations = 0;
+                state.sync_total_iterations = 0;
+                return;
+            }
+        }
     } else {
         // Fetch from all relays
-        client
+        match client
             .stream_events(filter, std::time::Duration::from_secs(60))
             .await
-            .unwrap()
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
+                let mut state = STATE.lock().await;
+                state.is_syncing = false;
+                state.sync_mode = SyncMode::Finished;
+                state.sync_empty_iterations = 0;
+                state.sync_total_iterations = 0;
+                return;
+            }
+        }
     };
 
     // Count total events fetched (for DeepRescan) and new messages added (for other modes)
@@ -929,10 +1493,6 @@ async fn fetch_messages<R: Runtime>(
     let total_events_count = new_messages_count as u16;
     let should_continue = {
         let mut state = STATE.lock().await;
-        let mut continue_sync = true;
-
-        // Increment total iterations counter
-        state.sync_total_iterations += 1;
 
         // For DeepRescan, use total events count; for other modes, use new messages count
         let events_found = if state.sync_mode == SyncMode::DeepRescan {
@@ -941,81 +1501,23 @@ async fn fetch_messages<R: Runtime>(
             new_messages_count
         };
 
-        // Update state based on if events were found
-        if events_found > 0 {
-            state.sync_empty_iterations = 0;
-        } else {
-            state.sync_empty_iterations += 1;
-        }
+        // Oldest message timestamp across all chats, needed only for the ForwardSync ->
+        // BackwardSync transition; computed here since it needs `state.chats`.
+        let oldest_message_time = state
+            .chats
+            .iter()
+            .filter_map(|chat| chat.last_message_time())
+            .min();
 
-        if state.sync_mode == SyncMode::ForwardSync {
-            // Forward sync transitions to backward sync after:
-            // 1. Finding messages and going 3 more iterations without messages, or
-            // 2. Going 5 iterations without finding any messages
-            let enough_empty_iterations = state.sync_empty_iterations >= 5;
-            let found_then_empty = new_messages_count > 0 && state.sync_empty_iterations >= 3;
-
-            if found_then_empty || enough_empty_iterations {
-                // Time to switch mode - calculate oldest timestamp while holding lock
-                let mut oldest_timestamp = None;
-                
-                // Check each chat's messages for oldest timestamp
-                for chat in &state.chats {
-                    if let Some(oldest_msg_time) = chat.last_message_time() {
-                        match oldest_timestamp {
-                            None => oldest_timestamp = Some(oldest_msg_time),
-                            Some(current_oldest) => {
-                                if oldest_msg_time < current_oldest {
-                                    oldest_timestamp = Some(oldest_msg_time);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Switch to backward sync mode
-                state.sync_mode = SyncMode::BackwardSync;
-                state.sync_empty_iterations = 0;
-                state.sync_total_iterations = 0;
-
-                if let Some(oldest_ts) = oldest_timestamp {
-                    state.sync_window_end = oldest_ts;
-                    state.sync_window_start = oldest_ts - (60 * 60 * 24 * 2); // 2 days before oldest
-                } else {
-                    // Still start backward sync, but from recent history
-                    let now = Timestamp::now().as_u64();
-                    let thirty_days_ago = now - (60 * 60 * 24 * 30);
-
-                    state.sync_window_end = thirty_days_ago;
-                    state.sync_window_start = thirty_days_ago - (60 * 60 * 24 * 2);
-                }
-            }
-        } else if state.sync_mode == SyncMode::BackwardSync {
-            // For backward sync, continue until:
-            // No messages found for 5 consecutive iterations
-            let enough_empty_iterations = state.sync_empty_iterations >= 5;
-
-            if enough_empty_iterations {
-                // We've completed backward sync
-                state.sync_mode = SyncMode::Finished;
-                continue_sync = false;
-            }
-        } else if state.sync_mode == SyncMode::DeepRescan {
-            // For deep rescan, continue until:
-            // No messages found for 15 consecutive iterations (30 days of no events)
-            // Each iteration is 2 days, so 15 iterations = 30 days
-            let enough_empty_iterations = state.sync_empty_iterations >= 15;
-
-            if enough_empty_iterations {
-                // We've completed deep rescan
-                state.sync_mode = SyncMode::Finished;
-                continue_sync = false;
-            }
-        } else {
-            continue_sync = false; // Unknown state, stop syncing
-        }
-
-        continue_sync
+        record_slice_result(
+            &mut state,
+            new_messages_count,
+            events_found,
+            catch_up_is_last_slice,
+            oldest_message_time,
+            Timestamp::now().as_u64(),
+            monotonic_now_secs(),
+        )
     };
 
     if should_continue {
@@ -1031,6 +1533,8 @@ async fn fetch_messages<R: Runtime>(
             state.is_syncing = false;
             state.sync_empty_iterations = 0;
             state.sync_total_iterations = 0;
+            // last_catch_up_until was already advanced inside record_slice_result for the
+            // normal-completion case; nothing further to do here.
         } // Release lock before emitting event
         
         // Clear the wrapper_id cache - it's only needed during sync
@@ -3886,6 +4390,25 @@ async fn validate_relay_url_cmd(url: String) -> Result<String, String> {
 
 // ============================================================================
 
+/// Whether a relay's current status alone (not a probe outcome) warrants a
+/// forced disconnect+reconnect from the health-check loop.
+fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
+    matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
+}
+
+/// Relay URLs with a single-relay reconnect fetch currently in flight. Guards against a relay
+/// flapping Connected/Disconnected/Connected in quick succession spawning overlapping fetches
+/// for the same relay; each relay has its own independent slot.
+lazy_static! {
+    static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
+}
+
+/// Whether a relay is allowed to start a new single-relay reconnect fetch, given the set of
+/// relay URLs that currently have one in flight.
+fn relay_fetch_may_start(in_flight: &std::collections::HashSet<String>, url: &str) -> bool {
+    !in_flight.contains(url)
+}
+
 /// Monitor relay pool connection status changes
 #[tauri::command]
 async fn monitor_relay_connections() -> Result<bool, String> {
@@ -3902,6 +4425,19 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     // Get the monitor and subscribe to real-time notifications
     let monitor = client.monitor().ok_or("Failed to get monitor")?;
     let mut receiver = monitor.subscribe();
+
+    // RAII guard releasing a relay's RELAY_FETCH_IN_FLIGHT slot on Drop, so a panicking or
+    // erroring single-relay fetch can't strand the slot and permanently block that relay's
+    // future reconnect fetches.
+    struct InFlightGuard(String);
+    impl Drop for InFlightGuard {
+        fn drop(&mut self) {
+            let url = std::mem::take(&mut self.0);
+            tokio::spawn(async move {
+                RELAY_FETCH_IN_FLIGHT.lock().await.remove(&url);
+            });
+        }
+    }
     
     // Spawn a task to handle real-time relay status notifications
     let handle_clone = handle.clone();
@@ -3946,13 +4482,31 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // Relay connection terminated (hard disconnect)
                         }
                         RelayStatus::Connected => {
-                            // When a relay reconnects, fetch last 2 days of messages from just that relay
+                            // When a relay reconnects, fetch its bounded catch-up window from just
+                            // that relay — skip if a fetch for this relay is already in flight so
+                            // rapid Connected/Disconnected flapping never overlaps fetches.
                             let handle_inner = handle_clone.clone();
                             let url_string = url_str.clone();
-                            tokio::spawn(async move {
-                                // fetch_messages handles both DM and MLS group syncing for single-relay reconnections
-                                fetch_messages(handle_inner, false, Some(url_string)).await;
-                            });
+                            let guard = {
+                                let mut in_flight = RELAY_FETCH_IN_FLIGHT.lock().await;
+                                if relay_fetch_may_start(&in_flight, &url_string) {
+                                    in_flight.insert(url_string.clone());
+                                    Some(InFlightGuard(url_string.clone()))
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(guard) = guard {
+                                tokio::spawn(async move {
+                                    // fetch_messages handles both DM and MLS group syncing for single-relay reconnections.
+                                    // `guard` is held across the await and dropped afterward, so a panic mid-fetch still
+                                    // releases the RELAY_FETCH_IN_FLIGHT slot via unwind.
+                                    fetch_messages(handle_inner, false, Some(url_string.clone())).await;
+                                    drop(guard);
+                                });
+                            } else {
+                                add_relay_log(&url_str, "info", "Skipping single-relay reconnect fetch: already in flight");
+                            }
                         }
                         _ => {}
                     }
@@ -3961,7 +4515,10 @@ async fn monitor_relay_connections() -> Result<bool, String> {
         }
     });
     
-    // Spawn aggressive health check task
+    // Spawn conservative health check task: measures/logs Connected relays but
+    // no longer force-disconnects them; only Terminated/Disconnected relays get
+    // reconnected here (the 5s poller below independently retries Terminated
+    // relays, but not Disconnected ones, so that case stays in this loop).
     let client_health = client.clone();
     let handle_health = handle.clone();
     tokio::spawn(async move {
@@ -4005,31 +4562,41 @@ async fn monitor_relay_connections() -> Result<bool, String> {
 
                     match result {
                         Ok(Ok(events)) => {
-                            // Check if we actually got events or just an empty response
+                            // Any completed round-trip is useful ping data, even an
+                            // empty/slow one — we no longer disconnect on this alone.
+                            update_relay_metrics(&url_str, |m| {
+                                m.ping_ms = Some(ping_ms);
+                                m.last_check = Some(now_secs);
+                            });
                             if events.is_empty() && elapsed.as_secs() >= 2 {
-                                // Empty response after 2+ seconds means relay is not responding properly
-                                unhealthy_relays.push((url.clone(), relay.clone()));
-                                add_relay_log(&url_str, "warn", "Health check failed: slow/empty response");
-                            } else {
-                                // Healthy - record ping time
-                                update_relay_metrics(&url_str, |m| {
-                                    m.ping_ms = Some(ping_ms);
-                                    m.last_check = Some(now_secs);
-                                });
+                                add_relay_log(&url_str, "warn", "Health check: slow/empty response");
                             }
                         }
                         Ok(Err(e)) => {
-                            // Query failed
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Query failed but the relay responded (no timeout): record the
+                            // probe attempt (R11), but don't force a reconnect — a slower-but-
+                            // alive relay shouldn't be treated the same as one that never
+                            // answers at all.
+                            update_relay_metrics(&url_str, |m| {
+                                m.last_check = Some(now_secs);
+                            });
                             add_relay_log(&url_str, "warn", &format!("Health check failed: {}", e));
                         }
                         Err(_) => {
-                            // Timeout
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Full probe timeout: a materially stronger "not there" signal
+                            // than a slow-but-completed response. A Connected relay that never
+                            // answers has no other recovery path — RelayStatus never
+                            // transitions out of Connected on its own, so the reconnect-only-
+                            // on-Terminated branch below never sees it. Queue it for the same
+                            // forced disconnect+reconnect that branch already uses.
+                            update_relay_metrics(&url_str, |m| {
+                                m.last_check = Some(now_secs);
+                            });
                             add_relay_log(&url_str, "warn", "Health check failed: timeout");
+                            unhealthy_relays.push((url.clone(), relay.clone()));
                         }
                     }
-                } else if status == RelayStatus::Terminated || status == RelayStatus::Disconnected {
+                } else if relay_needs_forced_reconnect(status) {
                     // Already disconnected, add to reconnect list
                     unhealthy_relays.push((url.clone(), relay.clone()));
                 }
@@ -4085,6 +4652,52 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     });
     
     Ok(true)
+}
+
+#[cfg(test)]
+mod relay_health_reconnect_tests {
+    use super::{relay_fetch_may_start, relay_needs_forced_reconnect};
+    use nostr_sdk::prelude::RelayStatus;
+
+    #[test]
+    fn terminated_and_disconnected_trigger_reconnect() {
+        assert!(relay_needs_forced_reconnect(RelayStatus::Terminated));
+        assert!(relay_needs_forced_reconnect(RelayStatus::Disconnected));
+    }
+
+    #[test]
+    fn connected_and_other_statuses_do_not_trigger_reconnect() {
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connected));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Initialized));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Pending));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connecting));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Banned));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Sleeping));
+    }
+
+    #[test]
+    fn same_relay_may_not_start_a_second_fetch_while_one_is_in_flight() {
+        let mut in_flight = std::collections::HashSet::new();
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+    }
+
+    #[test]
+    fn different_relay_may_start_its_own_fetch_independently() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay-a.example.com".to_string());
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay-b.example.com"));
+    }
+
+    #[test]
+    fn relay_may_start_again_once_its_in_flight_slot_is_cleared() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+        in_flight.remove("wss://relay.example.com");
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+    }
 }
 
 

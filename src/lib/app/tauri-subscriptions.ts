@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from '../api';
 import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
+import { listRelays, type RelayStatus } from '../api/relays';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import { handleChannelAddedToSquad, handleMlsWelcomeAccepted, notifyPendingInviteWelcome } from '../invites/accept-invite';
@@ -10,6 +11,7 @@ import {
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
+import { installWakeSyncHandlers } from './wake-sync';
 import {
   backendDmMessages,
   backendGroupMessages,
@@ -19,6 +21,10 @@ import {
   pendingMlsWelcomes,
   bumpMembershipVersion,
   dashboardPollReplicaNonceByParentId,
+  lastCatchUpSuccess,
+  seedRelayHealth,
+  applyRelayStatusChange,
+  installSyncHealthTicker,
   type DmMessage,
   type DmChatState,
   type SyncStatus,
@@ -95,6 +101,13 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   const typingClearTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const unsubs: Promise<UnlistenFn>[] = [];
   const cleanupSessionFocusChecks = initSessionFocusChecks();
+  const cleanupWakeSync = installWakeSyncHandlers();
+  const cleanupSyncHealthTicker = installSyncHealthTicker();
+  listRelays()
+    .then((relays) =>
+      seedRelayHealth(relays.map((r) => ({ url: r.url, status: r.status, enabled: r.enabled })))
+    )
+    .catch((e) => dmError('seedRelayHealth: listRelays failed', e));
 
   register(unsubs, 'message_new', (event) => {
     const { message, chat_id } = event.payload as { message: DmMessage; chat_id: string };
@@ -212,7 +225,13 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   register(unsubs, 'sync_finished', () => {
     dmLog('sync_finished (historical sync complete)');
     dmSyncStatus.set('finished');
+    lastCatchUpSuccess.set(Date.now());
     setTimeout(() => dmSyncStatus.set('idle'), 2500);
+  });
+
+  register(unsubs, 'relay_status_change', (event) => {
+    const { url, status } = event.payload as { url: string; status: RelayStatus };
+    applyRelayStatusChange(url, status);
   });
 
   register(unsubs, 'typing-update', (e) => {
@@ -331,5 +350,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     typingClearTimeouts.clear();
     unsubs.forEach((p) => p.then((fn) => fn()));
     cleanupSessionFocusChecks();
+    cleanupWakeSync();
+    cleanupSyncHealthTicker();
   };
 }

@@ -27,7 +27,6 @@ clear_image_cache
 clear_storage
 create_mls_group
 debug_hot_reload_sync
-deep_rescan
 delete_whisper_model
 download_whisper_model
 edit_message
