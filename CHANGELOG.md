@@ -7,14 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Recover missed dm/giftwrap traffic on long-lived sessions
+- Harden session-recovery sync state machine against restart, panic, and clock races
+- Close wake-sync race and relay-toggle staleness in the DM sync UI
+
+## v0.5.1
+
+### Bug Fixes
 - Build linux amd64 release on ubuntu-22.04 to avoid appimage wayland egl crash
 - Add canonical, og:image:alt, and twitter creator metadata to landing page
 - Update create-pull-request action to v8
 - Grant release workflow contents:write permission
+- Sign commits created by create-pull-request action
 
 
 ### Chores
 - Automate version-bump PR and homebrew tap update
+- Bump version to 0.5.1 (release)
+- Auto-tag releases after prepare-release PR merges
 
 
 ### Other
