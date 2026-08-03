@@ -338,7 +338,7 @@
     {/each}
   </div>
 
-  <section class="submode-panel" role="tabpanel" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
+  <div class="submode-panel" role="tabpanel" tabindex="0" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
     {#if govSubMode === 'proposals'}
       <GovProposalsBoard
         {network}
@@ -395,7 +395,7 @@
         {fundingHint}
       />
     {/if}
-  </section>
+  </div>
 </div>
 
 <style>

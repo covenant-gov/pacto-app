@@ -107,26 +107,4 @@
     margin-bottom: 14px;
   }
 
-  .squad-admin-deploy-label {
-    display: block;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
-
-  .squad-admin-deploy-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
-  .squad-admin-deploy-select {
-    max-width: 240px;
-  }
 </style>

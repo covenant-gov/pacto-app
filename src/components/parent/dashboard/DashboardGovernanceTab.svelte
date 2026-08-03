@@ -10,7 +10,6 @@
 
   export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
-  export let pactoGovTopHatId = '';
   export let pactoGovChain: string | undefined = undefined;
   export let parentId = '';
   export let myAddress = '';

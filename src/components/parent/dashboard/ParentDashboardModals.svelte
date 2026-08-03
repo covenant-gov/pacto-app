@@ -86,8 +86,6 @@
   export let onDeployPactoGov: () => void = () => {};
   export let onDeployGovAndSponsor: () => void = () => {};
   export let onDeployExtSponsor: () => void = () => {};
-  export let onDeploySafe: () => void = () => {};
-  export let onImportSafe: () => void = () => {};
 
   let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
   let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;

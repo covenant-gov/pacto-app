@@ -466,12 +466,6 @@
     color: var(--text-secondary);
   }
 
-  .home-send-wait {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
   .home-send-error {
     padding: 12px;
     border-radius: 8px;

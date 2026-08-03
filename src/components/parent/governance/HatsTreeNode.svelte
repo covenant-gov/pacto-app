@@ -79,7 +79,7 @@
   }
 </script>
 
-<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined}>
+<div class="hats-tree-node" role="treeitem" aria-expanded={childCount > 0 ? 'true' : undefined} aria-selected="false">
   <div class="hats-tree-node-card" class:has-wearers={hasWearers} class:inactive={!node.active}>
     <div class="hats-tree-node-body">
       <code class="hats-tree-node-id" title={node.hatId}>{prettyId}</code>

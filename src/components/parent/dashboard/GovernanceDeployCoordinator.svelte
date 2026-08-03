@@ -380,8 +380,6 @@
   onDeployPactoGov={openPactoGovDeploy}
   onDeployGovAndSponsor={openGovAndSponsorDeploy}
   onDeployExtSponsor={openExtSponsorDeploy}
-  onDeploySafe={openDeploySafe}
-  onImportSafe={openSetSafe}
   onDeploySafeSuccess={handleDeploySafeSuccess}
   onPactoGovComplete={handlePactoGovComplete}
   onGovAndSponsorComplete={handleGovAndSponsorComplete}

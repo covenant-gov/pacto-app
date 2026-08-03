@@ -748,7 +748,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             <GovernanceTab
               {squadInfraRows}
               {pactoPayload}
-              pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
               parentId={parentId ?? ''}
               myAddress={myGovernanceAddress}
@@ -1053,16 +1052,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     font-size: 0.875rem;
     color: var(--text-muted);
     margin: 0;
-  }
-
-  .btn-primary {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    border: none;
   }
 
   .dashboard-tab-load-error {

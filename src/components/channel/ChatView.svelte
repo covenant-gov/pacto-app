@@ -1361,12 +1361,6 @@
     color: var(--text-secondary);
   }
 
-  .channel-modal-error {
-    margin: 0 0 12px;
-    font-size: 0.875rem;
-    color: var(--danger);
-  }
-
   .channel-modal-actions {
     display: flex;
     gap: 8px;

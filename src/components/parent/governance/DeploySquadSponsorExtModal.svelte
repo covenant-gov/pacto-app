@@ -440,10 +440,6 @@
     border-color: var(--danger, #e55353);
   }
 
-  .sponsor-deploy-select {
-    max-width: 240px;
-  }
-
   .sponsor-deploy-hint {
     margin: 6px 0 0;
     font-size: 0.8125rem;

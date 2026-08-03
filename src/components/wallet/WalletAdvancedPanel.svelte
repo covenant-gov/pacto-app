@@ -348,9 +348,9 @@
       <dt>{$t('wallet.networkLabel')}</dt>
       <dd>{getWalletNetworkDisplayName(network)}</dd>
       <dt>{$t('wallet.fromLabel')}</dt>
-      <dd><code>{activeAdvancedAddress}</code></dd>
+      <dd><code class="wallet-advanced-code">{activeAdvancedAddress}</code></dd>
       <dt>{$t('wallet.toLabel')}</dt>
-      <dd><code>{toAddress.trim()}</code></dd>
+      <dd><code class="wallet-advanced-code">{toAddress.trim()}</code></dd>
       <dt>{$t('wallet.valueLabel')}</dt>
       <dd>{$t('wallet.ethAndWeiValue', { values: { eth: valueEth.trim() || '0', wei: ethAmountToWeiString(valueEth) } })}</dd>
       <dt>{$t('wallet.calldataLabel')}</dt>

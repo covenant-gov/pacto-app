@@ -120,10 +120,11 @@
   }
 </script>
 
-<article
+<div
   class="commons-tile"
   class:commons-tile-squad={isSquad}
   class:commons-tile-user={isUser}
+  role="button"
   tabindex="0"
   aria-label={$t('commons.card.ariaLabel', { values: { title } })}
   on:click={handleCardClick}
@@ -187,7 +188,7 @@
       <p class="commons-tile-error" role="alert">{actionError}</p>
     {/if}
   </div>
-</article>
+</div>
 
 {#if detailOpen}
   <CommonsBroadcastDetailModal {broadcast} onClose={() => (detailOpen = false)} />
@@ -298,6 +299,7 @@
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 4;
+    line-clamp: 4;
     overflow: hidden;
     white-space: pre-wrap;
     word-break: break-word;

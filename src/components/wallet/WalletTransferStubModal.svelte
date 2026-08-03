@@ -562,13 +562,6 @@
     min-height: 1.2em;
   }
 
-  .wallet-stub-wait {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-    line-height: 1.45;
-  }
-
   .wallet-stub-error {
     padding: 12px 14px;
     border-radius: 8px;

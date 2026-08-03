@@ -732,6 +732,7 @@
           class="attachment-menu"
           role="menu"
           aria-label={$t('messaging.messageInput.attachmentOptions')}
+          tabindex="-1"
           on:pointerdown|stopPropagation
         >
           <button
@@ -782,6 +783,7 @@
           class="emoji-panel"
           role="dialog"
           aria-label={$t('messaging.messageInput.insertEmojiAria')}
+          tabindex="-1"
           on:pointerdown|stopPropagation
         >
           <div class="emoji-panel-search">
@@ -922,6 +924,7 @@
           bind:this={mentionPickerEl}
           role="dialog"
           aria-label={$t('messaging.messageInput.mentionMember')}
+          tabindex="-1"
           style={mentionPickerStyle}
           use:portal
           on:pointerdown|stopPropagation
@@ -936,6 +939,7 @@
                   class:selected={i === mentionSelectedIndex}
                   title={candidate.npub}
                   on:click|stopPropagation={() => selectMention(candidate)}
+                  on:keydown={(e) => e.key === 'Enter' && selectMention(candidate)}
                   on:mouseenter={() => (mentionSelectedIndex = i)}
                 >
                   {#if candidate.avatar}
