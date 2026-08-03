@@ -111,6 +111,7 @@ const spoilerExtension = {
         text: match[1],
       };
     }
+    return undefined;
   },
   renderer(token: SpoilerToken): string {
     return `<span class="spoiler" role="button" tabindex="0">${escapeHtml(token.text ?? '')}</span>`;

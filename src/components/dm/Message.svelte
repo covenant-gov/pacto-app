@@ -75,7 +75,6 @@
   let menuOpen = false;
   let menuX = 0;
   let menuY = 0;
-  let menuAnchorEl: HTMLElement | undefined;
   let popoverEl: HTMLElement | undefined;
   let longPressTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -314,7 +313,6 @@
   class:compact
   class:mentioned={isMentioned}
   id={id ? `msg-${id}` : undefined}
-  bind:this={menuAnchorEl}
   use:observeLinkPreview={linkPreviewParams}
   on:contextmenu={handleContextMenu}
   on:pointerdown={handlePointerDown}
