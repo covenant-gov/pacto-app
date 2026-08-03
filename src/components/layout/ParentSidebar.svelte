@@ -174,7 +174,6 @@
             >
               <Channel
                 name={channel.name}
-                type="text"
                 alertCount={hubAlertByChannelName[channel.name] ?? 0}
                 active={activeView === 'hub' &&
                   activeChannelId === channel.groupId &&
@@ -197,7 +196,6 @@
             >
               <Channel
                 name={channel.name}
-                type="text"
                 alertCount={hubAlertByChannelName[channel.name] ?? 0}
                 active={activeView === 'hub' &&
                   activeChannelId === channel.groupId &&
@@ -358,13 +356,11 @@
     color: var(--danger);
   }
 
-  .parent-menu-item-disabled,
   .parent-menu-item:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }
 
-  .parent-menu-item-disabled:hover,
   .parent-menu-item:disabled:hover {
     background: none;
   }

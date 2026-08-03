@@ -1225,8 +1225,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     flex-direction: column;
   }
 
-  .parent-area,
-  .squads-area {
+  .parent-area {
     flex: 1;
     min-width: 0;
     min-height: 0;

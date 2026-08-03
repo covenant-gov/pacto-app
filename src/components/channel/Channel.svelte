@@ -4,7 +4,6 @@
 
   export let name: string = "";
   export let active: boolean = false;
-  export let type: 'text' | 'announcement' = 'text';
   /** Unread / action-needed count; hidden when 0 or channel is active. */
   export let alertCount = 0;
 

@@ -650,14 +650,6 @@
     color: var(--text-muted);
   }
 
-  .evm-extras-code {
-    font-size: 0.8em;
-    padding: 2px 6px;
-    background: var(--bg-elevated);
-    border-radius: 4px;
-    word-break: break-all;
-  }
-
   .evm-extras-external-copy {
     padding: 16px 18px;
     border-radius: 8px;

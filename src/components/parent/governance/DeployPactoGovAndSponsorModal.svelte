@@ -658,7 +658,6 @@
   .note {
     font-size: 0.8125rem;
   }
-  .select,
   .input {
     width: 100%;
     box-sizing: border-box;

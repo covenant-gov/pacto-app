@@ -392,6 +392,8 @@
       <div
         class="crop-viewport"
         class:crop-viewport-pending={!previewReady}
+        role="application"
+        aria-label={$t('profile.crop.hint')}
         bind:clientWidth={cropDiameter}
         on:wheel|nonpassive={handleWheel}
         on:pointerdown={handlePointerDown}

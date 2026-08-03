@@ -396,7 +396,6 @@
     margin: 12px 0 6px 0;
   }
 
-  .input-select,
   .input-address {
     width: 100%;
     box-sizing: border-box;

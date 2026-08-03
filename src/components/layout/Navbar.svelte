@@ -616,7 +616,7 @@
             class="squad-nav-item"
             class:is-dragging={squadDragFromId === squad.id}
             class:drop-gap-before={squadDropGapIndex === index && squadDragFromId != null}
-            role="listitem"
+            role="button"
             on:pointerdown={(e) => onSquadPointerDown(e, squad.id)}
             on:click={() => selectSquad(squad.id)}
             on:keydown={(e) => e.key === 'Enter' && selectSquad(squad.id)}
