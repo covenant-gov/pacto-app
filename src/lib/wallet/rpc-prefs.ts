@@ -181,7 +181,6 @@ export function formatRpcDisplay(url: string): string {
 }
 
 function isAllowedDefaultRpc(
-  chainId: SupportedChainId,
   url: string,
   personal: string[],
   curated: string[],
@@ -245,7 +244,7 @@ export function saveDefaultRpc(
 
   const personal = prefs.personal[chainId] ?? [];
   const curated = getCuratedRpcUrlsForChain(chainId);
-  if (!isAllowedDefaultRpc(chainId, url, personal, curated)) return;
+  if (!isAllowedDefaultRpc(url, personal, curated)) return;
 
   prefs.defaultRpc[chainId] = url;
   saveRpcPrefs(accountNpub, prefs);
@@ -266,7 +265,7 @@ export function resolveUserRpcUrls(
 
   if (
     defaultUrl &&
-    isAllowedDefaultRpc(chainId, defaultUrl, personal, curated)
+    isAllowedDefaultRpc(defaultUrl, personal, curated)
   ) {
     const rest = dedupeUrls([...curated, ...personal].filter((u) => u !== defaultUrl));
     return dedupeUrls([defaultUrl, ...rest]);
