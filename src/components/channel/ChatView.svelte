@@ -4,6 +4,7 @@
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
   import SquadBotAnnounceCard from '../announcements/SquadBotAnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
+  import MlsResetNotice from './MlsResetNotice.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
@@ -66,6 +67,7 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { mlsResetByGroupId } from '../../stores/mls-reset';
   import {
     incrementMentionAlert,
     clearMentionAlert,
@@ -128,6 +130,11 @@
     !isChannelCreating &&
     !!activeChannel?.groupId &&
     $mlsHistoryWelcomeGroupIds.includes(activeChannel.groupId.trim().toLowerCase());
+  $: activeMlsReset = effectiveMembersGroupId
+    ? ($mlsResetByGroupId[effectiveMembersGroupId] ??
+      $mlsResetByGroupId[effectiveMembersGroupId.toLowerCase()] ??
+      null)
+    : null;
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
 
@@ -902,20 +909,24 @@
             {#if $groupSendError}
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
-            <MessageInput
-              channelName={channelName}
-              onSend={handleSendText}
-              onSendMentions={handleSendMentions}
-              onSendFile={handleSendFile}
-              squadMlsGroupId={effectiveMembersGroupId ?? undefined}
-              squadRosterNpubs={panelMembers}
-              squadProfiles={$profiles}
-              {currentUserNpub}
-              disabled={isChannelCreating}
-              repliedTo={replyToMessageId ?? undefined}
-              repliedToPreview={replyPreview}
-              onCancelReply={cancelReply}
-            />
+            {#if activeMlsReset}
+              <MlsResetNotice state={activeMlsReset} />
+            {:else}
+              <MessageInput
+                channelName={channelName}
+                onSend={handleSendText}
+                onSendMentions={handleSendMentions}
+                onSendFile={handleSendFile}
+                squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+                squadRosterNpubs={panelMembers}
+                squadProfiles={$profiles}
+                {currentUserNpub}
+                disabled={isChannelCreating}
+                repliedTo={replyToMessageId ?? undefined}
+                repliedToPreview={replyPreview}
+                onCancelReply={cancelReply}
+              />
+            {/if}
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
@@ -994,20 +1005,24 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput
-      channelName={channelName}
-      onSend={handleSendText}
-      onSendMentions={handleSendMentions}
-      onSendFile={handleSendFile}
-      squadMlsGroupId={effectiveMembersGroupId ?? undefined}
-      squadRosterNpubs={panelMembers}
-      squadProfiles={$profiles}
-      {currentUserNpub}
-      disabled={isChannelCreating}
-      repliedTo={replyToMessageId ?? undefined}
-      repliedToPreview={replyPreview}
-      onCancelReply={cancelReply}
-    />
+    {#if activeMlsReset}
+      <MlsResetNotice state={activeMlsReset} />
+    {:else}
+      <MessageInput
+        channelName={channelName}
+        onSend={handleSendText}
+        onSendMentions={handleSendMentions}
+        onSendFile={handleSendFile}
+        squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+        squadRosterNpubs={panelMembers}
+        squadProfiles={$profiles}
+        {currentUserNpub}
+        disabled={isChannelCreating}
+        repliedTo={replyToMessageId ?? undefined}
+        repliedToPreview={replyPreview}
+        onCancelReply={cancelReply}
+      />
+    {/if}
     {/if}
 
     <!-- Leave channel confirm -->

@@ -4017,11 +4017,12 @@ pub fn harvest_legacy_mls_store(store_path: &std::path::Path) -> LegacyStoreHarv
 /// (matched by either `group_id` or `engine_group_id`). `INSERT OR IGNORE`
 /// against the migration's unique `(group_id, admin_npub)` index makes a
 /// re-run of the harvest produce no duplicate rows.
-fn persist_legacy_group_admins_conn(
+pub(crate) fn persist_legacy_group_admins_conn(
     conn: &rusqlite::Connection,
     harvest: &LegacyStoreHarvest,
 ) -> Result<usize, String> {
-    let mut known_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut canonical_group_ids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     {
         let mut stmt = conn
             .prepare("SELECT group_id, engine_group_id FROM mls_groups")
@@ -4031,9 +4032,9 @@ fn persist_legacy_group_admins_conn(
             .map_err(|e| format!("Failed to scan mls_groups: {}", e))?;
         for row in rows {
             let (group_id, engine_group_id) = row.map_err(|e| format!("Failed to read mls_groups row: {}", e))?;
-            known_ids.insert(group_id);
+            canonical_group_ids.insert(group_id.clone(), group_id.clone());
             if !engine_group_id.is_empty() {
-                known_ids.insert(engine_group_id);
+                canonical_group_ids.insert(engine_group_id, group_id);
             }
         }
     }
@@ -4044,10 +4045,10 @@ fn persist_legacy_group_admins_conn(
         .unwrap_or(0);
 
     let mut persisted = 0usize;
-    for (group_id, admins) in &harvest.admins_by_group {
-        if !known_ids.contains(group_id) {
+    for (harvested_group_id, admins) in &harvest.admins_by_group {
+        let Some(group_id) = canonical_group_ids.get(harvested_group_id) else {
             continue;
-        }
+        };
         for admin_npub in admins {
             persisted += conn
                 .execute(
@@ -4123,7 +4124,10 @@ pub async fn load_all_legacy_group_admins<R: Runtime>(
     result
 }
 
-fn clear_discarded_giftwraps_conn(conn: &rusqlite::Connection, wrapper_ids: &[String]) -> Result<usize, String> {
+pub(crate) fn clear_discarded_giftwraps_conn(
+    conn: &rusqlite::Connection,
+    wrapper_ids: &[String],
+) -> Result<usize, String> {
     if wrapper_ids.is_empty() {
         return Ok(0);
     }
@@ -4566,6 +4570,11 @@ mod legacy_mls_store_harvest_tests {
 
         let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
         assert_eq!(persisted, 1);
+        let loaded = load_legacy_group_admins_conn(&conn, "wire-id").unwrap();
+        assert_eq!(loaded, vec!["npub1viaenginematch".to_string()]);
+        assert!(load_legacy_group_admins_conn(&conn, "engine-id")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

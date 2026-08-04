@@ -63,6 +63,8 @@ const mocks = vi.hoisted(() => {
     seedRelayHealth: vi.fn(),
     applyRelayStatusChange: vi.fn(),
     installSyncHealthTicker: vi.fn(() => vi.fn()),
+    applyMlsStoreResetState: vi.fn(),
+    refreshMlsStoreResetState: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -160,6 +162,13 @@ vi.mock('../../stores/unread', () => ({
   mergeUnreadCounts: (...args: unknown[]) => mocks.mockFunctions.mergeUnreadCounts(...args),
 }));
 
+vi.mock('../../stores/mls-reset', () => ({
+  applyMlsStoreResetState: (...args: unknown[]) =>
+    mocks.mockFunctions.applyMlsStoreResetState(...args),
+  refreshMlsStoreResetState: (...args: unknown[]) =>
+    mocks.mockFunctions.refreshMlsStoreResetState(...args),
+}));
+
 function emit(event: string, payload: unknown): void {
   const handlers = mocks.registered[event] ?? [];
   for (const h of handlers) {
@@ -223,6 +232,7 @@ describe('subscribeAppEvents', () => {
     mocks.mockFunctions.syncMlsGroupsNow.mockResolvedValue(undefined);
     mocks.mockFunctions.listRelays.mockResolvedValue([]);
     mocks.mockFunctions.installSyncHealthTicker.mockReturnValue(vi.fn());
+    mocks.mockFunctions.refreshMlsStoreResetState.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -246,6 +256,7 @@ describe('subscribeAppEvents', () => {
       'mls_message_new',
       'unread_counts_changed',
       'mls_invite_received',
+      'mls_store_reset',
       'mls_welcome_accepted',
       'channel_added_to_squad',
       'mls_group_updated',
@@ -270,6 +281,17 @@ describe('subscribeAppEvents', () => {
     expect(windowRemoveEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
     expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
     expect(documentRemoveEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
+  });
+
+  it('hydrates reset state and applies live reset events', async () => {
+    const payload = [
+      { group_id: 'group-a', state_lost: true, admin_npubs: ['a', 'b'], single_admin: false },
+    ];
+    unsubscribe = subscribeAppEvents(handlers);
+    await Promise.resolve();
+    expect(mocks.mockFunctions.refreshMlsStoreResetState).toHaveBeenCalledTimes(1);
+    emit('mls_store_reset', payload);
+    expect(mocks.mockFunctions.applyMlsStoreResetState).toHaveBeenCalledWith(payload);
   });
 
   it('unsubscribes clears timeouts and unlisten promises', () => {

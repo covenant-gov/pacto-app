@@ -187,7 +187,7 @@ impl MlsService {
     /// the session key is already required for any MLS work, is per-account, and survives
     /// a reinstall from the recovery phrase. Domain separation keeps this distinct from
     /// the ChaCha20-Poly1305 key the same bytes serve elsewhere.
-    fn mls_store_encryption_config() -> Result<EncryptionConfig, MlsError> {
+    fn mls_store_encryption_key() -> Result<[u8; 32], MlsError> {
         use sha2::{Digest, Sha256};
 
         let session_key = crate::session::current_encryption_key().ok_or_else(|| {
@@ -199,23 +199,67 @@ impl MlsService {
         let mut hasher = Sha256::new();
         hasher.update(b"pacto/mls-store/v1");
         hasher.update(session_key);
-        Ok(EncryptionConfig::new(hasher.finalize().into()))
+        Ok(hasher.finalize().into())
+    }
+
+    fn mls_store_encryption_config(key: [u8; 32]) -> EncryptionConfig {
+        EncryptionConfig::new(key)
     }
 
     /// Create a new MLS service with persistent SQLite-backed storage at:
     ///   [AppData]/npub.../mls/vector-mls.db (account-specific)
     pub fn new_persistent<R: Runtime>(handle: &AppHandle<R>) -> Result<Self, MlsError> {
-        // Get current account's MLS directory
+        Self::new_persistent_inner(handle, false)
+    }
+
+    pub(crate) fn new_persistent_for_keypackage_refresh<R: Runtime>(
+        handle: &AppHandle<R>,
+    ) -> Result<Self, MlsError> {
+        Self::new_persistent_inner(handle, true)
+    }
+
+    fn new_persistent_inner<R: Runtime>(
+        handle: &AppHandle<R>,
+        allow_pending_keypackage_refresh: bool,
+    ) -> Result<Self, MlsError> {
         let npub = crate::account_manager::get_current_account()
             .map_err(|e| MlsError::StorageError(format!("No account selected: {}", e)))?;
-        
+
         let mls_dir = crate::account_manager::get_mls_directory(handle, &npub)
             .map_err(|e| MlsError::StorageError(format!("Failed to get MLS directory: {}", e)))?;
-        
         let db_path = mls_dir.join("vector-mls.db");
+        let encryption_key = Self::mls_store_encryption_key()?;
 
-        let storage = MdkSqliteStorage::new_with_key(&db_path, Self::mls_store_encryption_config()?)
-            .map_err(|e| MlsError::StorageError(format!("init sqlite storage: {}", e)))?;
+        // Detection and archive happen before MDK 0.8.0 can open legacy bytes.
+        let reset_outcome = crate::mls_store_reset::ensure_store_ready(
+            handle,
+            &npub,
+            &mls_dir,
+            &db_path,
+            &encryption_key,
+        )
+        .map_err(MlsError::StorageError)?;
+
+        if reset_outcome.reset_performed {
+            if let Err(e) = crate::mls_store_reset::emit_reset_state(handle) {
+                eprintln!("[MLS] Failed to emit store reset state: {}", e);
+            }
+        }
+        if !allow_pending_keypackage_refresh
+            && crate::mls_store_reset::keypackage_refresh_required(handle)
+                .map_err(MlsError::StorageError)?
+        {
+            return Err(MlsError::StorageError(
+                "MLS store access is paused until this device publishes a fresh KeyPackage"
+                    .to_string(),
+            ));
+        }
+
+        let storage = MdkSqliteStorage::new_with_key(
+            &db_path,
+            Self::mls_store_encryption_config(encryption_key),
+        )
+        .map_err(|e| MlsError::StorageError(format!("init sqlite storage: {}", e)))?;
         let mdk = MDK::new(storage);
 
         Ok(Self {

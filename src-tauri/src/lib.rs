@@ -22,6 +22,7 @@ mod account_manager;
 
 mod mls;
 pub use mls::MlsService;
+mod mls_store_reset;
 
 
 use db::save_chat_messages;
@@ -6855,6 +6856,16 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     let my_pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let owner_pubkey_b32 = my_pubkey.to_bech32().map_err(|e| e.to_string())?;
 
+    // Opening the service runs legacy-store detection before cache lookup. A reset
+    // invalidates the private init key behind the previously published KeyPackage,
+    // so cached relay state must not short-circuit fresh publication.
+    drop(
+        MlsService::new_persistent_for_keypackage_refresh(&handle)
+            .map_err(|e| e.to_string())?,
+    );
+    let force_refresh = mls_store_reset::keypackage_refresh_required(&handle)?;
+    let cache = cache && !force_refresh;
+
     // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
     for relay in TRUSTED_RELAYS.iter() {
         if let Ok(relay_url) = nostr_sdk::RelayUrl::parse(relay) {
@@ -6933,7 +6944,8 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 
     // Create device KeyPackage using persistent MLS engine inside a no-await scope
     let kp_data = {
-        let mls_service = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+        let mls_service = MlsService::new_persistent_for_keypackage_refresh(&handle)
+            .map_err(|e| e.to_string())?;
         let engine = mls_service.engine().map_err(|e| e.to_string())?;
         let relay_urls: Vec<nostr_sdk::RelayUrl> = TRUSTED_RELAYS
             .iter()
@@ -6963,6 +6975,12 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     // Upsert into mls_keypackage_index
     {
         let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
+        index.retain(|entry| {
+            entry.get("owner_pubkey").and_then(|value| value.as_str())
+                != Some(owner_pubkey_b32.as_str())
+                || entry.get("device_id").and_then(|value| value.as_str())
+                    != Some(device_id.as_str())
+        });
         let now = Timestamp::now().as_secs();
         index.push(serde_json::json!({
             "owner_pubkey": owner_pubkey_b32,
@@ -6974,12 +6992,64 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let _ = db::save_mls_keypackages(handle.clone(), &index).await;
     }
 
+    if force_refresh {
+        mls_store_reset::mark_keypackage_refreshed(&handle)?;
+    }
+    if let Err(e) = replay_reset_pending_welcomes(&handle).await {
+        // Keep the durable wrapper-id queue for the next login when a relay or
+        // the MLS engine is temporarily unavailable.
+        eprintln!("[MLS] Pending welcome replay after store reset deferred: {}", e);
+    }
+
     Ok(serde_json::json!({
         "device_id": device_id,
         "owner_pubkey": owner_pubkey_b32,
         "keypackage_ref": kp_event.id.to_hex(),
         "cached": false
     }))
+}
+
+/// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
+/// so clearing `discarded_giftwraps` alone cannot recover an old invitation.
+async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+    let ids = mls_store_reset::pending_wrapper_ids(handle)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
+    let mut remaining = Vec::new();
+    for wrapper_id in ids {
+        let Ok(event_id) = EventId::from_hex(&wrapper_id) else {
+            eprintln!("[MLS] Dropping malformed reset welcome wrapper id: {}", wrapper_id);
+            continue;
+        };
+        let filter = Filter::new().id(event_id).kind(Kind::GiftWrap).limit(1);
+        let event = match client
+            .stream_events_from(
+                TRUSTED_RELAYS.to_vec(),
+                filter,
+                std::time::Duration::from_secs(10),
+            )
+            .await
+        {
+            Ok(mut events) => events.next().await,
+            Err(e) => {
+                eprintln!("[MLS] Exact welcome re-fetch failed for {}: {}", wrapper_id, e);
+                None
+            }
+        };
+
+        let Some(event) = event else {
+            remaining.push(wrapper_id);
+            continue;
+        };
+        let _ = handle_event_guarded(event, true).await;
+        if !db::wrapper_event_exists(handle, &wrapper_id).await.unwrap_or(false) {
+            remaining.push(wrapper_id);
+        }
+    }
+    mls_store_reset::retain_pending_wrapper_ids(handle, &remaining)
 }
 
 /// Create a new MLS group with initial member devices
@@ -7547,6 +7617,8 @@ async fn do_accept_mls_welcome<R: Runtime>(
     }
 
     crate::catch_up::resolve_welcome_for_handle(&handle, &wrapper_event_id_hex).await;
+    mls_store_reset::mark_group_restored(&handle, &nostr_group_id)?;
+    mls_store_reset::emit_reset_state(&handle)?;
 
     if let Some(app) = TAURI_APP.get() {
         let _ = app.emit(
@@ -7626,6 +7698,12 @@ async fn get_mls_group_metadata() -> Result<Vec<serde_json::Value>, String> {
         .collect())
 }
 
+#[tauri::command]
+fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset::MlsStoreResetGroupState>, String> {
+    let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
+    mls_store_reset::reset_group_states(handle)
+}
+
 #[derive(serde::Serialize, Clone)]
 struct GroupMembers {
     group_id: String,
@@ -7636,6 +7714,13 @@ struct GroupMembers {
 /// Sync the participants array for an MLS group chat with the actual members from the engine
 /// This ensures chat.participants is always up-to-date
 pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
+    if let Some(handle) = TAURI_APP.get() {
+        if mls_store_reset::is_group_state_lost(handle, &group_id)? {
+            // The fresh engine has no membership yet. Keep the app DB's former
+            // participant list until a welcome restores this group.
+            return Ok(());
+        }
+    }
     // Get actual members from the engine
     let group_members = get_mls_group_members(group_id.clone()).await?;
     
@@ -8226,6 +8311,7 @@ pub fn run() {
             sync_mls_groups_now,
             list_mls_groups,
             get_mls_group_metadata,
+            get_mls_store_reset_state,
             // MLS welcome/invite commands
             list_pending_mls_welcomes,
             accept_mls_welcome,

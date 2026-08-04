@@ -101,6 +101,7 @@ export const chatFixtures: Record<string, MockCommandHandler> = {
   list_parent_treasury_safes: () => [],
   add_parent_treasury_safe: () => undefined,
   get_mls_group_metadata: () => [],
+  get_mls_store_reset_state: () => [],
   list_pending_mls_welcomes: () => [],
   accept_mls_welcome: () => true,
   invite_member_to_group: () => undefined,
