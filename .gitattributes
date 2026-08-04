@@ -1,0 +1,5 @@
+# Append-only beads audit log: entries are independent JSON lines with
+# unique ids, so concurrent appends from parallel branches/worktrees never
+# semantically overlap. Union merge auto-combines them instead of
+# conflicting on the same insertion point.
+.beads/interactions.jsonl merge=union
