@@ -651,6 +651,15 @@ mod tests {
         conn.execute_batch("PRAGMA journal_mode = MEMORY;").unwrap();
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o500)).unwrap();
 
+        // Root bypasses DAC checks, so a read-only parent cannot inject a rename
+        // failure there. Probe it and skip rather than assert a false negative.
+        if std::fs::write(root.join(".probe"), b"x").is_ok() {
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+            drop(conn);
+            std::fs::remove_dir_all(root).unwrap();
+            return;
+        }
+
         let result = reset_with_connection(&conn, &mls, &store_path, &[0; 32], 77);
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(result.is_err());
