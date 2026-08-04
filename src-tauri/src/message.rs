@@ -14,6 +14,7 @@ use crate::STATE;
 use crate::util::{self, calculate_file_hash};
 use crate::TAURI_APP;
 use crate::get_nostr_client;
+use crate::nostr_tags;
 
 /// Cached compressed image data
 #[derive(Clone)]
@@ -828,23 +829,23 @@ pub async fn message(
                 
                 // Append decryption keys and file metadata (using existing attachment's params)
                 attachment_rumor = attachment_rumor
-                    .tag(Tag::custom(TagKind::custom("file-type"), [mime_type.as_str()]))
-                    .tag(Tag::custom(TagKind::custom("size"), [existing_attachment.size.to_string()]))
-                    .tag(Tag::custom(TagKind::custom("encryption-algorithm"), ["aes-gcm"]))
-                    .tag(Tag::custom(TagKind::custom("decryption-key"), [existing_attachment.key.as_str()]))
-                    .tag(Tag::custom(TagKind::custom("decryption-nonce"), [existing_attachment.nonce.as_str()]))
-                    .tag(Tag::custom(TagKind::custom("ox"), [file_hash.clone()]));
+                    .tag(nostr_tags::custom_tag("file-type", [mime_type.as_str()]))
+                    .tag(nostr_tags::custom_tag("size", [existing_attachment.size.to_string()]))
+                    .tag(nostr_tags::custom_tag("encryption-algorithm", ["aes-gcm"]))
+                    .tag(nostr_tags::custom_tag("decryption-key", [existing_attachment.key.as_str()]))
+                    .tag(nostr_tags::custom_tag("decryption-nonce", [existing_attachment.nonce.as_str()]))
+                    .tag(nostr_tags::custom_tag("ox", [file_hash.clone()]));
                 // Carry the sender's original file name inside the encrypted rumor.
                 if let Some(name) = attached_file.file_name.as_ref().filter(|n| !n.trim().is_empty()) {
                     attachment_rumor = attachment_rumor
-                        .tag(Tag::custom(TagKind::custom("filename"), [name.as_str()]));
+                        .tag(nostr_tags::custom_tag("filename", [name.as_str()]));
                 }
                 
                 // Append image metadata if available
                 if let Some(ref img_meta) = attached_file.img_meta {
                     attachment_rumor = attachment_rumor
-                        .tag(Tag::custom(TagKind::custom("blurhash"), [&img_meta.blurhash]))
-                        .tag(Tag::custom(TagKind::custom("dim"), [format!("{}x{}", img_meta.width, img_meta.height)]));
+                        .tag(nostr_tags::custom_tag("blurhash", [&img_meta.blurhash]))
+                        .tag(nostr_tags::custom_tag("dim", [format!("{}x{}", img_meta.width, img_meta.height)]));
                 }
 
                 attachment_rumor
@@ -906,23 +907,23 @@ pub async fn message(
 
                     // Append decryption keys and file metadata
                     attachment_rumor = attachment_rumor
-                        .tag(Tag::custom(TagKind::custom("file-type"), [mime_type.as_str()]))
-                        .tag(Tag::custom(TagKind::custom("size"), [file_size.to_string()]))
-                        .tag(Tag::custom(TagKind::custom("encryption-algorithm"), ["aes-gcm"]))
-                        .tag(Tag::custom(TagKind::custom("decryption-key"), [params.key.as_str()]))
-                        .tag(Tag::custom(TagKind::custom("decryption-nonce"), [params.nonce.as_str()]))
-                        .tag(Tag::custom(TagKind::custom("ox"), [file_hash.clone()]));
+                        .tag(nostr_tags::custom_tag("file-type", [mime_type.as_str()]))
+                        .tag(nostr_tags::custom_tag("size", [file_size.to_string()]))
+                        .tag(nostr_tags::custom_tag("encryption-algorithm", ["aes-gcm"]))
+                        .tag(nostr_tags::custom_tag("decryption-key", [params.key.as_str()]))
+                        .tag(nostr_tags::custom_tag("decryption-nonce", [params.nonce.as_str()]))
+                        .tag(nostr_tags::custom_tag("ox", [file_hash.clone()]));
                     // Carry the sender's original file name inside the encrypted rumor.
                     if let Some(name) = attached_file.file_name.as_ref().filter(|n| !n.trim().is_empty()) {
                         attachment_rumor = attachment_rumor
-                            .tag(Tag::custom(TagKind::custom("filename"), [name.as_str()]));
+                            .tag(nostr_tags::custom_tag("filename", [name.as_str()]));
                     }
 
                     // Append image metadata if available
                     if let Some(ref img_meta) = attached_file.img_meta {
                         attachment_rumor = attachment_rumor
-                            .tag(Tag::custom(TagKind::custom("blurhash"), [&img_meta.blurhash]))
-                            .tag(Tag::custom(TagKind::custom("dim"), [format!("{}x{}", img_meta.width, img_meta.height)]));
+                            .tag(nostr_tags::custom_tag("blurhash", [&img_meta.blurhash]))
+                            .tag(nostr_tags::custom_tag("dim", [format!("{}x{}", img_meta.width, img_meta.height)]));
                     }
                     attachment_rumor
                 },
@@ -945,10 +946,7 @@ pub async fn message(
 
     // If a reply reference is included, add the tag
     if !msg.replied_to.is_empty() {
-        rumor = rumor.tag(Tag::custom(
-            TagKind::e(),
-            [msg.replied_to, String::from(""), String::from("reply")],
-        ));
+        rumor = rumor.tag(nostr_tags::e_tag([msg.replied_to, String::from(""), String::from("reply")]));
     }
 
     // Get fresh timestamp with milliseconds right before giftwrapping
@@ -958,10 +956,7 @@ pub async fn message(
     let milliseconds = final_time.as_millis() % 1000;
 
     // Add millisecond precision tag for accurate message ordering
-    rumor = rumor.tag(Tag::custom(
-        TagKind::custom("ms"),
-        [milliseconds.to_string()],
-    ));
+    rumor = rumor.tag(nostr_tags::custom_tag("ms", [milliseconds.to_string()]));
 
     if is_group_chat && !had_attachment {
         if let Some(vb) = virtual_bucket
@@ -970,7 +965,7 @@ pub async fn message(
             .filter(|s| !s.is_empty())
         {
             if matches!(vb.as_str(), "announcements" | "inbox" | "polls" | "join_requests") {
-                rumor = rumor.tag(Tag::custom(TagKind::custom("pacto_bucket"), [vb.as_str()]));
+                rumor = rumor.tag(nostr_tags::custom_tag("pacto_bucket", [vb.as_str()]));
             }
         }
     }
@@ -2918,10 +2913,14 @@ pub async fn react_to_message(reference_id: String, chat_id: String, emoji: Stri
             let receiver_pubkey = PublicKey::from_bech32(&chat_id).map_err(|e| e.to_string())?;
             
             // Build NIP-25 Reaction rumor
-            let rumor = EventBuilder::reaction_extended(
-                reference_event,
-                receiver_pubkey,
-                Some(Kind::PrivateDirectMessage),
+            let rumor = EventBuilder::reaction(
+                nip25::ReactionTarget {
+                    event_id: reference_event,
+                    public_key: receiver_pubkey,
+                    coordinate: None,
+                    kind: Some(Kind::PrivateDirectMessage),
+                    relay_hint: None,
+                },
                 &emoji,
             )
             .build(my_public_key);
@@ -3164,7 +3163,7 @@ pub async fn edit_message(
         .tag(Tag::event(reference_event))
         .build(my_public_key);
     let edit_id = rumor.id.ok_or("Failed to get edit rumor ID")?.to_hex();
-    let created_at = rumor.created_at.as_u64();
+    let created_at = rumor.created_at.as_secs();
 
     match chat_type {
         ChatType::DirectMessage => {

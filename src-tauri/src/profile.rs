@@ -5,6 +5,7 @@ use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
 use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
+use crate::nostr_tags;
 
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
@@ -569,10 +570,7 @@ async fn publish_vector_profile_kind0(
     let metadata_json = kind0_metadata_json_without_evm(&meta).map_err(|e| e.to_string())?;
 
     let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone()).tag(
-        Tag::custom(
-            TagKind::Custom(String::from("client").into()),
-            vec!["vector"],
-        ),
+        nostr_tags::custom_tag("client", vec!["vector"]),
     );
 
     client
@@ -636,7 +634,7 @@ pub async fn update_status(status: String) -> bool {
 
     // Build and broadcast the status
     let status_builder = EventBuilder::new(Kind::from_u16(30315), status.as_str())
-        .tag(Tag::custom(TagKind::d(), vec!["general"]));
+        .tag(nostr_tags::d_tag(vec!["general"]));
     match client.send_event_builder(status_builder).await {
         Ok(_) => {
             // Add the status to our profile

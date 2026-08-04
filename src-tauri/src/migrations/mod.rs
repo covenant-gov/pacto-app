@@ -194,7 +194,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 29);
+        assert_eq!(last_version, 30);
 
         let events_table: bool = conn
             .query_row(
@@ -232,8 +232,8 @@ mod tests {
             )
             .expect("history should exist");
         assert_eq!(
-            count, 29,
-            "27 pre-refinery migrations baselined plus V28 and V29 actually run"
+            count, 30,
+            "27 pre-refinery migrations baselined plus V28, V29, and V30 actually run"
         );
 
         // Running migrations again should be idempotent.
@@ -314,7 +314,7 @@ mod tests {
             .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |row| row.get(0))
             .expect("history should exist");
         assert_eq!(
-            last_version, 29,
+            last_version, 30,
             "an existing history table means every migration actually runs, never gets stamped"
         );
     }
@@ -403,7 +403,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 29);
+        assert_eq!(last_version, 30);
 
         let has_virtual_bucket: bool = conn
             .query_row(

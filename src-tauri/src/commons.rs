@@ -3,10 +3,10 @@
 use nostr_sdk::prelude::*;
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 use std::collections::HashMap;
 use tauri::{AppHandle, Runtime};
 
+use crate::nostr_tags;
 use crate::stored_event::event_kind;
 use crate::{get_nostr_client, TRUSTED_RELAYS};
 
@@ -157,21 +157,15 @@ fn unix_now_secs() -> i64 {
 }
 
 pub fn has_commons_broadcast_d_tag(tags: &Tags) -> bool {
-    tags.find(TagKind::d())
-        .and_then(|t| t.content())
+    nostr_tags::d_content(tags)
         .map(|c| c == COMMONS_BROADCAST_D_TAG)
         .unwrap_or(false)
 }
 
 pub fn has_commons_client_tag(tags: &Tags) -> bool {
-    tags.find(TagKind::Custom(Cow::Borrowed("client")))
-        .and_then(|t| t.content())
+    nostr_tags::custom_content(tags, "client")
         .map(|c| c == COMMONS_CLIENT_TAG)
         .unwrap_or(false)
-}
-
-fn tag_content<'a>(tags: &'a Tags, kind: TagKind<'a>) -> Option<&'a str> {
-    tags.find(kind).and_then(|t| t.content())
 }
 
 pub fn try_parse_broadcast_event(event: &Event) -> Option<(CommonsBroadcastWire, String)> {
@@ -195,7 +189,7 @@ pub fn try_parse_broadcast_event(event: &Event) -> Option<(CommonsBroadcastWire,
     if wire.expires_at <= unix_now_secs() {
         return None;
     }
-    let created = event.created_at.as_u64() as i64;
+    let created = event.created_at.as_secs() as i64;
     let expected = created + (wire.duration_hours as i64 * 3600);
     if (wire.expires_at - expected).abs() > EXPIRY_SKEW_SECS {
         return None;
@@ -213,25 +207,24 @@ pub fn try_parse_broadcast_event(event: &Event) -> Option<(CommonsBroadcastWire,
         if squad.kind != "squad" && squad.kind != "squad-pair" {
             return None;
         }
-        if tag_content(&event.tags, TagKind::Custom(Cow::Borrowed("squad"))) != Some(squad.id.as_str())
+        if nostr_tags::custom_content(&event.tags, "squad") != Some(squad.id.as_str())
         {
             return None;
         }
     } else if wire.squad.is_some() {
         return None;
     }
-    let tag_subject = tag_content(&event.tags, TagKind::Custom(Cow::Borrowed("subject")))?;
+    let tag_subject = nostr_tags::custom_content(&event.tags, "subject")?;
     if tag_subject != wire.subject {
         return None;
     }
-    let exp_tag = tag_content(&event.tags, TagKind::Custom(Cow::Borrowed("exp")))?;
+    let exp_tag = nostr_tags::custom_content(&event.tags, "exp")?;
     if exp_tag.parse::<i64>().ok()? != wire.expires_at {
         return None;
     }
     for t in &tags {
         if !event.tags.iter().any(|tag| {
-            tag.kind() == TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::T))
-                && tag.content() == Some(t.as_str())
+            nostr_tags::is_letter(tag, Alphabet::T) && tag.content() == Some(t.as_str())
         }) {
             return None;
         }
@@ -340,7 +333,7 @@ fn upsert_broadcast_row(
             squad_name,
             squad_kind,
             squad_icon_url,
-            event.created_at.as_u64() as i64,
+            event.created_at.as_secs() as i64,
             content_json,
             wire.cancelled.unwrap_or(false) as i64,
         ],
@@ -532,9 +525,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
             .ok_or_else(|| "squad id required".to_string())?;
         let (bot_keys, bot_npub) =
             crate::squad_bot::bot_keys_for_holder(&handle, squad_id).await?;
-        let event = builder
-            .sign_with_keys(&bot_keys)
-            .map_err(|e| e.to_string())?;
+        let event = crate::nostr_sign::sign_with(builder, &bot_keys)?;
         (event, bot_npub)
     } else {
         let signer = client.signer().await.map_err(|e| e.to_string())?;
@@ -573,7 +564,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
         squad_name: squad_wire.as_ref().map(|s| s.name.clone()),
         squad_kind: squad_wire.as_ref().map(|s| s.kind.clone()),
         squad_icon_url: squad_wire.as_ref().and_then(|s| s.icon_url.clone()),
-        created_at: event.created_at.as_u64() as i64,
+        created_at: event.created_at.as_secs() as i64,
     })
 }
 
@@ -666,30 +657,15 @@ pub async fn commons_get_local_active<R: Runtime>(
 /// Build the signed event tags for a broadcast wire (shared by publish + cancel).
 fn broadcast_event_builder(wire: &CommonsBroadcastWire, content: &str) -> EventBuilder {
     let mut builder = EventBuilder::new(Kind::ApplicationSpecificData, content)
-        .tag(Tag::custom(TagKind::d(), [COMMONS_BROADCAST_D_TAG]))
-        .tag(Tag::custom(
-            TagKind::Custom(Cow::Borrowed("client")),
-            [COMMONS_CLIENT_TAG],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(Cow::Borrowed("subject")),
-            [wire.subject.as_str()],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(Cow::Borrowed("exp")),
-            [wire.expires_at.to_string()],
-        ));
+        .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+        .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+        .tag(nostr_tags::custom_tag("subject", [wire.subject.as_str()]))
+        .tag(nostr_tags::custom_tag("exp", [wire.expires_at.to_string()]));
     for t in &wire.tags {
-        builder = builder.tag(Tag::custom(
-            TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::T)),
-            [t.as_str()],
-        ));
+        builder = builder.tag(nostr_tags::letter_tag(Alphabet::T, [t.as_str()]));
     }
     if let Some(ref squad) = wire.squad {
-        builder = builder.tag(Tag::custom(
-            TagKind::Custom(Cow::Borrowed("squad")),
-            [squad.id.as_str()],
-        ));
+        builder = builder.tag(nostr_tags::custom_tag("squad", [squad.id.as_str()]));
     }
     builder
 }
@@ -767,9 +743,7 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
 
     let builder = broadcast_event_builder(&wire, &content);
     let event = if let Some(keys) = bot_keys {
-        builder
-            .sign_with_keys(&keys)
-            .map_err(|e| e.to_string())?
+        crate::nostr_sign::sign_with(builder, &keys)?
     } else {
         client
             .sign_event_builder(builder)
@@ -827,23 +801,16 @@ mod tests {
     fn rejects_malformed_schema() {
         let pk = Keys::generate().public_key();
         let content = r#"{"schema":"other","subject":"user","message":"hi","durationHours":24,"expiresAt":9999999999,"tags":["neo"]}"#;
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, content)
-            .tag(Tag::custom(TagKind::d(), [COMMONS_BROADCAST_D_TAG]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("client")),
-                [COMMONS_CLIENT_TAG],
-            ))
-            .tag(Tag::custom(TagKind::Custom(Cow::Borrowed("subject")), ["user"]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("exp")),
-                ["9999999999"],
-            ))
-            .tag(Tag::custom(
-                TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::T)),
-                ["neo"],
-            ))
-            .sign_with_keys(&Keys::generate())
-            .unwrap();
+        let event = crate::nostr_sign::sign_with(
+            EventBuilder::new(Kind::ApplicationSpecificData, content)
+                .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+                .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+                .tag(nostr_tags::custom_tag("subject", ["user"]))
+                .tag(nostr_tags::custom_tag("exp", ["9999999999"]))
+                .tag(nostr_tags::letter_tag(Alphabet::T, ["neo"])),
+            &Keys::generate(),
+        )
+        .unwrap();
         assert!(try_parse_broadcast_event(&event).is_none());
         let _ = pk;
     }
@@ -856,23 +823,16 @@ mod tests {
         let content = format!(
             r#"{{"schema":"{COMMONS_BROADCAST_SCHEMA}","subject":"user","message":"hello","durationHours":24,"expiresAt":{expires},"tags":["neo"]}}"#
         );
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-            .tag(Tag::custom(TagKind::d(), [COMMONS_BROADCAST_D_TAG]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("client")),
-                [COMMONS_CLIENT_TAG],
-            ))
-            .tag(Tag::custom(TagKind::Custom(Cow::Borrowed("subject")), ["user"]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("exp")),
-                [expires.to_string()],
-            ))
-            .tag(Tag::custom(
-                TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::T)),
-                ["neo"],
-            ))
-            .sign_with_keys(&keys)
-            .unwrap();
+        let event = crate::nostr_sign::sign_with(
+            EventBuilder::new(Kind::ApplicationSpecificData, &content)
+                .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+                .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+                .tag(nostr_tags::custom_tag("subject", ["user"]))
+                .tag(nostr_tags::custom_tag("exp", [expires.to_string()]))
+                .tag(nostr_tags::letter_tag(Alphabet::T, ["neo"])),
+            &keys,
+        )
+        .unwrap();
         let (wire, npub) = try_parse_broadcast_event(&event).expect("parse");
         assert_eq!(wire.subject, "user");
         assert_eq!(wire.message, "hello");
@@ -887,23 +847,16 @@ mod tests {
         let content = format!(
             r#"{{"schema":"{COMMONS_BROADCAST_SCHEMA}","subject":"user","message":"hello","durationHours":24,"expiresAt":{expires},"tags":["neo"],"cancelled":true}}"#
         );
-        let event = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-            .tag(Tag::custom(TagKind::d(), [COMMONS_BROADCAST_D_TAG]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("client")),
-                [COMMONS_CLIENT_TAG],
-            ))
-            .tag(Tag::custom(TagKind::Custom(Cow::Borrowed("subject")), ["user"]))
-            .tag(Tag::custom(
-                TagKind::Custom(Cow::Borrowed("exp")),
-                [expires.to_string()],
-            ))
-            .tag(Tag::custom(
-                TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::T)),
-                ["neo"],
-            ))
-            .sign_with_keys(&keys)
-            .unwrap();
+        let event = crate::nostr_sign::sign_with(
+            EventBuilder::new(Kind::ApplicationSpecificData, &content)
+                .tag(nostr_tags::d_tag([COMMONS_BROADCAST_D_TAG]))
+                .tag(nostr_tags::custom_tag("client", [COMMONS_CLIENT_TAG]))
+                .tag(nostr_tags::custom_tag("subject", ["user"]))
+                .tag(nostr_tags::custom_tag("exp", [expires.to_string()]))
+                .tag(nostr_tags::letter_tag(Alphabet::T, ["neo"])),
+            &keys,
+        )
+        .unwrap();
         let (wire, _) = try_parse_broadcast_event(&event).expect("parse");
         assert_eq!(wire.cancelled, Some(true));
     }
