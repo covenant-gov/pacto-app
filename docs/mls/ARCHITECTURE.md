@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Crate path:** `mdk_core`, `mdk_sqlite_storage` — MDK engine with **`MdkSqliteStorage`**.
+- **Crates:** `mdk-core`, `mdk-sqlite-storage`, and `mdk-storage-traits` **0.8.0** from crates.io, using the `nostr` **0.44.7** line. The old git revision is no longer part of the dependency graph.
 - **Facade:** **`MlsService`** in `src-tauri/src/mls.rs` — creates a persistent engine at:
 
   `get_mls_directory(...)/vector-mls.db`
@@ -18,6 +18,14 @@
    - **`mls_event_cursors`** — last seen Nostr event per group for backfill
 
 Decrypted **application messages** are integrated into the same **chat/message model** as DMs (see module docs at top of `mls.rs`: unified chat storage, not a separate MLS-only messages table for UX persistence).
+
+## Store encryption and upgrades
+
+`vector-mls.db` is SQLCipher-encrypted. `MlsService` derives a distinct 32-byte store key from the unlocked account session key with the `pacto/mls-store/v1` domain separator; MDK never receives the app database's plaintext key material.
+
+Before MDK 0.8.0 opens the store, `mls_store_reset.rs` reads the MDK refinery history directly. Stores from the old V100–V104 series are harvested and the entire `<npub>/mls/` directory—database, WAL, and SHM together—is moved to `<npub>/mls.archive.<timestamp>/`. A fresh encrypted store is then created. Archive directories are removed after seven days.
+
+The app keeps message history, chat names, and participant lists in `vector.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored.
 
 ## Nostr interaction
 
