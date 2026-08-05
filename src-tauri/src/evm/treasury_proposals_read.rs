@@ -148,8 +148,8 @@ pub async fn treasury_proposal_has_voted<R: Runtime>(
 ) -> Result<bool, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
-    let voter_addr = parse_address(voter.trim())
-        .map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
+    let voter_addr =
+        parse_address(voter.trim()).map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
     let pid = U256::from_str_radix(proposal_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_PROPOSAL_ID", e.to_string(), None))?;
 

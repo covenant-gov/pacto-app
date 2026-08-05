@@ -1,22 +1,19 @@
-use std::path::PathBuf;
 use crate::rand;
 use crate::rand::Rng;
 use crate::util::{bytes_to_hex_string, hex_string_to_bytes};
 use aes::Aes256;
-use aes_gcm::{AesGcm, AeadInPlace, KeyInit};
-use generic_array::{GenericArray, typenum::U16};
+use aes_gcm::{AeadInPlace, AesGcm, KeyInit};
 use argon2::{Argon2, Params, Version};
-use chacha20poly1305::{
-    aead::Aead,
-    ChaCha20Poly1305, Nonce
-};
+use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Nonce};
+use generic_array::{typenum::U16, GenericArray};
+use std::path::PathBuf;
 use tauri::{AppHandle, Runtime};
 
 /// Represents encryption parameters
 #[derive(Debug)]
 pub struct EncryptionParams {
-    pub key: String,    // Hex string
-    pub nonce: String,  // Hex string
+    pub key: String,   // Hex string
+    pub nonce: String, // Hex string
 }
 
 /// Legacy hard-coded Argon2 salt used for accounts created before per-device
@@ -52,12 +49,12 @@ pub const ARGON_OUTPUT_LEN: usize = 32;
 /// Generates random encryption parameters (key and nonce)
 pub fn generate_encryption_params() -> EncryptionParams {
     let mut rng = rand::thread_rng();
-    
+
     // Generate 32 byte key (for AES-256)
     let key: [u8; 32] = rng.gen();
     // Generate 16 byte nonce (to match 0xChat)
     let nonce: [u8; 16] = rng.gen();
-    
+
     EncryptionParams {
         key: hex::encode(key),
         nonce: hex::encode(nonce),
@@ -67,15 +64,12 @@ pub fn generate_encryption_params() -> EncryptionParams {
 /// Encrypts data using AES-256-GCM with a 16-byte nonce
 pub fn encrypt_data(data: &[u8], params: &EncryptionParams) -> Result<Vec<u8>, String> {
     // Decode key and nonce from hex
-    let key_bytes = hex::decode(&params.key)
-        .map_err(|e| format!("Invalid key hex: {}", e))?;
-    let nonce_bytes = hex::decode(&params.nonce)
-        .map_err(|e| format!("Invalid nonce hex: {}", e))?;
+    let key_bytes = hex::decode(&params.key).map_err(|e| format!("Invalid key hex: {}", e))?;
+    let nonce_bytes =
+        hex::decode(&params.nonce).map_err(|e| format!("Invalid nonce hex: {}", e))?;
 
     // Initialize AES-GCM cipher
-    let cipher = AesGcm::<Aes256, U16>::new(
-        GenericArray::from_slice(&key_bytes)
-    );
+    let cipher = AesGcm::<Aes256, U16>::new(GenericArray::from_slice(&key_bytes));
 
     // Prepare nonce
     let nonce = GenericArray::from_slice(&nonce_bytes);
@@ -128,7 +122,11 @@ pub fn derive_key_from_salt(password: &str, salt: &[u8]) -> [u8; 32] {
 
 /// Derive the legacy key for an account still using the hard-coded salt.
 pub fn derive_legacy_key(password: &str) -> [u8; 32] {
-    let argon = Argon2::new(argon2::Algorithm::Argon2id, Version::V0x13, legacy_argon2_params());
+    let argon = Argon2::new(
+        argon2::Algorithm::Argon2id,
+        Version::V0x13,
+        legacy_argon2_params(),
+    );
     let mut key = [0u8; 32];
     argon
         .hash_password_into(password.as_bytes(), LEGACY_SALT, &mut key)
@@ -212,8 +210,7 @@ pub fn encrypt_with_key(input: &str, key: &[u8; 32]) -> String {
     let mut rng = rand::thread_rng();
     let nonce_bytes: [u8; 12] = rng.gen();
 
-    let cipher = ChaCha20Poly1305::new_from_slice(key)
-        .expect("Key should be valid");
+    let cipher = ChaCha20Poly1305::new_from_slice(key).expect("Key should be valid");
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let ciphertext = cipher
@@ -265,25 +262,25 @@ pub async fn internal_decrypt(ciphertext: String) -> Result<String, ()> {
     decrypt_with_key(&ciphertext, &key)
 }
 
-pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Result<Vec<u8>, String> {
+pub fn decrypt_data(
+    encrypted_data: &[u8],
+    key_hex: &str,
+    nonce_hex: &str,
+) -> Result<Vec<u8>, String> {
     // Verify minimum size requirements (need at least 16 bytes for the authentication tag)
     if encrypted_data.len() < 16 {
         return Err(format!("Invalid Input: encrypted data too small ({} bytes, minimum 16 bytes required for authentication tag)", encrypted_data.len()));
     }
 
     // Decode key and nonce from hex
-    let key_bytes = hex::decode(key_hex)
-        .map_err(|e| format!("Invalid key hex: {}", e))?;
-    let nonce_bytes = hex::decode(nonce_hex)
-        .map_err(|e| format!("Invalid nonce hex: {}", e))?;
+    let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid key hex: {}", e))?;
+    let nonce_bytes = hex::decode(nonce_hex).map_err(|e| format!("Invalid nonce hex: {}", e))?;
 
     // Split input into ciphertext and authentication tag
     let (ciphertext, tag_bytes) = encrypted_data.split_at(encrypted_data.len() - 16);
 
     // Initialize AES-GCM cipher
-    let cipher = AesGcm::<Aes256, U16>::new(
-        GenericArray::from_slice(&key_bytes)
-    );
+    let cipher = AesGcm::<Aes256, U16>::new(GenericArray::from_slice(&key_bytes));
 
     // Prepare nonce and tag
     let nonce = GenericArray::from_slice(&nonce_bytes);
@@ -293,8 +290,7 @@ pub fn decrypt_data(encrypted_data: &[u8], key_hex: &str, nonce_hex: &str) -> Re
     let mut buffer = ciphertext.to_vec();
 
     // Perform decryption
-    let decryption = cipher
-        .decrypt_in_place_detached(nonce, &[], &mut buffer, tag);
+    let decryption = cipher.decrypt_in_place_detached(nonce, &[], &mut buffer, tag);
 
     // Check that it went well
     if decryption.is_err() {
@@ -337,11 +333,7 @@ mod tests {
 
     #[test]
     fn decrypt_rejects_too_short_input() {
-        let result = decrypt_data(
-            &[0u8; 15],
-            &hex::encode([0u8; 32]),
-            &hex::encode([0u8; 16]),
-        );
+        let result = decrypt_data(&[0u8; 15], &hex::encode([0u8; 32]), &hex::encode([0u8; 16]));
         assert!(result.is_err());
     }
 
@@ -360,22 +352,14 @@ mod tests {
 
     #[test]
     fn decrypt_rejects_invalid_key_hex() {
-        let result = decrypt_data(
-            &[0u8; 32],
-            "not-hex",
-            &hex::encode([0u8; 16]),
-        );
+        let result = decrypt_data(&[0u8; 32], "not-hex", &hex::encode([0u8; 16]));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid key hex"));
     }
 
     #[test]
     fn decrypt_rejects_invalid_nonce_hex() {
-        let result = decrypt_data(
-            &[0u8; 32],
-            &hex::encode([0u8; 32]),
-            "not-hex",
-        );
+        let result = decrypt_data(&[0u8; 32], &hex::encode([0u8; 32]), "not-hex");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid nonce hex"));
     }

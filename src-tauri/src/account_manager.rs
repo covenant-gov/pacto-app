@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use std::sync::{Arc, RwLock, Mutex};
 use lazy_static::lazy_static;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::{AppHandle, Runtime};
 
 lazy_static! {
@@ -21,7 +21,7 @@ lazy_static! {
 /// Returns: AppData/npub1qwertyuiop.../
 pub fn get_profile_directory<R: Runtime>(
     handle: &AppHandle<R>,
-    npub: &str
+    npub: &str,
 ) -> Result<PathBuf, String> {
     let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
@@ -38,7 +38,10 @@ pub fn get_profile_directory<R: Runtime>(
     if !profile_dir.exists() {
         std::fs::create_dir_all(&profile_dir)
             .map_err(|e| format!("Failed to create profile directory: {}", e))?;
-        println!("[Account Manager] Created profile directory: {}", profile_dir.display());
+        println!(
+            "[Account Manager] Created profile directory: {}",
+            profile_dir.display()
+        );
     }
 
     Ok(profile_dir)
@@ -47,10 +50,7 @@ pub fn get_profile_directory<R: Runtime>(
 /// Get the database path for a given npub
 ///
 /// Returns: AppData/npub1qwerty.../vector.db
-pub fn get_database_path<R: Runtime>(
-    handle: &AppHandle<R>,
-    npub: &str
-) -> Result<PathBuf, String> {
+pub fn get_database_path<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<PathBuf, String> {
     let profile_dir = get_profile_directory(handle, npub)?;
     Ok(profile_dir.join("vector.db"))
 }
@@ -58,17 +58,17 @@ pub fn get_database_path<R: Runtime>(
 /// Get the MLS directory for a given npub
 ///
 /// Returns: AppData/npub1qwerty.../mls/
-pub fn get_mls_directory<R: Runtime>(
-    handle: &AppHandle<R>,
-    npub: &str
-) -> Result<PathBuf, String> {
+pub fn get_mls_directory<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<PathBuf, String> {
     let profile_dir = get_profile_directory(handle, npub)?;
     let mls_dir = profile_dir.join("mls");
 
     if !mls_dir.exists() {
         std::fs::create_dir_all(&mls_dir)
             .map_err(|e| format!("Failed to create MLS directory: {}", e))?;
-        println!("[Account Manager] Created MLS directory: {}", mls_dir.display());
+        println!(
+            "[Account Manager] Created MLS directory: {}",
+            mls_dir.display()
+        );
     }
 
     Ok(mls_dir)
@@ -241,7 +241,8 @@ pub fn has_any_account<R: Runtime>(handle: &AppHandle<R>) -> bool {
 /// Get the currently active account
 #[tauri::command]
 pub fn get_current_account() -> Result<String, String> {
-    CURRENT_ACCOUNT.read()
+    CURRENT_ACCOUNT
+        .read()
         .map_err(|e| format!("Failed to read current account: {}", e))?
         .clone()
         .ok_or_else(|| "No account selected".to_string())
@@ -271,7 +272,8 @@ pub fn auto_select_account<R: Runtime>(handle: &AppHandle<R>) -> Result<Option<S
 
 /// Set the currently active account
 pub fn set_current_account(npub: String) -> Result<(), String> {
-    *CURRENT_ACCOUNT.write()
+    *CURRENT_ACCOUNT
+        .write()
         .map_err(|e| format!("Failed to write current account: {}", e))? = Some(npub.clone());
 
     // Close old connection when switching accounts
@@ -282,35 +284,41 @@ pub fn set_current_account(npub: String) -> Result<(), String> {
 
 /// Clear the current account (e.g. on logout)
 pub fn clear_current_account() -> Result<(), String> {
-    *CURRENT_ACCOUNT.write()
+    *CURRENT_ACCOUNT
+        .write()
         .map_err(|e| format!("Failed to write current account: {}", e))? = None;
     Ok(())
 }
 
 /// Set a pending account (before database creation)
 pub fn set_pending_account(npub: String) -> Result<(), String> {
-    *PENDING_ACCOUNT.write()
+    *PENDING_ACCOUNT
+        .write()
         .map_err(|e| format!("Failed to write pending account: {}", e))? = Some(npub);
     Ok(())
 }
 
 /// Get the pending account (if any)
 pub fn get_pending_account() -> Result<Option<String>, String> {
-    Ok(PENDING_ACCOUNT.read()
+    Ok(PENDING_ACCOUNT
+        .read()
         .map_err(|e| format!("Failed to read pending account: {}", e))?
         .clone())
 }
 
 /// Clear the pending account
 pub fn clear_pending_account() -> Result<(), String> {
-    *PENDING_ACCOUNT.write()
+    *PENDING_ACCOUNT
+        .write()
         .map_err(|e| format!("Failed to clear pending account: {}", e))? = None;
     Ok(())
 }
 
 /// Get or reuse database connection for the current account
 /// This keeps the connection open to avoid repeated open/close overhead
-pub fn get_db_connection<R: Runtime>(handle: &AppHandle<R>) -> Result<rusqlite::Connection, String> {
+pub fn get_db_connection<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<rusqlite::Connection, String> {
     let npub = get_current_account()?;
 
     // Try to reuse existing connection
@@ -344,7 +352,10 @@ pub fn get_db_connection<R: Runtime>(handle: &AppHandle<R>) -> Result<rusqlite::
     // One-time repair for reaction rows persisted before the author_id hex/bech32
     // fix (pacto-app-rmq.2); idempotent, no-op after the first successful run.
     if let Err(e) = crate::db::repair_legacy_hex_reaction_npubs(&conn) {
-        eprintln!("[Account Manager] Failed to repair legacy reaction npubs: {}", e);
+        eprintln!(
+            "[Account Manager] Failed to repair legacy reaction npubs: {}",
+            e
+        );
     }
 
     Ok(conn)
@@ -380,10 +391,13 @@ pub fn check_any_account_exists<R: Runtime>(handle: AppHandle<R>) -> bool {
 /// Creates all tables if they don't exist
 pub async fn init_profile_database<R: Runtime>(
     handle: &AppHandle<R>,
-    npub: &str
+    npub: &str,
 ) -> Result<(), String> {
     let db_path = get_database_path(handle, npub)?;
-    println!("[Account Manager] Initializing database: {}", db_path.display());
+    println!(
+        "[Account Manager] Initializing database: {}",
+        db_path.display()
+    );
 
     // Create the database directory if it doesn't exist
     if let Some(parent) = db_path.parent() {
@@ -408,25 +422,18 @@ pub async fn init_profile_database<R: Runtime>(
 /// Singleton writes use a deterministic row id (`pacto-gov-{parent}`), so `ON CONFLICT(id)` upserts
 /// keep working; a second `pacto_gov` row with a different id is rejected instead of silently forking state.
 
-
 /// Run database migrations for schema updates
 /// This handles adding new columns to existing tables
-
 
 /// Migration 4: Copy attachment metadata from messages table into event tags
 /// This completes the migration to fully self-contained events
 
-
 /// Migrate existing messages from the old nested format to the flat events table
 /// This extracts reactions and attachments as separate event rows
 
-
 /// Switch to a different account
 #[tauri::command]
-pub async fn switch_account<R: Runtime>(
-    handle: AppHandle<R>,
-    npub: String
-) -> Result<(), String> {
+pub async fn switch_account<R: Runtime>(handle: AppHandle<R>, npub: String) -> Result<(), String> {
     // Validate npub
     if !npub.starts_with("npub1") {
         return Err(format!("Invalid npub format: {}", npub));
@@ -507,7 +514,10 @@ mod classify_pkey_query_result_tests {
     /// alone instead of deleting a live account.
     #[test]
     fn only_definitive_no_rows_is_treated_as_invalid() {
-        assert_eq!(classify_pkey_query_result(Ok("nsec1somekey".to_string())), Ok(true));
+        assert_eq!(
+            classify_pkey_query_result(Ok("nsec1somekey".to_string())),
+            Ok(true)
+        );
         assert_eq!(classify_pkey_query_result(Ok(String::new())), Ok(false));
         assert_eq!(
             classify_pkey_query_result(Err(rusqlite::Error::QueryReturnedNoRows)),
@@ -517,11 +527,8 @@ mod classify_pkey_query_result_tests {
         // A locked/busy database, disk error, or any other query failure must
         // NOT be treated as "no pkey" -- it must surface as Err so the caller
         // skips deletion rather than wiping a possibly-valid account.
-        let transient_failure = rusqlite::Error::InvalidColumnType(
-            0,
-            "value".to_string(),
-            rusqlite::types::Type::Null,
-        );
+        let transient_failure =
+            rusqlite::Error::InvalidColumnType(0, "value".to_string(), rusqlite::types::Type::Null);
         assert!(classify_pkey_query_result(Err(transient_failure)).is_err());
     }
 }

@@ -4,8 +4,8 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol_types::SolCall;
 
-use crate::evm::wallet_security;
 use super::errors::wallet_err_json;
+use crate::evm::wallet_security;
 
 /// ABI `uint256` return. Empty or short RPC payloads → zero (EOA target, no code, stripped leading zeros).
 pub fn decode_abi_u256_return(data: &[u8]) -> U256 {
@@ -40,25 +40,17 @@ pub async fn eth_call<P: Provider>(
         .with_to(to)
         .with_input(Bytes::from(calldata));
 
-    provider
-        .call(tx)
-        .await
-        .map(|b| b)
-        .map_err(|e| {
-            wallet_err_json(
-                "ETH_CALL_FAILED",
-                wallet_security::redact_urls_in_text(&e.to_string()),
-                None,
-            )
-        })
+    provider.call(tx).await.map(|b| b).map_err(|e| {
+        wallet_err_json(
+            "ETH_CALL_FAILED",
+            wallet_security::redact_urls_in_text(&e.to_string()),
+            None,
+        )
+    })
 }
 
 /// Encode a view call, run `eth_call`, and decode the return data with the generated `SolCall` decoder.
-pub async fn eth_call_decode<P, C>(
-    provider: &P,
-    to: Address,
-    call: &C,
-) -> Result<C::Return, String>
+pub async fn eth_call_decode<P, C>(provider: &P, to: Address, call: &C) -> Result<C::Return, String>
 where
     P: Provider,
     C: SolCall,

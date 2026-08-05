@@ -42,7 +42,11 @@ pub(crate) fn json_setting<T: serde::de::DeserializeOwned + Default>(
     }
 }
 
-pub(crate) fn put_json_setting<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<(), String> {
+pub(crate) fn put_json_setting<T: Serialize>(
+    conn: &Connection,
+    key: &str,
+    value: &T,
+) -> Result<(), String> {
     let encoded = serde_json::to_string(value)
         .map_err(|e| format!("Failed to encode MLS reset setting {key}: {e}"))?;
     put_setting(conn, key, &encoded)
@@ -75,10 +79,11 @@ pub(crate) fn mark_keypackage_refreshed<R: Runtime>(handle: &AppHandle<R>) -> Re
     })
 }
 
-pub(crate) fn store_reset_at_secs<R: Runtime>(handle: &AppHandle<R>) -> Result<Option<u64>, String> {
+pub(crate) fn store_reset_at_secs<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Option<u64>, String> {
     with_account_connection(handle, |conn| {
-        Ok(setting(conn, RESET_AT_KEY)?
-            .and_then(|v| v.parse::<u64>().ok()))
+        Ok(setting(conn, RESET_AT_KEY)?.and_then(|v| v.parse::<u64>().ok()))
     })
 }
 
@@ -130,7 +135,9 @@ pub(crate) struct MlsStoreResetGroupState {
     pub single_admin: bool,
 }
 
-pub(crate) fn reset_group_states_conn(conn: &Connection) -> Result<Vec<MlsStoreResetGroupState>, String> {
+pub(crate) fn reset_group_states_conn(
+    conn: &Connection,
+) -> Result<Vec<MlsStoreResetGroupState>, String> {
     let lost = json_setting::<LostGroups>(conn, LOST_GROUPS_KEY)?;
     let all_admins = crate::mls_store_reset::load_all_legacy_group_admins_conn(conn)?;
     let mut states = Vec::with_capacity(lost.0.len());

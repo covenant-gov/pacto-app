@@ -2,7 +2,10 @@ use alloy::primitives::Address;
 
 pub fn parse_address(s: &str) -> Result<Address, String> {
     let t = s.trim();
-    let h = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
+    let h = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .unwrap_or(t);
     if h.len() != 40 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("invalid EVM address".into());
     }
@@ -21,13 +24,19 @@ mod tests {
     #[test]
     fn parse_address_valid_with_prefix() {
         let a = parse_address("0x0000000000000000000000000000000000000001").unwrap();
-        assert_eq!(a, Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
+        assert_eq!(
+            a,
+            Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+        );
     }
 
     #[test]
     fn parse_address_valid_without_prefix() {
         let a = parse_address("0000000000000000000000000000000000000001").unwrap();
-        assert_eq!(a, Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
+        assert_eq!(
+            a,
+            Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+        );
     }
 
     #[test]
@@ -40,7 +49,10 @@ mod tests {
     #[test]
     fn parse_address_trims_whitespace() {
         let a = parse_address("  0x0000000000000000000000000000000000000001  ").unwrap();
-        assert_eq!(a, Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]));
+        assert_eq!(
+            a,
+            Address::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+        );
     }
 
     #[test]

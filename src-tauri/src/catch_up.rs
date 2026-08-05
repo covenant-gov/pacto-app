@@ -79,7 +79,12 @@ fn now_epoch_seconds() -> i64 {
 /// time-salted, randomized — unique without a dependency this crate
 /// doesn't otherwise pull in.
 fn generate_id(kind: CatchUpKind) -> String {
-    format!("{}-{}-{:x}", kind.as_db_str(), now_epoch_seconds(), rand::random::<u64>())
+    format!(
+        "{}-{}-{:x}",
+        kind.as_db_str(),
+        now_epoch_seconds(),
+        rand::random::<u64>()
+    )
 }
 
 /// Insert one entry. Returns whether a new row was actually inserted —
@@ -153,7 +158,9 @@ pub async fn record_admitted_event_for_handle<R: Runtime>(
             return;
         }
     };
-    if let Err(e) = record_admitted_event(&conn, kind, is_own, mention_hit, chat_id, source_event_id) {
+    if let Err(e) =
+        record_admitted_event(&conn, kind, is_own, mention_hit, chat_id, source_event_id)
+    {
         eprintln!("[CatchUp] Failed to record entry: {}", e);
     }
     crate::account_manager::return_db_connection(conn);
@@ -165,7 +172,11 @@ pub async fn record_admitted_event_for_handle<R: Runtime>(
 /// `true`. The dedup check and the write are one atomic step (the unique
 /// index), not a check-then-insert race, and it holds across a restart
 /// because the row lives in SQLite rather than process memory.
-fn record_welcome(conn: &rusqlite::Connection, chat_id: &str, wrapper_event_id: &str) -> Result<bool, String> {
+fn record_welcome(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    wrapper_event_id: &str,
+) -> Result<bool, String> {
     insert_entry(conn, CatchUpKind::Welcome, chat_id, wrapper_event_id)
 }
 
@@ -182,7 +193,10 @@ pub async fn record_welcome_for_handle<R: Runtime>(
     let conn = match crate::account_manager::get_db_connection(handle) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[CatchUp] Failed to open connection for welcome check: {}", e);
+            eprintln!(
+                "[CatchUp] Failed to open connection for welcome check: {}",
+                e
+            );
             return true;
         }
     };
@@ -219,7 +233,10 @@ pub async fn resolve_welcome_for_handle<R: Runtime>(handle: &AppHandle<R>, wrapp
     let conn = match crate::account_manager::get_db_connection(handle) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[CatchUp] Failed to open connection to resolve welcome: {}", e);
+            eprintln!(
+                "[CatchUp] Failed to open connection to resolve welcome: {}",
+                e
+            );
             return;
         }
     };
@@ -233,7 +250,10 @@ pub async fn resolve_welcome_for_handle<R: Runtime>(handle: &AppHandle<R>, wrapp
 /// for a chat in one statement — the counterpart to `chat::mark_as_read`
 /// advancing that chat's read watermark. `ActionPrompt` and `Welcome`
 /// entries resolve through their own dedicated paths and are untouched here.
-fn resolve_chat_message_entries(conn: &rusqlite::Connection, chat_id: &str) -> Result<usize, String> {
+fn resolve_chat_message_entries(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+) -> Result<usize, String> {
     let resolved_at = now_epoch_seconds();
     conn.execute(
         "UPDATE catch_up_entries SET resolved_at = ?1
@@ -244,11 +264,17 @@ fn resolve_chat_message_entries(conn: &rusqlite::Connection, chat_id: &str) -> R
 }
 
 /// `AppHandle`-based wrapper called from `chat::mark_as_read`.
-pub async fn resolve_chat_message_entries_for_handle<R: Runtime>(handle: &AppHandle<R>, chat_id: &str) {
+pub async fn resolve_chat_message_entries_for_handle<R: Runtime>(
+    handle: &AppHandle<R>,
+    chat_id: &str,
+) {
     let conn = match crate::account_manager::get_db_connection(handle) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[CatchUp] Failed to open connection to resolve chat entries: {}", e);
+            eprintln!(
+                "[CatchUp] Failed to open connection to resolve chat entries: {}",
+                e
+            );
             return;
         }
     };
@@ -261,9 +287,15 @@ pub async fn resolve_chat_message_entries_for_handle<R: Runtime>(handle: &AppHan
 /// Delete every entry for one chat (Approach #4): explicit cleanup, run
 /// wherever a chat is deleted, never a cascade — foreign keys are not
 /// enforced on these connections.
-pub fn delete_entries_for_chat(conn: &rusqlite::Connection, chat_id: &str) -> Result<usize, String> {
-    conn.execute("DELETE FROM catch_up_entries WHERE chat_id = ?1", rusqlite::params![chat_id])
-        .map_err(|e| format!("Failed to delete catch up entries for chat: {}", e))
+pub fn delete_entries_for_chat(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+) -> Result<usize, String> {
+    conn.execute(
+        "DELETE FROM catch_up_entries WHERE chat_id = ?1",
+        rusqlite::params![chat_id],
+    )
+    .map_err(|e| format!("Failed to delete catch up entries for chat: {}", e))
 }
 
 /// Delete every entry across a set of chats — used when a squad is deleted,
@@ -271,13 +303,20 @@ pub fn delete_entries_for_chat(conn: &rusqlite::Connection, chat_id: &str) -> Re
 /// a stored `squad_id` on this table. The catalog already owns the
 /// squad-to-channel mapping; duplicating it here would make this table a
 /// second store of record for something it must stay reference-only about.
-pub fn delete_entries_for_chats(conn: &rusqlite::Connection, chat_ids: &[String]) -> Result<usize, String> {
+pub fn delete_entries_for_chats(
+    conn: &rusqlite::Connection,
+    chat_ids: &[String],
+) -> Result<usize, String> {
     if chat_ids.is_empty() {
         return Ok(0);
     }
     let placeholders = vec!["?"; chat_ids.len()].join(",");
-    let sql = format!("DELETE FROM catch_up_entries WHERE chat_id IN ({})", placeholders);
-    let params: Vec<&dyn rusqlite::ToSql> = chat_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let sql = format!(
+        "DELETE FROM catch_up_entries WHERE chat_id IN ({})",
+        placeholders
+    );
+    let params: Vec<&dyn rusqlite::ToSql> =
+        chat_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
     conn.execute(&sql, params.as_slice())
         .map_err(|e| format!("Failed to delete catch up entries for chats: {}", e))
 }
@@ -317,7 +356,9 @@ pub fn list_unresolved_entries(
     }
     sql.push_str(" ORDER BY created_at DESC");
 
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("Failed to prepare catch up query: {}", e))?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("Failed to prepare catch up query: {}", e))?;
     let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     let rows = stmt
         .query_map(param_refs.as_slice(), |row| {
@@ -343,7 +384,10 @@ pub fn list_unresolved_entries(
 /// paths (a caller must see an entry's `kind` before deciding whether
 /// resolving it should also advance a chat's read watermark) as well as
 /// by tests.
-fn get_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<Option<CatchUpEntry>, String> {
+fn get_entry(
+    conn: &rusqlite::Connection,
+    source_event_id: &str,
+) -> Result<Option<CatchUpEntry>, String> {
     conn.query_row(
         "SELECT id, source_event_id, kind, chat_id, created_at, resolved_at
          FROM catch_up_entries WHERE source_event_id = ?1",
@@ -369,15 +413,24 @@ fn get_entry(conn: &rusqlite::Connection, source_event_id: &str) -> Result<Optio
 /// vec![])` which that function already treats as "match nothing" — an
 /// unknown squad id correctly returns an empty list rather than falling
 /// back to unfiltered.
-fn resolve_squad_chat_ids(conn: &rusqlite::Connection, squad_id: Option<&str>) -> Result<Option<Vec<String>>, String> {
+fn resolve_squad_chat_ids(
+    conn: &rusqlite::Connection,
+    squad_id: Option<&str>,
+) -> Result<Option<Vec<String>>, String> {
     let Some(sid) = squad_id else { return Ok(None) };
     let squad = crate::squad_catalog::get_squad_inner(conn, sid)?;
-    Ok(Some(squad.map(|s| s.channels.into_iter().map(|c| c.group_id).collect()).unwrap_or_default()))
+    Ok(Some(
+        squad
+            .map(|s| s.channels.into_iter().map(|c| c.group_id).collect())
+            .unwrap_or_default(),
+    ))
 }
 
 fn parse_kind_filter(kind: Option<&str>) -> Result<Option<CatchUpKind>, String> {
     match kind {
-        Some(k) => CatchUpKind::from_db_str(k).map(Some).ok_or_else(|| format!("Unknown catch up kind: {}", k)),
+        Some(k) => CatchUpKind::from_db_str(k)
+            .map(Some)
+            .ok_or_else(|| format!("Unknown catch up kind: {}", k)),
         None => Ok(None),
     }
 }
@@ -424,7 +477,10 @@ pub async fn catch_up_count<R: Runtime>(handle: AppHandle<R>) -> Result<usize, S
     let entries = entries?;
 
     let state = crate::STATE.lock().await;
-    let count = entries.iter().filter(|e| entry_counts_toward_badge(&state, &e.chat_id)).count();
+    let count = entries
+        .iter()
+        .filter(|e| entry_counts_toward_badge(&state, &e.chat_id))
+        .count();
     Ok(count)
 }
 
@@ -435,16 +491,23 @@ pub async fn catch_up_count<R: Runtime>(handle: AppHandle<R>) -> Result<usize, S
 /// chat, not just this row. Other kinds have no watermark to move and
 /// resolve directly.
 #[tauri::command]
-pub async fn resolve_catch_up_entry<R: Runtime>(handle: AppHandle<R>, source_event_id: String) -> Result<bool, String> {
+pub async fn resolve_catch_up_entry<R: Runtime>(
+    handle: AppHandle<R>,
+    source_event_id: String,
+) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let entry = get_entry(&conn, &source_event_id);
     crate::account_manager::return_db_connection(conn);
-    let Some(entry) = entry? else { return Ok(false) };
+    let Some(entry) = entry? else {
+        return Ok(false);
+    };
     if entry.resolved_at.is_some() {
         return Ok(false);
     }
 
-    if entry.kind == CatchUpKind::Mention.as_db_str() || entry.kind == CatchUpKind::DirectMessage.as_db_str() {
+    if entry.kind == CatchUpKind::Mention.as_db_str()
+        || entry.kind == CatchUpKind::DirectMessage.as_db_str()
+    {
         crate::chat::mark_as_read(entry.chat_id, None).await;
         return Ok(true);
     }
@@ -480,7 +543,9 @@ pub async fn resolve_all_catch_up_entries<R: Runtime>(
     let mut message_chat_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut other_source_ids: Vec<String> = Vec::new();
     for e in &entries {
-        if e.kind == CatchUpKind::Mention.as_db_str() || e.kind == CatchUpKind::DirectMessage.as_db_str() {
+        if e.kind == CatchUpKind::Mention.as_db_str()
+            || e.kind == CatchUpKind::DirectMessage.as_db_str()
+        {
             message_chat_ids.insert(e.chat_id.clone());
         } else {
             other_source_ids.push(e.source_event_id.clone());
@@ -509,14 +574,24 @@ pub async fn resolve_all_catch_up_entries<R: Runtime>(
 /// once resolved, but a derived-state entry has no event to re-arrive —
 /// resurfacing it on the next reconciliation pass IS how it stays correct
 /// (Approach #4).
-fn record_or_reopen_action_needed(conn: &rusqlite::Connection, chat_id: &str, source_event_id: &str) -> Result<(), String> {
+fn record_or_reopen_action_needed(
+    conn: &rusqlite::Connection,
+    chat_id: &str,
+    source_event_id: &str,
+) -> Result<(), String> {
     let id = generate_id(CatchUpKind::ActionPrompt);
     let created_at = now_epoch_seconds();
     conn.execute(
         "INSERT INTO catch_up_entries (id, source_event_id, kind, chat_id, created_at, resolved_at)
          VALUES (?1, ?2, ?3, ?4, ?5, NULL)
          ON CONFLICT(source_event_id) DO UPDATE SET resolved_at = NULL",
-        rusqlite::params![id, source_event_id, CatchUpKind::ActionPrompt.as_db_str(), chat_id, created_at],
+        rusqlite::params![
+            id,
+            source_event_id,
+            CatchUpKind::ActionPrompt.as_db_str(),
+            chat_id,
+            created_at
+        ],
     )
     .map_err(|e| format!("Failed to record action-needed entry: {}", e))?;
     Ok(())
@@ -576,12 +651,21 @@ mod tests {
             .map(|r| r.unwrap())
             .collect();
 
-        let expected: std::collections::HashSet<&str> =
-            ["id", "source_event_id", "kind", "chat_id", "created_at", "resolved_at"]
-                .into_iter()
-                .collect();
+        let expected: std::collections::HashSet<&str> = [
+            "id",
+            "source_event_id",
+            "kind",
+            "chat_id",
+            "created_at",
+            "resolved_at",
+        ]
+        .into_iter()
+        .collect();
         let actual: std::collections::HashSet<&str> = columns.iter().map(|s| s.as_str()).collect();
-        assert_eq!(actual, expected, "schema must carry references only, no content/title/body/sender column");
+        assert_eq!(
+            actual, expected,
+            "schema must carry references only, no content/title/body/sender column"
+        );
     }
 
     #[test]
@@ -599,14 +683,34 @@ mod tests {
             true,
         );
         assert_eq!(tier, crate::notification::Tier::Interrupt);
-        record_admitted_event(&conn, EventKind::GroupMessage, false, true, "chat-1", "evt-mention").unwrap();
-        let entry = get_entry(&conn, "evt-mention").unwrap().expect("mention entry should exist");
+        record_admitted_event(
+            &conn,
+            EventKind::GroupMessage,
+            false,
+            true,
+            "chat-1",
+            "evt-mention",
+        )
+        .unwrap();
+        let entry = get_entry(&conn, "evt-mention")
+            .unwrap()
+            .expect("mention entry should exist");
         assert_eq!(entry.kind, "mention");
         assert_eq!(entry.chat_id, "chat-1");
         assert!(entry.resolved_at.is_none());
 
-        record_admitted_event(&conn, EventKind::ActionPrompt, false, false, "chat-2", "evt-action").unwrap();
-        let entry = get_entry(&conn, "evt-action").unwrap().expect("action prompt entry should exist");
+        record_admitted_event(
+            &conn,
+            EventKind::ActionPrompt,
+            false,
+            false,
+            "chat-2",
+            "evt-action",
+        )
+        .unwrap();
+        let entry = get_entry(&conn, "evt-action")
+            .unwrap()
+            .expect("action prompt entry should exist");
         assert_eq!(entry.kind, "action_prompt");
     }
 
@@ -615,9 +719,22 @@ mod tests {
         let conn = migrated_conn();
 
         // Ambient is always Passive and never admitted.
-        let tier = crate::notification::resolve_tier(EventKind::Ambient, crate::chat::NotificationLevel::All, false, false);
+        let tier = crate::notification::resolve_tier(
+            EventKind::Ambient,
+            crate::chat::NotificationLevel::All,
+            false,
+            false,
+        );
         assert_eq!(tier, crate::notification::Tier::Passive);
-        record_admitted_event(&conn, EventKind::Ambient, false, false, "chat-1", "evt-ambient").unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::Ambient,
+            false,
+            false,
+            "chat-1",
+            "evt-ambient",
+        )
+        .unwrap();
         assert!(get_entry(&conn, "evt-ambient").unwrap().is_none());
 
         // An ordinary group message without a mention hit resolves Record
@@ -629,7 +746,15 @@ mod tests {
             false,
         );
         assert_eq!(tier, crate::notification::Tier::Record);
-        record_admitted_event(&conn, EventKind::GroupMessage, false, false, "chat-1", "evt-ordinary").unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::GroupMessage,
+            false,
+            false,
+            "chat-1",
+            "evt-ordinary",
+        )
+        .unwrap();
         assert!(get_entry(&conn, "evt-ordinary").unwrap().is_none());
     }
 
@@ -652,7 +777,15 @@ mod tests {
     #[test]
     fn own_events_never_create_an_entry() {
         let conn = migrated_conn();
-        record_admitted_event(&conn, EventKind::DirectMessage, true, false, "chat-1", "evt-own").unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::DirectMessage,
+            true,
+            false,
+            "chat-1",
+            "evt-own",
+        )
+        .unwrap();
         assert!(get_entry(&conn, "evt-own").unwrap().is_none());
     }
 
@@ -662,10 +795,17 @@ mod tests {
         let first = insert_entry(&conn, CatchUpKind::Mention, "chat-1", "evt-dup").unwrap();
         let second = insert_entry(&conn, CatchUpKind::Mention, "chat-1", "evt-dup").unwrap();
         assert!(first, "first insert should create the row");
-        assert!(!second, "second insert of the same source id must be a no-op, not an error");
+        assert!(
+            !second,
+            "second insert of the same source id must be a no-op, not an error"
+        );
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM catch_up_entries WHERE source_event_id = 'evt-dup'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM catch_up_entries WHERE source_event_id = 'evt-dup'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
     }
@@ -681,13 +821,45 @@ mod tests {
         insert_entry(&conn, CatchUpKind::Mention, "chat-2", "evt-other-chat").unwrap();
 
         let resolved_count = resolve_chat_message_entries(&conn, "chat-1").unwrap();
-        assert_eq!(resolved_count, 2, "exactly the mention and direct_message rows for chat-1");
+        assert_eq!(
+            resolved_count, 2,
+            "exactly the mention and direct_message rows for chat-1"
+        );
 
-        assert!(get_entry(&conn, "evt-mention").unwrap().unwrap().resolved_at.is_some());
-        assert!(get_entry(&conn, "evt-dm").unwrap().unwrap().resolved_at.is_some());
-        assert!(get_entry(&conn, "evt-action").unwrap().unwrap().resolved_at.is_none(), "action prompts resolve elsewhere");
-        assert!(get_entry(&conn, "evt-welcome").unwrap().unwrap().resolved_at.is_none(), "welcomes resolve elsewhere");
-        assert!(get_entry(&conn, "evt-other-chat").unwrap().unwrap().resolved_at.is_none(), "other chats untouched");
+        assert!(get_entry(&conn, "evt-mention")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_some());
+        assert!(get_entry(&conn, "evt-dm")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_some());
+        assert!(
+            get_entry(&conn, "evt-action")
+                .unwrap()
+                .unwrap()
+                .resolved_at
+                .is_none(),
+            "action prompts resolve elsewhere"
+        );
+        assert!(
+            get_entry(&conn, "evt-welcome")
+                .unwrap()
+                .unwrap()
+                .resolved_at
+                .is_none(),
+            "welcomes resolve elsewhere"
+        );
+        assert!(
+            get_entry(&conn, "evt-other-chat")
+                .unwrap()
+                .unwrap()
+                .resolved_at
+                .is_none(),
+            "other chats untouched"
+        );
     }
 
     #[test]
@@ -695,12 +867,19 @@ mod tests {
         let conn = migrated_conn();
         let is_new = record_welcome(&conn, "group-1", "wrapper-evt-1").unwrap();
         assert!(is_new);
-        assert!(get_entry(&conn, "wrapper-evt-1").unwrap().unwrap().resolved_at.is_none());
+        assert!(get_entry(&conn, "wrapper-evt-1")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_none());
 
         let resolved = resolve_entry(&conn, "wrapper-evt-1").unwrap();
         assert!(resolved);
         let entry = get_entry(&conn, "wrapper-evt-1").unwrap().unwrap();
-        assert!(entry.resolved_at.is_some(), "accepting a welcome must resolve, not delete, its entry");
+        assert!(
+            entry.resolved_at.is_some(),
+            "accepting a welcome must resolve, not delete, its entry"
+        );
     }
 
     #[test]
@@ -729,13 +908,17 @@ mod tests {
     #[test]
     fn welcome_dedup_holds_across_a_real_database_reopen() {
         let mut path = std::env::temp_dir();
-        path.push(format!("pacto-catch-up-reopen-test-{:x}.sqlite", rand::random::<u64>()));
+        path.push(format!(
+            "pacto-catch-up-reopen-test-{:x}.sqlite",
+            rand::random::<u64>()
+        ));
         let _ = std::fs::remove_file(&path);
 
         {
             let mut conn = rusqlite::Connection::open(&path).expect("open db file");
             crate::migrations::run_migrations(&mut conn).expect("run migrations");
-            let is_new = record_welcome(&conn, "group-1", "wrapper-evt-restart").expect("record welcome");
+            let is_new =
+                record_welcome(&conn, "group-1", "wrapper-evt-restart").expect("record welcome");
             assert!(is_new, "first sighting before restart should be new");
             // Connection dropped here — simulates process exit closing the
             // file handle, not merely clearing a process-local collection.
@@ -743,8 +926,12 @@ mod tests {
 
         {
             let conn = rusqlite::Connection::open(&path).expect("reopen db file");
-            let is_new = record_welcome(&conn, "group-1", "wrapper-evt-restart").expect("record welcome again");
-            assert!(!is_new, "the same welcome after a real reopen must not renotify");
+            let is_new = record_welcome(&conn, "group-1", "wrapper-evt-restart")
+                .expect("record welcome again");
+            assert!(
+                !is_new,
+                "the same welcome after a real reopen must not renotify"
+            );
         }
 
         let _ = std::fs::remove_file(&path);
@@ -761,7 +948,10 @@ mod tests {
         assert_eq!(deleted, 2);
         assert!(get_entry(&conn, "evt-1").unwrap().is_none());
         assert!(get_entry(&conn, "evt-2").unwrap().is_none());
-        assert!(get_entry(&conn, "evt-3").unwrap().is_some(), "other chats must survive");
+        assert!(
+            get_entry(&conn, "evt-3").unwrap().is_some(),
+            "other chats must survive"
+        );
     }
 
     #[test]
@@ -776,7 +966,10 @@ mod tests {
         assert_eq!(deleted, 2);
         assert!(get_entry(&conn, "evt-1").unwrap().is_none());
         assert!(get_entry(&conn, "evt-2").unwrap().is_none());
-        assert!(get_entry(&conn, "evt-3").unwrap().is_some(), "a channel outside the squad must survive");
+        assert!(
+            get_entry(&conn, "evt-3").unwrap().is_some(),
+            "a channel outside the squad must survive"
+        );
     }
 
     #[test]
@@ -800,7 +993,9 @@ mod tests {
         let resolved = resolve_entry(&conn, "evt-1").unwrap();
         assert!(resolved);
 
-        let entry = get_entry(&conn, "evt-1").unwrap().expect("row must still exist");
+        let entry = get_entry(&conn, "evt-1")
+            .unwrap()
+            .expect("row must still exist");
         assert!(entry.resolved_at.is_some());
 
         // Resolving an already-resolved entry is a no-op, not a second event.
@@ -818,13 +1013,23 @@ mod tests {
         resolve_entry(&conn, "evt-resolved").unwrap();
 
         let by_kind = list_unresolved_entries(&conn, Some(CatchUpKind::Mention), None).unwrap();
-        assert_eq!(by_kind.iter().map(|e| e.source_event_id.as_str()).collect::<std::collections::HashSet<_>>(),
-            std::collections::HashSet::from(["evt-mention", "evt-other-chat"]));
+        assert_eq!(
+            by_kind
+                .iter()
+                .map(|e| e.source_event_id.as_str())
+                .collect::<std::collections::HashSet<_>>(),
+            std::collections::HashSet::from(["evt-mention", "evt-other-chat"])
+        );
 
         let chat_ids = vec!["chat-1".to_string()];
         let by_chat = list_unresolved_entries(&conn, None, Some(&chat_ids)).unwrap();
-        assert_eq!(by_chat.iter().map(|e| e.source_event_id.as_str()).collect::<std::collections::HashSet<_>>(),
-            std::collections::HashSet::from(["evt-mention", "evt-action"]));
+        assert_eq!(
+            by_chat
+                .iter()
+                .map(|e| e.source_event_id.as_str())
+                .collect::<std::collections::HashSet<_>>(),
+            std::collections::HashSet::from(["evt-mention", "evt-action"])
+        );
     }
 
     /// Filtering by kind and by chat ("by squad", once a squad is resolved
@@ -834,7 +1039,9 @@ mod tests {
         let conn = migrated_conn();
 
         let plan_detail = |sql: &str| -> String {
-            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {}", sql)).unwrap();
+            let mut stmt = conn
+                .prepare(&format!("EXPLAIN QUERY PLAN {}", sql))
+                .unwrap();
             let rows: Vec<String> = stmt
                 .query_map([], |row| row.get::<_, String>(3))
                 .unwrap()
@@ -843,26 +1050,42 @@ mod tests {
             rows.join(" | ")
         };
 
-        let by_kind = plan_detail("SELECT * FROM catch_up_entries WHERE kind = 'mention' AND resolved_at IS NULL");
+        let by_kind = plan_detail(
+            "SELECT * FROM catch_up_entries WHERE kind = 'mention' AND resolved_at IS NULL",
+        );
         assert!(
             by_kind.contains("USING INDEX idx_catch_up_entries_kind_resolved"),
             "kind filter must use the kind/resolved_at index, got: {by_kind}"
         );
-        assert!(!by_kind.contains("SCAN catch_up_entries"), "must not fall back to a full scan, got: {by_kind}");
+        assert!(
+            !by_kind.contains("SCAN catch_up_entries"),
+            "must not fall back to a full scan, got: {by_kind}"
+        );
 
-        let by_chat = plan_detail("SELECT * FROM catch_up_entries WHERE chat_id = 'chat-1' AND resolved_at IS NULL");
+        let by_chat = plan_detail(
+            "SELECT * FROM catch_up_entries WHERE chat_id = 'chat-1' AND resolved_at IS NULL",
+        );
         assert!(
             by_chat.contains("USING INDEX idx_catch_up_entries_chat"),
             "squad(chat) filter must use the chat_id index, got: {by_chat}"
         );
-        assert!(!by_chat.contains("SCAN catch_up_entries"), "must not fall back to a full scan, got: {by_chat}");
+        assert!(
+            !by_chat.contains("SCAN catch_up_entries"),
+            "must not fall back to a full scan, got: {by_chat}"
+        );
     }
 
     #[test]
     fn parse_kind_filter_accepts_known_kinds_and_rejects_unknown() {
         assert_eq!(parse_kind_filter(None).unwrap(), None);
-        assert_eq!(parse_kind_filter(Some("mention")).unwrap(), Some(CatchUpKind::Mention));
-        assert_eq!(parse_kind_filter(Some("action_prompt")).unwrap(), Some(CatchUpKind::ActionPrompt));
+        assert_eq!(
+            parse_kind_filter(Some("mention")).unwrap(),
+            Some(CatchUpKind::Mention)
+        );
+        assert_eq!(
+            parse_kind_filter(Some("action_prompt")).unwrap(),
+            Some(CatchUpKind::ActionPrompt)
+        );
         assert!(parse_kind_filter(Some("bogus")).is_err());
     }
 
@@ -921,15 +1144,26 @@ mod tests {
 
         insert_entry(&conn, CatchUpKind::Mention, "chan-a", "evt-mention").unwrap();
         insert_entry(&conn, CatchUpKind::ActionPrompt, "chan-a", "evt-action").unwrap();
-        insert_entry(&conn, CatchUpKind::Mention, "chan-outside-squad", "evt-outside").unwrap();
+        insert_entry(
+            &conn,
+            CatchUpKind::Mention,
+            "chan-outside-squad",
+            "evt-outside",
+        )
+        .unwrap();
 
-        let needs_action = list_unresolved_entries(&conn, Some(CatchUpKind::ActionPrompt), None).unwrap();
+        let needs_action =
+            list_unresolved_entries(&conn, Some(CatchUpKind::ActionPrompt), None).unwrap();
         assert_eq!(needs_action.len(), 1);
         assert_eq!(needs_action[0].source_event_id, "evt-action");
 
         let squad_ids = resolve_squad_chat_ids(&conn, Some("squad-1")).unwrap();
         let by_squad = list_unresolved_entries(&conn, None, squad_ids.as_deref()).unwrap();
-        assert_eq!(by_squad.len(), 2, "both chan-a entries, not the one outside the squad");
+        assert_eq!(
+            by_squad.len(),
+            2,
+            "both chan-a entries, not the one outside the squad"
+        );
         assert!(by_squad.iter().all(|e| e.chat_id == "chan-a"));
     }
 
@@ -956,8 +1190,11 @@ mod tests {
     #[test]
     fn record_or_reopen_action_needed_creates_an_unresolved_entry() {
         let conn = migrated_conn();
-        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
-        let entry = get_entry(&conn, "roster-key:squad-1").unwrap().expect("entry should exist");
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1")
+            .unwrap();
+        let entry = get_entry(&conn, "roster-key:squad-1")
+            .unwrap()
+            .expect("entry should exist");
         assert_eq!(entry.kind, "action_prompt");
         assert_eq!(entry.chat_id, "squad-dashboard-chat");
         assert!(entry.resolved_at.is_none());
@@ -966,19 +1203,34 @@ mod tests {
     #[test]
     fn record_or_reopen_action_needed_resurfaces_a_resolved_entry_when_the_condition_still_holds() {
         let conn = migrated_conn();
-        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1")
+            .unwrap();
         let first = get_entry(&conn, "roster-key:squad-1").unwrap().unwrap();
 
         // The member dismissed it in Catch up, or a prior reconciliation
         // pass resolved it, but the condition is still true on this pass.
         resolve_entry(&conn, "roster-key:squad-1").unwrap();
-        assert!(get_entry(&conn, "roster-key:squad-1").unwrap().unwrap().resolved_at.is_some());
+        assert!(get_entry(&conn, "roster-key:squad-1")
+            .unwrap()
+            .unwrap()
+            .resolved_at
+            .is_some());
 
-        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1")
+            .unwrap();
         let reopened = get_entry(&conn, "roster-key:squad-1").unwrap().unwrap();
-        assert!(reopened.resolved_at.is_none(), "must resurface, not stay silently resolved");
-        assert_eq!(reopened.id, first.id, "reopening must not fork a second row");
-        assert_eq!(reopened.created_at, first.created_at, "original creation time is preserved");
+        assert!(
+            reopened.resolved_at.is_none(),
+            "must resurface, not stay silently resolved"
+        );
+        assert_eq!(
+            reopened.id, first.id,
+            "reopening must not fork a second row"
+        );
+        assert_eq!(
+            reopened.created_at, first.created_at,
+            "original creation time is preserved"
+        );
 
         let count: i64 = conn
             .query_row(
@@ -987,14 +1239,19 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(count, 1, "reopen must update the existing row, never insert a second one");
+        assert_eq!(
+            count, 1,
+            "reopen must update the existing row, never insert a second one"
+        );
     }
 
     #[test]
     fn record_or_reopen_action_needed_leaves_an_already_unresolved_entry_untouched() {
         let conn = migrated_conn();
-        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
-        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1").unwrap();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1")
+            .unwrap();
+        record_or_reopen_action_needed(&conn, "squad-dashboard-chat", "roster-key:squad-1")
+            .unwrap();
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM catch_up_entries WHERE source_event_id = 'roster-key:squad-1'",
@@ -1014,8 +1271,24 @@ mod tests {
         // here so a future EventKind/CatchUpKind change that breaks it is
         // caught in this unit, not discovered as a resolve-all over-reach.
         let conn = migrated_conn();
-        record_admitted_event(&conn, EventKind::DirectMessage, false, false, "dm-chat", "evt-dm").unwrap();
-        record_admitted_event(&conn, EventKind::GroupMessage, false, true, "mls-chat", "evt-mention").unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::DirectMessage,
+            false,
+            false,
+            "dm-chat",
+            "evt-dm",
+        )
+        .unwrap();
+        record_admitted_event(
+            &conn,
+            EventKind::GroupMessage,
+            false,
+            true,
+            "mls-chat",
+            "evt-mention",
+        )
+        .unwrap();
 
         let dm_entry = get_entry(&conn, "evt-dm").unwrap().unwrap();
         assert_eq!(dm_entry.kind, CatchUpKind::DirectMessage.as_db_str());

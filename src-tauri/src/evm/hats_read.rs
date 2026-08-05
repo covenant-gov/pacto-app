@@ -5,9 +5,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tauri::{AppHandle, Runtime};
 
-use super::contracts::hats::IHats::{
-    buildHatIdCall, isValidHatIdCall, viewHatCall,
-};
+use super::contracts::hats::IHats::{buildHatIdCall, isValidHatIdCall, viewHatCall};
 use super::gov_read::{connect_gov_read_provider, parse_top_hat_id};
 use super::pacto_chain_config;
 use super::rpc::{call::eth_call_decode, wallet_err_json};
@@ -45,7 +43,11 @@ fn build_tree(flat: &[FlatHatNode], root_id: U256) -> Option<HatTreeNodeDto> {
         }
     }
 
-    fn node_for(id: U256, flat: &[FlatHatNode], children_by_parent: &HashMap<U256, Vec<U256>>) -> Option<HatTreeNodeDto> {
+    fn node_for(
+        id: U256,
+        flat: &[FlatHatNode],
+        children_by_parent: &HashMap<U256, Vec<U256>>,
+    ) -> Option<HatTreeNodeDto> {
         let n = flat.iter().find(|x| x.hat_id == id)?;
         let child_ids = children_by_parent.get(&id).cloned().unwrap_or_default();
         let children = child_ids
@@ -89,7 +91,9 @@ pub async fn get_hats_tree<R: Runtime>(
     };
 
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let max_nodes = max_nodes.unwrap_or(DEFAULT_MAX_NODES).clamp(1, HARD_MAX_NODES);
+    let max_nodes = max_nodes
+        .unwrap_or(DEFAULT_MAX_NODES)
+        .clamp(1, HARD_MAX_NODES);
     let max_depth = max_depth.unwrap_or(DEFAULT_MAX_DEPTH).clamp(1, 12);
 
     let mut flat: Vec<FlatHatNode> = Vec::new();

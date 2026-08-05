@@ -1,12 +1,11 @@
 use nostr_sdk::prelude::*;
 use tauri::Emitter;
 
-use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
-use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
+use crate::message::AttachmentFile;
 use crate::nostr_tags;
-
+use crate::{get_nostr_client, STATE, TAURI_APP};
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(default)]
@@ -66,11 +65,11 @@ impl Profile {
     }
 
     /// Merge Nostr Metadata with this Vector Profile
-    /// 
+    ///
     /// Returns `true` if any fields were updated, `false`` otherwise
     pub fn from_metadata(&mut self, meta: Metadata) -> bool {
         let mut changed = false;
-        
+
         // Name
         if let Some(name) = meta.name {
             if self.name != name {
@@ -152,18 +151,19 @@ impl Profile {
                 Some(b) => b,
                 None => {
                     // Try parsing as string
-                    custom.as_str()
+                    custom
+                        .as_str()
                         .map(|s| s.to_lowercase() == "true")
                         .unwrap_or(false)
                 }
             };
-            
+
             if self.bot != bot_value {
                 self.bot = bot_value;
                 changed = true;
             }
         }
-        
+
         changed
     }
 }
@@ -263,7 +263,9 @@ pub async fn cache_all_profile_images() {
     // Get all profiles that need caching
     let profiles_to_cache: Vec<(String, String, String)> = {
         let state = STATE.lock().await;
-        state.profiles.iter()
+        state
+            .profiles
+            .iter()
             .filter(|p| {
                 // Cache if has avatar URL but no cached path
                 (!p.avatar.is_empty() && p.avatar_cached.is_empty()) ||
@@ -278,7 +280,10 @@ pub async fn cache_all_profile_images() {
         return;
     }
 
-    log::info!("[Profile] Caching images for {} profiles", profiles_to_cache.len());
+    log::info!(
+        "[Profile] Caching images for {} profiles",
+        profiles_to_cache.len()
+    );
 
     // Spawn caching tasks for each profile (they run concurrently with semaphore limiting)
     for (npub, avatar_url, banner_url) in profiles_to_cache {
@@ -403,7 +408,7 @@ pub async fn load_profile(npub: String) -> bool {
     let fetch_result = client
         .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
         .await;
-    
+
     match fetch_result {
         Ok(meta) => {
             if meta.is_some() {
@@ -431,7 +436,9 @@ pub async fn load_profile(npub: String) -> bool {
                     handle.emit("profile_update", &profile_mutable).unwrap();
 
                     // Cache this profile in our DB, too
-                    db::set_profile(handle.clone(), profile_mutable.clone()).await.unwrap();
+                    db::set_profile(handle.clone(), profile_mutable.clone())
+                        .await
+                        .unwrap();
 
                     // Cache avatar/banner images in the background for offline access
                     let npub_clone = npub.clone();
@@ -553,10 +560,7 @@ async fn publish_vector_profile_kind0(
     let client = get_nostr_client()?;
 
     let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let my_public_key = signer
-        .get_public_key()
-        .await
-        .map_err(|e| e.to_string())?;
+    let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let npub = my_public_key.to_bech32().map_err(|e| e.to_string())?;
 
     let meta = {
@@ -569,9 +573,8 @@ async fn publish_vector_profile_kind0(
 
     let metadata_json = kind0_metadata_json_without_evm(&meta).map_err(|e| e.to_string())?;
 
-    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone()).tag(
-        nostr_tags::custom_tag("client", vec!["vector"]),
-    );
+    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone())
+        .tag(nostr_tags::custom_tag("client", vec!["vector"]));
 
     client
         .send_event_builder(metadata_event)
@@ -730,15 +733,17 @@ pub async fn upload_avatar(bytes: String, upload_type: Option<String>) -> Result
     // Create progress callback that emits events to frontend
     let handle_clone = handle.clone();
     let upload_type_clone = upload_type.clone();
-    let progress_callback: crate::blossom::ProgressCallback = std::sync::Arc::new(move |percentage, bytes_uploaded| {
-        let payload = serde_json::json!({
-            "type": upload_type_clone,
-            "progress": percentage.unwrap_or(0),
-            "bytes": bytes_uploaded.unwrap_or(0)
+    let progress_callback: crate::blossom::ProgressCallback =
+        std::sync::Arc::new(move |percentage, bytes_uploaded| {
+            let payload = serde_json::json!({
+                "type": upload_type_clone,
+                "progress": percentage.unwrap_or(0),
+                "bytes": bytes_uploaded.unwrap_or(0)
+            });
+            handle_clone
+                .emit("profile_upload_progress", payload)
+                .map_err(|_| "Failed to emit progress event".to_string())
         });
-        handle_clone.emit("profile_upload_progress", payload)
-            .map_err(|_| "Failed to emit progress event".to_string())
-    });
 
     // Keep a copy of bytes for pre-caching
     let bytes_for_cache = attachment_file.bytes.clone();
@@ -765,7 +770,6 @@ pub async fn upload_avatar(bytes: String, upload_type: Option<String>) -> Result
 
     Ok(upload_url)
 }
-
 
 /// Toggles blocked status (local DM block; incoming decrypted content is dropped).
 #[tauri::command]
@@ -806,17 +810,24 @@ pub async fn set_nickname(npub: String, nickname: String) -> bool {
             profile.nickname = nickname;
 
             // Update the frontend
-            handle.emit("profile_nick_changed", serde_json::json!({
-                "profile_id": &profile.id,
-                "value": &profile.nickname
-            })).unwrap();
+            handle
+                .emit(
+                    "profile_nick_changed",
+                    serde_json::json!({
+                        "profile_id": &profile.id,
+                        "value": &profile.nickname
+                    }),
+                )
+                .unwrap();
 
             // Save to DB
-            db::set_profile(handle.clone(), profile.clone()).await.unwrap();
+            db::set_profile(handle.clone(), profile.clone())
+                .await
+                .unwrap();
 
             true
         }
-        None => false
+        None => false,
     }
 }
 
@@ -824,10 +835,10 @@ pub async fn set_nickname(npub: String, nickname: String) -> bool {
 #[tauri::command]
 pub async fn get_profile(npub: String) -> Result<Profile, String> {
     let state = STATE.lock().await;
-    
+
     match state.get_profile(&npub) {
         Some(profile) => Ok(profile.clone()),
-        None => Err(format!("Profile not found: {}", npub))
+        None => Err(format!("Profile not found: {}", npub)),
     }
 }
 
@@ -843,9 +854,7 @@ mod kind0_evm_tests {
         if let serde_json::Value::Object(ref mut m) = v {
             m.insert(
                 "evm_address".to_string(),
-                serde_json::Value::String(
-                    "0x1111111111111111111111111111111111111111".to_string(),
-                ),
+                serde_json::Value::String("0x1111111111111111111111111111111111111111".to_string()),
             );
         }
         let contaminated: Metadata = serde_json::from_value(v).unwrap();
@@ -868,7 +877,12 @@ mod avatar_validation_tests {
         let mut cursor = std::io::Cursor::new(&mut data);
         let encoder = ::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 85);
         encoder
-            .write_image(img.as_raw(), dimension, dimension, ::image::ExtendedColorType::Rgb8)
+            .write_image(
+                img.as_raw(),
+                dimension,
+                dimension,
+                ::image::ExtendedColorType::Rgb8,
+            )
             .unwrap();
         data
     }
@@ -878,7 +892,10 @@ mod avatar_validation_tests {
         let img = ::image::RgbImage::from_pixel(dimension, dimension, ::image::Rgb([10, 200, 40]));
         let mut data = Vec::new();
         ::image::DynamicImage::ImageRgb8(img)
-            .write_to(&mut std::io::Cursor::new(&mut data), ::image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut data),
+                ::image::ImageFormat::Png,
+            )
             .unwrap();
         data
     }

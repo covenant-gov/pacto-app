@@ -67,7 +67,13 @@ pub async fn emit<R: Runtime>(
         // so it is never buried in a collapsed count.
         coalesce::preempt_and_emit(handle.clone(), chat_id, single).await;
     } else {
-        coalesce::register_interrupt(handle.clone(), chat_id.to_string(), chat_display_name.to_string(), single).await;
+        coalesce::register_interrupt(
+            handle.clone(),
+            chat_id.to_string(),
+            chat_display_name.to_string(),
+            single,
+        )
+        .await;
     }
 }
 
@@ -156,7 +162,17 @@ mod tests {
     #[tokio::test]
     async fn passive_tier_never_reaches_the_coalescer() {
         let handle = test_handle();
-        emit(&handle, EventKind::Ambient, All, false, false, "chat-passive", "Chat", single("hi")).await;
+        emit(
+            &handle,
+            EventKind::Ambient,
+            All,
+            false,
+            false,
+            "chat-passive",
+            "Chat",
+            single("hi"),
+        )
+        .await;
 
         assert!(!coalesce::has_window("chat-passive").await);
     }

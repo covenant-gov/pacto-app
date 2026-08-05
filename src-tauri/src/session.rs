@@ -1,5 +1,5 @@
-use std::sync::{Arc, LazyLock};
 use parking_lot::Mutex;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use secrecy::{ExposeSecret, SecretBox};
@@ -162,11 +162,9 @@ impl SessionManager {
 
     pub fn locked_at_epoch_ms(&self) -> Option<u64> {
         let state = self.state.lock();
-        state.locked_at.map(|t| {
-            t.duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64
-        })
+        state
+            .locked_at
+            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64)
     }
 
     fn spawn_timer_locked(&self, state: &mut InnerState) {
@@ -224,15 +222,11 @@ impl SessionManager {
 }
 
 fn emit_session_warning_to_handle<R: tauri::Runtime>(handle: &tauri::AppHandle<R>, warning: &str) {
-    let _ = handle.emit(
-        "session_warning",
-        serde_json::json!({ "warning": warning }),
-    );
+    let _ = handle.emit("session_warning", serde_json::json!({ "warning": warning }));
 }
 
 /// Global session manager used by the rest of the crate.
-pub static SESSION_MANAGER: LazyLock<SessionManager> =
-    LazyLock::new(SessionManager::new);
+pub static SESSION_MANAGER: LazyLock<SessionManager> = LazyLock::new(SessionManager::new);
 
 /// Store the encryption key in the secret session container.
 pub fn set_encryption_key(key: [u8; 32]) {
@@ -266,8 +260,15 @@ pub fn set_timeout_ms(timeout_ms: u64) {
 pub fn load_timeout_ms_from_conn(conn: &rusqlite::Connection) {
     let sql = "SELECT value FROM settings WHERE key = 'session_idle_timeout_ms'";
     let stored: Result<String, _> = conn.query_row(sql, [], |r| r.get(0));
-    if let Ok(ms) = stored.and_then(|v| v.parse::<u64>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))) {
-        let ms = if ms == 0 { 0 } else { ms.max(DEFAULT_IDLE_TIMEOUT_MS.min(60_000)) };
+    if let Ok(ms) = stored.and_then(|v| {
+        v.parse::<u64>()
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+    }) {
+        let ms = if ms == 0 {
+            0
+        } else {
+            ms.max(DEFAULT_IDLE_TIMEOUT_MS.min(60_000))
+        };
         SESSION_MANAGER.set_timeout_ms(ms);
     }
 }
@@ -281,7 +282,10 @@ pub fn check_session() -> SessionStatus {
     } else {
         SESSION_MANAGER.locked_at_epoch_ms()
     };
-    SessionStatus { unlocked, locked_at }
+    SessionStatus {
+        unlocked,
+        locked_at,
+    }
 }
 
 /// Reset the idle timer from the frontend.
@@ -320,12 +324,11 @@ pub fn get_session_timeout() -> u64 {
     let Ok(conn) = account_manager::get_db_connection(handle) else {
         return default_minutes;
     };
-    let value: Result<String, _> = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'session_idle_timeout_ms'",
-            [],
-            |r| r.get(0),
-        );
+    let value: Result<String, _> = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'session_idle_timeout_ms'",
+        [],
+        |r| r.get(0),
+    );
     account_manager::return_db_connection(conn);
     value
         .ok()

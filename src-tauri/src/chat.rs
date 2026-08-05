@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use tauri::Emitter;
 use crate::Message;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tauri::Emitter;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Chat {
@@ -39,7 +39,11 @@ impl Chat {
 
     /// Create a new DM chat with another user
     pub fn new_dm(their_npub: String) -> Self {
-        Self::new(their_npub.clone(), ChatType::DirectMessage, vec![their_npub])
+        Self::new(
+            their_npub.clone(),
+            ChatType::DirectMessage,
+            vec![their_npub],
+        )
     }
 
     /// Create a new MLS group chat
@@ -67,13 +71,13 @@ impl Chat {
                 return true;
             }
         }
-        
+
         // No messages from others, can't mark anything as read
         false
     }
 
     /// Add a Message to this Chat
-    /// 
+    ///
     /// This method internally checks for and avoids duplicate messages.
     pub fn internal_add_message(&mut self, message: Message) -> bool {
         // Make sure we don't add the same message twice
@@ -95,8 +99,10 @@ impl Chat {
         } else {
             // Less common case: Message belongs somewhere in the middle
             self.messages.insert(
-                self.messages.binary_search_by(|m| m.at.cmp(&message.at)).unwrap_or_else(|idx| idx),
-                message
+                self.messages
+                    .binary_search_by(|m| m.at.cmp(&message.at))
+                    .unwrap_or_else(|idx| idx),
+                message,
             );
         }
         true
@@ -153,18 +159,15 @@ impl Chat {
     /// Get other participant for DM chats
     pub fn get_other_participant(&self, my_npub: &str) -> Option<String> {
         match self.chat_type {
-            ChatType::DirectMessage => {
-                self.participants.iter()
-                    .find(|&p| p != my_npub)
-                    .cloned()
-            }
+            ChatType::DirectMessage => self.participants.iter().find(|&p| p != my_npub).cloned(),
             ChatType::MlsGroup => None, // Groups don't have a single "other" participant
         }
     }
 
     /// Check if this is a DM with a specific user
     pub fn is_dm_with(&self, npub: &str) -> bool {
-        matches!(self.chat_type, ChatType::DirectMessage) && self.participants.contains(&npub.to_string())
+        matches!(self.chat_type, ChatType::DirectMessage)
+            && self.participants.contains(&npub.to_string())
     }
 
     /// Check if this is an MLS group
@@ -184,7 +187,7 @@ impl Chat {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        
+
         self.typing_participants
             .iter()
             .filter(|(_, &expires_at)| expires_at > now)
@@ -197,7 +200,7 @@ impl Chat {
     pub fn update_typing_participant(&mut self, npub: String, expires_at: u64) {
         // Add or update the typing participant
         self.typing_participants.insert(npub, expires_at);
-        
+
         // Clean up expired entries
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -252,7 +255,7 @@ impl ChatType {
             ChatType::MlsGroup => 1,
         }
     }
-    
+
     /// Convert integer from database to ChatType
     pub fn from_i32(value: i32) -> Self {
         match value {
@@ -320,12 +323,15 @@ impl ChatMetadata {
 
     /// Set the member count in custom_fields
     pub fn set_member_count(&mut self, count: usize) {
-        self.custom_fields.insert("member_count".to_string(), count.to_string());
+        self.custom_fields
+            .insert("member_count".to_string(), count.to_string());
     }
 
     /// Get the member count from custom_fields
     pub fn get_member_count(&self) -> Option<usize> {
-        self.custom_fields.get("member_count").and_then(|s| s.parse().ok())
+        self.custom_fields
+            .get("member_count")
+            .and_then(|s| s.parse().ok())
     }
 }
 
@@ -467,11 +473,20 @@ mod tests {
 
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].id, "reply-id");
-        assert_eq!(updated[0].replied_to_content.as_deref(), Some("original message"));
+        assert_eq!(
+            updated[0].replied_to_content.as_deref(),
+            Some("original message")
+        );
         assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1original"));
         let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
-        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("original message"));
-        assert_eq!(reply_in_chat.replied_to_npub.as_deref(), Some("npub1original"));
+        assert_eq!(
+            reply_in_chat.replied_to_content.as_deref(),
+            Some("original message")
+        );
+        assert_eq!(
+            reply_in_chat.replied_to_npub.as_deref(),
+            Some("npub1original")
+        );
     }
 
     #[test]
@@ -488,9 +503,15 @@ mod tests {
         let updated = chat.update_replies_to_message(&original, true);
 
         assert_eq!(updated.len(), 1);
-        assert_eq!(updated[0].replied_to_content.as_deref(), Some("original message"));
+        assert_eq!(
+            updated[0].replied_to_content.as_deref(),
+            Some("original message")
+        );
         let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
-        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("original message"));
+        assert_eq!(
+            reply_in_chat.replied_to_content.as_deref(),
+            Some("original message")
+        );
     }
 
     #[test]
@@ -512,7 +533,10 @@ mod tests {
 
         assert!(updated.is_empty());
         let reply_in_chat = chat.messages.iter().find(|m| m.id == "reply-id").unwrap();
-        assert_eq!(reply_in_chat.replied_to_content.as_deref(), Some("old original"));
+        assert_eq!(
+            reply_in_chat.replied_to_content.as_deref(),
+            Some("old original")
+        );
     }
 
     #[test]
@@ -530,7 +554,11 @@ mod tests {
         assert_eq!(updated.len(), 1);
         assert_eq!(updated[0].id, "reply-id");
         assert_eq!(updated[0].replied_to_npub.as_deref(), Some("npub1original"));
-        let unrelated_in_chat = chat.messages.iter().find(|m| m.id == "unrelated-id").unwrap();
+        let unrelated_in_chat = chat
+            .messages
+            .iter()
+            .find(|m| m.id == "unrelated-id")
+            .unwrap();
         assert!(unrelated_in_chat.replied_to_content.is_none());
     }
 
@@ -577,7 +605,11 @@ mod tests {
 
     #[test]
     fn notification_level_db_round_trip_for_all_three_levels() {
-        for level in [NotificationLevel::All, NotificationLevel::Mentions, NotificationLevel::Nothing] {
+        for level in [
+            NotificationLevel::All,
+            NotificationLevel::Mentions,
+            NotificationLevel::Nothing,
+        ] {
             let db_str = level.as_db_str();
             assert_eq!(NotificationLevel::from_db_str(db_str), level);
         }
@@ -585,8 +617,14 @@ mod tests {
 
     #[test]
     fn unrecognized_notification_level_string_reads_back_as_mentions() {
-        assert_eq!(NotificationLevel::from_db_str("bogus"), NotificationLevel::Mentions);
-        assert_eq!(NotificationLevel::from_db_str(""), NotificationLevel::Mentions);
+        assert_eq!(
+            NotificationLevel::from_db_str("bogus"),
+            NotificationLevel::Mentions
+        );
+        assert_eq!(
+            NotificationLevel::from_db_str(""),
+            NotificationLevel::Mentions
+        );
     }
 
     /// Exercises the exact persistence path `set_notification_level` uses once it finds the
@@ -604,7 +642,8 @@ mod tests {
 
         let app = tauri::test::mock_app();
 
-        let profile_dir = crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
         let _ = std::fs::remove_dir_all(&profile_dir);
 
         let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
@@ -617,7 +656,9 @@ mod tests {
         assert_eq!(chat.notification_level, NotificationLevel::Mentions);
 
         chat.notification_level = NotificationLevel::Nothing;
-        crate::db::save_chat(app.handle().clone(), &chat).await.unwrap();
+        crate::db::save_chat(app.handle().clone(), &chat)
+            .await
+            .unwrap();
 
         let reloaded = crate::db::get_all_chats(app.handle())
             .await
@@ -629,7 +670,9 @@ mod tests {
 
         // Raising it again round-trips too, not just the initial non-default write.
         chat.notification_level = NotificationLevel::All;
-        crate::db::save_chat(app.handle().clone(), &chat).await.unwrap();
+        crate::db::save_chat(app.handle().clone(), &chat)
+            .await
+            .unwrap();
         let reloaded_again = crate::db::get_all_chats(app.handle())
             .await
             .unwrap()

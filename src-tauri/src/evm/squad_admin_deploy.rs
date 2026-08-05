@@ -8,20 +8,20 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Runtime};
 
+use super::access_control::{require_capability, GovCapability};
 use super::contracts::pacto_gov::INavePirataFactory::{
     deploySquadAdminExtStandaloneCall, deploySquadAdminStandaloneCaptainHatCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
+use super::rpc::signer::{
+    load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
+};
 use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
 };
-use super::access_control::{require_capability, GovCapability};
-use super::rpc::signer::{
-    load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
-};
 use super::squad_sponsor_common::require_parent_member;
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -32,9 +32,7 @@ fn squad_admin_ext_deployed_topic0() -> B256 {
 }
 
 fn squad_admin_captain_hat_deployed_topic0() -> B256 {
-    B256::from_slice(
-        keccak256("SquadAdminStandaloneDeployed(address,address,uint256)").as_slice(),
-    )
+    B256::from_slice(keccak256("SquadAdminStandaloneDeployed(address,address,uint256)").as_slice())
 }
 
 fn address_from_topic(topic: &B256) -> Address {
@@ -142,8 +140,8 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
         require_capability(&app, pid, GovCapability::CaptainResign, rpc_urls.clone()).await?;
     }
 
-    let variant_key = parse_variant(variant.as_str())
-        .map_err(|e| wallet_err_json("INVALID_VARIANT", e, None))?;
+    let variant_key =
+        parse_variant(variant.as_str()).map_err(|e| wallet_err_json("INVALID_VARIANT", e, None))?;
 
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -160,11 +158,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
 
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
@@ -173,8 +167,9 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
     let calldata = match variant_key {
         "ext_standalone" => {
             let owner_addr = match owner.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                Some(raw) => parse_address(raw)
-                    .map_err(|e| wallet_err_json("INVALID_OWNER", e, None))?,
+                Some(raw) => {
+                    parse_address(raw).map_err(|e| wallet_err_json("INVALID_OWNER", e, None))?
+                }
                 None => signer.address(),
             };
             let roster = db::list_squad_member_evm(app.clone(), pid.to_string(), None)?;
@@ -257,12 +252,7 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
                     format!("0x{:x}", receipt.transaction_hash),
                 )
             })?;
-            (
-                clone,
-                impl_addr,
-                Some(format!("{:#x}", owner_addr)),
-                None,
-            )
+            (clone, impl_addr, Some(format!("{:#x}", owner_addr)), None)
         }
         "captain_hat" => {
             let mut parsed: Option<(Address, Address, U256)> = None;

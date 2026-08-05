@@ -8,11 +8,11 @@ use tauri::{AppHandle, Runtime};
 
 use super::contract_call_params::{parse_data_hex, parse_value_wei};
 use super::evm_accounts;
+use super::rpc::signer::load_advanced_embedded_signer;
 use super::rpc::{
     connect_signing_provider, parse_address, send_and_confirm, send_transaction_only,
     wallet_err_json,
 };
-use super::rpc::signer::load_advanced_embedded_signer;
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -44,9 +44,10 @@ pub async fn evm_send_advanced_contract_call<R: Runtime>(
         ));
     };
 
-    let to_addr = parse_address(to.trim())
-        .map_err(|e| wallet_err_json("INVALID_TO_ADDRESS", e, None))?;
-    let value = parse_value_wei(&value_wei).map_err(|e| wallet_err_json("INVALID_VALUE", e, None))?;
+    let to_addr =
+        parse_address(to.trim()).map_err(|e| wallet_err_json("INVALID_TO_ADDRESS", e, None))?;
+    let value =
+        parse_value_wei(&value_wei).map_err(|e| wallet_err_json("INVALID_VALUE", e, None))?;
     let data = parse_data_hex(&data_hex).map_err(|e| wallet_err_json("INVALID_DATA", e, None))?;
 
     evm_accounts::require_advanced_purpose_signer(app.clone())

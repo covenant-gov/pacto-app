@@ -1,9 +1,9 @@
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use sha2::{Sha256, Digest};
+use base64::{engine::general_purpose, Engine as _};
 use blurhash::decode;
-use base64::{Engine as _, engine::general_purpose};
 use image::ImageEncoder;
+use once_cell::sync::Lazy;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// Extract all HTTPS URLs from a string
 pub fn extract_https_urls(text: &str) -> Vec<String> {
@@ -65,7 +65,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("ico", "Icon");
         map.insert("tiff", "TIFF Image");
         map.insert("tif", "TIFF Image");
-        
+
         // Raw Images
         map.insert("raw", "RAW Image");
         map.insert("dng", "RAW Image");
@@ -86,7 +86,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("opus", "Audio Clip");
         map.insert("ape", "Audio Clip");
         map.insert("wv", "Audio Clip");
-        
+
         // Audio Project Files
         map.insert("aup", "Audacity Project");
         map.insert("flp", "FL Studio Project");
@@ -115,7 +115,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("mxf", "Material Exchange Format");
         map.insert("ts", "MPEG Transport Stream");
         map.insert("m2ts", "Blu-ray Video");
-        
+
         // Documents
         map.insert("pdf", "PDF Document");
         map.insert("doc", "Word Document");
@@ -132,14 +132,14 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("pages", "Pages Document");
         map.insert("numbers", "Numbers Spreadsheet");
         map.insert("key", "Keynote Presentation");
-        
+
         // Text Files
         map.insert("txt", "Text File");
         map.insert("md", "Markdown");
         map.insert("log", "Log File");
         map.insert("csv", "CSV File");
         map.insert("tsv", "TSV File");
-        
+
         // Data Files
         map.insert("json", "JSON File");
         map.insert("xml", "XML File");
@@ -149,7 +149,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("sql", "SQL File");
         map.insert("db", "Database File");
         map.insert("sqlite", "SQLite Database");
-        
+
         // Archives
         map.insert("zip", "ZIP Archive");
         map.insert("rar", "RAR Archive");
@@ -172,7 +172,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("jar", "Java Archive");
         map.insert("war", "Web Archive");
         map.insert("ear", "Enterprise Archive");
-        
+
         // 3D Files
         map.insert("obj", "3D Object");
         map.insert("fbx", "Autodesk FBX");
@@ -188,7 +188,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("ma", "Maya ASCII");
         map.insert("mb", "Maya Binary");
         map.insert("usdz", "Universal Scene");
-        
+
         // CAD Files
         map.insert("dwg", "AutoCAD Drawing");
         map.insert("dxf", "Drawing Exchange");
@@ -205,7 +205,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("slddrw", "SolidWorks Drawing");
         map.insert("catpart", "CATIA Part");
         map.insert("catproduct", "CATIA Product");
-        
+
         // Code Files
         map.insert("js", "JavaScript");
         map.insert("ts", "TypeScript");
@@ -252,7 +252,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("vbs", "VBScript");
         map.insert("asm", "Assembly");
         map.insert("s", "Assembly");
-        
+
         // Config Files
         map.insert("ini", "INI Config");
         map.insert("cfg", "Config File");
@@ -266,7 +266,7 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("editorconfig", "Editor Config");
         map.insert("eslintrc", "ESLint Config");
         map.insert("prettierrc", "Prettier Config");
-        
+
         // Web Files
         map.insert("html", "HTML File");
         map.insert("htm", "HTML File");
@@ -276,14 +276,14 @@ pub fn get_file_type_description(extension: &str) -> String {
         map.insert("less", "Less Stylesheet");
         map.insert("vue", "Vue Component");
         map.insert("svelte", "Svelte Component");
-        
+
         // Vector Graphics
         map.insert("eps", "Encapsulated PostScript");
         map.insert("ai", "Adobe Illustrator");
         map.insert("sketch", "Sketch File");
         map.insert("fig", "Figma File");
         map.insert("xd", "Adobe XD");
-        
+
         // Other
         map.insert("exe", "Executable");
         map.insert("msi", "Windows Installer");
@@ -316,7 +316,7 @@ pub fn format_bytes(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
     const GB: f64 = MB * 1024.0;
-    
+
     if bytes < KB as u64 {
         format!("{} B", bytes)
     } else if bytes < MB as u64 {
@@ -332,10 +332,10 @@ pub fn format_bytes(bytes: u64) -> String {
 pub fn bytes_to_hex_string(bytes: &[u8]) -> String {
     // Pre-allocate the exact size needed (2 hex chars per byte)
     let mut result = String::with_capacity(bytes.len() * 2);
-    
+
     // Use a lookup table for hex conversion
     const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
-    
+
     for &b in bytes {
         // Extract high and low nibbles
         let high = b >> 4;
@@ -343,7 +343,7 @@ pub fn bytes_to_hex_string(bytes: &[u8]) -> String {
         result.push(HEX_CHARS[high as usize] as char);
         result.push(HEX_CHARS[low as usize] as char);
     }
-    
+
     result
 }
 
@@ -352,7 +352,7 @@ pub fn hex_string_to_bytes(s: &str) -> Vec<u8> {
     // Pre-allocate the result vector to avoid resize operations
     let mut result = Vec::with_capacity(s.len() / 2);
     let bytes = s.as_bytes();
-    
+
     // Process bytes directly to avoid UTF-8 decoding overhead
     let mut i = 0;
     while i + 1 < bytes.len() {
@@ -363,18 +363,18 @@ pub fn hex_string_to_bytes(s: &str) -> Vec<u8> {
             b'A'..=b'F' => bytes[i] - b'A' + 10,
             _ => 0,
         };
-        
+
         let low = match bytes[i + 1] {
             b'0'..=b'9' => bytes[i + 1] - b'0',
             b'a'..=b'f' => bytes[i + 1] - b'a' + 10,
             b'A'..=b'F' => bytes[i + 1] - b'A' + 10,
             _ => 0,
         };
-        
+
         result.push((high << 4) | low);
         i += 2;
     }
-    
+
     result
 }
 
@@ -409,10 +409,10 @@ pub fn nearest_neighbor_downsample(
     dst_height: u32,
 ) -> Vec<u8> {
     let mut result = Vec::with_capacity((dst_width * dst_height * 4) as usize);
-    
+
     let x_ratio = src_width as f32 / dst_width as f32;
     let y_ratio = src_height as f32 / dst_height as f32;
-    
+
     for ty in 0..dst_height {
         let sy = (ty as f32 * y_ratio) as u32;
         for tx in 0..dst_width {
@@ -421,7 +421,7 @@ pub fn nearest_neighbor_downsample(
             result.extend_from_slice(&pixels[src_idx..src_idx + 4]);
         }
     }
-    
+
     result
 }
 
@@ -438,21 +438,22 @@ pub fn generate_blurhash_from_rgba(pixels: &[u8], width: u32, height: u32) -> Op
     // Adaptive downscaling based on image size for optimal blurhash performance
     let max_dimension = width.max(height);
     let scale_factor = if max_dimension >= 3840 {
-        0.01  // 1% for 4K+ images
+        0.01 // 1% for 4K+ images
     } else if max_dimension >= 1920 {
         0.025 // 2.5% for large images
     } else if max_dimension >= 960 {
-        0.05  // 5% for medium images
+        0.05 // 5% for medium images
     } else {
-        0.10  // 10% for smaller images
+        0.10 // 10% for smaller images
     };
-    
+
     let thumbnail_width = (width as f32 * scale_factor).max(1.0) as u32;
     let thumbnail_height = (height as f32 * scale_factor).max(1.0) as u32;
-    
+
     // Use fast nearest-neighbor downsampling
-    let thumbnail_pixels = nearest_neighbor_downsample(pixels, width, height, thumbnail_width, thumbnail_height);
-    
+    let thumbnail_pixels =
+        nearest_neighbor_downsample(pixels, width, height, thumbnail_width, thumbnail_height);
+
     blurhash::encode(4, 3, thumbnail_width, thumbnail_height, &thumbnail_pixels).ok()
 }
 
@@ -460,7 +461,7 @@ pub fn generate_blurhash_from_rgba(pixels: &[u8], width: u32, height: u32) -> Op
 /// Returns a data URL string that can be used directly in an <img> src attribute
 pub fn decode_blurhash_to_base64(blurhash: &str, width: u32, height: u32, punch: f32) -> String {
     const EMPTY_DATA_URL: &str = "data:image/png;base64,";
-    
+
     let decoded_data = match decode(blurhash, width, height, punch) {
         Ok(data) => data,
         Err(e) => {
@@ -468,28 +469,31 @@ pub fn decode_blurhash_to_base64(blurhash: &str, width: u32, height: u32, punch:
             return EMPTY_DATA_URL.to_string();
         }
     };
-    
+
     let pixel_count = (width * height) as usize;
     let bytes_per_pixel = decoded_data.len() / pixel_count;
-    
+
     // Fast path for RGBA data
     if bytes_per_pixel == 4 {
         encode_rgba_to_png_base64(&decoded_data, width, height)
-    } 
+    }
     // Convert RGB to RGBA
     else if bytes_per_pixel == 3 {
         // Pre-allocate exact size needed
         let mut rgba_data = Vec::with_capacity(pixel_count * 4);
-        
+
         // Use chunks_exact for safe and efficient iteration
         for rgb_chunk in decoded_data.chunks_exact(3) {
             rgba_data.extend_from_slice(&[rgb_chunk[0], rgb_chunk[1], rgb_chunk[2], 255]);
         }
-        
+
         encode_rgba_to_png_base64(&rgba_data, width, height)
     } else {
-        eprintln!("Unexpected decoded data length: {} bytes for {} pixels", 
-                 decoded_data.len(), pixel_count);
+        eprintln!(
+            "Unexpected decoded data length: {} bytes for {} pixels",
+            decoded_data.len(),
+            pixel_count
+        );
         EMPTY_DATA_URL.to_string()
     }
 }
@@ -498,7 +502,7 @@ pub fn decode_blurhash_to_base64(blurhash: &str, width: u32, height: u32, punch:
 #[inline]
 fn encode_rgba_to_png_base64(rgba_data: &[u8], width: u32, height: u32) -> String {
     const EMPTY_DATA_URL: &str = "data:image/png;base64,";
-    
+
     // Create image without additional allocation
     let img = match image::RgbaImage::from_raw(width, height, rgba_data.to_vec()) {
         Some(img) => img,
@@ -507,35 +511,32 @@ fn encode_rgba_to_png_base64(rgba_data: &[u8], width: u32, height: u32) -> Strin
             return EMPTY_DATA_URL.to_string();
         }
     };
-    
+
     // Pre-allocate PNG buffer with estimated size
     // PNG is typically smaller than raw RGBA, estimate 50% of original size
     let estimated_size = (rgba_data.len() / 2).max(1024);
     let mut png_data = Vec::with_capacity(estimated_size);
-    
+
     // Use best compression for smaller output
     let encoder = image::codecs::png::PngEncoder::new_with_quality(
         &mut png_data,
         image::codecs::png::CompressionType::Best,
         image::codecs::png::FilterType::Adaptive,
     );
-    if let Err(e) = encoder.write_image(
-        img.as_raw(),
-        width,
-        height,
-        image::ExtendedColorType::Rgba8
-    ) {
+    if let Err(e) =
+        encoder.write_image(img.as_raw(), width, height, image::ExtendedColorType::Rgba8)
+    {
         eprintln!("Failed to encode PNG: {}", e);
         return EMPTY_DATA_URL.to_string();
     }
-    
+
     // Encode as base64 with pre-allocated string
     // Base64 is 4/3 the size of input + padding
     let base64_capacity = ((png_data.len() * 4 / 3) + 4) + 22; // +22 for "data:image/png;base64,"
     let mut result = String::with_capacity(base64_capacity);
     result.push_str("data:image/png;base64,");
     general_purpose::STANDARD.encode_string(&png_data, &mut result);
-    
+
     result
 }
 
@@ -550,7 +551,6 @@ pub fn has_alpha_transparency(rgba_pixels: &[u8]) -> bool {
         .step_by(4)
         .any(|&alpha| alpha < 255)
 }
-
 
 // ===== MIME & Extension Conversion Utilities =====
 static EXT_TO_MIME: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
@@ -603,11 +603,20 @@ static EXT_TO_MIME: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Documents
     m.insert("pdf", "application/pdf");
     m.insert("doc", "application/msword");
-    m.insert("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    m.insert(
+        "docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
     m.insert("xls", "application/vnd.ms-excel");
-    m.insert("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    m.insert(
+        "xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
     m.insert("ppt", "application/vnd.ms-powerpoint");
-    m.insert("pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+    m.insert(
+        "pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
     m.insert("odt", "application/vnd.oasis.opendocument.text");
     m.insert("ods", "application/vnd.oasis.opendocument.spreadsheet");
     m.insert("odp", "application/vnd.oasis.opendocument.presentation");
@@ -726,11 +735,20 @@ static MIME_TO_EXT: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     // Documents
     m.insert("application/pdf", "pdf");
     m.insert("application/msword", "doc");
-    m.insert("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx");
+    m.insert(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "docx",
+    );
     m.insert("application/vnd.ms-excel", "xls");
-    m.insert("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx");
+    m.insert(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "xlsx",
+    );
     m.insert("application/vnd.ms-powerpoint", "ppt");
-    m.insert("application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx");
+    m.insert(
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "pptx",
+    );
     m.insert("application/vnd.oasis.opendocument.text", "odt");
     m.insert("application/vnd.oasis.opendocument.spreadsheet", "ods");
     m.insert("application/vnd.oasis.opendocument.presentation", "odp");
@@ -844,11 +862,7 @@ pub fn extension_from_mime(mime: &str) -> String {
     }
 
     // Fallback: best-effort subtype extraction, mirroring previous behavior
-    lower
-        .split('/')
-        .nth(1)
-        .unwrap_or("bin")
-        .to_string()
+    lower.split('/').nth(1).unwrap_or("bin").to_string()
 }
 
 /// Convert a file extension (with or without leading dot) to a MIME type,
@@ -858,11 +872,11 @@ pub fn extension_from_mime(mime: &str) -> String {
 /// returns `Err` with the invalid MIME type.
 pub fn mime_from_extension_safe(extension: &str, image_only: bool) -> Result<String, String> {
     let mime = mime_from_extension(extension);
-    
+
     if image_only && !is_image_mime(&mime) {
         return Err(mime);
     }
-    
+
     Ok(mime)
 }
 
@@ -879,14 +893,20 @@ mod tests {
     fn extract_https_urls_basic() {
         let text = "Check https://example.com and https://foo.bar/path?x=1.";
         let urls = extract_https_urls(text);
-        assert_eq!(urls, vec!["https://example.com", "https://foo.bar/path?x=1"]);
+        assert_eq!(
+            urls,
+            vec!["https://example.com", "https://foo.bar/path?x=1"]
+        );
     }
 
     #[test]
     fn extract_https_urls_trims_trailing_punctuation() {
         let text = "See https://example.com, (https://foo.bar), and https://baz.com.";
         let urls = extract_https_urls(text);
-        assert_eq!(urls, vec!["https://example.com", "https://foo.bar", "https://baz.com"]);
+        assert_eq!(
+            urls,
+            vec!["https://example.com", "https://foo.bar", "https://baz.com"]
+        );
     }
 
     #[test]
@@ -927,7 +947,10 @@ mod tests {
 
     #[test]
     fn hex_string_to_bytes_accepts_uppercase() {
-        assert_eq!(hex_string_to_bytes("DEADBEEF"), vec![0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(
+            hex_string_to_bytes("DEADBEEF"),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
     }
 
     #[test]
@@ -949,8 +972,7 @@ mod tests {
     fn nearest_neighbor_downsample_preserves_corners() {
         // 2x2 image with four distinct colors.
         let pixels = vec![
-            255, 0, 0, 255, 0, 255, 0, 255,
-            0, 0, 255, 255, 255, 255, 0, 255,
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255,
         ];
         let out = nearest_neighbor_downsample(&pixels, 2, 2, 1, 1);
         assert_eq!(out, vec![255, 0, 0, 255]);

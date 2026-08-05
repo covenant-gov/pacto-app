@@ -6,15 +6,15 @@ use alloy::rpc::types::TransactionRequest;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
-use crate::db;
 use super::contract_call_params::{parse_data_hex, parse_value_wei};
+use super::gov_read::rpc_urls_or_default;
+use super::rpc::signer::load_squad_roster_embedded_signer;
 use super::rpc::{
     connect_signing_provider, parse_address, send_and_confirm, send_transaction_only,
     wallet_err_json,
 };
-use super::rpc::signer::load_squad_roster_embedded_signer;
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
+use crate::db;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,13 +56,15 @@ pub async fn evm_send_squad_allowlisted_contract_call<R: Runtime>(
         ));
     };
 
-    let to_addr = parse_address(to.trim())
-        .map_err(|e| wallet_err_json("INVALID_TO_ADDRESS", e, None))?;
-    let value = parse_value_wei(&value_wei).map_err(|e| wallet_err_json("INVALID_VALUE", e, None))?;
+    let to_addr =
+        parse_address(to.trim()).map_err(|e| wallet_err_json("INVALID_TO_ADDRESS", e, None))?;
+    let value =
+        parse_value_wei(&value_wei).map_err(|e| wallet_err_json("INVALID_VALUE", e, None))?;
     let data = parse_data_hex(&data_hex).map_err(|e| wallet_err_json("INVALID_DATA", e, None))?;
 
-    let allowed = db::is_allowlisted_contract_target(&app, pid, &net.key, &format!("{:#x}", to_addr))
-        .map_err(|e| wallet_err_json("ALLOWLIST_CHECK", e, None))?;
+    let allowed =
+        db::is_allowlisted_contract_target(&app, pid, &net.key, &format!("{:#x}", to_addr))
+            .map_err(|e| wallet_err_json("ALLOWLIST_CHECK", e, None))?;
     if !allowed {
         return Err(wallet_err_json(
             "TARGET_NOT_ALLOWLISTED",

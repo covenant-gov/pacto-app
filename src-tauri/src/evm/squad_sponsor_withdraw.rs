@@ -8,6 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_sponsor::ISquadSponsorBase::{withdrawCall, withdrawableCall};
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::load_embedded_signer_for_account_id;
@@ -18,7 +19,6 @@ use super::rpc::{
 use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::squad_sponsor_read::read_sponsor_pool;
-use super::gov_read::rpc_urls_or_default;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -144,16 +144,17 @@ pub async fn withdraw_squad_sponsor<R: Runtime>(
     .await?;
 
     let read_provider = connect_read_provider(&urls).await?;
-    let (pool_balance, _, _, _) = read_sponsor_pool(&read_provider, sponsor)
-        .await
-        .map_err(|e| {
-            wallet_err_json_with_tx_hash(
-                "SPONSOR_READ",
-                e,
-                None,
-                format!("0x{:x}", receipt.transaction_hash),
-            )
-        })?;
+    let (pool_balance, _, _, _) =
+        read_sponsor_pool(&read_provider, sponsor)
+            .await
+            .map_err(|e| {
+                wallet_err_json_with_tx_hash(
+                    "SPONSOR_READ",
+                    e,
+                    None,
+                    format!("0x{:x}", receipt.transaction_hash),
+                )
+            })?;
 
     Ok(SquadSponsorWithdrawResult {
         tx_hash: format!("0x{:x}", receipt.transaction_hash),

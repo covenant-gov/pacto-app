@@ -6,12 +6,12 @@ use rusqlite::OptionalExtension;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
-use crate::account_manager;
-use crate::crypto;
-use crate::db;
 use super::{
     address_from_evm_secret_32, derive_eth_bip44_v1_from_mnemonic_phrase, normalize_hex_address,
 };
+use crate::account_manager;
+use crate::crypto;
+use crate::db;
 
 pub const SCHEME_BIP44_V1: &str = "bip44_v1";
 pub const SCHEME_IMPORTED: &str = "imported_private_key";
@@ -46,7 +46,10 @@ fn normalize_purpose(raw: &str) -> Result<String, String> {
 }
 
 /// Resolve account purpose for a normalized `0x` address, if it belongs to a local row.
-pub fn address_purpose<R: Runtime>(handle: &AppHandle<R>, address: &str) -> Result<Option<String>, String> {
+pub fn address_purpose<R: Runtime>(
+    handle: &AppHandle<R>,
+    address: &str,
+) -> Result<Option<String>, String> {
     let Some(norm) = normalize_hex_address(address.trim()) else {
         return Ok(None);
     };
@@ -130,7 +133,9 @@ pub fn resolve_roster_signing_account_id<R: Runtime>(
 }
 
 /// Active squad-purpose signer (`active_evm_account_id`), ignoring per-squad roster bindings.
-pub fn active_squad_signing_account_id<R: Runtime>(handle: &AppHandle<R>) -> Result<String, String> {
+pub fn active_squad_signing_account_id<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<String, String> {
     let conn = account_manager::get_db_connection(handle)?;
     let active_id = sql_get_setting(&conn, SETTING_ACTIVE)?
         .ok_or_else(|| "No active EVM account.".to_string())?;
@@ -188,11 +193,14 @@ pub async fn require_squad_purpose_signer<R: Runtime>(handle: AppHandle<R>) -> R
     .await
 }
 
-pub async fn require_advanced_purpose_signer<R: Runtime>(handle: AppHandle<R>) -> Result<(), String> {
+pub async fn require_advanced_purpose_signer<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<(), String> {
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let advanced_id = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.ok_or_else(|| {
-        "No active Advanced account. Create or select one under Settings → EVM accounts.".to_string()
+        "No active Advanced account. Create or select one under Settings → EVM accounts."
+            .to_string()
     })?;
     let purpose: String = conn
         .query_row(
@@ -219,10 +227,14 @@ fn account_purpose_by_id(conn: &rusqlite::Connection, account_id: &str) -> Resul
     normalize_purpose(&purpose)
 }
 
-fn require_squad_purpose_account_id(conn: &rusqlite::Connection, account_id: &str) -> Result<(), String> {
+fn require_squad_purpose_account_id(
+    conn: &rusqlite::Connection,
+    account_id: &str,
+) -> Result<(), String> {
     if account_purpose_by_id(conn, account_id)? != PURPOSE_SQUAD {
         return Err(
-            "Only squad-purpose accounts may be the active signer or default receiving address.".to_string(),
+            "Only squad-purpose accounts may be the active signer or default receiving address."
+                .to_string(),
         );
     }
     Ok(())
@@ -268,7 +280,9 @@ fn count_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<i64, String> {
     Ok(c)
 }
 
-pub(crate) async fn get_mnemonic_for_hd<R: Runtime>(handle: AppHandle<R>) -> Result<String, String> {
+pub(crate) async fn get_mnemonic_for_hd<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<String, String> {
     if let Some(m) = crate::mnemonic_seed_get() {
         return Ok(m);
     }
@@ -312,7 +326,8 @@ pub(crate) async fn resolve_private_key_hex_for_account_id<R: Runtime>(
             Ok((key_hex, norm, SCHEME_BIP44_V1.to_string()))
         }
         SCHEME_IMPORTED => {
-            let enc = imported_enc.ok_or_else(|| "Imported account missing ciphertext.".to_string())?;
+            let enc =
+                imported_enc.ok_or_else(|| "Imported account missing ciphertext.".to_string())?;
             let key_hex = crypto::internal_decrypt(enc)
                 .await
                 .map_err(|_| "Could not decrypt imported EVM key.".to_string())?;
@@ -326,7 +341,11 @@ pub(crate) async fn resolve_private_key_hex_for_account_id<R: Runtime>(
             }
             let norm =
                 normalize_hex_address(address.trim()).unwrap_or_else(|| address.trim().to_string());
-            Ok((format!("0x{}", h.to_lowercase()), norm, SCHEME_IMPORTED.to_string()))
+            Ok((
+                format!("0x{}", h.to_lowercase()),
+                norm,
+                SCHEME_IMPORTED.to_string(),
+            ))
         }
         _ => Err("Unknown EVM account scheme.".to_string()),
     }
@@ -350,7 +369,8 @@ pub(crate) async fn resolve_advanced_signing_material<R: Runtime>(
     require_advanced_purpose_signer(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let advanced_id = sql_get_setting(&conn, SETTING_ACTIVE_ADVANCED)?.ok_or_else(|| {
-        "No active Advanced account. Create or select one under Settings → EVM accounts.".to_string()
+        "No active Advanced account. Create or select one under Settings → EVM accounts."
+            .to_string()
     })?;
     account_manager::return_db_connection(conn);
     let (key_hex, addr, _) = resolve_private_key_hex_for_account_id(&handle, &advanced_id).await?;
@@ -515,7 +535,9 @@ pub async fn active_account_allows_treasury_signing<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn list_evm_accounts<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<EvmAccountRow>, String> {
+pub async fn list_evm_accounts<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<Vec<EvmAccountRow>, String> {
     ensure_ready(handle.clone()).await?;
     let conn = account_manager::get_db_connection(&handle)?;
     let active = sql_get_setting(&conn, SETTING_ACTIVE)?.unwrap_or_default();
@@ -544,17 +566,19 @@ pub async fn list_evm_accounts<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<E
 
     Ok(rows
         .into_iter()
-        .map(|(id, scheme, hd_index, address, label, purpose)| EvmAccountRow {
-            is_active: id == active,
-            is_default_shared: id == default_sh,
-            is_active_advanced: id == active_adv,
-            hd_index: hd_index.map(|i| i as u32),
-            purpose: normalize_purpose(&purpose).unwrap_or_else(|_| PURPOSE_SQUAD.to_string()),
-            id,
-            scheme,
-            address,
-            label,
-        })
+        .map(
+            |(id, scheme, hd_index, address, label, purpose)| EvmAccountRow {
+                is_active: id == active,
+                is_default_shared: id == default_sh,
+                is_active_advanced: id == active_adv,
+                hd_index: hd_index.map(|i| i as u32),
+                purpose: normalize_purpose(&purpose).unwrap_or_else(|_| PURPOSE_SQUAD.to_string()),
+                id,
+                scheme,
+                address,
+                label,
+            },
+        )
         .collect())
 }
 
@@ -623,7 +647,9 @@ pub async fn add_evm_account<R: Runtime>(
 
     if set_active_signer {
         if purpose_norm != PURPOSE_SQUAD {
-            return Err("Only squad-purpose accounts may be the active WalletBar signer.".to_string());
+            return Err(
+                "Only squad-purpose accounts may be the active WalletBar signer.".to_string(),
+            );
         }
         sql_set_setting(&conn, SETTING_ACTIVE, &id)?;
     }
@@ -886,7 +912,9 @@ pub async fn set_active_advanced_evm_account<R: Runtime>(
         return Err("Unknown EVM account.".to_string());
     }
     if account_purpose_by_id(&conn, &account_id)? != PURPOSE_ADVANCED {
-        return Err("Only advanced-purpose accounts may be selected for Advanced sends.".to_string());
+        return Err(
+            "Only advanced-purpose accounts may be selected for Advanced sends.".to_string(),
+        );
     }
     sql_set_setting(&conn, SETTING_ACTIVE_ADVANCED, &account_id)?;
     account_manager::return_db_connection(conn);

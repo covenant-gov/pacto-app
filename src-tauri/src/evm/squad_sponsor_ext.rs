@@ -8,16 +8,18 @@ use tauri::{AppHandle, Runtime};
 use super::contracts::pacto_sponsor::ISquadSponsorExt::{
     addressOwnerCall, hatsWiredCall, permittedAddressCall, setPermittedAddressCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
-use super::rpc::signer::{load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed};
+use super::rpc::signer::{
+    load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
+};
 use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
     send_and_confirm, wallet_err_json,
 };
 use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
-use super::gov_read::rpc_urls_or_default;
 
 /// Ext exposes only a single-address `permittedAddress` view, so each member costs one
 /// eth_call; cap the fan-out per status call.
@@ -74,8 +76,8 @@ fn ensure_signer_is_sponsor_owner(signer: Address, owner: Address) -> Result<(),
 
 /// Parsed member address; rejects malformed and zero addresses.
 fn parse_member_address(raw: &str) -> Result<Address, String> {
-    let addr = parse_address(raw.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(raw.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     if addr.is_zero() {
         return Err(wallet_err_json(
             "INVALID_ADDRESS",
@@ -142,11 +144,7 @@ pub async fn get_squad_sponsor_ext_status<R: Runtime>(
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let provider = connect_read_provider(&urls).await?;
@@ -219,11 +217,7 @@ pub async fn squad_sponsor_set_permitted_address<R: Runtime>(
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let read_provider = connect_read_provider(&urls).await?;
@@ -362,8 +356,8 @@ mod tests {
     fn ensure_signer_is_sponsor_owner_rejects_non_owner() {
         let owner = parse_address(ADDR_A).unwrap();
         assert!(ensure_signer_is_sponsor_owner(owner, owner).is_ok());
-        let err = ensure_signer_is_sponsor_owner(parse_address(ADDR_B).unwrap(), owner)
-            .unwrap_err();
+        let err =
+            ensure_signer_is_sponsor_owner(parse_address(ADDR_B).unwrap(), owner).unwrap_err();
         assert_eq!(err_code(&err), "NOT_SPONSOR_OWNER");
     }
 
@@ -380,7 +374,11 @@ mod tests {
     #[test]
     fn roster_contains_member_matches_only_roster_evm_addresses() {
         let member = parse_address(ADDR_A).unwrap();
-        let roster = vec!["garbage".to_string(), ADDR_B.to_string(), ADDR_A.to_string()];
+        let roster = vec![
+            "garbage".to_string(),
+            ADDR_B.to_string(),
+            ADDR_A.to_string(),
+        ];
         assert!(roster_contains_member(
             roster.iter().map(|s| s.as_str()),
             member

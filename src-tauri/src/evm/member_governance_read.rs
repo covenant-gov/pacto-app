@@ -86,7 +86,11 @@ pub async fn get_member_hat_wearers<R: Runtime>(
     rpc_urls: Option<Vec<String>>,
 ) -> Result<Vec<MemberHatAssignmentDto>, String> {
     let net_key = network.to_lowercase();
-    let hats = if let Some(raw) = hats_contract.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let hats = if let Some(raw) = hats_contract
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         parse_address(raw).map_err(|e| wallet_err_json("INVALID_HATS", e, None))?
     } else {
         let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net_key)
@@ -159,13 +163,9 @@ pub async fn get_squad_admin_executor_roles<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
 
-    let paused: bool = eth_call_decode(
-        &provider,
-        admin,
-        &isExecutorPausedCall { _executor: exec },
-    )
-    .await
-    .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
+    let paused: bool = eth_call_decode(&provider, admin, &isExecutorPausedCall { _executor: exec })
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_ADMIN_READ", e, None))?;
 
     let role_tags = ["FULL", "PAUSE"];
     let mut roles = Vec::new();

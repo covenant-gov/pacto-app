@@ -3,8 +3,8 @@
 //! marks the account as reset. `mls_store_reset_state` owns the ongoing
 //! read/mutate settings API that the Tauri command layer polls afterward.
 
-use once_cell::sync::Lazy;
 use nostr_sdk::ToBech32;
+use once_cell::sync::Lazy;
 use rusqlite::{Connection, OpenFlags};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Runtime};
 
 use crate::mls_store_reset_state::{
-    put_json_setting, put_setting, setting, KEYPACKAGE_REFRESH_KEY, LostGroups, LOST_GROUPS_KEY,
+    put_json_setting, put_setting, setting, LostGroups, KEYPACKAGE_REFRESH_KEY, LOST_GROUPS_KEY,
     PENDING_WRAPPERS_KEY, RESET_AT_KEY,
 };
 
@@ -257,7 +257,9 @@ fn parse_legacy_admin_pubkey(raw: &str) -> Option<String> {
     pubkey.to_bech32().ok()
 }
 
-fn harvest_legacy_group_admins(conn: &rusqlite::Connection) -> std::collections::BTreeMap<String, Vec<String>> {
+fn harvest_legacy_group_admins(
+    conn: &rusqlite::Connection,
+) -> std::collections::BTreeMap<String, Vec<String>> {
     let mut out = std::collections::BTreeMap::new();
     let Ok(mut stmt) = conn.prepare("SELECT nostr_group_id, admin_pubkeys FROM groups") else {
         return out;
@@ -271,13 +273,22 @@ fn harvest_legacy_group_admins(conn: &rusqlite::Connection) -> std::collections:
     };
 
     for row in rows {
-        let Ok((group_id_value, admin_json)) = row else { continue };
-        let Some(group_id) = legacy_id_to_hex(group_id_value) else { continue };
+        let Ok((group_id_value, admin_json)) = row else {
+            continue;
+        };
+        let Some(group_id) = legacy_id_to_hex(group_id_value) else {
+            continue;
+        };
         // Malformed JSON drops this group's entry without aborting the scan;
         // a well-formed array of non-key strings parses to no admins, which
         // also drops the entry rather than persisting an empty admin list.
-        let Ok(raw_keys) = serde_json::from_str::<Vec<String>>(&admin_json) else { continue };
-        let admins: Vec<String> = raw_keys.iter().filter_map(|k| parse_legacy_admin_pubkey(k)).collect();
+        let Ok(raw_keys) = serde_json::from_str::<Vec<String>>(&admin_json) else {
+            continue;
+        };
+        let admins: Vec<String> = raw_keys
+            .iter()
+            .filter_map(|k| parse_legacy_admin_pubkey(k))
+            .collect();
         if !admins.is_empty() {
             out.insert(group_id, admins);
         }
@@ -286,13 +297,17 @@ fn harvest_legacy_group_admins(conn: &rusqlite::Connection) -> std::collections:
 }
 
 fn harvest_legacy_pending_wrapper_ids(conn: &rusqlite::Connection) -> Vec<String> {
-    let Ok(mut stmt) = conn.prepare("SELECT wrapper_event_id FROM welcomes WHERE state = 'pending'") else {
+    let Ok(mut stmt) =
+        conn.prepare("SELECT wrapper_event_id FROM welcomes WHERE state = 'pending'")
+    else {
         return Vec::new();
     };
     let Ok(rows) = stmt.query_map([], |row| row.get::<_, rusqlite::types::Value>(0)) else {
         return Vec::new();
     };
-    rows.filter_map(|r| r.ok()).filter_map(legacy_id_to_hex).collect()
+    rows.filter_map(|r| r.ok())
+        .filter_map(legacy_id_to_hex)
+        .collect()
 }
 
 /// Read `groups` and `welcomes` out of a legacy (pre-0.8.0) MDK store by
@@ -306,8 +321,16 @@ fn harvest_legacy_mls_store(store_path: &std::path::Path) -> Result<LegacyStoreH
         pending_wrapper_ids: Vec::new(),
     };
 
-    let conn = rusqlite::Connection::open_with_flags(store_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|e| format!("Failed to open legacy MLS store {}: {e}", store_path.display()))?;
+    let conn = rusqlite::Connection::open_with_flags(
+        store_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| {
+        format!(
+            "Failed to open legacy MLS store {}: {e}",
+            store_path.display()
+        )
+    })?;
 
     if legacy_store_table_exists(&conn, "groups") {
         harvest.admins_by_group = harvest_legacy_group_admins(&conn);
@@ -326,12 +349,16 @@ pub(crate) fn load_all_legacy_group_admins_conn(
         .prepare("SELECT group_id, admin_npub FROM mls_legacy_admins ORDER BY group_id, admin_npub")
         .map_err(|e| format!("Failed to prepare legacy admin scan: {}", e))?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| format!("Failed to scan legacy admins: {}", e))?;
 
-    let mut out: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    let mut out: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
     for row in rows {
-        let (group_id, admin_npub) = row.map_err(|e| format!("Failed to read legacy admin row: {}", e))?;
+        let (group_id, admin_npub) =
+            row.map_err(|e| format!("Failed to read legacy admin row: {}", e))?;
         out.entry(group_id).or_default().push(admin_npub);
     }
     Ok(out)
@@ -923,7 +950,10 @@ mod tests {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            std::env::temp_dir().join(format!("pacto-legacy-mls-fixture-{}-{}-{}.sqlite", name, pid, nanos))
+            std::env::temp_dir().join(format!(
+                "pacto-legacy-mls-fixture-{}-{}-{}.sqlite",
+                name, pid, nanos
+            ))
         }
 
         struct FixtureGroup {
@@ -1075,14 +1105,21 @@ mod tests {
                 &[FixtureGroup {
                     nostr_group_id: group_id,
                     name: "squad",
-                    admin_pubkeys_json: serde_json::to_string(&[keys_a.public_key().to_hex(), keys_b.public_key().to_hex()]).unwrap(),
+                    admin_pubkeys_json: serde_json::to_string(&[
+                        keys_a.public_key().to_hex(),
+                        keys_b.public_key().to_hex(),
+                    ])
+                    .unwrap(),
                 }],
                 &[],
             );
 
             let harvest = harvest_legacy_mls_store(&path).expect("harvest");
             let group_hex = hex::encode(group_id);
-            let admins = harvest.admins_by_group.get(&group_hex).expect("group present");
+            let admins = harvest
+                .admins_by_group
+                .get(&group_hex)
+                .expect("group present");
             assert_eq!(admins.len(), 2);
             assert!(admins.contains(&keys_a.public_key().to_bech32().unwrap()));
             assert!(admins.contains(&keys_b.public_key().to_bech32().unwrap()));
@@ -1101,7 +1138,8 @@ mod tests {
                 &[FixtureGroup {
                     nostr_group_id: group_id,
                     name: "solo",
-                    admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()]).unwrap(),
+                    admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()])
+                        .unwrap(),
                 }],
                 &[],
             );
@@ -1109,7 +1147,10 @@ mod tests {
             let harvest = harvest_legacy_mls_store(&path).expect("harvest");
             let group_hex = hex::encode(group_id);
             assert_eq!(harvest.admins_by_group.len(), 1);
-            assert_eq!(harvest.admins_by_group[&group_hex], vec![keys.public_key().to_bech32().unwrap()]);
+            assert_eq!(
+                harvest.admins_by_group[&group_hex],
+                vec![keys.public_key().to_bech32().unwrap()]
+            );
 
             cleanup(&path);
         }
@@ -1119,7 +1160,8 @@ mod tests {
             let path = unique_fixture_path("no-groups-table");
             {
                 let conn = rusqlite::Connection::open(&path).expect("open");
-                conn.execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);").unwrap();
+                conn.execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);")
+                    .unwrap();
             }
 
             let harvest = harvest_legacy_mls_store(&path).expect("harvest");
@@ -1168,8 +1210,12 @@ mod tests {
             drop(conn);
 
             let harvest = harvest_legacy_mls_store(&path).expect("harvest");
-            assert!(harvest.admins_by_group.contains_key(&hex::encode(good_group)));
-            assert!(!harvest.admins_by_group.contains_key(&hex::encode(bad_group)));
+            assert!(harvest
+                .admins_by_group
+                .contains_key(&hex::encode(good_group)));
+            assert!(!harvest
+                .admins_by_group
+                .contains_key(&hex::encode(bad_group)));
 
             cleanup(&path);
         }
@@ -1187,7 +1233,8 @@ mod tests {
                     FixtureGroup {
                         nostr_group_id: good_group,
                         name: "good",
-                        admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()]).unwrap(),
+                        admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()])
+                            .unwrap(),
                     },
                     FixtureGroup {
                         nostr_group_id: junk_group,
@@ -1199,9 +1246,13 @@ mod tests {
             );
 
             let harvest = harvest_legacy_mls_store(&path).expect("harvest");
-            assert!(harvest.admins_by_group.contains_key(&hex::encode(good_group)));
+            assert!(harvest
+                .admins_by_group
+                .contains_key(&hex::encode(good_group)));
             assert!(
-                !harvest.admins_by_group.contains_key(&hex::encode(junk_group)),
+                !harvest
+                    .admins_by_group
+                    .contains_key(&hex::encode(junk_group)),
                 "an entry whose only admin key is unparseable must persist nothing"
             );
 
@@ -1218,14 +1269,22 @@ mod tests {
             write_legacy_store_fixture(
                 &path_v100,
                 100,
-                &[FixtureGroup { nostr_group_id: group_id, name: "g", admin_pubkeys_json: admin_json.clone() }],
+                &[FixtureGroup {
+                    nostr_group_id: group_id,
+                    name: "g",
+                    admin_pubkeys_json: admin_json.clone(),
+                }],
                 &[],
             );
             let path_v104 = unique_fixture_path("v104");
             write_legacy_store_fixture(
                 &path_v104,
                 104,
-                &[FixtureGroup { nostr_group_id: group_id, name: "g", admin_pubkeys_json: admin_json }],
+                &[FixtureGroup {
+                    nostr_group_id: group_id,
+                    name: "g",
+                    admin_pubkeys_json: admin_json,
+                }],
                 &[],
             );
 
@@ -1248,9 +1307,18 @@ mod tests {
                 104,
                 &[],
                 &[
-                    FixtureWelcome { wrapper_event_id: pending_id, state: "pending" },
-                    FixtureWelcome { wrapper_event_id: accepted_id_a, state: "accepted" },
-                    FixtureWelcome { wrapper_event_id: accepted_id_b, state: "accepted" },
+                    FixtureWelcome {
+                        wrapper_event_id: pending_id,
+                        state: "pending",
+                    },
+                    FixtureWelcome {
+                        wrapper_event_id: accepted_id_a,
+                        state: "accepted",
+                    },
+                    FixtureWelcome {
+                        wrapper_event_id: accepted_id_b,
+                        state: "accepted",
+                    },
                 ],
             );
 

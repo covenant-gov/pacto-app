@@ -68,7 +68,11 @@ pub async fn register_interrupt<R: Runtime>(
     let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
     windows.insert(
         chat_id.clone(),
-        ChatWindow { pending_count: 1, generation, single },
+        ChatWindow {
+            pending_count: 1,
+            generation,
+            single,
+        },
     );
     drop(windows);
 
@@ -83,7 +87,11 @@ pub async fn register_interrupt<R: Runtime>(
 /// no-op) and emit the mention's own banner immediately, subject to its own
 /// focus check (a member who has since focused the app should not still get
 /// banner + sound for a message they may already be looking at).
-pub async fn preempt_and_emit<R: Runtime>(handle: AppHandle<R>, chat_id: &str, single: SingleEventNotification) {
+pub async fn preempt_and_emit<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_id: &str,
+    single: SingleEventNotification,
+) {
     {
         let mut windows = WINDOWS.lock().await;
         windows.remove(chat_id);
@@ -95,7 +103,12 @@ pub async fn preempt_and_emit<R: Runtime>(handle: AppHandle<R>, chat_id: &str, s
     send_banner(&handle, &single.title, &single.body);
 }
 
-async fn flush<R: Runtime>(handle: AppHandle<R>, chat_id: String, chat_display_name: String, generation: u64) {
+async fn flush<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_id: String,
+    chat_display_name: String,
+    generation: u64,
+) {
     let window = {
         let mut windows = WINDOWS.lock().await;
         match windows.get(&chat_id) {
@@ -160,7 +173,13 @@ mod tests {
         let chat_id = "chat-burst".to_string();
 
         for _ in 0..6 {
-            register_interrupt(handle.clone(), chat_id.clone(), "Burst Chat".to_string(), single("hi")).await;
+            register_interrupt(
+                handle.clone(),
+                chat_id.clone(),
+                "Burst Chat".to_string(),
+                single("hi"),
+            )
+            .await;
         }
 
         let windows = WINDOWS.lock().await;
@@ -173,8 +192,20 @@ mod tests {
         // KTD2: the collapse key is the chat, not the sender — two chats
         // must never share one window.
         let handle = test_handle();
-        register_interrupt(handle.clone(), "chat-a".to_string(), "A".to_string(), single("hi")).await;
-        register_interrupt(handle.clone(), "chat-b".to_string(), "B".to_string(), single("hi")).await;
+        register_interrupt(
+            handle.clone(),
+            "chat-a".to_string(),
+            "A".to_string(),
+            single("hi"),
+        )
+        .await;
+        register_interrupt(
+            handle.clone(),
+            "chat-b".to_string(),
+            "B".to_string(),
+            single("hi"),
+        )
+        .await;
 
         let windows = WINDOWS.lock().await;
         assert!(windows.contains_key("chat-a"));
@@ -185,7 +216,13 @@ mod tests {
     async fn preempt_removes_the_pending_window() {
         let handle = test_handle();
         let chat_id = "chat-preempt".to_string();
-        register_interrupt(handle.clone(), chat_id.clone(), "Chat".to_string(), single("hi")).await;
+        register_interrupt(
+            handle.clone(),
+            chat_id.clone(),
+            "Chat".to_string(),
+            single("hi"),
+        )
+        .await;
         {
             let windows = WINDOWS.lock().await;
             assert!(windows.contains_key(&chat_id));
@@ -194,32 +231,61 @@ mod tests {
         preempt_and_emit(handle, &chat_id, single("mention")).await;
 
         let windows = WINDOWS.lock().await;
-        assert!(!windows.contains_key(&chat_id), "preemption must drop the pending window");
+        assert!(
+            !windows.contains_key(&chat_id),
+            "preemption must drop the pending window"
+        );
     }
 
     #[tokio::test]
     async fn window_flushes_and_clears_after_its_duration() {
         let handle = test_handle();
         let chat_id = "chat-flush".to_string();
-        register_interrupt(handle.clone(), chat_id.clone(), "Chat".to_string(), single("hi")).await;
+        register_interrupt(
+            handle.clone(),
+            chat_id.clone(),
+            "Chat".to_string(),
+            single("hi"),
+        )
+        .await;
 
         tokio::time::sleep(COALESCE_WINDOW + Duration::from_millis(200)).await;
 
         let windows = WINDOWS.lock().await;
-        assert!(!windows.contains_key(&chat_id), "a flushed window must not linger");
+        assert!(
+            !windows.contains_key(&chat_id),
+            "a flushed window must not linger"
+        );
     }
 
     #[tokio::test]
     async fn an_event_arriving_after_flush_opens_a_fresh_window() {
         let handle = test_handle();
         let chat_id = "chat-refresh".to_string();
-        register_interrupt(handle.clone(), chat_id.clone(), "Chat".to_string(), single("first")).await;
+        register_interrupt(
+            handle.clone(),
+            chat_id.clone(),
+            "Chat".to_string(),
+            single("first"),
+        )
+        .await;
         tokio::time::sleep(COALESCE_WINDOW + Duration::from_millis(200)).await;
 
-        register_interrupt(handle.clone(), chat_id.clone(), "Chat".to_string(), single("second")).await;
+        register_interrupt(
+            handle.clone(),
+            chat_id.clone(),
+            "Chat".to_string(),
+            single("second"),
+        )
+        .await;
 
         let windows = WINDOWS.lock().await;
-        let window = windows.get(&chat_id).expect("a new window should have opened");
-        assert_eq!(window.pending_count, 1, "the closed window's count must not carry over");
+        let window = windows
+            .get(&chat_id)
+            .expect("a new window should have opened");
+        assert_eq!(
+            window.pending_count, 1,
+            "the closed window's count must not carry over"
+        );
     }
 }

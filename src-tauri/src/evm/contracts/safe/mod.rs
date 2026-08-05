@@ -1,7 +1,7 @@
 //! Gnosis Safe proxy factory bindings and deploy helpers.
 //! Default addresses follow safe-global/safe-deployments; override via `pacto_chain_config` env vars.
 
-use alloy::primitives::{keccak256, Address, B256, Bytes, U256};
+use alloy::primitives::{keccak256, Address, Bytes, B256, U256};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::sol;
 use alloy::sol_types::SolCall;

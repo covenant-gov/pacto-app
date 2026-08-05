@@ -13,23 +13,23 @@ use tauri::{AppHandle, Runtime};
 
 use crate::db;
 
+use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
 use super::contracts::pacto_gov::INavePirataFactory::{
     deployNavePirataCall, CrewVoteMode, DeployParams, SquadParams,
 };
-use super::contracts::pacto_gov::read_bindings::INavePirataRegistry::NavePirataRegistered;
-use alloy::sol_types::SolEvent;
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
-use super::rpc::{
-    connect_signing_provider, contract_call_request, parse_salt_nonce, parse_address,
-    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
-};
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
 };
+use super::rpc::{
+    connect_signing_provider, contract_call_request, parse_address, parse_salt_nonce,
+    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
+};
 use super::squad_sponsor_common::{parse_signer_wallet, require_parent_member};
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
+use alloy::sol_types::SolEvent;
 
 /// Matches `script/Constants.sol` production-style defaults (`CREW_CHANGE_DELAY`, `PROPOSAL_EXPIRY`, etc.).
 const DEFAULT_CREW_CHANGE_DELAY_SEC: u64 = 7 * 24 * 3600;
@@ -38,7 +38,8 @@ const DEFAULT_QUORUM_BPS: u64 = 3000;
 
 fn nave_pirata_deployed_topic0() -> B256 {
     B256::from_slice(
-        keccak256("NavePirataDeployed(uint256,address,address,address,address,address,address)").as_slice(),
+        keccak256("NavePirataDeployed(uint256,address,address,address,address,address,address)")
+            .as_slice(),
     )
 }
 
@@ -77,7 +78,15 @@ fn addresses_from_nave_pirata_deployed_log(
     let mutiny = address_from_word(data, 2)?;
     let treasury = address_from_word(data, 3)?;
     let squad_admin = address_from_word(data, 4)?;
-    Ok((top_hat, captain, safe, quartermaster, mutiny, treasury, squad_admin))
+    Ok((
+        top_hat,
+        captain,
+        safe,
+        quartermaster,
+        mutiny,
+        treasury,
+        squad_admin,
+    ))
 }
 
 fn addresses_from_nave_pirata_registered_log(
@@ -193,7 +202,10 @@ fn ensure_captain_for_parent_deploy<R: Runtime>(
     }
 
     let mut candidates = vec![parent_id];
-    if let Some(alt) = alt_parent_id.map(str::trim).filter(|s| !s.is_empty() && *s != parent_id) {
+    if let Some(alt) = alt_parent_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != parent_id)
+    {
         candidates.push(alt);
     }
     for pid in &candidates {
@@ -222,7 +234,10 @@ fn roster_signing_parent_id<R: Runtime>(
     if db::get_squad_member_evm_account_id(app, parent_id, None)?.is_some() {
         return Ok(parent_id.to_string());
     }
-    if let Some(alt) = alt_parent_id.map(str::trim).filter(|s| !s.is_empty() && *s != parent_id) {
+    if let Some(alt) = alt_parent_id
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != parent_id)
+    {
         if db::get_squad_member_evm_account_id(app, alt, None)?.is_some() {
             return Ok(alt.to_string());
         }
@@ -287,12 +302,11 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
         ));
     };
 
-    let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net.key).map_err(|e| {
-        wallet_err_json("NAVE_PIRATA_CONFIG", e, None)
-    })?;
+    let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net.key)
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
 
-    let captain_addr = parse_address(captain.trim())
-        .map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
+    let captain_addr =
+        parse_address(captain.trim()).map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
     let alt = alt_parent_id
         .as_deref()
         .map(str::trim)
@@ -301,8 +315,8 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let meta = validate_metadata_uri(&metadata_uri)?;
 
-    let salt = parse_salt_nonce(salt_nonce)
-        .map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
+    let salt =
+        parse_salt_nonce(salt_nonce).map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
 
     let squad_params = SquadParams {
         crewChangeDelay: U256::from(DEFAULT_CREW_CHANGE_DELAY_SEC),
@@ -327,11 +341,7 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
 
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
@@ -364,22 +374,19 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     }
 
     let tx = contract_call_request(factory, calldata);
-    let receipt = send_and_confirm(
-        &provider,
-        tx,
-        "Timed out waiting for confirmation.",
-    )
-    .await?;
+    let receipt = send_and_confirm(&provider, tx, "Timed out waiting for confirmation.").await?;
 
     let (top_hat, _captain_out, safe_a, qm_a, mm_a, ta_a, admin_a) =
-        nave_pirata_addresses_from_receipt(&receipt, factory, addrs.nave_pirata_registry).map_err(|e| {
-            wallet_err_json_with_tx_hash(
-                "PARSE_RECEIPT",
-                e,
-                None,
-                format!("0x{:x}", receipt.transaction_hash),
-            )
-        })?;
+        nave_pirata_addresses_from_receipt(&receipt, factory, addrs.nave_pirata_registry).map_err(
+            |e| {
+                wallet_err_json_with_tx_hash(
+                    "PARSE_RECEIPT",
+                    e,
+                    None,
+                    format!("0x{:x}", receipt.transaction_hash),
+                )
+            },
+        )?;
 
     let tx_hash = format!("0x{:x}", receipt.transaction_hash);
     let top_hat_str = top_hat.to_string();
@@ -465,7 +472,10 @@ mod tests {
     #[test]
     fn captain_on_roster_matches_regardless_of_hex_case() {
         let captain = parse_address("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
-        assert!(ensure_captain_on_roster(captain, ["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]).is_ok());
+        assert!(
+            ensure_captain_on_roster(captain, ["0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"])
+                .is_ok()
+        );
     }
 
     #[test]
@@ -488,8 +498,14 @@ mod tests {
     fn signer_wallet_parsing_accepts_deploy_modes_and_defaults_to_squad() {
         assert_eq!(parse_signer_wallet(None, "squad").unwrap(), "squad");
         assert_eq!(parse_signer_wallet(Some("  "), "squad").unwrap(), "squad");
-        assert_eq!(parse_signer_wallet(Some("default"), "squad").unwrap(), "default");
-        assert_eq!(parse_signer_wallet(Some("SQUAD"), "squad").unwrap(), "squad");
+        assert_eq!(
+            parse_signer_wallet(Some("default"), "squad").unwrap(),
+            "default"
+        );
+        assert_eq!(
+            parse_signer_wallet(Some("SQUAD"), "squad").unwrap(),
+            "squad"
+        );
     }
 
     #[test]

@@ -42,7 +42,12 @@ pub enum EventKind {
 /// `is_own` short-circuits to Passive before anything else — a member's own
 /// activity never notifies them. `mention_hit` only changes the outcome for
 /// `GroupMessage`; every other kind's row does not vary with it.
-pub fn resolve_tier(kind: EventKind, level: NotificationLevel, is_own: bool, mention_hit: bool) -> Tier {
+pub fn resolve_tier(
+    kind: EventKind,
+    level: NotificationLevel,
+    is_own: bool,
+    mention_hit: bool,
+) -> Tier {
     use EventKind::*;
     use NotificationLevel::*;
     use Tier::*;
@@ -132,7 +137,12 @@ mod tests {
     /// Independent restatement of the published table, so the exhaustive
     /// test above is checking against the spec, not against a copy of the
     /// implementation.
-    fn expected_tier(kind: EventKind, level: NotificationLevel, is_own: bool, mention_hit: bool) -> Tier {
+    fn expected_tier(
+        kind: EventKind,
+        level: NotificationLevel,
+        is_own: bool,
+        mention_hit: bool,
+    ) -> Tier {
         if is_own {
             return Passive;
         }
@@ -176,14 +186,26 @@ mod tests {
     #[test]
     fn ordinary_group_message_is_record_at_mentions_and_interrupt_at_all() {
         // Covers AE3, AE4.
-        assert_eq!(resolve_tier(EventKind::GroupMessage, Mentions, false, false), Record);
-        assert_eq!(resolve_tier(EventKind::GroupMessage, All, false, false), Interrupt);
+        assert_eq!(
+            resolve_tier(EventKind::GroupMessage, Mentions, false, false),
+            Record
+        );
+        assert_eq!(
+            resolve_tier(EventKind::GroupMessage, All, false, false),
+            Interrupt
+        );
     }
 
     #[test]
     fn mention_of_the_member_is_interrupt_at_mentions_and_record_at_nothing() {
-        assert_eq!(resolve_tier(EventKind::GroupMessage, Mentions, false, true), Interrupt);
-        assert_eq!(resolve_tier(EventKind::GroupMessage, Nothing, false, true), Record);
+        assert_eq!(
+            resolve_tier(EventKind::GroupMessage, Mentions, false, true),
+            Interrupt
+        );
+        assert_eq!(
+            resolve_tier(EventKind::GroupMessage, Nothing, false, true),
+            Record
+        );
     }
 
     #[test]

@@ -287,7 +287,13 @@ fn current_npub() -> Result<String, String> {
     crate::account_manager::get_current_account()
 }
 
-fn meta_content(squad_id: &str, bot_npub: &str, holders: &[String], key_epoch: i64, updated_at: i64) -> Result<String, String> {
+fn meta_content(
+    squad_id: &str,
+    bot_npub: &str,
+    holders: &[String],
+    key_epoch: i64,
+    updated_at: i64,
+) -> Result<String, String> {
     let wire = SquadBotMetaWire {
         schema: SQUAD_BOT_META_SCHEMA.into(),
         pacto_virtual_bucket: "announcements".into(),
@@ -392,7 +398,10 @@ async fn list_mls_member_npubs(group_id: &str) -> Result<Vec<String>, String> {
             let meta_groups = mls.read_groups().await.unwrap_or_default();
             let engine_id = meta_groups
                 .iter()
-                .find(|g| g.group_id == group_id || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id))
+                .find(|g| {
+                    g.group_id == group_id
+                        || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
+                })
                 .map(|g| {
                     if !g.engine_group_id.is_empty() {
                         g.engine_group_id.clone()
@@ -440,8 +449,10 @@ pub async fn bot_keys_for_holder<R: Runtime>(
     let me = current_npub()?;
     let (bot_npub_meta, holders, key_epoch, enc) = {
         let conn = crate::account_manager::get_db_connection(handle)?;
-        let (bot_npub, holders, key_epoch, _) = read_meta_row(&conn, squad_id)?
-            .ok_or_else(|| "Squad bot not initialized — open Join inbox settings first".to_string())?;
+        let (bot_npub, holders, key_epoch, _) =
+            read_meta_row(&conn, squad_id)?.ok_or_else(|| {
+                "Squad bot not initialized — open Join inbox settings first".to_string()
+            })?;
         require_holder(&holders, &me)?;
         let (secret_bot, secret_epoch, enc) = read_secret_row(&conn, squad_id)?;
         crate::account_manager::return_db_connection(conn);
@@ -453,10 +464,7 @@ pub async fn bot_keys_for_holder<R: Runtime>(
     let _ = (holders, key_epoch);
     let nsec = decrypt_nsec(enc).await?;
     let keys = Keys::parse(&nsec).map_err(|_| "Invalid stored bot nsec".to_string())?;
-    let derived = keys
-        .public_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
+    let derived = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
     if derived != bot_npub_meta {
         return Err("Stored bot nsec does not match bot npub".into());
     }
@@ -496,7 +504,9 @@ pub async fn squad_bot_init<R: Runtime>(
         if let Some((bot_npub, holders, key_epoch, updated_at)) = read_meta_row(&conn, &squad_id)? {
             let has = has_secret_row(&conn, &squad_id)?;
             crate::account_manager::return_db_connection(conn);
-            let state = state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me);
+            let state = state_dto(
+                &squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me,
+            );
             return Ok(SquadBotPublishBundle {
                 state,
                 mls_announcements: vec![],
@@ -508,14 +518,8 @@ pub async fn squad_bot_init<R: Runtime>(
     }
 
     let keys = Keys::generate();
-    let bot_npub = keys
-        .public_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
+    let bot_npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| e.to_string())?;
     let holders = vec![me.clone()];
     let key_epoch = 1i64;
     let updated_at = unix_now_secs();
@@ -526,13 +530,7 @@ pub async fn squad_bot_init<R: Runtime>(
     upsert_meta_row(&conn, &squad_id, &bot_npub, &holders, key_epoch, updated_at)?;
     let meta = meta_content(&squad_id, &bot_npub, &holders, key_epoch, updated_at)?;
     let state = state_dto(
-        &squad_id,
-        &bot_npub,
-        &holders,
-        key_epoch,
-        updated_at,
-        true,
-        &me,
+        &squad_id, &bot_npub, &holders, key_epoch, updated_at, true, &me,
     );
     crate::account_manager::return_db_connection(conn);
     Ok(SquadBotPublishBundle {
@@ -558,7 +556,9 @@ pub async fn squad_bot_get_state<R: Runtime>(
     let has = has_secret_row(&conn, &squad_id)?;
     crate::account_manager::return_db_connection(conn);
     Ok(row.map(|(bot_npub, holders, key_epoch, updated_at)| {
-        state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me)
+        state_dto(
+            &squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me,
+        )
     }))
 }
 
@@ -583,8 +583,8 @@ pub async fn squad_bot_add_holder<R: Runtime>(
     }
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
-    let (bot_npub, mut holders, key_epoch, _) = read_meta_row(&conn, &squad_id)?
-        .ok_or_else(|| "Squad bot not initialized".to_string())?;
+    let (bot_npub, mut holders, key_epoch, _) =
+        read_meta_row(&conn, &squad_id)?.ok_or_else(|| "Squad bot not initialized".to_string())?;
     require_holder(&holders, &me)?;
     if !has_secret_row(&conn, &squad_id)? {
         crate::account_manager::return_db_connection(conn);
@@ -593,7 +593,9 @@ pub async fn squad_bot_add_holder<R: Runtime>(
     if holders.iter().any(|h| h == &holder_npub) {
         let has = true;
         let updated_at = unix_now_secs();
-        let state = state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me);
+        let state = state_dto(
+            &squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me,
+        );
         crate::account_manager::return_db_connection(conn);
         return Ok(SquadBotPublishBundle {
             state,
@@ -610,7 +612,9 @@ pub async fn squad_bot_add_holder<R: Runtime>(
     crate::account_manager::return_db_connection(conn);
     let nsec = decrypt_nsec(enc).await?;
     let share = key_share_content(&squad_id, &bot_npub, key_epoch, &nsec)?;
-    let state = state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, true, &me);
+    let state = state_dto(
+        &squad_id, &bot_npub, &holders, key_epoch, updated_at, true, &me,
+    );
     Ok(SquadBotPublishBundle {
         state,
         mls_announcements: vec![meta],
@@ -640,8 +644,8 @@ pub async fn squad_bot_remove_holder<R: Runtime>(
     }
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
-    let (bot_npub, mut holders, key_epoch, _) = read_meta_row(&conn, &squad_id)?
-        .ok_or_else(|| "Squad bot not initialized".to_string())?;
+    let (bot_npub, mut holders, key_epoch, _) =
+        read_meta_row(&conn, &squad_id)?.ok_or_else(|| "Squad bot not initialized".to_string())?;
     require_holder(&holders, &me)?;
     if holders.len() <= 1 && holders.iter().any(|h| h == &holder_npub) {
         crate::account_manager::return_db_connection(conn);
@@ -661,7 +665,9 @@ pub async fn squad_bot_remove_holder<R: Runtime>(
     let meta = meta_content(&squad_id, &bot_npub, &holders, key_epoch, updated_at)?;
     let prompt = rotate_prompt_content(&squad_id, key_epoch, &holder_npub, updated_at)?;
     let has = has_secret_row(&conn, &squad_id)?;
-    let state = state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me);
+    let state = state_dto(
+        &squad_id, &bot_npub, &holders, key_epoch, updated_at, has, &me,
+    );
     crate::account_manager::return_db_connection(conn);
     Ok(SquadBotPublishBundle {
         state,
@@ -709,14 +715,8 @@ pub async fn squad_bot_rotate_key<R: Runtime>(
     }
 
     let keys = Keys::generate();
-    let bot_npub = keys
-        .public_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
-    let nsec = keys
-        .secret_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
+    let bot_npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
+    let nsec = keys.secret_key().to_bech32().map_err(|e| e.to_string())?;
     let key_epoch = old_epoch.saturating_add(1);
     let updated_at = unix_now_secs();
     let enc = encrypt_nsec(&nsec).await;
@@ -736,7 +736,9 @@ pub async fn squad_bot_rotate_key<R: Runtime>(
             content: share.clone(),
         })
         .collect();
-    let state = state_dto(&squad_id, &bot_npub, &holders, key_epoch, updated_at, true, &me);
+    let state = state_dto(
+        &squad_id, &bot_npub, &holders, key_epoch, updated_at, true, &me,
+    );
     crate::account_manager::return_db_connection(conn);
     Ok(SquadBotPublishBundle {
         state,
@@ -866,10 +868,7 @@ pub async fn apply_key_share_from_content<R: Runtime>(
     }
     // Verify nsec matches bot_npub.
     let keys = Keys::parse(nsec).map_err(|_| "Invalid bot nsec in key share".to_string())?;
-    let derived = keys
-        .public_key()
-        .to_bech32()
-        .map_err(|e| e.to_string())?;
+    let derived = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
     if derived != bot_npub {
         return Err("Key share nsec does not match botNpub".into());
     }
@@ -945,7 +944,8 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
     let (bot_keys, bot_npub) = bot_keys_for_holder(&handle, &squad_id).await?;
     let bot_pk = bot_keys.public_key();
 
-    let client = crate::get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
+    let client =
+        crate::get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
     let since = unix_now_secs().saturating_sub(SQUAD_BOT_JOIN_DM_LOOKBACK_SECS as i64);
     let filter = Filter::new()
         .pubkey(bot_pk)
@@ -1007,7 +1007,12 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
 }
 
 /// Pure helpers for unit tests (membership / holder list rules).
-pub fn can_add_holder(members: &[String], actor: &str, target: &str, holders: &[String]) -> Result<(), String> {
+pub fn can_add_holder(
+    members: &[String],
+    actor: &str,
+    target: &str,
+    holders: &[String],
+) -> Result<(), String> {
     if !members.iter().any(|m| m == actor) {
         return Err("actor not a member".into());
     }
@@ -1061,7 +1066,8 @@ mod tests {
 
     #[test]
     fn parse_join_dm_rejects_other_schema() {
-        let raw = r#"{"schema":"other","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
+        let raw =
+            r#"{"schema":"other","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
         assert!(parse_join_dm_content(raw).is_none());
     }
 }

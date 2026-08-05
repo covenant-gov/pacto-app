@@ -2,7 +2,7 @@
 //! See pacto-squad-sponsor `docs/DESKTOP_CLIENT_INTEGRATION.md`.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, B256, Bytes, U256, Uint};
+use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::Signer;
@@ -177,10 +177,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             FALLBACK_CALL_GAS_LIMIT
         });
     let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => (
-            fees.max_priority_fee_per_gas,
-            fees.max_fee_per_gas,
-        ),
+        Ok(fees) => (fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
         Err(_) => {
             log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
             (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
@@ -253,9 +250,8 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
                     None,
                 )
             })?;
-        eip7702_auth = Some(
-            sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?,
-        );
+        eip7702_auth =
+            Some(sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?);
     }
 
     let packed = PackedUserOperation {
@@ -273,9 +269,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let user_op_hash: B256 = eth_call_decode(
         &read_provider,
         addrs.entry_point,
-        &IEntryPointV07::getUserOpHashCall {
-            userOp: packed,
-        },
+        &IEntryPointV07::getUserOpHashCall { userOp: packed },
     )
     .await
     .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
@@ -343,9 +337,15 @@ fn user_op_json(p: UserOpParams) -> Result<Value, String> {
 
 /// `paymasterData` is `paymasterAndData` past its fixed header; short input is a bug, not a panic.
 fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
-    paymaster_and_data.get(PAYMASTER_DATA_OFFSET..).ok_or_else(|| {
-        wallet_err_json("PAYMASTER_DATA", "paymasterAndData shorter than 52-byte header", None)
-    })
+    paymaster_and_data
+        .get(PAYMASTER_DATA_OFFSET..)
+        .ok_or_else(|| {
+            wallet_err_json(
+                "PAYMASTER_DATA",
+                "paymasterAndData shorter than 52-byte header",
+                None,
+            )
+        })
 }
 
 fn pack_u128s(hi: u128, lo: u128) -> B256 {
@@ -378,11 +378,7 @@ pub(crate) async fn estimate_call_gas<P: Provider>(
         .with_from(member)
         .with_to(to)
         .with_input(Bytes::copy_from_slice(calldata));
-    provider
-        .estimate_gas(tx)
-        .await
-        .ok()
-        .map(|gas| gas as u128)
+    provider.estimate_gas(tx).await.ok().map(|gas| gas as u128)
 }
 
 /// EntryPoint v0.7 maxCost bound: maxFeePerGas × every gas limit charged for the UserOp
@@ -435,7 +431,11 @@ fn encode_eip7702_authorization(chain_id: u64, implementation: Address, nonce: u
     let addr = implementation.as_slice();
     let payload_length = chain_id.length() + addr.length() + nonce.length();
     let mut out = Vec::with_capacity(payload_length + 9);
-    Header { list: true, payload_length }.encode(&mut out);
+    Header {
+        list: true,
+        payload_length,
+    }
+    .encode(&mut out);
     chain_id.encode(&mut out);
     addr.encode(&mut out);
     nonce.encode(&mut out);
@@ -467,7 +467,10 @@ async fn bundler_send_user_operation(
     let res = res.map_err(|e| {
         wallet_err_json(
             "BUNDLER_RPC",
-            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            format!(
+                "bundler rpc failed after {attempt} attempt(s): {}",
+                e.message
+            ),
             None,
         )
     })?;
@@ -517,7 +520,10 @@ async fn bundler_get_user_operation_receipt(
     let res = res.map_err(|e| {
         wallet_err_json(
             "BUNDLER_RPC",
-            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            format!(
+                "bundler rpc failed after {attempt} attempt(s): {}",
+                e.message
+            ),
             None,
         )
     })?;
@@ -627,7 +633,10 @@ fn bundler_retry_delay(attempt: u32) -> Duration {
 /// Redacts transport errors; timeouts name the bound so callers can tell slow bundlers from failures.
 fn bundler_transport_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
-        format!("bundler request timed out after {}s", BUNDLER_RPC_TIMEOUT.as_secs())
+        format!(
+            "bundler request timed out after {}s",
+            BUNDLER_RPC_TIMEOUT.as_secs()
+        )
     } else {
         crate::evm::wallet_security::redact_urls_in_text(&e.to_string())
     }
@@ -635,10 +644,15 @@ fn bundler_transport_error(e: &reqwest::Error) -> String {
 
 async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> {
     let client = bundler_http_client()?;
-    let res = client.post(url).json(body).send().await.map_err(|e| BundlerRpcError {
-        retriable: e.is_timeout() || e.is_connect(),
-        message: bundler_transport_error(&e),
-    })?;
+    let res = client
+        .post(url)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| BundlerRpcError {
+            retriable: e.is_timeout() || e.is_connect(),
+            message: bundler_transport_error(&e),
+        })?;
     let status = res.status();
     let text = res.text().await.map_err(|e| BundlerRpcError {
         retriable: e.is_timeout() || e.is_connect(),
@@ -701,8 +715,7 @@ mod tests {
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
         let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
-        let squad_id =
-            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
         let paymaster_and_data = encode_paymaster_and_data(
             paymaster,
@@ -785,7 +798,10 @@ mod tests {
             "success": true,
             "receipt": {"transactionHash": "0xbbb", "blockNumber": "0x1"}
         });
-        assert_eq!(receipt_transaction_hash(&receipt), Some("0xbbb".to_string()));
+        assert_eq!(
+            receipt_transaction_hash(&receipt),
+            Some("0xbbb".to_string())
+        );
 
         let pending_shape = json!({"userOpHash": "0xaaa"});
         assert_eq!(receipt_transaction_hash(&pending_shape), None);

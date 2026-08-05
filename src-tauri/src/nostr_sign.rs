@@ -46,7 +46,8 @@ mod tests {
     #[test]
     fn event_json_round_trips() {
         let keys = Keys::generate();
-        let event = sign_with(EventBuilder::new(Kind::TextNote, "round trip"), &keys).expect("sign");
+        let event =
+            sign_with(EventBuilder::new(Kind::TextNote, "round trip"), &keys).expect("sign");
         let json = event_json(&event);
         let parsed = Event::from_json(json.as_bytes()).expect("parse");
         assert_eq!(parsed, event);
