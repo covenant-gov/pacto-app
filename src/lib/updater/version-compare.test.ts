@@ -68,6 +68,12 @@ describe('parseVersion', () => {
     expect(parseVersion(null as unknown as string)).toBeNull();
     expect(parseVersion(undefined as unknown as string)).toBeNull();
   });
+
+  it('returns null for malformed build metadata (empty identifiers)', () => {
+    expect(parseVersion('1.0.0+..')).toBeNull();
+    expect(parseVersion('1.0.0+abc..def')).toBeNull();
+    expect(parseVersion('1.0.0+')).toBeNull();
+  });
 });
 
 describe('compareVersions', () => {

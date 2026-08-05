@@ -33,16 +33,29 @@ export type UpdaterUpdate = Awaited<ReturnType<typeof check>>;
 let memoizedCheckPromise: Promise<UpdaterUpdate> | null = null;
 
 /**
- * The launch-time manifest check, called at most once per launch. Both the
- * update gate and `checkForUpdates` consult this instead of calling
- * `check()` directly, so one launch makes one round trip and the courtesy
- * startup check can never race a second, independent result into
- * `updateStatus`. Dev builds resolve `null` without a network call, since
+ * The launch-time manifest check, shared by the update gate and
+ * `checkForUpdates` so genuinely concurrent callers within one launch make
+ * one round trip rather than racing independent results into
+ * `updateStatus`. The memo clears itself the moment this call settles
+ * (resolved or rejected) - it only coalesces callers overlapping in time,
+ * never pins every later call (a manual "check for updates" click, a retry
+ * after a transient failure) to a stale result for the rest of the
+ * session. Dev builds resolve `null` without a network call, since
  * `check()` has no manifest to read in dev.
  */
 export function getMemoizedUpdateCheck(): Promise<UpdaterUpdate> {
   if (!memoizedCheckPromise) {
-    memoizedCheckPromise = isDevBuild() ? Promise.resolve(null) : check();
+    const promise = isDevBuild() ? Promise.resolve(null) : check();
+    const clearIfCurrent = () => {
+      if (memoizedCheckPromise === promise) memoizedCheckPromise = null;
+    };
+    // `.then(f, f)` rather than `.finally(f)`: finally's derived promise
+    // re-rejects on a rejected source with nothing consuming it, which is
+    // an unhandled-rejection warning waiting to happen. Passing an
+    // onRejected handler here marks the rejection handled without
+    // affecting the original `promise` returned below.
+    promise.then(clearIfCurrent, clearIfCurrent);
+    memoizedCheckPromise = promise;
   }
   return memoizedCheckPromise;
 }
@@ -163,17 +176,6 @@ export async function checkForUpdates(): Promise<void> {
     const message = friendlyErrorMessage(err);
     updateStatus.setStatus('error', { error: message });
   }
-}
-
-/**
- * Force a fresh manifest check, bypassing the per-launch memo. For an
- * explicit user-initiated retry (e.g. the update gate's block screen),
- * where a second network attempt is a deliberate choice rather than
- * passive launch-time behavior.
- */
-export function retryUpdateCheck(): Promise<void> {
-  memoizedCheckPromise = null;
-  return checkForUpdates();
 }
 
 let downloadTotalBytes = 0;

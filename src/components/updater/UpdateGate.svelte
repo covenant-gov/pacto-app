@@ -2,7 +2,7 @@
   import { tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { gateState } from '../../lib/updater/update-gate';
-  import { updateStatus, retryUpdateCheck } from '../../lib/updater/update-check';
+  import { updateStatus, checkForUpdates } from '../../lib/updater/update-check';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import UpdateAvailablePanel from './UpdateAvailablePanel.svelte';
 
@@ -25,7 +25,7 @@
   });
 
   function handleRetry(): void {
-    void retryUpdateCheck();
+    void checkForUpdates();
   }
 
   function handleReleasePageClick(event: MouseEvent): void {

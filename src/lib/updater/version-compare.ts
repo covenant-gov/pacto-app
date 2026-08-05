@@ -13,7 +13,7 @@ export interface ParsedVersion {
 const VERSION_PATTERN =
   /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-.]+))?(?:\+([0-9A-Za-z-.]+))?$/;
 
-const PRERELEASE_IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/;
+const IDENTIFIER_PATTERN = /^[0-9A-Za-z-]+$/;
 const NUMERIC_IDENTIFIER_PATTERN = /^(?:0|[1-9]\d*)$/;
 
 /** Parses a version string tolerating an optional leading `v`; null if unparseable. */
@@ -26,7 +26,17 @@ export function parseVersion(input: string): ParsedVersion | null {
   const [, major, minor, patch, prereleaseRaw, buildRaw] = match;
 
   const prerelease = prereleaseRaw ? prereleaseRaw.split('.') : [];
-  if (!prerelease.every((identifier) => PRERELEASE_IDENTIFIER_PATTERN.test(identifier))) {
+  if (!prerelease.every((identifier) => IDENTIFIER_PATTERN.test(identifier))) {
+    return null;
+  }
+
+  // Build metadata identifiers use the same non-empty charset as
+  // pre-release ones per the SemVer 2.0.0 spec - unvalidated, a value like
+  // '1.0.0+..' would parse with empty identifiers instead of being
+  // rejected, and this comparator must treat malformed input as
+  // unparseable rather than silently accepting it.
+  const build = buildRaw ? buildRaw.split('.') : [];
+  if (!build.every((identifier) => IDENTIFIER_PATTERN.test(identifier))) {
     return null;
   }
 
@@ -37,7 +47,7 @@ export function parseVersion(input: string): ParsedVersion | null {
     prerelease: prerelease.map((identifier) =>
       NUMERIC_IDENTIFIER_PATTERN.test(identifier) ? Number(identifier) : identifier
     ),
-    build: buildRaw ? buildRaw.split('.') : []
+    build
   };
 }
 
