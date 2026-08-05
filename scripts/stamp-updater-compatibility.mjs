@@ -89,7 +89,7 @@ export function parseManifest(text) {
   try {
     return JSON.parse(text);
   } catch (err) {
-    throw new Error(`Could not parse manifest JSON: ${err.message}`);
+    throw new Error(`Could not parse manifest JSON: ${err.message}`, { cause: err });
   }
 }
 
