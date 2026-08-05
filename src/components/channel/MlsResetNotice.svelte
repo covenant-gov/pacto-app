@@ -6,11 +6,17 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { requestSquadRecreate } from '../../stores/squad-recreate';
 
-  let { state, squadName = '' }: { state: MlsStoreResetGroupState; squadName?: string } = $props();
+  let { state, squadName = '', formerMemberNpubs = [] }: {
+    state: MlsStoreResetGroupState;
+    squadName?: string;
+    /** Preserved roster for sole-admin recreate (self filtered out on click). */
+    formerMemberNpubs?: string[];
+  } = $props();
   const currentUserNpub = $derived($currentUser?.npub ?? '');
 
   function recreateSquad(): void {
-    requestSquadRecreate({ name: squadName, memberNpubs: [] });
+    const memberNpubs = formerMemberNpubs.filter((npub) => npub && npub !== currentUserNpub);
+    requestSquadRecreate({ name: squadName, memberNpubs });
   }
 
   function adminName(npub: string): string {

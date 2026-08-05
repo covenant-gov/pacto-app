@@ -342,6 +342,10 @@
     prevMembersGroupIdForPanel = panelMembersGroupId;
     void ensureMlsGroupMembers(panelMembersGroupId);
   }
+  // Sole-admin recreate needs the preserved roster even when the members panel is closed.
+  $: if (activeMlsReset && panelMembersGroupId) {
+    void ensureMlsGroupMembers(panelMembersGroupId);
+  }
   $: if (!$showMembersPanel) {
     prevMembersGroupIdForPanel = null;
   }
@@ -914,7 +918,11 @@
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
             {#if activeMlsReset}
-              <MlsResetNotice state={activeMlsReset} squadName={activeParent?.name ?? channelName} />
+              <MlsResetNotice
+                state={activeMlsReset}
+                squadName={activeParent?.name ?? channelName}
+                formerMemberNpubs={panelMembers}
+              />
             {:else}
               <MessageInput
                 channelName={channelName}
@@ -1010,7 +1018,11 @@
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
     {#if activeMlsReset}
-      <MlsResetNotice state={activeMlsReset} squadName={activeParent?.name ?? channelName} />
+      <MlsResetNotice
+        state={activeMlsReset}
+        squadName={activeParent?.name ?? channelName}
+        formerMemberNpubs={panelMembers}
+      />
     {:else}
       <MessageInput
         channelName={channelName}

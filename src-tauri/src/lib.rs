@@ -7764,7 +7764,10 @@ pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), 
     Ok(())
 }
 
-/// Get members (npubs) of an MLS group from the persistent engine (on-demand)
+/// Get members (npubs) of an MLS group from the persistent engine (on-demand).
+/// When the group is in MLS store-reset "lost" state the fresh engine has no
+/// membership — fall back to the preserved chat.participants roster so UI paths
+/// like sole-admin recreate can still invite former members.
 #[tauri::command]
 async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String> {
     // Run engine operations on a blocking thread so the outer future is Send
@@ -7815,6 +7818,34 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                                 .filter_map(|pk| pk.to_bech32().ok())
                                 .collect();
                             break;
+                        }
+                    }
+                }
+            }
+            drop(engine);
+
+            let lost = mls_store_reset_state::is_group_state_lost(&handle, &wire_id)
+                .or_else(|_| mls_store_reset_state::is_group_state_lost(&handle, &group_id))
+                .unwrap_or(false);
+            if lost && members.is_empty() {
+                let preserved = {
+                    let state = STATE.lock().await;
+                    state
+                        .get_chat(&wire_id)
+                        .or_else(|| state.get_chat(&group_id))
+                        .map(|chat| chat.participants.clone())
+                        .unwrap_or_default()
+                };
+                if !preserved.is_empty() {
+                    members = preserved;
+                }
+                if admins.is_empty() {
+                    if let Ok(states) = mls_store_reset_state::reset_group_states(&handle) {
+                        if let Some(s) = states
+                            .into_iter()
+                            .find(|s| s.group_id == wire_id || s.group_id == group_id)
+                        {
+                            admins = s.admin_npubs;
                         }
                     }
                 }
