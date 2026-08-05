@@ -11,6 +11,8 @@ use tauri::{AppHandle, Emitter, Runtime};
 pub(crate) const LOST_GROUPS_KEY: &str = "mls_store_reset_lost_groups";
 pub(crate) const PENDING_WRAPPERS_KEY: &str = "mls_store_reset_pending_wrappers";
 pub(crate) const KEYPACKAGE_REFRESH_KEY: &str = "mls_store_keypackage_refresh_required";
+/// Unix seconds when this account's MLS store reset harvested/archived (generation floor).
+pub(crate) const RESET_AT_KEY: &str = "mls_store_reset_at";
 
 pub(crate) fn setting(conn: &Connection, key: &str) -> Result<Option<String>, String> {
     conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
@@ -70,6 +72,13 @@ pub(crate) fn keypackage_refresh_required<R: Runtime>(
 pub(crate) fn mark_keypackage_refreshed<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
     with_account_connection(handle, |conn| {
         put_setting(conn, KEYPACKAGE_REFRESH_KEY, "false")
+    })
+}
+
+pub(crate) fn store_reset_at_secs<R: Runtime>(handle: &AppHandle<R>) -> Result<Option<u64>, String> {
+    with_account_connection(handle, |conn| {
+        Ok(setting(conn, RESET_AT_KEY)?
+            .and_then(|v| v.parse::<u64>().ok()))
     })
 }
 

@@ -284,14 +284,25 @@ describe('subscribeAppEvents', () => {
   });
 
   it('hydrates reset state and applies live reset events', async () => {
+    // Serde rename_all = camelCase on MlsStoreResetGroupState — the live emit shape.
     const payload = [
-      { group_id: 'group-a', state_lost: true, admin_npubs: ['a', 'b'], single_admin: false },
+      { groupId: 'group-a', stateLost: true, adminNpubs: ['a', 'b'], singleAdmin: false },
     ];
     unsubscribe = subscribeAppEvents(handlers);
     await Promise.resolve();
     expect(mocks.mockFunctions.refreshMlsStoreResetState).toHaveBeenCalledTimes(1);
     emit('mls_store_reset', payload);
     expect(mocks.mockFunctions.applyMlsStoreResetState).toHaveBeenCalledWith(payload);
+    expect(mocks.mockFunctions.applyMlsStoreResetState).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          groupId: 'group-a',
+          stateLost: true,
+          adminNpubs: ['a', 'b'],
+          singleAdmin: false,
+        }),
+      ])
+    );
   });
 
   it('unsubscribes clears timeouts and unlisten promises', () => {

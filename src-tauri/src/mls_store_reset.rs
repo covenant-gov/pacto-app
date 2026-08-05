@@ -13,7 +13,7 @@ use tauri::{AppHandle, Runtime};
 
 use crate::mls_store_reset_state::{
     put_json_setting, put_setting, setting, KEYPACKAGE_REFRESH_KEY, LostGroups, LOST_GROUPS_KEY,
-    PENDING_WRAPPERS_KEY,
+    PENDING_WRAPPERS_KEY, RESET_AT_KEY,
 };
 
 const RESET_MARKER_KEY: &str = "mls_store_reset_v1";
@@ -28,6 +28,8 @@ enum StoreClassification {
     Fresh,
     Current,
     Legacy,
+    /// Schema versions outside the known current (1–5) and legacy (≥100) ranges.
+    Unsupported(i64),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -66,7 +68,8 @@ fn classify_version(version: Option<i64>, table_exists: bool) -> StoreClassifica
     match version {
         Some(1..=5) => StoreClassification::Current,
         Some(100..) => StoreClassification::Legacy,
-        Some(_) => StoreClassification::Legacy,
+        // Unknown mid-range versions must not be archived or opened as current.
+        Some(v) => StoreClassification::Unsupported(v),
         None if table_exists => StoreClassification::Legacy,
         None => StoreClassification::Fresh,
     }
@@ -363,12 +366,20 @@ fn reset_with_connection(
     }
 
     let classification = classify_store(store_path, encryption_key);
-    if classification != StoreClassification::Legacy {
-        put_setting(conn, RESET_MARKER_KEY, "complete")?;
-        if let Err(e) = prune_archives(profile_dir, now) {
-            eprintln!("[MLS Reset] Failed to prune archives: {e}");
+    match classification {
+        StoreClassification::Unsupported(version) => {
+            return Err(format!(
+                "Unsupported MLS store schema version {version}; refusing to open or archive. Expected 1–5 (current) or ≥100 (legacy)."
+            ));
         }
-        return Ok(ResetOutcome::default());
+        StoreClassification::Fresh | StoreClassification::Current => {
+            put_setting(conn, RESET_MARKER_KEY, "complete")?;
+            if let Err(e) = prune_archives(profile_dir, now) {
+                eprintln!("[MLS Reset] Failed to prune archives: {e}");
+            }
+            return Ok(ResetOutcome::default());
+        }
+        StoreClassification::Legacy => {}
     }
 
     let harvest = harvest_legacy_mls_store(store_path).map_err(|e| {
@@ -387,6 +398,7 @@ fn reset_with_connection(
     put_json_setting(&tx, LOST_GROUPS_KEY, &lost_groups)?;
     put_json_setting(&tx, PENDING_WRAPPERS_KEY, &pending_wrapper_ids)?;
     put_setting(&tx, KEYPACKAGE_REFRESH_KEY, "true")?;
+    put_setting(&tx, RESET_AT_KEY, &now.to_string())?;
     tx.commit()
         .map_err(|e| format!("Failed to commit MLS reset harvest: {e}"))?;
 
@@ -501,6 +513,41 @@ mod tests {
     }
 
     #[test]
+    fn mid_range_schema_versions_are_unsupported() {
+        assert_eq!(
+            classify_version(Some(6), true),
+            StoreClassification::Unsupported(6)
+        );
+        assert_eq!(
+            classify_version(Some(50), true),
+            StoreClassification::Unsupported(50)
+        );
+        assert_eq!(
+            classify_version(Some(99), true),
+            StoreClassification::Unsupported(99)
+        );
+    }
+
+    #[test]
+    fn unsupported_schema_version_fails_closed_without_archiving() {
+        let root = temp_dir("unsupported");
+        let mls = root.join("mls");
+        std::fs::create_dir_all(&mls).unwrap();
+        let db_path = mls.join("vector-mls.db");
+        store(&db_path, Some(50));
+        let conn = app_db(&root.join("app.db"));
+
+        let err = reset_with_connection(&conn, &mls, &db_path, &[0; 32], 1_000_000).unwrap_err();
+        assert!(err.contains("Unsupported MLS store schema version 50"));
+        assert!(db_path.exists(), "must not archive an unsupported store");
+        assert!(
+            setting(&conn, RESET_MARKER_KEY).unwrap().is_none(),
+            "must not mark reset complete for unsupported schema"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn unopenable_existing_store_is_legacy() {
         let root = temp_dir("unopenable");
         let path = root.join("broken.db");
@@ -531,6 +578,10 @@ mod tests {
         assert_eq!(
             setting(&conn, RESET_MARKER_KEY).unwrap().as_deref(),
             Some("complete")
+        );
+        assert_eq!(
+            setting(&conn, RESET_AT_KEY).unwrap().as_deref(),
+            Some("1000000")
         );
 
         let second = reset_with_connection(&conn, &mls, &db_path, &[0; 32], 1_000_001).unwrap();
