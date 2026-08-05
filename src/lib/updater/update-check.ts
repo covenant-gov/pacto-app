@@ -165,6 +165,17 @@ export async function checkForUpdates(): Promise<void> {
   }
 }
 
+/**
+ * Force a fresh manifest check, bypassing the per-launch memo. For an
+ * explicit user-initiated retry (e.g. the update gate's block screen),
+ * where a second network attempt is a deliberate choice rather than
+ * passive launch-time behavior.
+ */
+export function retryUpdateCheck(): Promise<void> {
+  memoizedCheckPromise = null;
+  return checkForUpdates();
+}
+
 let downloadTotalBytes = 0;
 let downloadedBytes = 0;
 
