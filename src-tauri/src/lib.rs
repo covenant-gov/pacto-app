@@ -4639,9 +4639,7 @@ fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
     matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
 }
 
-/// Relay URLs with a single-relay reconnect fetch currently in flight. Guards against a relay
-/// flapping Connected/Disconnected/Connected in quick succession spawning overlapping fetches
-/// for the same relay; each relay has its own independent slot.
+// Relay URLs with a reconnect fetch in flight (lazy_static items cannot take /// docs).
 lazy_static! {
     static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
 }

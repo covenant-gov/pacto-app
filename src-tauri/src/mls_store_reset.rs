@@ -644,7 +644,9 @@ mod tests {
         let db_path = mls.join("vector-mls.db");
         store(&db_path, Some(104));
 
-        // Old archive that prune will try to delete; make removal fail on Unix.
+        // Aged archive so prune will attempt deletion. Mode 0555 often blocks
+        // remove_dir_all for non-root; CI-as-root may still delete it — either
+        // outcome is fine as long as reset completes after the marker.
         let sticky = root.join(format!("{ARCHIVE_PREFIX}1"));
         std::fs::create_dir_all(&sticky).unwrap();
         std::fs::write(sticky.join("hold"), b"x").unwrap();
@@ -664,7 +666,7 @@ mod tests {
         );
 
         #[cfg(unix)]
-        {
+        if sticky.exists() {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&sticky, std::fs::Permissions::from_mode(0o755)).unwrap();
         }

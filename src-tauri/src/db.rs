@@ -5575,7 +5575,7 @@ pub fn repair_legacy_hex_reaction_npubs(conn: &rusqlite::Connection) -> Result<(
 
     for (id, hex_npub) in rows {
         let Ok(pubkey) = nostr_sdk::PublicKey::from_hex(&hex_npub) else { continue };
-        let Ok(bech32) = pubkey.to_bech32() else { continue };
+        let bech32 = pubkey.to_bech32().expect("PublicKey::to_bech32 is infallible");
         conn.execute(
             "UPDATE events SET npub = ?1 WHERE id = ?2",
             rusqlite::params![bech32, id],
