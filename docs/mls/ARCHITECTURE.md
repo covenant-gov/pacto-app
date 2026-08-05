@@ -2,7 +2,7 @@
 
 ## Stack
 
-- **Crate path:** `mdk_core`, `mdk_sqlite_storage` — MDK engine with **`MdkSqliteStorage`**.
+- **Crates:** `mdk-core`, `mdk-sqlite-storage`, and `mdk-storage-traits` **0.8.0** from crates.io, using the `nostr` **0.44.7** line. The old git revision is no longer part of the dependency graph.
 - **Facade:** **`MlsService`** in `src-tauri/src/mls.rs` — creates a persistent engine at:
 
   `get_mls_directory(...)/vector-mls.db`
@@ -18,6 +18,29 @@
    - **`mls_event_cursors`** — last seen Nostr event per group for backfill
 
 Decrypted **application messages** are integrated into the same **chat/message model** as DMs (see module docs at top of `mls.rs`: unified chat storage, not a separate MLS-only messages table for UX persistence).
+
+## Store encryption and upgrades
+
+`vector-mls.db` is SQLCipher-encrypted. `MlsService` derives a distinct 32-byte store key from the unlocked account session key with the `pacto/mls-store/v1` domain separator; MDK never receives the app database's plaintext key material.
+
+Before MDK 0.8.0 opens the store, `mls_store_reset.rs` reads the MDK refinery history directly. Stores from the old V100–V104 series are harvested and the entire `<npub>/mls/` directory—database, WAL, and SHM together—is moved to `<npub>/mls.archive.<timestamp>/`. A fresh encrypted store is then created. Archive directories are removed after seven days.
+
+Seven-day retention bounds disk exposure; it does **not** revoke credentials. Until an upgraded admin restores a member (remove-then-re-add advances the epoch past the archived leaf), or members abandon an unrecovered/re-created old channel, anyone who obtains the archive can still participate as that member on the live group. Sole-admin squads never get that revoke path and must re-create, then stop using the old channel.
+
+Unknown MDK schema versions outside **1–5** (current) and **≥100** (legacy) fail closed: the app refuses to open or archive the store rather than guessing.
+
+The app keeps message history, chat names, and participant lists in `vector.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored. Multi-admin rollout must leave one admin on the pre-upgrade build until others are restored. Harvest records `mls_store_reset_at` as a KeyPackage creation-time floor when no prior keypackage reference exists for a member.
+
+### Optional real legacy fixture
+
+CI covers reset with synthetic V100/V104 SQLite fixtures. To exercise a copied pre-upgrade `mls/` directory (including hot WAL):
+
+```bash
+export MLS_LEGACY_FIXTURE=/path/to/copied/mls   # contains vector-mls.db (+ optional -wal/-shm)
+cd src-tauri && cargo test --lib mls_store_reset::tests::real_legacy_store_copy_archives_with_hot_wal_and_fresh_store_opens -- --ignored --exact
+```
+
+Or: `./scripts/run-mls-legacy-fixture-test.sh` (no-ops with exit 0 when `MLS_LEGACY_FIXTURE` is unset).
 
 ## Nostr interaction
 

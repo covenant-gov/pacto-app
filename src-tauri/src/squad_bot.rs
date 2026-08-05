@@ -999,7 +999,7 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
             squad_name: wire.squad_name.trim().to_string(),
             broadcast_event_id: wire.broadcast_event_id.trim().to_string(),
             requester_npub,
-            created_at: rumor.created_at.as_u64() as i64,
+            created_at: rumor.created_at.as_secs() as i64,
         });
     }
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));

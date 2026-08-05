@@ -4,6 +4,8 @@
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
   import SquadBotAnnounceCard from '../announcements/SquadBotAnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
+  import MlsResetNotice from './MlsResetNotice.svelte';
+  import MlsMembersPanel from './MlsMembersPanel.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
@@ -20,6 +22,7 @@
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
+    adminsByGroupId,
     membersLoadingByGroupId,
     refreshMlsGroupMembers,
     isMlsGroupMembersHydrated,
@@ -66,6 +69,7 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { mlsResetByGroupId } from '../../stores/mls-reset';
   import {
     incrementMentionAlert,
     clearMentionAlert,
@@ -128,6 +132,11 @@
     !isChannelCreating &&
     !!activeChannel?.groupId &&
     $mlsHistoryWelcomeGroupIds.includes(activeChannel.groupId.trim().toLowerCase());
+  $: activeMlsReset = effectiveMembersGroupId
+    ? ($mlsResetByGroupId[effectiveMembersGroupId] ??
+      $mlsResetByGroupId[effectiveMembersGroupId.toLowerCase()] ??
+      null)
+    : null;
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
 
@@ -323,12 +332,18 @@
   $: panelMembersGroupId = effectiveMembersGroupId;
   $: panelMembers =
     panelMembersGroupId != null ? ($membersByGroupId[panelMembersGroupId] ?? []) : [];
+  $: panelAdmins =
+    panelMembersGroupId != null ? ($adminsByGroupId[panelMembersGroupId] ?? []) : [];
   $: panelMembersLoading =
     panelMembersGroupId != null ? ($membersLoadingByGroupId[panelMembersGroupId] ?? false) : false;
   $: showPanelMembersLoading = panelMembersLoading && panelMembers.length === 0;
 
   $: if ($showMembersPanel && panelMembersGroupId && prevMembersGroupIdForPanel !== panelMembersGroupId) {
     prevMembersGroupIdForPanel = panelMembersGroupId;
+    void ensureMlsGroupMembers(panelMembersGroupId);
+  }
+  // Sole-admin recreate needs the preserved roster even when the members panel is closed.
+  $: if (activeMlsReset && panelMembersGroupId) {
     void ensureMlsGroupMembers(panelMembersGroupId);
   }
   $: if (!$showMembersPanel) {
@@ -902,20 +917,28 @@
             {#if $groupSendError}
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
-            <MessageInput
-              channelName={channelName}
-              onSend={handleSendText}
-              onSendMentions={handleSendMentions}
-              onSendFile={handleSendFile}
-              squadMlsGroupId={effectiveMembersGroupId ?? undefined}
-              squadRosterNpubs={panelMembers}
-              squadProfiles={$profiles}
-              {currentUserNpub}
-              disabled={isChannelCreating}
-              repliedTo={replyToMessageId ?? undefined}
-              repliedToPreview={replyPreview}
-              onCancelReply={cancelReply}
-            />
+            {#if activeMlsReset}
+              <MlsResetNotice
+                state={activeMlsReset}
+                squadName={activeParent?.name ?? channelName}
+                formerMemberNpubs={panelMembers}
+              />
+            {:else}
+              <MessageInput
+                channelName={channelName}
+                onSend={handleSendText}
+                onSendMentions={handleSendMentions}
+                onSendFile={handleSendFile}
+                squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+                squadRosterNpubs={panelMembers}
+                squadProfiles={$profiles}
+                {currentUserNpub}
+                disabled={isChannelCreating}
+                repliedTo={replyToMessageId ?? undefined}
+                repliedToPreview={replyPreview}
+                onCancelReply={cancelReply}
+              />
+            {/if}
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
@@ -994,20 +1017,28 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput
-      channelName={channelName}
-      onSend={handleSendText}
-      onSendMentions={handleSendMentions}
-      onSendFile={handleSendFile}
-      squadMlsGroupId={effectiveMembersGroupId ?? undefined}
-      squadRosterNpubs={panelMembers}
-      squadProfiles={$profiles}
-      {currentUserNpub}
-      disabled={isChannelCreating}
-      repliedTo={replyToMessageId ?? undefined}
-      repliedToPreview={replyPreview}
-      onCancelReply={cancelReply}
-    />
+    {#if activeMlsReset}
+      <MlsResetNotice
+        state={activeMlsReset}
+        squadName={activeParent?.name ?? channelName}
+        formerMemberNpubs={panelMembers}
+      />
+    {:else}
+      <MessageInput
+        channelName={channelName}
+        onSend={handleSendText}
+        onSendMentions={handleSendMentions}
+        onSendFile={handleSendFile}
+        squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+        squadRosterNpubs={panelMembers}
+        squadProfiles={$profiles}
+        {currentUserNpub}
+        disabled={isChannelCreating}
+        repliedTo={replyToMessageId ?? undefined}
+        repliedToPreview={replyPreview}
+        onCancelReply={cancelReply}
+      />
+    {/if}
     {/if}
 
     <!-- Leave channel confirm -->
@@ -1064,29 +1095,15 @@
     {/if}
     </div>
     <!-- Right-hand members panel (Discord-style) -->
-    {#if $showMembersPanel}
-      <aside class="members-panel" aria-label={$t('messaging.channel.membersTitle')}>
-        <div class="members-panel-header">
-          <h3 class="members-panel-title">{$t('messaging.channel.membersPanelTitle')}</h3>
-        </div>
-        <div class="members-panel-list">
-          {#if showPanelMembersLoading}
-            <p class="members-panel-loading">{$t('messaging.channel.membersPanelLoading')}</p>
-          {:else}
-            {#each panelMembers as npub (npub)}
-              {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
-              <div class="members-panel-member">
-                {#if avatarSrc}
-                  <img src={avatarSrc} alt="" class="members-panel-avatar" />
-                {:else}
-                  <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
-                {/if}
-                <span class="members-panel-name">{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</span>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      </aside>
+    {#if $showMembersPanel && panelMembersGroupId}
+      <MlsMembersPanel
+        groupId={panelMembersGroupId}
+        members={panelMembers}
+        admins={panelAdmins}
+        loading={showPanelMembersLoading}
+        currentUserNpub={currentUserNpub ?? ''}
+        profiles={$profiles}
+      />
     {/if}
   {:else}
     <div class="empty-state">
@@ -1415,77 +1432,6 @@
   .channel-modal-danger:hover:not(:disabled) {
     background: var(--danger);
     filter: brightness(1.1);
-  }
-
-  /* Right-hand members panel (Discord-style) */
-  .members-panel {
-    width: 240px;
-    min-width: 240px;
-    background: var(--bg-elevated);
-    border-left: 1px solid var(--border-subtle);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-  }
-
-  .members-panel-header {
-    height: 48px;
-    padding: 0 12px 0 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
-
-  .members-panel-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .members-panel-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-
-  .members-panel-loading {
-    margin: 0 16px;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .members-panel-member {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 16px;
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-  }
-
-  .members-panel-member:hover {
-    background: var(--bg-hover);
-  }
-
-  .members-panel-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .members-panel-avatar-placeholder {
-    background: var(--border);
-  }
-
-  .members-panel-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .channel-info {

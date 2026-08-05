@@ -515,6 +515,18 @@ export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
   return meta;
 }
 
+/** A squad channel whose local MLS state was archived during the MDK upgrade. */
+export interface MlsStoreResetGroupState {
+  groupId: string;
+  stateLost: boolean;
+  adminNpubs: string[];
+  singleAdmin: boolean;
+}
+
+export async function getMlsStoreResetState(): Promise<MlsStoreResetGroupState[]> {
+  return (await invoke('get_mls_store_reset_state')) as MlsStoreResetGroupState[];
+}
+
 /** Structured payload for squad / squad-pair invite (DM until RNF-4 Pacto App thread). */
 export interface SquadInvitePayload {
   type: 'squad_invite';

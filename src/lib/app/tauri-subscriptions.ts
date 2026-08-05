@@ -1,5 +1,11 @@
 import { listen, type UnlistenFn } from '../api';
-import { listPendingMlsWelcomes, fetchMessages, parseSquadInviteMessage, syncMlsGroupsNow } from '../api/nostr';
+import {
+  listPendingMlsWelcomes,
+  fetchMessages,
+  parseSquadInviteMessage,
+  syncMlsGroupsNow,
+  type MlsStoreResetGroupState,
+} from '../api/nostr';
 import { listRelays, type RelayStatus } from '../api/relays';
 import { parseWalletTxAnnouncement, walletTxAnnouncementHash } from '../wallet/dm-messages';
 import { onMlsStructuredMessage } from './mls-structured-refresh';
@@ -31,6 +37,10 @@ import {
 } from '../../stores/app';
 import { mergeUnreadCounts } from '../../stores/unread';
 
+import {
+  applyMlsStoreResetState,
+  refreshMlsStoreResetState,
+} from '../../stores/mls-reset';
 const TYPING_EXPIRY_SEC = 15;
 
 export interface AppEventHandlers {
@@ -103,6 +113,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
   const cleanupSessionFocusChecks = initSessionFocusChecks();
   const cleanupWakeSync = installWakeSyncHandlers();
   const cleanupSyncHealthTicker = installSyncHealthTicker();
+  refreshMlsStoreResetState().catch((e) => dmError('refreshMlsStoreResetState', e));
   listRelays()
     .then((relays) =>
       seedRelayHealth(relays.map((r) => ({ url: r.url, status: r.status, enabled: r.enabled })))
@@ -294,6 +305,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         ? String((event.payload as { group_id?: string }).group_id ?? '')
         : '';
     notifyPendingInviteWelcome(groupId || null);
+  });
+
+  register(unsubs, 'mls_store_reset', (event) => {
+    applyMlsStoreResetState(event.payload as MlsStoreResetGroupState[]);
   });
 
   register(unsubs, 'mls_welcome_accepted', (event) => {

@@ -1,5 +1,6 @@
-use std::borrow::Cow;
+use std::future::Future;
 use std::sync::Arc;
+use futures_util::FutureExt;
 use lazy_static::lazy_static;
 use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
@@ -21,6 +22,8 @@ mod account_manager;
 
 mod mls;
 pub use mls::MlsService;
+mod mls_store_reset;
+mod mls_store_reset_state;
 
 
 use db::save_chat_messages;
@@ -93,6 +96,10 @@ mod session;
 
 // Application-wide configuration constants and IPC snapshot.
 mod app_config;
+
+// App-local seams over the nostr symbols the 0.45 line removes.
+mod nostr_tags;
+mod nostr_sign;
 
 /// # Trusted Relays
 ///
@@ -217,6 +224,30 @@ static PENDING_INVITE: OnceCell<PendingInviteAcceptance> = OnceCell::new();
 // - Cleared when sync finishes to free memory
 lazy_static! {
     static ref WRAPPER_ID_CACHE: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
+}
+
+/// Consecutive handling timeouts per gift-wrap wrapper id. After
+/// `GIFTWRAP_TIMEOUT_DISCARD_AFTER`, the wrapper is quarantined like a panic.
+const GIFTWRAP_TIMEOUT_DISCARD_AFTER: u32 = 3;
+lazy_static! {
+    static ref GIFTWRAP_TIMEOUT_COUNTS: std::sync::Mutex<std::collections::HashMap<String, u32>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
+/// Returns true once the same wrapper has timed out `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times.
+fn note_giftwrap_timeout(wrapper_event_id: &str) -> bool {
+    let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() else {
+        return true;
+    };
+    let entry = counts.entry(wrapper_event_id.to_string()).or_insert(0);
+    *entry = entry.saturating_add(1);
+    *entry >= GIFTWRAP_TIMEOUT_DISCARD_AFTER
+}
+
+fn clear_giftwrap_timeout_count(wrapper_event_id: &str) {
+    if let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() {
+        counts.remove(wrapper_event_id);
+    }
 }
 
 
@@ -1188,7 +1219,7 @@ async fn fetch_messages<R: Runtime>(
         // account-wide catch-up. Read-only lock: does not mutate ChatState.
         let now = Timestamp::now();
         let last_catch_up_until = STATE.lock().await.last_catch_up_until;
-        let since = single_relay_fetch_since(last_catch_up_until, now.as_u64());
+        let since = single_relay_fetch_since(last_catch_up_until, now.as_secs());
 
         let filter = Filter::new()
             .pubkey(my_public_key)
@@ -1211,7 +1242,7 @@ async fn fetch_messages<R: Runtime>(
 
         // Process events without affecting global sync state
         while let Some(event) = events.next().await {
-            handle_event(event, false).await;
+            handle_event_guarded(event, false).await;
         }
         
         // Also sync MLS group messages after single-relay reconnection
@@ -1391,10 +1422,10 @@ async fn fetch_messages<R: Runtime>(
             state.sync_total_iterations = 0;
 
             // Initial 2-day window: now - 2 days → now
-            let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
+            let two_days_ago = now.as_secs() - (60 * 60 * 24 * 2);
 
             state.sync_window_start = two_days_ago;
-            state.sync_window_end = now.as_u64();
+            state.sync_window_end = now.as_secs();
 
             (
                 Timestamp::from_secs(two_days_ago),
@@ -1402,7 +1433,7 @@ async fn fetch_messages<R: Runtime>(
                 false
             )
         } else {
-            match next_sync_slice(&mut state, Timestamp::now().as_u64(), monotonic_now_secs()) {
+            match next_sync_slice(&mut state, Timestamp::now().as_secs(), monotonic_now_secs()) {
                 Some((since, until, is_last)) => (
                     Timestamp::from_secs(since),
                     Timestamp::from_secs(until),
@@ -1430,8 +1461,8 @@ async fn fetch_messages<R: Runtime>(
     // Emit our current "Sync Range" to the frontend (only for general syncs, not single-relay)
     if relay_url.is_none() {
         handle.emit("sync_progress", serde_json::json!({
-            "since": since_timestamp.as_u64(),
-            "until": until_timestamp.as_u64(),
+            "since": since_timestamp.as_secs(),
+            "until": until_timestamp.as_secs(),
             "mode": format!("{:?}", STATE.lock().await.sync_mode)
         })).unwrap();
     }
@@ -1453,10 +1484,7 @@ async fn fetch_messages<R: Runtime>(
             Err(e) => {
                 eprintln!("[Sync] Relay event stream failed for {}: {}", url, e);
                 let mut state = STATE.lock().await;
-                state.is_syncing = false;
-                state.sync_mode = SyncMode::Finished;
-                state.sync_empty_iterations = 0;
-                state.sync_total_iterations = 0;
+                abandon_sync_slice(&mut state);
                 return;
             }
         }
@@ -1470,10 +1498,7 @@ async fn fetch_messages<R: Runtime>(
             Err(e) => {
                 eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
                 let mut state = STATE.lock().await;
-                state.is_syncing = false;
-                state.sync_mode = SyncMode::Finished;
-                state.sync_empty_iterations = 0;
-                state.sync_total_iterations = 0;
+                abandon_sync_slice(&mut state);
                 return;
             }
         }
@@ -1484,7 +1509,7 @@ async fn fetch_messages<R: Runtime>(
     let mut new_messages_count: u16 = 0;
     while let Some(event) = event_stream.next().await {
         // Count the amount of accepted (new) events
-        if handle_event(event, false).await {
+        if handle_event_guarded(event, false).await {
             new_messages_count += 1;
         }
     }
@@ -1515,7 +1540,7 @@ async fn fetch_messages<R: Runtime>(
             events_found,
             catch_up_is_last_slice,
             oldest_message_time,
-            Timestamp::now().as_u64(),
+            Timestamp::now().as_secs(),
             monotonic_now_secs(),
         )
     };
@@ -1752,7 +1777,7 @@ async fn start_typing(receiver: String) -> bool {
             // Build and broadcast the Typing Indicator
             let rumor = EventBuilder::new(Kind::ApplicationSpecificData, "typing")
                 .tag(Tag::public_key(pubkey))
-                .tag(Tag::custom(TagKind::d(), vec!["vector"]))
+                .tag(nostr_tags::d_tag(vec!["vector"]))
                 .tag(Tag::expiration(Timestamp::from_secs(
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1790,7 +1815,7 @@ async fn start_typing(receiver: String) -> bool {
 
             // Build the typing indicator rumor
             let rumor = EventBuilder::new(Kind::ApplicationSpecificData, "typing")
-                .tag(Tag::custom(TagKind::d(), vec!["vector"]))
+                .tag(nostr_tags::d_tag(vec!["vector"]))
                 .tag(Tag::expiration(Timestamp::from_secs(
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -2019,6 +2044,219 @@ mod welcome_outcome_tests {
     }
 }
 
+/// Per-event ceiling on gift-wrap handling. An unwind is not the only way one inbound
+/// event can end the intake loop: a payload that allocates or spins never unwinds, so a
+/// deadline is the only bound that catches it.
+const EVENT_HANDLING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Result of one bounded gift-wrap intake attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntakeOutcome {
+    /// Handling completed; carries `handle_event`'s accepted-as-new verdict.
+    Handled(bool),
+    /// Handling unwound. A payload that panics does so deterministically, so the
+    /// wrapper is permanently unhandleable and is recorded as discarded.
+    Panicked,
+    /// Handling exceeded the deadline. Retryable until the same wrapper times out
+    /// `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times in this process, then quarantined.
+    TimedOut,
+}
+
+impl IntakeOutcome {
+    /// Whether `handle_event` accepted the event as new.
+    fn accepted_new(self) -> bool {
+        matches!(self, IntakeOutcome::Handled(true))
+    }
+
+    /// Whether the failure repeats on every retry, so the wrapper should be recorded
+    /// as discarded rather than re-fetched on each launch. Timeouts need the per-id
+    /// counter in `note_giftwrap_timeout` — use that path from `handle_event_guarded`.
+    fn is_permanent_failure(self) -> bool {
+        matches!(self, IntakeOutcome::Panicked)
+    }
+}
+
+/// Run one intake attempt behind a failure boundary: catch an unwind, and abandon an
+/// attempt that outlives `deadline`. Generic over the attempt so the boundary is
+/// exercisable without a live relay.
+async fn bounded_intake<F>(
+    wrapper_event_id: &str,
+    attempt: F,
+    deadline: std::time::Duration,
+) -> IntakeOutcome
+where
+    F: Future<Output = bool>,
+{
+    let guarded = std::panic::AssertUnwindSafe(attempt).catch_unwind();
+    match tokio::time::timeout(deadline, guarded).await {
+        Ok(Ok(accepted)) => IntakeOutcome::Handled(accepted),
+        Ok(Err(_)) => {
+            eprintln!("[Intake] Gift wrap {} panicked while being handled; discarding it", wrapper_event_id);
+            IntakeOutcome::Panicked
+        }
+        Err(_) => {
+            eprintln!(
+                "[Intake] Gift wrap {} exceeded the {}s handling deadline; abandoned for retry",
+                wrapper_event_id,
+                deadline.as_secs()
+            );
+            IntakeOutcome::TimedOut
+        }
+    }
+}
+
+/// Handle one inbound gift wrap so a hostile payload costs one event instead of the
+/// whole intake path. Every intake caller goes through this rather than `handle_event`.
+async fn handle_event_guarded(event: Event, is_new: bool) -> bool {
+    let wrapper_event_id = event.id.to_hex();
+    let outcome = bounded_intake(
+        &wrapper_event_id,
+        handle_event(event, is_new),
+        EVENT_HANDLING_TIMEOUT,
+    )
+    .await;
+
+    let quarantine = match outcome {
+        IntakeOutcome::Panicked => true,
+        IntakeOutcome::TimedOut => {
+            let discard = note_giftwrap_timeout(&wrapper_event_id);
+            if discard {
+                eprintln!(
+                    "[Intake] Gift wrap {} timed out {} times; discarding it",
+                    wrapper_event_id, GIFTWRAP_TIMEOUT_DISCARD_AFTER
+                );
+            }
+            discard
+        }
+        IntakeOutcome::Handled(_) => {
+            clear_giftwrap_timeout_count(&wrapper_event_id);
+            false
+        }
+    };
+
+    if quarantine {
+        if let Some(handle) = TAURI_APP.get() {
+            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+        }
+        WRAPPER_ID_CACHE.lock().await.insert(wrapper_event_id);
+    }
+
+    outcome.accepted_new()
+}
+
+/// Park the walk and release *both* sync in-flight guards. Every `fetch_messages` path
+/// that returns before `record_slice_result` must use this: clearing `is_syncing` alone
+/// still refuses every later slice, because `next_sync_slice` bails on `slice_in_flight`.
+fn abandon_sync_slice(state: &mut ChatState) {
+    state.is_syncing = false;
+    state.slice_in_flight = false;
+    state.sync_mode = SyncMode::Finished;
+    state.sync_empty_iterations = 0;
+    state.sync_total_iterations = 0;
+}
+
+#[cfg(test)]
+mod intake_boundary_tests {
+    use super::{
+        abandon_sync_slice, bounded_intake, clear_giftwrap_timeout_count, note_giftwrap_timeout,
+        ChatState, IntakeOutcome, SyncMode, GIFTWRAP_TIMEOUT_DISCARD_AFTER,
+    };
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn a_well_formed_attempt_is_untouched_by_the_boundary() {
+        let outcome = bounded_intake("ok", async { true }, Duration::from_secs(5)).await;
+        assert_eq!(outcome, IntakeOutcome::Handled(true));
+        assert!(outcome.accepted_new());
+        assert!(!outcome.is_permanent_failure());
+
+        let duplicate = bounded_intake("dup", async { false }, Duration::from_secs(5)).await;
+        assert_eq!(duplicate, IntakeOutcome::Handled(false));
+        assert!(!duplicate.accepted_new());
+        assert!(!duplicate.is_permanent_failure());
+    }
+
+    #[tokio::test]
+    async fn an_unwinding_payload_is_caught_and_treated_as_permanent() {
+        let outcome = bounded_intake(
+            "hostile",
+            async { panic!("NIP-44 v2 decrypt out of bounds") },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(outcome, IntakeOutcome::Panicked);
+        assert!(!outcome.accepted_new());
+        assert!(outcome.is_permanent_failure());
+    }
+
+    #[tokio::test]
+    async fn a_stalling_payload_is_abandoned_at_the_deadline_and_stays_retryable() {
+        let outcome = bounded_intake(
+            "stalled",
+            async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                true
+            },
+            Duration::from_millis(20),
+        )
+        .await;
+        assert_eq!(outcome, IntakeOutcome::TimedOut);
+        assert!(!outcome.accepted_new());
+        assert!(
+            !outcome.is_permanent_failure(),
+            "a single stall must stay retryable so a slow disk cannot drop a pending invitation"
+        );
+    }
+
+    #[test]
+    fn repeated_timeouts_for_the_same_wrapper_eventually_quarantine() {
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        for _ in 0..(GIFTWRAP_TIMEOUT_DISCARD_AFTER - 1) {
+            assert!(!note_giftwrap_timeout("wrap-timeout-q"));
+        }
+        assert!(note_giftwrap_timeout("wrap-timeout-q"));
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        assert!(!note_giftwrap_timeout("wrap-timeout-q"));
+    }
+
+    #[tokio::test]
+    async fn the_loop_survives_a_failure_and_processes_the_following_event() {
+        let mut accepted = 0u16;
+        for attempt in 0..3u8 {
+            let outcome = match attempt {
+                0 => bounded_intake("first", async { true }, Duration::from_secs(5)).await,
+                1 => bounded_intake("hostile", async { panic!("boom") }, Duration::from_secs(5)).await,
+                _ => bounded_intake("third", async { true }, Duration::from_secs(5)).await,
+            };
+            if outcome.accepted_new() {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 2, "the event after the hostile one must still be accepted");
+    }
+
+    #[test]
+    fn abandoning_a_slice_releases_both_in_flight_guards() {
+        let mut state = ChatState::new();
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        state.sync_mode = SyncMode::ForwardSync;
+        state.sync_empty_iterations = 3;
+        state.sync_total_iterations = 7;
+
+        abandon_sync_slice(&mut state);
+
+        assert!(!state.is_syncing);
+        assert!(
+            !state.slice_in_flight,
+            "releasing is_syncing alone still refuses every later slice"
+        );
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(state.sync_empty_iterations, 0);
+        assert_eq!(state.sync_total_iterations, 0);
+    }
+}
+
 #[tauri::command]
 async fn handle_event(event: Event, is_new: bool) -> bool {
     // Get the wrapper (giftwrap) event ID for duplicate detection
@@ -2048,11 +2286,21 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
         }
     }
 
-    let client = get_nostr_client().expect("Nostr client not initialized");
-
-    // Grab our pubkey
-    let signer = client.signer().await.unwrap();
-    let my_public_key = signer.get_public_key().await.unwrap();
+    // Missing client or signer is a transient local condition, not a bad payload: return
+    // without a verdict so the wrapper stays retryable instead of unwinding into the
+    // intake boundary, which would record it as permanently discarded.
+    let Ok(client) = get_nostr_client() else {
+        eprintln!("[Intake] Nostr client not initialized; leaving gift wrap {} retryable", wrapper_event_id);
+        return false;
+    };
+    let Ok(signer) = client.signer().await else {
+        eprintln!("[Intake] No signer available; leaving gift wrap {} retryable", wrapper_event_id);
+        return false;
+    };
+    let Ok(my_public_key) = signer.get_public_key().await else {
+        eprintln!("[Intake] Signer has no public key; leaving gift wrap {} retryable", wrapper_event_id);
+        return false;
+    };
 
     // Unwrap the gift wrap
     match client.unwrap_gift_wrap(&event).await {
@@ -2092,9 +2340,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
             // Special handling for MLS Welcomes (not processed by rumor processor)
             if rumor.kind == Kind::MlsWelcome {
                 // Convert rumor Event -> UnsignedEvent
-                let unsigned_opt = serde_json::to_string(&rumor)
-                    .ok()
-                    .and_then(|s| nostr_sdk::UnsignedEvent::from_json(s.as_bytes()).ok());
+                let unsigned_opt = nostr_sign::unsigned_event_from(&rumor).ok();
 
                 if let Some(unsigned) = unsigned_opt {
                     // Outer giftwrap id is our wrapper id for dedup/logs
@@ -2871,15 +3117,13 @@ async fn notifs() -> Result<bool, String> {
             if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
                 if subscription_id == gift_sub_id {
                     // Handle DMs/files/vector-specific + MLS welcomes inside giftwrap
-                    handle_event(*event, true).await;
+                    handle_event_guarded(*event, true).await;
                 } else if subscription_id == mls_sub_id {
                     // Handle live MLS group message wrappers
                     let ev = (*event).clone();
 
                     // Extract group wire id from 'h' tag
-                    let group_wire_id_opt = ev
-                        .tags
-                        .find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)))
+                    let group_wire_id_opt = nostr_tags::find_letter(&ev.tags, Alphabet::H)
                         .and_then(|t| t.content().map(|s| s.to_string()));
 
                     if let Some(group_wire_id) = group_wire_id_opt {
@@ -3659,7 +3903,7 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
 
 /// Approximate wire size of an event via its serialized JSON length.
 fn event_size(event: &Event) -> u64 {
-    event.as_json().len() as u64
+    nostr_sign::event_json(event).len() as u64
 }
 
 /// Record that a relay delivered an event: increments `events_received` and adds the
@@ -3693,13 +3937,12 @@ pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
 #[cfg(test)]
 mod relay_metrics_tests {
     use super::{get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome};
-    use nostr_sdk::prelude::{EventBuilder, JsonUtil, Kind, Keys, Output, RelayUrl};
+    use crate::nostr_sign;
+    use nostr_sdk::prelude::{EventBuilder, Kind, Keys, Output, RelayUrl};
     use std::collections::{HashMap, HashSet};
 
     fn test_event(content: &str) -> nostr_sdk::Event {
-        EventBuilder::new(Kind::TextNote, content)
-            .sign_with_keys(&Keys::generate())
-            .unwrap()
+        nostr_sign::sign_with(EventBuilder::new(Kind::TextNote, content), &Keys::generate()).unwrap()
     }
 
     #[tokio::test]
@@ -3715,7 +3958,7 @@ mod relay_metrics_tests {
 
         let metrics = get_relay_metrics(accepted.to_string()).await.unwrap();
         assert_eq!(metrics.events_sent, 1);
-        assert_eq!(metrics.bytes_up, event.as_json().len() as u64);
+        assert_eq!(metrics.bytes_up, nostr_sign::event_json(&event).len() as u64);
     }
 
     #[tokio::test]
@@ -3769,7 +4012,7 @@ mod relay_metrics_tests {
         assert_eq!(metrics.events_received, 2);
         assert_eq!(
             metrics.bytes_down,
-            (event_a.as_json().len() + event_b.as_json().len()) as u64
+            (nostr_sign::event_json(&event_a).len() + nostr_sign::event_json(&event_b).len()) as u64
         );
     }
 
@@ -4396,9 +4639,7 @@ fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
     matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
 }
 
-/// Relay URLs with a single-relay reconnect fetch currently in flight. Guards against a relay
-/// flapping Connected/Disconnected/Connected in quick succession spawning overlapping fetches
-/// for the same relay; each relay has its own independent slot.
+// Relay URLs with a reconnect fetch in flight (lazy_static items cannot take /// docs).
 lazy_static! {
     static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
 }
@@ -5310,7 +5551,8 @@ async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_js
     // Initialize the Nostr client.
     let client = Client::builder()
         .signer(keys.clone())
-        .opts(ClientOptions::new().gossip(false))
+        // Gossip is opt-in from nostr-sdk 0.44: absent a gossip database it stays off.
+        .opts(ClientOptions::new())
         .monitor(Monitor::new(1024))
         .build();
     set_nostr_client(client);
@@ -5358,7 +5600,7 @@ async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_js
 async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
         .signer(keys.clone())
-        .opts(ClientOptions::new().gossip(false))
+        .opts(ClientOptions::new())
         .monitor(Monitor::new(1024))
         .build();
     set_nostr_client(client);
@@ -5593,8 +5835,8 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
             tokio::spawn(async move {
                 // Create and publish the acceptance event
                 let event_builder = EventBuilder::new(Kind::ApplicationSpecificData, "vector_invite_accepted")
-                    .tag(Tag::custom(TagKind::Custom("l".into()), vec!["vector"]))
-                    .tag(Tag::custom(TagKind::Custom("d".into()), vec![invite_code.as_str()]))
+                    .tag(nostr_tags::custom_tag("l", vec!["vector"]))
+                    .tag(nostr_tags::custom_tag("d", vec![invite_code.as_str()]))
                     .tag(Tag::public_key(inviter_pubkey));
                 
                 // Build the event
@@ -5724,9 +5966,9 @@ async fn deep_rescan<R: Runtime>(handle: AppHandle<R>) -> Result<bool, String> {
         state.sync_total_iterations = 0;
         
         // Start with a 2-day window from now
-        let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
+        let two_days_ago = now.as_secs() - (60 * 60 * 24 * 2);
         state.sync_window_start = two_days_ago;
-        state.sync_window_end = now.as_u64();
+        state.sync_window_end = now.as_secs();
     }
 
     // Trigger the first fetch
@@ -5805,7 +6047,7 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     // Initialise the Nostr client
     let client = Client::builder()
         .signer(keys.clone())
-        .opts(ClientOptions::new().gossip(false))
+        .opts(ClientOptions::new())
         .monitor(Monitor::new(1024))
         .build();
     set_nostr_client(client);
@@ -6232,7 +6474,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
     while let Some(event) = events.next().await {
         if event.content == "vector_invite" {
             // Extract the r tag (invite code)
-            if let Some(r_tag) = event.tags.find(TagKind::Custom(Cow::Borrowed("r"))) {
+            if let Some(r_tag) = nostr_tags::find_custom(&event.tags, "r") {
                 if let Some(code) = r_tag.content() {
                     // Store it locally
                     db::set_sql_setting(handle.clone(), "invite_code".to_string(), code.to_string())
@@ -6248,8 +6490,8 @@ async fn get_or_create_invite_code() -> Result<String, String> {
     
     // Create and publish the invite event
     let event_builder = EventBuilder::new(Kind::ApplicationSpecificData, "vector_invite")
-        .tag(Tag::custom(TagKind::d(), vec!["vector"]))
-        .tag(Tag::custom(TagKind::Custom("r".into()), vec![new_code.as_str()]));
+        .tag(nostr_tags::d_tag(vec!["vector"]))
+        .tag(nostr_tags::custom_tag("r", vec![new_code.as_str()]));
     
     // Build the event
     let event = client.sign_event_builder(event_builder).await.map_err(|e| e.to_string())?;
@@ -6541,7 +6783,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
     let mut invite_code_opt = None;
     while let Some(event) = events.next().await {
         if event.content == "vector_invite" {
-            if let Some(tag) = event.tags.find(TagKind::Custom(Cow::Borrowed("r"))) {
+            if let Some(tag) = nostr_tags::find_custom(&event.tags, "r") {
                 if let Some(content) = tag.content() {
                     invite_code_opt = Some(content.to_string());
                     break;
@@ -6570,13 +6812,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
             // Check if this acceptance references our inviter
             let references_inviter = event.tags
                 .iter()
-                .any(|tag| {
-                    if let Some(TagStandard::PublicKey { public_key, .. }) = tag.as_standardized() {
-                        *public_key == inviter_pubkey
-                    } else {
-                        false
-                    }
-                });
+                .any(|tag| nostr_tags::public_key_of(tag) == Some(inviter_pubkey));
             
             if references_inviter {
                 unique_acceptors.insert(event.pubkey);
@@ -6615,7 +6851,7 @@ async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
     // Check if they have a valid badge claim from the event period
     while let Some(event) = events.next().await {
         if event.content == "fawkes_badge_claimed" {
-            let timestamp = event.created_at.as_u64();
+            let timestamp = event.created_at.as_secs();
             // Verify the timestamp is within the valid event window
             if timestamp >= FAWKES_DAY_START && timestamp < FAWKES_DAY_END {
                 return Ok(true);
@@ -6675,6 +6911,16 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let my_pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let owner_pubkey_b32 = my_pubkey.to_bech32().map_err(|e| e.to_string())?;
+
+    // Opening the service runs legacy-store detection before cache lookup. A reset
+    // invalidates the private init key behind the previously published KeyPackage,
+    // so cached relay state must not short-circuit fresh publication.
+    drop(
+        MlsService::new_persistent_for_keypackage_refresh(&handle)
+            .map_err(|e| e.to_string())?,
+    );
+    let force_refresh = mls_store_reset_state::keypackage_refresh_required(&handle)?;
+    let cache = cache && !force_refresh;
 
     // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
     for relay in TRUSTED_RELAYS.iter() {
@@ -6753,8 +6999,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     }
 
     // Create device KeyPackage using persistent MLS engine inside a no-await scope
-    let (kp_encoded, kp_tags) = {
-        let mls_service = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+    let kp_data = {
+        let mls_service = MlsService::new_persistent_for_keypackage_refresh(&handle)
+            .map_err(|e| e.to_string())?;
         let engine = mls_service.engine().map_err(|e| e.to_string())?;
         let relay_urls: Vec<nostr_sdk::RelayUrl> = TRUSTED_RELAYS
             .iter()
@@ -6767,7 +7014,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 
     // Build and sign event with nostr client
     let kp_event = client
-        .sign_event_builder(EventBuilder::new(Kind::MlsKeyPackage, kp_encoded).tags(kp_tags))
+        // `Kind::MlsKeyPackage` is 443, so the tag set without the `d` tag is the right one.
+        .sign_event_builder(
+            EventBuilder::new(Kind::MlsKeyPackage, kp_data.content).tags(kp_data.tags_443),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -6781,7 +7031,13 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     // Upsert into mls_keypackage_index
     {
         let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
-        let now = Timestamp::now().as_u64();
+        index.retain(|entry| {
+            entry.get("owner_pubkey").and_then(|value| value.as_str())
+                != Some(owner_pubkey_b32.as_str())
+                || entry.get("device_id").and_then(|value| value.as_str())
+                    != Some(device_id.as_str())
+        });
+        let now = Timestamp::now().as_secs();
         index.push(serde_json::json!({
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
@@ -6792,12 +7048,64 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let _ = db::save_mls_keypackages(handle.clone(), &index).await;
     }
 
+    if force_refresh {
+        mls_store_reset_state::mark_keypackage_refreshed(&handle)?;
+    }
+    if let Err(e) = replay_reset_pending_welcomes(&handle).await {
+        // Keep the durable wrapper-id queue for the next login when a relay or
+        // the MLS engine is temporarily unavailable.
+        eprintln!("[MLS] Pending welcome replay after store reset deferred: {}", e);
+    }
+
     Ok(serde_json::json!({
         "device_id": device_id,
         "owner_pubkey": owner_pubkey_b32,
         "keypackage_ref": kp_event.id.to_hex(),
         "cached": false
     }))
+}
+
+/// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
+/// so clearing `discarded_giftwraps` alone cannot recover an old invitation.
+async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+    let ids = mls_store_reset_state::pending_wrapper_ids(handle)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
+    let mut remaining = Vec::new();
+    for wrapper_id in ids {
+        let Ok(event_id) = EventId::from_hex(&wrapper_id) else {
+            eprintln!("[MLS] Dropping malformed reset welcome wrapper id: {}", wrapper_id);
+            continue;
+        };
+        let filter = Filter::new().id(event_id).kind(Kind::GiftWrap).limit(1);
+        let event = match client
+            .stream_events_from(
+                TRUSTED_RELAYS.to_vec(),
+                filter,
+                std::time::Duration::from_secs(10),
+            )
+            .await
+        {
+            Ok(mut events) => events.next().await,
+            Err(e) => {
+                eprintln!("[MLS] Exact welcome re-fetch failed for {}: {}", wrapper_id, e);
+                None
+            }
+        };
+
+        let Some(event) = event else {
+            remaining.push(wrapper_id);
+            continue;
+        };
+        let _ = handle_event_guarded(event, true).await;
+        if !db::wrapper_event_exists(handle, &wrapper_id).await.unwrap_or(false) {
+            remaining.push(wrapper_id);
+        }
+    }
+    mls_store_reset_state::retain_pending_wrapper_ids(handle, &remaining)
 }
 
 /// Create a new MLS group with initial member devices
@@ -7184,7 +7492,7 @@ fn get_pending_welcome_id_for_group_sync<R: Runtime>(
 ) -> Option<String> {
     let mls = MlsService::new_persistent(handle).ok()?;
     let engine = mls.engine().ok()?;
-    let pending = engine.get_pending_welcomes().ok()?;
+    let pending = engine.get_pending_welcomes(None).ok()?;
     let cid_lower = channel_group_id.to_lowercase();
     let w = pending.into_iter().find(|w| hex::encode(&w.nostr_group_id).to_lowercase() == cid_lower)?;
     Some(w.id.to_hex())
@@ -7201,7 +7509,7 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             let engine = mls.engine().map_err(|e| e.to_string())?;
 
-            let pending = engine.get_pending_welcomes().map_err(|e| e.to_string())?;
+            let pending = engine.get_pending_welcomes(None).map_err(|e| e.to_string())?;
 
             let mut out: Vec<SimpleWelcome> = Vec::with_capacity(pending.len());
             for w in pending {
@@ -7365,6 +7673,8 @@ async fn do_accept_mls_welcome<R: Runtime>(
     }
 
     crate::catch_up::resolve_welcome_for_handle(&handle, &wrapper_event_id_hex).await;
+    mls_store_reset_state::mark_group_restored(&handle, &nostr_group_id)?;
+    mls_store_reset_state::emit_reset_state(&handle)?;
 
     if let Some(app) = TAURI_APP.get() {
         let _ = app.emit(
@@ -7444,6 +7754,12 @@ async fn get_mls_group_metadata() -> Result<Vec<serde_json::Value>, String> {
         .collect())
 }
 
+#[tauri::command]
+fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset_state::MlsStoreResetGroupState>, String> {
+    let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
+    mls_store_reset_state::reset_group_states(handle)
+}
+
 #[derive(serde::Serialize, Clone)]
 struct GroupMembers {
     group_id: String,
@@ -7454,6 +7770,13 @@ struct GroupMembers {
 /// Sync the participants array for an MLS group chat with the actual members from the engine
 /// This ensures chat.participants is always up-to-date
 pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
+    if let Some(handle) = TAURI_APP.get() {
+        if mls_store_reset_state::is_group_state_lost(handle, &group_id)? {
+            // The fresh engine has no membership yet. Keep the app DB's former
+            // participant list until a welcome restores this group.
+            return Ok(());
+        }
+    }
     // Get actual members from the engine
     let group_members = get_mls_group_members(group_id.clone()).await?;
     
@@ -7496,7 +7819,10 @@ pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), 
     Ok(())
 }
 
-/// Get members (npubs) of an MLS group from the persistent engine (on-demand)
+/// Get members (npubs) of an MLS group from the persistent engine (on-demand).
+/// When the group is in MLS store-reset "lost" state the fresh engine has no
+/// membership — fall back to the preserved chat.participants roster so UI paths
+/// like sole-admin recreate can still invite former members.
 #[tauri::command]
 async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String> {
     // Run engine operations on a blocking thread so the outer future is Send
@@ -7547,6 +7873,34 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                                 .filter_map(|pk| pk.to_bech32().ok())
                                 .collect();
                             break;
+                        }
+                    }
+                }
+            }
+            drop(engine);
+
+            let lost = mls_store_reset_state::is_group_state_lost(&handle, &wire_id)
+                .or_else(|_| mls_store_reset_state::is_group_state_lost(&handle, &group_id))
+                .unwrap_or(false);
+            if lost && members.is_empty() {
+                let preserved = {
+                    let state = STATE.lock().await;
+                    state
+                        .get_chat(&wire_id)
+                        .or_else(|| state.get_chat(&group_id))
+                        .map(|chat| chat.participants.clone())
+                        .unwrap_or_default()
+                };
+                if !preserved.is_empty() {
+                    members = preserved;
+                }
+                if admins.is_empty() {
+                    if let Ok(states) = mls_store_reset_state::reset_group_states(&handle) {
+                        if let Some(s) = states
+                            .into_iter()
+                            .find(|s| s.group_id == wire_id || s.group_id == group_id)
+                        {
+                            admins = s.admin_npubs;
                         }
                     }
                 }
@@ -7624,7 +7978,7 @@ async fn refresh_keypackages_for_contact(
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
             "keypackage_ref": keypackage_ref,
-            "fetched_at": Timestamp::now().as_u64(),
+            "fetched_at": Timestamp::now().as_secs(),
             "expires_at": 0u64
         }));
     }
@@ -8044,6 +8398,7 @@ pub fn run() {
             sync_mls_groups_now,
             list_mls_groups,
             get_mls_group_metadata,
+            get_mls_store_reset_state,
             // MLS welcome/invite commands
             list_pending_mls_welcomes,
             accept_mls_welcome,

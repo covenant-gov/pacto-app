@@ -10,6 +10,7 @@ For a given **`npub`** (full `npub1…` string):
 | `<npub>/vector.db` | Primary app database — `get_database_path` |
 | `<npub>/mls/` | MLS directory — `get_mls_directory` |
 | `<npub>/mls/vector-mls.db` | MDK engine database (see `docs/mls/ARCHITECTURE.md`) |
+| `<npub>/mls.archive.<unix-seconds>/` | A complete pre-upgrade MLS store set (`vector-mls.db`, `-wal`, and `-shm` together), retained for seven days |
 
 Account discovery scans **`npub1*`** subfolders and validates stored keys — see **`list_accounts`** in `account_manager.rs`.
 
@@ -29,6 +30,7 @@ Old accounts are detected by the absence of `refinery_schema_history` and the pr
 | **events** | **Primary** flat storage for Nostr-shaped events (kind, content, tags JSON, chat_id, pending/failed flags, `wrapper_event_id`, …) |
 | **settings** | Key-value (`pkey`, `evm_pkey`, `evm_address`, …) |
 | **mls_groups** | MLS group metadata for the app (wire id, engine id, eviction) |
+| **mls_legacy_admins** | Last-known admin npubs harvested before a legacy MLS reset; unique by `(group_id, admin_npub)` and intentionally independent of `mls_groups` foreign keys |
 | **mls_keypackages** | Key package cache |
 | **mls_event_cursors** | Sync cursors per group |
 | **squad_safe** | Squad/network id → Safe address |
@@ -40,7 +42,15 @@ Indexes and foreign keys are defined next to each table in the migration files.
 
 ## Encryption vs plaintext
 
-`account_manager.rs` documents intent: **message content and secrets** are stored encrypted where noted; **profiles and indexing metadata** are plaintext for performance and search. Exact encrypt/decrypt paths live in **`crypto.rs`** and call sites in **`db.rs`** / **`lib.rs`**.
+`account_manager.rs` documents intent: **message content and secrets** are stored encrypted where noted; **profiles and indexing metadata** are plaintext for performance and search. Exact encrypt/decrypt paths live in **`crypto.rs`** and call sites in **`db.rs`** / **`lib.rs`**. The app database remains an unkeyed SQLite file even though the binary now links SQLCipher; its file format and hot-WAL behavior remain compatible.
+
+The active MLS database is SQLCipher-encrypted with a key domain-separated from the unlocked account session key. The shipped native stack is **SQLCipher 4.6.1 Community**, **SQLite 3.46.1**, `openssl-src` **300.6.1+3.6.3**, and `openssl-sys` **0.9.117**. These libraries are vendored into application releases and must be matched against future security advisories explicitly.
+
+## MLS legacy reset
+
+`mls_store_reset.rs` runs before MDK opens `vector-mls.db`. It classifies the old V100–V104 migration series as legacy; MDK 0.8.0 V1–V5 stores are current. For a legacy store it harvests known group admins and pending welcome wrapper ids, commits those rows and reset settings to `vector.db`, atomically moves the whole `mls/` directory to a timestamped sibling, and only then writes the completion marker. Missing files and interrupted runs are safe to re-enter, and reset work is serialized per account.
+
+The pending wrapper ids are removed from `discarded_giftwraps` and retained in a durable exact-refetch queue, because the normal forward sync window may no longer include an old invitation. Lost group ids remain in a settings value until a welcome restores that group; while listed, participant synchronization does not replace the surviving chat roster with an empty fresh-engine roster.
 
 ## `db.rs` usage pattern
 

@@ -23,12 +23,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use mdk_core::prelude::*;
-use mdk_sqlite_storage::MdkSqliteStorage;
+use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use std::sync::Arc;
+use std::future::Future;
 use tauri::{AppHandle, Runtime, Emitter};
 use crate::{get_nostr_client, TAURI_APP, TRUSTED_RELAYS, STATE};
 use crate::rumor::{RumorEvent, RumorContext, ConversationType, process_rumor, RumorProcessingResult};
+use crate::nostr_tags;
 use crate::db::{save_chat, save_chat_messages};
+use nostr_sdk::PublicKey;
 
 /// MLS-specific error types following this crate's error style
 #[derive(Debug)]
@@ -133,6 +136,157 @@ pub struct MlsService {
     _initialized: bool,
 }
 
+/// Whether adding a member device is a first-time invite or a restoration of an existing leaf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MembershipAction {
+    Invite,
+    Restore,
+}
+
+/// A member who already has a live leaf in the group is being restored, not invited for the
+/// first time — e.g. after this build's MLS store reset archives their old credential.
+fn classify_membership_action(
+    current_members: &std::collections::BTreeSet<PublicKey>,
+    member_pk: &PublicKey,
+) -> MembershipAction {
+    if current_members.contains(member_pk) {
+        MembershipAction::Restore
+    } else {
+        MembershipAction::Invite
+    }
+}
+
+/// Restoring a member revokes their existing leaf, so it is gated like removal: only a group
+/// admin may restore. A first-time invite is never gated.
+fn authorize_membership_action(
+    action: MembershipAction,
+    admin_pubkeys: &std::collections::BTreeSet<PublicKey>,
+    caller_pk: &PublicKey,
+) -> Result<(), MlsError> {
+    match action {
+        MembershipAction::Invite => Ok(()),
+        MembershipAction::Restore if admin_pubkeys.contains(caller_pk) => Ok(()),
+        MembershipAction::Restore => Err(MlsError::NostrMlsError(
+            "Only a group admin can restore a member who already has a leaf in the group".to_string(),
+        )),
+    }
+}
+
+/// Per-group registry serializing admin membership-mutating operations — the restoration
+/// remove-then-add sequence in particular — on a given group. Two admins racing to restore the
+/// same member would otherwise both locally stage a commit before either publishes; the
+/// loser's later `merge_pending_commit()` can then diverge from what the relay actually
+/// accepted. Keyed by the canonical `engine_group_id`, not whatever alias a caller passed to
+/// `add_member_device`, so both aliases contend on the same lock. Never evicted, matching the
+/// existing per-key lock registries elsewhere in this crate (e.g. `mls_store_reset`'s
+/// `ACCOUNT_RESET_LOCKS`).
+static GROUP_MEMBERSHIP_LOCKS: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Hold the lock for `engine_group_id` for the duration of a membership mutation.
+async fn group_membership_lock(engine_group_id: &str) -> tokio::sync::OwnedMutexGuard<()> {
+    let lock = {
+        let mut locks = GROUP_MEMBERSHIP_LOCKS
+            .lock()
+            .expect("group membership lock registry poisoned");
+        locks
+            .entry(engine_group_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    lock.lock_owned().await
+}
+
+/// Bounded retry budget for resolving a Restore's post-reset KeyPackage. Each attempt queries
+/// the relay directly; the delay between attempts gives the member's own decrypt/login-
+/// triggered republish — a background task this call has no direct handle to await — time to
+/// land before restoration gives up, instead of silently using whatever is already visible.
+const RESTORE_KEYPACKAGE_RETRY_ATTEMPTS: u32 = 4;
+const RESTORE_KEYPACKAGE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether `candidate_id` is acceptable evidence of a post-reset republish, given the
+/// KeyPackage event id this admin last recorded for the same member+device (populated in
+/// `mls_keypackage_index` — see `MlsService::record_keypackage_reference`). A candidate
+/// identical to the recorded id has not rotated since, so it cannot be trusted to hold a
+/// private key outside an archived store. This is the generation marker: not a wire tag on the
+/// KeyPackage event itself, but a value derived from what this admin has already observed — no
+/// cooperation from the publisher required. When there is no recorded ref (admin never resolved
+/// this member+device), require `candidate_created_at >= reset_at_secs` so a pre-reset KeyPackage
+/// still on the relay is not welcomed into the fresh store.
+fn keypackage_generation_advanced(
+    recorded_ref: Option<&str>,
+    candidate_id: &str,
+    reset_at_secs: Option<u64>,
+    candidate_created_at: u64,
+) -> bool {
+    if let Some(recorded) = recorded_ref {
+        return recorded != candidate_id;
+    }
+    match reset_at_secs {
+        Some(floor) => candidate_created_at >= floor,
+        None => true,
+    }
+}
+
+/// Retries `fetch_candidate` up to `attempts` times, accepting the first result that passes
+/// `keypackage_generation_advanced`. Returns `None` — not the last stale candidate — once
+/// retries are exhausted: restoration must not proceed on a KeyPackage known to predate the
+/// reset. `sleep` is injected so the retry contract is unit-testable without real wall-clock
+/// delay or a live relay; production callers pass `tokio::time::sleep`.
+async fn resolve_fresh_keypackage<FetchFut, SleepFut>(
+    recorded_ref: Option<&str>,
+    reset_at_secs: Option<u64>,
+    attempts: u32,
+    mut fetch_candidate: impl FnMut() -> FetchFut,
+    mut sleep: impl FnMut(std::time::Duration) -> SleepFut,
+) -> Option<nostr_sdk::Event>
+where
+    FetchFut: Future<Output = Option<nostr_sdk::Event>>,
+    SleepFut: Future<Output = ()>,
+{
+    let attempts = attempts.max(1);
+    for attempt in 0..attempts {
+        if let Some(candidate) = fetch_candidate().await {
+            if keypackage_generation_advanced(
+                recorded_ref,
+                &candidate.id.to_hex(),
+                reset_at_secs,
+                candidate.created_at.as_secs(),
+            ) {
+                return Some(candidate);
+            }
+        }
+        if attempt + 1 < attempts {
+            sleep(RESTORE_KEYPACKAGE_RETRY_DELAY).await;
+        }
+    }
+    None
+}
+
+/// Map a failed re-add into the error the caller sees, distinguishing a restoration whose
+/// remove commit already landed (the member is now outside the group entirely and needs a
+/// distinct "retry the restore" message) from an ordinary add failure that never touched
+/// membership. Extracted as a pure function so both branches are unit-testable without a live
+/// engine or client.
+fn map_add_member_failure(
+    member_pubkey: &str,
+    restoration_remove_committed: bool,
+    add_error: MlsError,
+) -> MlsError {
+    if !restoration_remove_committed {
+        return add_error;
+    }
+    eprintln!(
+        "[MLS] Restoration left {} outside the group: remove committed but re-add failed: {}",
+        member_pubkey, add_error
+    );
+    MlsError::NostrMlsError(format!(
+        "Restoration incomplete: the archived leaf for {} was removed but re-adding them failed ({}). They are currently not a member of the group; retry the restore.",
+        member_pubkey, add_error
+    ))
+}
+
 impl MlsService {
     /// Create a new MLS service instance (no engine initialized)
     pub fn new() -> Self {
@@ -142,21 +296,86 @@ impl MlsService {
         }
     }
 
+    /// SQLCipher key for the MLS store, derived from the unlocked session key.
+    ///
+    /// MDK 0.8.0 removed the unencrypted store from its public API. The alternative it
+    /// offers is a platform keyring, which would add a dependency and a new failure mode;
+    /// the session key is already required for any MLS work, is per-account, and survives
+    /// a reinstall from the recovery phrase. Domain separation keeps this distinct from
+    /// the ChaCha20-Poly1305 key the same bytes serve elsewhere.
+    fn mls_store_encryption_key() -> Result<[u8; 32], MlsError> {
+        use sha2::{Digest, Sha256};
+
+        let session_key = crate::session::current_encryption_key().ok_or_else(|| {
+            MlsError::StorageError(
+                "Account is locked: no session key available for the MLS store".to_string(),
+            )
+        })?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"pacto/mls-store/v1");
+        hasher.update(session_key);
+        Ok(hasher.finalize().into())
+    }
+
+    fn mls_store_encryption_config(key: [u8; 32]) -> EncryptionConfig {
+        EncryptionConfig::new(key)
+    }
+
     /// Create a new MLS service with persistent SQLite-backed storage at:
     ///   [AppData]/npub.../mls/vector-mls.db (account-specific)
     pub fn new_persistent<R: Runtime>(handle: &AppHandle<R>) -> Result<Self, MlsError> {
-        // Get current account's MLS directory
+        Self::new_persistent_inner(handle, false)
+    }
+
+    pub(crate) fn new_persistent_for_keypackage_refresh<R: Runtime>(
+        handle: &AppHandle<R>,
+    ) -> Result<Self, MlsError> {
+        Self::new_persistent_inner(handle, true)
+    }
+
+    fn new_persistent_inner<R: Runtime>(
+        handle: &AppHandle<R>,
+        allow_pending_keypackage_refresh: bool,
+    ) -> Result<Self, MlsError> {
         let npub = crate::account_manager::get_current_account()
             .map_err(|e| MlsError::StorageError(format!("No account selected: {}", e)))?;
-        
+
         let mls_dir = crate::account_manager::get_mls_directory(handle, &npub)
             .map_err(|e| MlsError::StorageError(format!("Failed to get MLS directory: {}", e)))?;
-        
         let db_path = mls_dir.join("vector-mls.db");
+        let encryption_key = Self::mls_store_encryption_key()?;
 
-        // Initialize persistent storage and engine
-        let storage = MdkSqliteStorage::new(&db_path)
-            .map_err(|e| MlsError::StorageError(format!("init sqlite storage: {}", e)))?;
+        // Detection and archive happen before MDK 0.8.0 can open legacy bytes.
+        let reset_outcome = crate::mls_store_reset::ensure_store_ready(
+            handle,
+            &npub,
+            &mls_dir,
+            &db_path,
+            &encryption_key,
+        )
+        .map_err(MlsError::StorageError)?;
+
+        if reset_outcome.reset_performed {
+            if let Err(e) = crate::mls_store_reset_state::emit_reset_state(handle) {
+                eprintln!("[MLS] Failed to emit store reset state: {}", e);
+            }
+        }
+        if !allow_pending_keypackage_refresh
+            && crate::mls_store_reset_state::keypackage_refresh_required(handle)
+                .map_err(MlsError::StorageError)?
+        {
+            return Err(MlsError::StorageError(
+                "MLS store access is paused until this device publishes a fresh KeyPackage"
+                    .to_string(),
+            ));
+        }
+
+        let storage = MdkSqliteStorage::new_with_key(
+            &db_path,
+            Self::mls_store_encryption_config(encryption_key),
+        )
+        .map_err(|e| MlsError::StorageError(format!("init sqlite storage: {}", e)))?;
         let mdk = MDK::new(storage);
 
         Ok(Self {
@@ -337,7 +556,7 @@ impl MlsService {
                 {
                     Ok(events) => {
                         // Heuristic: pick newest by created_at
-                        let selected = events.into_iter().max_by_key(|e| e.created_at.as_u64());
+                        let selected = events.into_iter().max_by_key(|e| e.created_at.as_secs());
                         if selected.is_none() {
                             eprintln!("[MLS] No KeyPackage events found for {}", member_npub);
                         }
@@ -381,15 +600,10 @@ impl MlsService {
             let wire_gid_hex = {
                 use nostr_sdk::prelude::*;
                 let dummy_rumor = EventBuilder::new(Kind::Custom(9), "vector-mls-bootstrap")
-                    .tag(Tag::custom(
-                        TagKind::Custom(std::borrow::Cow::Borrowed("vector-mls-bootstrap")),
-                        vec!["true"],
-                    ))
+                    .tag(nostr_tags::custom_tag("vector-mls-bootstrap", vec!["true"]))
                     .build(*&my_pubkey);
-                if let Ok(wrapper) = engine.create_message(&create_out.group.mls_group_id, dummy_rumor) {
-                    if let Some(h_tag) = wrapper
-                        .tags
-                        .find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)))
+                if let Ok(wrapper) = engine.create_message(&create_out.group.mls_group_id, dummy_rumor, None) {
+                    if let Some(h_tag) = nostr_tags::find_letter(&wrapper.tags, Alphabet::H)
                     {
                         if let Some(canon) = h_tag.content() {
                             if canon.len() == 64 {
@@ -552,6 +766,13 @@ impl MlsService {
     /// 2. Add the device to the group via nostr-mls
     /// 3. Send the welcome message
     /// 4. Update group metadata
+    ///
+    /// If the member already has a live leaf in the group, this is a restoration rather than a
+    /// first-time invite: the existing leaf is revoked (removed) before the new one is added, so
+    /// the epoch advances past whatever secrets an archived credential still holds. Restoration
+    /// requires the caller to be a group admin. This revocation only holds when this build
+    /// performs the restoration — an admin still on the pre-upgrade build restores access the
+    /// old way and does not revoke.
     pub async fn add_member_device(
         &self,
         group_id: &str,
@@ -567,44 +788,6 @@ impl MlsService {
         let member_pk = PublicKey::from_bech32(member_pubkey)
             .map_err(|e| MlsError::CryptoError(format!("Invalid member npub: {}", e)))?;
 
-        // Fetch member's keypackage from index or network
-        let index = self.read_keypackage_index().await.unwrap_or_default();
-        let mut kp_event: Option<Event> = None;
-
-        // Try index first
-        for entry in &index {
-            if entry.owner_pubkey == member_pubkey && entry.device_id == device_id {
-                let id = EventId::from_hex(&entry.keypackage_ref)
-                    .map_err(|e| MlsError::CryptoError(format!("Invalid keypackage ref: {}", e)))?;
-                let filter = Filter::new().id(id).limit(1);
-                if let Ok(events) = client
-                    .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
-                    .await
-                {
-                    kp_event = events.into_iter().next();
-                }
-                break;
-            }
-        }
-
-        // Fallback: fetch latest from network
-        if kp_event.is_none() {
-            let filter = Filter::new()
-                .author(member_pk)
-                .kind(Kind::MlsKeyPackage)
-                .limit(50);
-            if let Ok(events) = client
-                .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
-                .await
-            {
-                kp_event = events.into_iter().max_by_key(|e| e.created_at.as_u64());
-            }
-        }
-
-        let kp_event = kp_event.ok_or_else(|| {
-            MlsError::NetworkError(format!("No keypackage found for {}:{}", member_pubkey, device_id))
-        })?;
-
         // Find the group's MLS group ID
         let groups = self.read_groups().await?;
         let group_meta = groups.iter()
@@ -617,63 +800,264 @@ impl MlsService {
                 .map_err(|e| MlsError::CryptoError(format!("Invalid group ID hex: {}", e)))?
         );
 
-        // Perform engine operations (add member but DON'T merge yet)
-        let (evolution_event, welcome_rumors) = {
-            let engine = self.engine()?;
-            
-            // Add member to group - returns AddMembersResult with evolution_event and welcome_rumors
-            let add_result = engine
-                .add_members(&mls_group_id, std::slice::from_ref(&kp_event))
-                .map_err(|e| {
-                    eprintln!("[MLS] Failed to add member: {}", e);
-                    MlsError::NostrMlsError(format!("Failed to add member: {}", e))
-                })?;
+        // Serialize admin membership mutations on this group: two admins racing to restore the
+        // same member must not both locally stage a commit before either publishes, or the
+        // loser's later merge can diverge from what the relay actually accepted. Keyed by the
+        // canonical engine_group_id so either alias `group_id` resolves to the same lock.
+        let _membership_guard = group_membership_lock(&group_meta.engine_group_id).await;
 
-            (add_result.evolution_event, add_result.welcome_rumors)
+        // A member who already has a leaf is being restored, not invited for the first time.
+        let action = {
+            let engine = self.engine()?;
+            let current_members = engine.get_members(&mls_group_id).map_err(|e| {
+                eprintln!("[MLS] Failed to get current members: {}", e);
+                MlsError::NostrMlsError(format!("Failed to get group members: {}", e))
+            })?;
+            classify_membership_action(&current_members, &member_pk)
         };
 
-        // Send welcome before merging commit (welcome is created for current epoch)
-        let mut welcomeSendFailed = false;
-        if let Some(welcome_rumors) = welcome_rumors {
-            if welcome_rumors.is_empty() {
-                welcomeSendFailed = true;
-                eprintln!("[MLS] add_member_device: empty welcome rumors");
-            }
-            for welcome in welcome_rumors {
-                if let Err(e) = client.gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &member_pk, welcome, []).await {
-                    eprintln!("[MLS] Failed to send welcome: {}", e);
-                    welcomeSendFailed = true;
+        if action == MembershipAction::Restore {
+            // Restoring access revokes the old leaf, so gate it like removal: admin only.
+            let my_pk = client
+                .signer()
+                .await
+                .map_err(|e| MlsError::CryptoError(e.to_string()))?
+                .get_public_key()
+                .await
+                .map_err(|e| MlsError::CryptoError(e.to_string()))?;
+
+            let admin_pubkeys = {
+                let engine = self.engine()?;
+                engine
+                    .get_groups()
+                    .ok()
+                    .and_then(|stored| {
+                        stored
+                            .into_iter()
+                            .find(|g| g.mls_group_id.as_slice() == mls_group_id.as_slice())
+                    })
+                    .map(|g| g.admin_pubkeys)
+                    .unwrap_or_default()
+            };
+            authorize_membership_action(action, &admin_pubkeys, &my_pk)?;
+        }
+
+        // The keypackage reference this admin last recorded for this exact member+device (see
+        // `record_keypackage_reference`) — the generation-marker floor a Restore's fetch must
+        // diverge from before it can be trusted.
+        let recorded_ref = self
+            .read_keypackage_index()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .find(|entry| entry.owner_pubkey == member_pubkey && entry.device_id == device_id)
+            .map(|entry| entry.keypackage_ref);
+
+        // Fetch member's keypackage. A restoration must resolve fresh from the network: a reset
+        // member republishes a new keypackage backed by their new store, and a keypackage
+        // reference this admin recorded before the reset still points at the pre-reset
+        // keypackage whose private init key only lives in the archived store — a welcome built
+        // against it would be openable only by the archive.
+        let kp_event = if action == MembershipAction::Restore {
+            // Retry rather than trust the first response: the member's own post-reset
+            // republish (triggered elsewhere, on their next decrypt/login, out of this call's
+            // control) races this restore. A candidate identical to `recorded_ref` has not
+            // rotated since we last saw them, so keep polling instead of proceeding on it.
+            // With no recorded ref, `mls_store_reset_at` is the time floor.
+            let reset_at_secs = TAURI_APP
+                .get()
+                .and_then(|h| crate::mls_store_reset_state::store_reset_at_secs(h).ok())
+                .flatten();
+            let retry_client = client.clone();
+            resolve_fresh_keypackage(
+                recorded_ref.as_deref(),
+                reset_at_secs,
+                RESTORE_KEYPACKAGE_RETRY_ATTEMPTS,
+                move || {
+                    let retry_client = retry_client.clone();
+                    async move { Self::fetch_latest_keypackage(&retry_client, member_pk).await }
+                },
+                |delay| tokio::time::sleep(delay),
+            )
+            .await
+        } else {
+            let mut kp_event: Option<Event> = None;
+
+            // Try the recorded reference first: it pins the exact device_id the caller asked
+            // for, since `fetch_latest_keypackage` (author-only filter) cannot distinguish
+            // between a member's devices.
+            if let Some(ref_hex) = recorded_ref.as_deref() {
+                let id = EventId::from_hex(ref_hex)
+                    .map_err(|e| MlsError::CryptoError(format!("Invalid keypackage ref: {}", e)))?;
+                let filter = Filter::new().id(id).limit(1);
+                if let Ok(events) = client
+                    .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+                    .await
+                {
+                    kp_event = events.into_iter().next();
                 }
             }
-        } else {
-            welcomeSendFailed = true;
-            eprintln!("[MLS] add_member_device: no welcome rumors returned");
-        }
 
-        if welcomeSendFailed {
-            return Err(MlsError::NetworkError(
-                "Failed to deliver MLS welcome to the new member".to_string(),
-            ));
-        }
-
-        // Publish evolution event (commit) to the relay
-        match client.send_event(&evolution_event).await {
-            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
-            Err(e) => {
-                eprintln!("[MLS] Failed to publish commit: {}", e);
-                return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
+            // Fallback: fetch latest from network
+            if kp_event.is_none() {
+                kp_event = Self::fetch_latest_keypackage(&client, member_pk).await;
             }
+
+            kp_event
+        };
+
+        let kp_event = kp_event.ok_or_else(|| {
+            if action == MembershipAction::Restore {
+                MlsError::NetworkError(format!(
+                    "No post-reset keypackage observed yet for {}:{}; ask them to reopen the app so it republishes, then retry the restore",
+                    member_pubkey, device_id
+                ))
+            } else {
+                MlsError::NetworkError(format!("No keypackage found for {}:{}", member_pubkey, device_id))
+            }
+        })?;
+
+        // Record this reference now, before the remove/add attempt below can fail: a retry
+        // after a partial restoration failure re-enters through the branch above with
+        // `action == Invite` (the archived leaf is already gone), and must resolve this same
+        // validated, non-archived keypackage rather than whatever was cached before the reset.
+        if let Err(e) = self
+            .record_keypackage_reference(member_pubkey, device_id, &kp_event.id.to_hex())
+            .await
+        {
+            eprintln!("[MLS] Failed to record resolved keypackage reference: {}", e);
         }
 
-        // NOW merge the pending commit after welcome and evolution event are sent
-        {
-            let engine = self.engine()?;
-            engine
-                .merge_pending_commit(&mls_group_id)
-                .map_err(|e| {
-                    eprintln!("[MLS] Failed to merge commit: {}", e);
-                    MlsError::NostrMlsError(format!("Failed to merge commit: {}", e))
+        // Restoration first removes the member's existing (possibly archived) leaf so the epoch
+        // advances past whatever secrets the archive holds; the add below then proceeds exactly
+        // like a first-time invite. If the remove commits but the add then fails, the member
+        // ends up outside the group entirely — reported below as a distinct, explicit error
+        // rather than the generic add failure, since that state needs a retry, not a shrug.
+        let mut restoration_remove_committed = false;
+        if action == MembershipAction::Restore {
+            let remove_evolution_event = {
+                let engine = self.engine()?;
+                engine
+                    .remove_members(&mls_group_id, &[member_pk])
+                    .map_err(|e| {
+                        eprintln!("[MLS] Restoration: failed to remove archived leaf: {}", e);
+                        MlsError::NostrMlsError(format!("Failed to remove archived leaf: {}", e))
+                    })?
+                    .evolution_event
+            };
+
+            match client.send_event(&remove_evolution_event).await {
+                Ok(output) => crate::record_send_outcome(&remove_evolution_event, &output),
+                Err(e) => {
+                    eprintln!("[MLS] Restoration: failed to publish remove commit: {}", e);
+                    // The remove commit is staged locally the moment `remove_members()`
+                    // returns, before any network I/O. A publish failure must not leave it
+                    // pending: openmls's high-level `add_members` rejects while ANY commit is
+                    // pending, so a stuck remove would silently block every future add on this
+                    // group (including this same restoration's own re-add) until cleared.
+                    if let Ok(engine) = self.engine() {
+                        if let Err(clear_err) = engine.clear_pending_commit(&mls_group_id) {
+                            eprintln!(
+                                "[MLS] Restoration: failed to roll back pending remove commit after publish failure: {}",
+                                clear_err
+                            );
+                        }
+                    }
+                    return Err(MlsError::NetworkError(format!(
+                        "Failed to publish restoration remove commit: {}", e
+                    )));
+                }
+            }
+
+            {
+                let engine = self.engine()?;
+                engine.merge_pending_commit(&mls_group_id).map_err(|e| {
+                    eprintln!("[MLS] Restoration: failed to merge remove commit: {}", e);
+                    MlsError::NostrMlsError(format!("Failed to merge restoration remove commit: {}", e))
                 })?;
+            }
+
+            restoration_remove_committed = true;
+        }
+
+        // Perform engine operations (add member but DON'T merge yet)
+        let add_outcome: Result<(), MlsError> = async {
+            let (evolution_event, welcome_rumors) = {
+                let engine = self.engine()?;
+
+                // Add member to group - returns AddMembersResult with evolution_event and welcome_rumors
+                let add_result = engine
+                    .add_members(&mls_group_id, std::slice::from_ref(&kp_event))
+                    .map_err(|e| {
+                        eprintln!("[MLS] Failed to add member: {}", e);
+                        MlsError::NostrMlsError(format!("Failed to add member: {}", e))
+                    })?;
+
+                (add_result.evolution_event, add_result.welcome_rumors)
+            };
+
+            // Send welcome before merging commit (welcome is created for current epoch)
+            let mut welcome_send_failed = false;
+            if let Some(welcome_rumors) = welcome_rumors {
+                if welcome_rumors.is_empty() {
+                    welcome_send_failed = true;
+                    eprintln!("[MLS] add_member_device: empty welcome rumors");
+                }
+                for welcome in welcome_rumors {
+                    if let Err(e) = client.gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &member_pk, welcome, []).await {
+                        eprintln!("[MLS] Failed to send welcome: {}", e);
+                        welcome_send_failed = true;
+                    }
+                }
+            } else {
+                welcome_send_failed = true;
+                eprintln!("[MLS] add_member_device: no welcome rumors returned");
+            }
+
+            if welcome_send_failed {
+                return Err(MlsError::NetworkError(
+                    "Failed to deliver MLS welcome to the new member".to_string(),
+                ));
+            }
+
+            // Publish evolution event (commit) to the relay
+            match client.send_event(&evolution_event).await {
+                Ok(output) => crate::record_send_outcome(&evolution_event, &output),
+                Err(e) => {
+                    eprintln!("[MLS] Failed to publish commit: {}", e);
+                    return Err(MlsError::NetworkError(format!("Failed to publish commit: {}", e)));
+                }
+            }
+
+            // NOW merge the pending commit after welcome and evolution event are sent
+            {
+                let engine = self.engine()?;
+                engine
+                    .merge_pending_commit(&mls_group_id)
+                    .map_err(|e| {
+                        eprintln!("[MLS] Failed to merge commit: {}", e);
+                        MlsError::NostrMlsError(format!("Failed to merge commit: {}", e))
+                    })?;
+            }
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = add_outcome {
+            // The add commit is staged as soon as `add_members()` returns, before either the
+            // welcome or the evolution event reaches the relay — either failing here leaves it
+            // pending. Roll it back so the group is not wedged for whatever attempt comes next,
+            // including the retry the error below asks for.
+            if let Ok(engine) = self.engine() {
+                if let Err(clear_err) = engine.clear_pending_commit(&mls_group_id) {
+                    eprintln!(
+                        "[MLS] Failed to roll back pending add commit after failure: {}",
+                        clear_err
+                    );
+                }
+            }
+            return Err(map_add_member_failure(member_pubkey, restoration_remove_committed, e));
         }
 
         // Update group metadata timestamp
@@ -695,6 +1079,26 @@ impl MlsService {
 
         Ok(())
     }
+
+    /// Fetch the newest published KeyPackage (Kind:443) for a pubkey directly from the network,
+    /// bypassing the local keypackage index/cache.
+    async fn fetch_latest_keypackage(
+        client: &nostr_sdk::Client,
+        member_pk: PublicKey,
+    ) -> Option<nostr_sdk::Event> {
+        use nostr_sdk::prelude::*;
+
+        let filter = Filter::new()
+            .author(member_pk)
+            .kind(Kind::MlsKeyPackage)
+            .limit(50);
+        client
+            .fetch_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+            .await
+            .ok()
+            .and_then(|events| events.into_iter().max_by_key(|e| e.created_at.as_secs()))
+    }
+
 
 
     /// Leave a group voluntarily
@@ -987,7 +1391,7 @@ impl MlsService {
             Timestamp::from_secs(cur.last_seen_at)
         } else {
             // No cursor: default to last 48h for initial backfill
-            Timestamp::from_secs(now.as_u64().saturating_sub(60 * 60 * 48))
+            Timestamp::from_secs(now.as_secs().saturating_sub(60 * 60 * 48))
         };
         let until = now;
 
@@ -1071,7 +1475,7 @@ impl MlsService {
 
         // 4) Sort by created_at ascending to ensure deterministic processing
         let mut ordered: Vec<nostr_sdk::Event> = events.into_iter().collect();
-        ordered.sort_by_key(|e| e.created_at.as_u64());
+        ordered.sort_by_key(|e| e.created_at.as_secs());
 
         // 4b) If we had to fall back to a broad fetch (no 'h' tag in the filter),
         // first, log observed 'h' tags to verify encoding; then, ONLY IF we positively match, filter.
@@ -1079,14 +1483,14 @@ impl MlsService {
             // Attempt to filter only if we observe any h tag; otherwise, do not filter and rely on engine.
             let saw_any_h = ordered
                 .iter()
-                .any(|ev| ev.tags.find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H))).is_some());
+                .any(|ev| nostr_tags::find_letter(&ev.tags, Alphabet::H).is_some());
             if saw_any_h {
                 // Try to narrow to our group via h-tag; if none match, proceed unfiltered and let engine decide.
                 let original = ordered.clone();
                 let filtered: Vec<nostr_sdk::Event> = original
                     .into_iter()
                     .filter(|ev| {
-                        match ev.tags.find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H))) {
+                        match nostr_tags::find_letter(&ev.tags, Alphabet::H) {
                             Some(tag) => tag.content().map(|s| s == gid_for_fetch).unwrap_or(false),
                             None => false,
                         }
@@ -1160,7 +1564,7 @@ impl MlsService {
                     let dummy_rumor = EventBuilder::new(Kind::Custom(9), "engine_check")
                         .build(nostr_sdk::PublicKey::from_hex("000000000000000000000000000000000000000000000000000000000000dead").unwrap());
                     
-                    if let Err(e) = engine.create_message(&check_gid, dummy_rumor) {
+                    if let Err(e) = engine.create_message(&check_gid, dummy_rumor, None) {
                         eprintln!("[MLS] Engine missing group: {}", e);
                         
                         if let Some(handle) = TAURI_APP.get() {
@@ -1176,7 +1580,7 @@ impl MlsService {
             for ev in ordered.iter() {
                 // Hard guard: only process/persist wrappers whose 'h' tag matches our target group's wire id.
                 // This prevents cross-contamination when the fallback fetch returns events for other groups.
-                if let Some(tag) = ev.tags.find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H))) {
+                if let Some(tag) = nostr_tags::find_letter(&ev.tags, Alphabet::H) {
                     if let Some(h_val) = tag.content() {
                         if h_val != gid_for_fetch {
                             // Skip silently - this is expected when multiple groups exist
@@ -1277,15 +1681,37 @@ impl MlsService {
                                 eprintln!(
                                     "[MLS] Unprocessable event: id={}, created_at={}",
                                     ev.id.to_hex(),
-                                    ev.created_at.as_u64()
+                                    ev.created_at.as_secs()
                                 );
+                            }
+                            MessageProcessingResult::PendingProposal { mls_group_id: _ } => {
+                                // Stored awaiting an admin commit; membership may change once
+                                // that lands, so refresh the UI the same way a committed
+                                // proposal does.
+                                if let Some(handle) = TAURI_APP.get() {
+                                    handle.emit("mls_group_updated", serde_json::json!({
+                                        "group_id": gid_for_fetch
+                                    })).ok();
+                                }
+                            }
+                            MessageProcessingResult::IgnoredProposal { mls_group_id: _, reason } => {
+                                // Not stored and no state change; nothing for the UI to refresh.
+                                eprintln!(
+                                    "[MLS] Ignored proposal: id={}, reason={}",
+                                    ev.id.to_hex(),
+                                    reason
+                                );
+                            }
+                            MessageProcessingResult::PreviouslyFailed => {
+                                // Already recorded as failed; replaying it changes nothing.
+                                eprintln!("[MLS] Skipping previously failed event: id={}", ev.id.to_hex());
                             }
                         }
                 
                         processed = processed.saturating_add(1);
                 
                         last_seen_id = Some(ev.id);
-                        last_seen_at = ev.created_at.as_u64();
+                        last_seen_at = ev.created_at.as_secs();
                     }
                     Err(e) => {
                         let error_msg = e.to_string();
@@ -1700,7 +2126,6 @@ impl MlsService {
     }
 
     /// Read keypackage index from database
-    #[allow(dead_code)]
     async fn read_keypackage_index(&self) -> Result<Vec<KeyPackageIndexEntry>, MlsError> {
         let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
         let packages = crate::db::load_mls_keypackages(&handle)
@@ -1716,7 +2141,6 @@ impl MlsService {
     }
 
     /// Write keypackage index to database
-    #[allow(dead_code)]
     async fn write_keypackage_index(&self, index: &[KeyPackageIndexEntry]) -> Result<(), MlsError> {
         let handle = TAURI_APP.get().ok_or(MlsError::NotInitialized)?.clone();
         
@@ -1728,6 +2152,33 @@ impl MlsService {
         crate::db::save_mls_keypackages(handle, &packages)
             .await
             .map_err(|e| MlsError::StorageError(e))
+    }
+
+    /// Record the KeyPackage this admin most recently resolved for `owner_pubkey`/`device_id`
+    /// (a Restore's generation-checked fetch, or an ordinary Invite resolution). This becomes
+    /// the staleness floor `keypackage_generation_advanced` compares the next fetch against —
+    /// critical after a restoration whose remove commits but whose re-add fails: the retry
+    /// re-enters through the Invite branch (no current leaf left to signal a Restore), and must
+    /// not resolve the pre-reset reference this call replaces.
+    async fn record_keypackage_reference(
+        &self,
+        owner_pubkey: &str,
+        device_id: &str,
+        keypackage_ref: &str,
+    ) -> Result<(), MlsError> {
+        let mut index = self.read_keypackage_index().await.unwrap_or_default();
+        index.retain(|entry| entry.owner_pubkey != owner_pubkey || entry.device_id != device_id);
+        index.push(KeyPackageIndexEntry {
+            owner_pubkey: owner_pubkey.to_string(),
+            device_id: device_id.to_string(),
+            keypackage_ref: keypackage_ref.to_string(),
+            fetched_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            expires_at: 0,
+        });
+        self.write_keypackage_index(&index).await
     }
 
     /// Read event cursors from database
@@ -1779,9 +2230,11 @@ impl MlsService {
                 saul_keys.public_key().to_bech32().unwrap_or_default()
             );
 
-            // Two independent in-memory MLS engines (no disk I/O)
-            let kim_mls = MDK::new(MdkSqliteStorage::new(":memory:").map_err(|e| MlsError::StorageError(e.to_string()))?);
-            let saul_mls = MDK::new(MdkSqliteStorage::new(":memory:").map_err(|e| MlsError::StorageError(e.to_string()))?);
+            // Two independent in-memory MLS engines (no disk I/O). MDK 0.8.0 always keys the
+            // store, so the test supplies a fixed key rather than a session-derived one.
+            let test_key = EncryptionConfig::new([7u8; 32]);
+            let kim_mls = MDK::new(MdkSqliteStorage::new_with_key(":memory:", test_key.clone()).map_err(|e| MlsError::StorageError(e.to_string()))?);
+            let saul_mls = MDK::new(MdkSqliteStorage::new_with_key(":memory:", test_key).map_err(|e| MlsError::StorageError(e.to_string()))?);
 
             // RelayUrl (nostr-mls type)
             let relay_url = RelayUrl::parse(relay)
@@ -1789,13 +2242,13 @@ impl MlsService {
 
             // 1) Saul publishes a device KeyPackage (so Kim can add him)
             println!("[MLS Smoke Test] Saul publishing device KeyPackage...");
-            let (saul_kp_encoded, saul_kp_tags) = saul_mls
+            let saul_kp = saul_mls
                 .create_key_package_for_event(&saul_keys.public_key(), [relay_url.clone()])
                 .map_err(|e| MlsError::NostrMlsError(format!("create_key_package_for_event (saul): {}", e)))?;
     
             // Build + sign with Saul's ephemeral keys, then publish with the app's client
-            let saul_kp_event = EventBuilder::new(Kind::MlsKeyPackage, saul_kp_encoded)
-                .tags(saul_kp_tags)
+            let saul_kp_event = EventBuilder::new(Kind::MlsKeyPackage, saul_kp.content)
+                .tags(saul_kp.tags_443)
                 .build(saul_keys.public_key())
                 .sign(&saul_keys)
                 .await
@@ -1849,7 +2302,7 @@ impl MlsService {
                 .process_welcome(&nostr_sdk::EventId::all_zeros(), &welcome_rumor)
                 .map_err(|e| MlsError::NostrMlsError(format!("saul process_welcome: {}", e)))?;
             let welcomes = saul_mls
-                .get_pending_welcomes()
+                .get_pending_welcomes(None)
                 .map_err(|e| MlsError::NostrMlsError(format!("saul get_pending_welcomes: {}", e)))?;
             let welcome = welcomes
                 .first()
@@ -1864,14 +2317,11 @@ impl MlsService {
             let group_id = &kim_group.mls_group_id; // Already a GroupId in MDK
             println!("[MLS Smoke Test] Kim sending application message...");
             let rumor = EventBuilder::new(Kind::PrivateDirectMessage, "Vector-MLS-Test: hello")
-                .tag(Tag::custom(
-                    TagKind::Custom(std::borrow::Cow::Borrowed("vector-mls-test")),
-                    vec!["true"],
-                ))
+                .tag(nostr_tags::custom_tag("vector-mls-test", vec!["true"]))
                 .build(kim_keys.public_key());
     
             let mls_wrapper = kim_mls
-                .create_message(&group_id, rumor)
+                .create_message(&group_id, rumor, None)
                 .map_err(|e| MlsError::NostrMlsError(format!("kim create_message: {}", e)))?;
     
             client
@@ -1975,7 +2425,7 @@ pub async fn send_mls_message(group_id: &str, rumor: nostr_sdk::UnsignedEvent, p
                 let engine = service.engine()
                     .map_err(|e| format!("Failed to get MLS engine: {}", e))?;
                 
-                engine.create_message(&engine_group_id, rumor.clone())
+                engine.create_message(&engine_group_id, rumor.clone(), None)
             }; // engine dropped here
             
             // Check for eviction errors after engine is dropped
@@ -2177,7 +2627,7 @@ mod mls_smoke_tests {
         let signer = Keys::generate();
         let client = Client::builder()
             .signer(signer)
-            .opts(ClientOptions::new().gossip(false))
+            .opts(ClientOptions::new())
             .build();
 
         client
@@ -2193,5 +2643,457 @@ mod mls_smoke_tests {
         )
         .await
         .expect("MLS smoke test failed");
+    }
+}
+
+#[cfg(test)]
+mod mls_restore_tests {
+    use super::*;
+    use nostr_sdk::prelude::*;
+
+    /// Two independent in-memory MDK engines, plus a group Kim (admin) created with Saul as an
+    /// initial member. Mirrors `run_mls_smoke_test_with_client`'s setup but purely local: no
+    /// relay, no `AppHandle` — the only I/O is signing events in memory.
+    async fn kim_group_with_saul() -> (
+        MDK<MdkSqliteStorage>,
+        MDK<MdkSqliteStorage>,
+        Keys,
+        Keys,
+        GroupId,
+        RelayUrl,
+    ) {
+        let kim_keys = Keys::generate();
+        let saul_keys = Keys::generate();
+        let kim_mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([7u8; 32])).unwrap(),
+        );
+        let saul_mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([8u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+
+        let saul_kp_event = fresh_keypackage_event(&saul_mls, &saul_keys, &relay_url).await;
+
+        let group_config = NostrGroupConfigData::new(
+            "restore-test".to_string(),
+            "restore-test group".to_string(),
+            None,
+            None,
+            None,
+            vec![relay_url.clone()],
+            vec![kim_keys.public_key()],
+        );
+        let group_create = kim_mls
+            .create_group(&kim_keys.public_key(), vec![saul_kp_event], group_config)
+            .expect("create group");
+
+        let group_id = group_create.group.mls_group_id;
+        (kim_mls, saul_mls, kim_keys, saul_keys, group_id, relay_url)
+    }
+
+    /// Builds and signs a fresh KeyPackage (Kind:443) event for `keys`, without publishing it
+    /// anywhere — matches what `add_member_device`'s restoration path resolves from the network.
+    async fn fresh_keypackage_event(
+        engine: &MDK<MdkSqliteStorage>,
+        keys: &Keys,
+        relay_url: &RelayUrl,
+    ) -> Event {
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url.clone()])
+            .expect("create keypackage");
+        EventBuilder::new(Kind::MlsKeyPackage, kp.content)
+            .tags(kp.tags_443)
+            .build(keys.public_key())
+            .sign(keys)
+            .await
+            .expect("sign keypackage")
+    }
+
+    fn group_epoch(engine: &MDK<MdkSqliteStorage>, group_id: &GroupId) -> u64 {
+        engine
+            .get_groups()
+            .expect("get_groups")
+            .into_iter()
+            .find(|g| g.mls_group_id.as_slice() == group_id.as_slice())
+            .expect("group present")
+            .epoch
+    }
+
+    // Engine-level: restoring a member who already has a leaf must remove the archived leaf
+    // before adding the fresh one back, so the identity collapses to exactly one leaf and the
+    // epoch advances past whatever secrets the archived leaf held.
+    #[tokio::test]
+    async fn restoring_existing_member_collapses_to_one_leaf_and_advances_two_epochs() {
+        let (kim_mls, saul_mls, _kim_keys, saul_keys, group_id, relay_url) =
+            kim_group_with_saul().await;
+
+        let before_epoch = group_epoch(&kim_mls, &group_id);
+        let current_members = kim_mls.get_members(&group_id).expect("get_members");
+        assert_eq!(
+            classify_membership_action(&current_members, &saul_keys.public_key()),
+            MembershipAction::Restore
+        );
+
+        // Mirrors `add_member_device`'s restoration branch: remove the archived leaf, merge,
+        // then re-add with a freshly resolved keypackage (never the cached/stale one).
+        kim_mls
+            .remove_members(&group_id, &[saul_keys.public_key()])
+            .expect("remove archived leaf");
+        kim_mls.merge_pending_commit(&group_id).expect("merge remove");
+        assert!(
+            !kim_mls
+                .get_members(&group_id)
+                .expect("get_members")
+                .contains(&saul_keys.public_key()),
+            "leaf must be gone after the remove commits"
+        );
+
+        let fresh_kp_event = fresh_keypackage_event(&saul_mls, &saul_keys, &relay_url).await;
+        kim_mls
+            .add_members(&group_id, std::slice::from_ref(&fresh_kp_event))
+            .expect("re-add member");
+        kim_mls.merge_pending_commit(&group_id).expect("merge add");
+
+        let after_members = kim_mls.get_members(&group_id).expect("get_members");
+        assert!(after_members.contains(&saul_keys.public_key()));
+        assert_eq!(
+            after_members.len(),
+            2,
+            "exactly kim + saul as identities, no third identity introduced"
+        );
+
+        let after_epoch = group_epoch(&kim_mls, &group_id);
+        assert_eq!(
+            after_epoch,
+            before_epoch + 2,
+            "one commit for the remove, one for the add"
+        );
+    }
+
+    // Engine-level: a member with no existing leaf takes the ordinary invite path — a single
+    // add commit, epoch advances by one, no remove is performed.
+    #[tokio::test]
+    async fn restoring_absent_member_behaves_as_plain_add() {
+        let (kim_mls, _saul_mls, _kim_keys, _saul_keys, group_id, relay_url) =
+            kim_group_with_saul().await;
+
+        let uma_keys = Keys::generate();
+        let uma_mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([9u8; 32])).unwrap(),
+        );
+
+        let before_epoch = group_epoch(&kim_mls, &group_id);
+        let current_members = kim_mls.get_members(&group_id).expect("get_members");
+        assert_eq!(
+            classify_membership_action(&current_members, &uma_keys.public_key()),
+            MembershipAction::Invite
+        );
+
+        let uma_kp_event = fresh_keypackage_event(&uma_mls, &uma_keys, &relay_url).await;
+        kim_mls
+            .add_members(&group_id, std::slice::from_ref(&uma_kp_event))
+            .expect("add new member");
+        kim_mls.merge_pending_commit(&group_id).expect("merge add");
+
+        let after_members = kim_mls.get_members(&group_id).expect("get_members");
+        assert!(after_members.contains(&uma_keys.public_key()));
+
+        let after_epoch = group_epoch(&kim_mls, &group_id);
+        assert_eq!(
+            after_epoch,
+            before_epoch + 1,
+            "a first-time invite is a single commit, unlike a two-commit restoration"
+        );
+    }
+
+    // Pure helper: classification depends only on current membership, not on any I/O.
+    #[test]
+    fn classify_membership_action_matches_current_membership() {
+        let existing = Keys::generate().public_key();
+        let newcomer = Keys::generate().public_key();
+        let mut members = std::collections::BTreeSet::new();
+        members.insert(existing);
+
+        assert_eq!(
+            classify_membership_action(&members, &existing),
+            MembershipAction::Restore
+        );
+        assert_eq!(
+            classify_membership_action(&members, &newcomer),
+            MembershipAction::Invite
+        );
+    }
+
+    // Pure helper: this is the decision `add_member_device` cannot exercise without a live
+    // client/AppHandle — a non-admin restoration is refused, while an invite is never gated.
+    #[test]
+    fn non_admin_restoration_is_refused_but_invite_is_never_gated() {
+        let admin = Keys::generate().public_key();
+        let non_admin = Keys::generate().public_key();
+        let mut admins = std::collections::BTreeSet::new();
+        admins.insert(admin);
+
+        assert!(authorize_membership_action(MembershipAction::Restore, &admins, &non_admin).is_err());
+        assert!(authorize_membership_action(MembershipAction::Restore, &admins, &admin).is_ok());
+        assert!(authorize_membership_action(MembershipAction::Invite, &admins, &non_admin).is_ok());
+    }
+
+    // Pure: identical candidate never counts as advanced; anything else (including "nothing
+    // recorded yet" with no reset floor) does. With a reset floor and no recorded ref, only
+    // candidates at/after the floor advance.
+    #[test]
+    fn keypackage_generation_advanced_rejects_identical_and_accepts_divergent_or_unknown() {
+        assert!(!keypackage_generation_advanced(Some("abc"), "abc", None, 0));
+        assert!(keypackage_generation_advanced(Some("abc"), "def", None, 0));
+        assert!(keypackage_generation_advanced(None, "abc", None, 0));
+        assert!(!keypackage_generation_advanced(None, "abc", Some(100), 50));
+        assert!(keypackage_generation_advanced(None, "abc", Some(100), 100));
+        assert!(keypackage_generation_advanced(None, "abc", Some(100), 150));
+        // Recorded-ref check wins over the time floor when both are present.
+        assert!(!keypackage_generation_advanced(Some("abc"), "abc", Some(100), 150));
+        assert!(keypackage_generation_advanced(Some("abc"), "def", Some(100), 50));
+    }
+
+    // The exact scenario #1 (pacto-app-7xq.1) targets: only the pre-reset KeyPackage is ever
+    // visible on the relay. `resolve_fresh_keypackage` must retry the full budget and then
+    // reject it outright -- never silently proceed with a candidate known to predate the reset.
+    #[tokio::test]
+    async fn resolve_fresh_keypackage_rejects_when_only_pre_reset_keypackage_is_ever_published() {
+        let keys = Keys::generate();
+        let mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([21u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let pre_reset_event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        let recorded_ref = pre_reset_event.id.to_hex();
+
+        let fetch_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let sleep_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fetch_calls_c = fetch_calls.clone();
+        let sleep_calls_c = sleep_calls.clone();
+        let candidate = pre_reset_event.clone();
+
+        let result = resolve_fresh_keypackage(
+            Some(&recorded_ref),
+            None,
+            3,
+            move || {
+                fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let candidate = candidate.clone();
+                async move { Some(candidate) }
+            },
+            move |_delay| {
+                sleep_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async {}
+            },
+        )
+        .await;
+
+        assert!(result.is_none(), "must reject rather than reuse the pre-reset keypackage");
+        assert_eq!(fetch_calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert_eq!(
+            sleep_calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "sleeps between attempts, not after the final one"
+        );
+    }
+
+    // Once the member's post-reset republish lands, the very next poll must accept it.
+    #[tokio::test]
+    async fn resolve_fresh_keypackage_retries_until_generation_advances() {
+        let keys = Keys::generate();
+        let mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([22u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let stale_event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        let fresh_event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        assert_ne!(stale_event.id, fresh_event.id, "each republish must mint distinct KeyPackage material");
+        let recorded_ref = stale_event.id.to_hex();
+
+        let fetch_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fetch_calls_c = fetch_calls.clone();
+        let stale = stale_event.clone();
+        let fresh = fresh_event.clone();
+
+        let result = resolve_fresh_keypackage(
+            Some(&recorded_ref),
+            None,
+            4,
+            move || {
+                let n = fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let candidate = if n == 0 { stale.clone() } else { fresh.clone() };
+                async move { Some(candidate) }
+            },
+            |_delay| async {},
+        )
+        .await;
+
+        assert_eq!(result.map(|e| e.id), Some(fresh_event.id));
+        assert_eq!(
+            fetch_calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "accepts on the first candidate that diverges from the recorded reference"
+        );
+    }
+
+    // With no recorded reference (this admin has never resolved this member+device before)
+    // and no reset floor, there is nothing to compare against, so the very first candidate
+    // is accepted.
+    #[tokio::test]
+    async fn resolve_fresh_keypackage_accepts_first_candidate_when_no_recorded_reference() {
+        let keys = Keys::generate();
+        let mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([23u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        let fetch_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fetch_calls_c = fetch_calls.clone();
+        let candidate = event.clone();
+
+        let result = resolve_fresh_keypackage(
+            None,
+            None,
+            4,
+            move || {
+                fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let candidate = candidate.clone();
+                async move { Some(candidate) }
+            },
+            |_delay| async {},
+        )
+        .await;
+
+        assert_eq!(result.map(|e| e.id), Some(event.id));
+        assert_eq!(fetch_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // After a store reset with no recorded ref, a KeyPackage created before `reset_at` must
+    // be rejected even when it is the only event on the relay.
+    #[tokio::test]
+    async fn resolve_fresh_keypackage_rejects_pre_reset_created_at_when_only_time_floor_applies() {
+        let keys = Keys::generate();
+        let mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([24u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let pre_reset_event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        let reset_at = pre_reset_event.created_at.as_secs().saturating_add(1);
+
+        let fetch_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fetch_calls_c = fetch_calls.clone();
+        let candidate = pre_reset_event.clone();
+
+        let result = resolve_fresh_keypackage(
+            None,
+            Some(reset_at),
+            3,
+            move || {
+                fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let candidate = candidate.clone();
+                async move { Some(candidate) }
+            },
+            |_delay| async {},
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert_eq!(fetch_calls.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    // Extracted pure error-mapping (pacto-app-7xq.5): a partial restoration failure gets the
+    // distinct "retry the restore" message; an ordinary add failure (no remove ever committed)
+    // passes the original error straight through.
+    #[test]
+    fn map_add_member_failure_distinguishes_partial_restoration_from_plain_add_failure() {
+        let plain = map_add_member_failure("npub1abc", false, MlsError::NetworkError("boom".to_string()));
+        match plain {
+            MlsError::NetworkError(msg) => assert_eq!(msg, "boom"),
+            other => panic!("expected the original error unchanged, got {:?}", other),
+        }
+
+        let partial = map_add_member_failure("npub1abc", true, MlsError::NetworkError("boom".to_string()));
+        match partial {
+            MlsError::NostrMlsError(msg) => {
+                assert!(msg.contains("retry the restore"));
+                assert!(msg.contains("npub1abc"));
+                assert!(msg.contains("boom"));
+            }
+            other => panic!("expected a distinct restoration-incomplete error, got {:?}", other),
+        }
+    }
+
+    // Two admins racing to mutate the same group must serialize: the second acquire only
+    // completes once the first guard drops. A different group id is never blocked by it.
+    #[tokio::test]
+    async fn group_membership_lock_serializes_same_group_but_not_different_groups() {
+        let guard_a = group_membership_lock("restore-lock-test-group-1").await;
+
+        // A different group's lock is independent and must acquire immediately.
+        let other = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            group_membership_lock("restore-lock-test-group-2"),
+        )
+        .await;
+        assert!(other.is_ok(), "a different group id must not contend on group-1's lock");
+
+        // The same group id must block while `guard_a` is held.
+        let blocked = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            group_membership_lock("restore-lock-test-group-1"),
+        )
+        .await;
+        assert!(blocked.is_err(), "a concurrent operation on the same group must wait for the lock");
+
+        drop(guard_a);
+        let unblocked = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            group_membership_lock("restore-lock-test-group-1"),
+        )
+        .await;
+        assert!(unblocked.is_ok(), "the lock must become available once the holder drops it");
+    }
+
+    // Engine-level mirror of pacto-app-7xq.4: a remove commit is staged before publish; when
+    // publish fails, clearing the pending commit (rather than leaving it staged) must return
+    // the group to a wedge-free state that accepts a subsequent add. (mdk-core's `remove_members`
+    // stages via openmls's low-level CommitBuilder, which tolerates re-staging -- the guard that
+    // actually rejects while a commit is pending lives in the high-level `add_members` convenience
+    // method it wraps, so this exercises that path rather than a second remove.)
+    #[tokio::test]
+    async fn clearing_pending_remove_commit_after_publish_failure_unwedges_the_group() {
+        let (kim_mls, _saul_mls, _kim_keys, saul_keys, group_id, relay_url) =
+            kim_group_with_saul().await;
+
+        // Stage the restoration remove commit but do not merge -- mirrors a `client.send_event`
+        // failure between staging and merging.
+        kim_mls
+            .remove_members(&group_id, &[saul_keys.public_key()])
+            .expect("stage remove commit");
+
+        // Before the fix: any add while a commit is pending is rejected -- including an
+        // unrelated new member, wedging the whole group's growth on this one stuck remove.
+        let uma_keys = Keys::generate();
+        let uma_mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([24u8; 32])).unwrap(),
+        );
+        let uma_kp_event = fresh_keypackage_event(&uma_mls, &uma_keys, &relay_url).await;
+        let blocked = kim_mls.add_members(&group_id, std::slice::from_ref(&uma_kp_event));
+        assert!(blocked.is_err(), "an add while a commit is pending must fail");
+
+        kim_mls
+            .clear_pending_commit(&group_id)
+            .expect("clear_pending_commit rolls back the failed-publish remove");
+
+        // Saul is still a member: the remove never actually took effect.
+        assert!(kim_mls.get_members(&group_id).expect("get_members").contains(&saul_keys.public_key()));
+
+        // The group is usable again: the previously-blocked add now succeeds.
+        kim_mls
+            .add_members(&group_id, std::slice::from_ref(&uma_kp_event))
+            .expect("add succeeds after clearing the wedge");
+        kim_mls.merge_pending_commit(&group_id).expect("merge add");
+        assert!(kim_mls.get_members(&group_id).expect("get_members").contains(&uma_keys.public_key()));
     }
 }

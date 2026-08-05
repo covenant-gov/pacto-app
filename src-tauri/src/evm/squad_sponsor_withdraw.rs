@@ -19,7 +19,6 @@ use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_par
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::squad_sponsor_read::read_sponsor_pool;
 use super::gov_read::rpc_urls_or_default;
-use super::wallet_chain_config;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

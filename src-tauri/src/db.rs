@@ -3893,6 +3893,255 @@ pub async fn load_mls_groups<R: Runtime>(
     Ok(groups)
 }
 
+/// Persist a harvest, keeping groups that match an `mls_groups` row by
+/// `group_id` or `engine_group_id` (case-insensitive for hex ids).
+/// Unmatched harvest keys are logged and skipped. `INSERT OR IGNORE`
+/// against the migration's unique `(group_id, admin_npub)` index makes a
+/// re-run of the harvest produce no duplicate rows.
+pub(crate) fn persist_legacy_group_admins_conn(
+    conn: &rusqlite::Connection,
+    harvest: &crate::mls_store_reset::LegacyStoreHarvest,
+) -> Result<usize, String> {
+    let mut canonical_group_ids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT group_id, engine_group_id FROM mls_groups")
+            .map_err(|e| format!("Failed to prepare mls_groups scan: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|e| format!("Failed to scan mls_groups: {}", e))?;
+        for row in rows {
+            let (group_id, engine_group_id) = row.map_err(|e| format!("Failed to read mls_groups row: {}", e))?;
+            canonical_group_ids.insert(group_id.clone(), group_id.clone());
+            canonical_group_ids.insert(group_id.to_lowercase(), group_id.clone());
+            if !engine_group_id.is_empty() {
+                canonical_group_ids.insert(engine_group_id.clone(), group_id.clone());
+                canonical_group_ids.insert(engine_group_id.to_lowercase(), group_id);
+            }
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let mut persisted = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+    for (harvested_group_id, admins) in &harvest.admins_by_group {
+        let Some(group_id) = canonical_group_ids
+            .get(harvested_group_id)
+            .or_else(|| canonical_group_ids.get(&harvested_group_id.to_lowercase()))
+            .cloned()
+        else {
+            unmatched.push(harvested_group_id.clone());
+            continue;
+        };
+        for admin_npub in admins {
+            persisted += conn
+                .execute(
+                    "INSERT OR IGNORE INTO mls_legacy_admins (group_id, admin_npub, harvested_at) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![group_id, admin_npub, now],
+                )
+                .map_err(|e| format!("Failed to persist legacy admin for {}: {}", group_id, e))?;
+        }
+    }
+
+    if !unmatched.is_empty() {
+        let preview: Vec<&str> = unmatched.iter().take(5).map(String::as_str).collect();
+        eprintln!(
+            "[MLS Reset] Harvested {} group id(s) with no mls_groups match (admins dropped for those): {}{}",
+            unmatched.len(),
+            preview.join(", "),
+            if unmatched.len() > 5 { ", …" } else { "" }
+        );
+    }
+
+    Ok(persisted)
+}
+
+pub(crate) fn clear_discarded_giftwraps_conn(
+    conn: &rusqlite::Connection,
+    wrapper_ids: &[String],
+) -> Result<usize, String> {
+    if wrapper_ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders = std::iter::repeat("?").take(wrapper_ids.len()).collect::<Vec<_>>().join(", ");
+    let sql = format!("DELETE FROM discarded_giftwraps WHERE wrapper_id IN ({})", placeholders);
+    let params: Vec<&dyn rusqlite::ToSql> = wrapper_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+    conn.execute(&sql, params.as_slice())
+        .map_err(|e| format!("Failed to clear discarded giftwraps: {}", e))
+}
+
+#[cfg(test)]
+mod legacy_mls_store_harvest_tests {
+    use super::*;
+
+    fn in_memory_app_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn
+    }
+
+    fn insert_mls_group(conn: &rusqlite::Connection, group_id: &str, engine_group_id: &str) {
+        conn.execute(
+            "INSERT INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted)
+             VALUES (?1, ?2, 'creator', 'group', '', 1000, 1000, 0)",
+            rusqlite::params![group_id, engine_group_id],
+        )
+        .expect("insert mls_groups row");
+    }
+
+    #[test]
+    fn v30_migration_creates_mls_legacy_admins_table_on_fresh_db() {
+        let conn = in_memory_app_conn();
+        assert!(crate::mls_store_reset::legacy_store_table_exists(&conn, "mls_legacy_admins"));
+    }
+
+    #[test]
+    fn v30_migration_creates_mls_legacy_admins_table_on_baselined_db() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                npub TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                nickname TEXT NOT NULL DEFAULT '',
+                lud06 TEXT NOT NULL DEFAULT '',
+                lud16 TEXT NOT NULL DEFAULT '',
+                banner TEXT NOT NULL DEFAULT '',
+                avatar TEXT NOT NULL DEFAULT '',
+                about TEXT NOT NULL DEFAULT '',
+                website TEXT NOT NULL DEFAULT '',
+                nip05 TEXT NOT NULL DEFAULT '',
+                status_content TEXT NOT NULL DEFAULT '',
+                status_url TEXT NOT NULL DEFAULT '',
+                muted INTEGER NOT NULL DEFAULT 0,
+                bot INTEGER NOT NULL DEFAULT 0,
+                avatar_cached TEXT NOT NULL DEFAULT '',
+                banner_cached TEXT NOT NULL DEFAULT '',
+                evm_address TEXT NOT NULL DEFAULT '',
+                blocked INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_identifier TEXT UNIQUE NOT NULL,
+                chat_type INTEGER NOT NULL,
+                participants TEXT NOT NULL,
+                last_read TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                muted INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
+
+        crate::migrations::run_migrations(&mut conn).expect("baseline should run");
+
+        assert!(crate::mls_store_reset::legacy_store_table_exists(&conn, "mls_legacy_admins"));
+    }
+
+    #[test]
+    fn persist_skips_groups_with_no_matching_mls_groups_row() {
+        let conn = in_memory_app_conn();
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert("unknown-group".to_string(), vec!["npub1fixture".to_string()]);
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest { admins_by_group, pending_wrapper_ids: vec![] };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 0);
+        assert!(crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn running_harvest_twice_produces_no_duplicate_rows() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "known-group", "");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert("known-group".to_string(), vec!["npub1fixtureadmin".to_string()]);
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest { admins_by_group, pending_wrapper_ids: vec![] };
+
+        let first = persist_legacy_group_admins_conn(&conn, &harvest).expect("first persist");
+        let second = persist_legacy_group_admins_conn(&conn, &harvest).expect("second persist");
+        assert_eq!(first, 1);
+        assert_eq!(second, 0, "re-running the harvest must not duplicate rows");
+
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(loaded.get("known-group"), Some(&vec!["npub1fixtureadmin".to_string()]));
+    }
+
+    #[test]
+    fn persist_matches_group_by_engine_group_id() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "wire-id", "engine-id");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert("engine-id".to_string(), vec!["npub1viaenginematch".to_string()]);
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest { admins_by_group, pending_wrapper_ids: vec![] };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 1);
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(loaded.get("wire-id"), Some(&vec!["npub1viaenginematch".to_string()]));
+        assert!(!loaded.contains_key("engine-id"));
+    }
+
+    #[test]
+    fn persist_matches_group_id_case_insensitively() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "abcdef0123456789", "");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "ABCDEF0123456789".to_string(),
+            vec!["npub1casefold".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 1);
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(
+            loaded.get("abcdef0123456789"),
+            Some(&vec!["npub1casefold".to_string()])
+        );
+    }
+
+    #[test]
+    fn clear_discarded_giftwraps_removes_exactly_supplied_ids() {
+        let conn = in_memory_app_conn();
+        for id in ["wrap-a", "wrap-b", "wrap-c"] {
+            conn.execute("INSERT INTO discarded_giftwraps (wrapper_id) VALUES (?1)", rusqlite::params![id]).unwrap();
+        }
+
+        let removed = clear_discarded_giftwraps_conn(&conn, &["wrap-a".to_string(), "wrap-c".to_string()]).unwrap();
+        assert_eq!(removed, 2);
+
+        let remaining: Vec<String> = conn
+            .prepare("SELECT wrapper_id FROM discarded_giftwraps ORDER BY wrapper_id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(remaining, vec!["wrap-b".to_string()]);
+    }
+
+    #[test]
+    fn clear_discarded_giftwraps_is_a_noop_for_empty_input() {
+        let conn = in_memory_app_conn();
+        conn.execute("INSERT INTO discarded_giftwraps (wrapper_id) VALUES ('wrap-a')", []).unwrap();
+
+        let removed = clear_discarded_giftwraps_conn(&conn, &[]).unwrap();
+        assert_eq!(removed, 0);
+    }
+}
+
 /// Save MLS keypackage index to SQL database (plaintext)
 pub async fn save_mls_keypackages<R: Runtime>(
     handle: AppHandle<R>,
@@ -5326,7 +5575,7 @@ pub fn repair_legacy_hex_reaction_npubs(conn: &rusqlite::Connection) -> Result<(
 
     for (id, hex_npub) in rows {
         let Ok(pubkey) = nostr_sdk::PublicKey::from_hex(&hex_npub) else { continue };
-        let Ok(bech32) = pubkey.to_bech32() else { continue };
+        let bech32 = pubkey.to_bech32().expect("PublicKey::to_bech32 is infallible");
         conn.execute(
             "UPDATE events SET npub = ?1 WHERE id = ?2",
             rusqlite::params![bech32, id],

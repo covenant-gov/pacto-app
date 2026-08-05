@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::stored_event::event_kind;
 use crate::{db, get_nostr_client, message::Message, TAURI_APP};
+use crate::nostr_tags;
 
 pub const DASHBOARD_POLL_D_TAG: &str = "pacto_dashboard_poll";
 
@@ -96,8 +97,7 @@ pub fn try_parse_create_announce(content: &str) -> Option<DashboardPollAnnounceE
 }
 
 pub fn has_dashboard_poll_d_tag(tags: &Tags) -> bool {
-    tags.find(TagKind::d())
-        .and_then(|t| t.content())
+    nostr_tags::d_content(&tags)
         .map(|c| c == DASHBOARD_POLL_D_TAG)
         .unwrap_or(false)
 }
@@ -380,17 +380,11 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
     let ms = (final_time.as_millis() % 1000) as u64;
 
     let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-        .tag(Tag::custom(TagKind::d(), [DASHBOARD_POLL_D_TAG]))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("parent")),
-            [&parent_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
-            [&poll_id],
-        ))
-        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["announcements"]))
-        .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [&parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [&poll_id]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["announcements"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]));
 
     let built = rumor.build(pk);
     let create_hex = built.id.ok_or_else(|| "poll create rumor id missing".to_string())?;
@@ -476,21 +470,12 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     let ms = (final_time.as_millis() % 1000) as u64;
 
     let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-        .tag(Tag::custom(TagKind::d(), [DASHBOARD_POLL_D_TAG]))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("parent")),
-            [&parent_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
-            [&poll_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("option")),
-            [&option_id],
-        ))
-        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["polls"]))
-        .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [&parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [&poll_id]))
+        .tag(nostr_tags::custom_tag("option", [&option_id]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["polls"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]));
 
     let built = rumor.build(pk);
     let vote_id = built.id.ok_or("rumor id missing")?.to_hex();
