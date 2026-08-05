@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSyn
 import { createServer } from 'node:http';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateMinimumVersion, mergeMinimumVersion } from './stamp-updater-compatibility.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -70,6 +71,7 @@ function parseArgs() {
     serve: true,
     restore: false,
     debug: false,
+    minimumCompatibleVersion: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -86,6 +88,9 @@ function parseArgs() {
         break;
       case '--signing-key-password':
         options.signingKeyPassword = args[++i];
+        break;
+      case '--minimum-compatible-version':
+        options.minimumCompatibleVersion = args[++i];
         break;
       case '--port':
         options.port = parseInt(args[++i], 10);
@@ -129,6 +134,9 @@ Options:
   --signing-key-password <password>
                          Password for the private key (default: env TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
   --port <number>         Port for the local update server (default: 8080)
+  --minimum-compatible-version <x.y.z>
+                         Stamp the generated manifest with this minimum, so the
+                         update gate blocks the old version being tested
   --install               Install the old version to /Applications/Pacto-Test.app
   --no-serve              Build artifacts but do not start the local server
   --debug                 Build debug bundles instead of release bundles (much faster)
@@ -274,11 +282,11 @@ function findSignature(artifactPath) {
   throw new Error(`Signature file not found: ${sigPath}`);
 }
 
-function generateManifest(newVersion, artifactPath, sigPath, port) {
+function generateManifest(newVersion, artifactPath, sigPath, port, minimumCompatibleVersion) {
   const filename = basename(artifactPath);
   const signature = readFileSync(sigPath, 'utf8').trim();
 
-  const manifest = {
+  let manifest = {
     version: newVersion,
     notes: 'Local update test',
     pub_date: new Date().toISOString(),
@@ -289,6 +297,10 @@ function generateManifest(newVersion, artifactPath, sigPath, port) {
       },
     },
   };
+
+  if (minimumCompatibleVersion) {
+    manifest = mergeMinimumVersion(manifest, validateMinimumVersion(minimumCompatibleVersion, manifest));
+  }
 
   const manifestPath = resolve(TEST_DIR, 'latest.json');
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
@@ -418,7 +430,13 @@ async function main() {
     console.log(`Signature: ${newSigDest}`);
 
     // Generate manifest
-    const manifestPath = generateManifest(options.newVersion, newArtifactDest, newSigDest, options.port);
+    const manifestPath = generateManifest(
+      options.newVersion,
+      newArtifactDest,
+      newSigDest,
+      options.port,
+      options.minimumCompatibleVersion,
+    );
     console.log(`\nManifest: ${manifestPath}`);
 
     // Install test app if requested

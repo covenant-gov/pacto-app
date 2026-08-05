@@ -1,0 +1,40 @@
+name: 'release-compatibility'
+
+# Re-stamps an already-published release's latest.json with a
+# minimum_compatible_version, without a rebuild. Use this to correct a wrong
+# value or to raise the floor on a release the automatic publish job already
+# stamped. See docs/build/OPERATOR_UPDATES.md for the operator procedure.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to re-stamp (e.g. v0.5.2)'
+        required: true
+        type: string
+      override:
+        description: 'Minimum compatible version to stamp (defaults to the tracked scripts/release-compatibility.json value)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  stamp-updater-compatibility:
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - name: Stamp updater compatibility manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          OVERRIDE_MINIMUM_COMPATIBLE_VERSION: ${{ inputs.override }}
+        run: node scripts/stamp-updater-compatibility.mjs
