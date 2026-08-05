@@ -31,12 +31,13 @@ async function mountNotice(
   page: Page,
   state: ResetState,
   currentNpub = 'npub-self',
-  squadName?: string
+  squadName?: string,
+  formerMemberNpubs?: string[]
 ): Promise<void> {
   await page.goto(sourceOrigin);
   await page.setContent('<main id="fixture"></main>');
   await page.evaluate(
-    async ({ state, currentNpub, squadName }) => {
+    async ({ state, currentNpub, squadName, formerMemberNpubs }) => {
       const [{ initI18n }, { mount }, component, auth, profileStores] = await Promise.all([
         import('/src/lib/i18n/index.ts'),
         import('/@id/svelte'),
@@ -50,12 +51,15 @@ async function mountNotice(
         'npub-a': { npub: 'npub-a', name: 'Alice Admin' },
         'npub-b': { npub: 'npub-b', name: 'Bob Admin' },
       });
+      const props: Record<string, unknown> = { state };
+      if (squadName !== undefined) props.squadName = squadName;
+      if (formerMemberNpubs !== undefined) props.formerMemberNpubs = formerMemberNpubs;
       mount(component.default, {
         target: document.querySelector('#fixture')!,
-        props: squadName === undefined ? { state } : { state, squadName },
+        props,
       });
     },
-    { state, currentNpub, squadName }
+    { state, currentNpub, squadName, formerMemberNpubs }
   );
 }
 
@@ -241,6 +245,9 @@ test.describe('MLS reset explanation', () => {
     await expect(notice).toContainText('npub-a');
     await expect(notice).toContainText('Bob Admin');
     await expect(notice).toContainText('npub-b');
+    await expect(notice).toContainText('Restore access');
+    await expect(notice).toContainText('Upgrade co-admins one at a time');
+    await expect(notice).toContainText('does not revoke');
   });
 
   test('uses re-create wording for a sole admin and missing-record wording for none', async ({ page }) => {
@@ -277,7 +284,8 @@ test.describe('MLS reset explanation', () => {
         singleAdmin: true,
       },
       'npub-self',
-      'Old Squad Name'
+      'Old Squad Name',
+      ['npub-self', 'npub-a', 'npub-b']
     );
     const notice = page.getByTestId('mls-reset-notice');
     await expect(notice.getByRole('button', { name: 'Re-create this squad' })).toBeVisible();
@@ -289,7 +297,10 @@ test.describe('MLS reset explanation', () => {
       document.querySelector<HTMLButtonElement>('.recreate-button')!.click();
       return get(store.squadRecreateRequest);
     });
-    expect(prefill).toEqual({ name: 'Old Squad Name', memberNpubs: [] });
+    expect(prefill).toEqual({
+      name: 'Old Squad Name',
+      memberNpubs: ['npub-a', 'npub-b'],
+    });
 
     await mountNotice(
       page,

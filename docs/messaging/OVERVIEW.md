@@ -80,7 +80,11 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 
 ### MLS state reset after the MDK upgrade
 
-The app's message rows and channel metadata survive the MDK 0.8.0 upgrade, but legacy cryptographic group state does not migrate. An affected channel therefore replaces its composer with a persistent explanation. With two or more last-known admins it names the npub and resolved display name of each person who can restore access; with exactly one recorded admin it explains that the squad must be re-created; with no harvested record it says that no restorer can be identified.
+The app's message rows and channel metadata survive the MDK 0.8.0 upgrade, but legacy cryptographic group state does not migrate. An affected channel therefore replaces its composer with a persistent explanation. With two or more last-known admins it names the npub and resolved display name of each person who can restore access (via **Members → Restore access**, which re-runs `invite_member_to_group` so the backend remove-then-re-adds); with exactly one recorded admin it explains that the squad must be re-created; with no harvested record it says that no restorer can be identified.
+
+**Rollout:** multi-admin squads must upgrade co-admins one at a time so someone still holding live group state can restore the others. If every admin upgrades before any restore, the squad cannot be recovered and must be re-created (same outcome as a sole-admin squad).
+
+**Archives:** the pre-upgrade `mls/` directory is kept on disk for about seven days for troubleshooting. Retention is not revocation — archived credentials remain valid on the live group until an upgraded admin runs restore (remove-then-re-add), or members abandon the old channel after re-creating. Deleting the archive later does not invalidate a leaf the group still honors.
 
 The backend command **`get_mls_store_reset_state`** hydrates this state on account load, and **`mls_store_reset`** updates it in an open session. Accepting a fresh welcome removes that group from the lost-state set, emits the updated state, restores the composer without a relaunch, and resumes participant synchronization. Pending invitations from the archived store are re-fetched by exact Gift Wrap id.
 

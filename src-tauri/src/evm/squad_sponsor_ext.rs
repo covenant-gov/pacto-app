@@ -18,7 +18,6 @@ use super::rpc::{
 use super::squad_sponsor_common::{require_parent_member, resolve_sponsor_for_parent};
 use super::squad_sponsor_deposit::{require_network_config, require_non_empty_parent_id};
 use super::gov_read::rpc_urls_or_default;
-use super::wallet_chain_config;
 
 /// Ext exposes only a single-address `permittedAddress` view, so each member costs one
 /// eth_call; cap the fan-out per status call.

@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api/nostr', () => ({
   inviteMemberToGroup: vi.fn(),
-  getMlsGroupMembers: vi.fn(),
   sendDmMessage: vi.fn(),
   formatChannelInSquadMessage: vi.fn(() => 'payload'),
 }));
@@ -32,7 +31,7 @@ vi.mock('../../stores/squads', async () => {
   return { squads: writable([parent]) };
 });
 
-import { inviteMemberToGroup, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
+import { inviteMemberToGroup, sendDmMessage } from '../api/nostr';
 import { admitMemberToSquad, runAdmitMembersToSquad } from './admit-member';
 import type { Squad } from '../../stores/squads';
 
@@ -53,11 +52,6 @@ describe('admitMemberToSquad', () => {
   beforeEach(() => {
     vi.mocked(inviteMemberToGroup).mockReset().mockResolvedValue(undefined);
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
-    vi.mocked(getMlsGroupMembers).mockReset().mockResolvedValue({
-      group_id: 'g',
-      members: [],
-      admins: [],
-    });
   });
 
   it('admits to announcements and invites open channels in the background', async () => {
@@ -71,14 +65,10 @@ describe('admitMemberToSquad', () => {
     expect(inviteMemberToGroup).not.toHaveBeenCalledWith('g-sec', 'npub-bob');
   });
 
-  it('skips groups the member already joined', async () => {
-    vi.mocked(getMlsGroupMembers).mockImplementation(async (groupId: string) => {
-      if (groupId === 'g-ann') return { group_id: groupId, members: ['npub-bob'], admins: [] };
-      return { group_id: groupId, members: [], admins: [] };
-    });
+  it('still invites when the member already holds a leaf (Restore path)', async () => {
     const result = await admitMemberToSquad({ parent, memberNpub: 'npub-bob' });
     expect(result.announcementsOk).toBe(true);
-    expect(inviteMemberToGroup).not.toHaveBeenCalledWith('g-ann', 'npub-bob');
+    expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ann', 'npub-bob');
     await vi.waitFor(() => {
       expect(inviteMemberToGroup).toHaveBeenCalledWith('g-ops', 'npub-bob');
     });
@@ -100,10 +90,6 @@ describe('admitMemberToSquad', () => {
   });
 
   it('returns after announcements even when open-channel invite fails later', async () => {
-    vi.mocked(getMlsGroupMembers).mockImplementation(async (groupId: string) => {
-      if (groupId === 'g-ops') throw new Error('members down');
-      return { group_id: groupId, members: [], admins: [] };
-    });
     vi.mocked(inviteMemberToGroup).mockImplementation(async (groupId: string) => {
       if (groupId === 'g-ops') throw new Error('invite fail');
     });
@@ -129,7 +115,6 @@ describe('admitMemberToSquad', () => {
     const [r1, r2] = await Promise.all([first, second]);
     expect(r1.ok).toBe(true);
     expect(r2.ok).toBe(true);
-    // Only one announcements invite should run; the second call is deduped.
     const annCalls = vi.mocked(inviteMemberToGroup).mock.calls.filter(([gid]) => gid === 'g-ann');
     expect(annCalls).toHaveLength(1);
 

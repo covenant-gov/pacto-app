@@ -211,21 +211,32 @@ const RESTORE_KEYPACKAGE_RETRY_DELAY: std::time::Duration = std::time::Duration:
 /// identical to the recorded id has not rotated since, so it cannot be trusted to hold a
 /// private key outside an archived store. This is the generation marker: not a wire tag on the
 /// KeyPackage event itself, but a value derived from what this admin has already observed — no
-/// cooperation from the publisher required. Absent a recorded floor (this admin has never
-/// resolved this member+device before), there is nothing to compare against, so the candidate
-/// is accepted as-is.
-fn keypackage_generation_advanced(recorded_ref: Option<&str>, candidate_id: &str) -> bool {
-    recorded_ref.map_or(true, |recorded| recorded != candidate_id)
+/// cooperation from the publisher required. When there is no recorded ref (admin never resolved
+/// this member+device), require `candidate_created_at >= reset_at_secs` so a pre-reset KeyPackage
+/// still on the relay is not welcomed into the fresh store.
+fn keypackage_generation_advanced(
+    recorded_ref: Option<&str>,
+    candidate_id: &str,
+    reset_at_secs: Option<u64>,
+    candidate_created_at: u64,
+) -> bool {
+    if let Some(recorded) = recorded_ref {
+        return recorded != candidate_id;
+    }
+    match reset_at_secs {
+        Some(floor) => candidate_created_at >= floor,
+        None => true,
+    }
 }
 
-/// Retries `fetch_candidate` up to `attempts` times, accepting the first result whose id
-/// diverges from `recorded_ref` per `keypackage_generation_advanced`. Returns `None` — not the
-/// last stale candidate — once retries are exhausted: restoration must not proceed on a
-/// KeyPackage known to predate the reset. `sleep` is injected so the retry contract is
-/// unit-testable without real wall-clock delay or a live relay; production callers pass
-/// `tokio::time::sleep`.
+/// Retries `fetch_candidate` up to `attempts` times, accepting the first result that passes
+/// `keypackage_generation_advanced`. Returns `None` — not the last stale candidate — once
+/// retries are exhausted: restoration must not proceed on a KeyPackage known to predate the
+/// reset. `sleep` is injected so the retry contract is unit-testable without real wall-clock
+/// delay or a live relay; production callers pass `tokio::time::sleep`.
 async fn resolve_fresh_keypackage<FetchFut, SleepFut>(
     recorded_ref: Option<&str>,
+    reset_at_secs: Option<u64>,
     attempts: u32,
     mut fetch_candidate: impl FnMut() -> FetchFut,
     mut sleep: impl FnMut(std::time::Duration) -> SleepFut,
@@ -237,7 +248,12 @@ where
     let attempts = attempts.max(1);
     for attempt in 0..attempts {
         if let Some(candidate) = fetch_candidate().await {
-            if keypackage_generation_advanced(recorded_ref, &candidate.id.to_hex()) {
+            if keypackage_generation_advanced(
+                recorded_ref,
+                &candidate.id.to_hex(),
+                reset_at_secs,
+                candidate.created_at.as_secs(),
+            ) {
                 return Some(candidate);
             }
         }
@@ -847,9 +863,15 @@ impl MlsService {
             // republish (triggered elsewhere, on their next decrypt/login, out of this call's
             // control) races this restore. A candidate identical to `recorded_ref` has not
             // rotated since we last saw them, so keep polling instead of proceeding on it.
+            // With no recorded ref, `mls_store_reset_at` is the time floor.
+            let reset_at_secs = TAURI_APP
+                .get()
+                .and_then(|h| crate::mls_store_reset_state::store_reset_at_secs(h).ok())
+                .flatten();
             let retry_client = client.clone();
             resolve_fresh_keypackage(
                 recorded_ref.as_deref(),
+                reset_at_secs,
                 RESTORE_KEYPACKAGE_RETRY_ATTEMPTS,
                 move || {
                     let retry_client = retry_client.clone();
@@ -2817,12 +2839,19 @@ mod mls_restore_tests {
     }
 
     // Pure: identical candidate never counts as advanced; anything else (including "nothing
-    // recorded yet") does.
+    // recorded yet" with no reset floor) does. With a reset floor and no recorded ref, only
+    // candidates at/after the floor advance.
     #[test]
     fn keypackage_generation_advanced_rejects_identical_and_accepts_divergent_or_unknown() {
-        assert!(!keypackage_generation_advanced(Some("abc"), "abc"));
-        assert!(keypackage_generation_advanced(Some("abc"), "def"));
-        assert!(keypackage_generation_advanced(None, "abc"));
+        assert!(!keypackage_generation_advanced(Some("abc"), "abc", None, 0));
+        assert!(keypackage_generation_advanced(Some("abc"), "def", None, 0));
+        assert!(keypackage_generation_advanced(None, "abc", None, 0));
+        assert!(!keypackage_generation_advanced(None, "abc", Some(100), 50));
+        assert!(keypackage_generation_advanced(None, "abc", Some(100), 100));
+        assert!(keypackage_generation_advanced(None, "abc", Some(100), 150));
+        // Recorded-ref check wins over the time floor when both are present.
+        assert!(!keypackage_generation_advanced(Some("abc"), "abc", Some(100), 150));
+        assert!(keypackage_generation_advanced(Some("abc"), "def", Some(100), 50));
     }
 
     // The exact scenario #1 (pacto-app-7xq.1) targets: only the pre-reset KeyPackage is ever
@@ -2846,6 +2875,7 @@ mod mls_restore_tests {
 
         let result = resolve_fresh_keypackage(
             Some(&recorded_ref),
+            None,
             3,
             move || {
                 fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2888,6 +2918,7 @@ mod mls_restore_tests {
 
         let result = resolve_fresh_keypackage(
             Some(&recorded_ref),
+            None,
             4,
             move || {
                 let n = fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2907,7 +2938,8 @@ mod mls_restore_tests {
     }
 
     // With no recorded reference (this admin has never resolved this member+device before)
-    // there is nothing to compare against, so the very first candidate is accepted.
+    // and no reset floor, there is nothing to compare against, so the very first candidate
+    // is accepted.
     #[tokio::test]
     async fn resolve_fresh_keypackage_accepts_first_candidate_when_no_recorded_reference() {
         let keys = Keys::generate();
@@ -2922,6 +2954,7 @@ mod mls_restore_tests {
 
         let result = resolve_fresh_keypackage(
             None,
+            None,
             4,
             move || {
                 fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2934,6 +2967,39 @@ mod mls_restore_tests {
 
         assert_eq!(result.map(|e| e.id), Some(event.id));
         assert_eq!(fetch_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // After a store reset with no recorded ref, a KeyPackage created before `reset_at` must
+    // be rejected even when it is the only event on the relay.
+    #[tokio::test]
+    async fn resolve_fresh_keypackage_rejects_pre_reset_created_at_when_only_time_floor_applies() {
+        let keys = Keys::generate();
+        let mls = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([24u8; 32])).unwrap(),
+        );
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let pre_reset_event = fresh_keypackage_event(&mls, &keys, &relay_url).await;
+        let reset_at = pre_reset_event.created_at.as_secs().saturating_add(1);
+
+        let fetch_calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let fetch_calls_c = fetch_calls.clone();
+        let candidate = pre_reset_event.clone();
+
+        let result = resolve_fresh_keypackage(
+            None,
+            Some(reset_at),
+            3,
+            move || {
+                fetch_calls_c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let candidate = candidate.clone();
+                async move { Some(candidate) }
+            },
+            |_delay| async {},
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert_eq!(fetch_calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     // Extracted pure error-mapping (pacto-app-7xq.5): a partial restoration failure gets the

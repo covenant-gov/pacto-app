@@ -226,6 +226,30 @@ lazy_static! {
     static ref WRAPPER_ID_CACHE: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
 }
 
+/// Consecutive handling timeouts per gift-wrap wrapper id. After
+/// `GIFTWRAP_TIMEOUT_DISCARD_AFTER`, the wrapper is quarantined like a panic.
+const GIFTWRAP_TIMEOUT_DISCARD_AFTER: u32 = 3;
+lazy_static! {
+    static ref GIFTWRAP_TIMEOUT_COUNTS: std::sync::Mutex<std::collections::HashMap<String, u32>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
+
+/// Returns true once the same wrapper has timed out `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times.
+fn note_giftwrap_timeout(wrapper_event_id: &str) -> bool {
+    let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() else {
+        return true;
+    };
+    let entry = counts.entry(wrapper_event_id.to_string()).or_insert(0);
+    *entry = entry.saturating_add(1);
+    *entry >= GIFTWRAP_TIMEOUT_DISCARD_AFTER
+}
+
+fn clear_giftwrap_timeout_count(wrapper_event_id: &str) {
+    if let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() {
+        counts.remove(wrapper_event_id);
+    }
+}
+
 
 
 
@@ -2033,8 +2057,8 @@ enum IntakeOutcome {
     /// Handling unwound. A payload that panics does so deterministically, so the
     /// wrapper is permanently unhandleable and is recorded as discarded.
     Panicked,
-    /// Handling exceeded the deadline. Kept retryable: a stall can also come from a
-    /// slow disk or relay, and discarding here would silently drop a real invitation.
+    /// Handling exceeded the deadline. Retryable until the same wrapper times out
+    /// `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times in this process, then quarantined.
     TimedOut,
 }
 
@@ -2045,7 +2069,8 @@ impl IntakeOutcome {
     }
 
     /// Whether the failure repeats on every retry, so the wrapper should be recorded
-    /// as discarded rather than re-fetched on each launch.
+    /// as discarded rather than re-fetched on each launch. Timeouts need the per-id
+    /// counter in `note_giftwrap_timeout` — use that path from `handle_event_guarded`.
     fn is_permanent_failure(self) -> bool {
         matches!(self, IntakeOutcome::Panicked)
     }
@@ -2071,7 +2096,7 @@ where
         }
         Err(_) => {
             eprintln!(
-                "[Intake] Gift wrap {} exceeded the {}s handling deadline; abandoned and left retryable",
+                "[Intake] Gift wrap {} exceeded the {}s handling deadline; abandoned for retry",
                 wrapper_event_id,
                 deadline.as_secs()
             );
@@ -2091,7 +2116,25 @@ async fn handle_event_guarded(event: Event, is_new: bool) -> bool {
     )
     .await;
 
-    if outcome.is_permanent_failure() {
+    let quarantine = match outcome {
+        IntakeOutcome::Panicked => true,
+        IntakeOutcome::TimedOut => {
+            let discard = note_giftwrap_timeout(&wrapper_event_id);
+            if discard {
+                eprintln!(
+                    "[Intake] Gift wrap {} timed out {} times; discarding it",
+                    wrapper_event_id, GIFTWRAP_TIMEOUT_DISCARD_AFTER
+                );
+            }
+            discard
+        }
+        IntakeOutcome::Handled(_) => {
+            clear_giftwrap_timeout_count(&wrapper_event_id);
+            false
+        }
+    };
+
+    if quarantine {
         if let Some(handle) = TAURI_APP.get() {
             let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
         }
@@ -2114,7 +2157,10 @@ fn abandon_sync_slice(state: &mut ChatState) {
 
 #[cfg(test)]
 mod intake_boundary_tests {
-    use super::{abandon_sync_slice, bounded_intake, ChatState, IntakeOutcome, SyncMode};
+    use super::{
+        abandon_sync_slice, bounded_intake, clear_giftwrap_timeout_count, note_giftwrap_timeout,
+        ChatState, IntakeOutcome, SyncMode, GIFTWRAP_TIMEOUT_DISCARD_AFTER,
+    };
     use std::time::Duration;
 
     #[tokio::test]
@@ -2158,8 +2204,19 @@ mod intake_boundary_tests {
         assert!(!outcome.accepted_new());
         assert!(
             !outcome.is_permanent_failure(),
-            "a stall must stay retryable so a slow disk cannot drop a pending invitation"
+            "a single stall must stay retryable so a slow disk cannot drop a pending invitation"
         );
+    }
+
+    #[test]
+    fn repeated_timeouts_for_the_same_wrapper_eventually_quarantine() {
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        for _ in 0..(GIFTWRAP_TIMEOUT_DISCARD_AFTER - 1) {
+            assert!(!note_giftwrap_timeout("wrap-timeout-q"));
+        }
+        assert!(note_giftwrap_timeout("wrap-timeout-q"));
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        assert!(!note_giftwrap_timeout("wrap-timeout-q"));
     }
 
     #[tokio::test]
@@ -4582,9 +4639,7 @@ fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
     matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
 }
 
-/// Relay URLs with a single-relay reconnect fetch currently in flight. Guards against a relay
-/// flapping Connected/Disconnected/Connected in quick succession spawning overlapping fetches
-/// for the same relay; each relay has its own independent slot.
+// Relay URLs with a reconnect fetch in flight (lazy_static items cannot take /// docs).
 lazy_static! {
     static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
 }
@@ -7764,7 +7819,10 @@ pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), 
     Ok(())
 }
 
-/// Get members (npubs) of an MLS group from the persistent engine (on-demand)
+/// Get members (npubs) of an MLS group from the persistent engine (on-demand).
+/// When the group is in MLS store-reset "lost" state the fresh engine has no
+/// membership — fall back to the preserved chat.participants roster so UI paths
+/// like sole-admin recreate can still invite former members.
 #[tauri::command]
 async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String> {
     // Run engine operations on a blocking thread so the outer future is Send
@@ -7815,6 +7873,34 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                                 .filter_map(|pk| pk.to_bech32().ok())
                                 .collect();
                             break;
+                        }
+                    }
+                }
+            }
+            drop(engine);
+
+            let lost = mls_store_reset_state::is_group_state_lost(&handle, &wire_id)
+                .or_else(|_| mls_store_reset_state::is_group_state_lost(&handle, &group_id))
+                .unwrap_or(false);
+            if lost && members.is_empty() {
+                let preserved = {
+                    let state = STATE.lock().await;
+                    state
+                        .get_chat(&wire_id)
+                        .or_else(|| state.get_chat(&group_id))
+                        .map(|chat| chat.participants.clone())
+                        .unwrap_or_default()
+                };
+                if !preserved.is_empty() {
+                    members = preserved;
+                }
+                if admins.is_empty() {
+                    if let Ok(states) = mls_store_reset_state::reset_group_states(&handle) {
+                        if let Some(s) = states
+                            .into_iter()
+                            .find(|s| s.group_id == wire_id || s.group_id == group_id)
+                        {
+                            admins = s.admin_npubs;
                         }
                     }
                 }

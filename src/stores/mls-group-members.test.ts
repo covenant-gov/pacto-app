@@ -4,6 +4,7 @@ import * as nostrApi from '../lib/api/nostr';
 import {
   ensureMlsGroupMembers,
   membersByGroupId,
+  adminsByGroupId,
   refreshMlsGroupMembers,
   resetMlsGroupMembersStores,
 } from './mls-group-members';
@@ -18,23 +19,29 @@ describe('mls group members store', () => {
     vi.spyOn(nostrApi, 'getMlsGroupMembers').mockResolvedValue({
       group_id: 'group-1',
       members: ['npub-a'],
-      admins: [],
+      admins: ['npub-admin'],
     });
     await ensureMlsGroupMembers('group-1');
     await ensureMlsGroupMembers('group-1');
     expect(nostrApi.getMlsGroupMembers).toHaveBeenCalledTimes(1);
     expect(get(membersByGroupId)['group-1']).toEqual(['npub-a']);
+    expect(get(adminsByGroupId)['group-1']).toEqual(['npub-admin']);
   });
 
   it('refreshMlsGroupMembers syncs and replaces cached list', async () => {
     vi.spyOn(nostrApi, 'syncMlsGroupsNow').mockResolvedValue({ synced: 1, total: 1 });
     vi.spyOn(nostrApi, 'getMlsGroupMembers')
-      .mockResolvedValueOnce({ group_id: 'group-1', members: ['npub-a'], admins: [] })
-      .mockResolvedValueOnce({ group_id: 'group-1', members: ['npub-a', 'npub-b'], admins: [] });
+      .mockResolvedValueOnce({ group_id: 'group-1', members: ['npub-a'], admins: ['npub-admin'] })
+      .mockResolvedValueOnce({
+        group_id: 'group-1',
+        members: ['npub-a', 'npub-b'],
+        admins: ['npub-admin'],
+      });
     await ensureMlsGroupMembers('group-1');
     await refreshMlsGroupMembers('group-1');
     expect(nostrApi.syncMlsGroupsNow).toHaveBeenCalledWith('group-1');
     expect(get(membersByGroupId)['group-1']).toEqual(['npub-a', 'npub-b']);
+    expect(get(adminsByGroupId)['group-1']).toEqual(['npub-admin']);
   });
 
   it('skips virtual hub ids', async () => {
