@@ -9,6 +9,7 @@ import {
   relaunchApp,
   updateStatus,
   resetUpdateStatus,
+  resetMemoizedUpdateCheckForTest,
   setIsDevBuildForTest,
   buildCommitHash,
   buildVersion,
@@ -38,6 +39,7 @@ const mockedShowToast = vi.mocked(showToast);
 beforeEach(() => {
   vi.resetAllMocks();
   resetUpdateStatus();
+  resetMemoizedUpdateCheckForTest();
 });
 
 afterEach(() => {

@@ -30,6 +30,28 @@ export function setIsDevBuildForTest(value: boolean): void {
 
 export type UpdaterUpdate = Awaited<ReturnType<typeof check>>;
 
+let memoizedCheckPromise: Promise<UpdaterUpdate> | null = null;
+
+/**
+ * The launch-time manifest check, called at most once per launch. Both the
+ * update gate and `checkForUpdates` consult this instead of calling
+ * `check()` directly, so one launch makes one round trip and the courtesy
+ * startup check can never race a second, independent result into
+ * `updateStatus`. Dev builds resolve `null` without a network call, since
+ * `check()` has no manifest to read in dev.
+ */
+export function getMemoizedUpdateCheck(): Promise<UpdaterUpdate> {
+  if (!memoizedCheckPromise) {
+    memoizedCheckPromise = isDevBuild() ? Promise.resolve(null) : check();
+  }
+  return memoizedCheckPromise;
+}
+
+/** Test-only: force the next call to make a fresh `check()` call. */
+export function resetMemoizedUpdateCheckForTest(): void {
+  memoizedCheckPromise = null;
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'
@@ -125,7 +147,7 @@ export async function checkForUpdates(): Promise<void> {
   updateStatus.setStatus('checking', { currentVersion, availableVersion: null, error: null });
 
   try {
-    const update = await check();
+    const update = await getMemoizedUpdateCheck();
     if (!update) {
       updateStatus.setStatus('no-update', { currentVersion });
       return;
