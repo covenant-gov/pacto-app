@@ -10,6 +10,7 @@ import { loadAccountState } from './persistence';
 import { markBackupVerified } from './backup-verification';
 import { clearAccountState } from '../lib/utils/clear-account-state';
 import { isMigrationGateError } from '../lib/utils/tauri-errors';
+import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
 
 async function maybeApplyLocalDevDefaults(npub: string): Promise<void> {
   if (!import.meta.env.DEV) return;
@@ -197,6 +198,11 @@ export async function createAccount(pin: string): Promise<void> {
   authError.set(null);
 
   try {
+    if ((await awaitGateBeforeAuth()) === 'blocked') {
+      authLoading.set(false);
+      return;
+    }
+
     clearAccountState();
     // Generate keys with mnemonic (initializes Nostr client)
     const keys = await apiCreateAccount();
@@ -224,6 +230,7 @@ export async function createAccount(pin: string): Promise<void> {
       pubkey: keys.public
     });
     await maybeApplyLocalDevDefaults(npub);
+    freezeGate();
 
     dmLog('createAccount: done');
     authLoading.set(false);
@@ -245,6 +252,11 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
   authError.set(null);
 
   try {
+    if ((await awaitGateBeforeAuth()) === 'blocked') {
+      authLoading.set(false);
+      return;
+    }
+
     clearAccountState();
     if (!validateRecoveryPhraseForImport(recoveryPhrase)) {
       throw new Error('Enter a valid 12- or 24-word recovery phrase');
@@ -274,6 +286,7 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
       pubkey: keys.public
     });
     await maybeApplyLocalDevDefaults(npub);
+    freezeGate();
     await markBackupVerified(true);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
@@ -296,6 +309,8 @@ export async function unlockWithPin(pin: string): Promise<void> {
   authError.set(null);
 
   try {
+    if ((await awaitGateBeforeAuth()) === 'blocked') return;
+
     const privateKey = await loadAndDecryptKey(pin);
     const keys = await apiLogin(privateKey);
     const npub = await getCurrentAccount();
@@ -311,6 +326,7 @@ export async function unlockWithPin(pin: string): Promise<void> {
       pubkey: keys.public
     });
     await maybeApplyLocalDevDefaults(npub);
+    freezeGate();
 
     dmLog('unlockWithPin: done');
   } catch (error: unknown) {

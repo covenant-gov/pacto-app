@@ -48,12 +48,14 @@ async function mountGate(page: Page, scenario: StorageScenario): Promise<void> {
   await page.goto(sourceOrigin);
   await page.setContent('<main id="fixture"></main>');
   await page.evaluate(async ({ scenario }) => {
-    const [{ initI18n }, { mount, createRawSnippet }, gateModule, mockRegistryModule] = await Promise.all([
-      import('/src/lib/i18n/index.ts'),
-      import('/@id/svelte'),
-      import('/src/components/updater/UpdateGate.svelte'),
-      import('/src/lib/api/mock-registry.ts'),
-    ]);
+    const [{ initI18n }, { mount, createRawSnippet }, gateComponent, gateModule, mockRegistryModule] =
+      await Promise.all([
+        import('/src/lib/i18n/index.ts'),
+        import('/@id/svelte'),
+        import('/src/components/updater/UpdateGate.svelte'),
+        import('/src/lib/updater/update-gate.ts'),
+        import('/src/lib/api/mock-registry.ts'),
+      ]);
     await initI18n('en');
 
     mockRegistryModule.mockCommandRegistry.get_storage_compatibility = () => {
@@ -76,10 +78,14 @@ async function mountGate(page: Page, scenario: StorageScenario): Promise<void> {
       render: () => '<div data-testid="gate-children">Authenticated content</div>',
     }));
 
-    mount(gateModule.default, {
+    mount(gateComponent.default, {
       target: document.querySelector('#fixture')!,
       props: { children: childrenSnippet },
     });
+
+    // Mirrors +layout.svelte's own onMount: this is the one call site that
+    // starts gate resolution. UpdateGate itself only renders `gateState`.
+    void gateModule.resolveGateAtLaunch();
   }, { scenario });
 }
 

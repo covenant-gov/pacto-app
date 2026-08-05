@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, tick, type Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
-  import { gateState, resolveGateAtLaunch } from '../../lib/updater/update-gate';
+  import { gateState } from '../../lib/updater/update-gate';
   import { updateStatus, retryUpdateCheck } from '../../lib/updater/update-check';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import UpdateAvailablePanel from './UpdateAvailablePanel.svelte';
@@ -14,10 +14,6 @@
   let { children }: { children: Snippet } = $props();
 
   let panelEl: HTMLDivElement | undefined = $state();
-
-  onMount(() => {
-    void resolveGateAtLaunch();
-  });
 
   $effect(() => {
     if ($gateState.status !== 'blocked' || !panelEl) return;
