@@ -11,10 +11,10 @@ use tauri::{AppHandle, Runtime};
 use super::access_control::GovCapability;
 use super::contracts::hats::IHats::hatSupplyCall;
 use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
-    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall,
-    crewHatIdCall, executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall,
-    pendingCrewAddAtCall, pendingCrewRemoveAtCall, requestAddCrewCall, requestRemoveCrewCall,
-    CrewAddCancelled, CrewAddExecuted, CrewAddRequested, CrewRemoveCancelled, CrewRemoveExecuted,
+    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall, crewHatIdCall,
+    executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall, pendingCrewAddAtCall,
+    pendingCrewRemoveAtCall, requestAddCrewCall, requestRemoveCrewCall, CrewAddCancelled,
+    CrewAddExecuted, CrewAddRequested, CrewRemoveCancelled, CrewRemoveExecuted,
     CrewRemoveRequested,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
@@ -27,8 +27,8 @@ use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 use super::squad_sponsor_common::require_parent_member;
 
 fn encode_request_add_crew(candidate: &str) -> Result<Vec<u8>, String> {
-    let addr = parse_address(candidate.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(candidate.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(requestAddCrewCall { _candidate: addr }.abi_encode())
 }
 
@@ -42,24 +42,22 @@ fn encode_bootstrap_crew(candidates: &[String]) -> Result<Vec<u8>, String> {
     }
     let mut addrs = Vec::with_capacity(candidates.len());
     for raw in candidates {
-        let addr = parse_address(raw.trim())
-            .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+        let addr =
+            parse_address(raw.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
         addrs.push(addr);
     }
-    Ok(bootstrapCrewCall {
-        _candidates: addrs,
-    }
-    .abi_encode())
+    Ok(bootstrapCrewCall { _candidates: addrs }.abi_encode())
 }
 
 fn encode_execute_add_crew(candidate: &str) -> Result<Vec<u8>, String> {
-    let addr = parse_address(candidate.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(candidate.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(executeAddCrewCall { _candidate: addr }.abi_encode())
 }
 
 fn encode_request_remove_crew(crew: &str) -> Result<Vec<u8>, String> {
-    let addr = parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(crew.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(requestRemoveCrewCall { _crew: addr }.abi_encode())
 }
 
@@ -210,20 +208,12 @@ pub async fn get_quartermaster_pending<R: Runtime>(
     let addr =
         parse_address(address.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let add_at = eth_call_decode(
-        &provider,
-        qm,
-        &pendingCrewAddAtCall { _candidate: addr },
-    )
-    .await
-    .map_err(|e| wallet_err_json("QM_READ", e, None))?;
-    let remove_at = eth_call_decode(
-        &provider,
-        qm,
-        &pendingCrewRemoveAtCall { _crew: addr },
-    )
-    .await
-    .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let add_at = eth_call_decode(&provider, qm, &pendingCrewAddAtCall { _candidate: addr })
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let remove_at = eth_call_decode(&provider, qm, &pendingCrewRemoveAtCall { _crew: addr })
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
     Ok(QuartermasterPendingDto {
         address: format!("{:#x}", addr),
         pending_add_at: add_at.to_string(),
@@ -303,20 +293,16 @@ pub async fn list_quartermaster_pending<R: Runtime>(
         let provider = provider.clone();
         async move {
             let executable_at: U256 = match kind {
-                QmPendingKind::Add => eth_call_decode(
-                    &provider,
-                    qm,
-                    &pendingCrewAddAtCall { _candidate: addr },
-                )
-                .await
-                .map_err(|e| wallet_err_json("QM_READ", e, None))?,
-                QmPendingKind::Remove => eth_call_decode(
-                    &provider,
-                    qm,
-                    &pendingCrewRemoveAtCall { _crew: addr },
-                )
-                .await
-                .map_err(|e| wallet_err_json("QM_READ", e, None))?,
+                QmPendingKind::Add => {
+                    eth_call_decode(&provider, qm, &pendingCrewAddAtCall { _candidate: addr })
+                        .await
+                        .map_err(|e| wallet_err_json("QM_READ", e, None))?
+                }
+                QmPendingKind::Remove => {
+                    eth_call_decode(&provider, qm, &pendingCrewRemoveAtCall { _crew: addr })
+                        .await
+                        .map_err(|e| wallet_err_json("QM_READ", e, None))?
+                }
             };
             Ok::<_, String>((kind, addr, executable_at))
         }
@@ -383,8 +369,8 @@ pub async fn quartermaster_cancel_add_crew<R: Runtime>(
     candidate: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<QuartermasterWriteResult, String> {
-    let addr = parse_address(candidate.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(candidate.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = cancelAddCrewCall { _candidate: addr }.abi_encode();
     qm_write(
         app,
@@ -519,14 +505,14 @@ mod tests {
         encode_execute_add_crew, encode_request_add_crew, encode_request_remove_crew,
         fold_qm_pending_verifies, qm_crew_lifecycle_topic0s, QmPendingKind,
     };
-    use alloy::primitives::{keccak256, Address, U256};
-    use alloy::rpc::types::Log;
-    use alloy::sol_types::{SolCall, SolEvent};
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
         bootstrapCrewCall, executeAddCrewCall, requestAddCrewCall, requestRemoveCrewCall,
         CrewAddCancelled, CrewAddExecuted, CrewAddRequested, CrewRemoveRequested,
     };
     use crate::evm::rpc::parse_address;
+    use alloy::primitives::{keccak256, Address, U256};
+    use alloy::rpc::types::Log;
+    use alloy::sol_types::{SolCall, SolEvent};
 
     const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
     const ADDR_B: &str = "0x2222222222222222222222222222222222222222";
@@ -592,16 +578,10 @@ mod tests {
     fn crew_lifecycle_topic0s_match_event_signatures() {
         let topics = qm_crew_lifecycle_topic0s();
         assert_eq!(topics.len(), 6);
-        assert_eq!(
-            topics[0],
-            keccak256("CrewAddRequested(address,uint256)")
-        );
+        assert_eq!(topics[0], keccak256("CrewAddRequested(address,uint256)"));
         assert_eq!(topics[1], keccak256("CrewAddCancelled(address)"));
         assert_eq!(topics[2], keccak256("CrewAddExecuted(address)"));
-        assert_eq!(
-            topics[3],
-            keccak256("CrewRemoveRequested(address,uint256)")
-        );
+        assert_eq!(topics[3], keccak256("CrewRemoveRequested(address,uint256)"));
         assert_eq!(topics[4], keccak256("CrewRemoveCancelled(address)"));
         assert_eq!(topics[5], keccak256("CrewRemoveExecuted(address)"));
     }

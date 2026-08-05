@@ -207,8 +207,7 @@ pub fn try_parse_broadcast_event(event: &Event) -> Option<(CommonsBroadcastWire,
         if squad.kind != "squad" && squad.kind != "squad-pair" {
             return None;
         }
-        if nostr_tags::custom_content(&event.tags, "squad") != Some(squad.id.as_str())
-        {
+        if nostr_tags::custom_content(&event.tags, "squad") != Some(squad.id.as_str()) {
             return None;
         }
     } else if wire.squad.is_some() {
@@ -223,9 +222,11 @@ pub fn try_parse_broadcast_event(event: &Event) -> Option<(CommonsBroadcastWire,
         return None;
     }
     for t in &tags {
-        if !event.tags.iter().any(|tag| {
-            nostr_tags::is_letter(tag, Alphabet::T) && tag.content() == Some(t.as_str())
-        }) {
+        if !event
+            .tags
+            .iter()
+            .any(|tag| nostr_tags::is_letter(tag, Alphabet::T) && tag.content() == Some(t.as_str()))
+        {
             return None;
         }
     }
@@ -523,8 +524,7 @@ pub async fn commons_publish_broadcast<R: Runtime>(
             .as_ref()
             .map(|s| s.id.as_str())
             .ok_or_else(|| "squad id required".to_string())?;
-        let (bot_keys, bot_npub) =
-            crate::squad_bot::bot_keys_for_holder(&handle, squad_id).await?;
+        let (bot_keys, bot_npub) = crate::squad_bot::bot_keys_for_holder(&handle, squad_id).await?;
         let event = crate::nostr_sign::sign_with(builder, &bot_keys)?;
         (event, bot_npub)
     } else {
@@ -569,7 +569,9 @@ pub async fn commons_publish_broadcast<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn commons_list_cached_broadcasts(limit: Option<u32>) -> Result<Vec<CommonsBroadcastDto>, String> {
+pub async fn commons_list_cached_broadcasts(
+    limit: Option<u32>,
+) -> Result<Vec<CommonsBroadcastDto>, String> {
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let handle = crate::TAURI_APP
         .get()
@@ -583,7 +585,9 @@ pub async fn commons_list_cached_broadcasts(limit: Option<u32>) -> Result<Vec<Co
 }
 
 #[tauri::command]
-pub async fn commons_fetch_broadcasts(limit: Option<u32>) -> Result<Vec<CommonsBroadcastDto>, String> {
+pub async fn commons_fetch_broadcasts(
+    limit: Option<u32>,
+) -> Result<Vec<CommonsBroadcastDto>, String> {
     let limit = limit.unwrap_or(100).clamp(1, 500);
     let _ = sync_broadcasts_from_relays(limit).await?;
     let handle = crate::TAURI_APP
@@ -719,10 +723,9 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
                        ORDER BY created_at DESC LIMIT 1"#,
                 )
                 .map_err(|e| e.to_string())?;
-            stmt.query_row(
-                params![author_npub, subject, subject_id, now],
-                |r| r.get::<_, String>(0),
-            )
+            stmt.query_row(params![author_npub, subject, subject_id, now], |r| {
+                r.get::<_, String>(0)
+            })
             .optional()
             .map_err(|e| e.to_string())?
         };
@@ -784,7 +787,10 @@ mod tests {
 
     #[test]
     fn allows_reserved_new_beyond_author_cap() {
-        let raw: Vec<String> = ["a", "b", "c", "new"].iter().map(|s| s.to_string()).collect();
+        let raw: Vec<String> = ["a", "b", "c", "new"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         assert_eq!(
             normalize_commons_tags(&raw).unwrap(),
             vec!["a", "b", "c", "new"]

@@ -2,15 +2,19 @@ use std::cmp::min;
 
 use futures_util::StreamExt;
 use reqwest::{self, Client};
+use scraper::{Html, Selector};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
-use scraper::{Html, Selector};
 
 /// Trait for reporting download progress
 pub trait ProgressReporter {
     /// Report progress of a download
-    fn report_progress(&self, percentage: Option<u8>, bytes_downloaded: Option<u64>) -> Result<(), &'static str>;
-    
+    fn report_progress(
+        &self,
+        percentage: Option<u8>,
+        bytes_downloaded: Option<u64>,
+    ) -> Result<(), &'static str>;
+
     /// Report completion of a download
     fn report_complete(&self) -> Result<(), &'static str>;
 }
@@ -27,11 +31,15 @@ impl NoOpProgressReporter {
 }
 
 impl ProgressReporter for NoOpProgressReporter {
-    fn report_progress(&self, _percentage: Option<u8>, _bytes_downloaded: Option<u64>) -> Result<(), &'static str> {
+    fn report_progress(
+        &self,
+        _percentage: Option<u8>,
+        _bytes_downloaded: Option<u64>,
+    ) -> Result<(), &'static str> {
         // Do nothing
         Ok(())
     }
-    
+
     fn report_complete(&self) -> Result<(), &'static str> {
         // Do nothing
         Ok(())
@@ -47,31 +55,38 @@ pub struct TauriProgressReporter<'a, R: tauri::Runtime> {
 impl<'a, R: tauri::Runtime> TauriProgressReporter<'a, R> {
     /// Create a new TauriProgressReporter
     pub fn new(handle: &'a AppHandle<R>, attachment_id: &'a str) -> Self {
-        Self { handle, attachment_id }
+        Self {
+            handle,
+            attachment_id,
+        }
     }
 }
 
 impl<'a, R: tauri::Runtime> ProgressReporter for TauriProgressReporter<'a, R> {
-    fn report_progress(&self, percentage: Option<u8>, bytes_downloaded: Option<u64>) -> Result<(), &'static str> {
+    fn report_progress(
+        &self,
+        percentage: Option<u8>,
+        bytes_downloaded: Option<u64>,
+    ) -> Result<(), &'static str> {
         let mut payload = json!({
             "id": self.attachment_id
         });
-        
+
         if let Some(p) = percentage {
             payload["progress"] = json!(p);
         } else {
             payload["progress"] = json!(-1); // Use -1 to indicate unknown progress
         }
-        
+
         if let Some(bytes) = bytes_downloaded {
             payload["bytesDownloaded"] = json!(bytes);
         }
-        
+
         self.handle
             .emit("attachment_download_progress", payload)
             .map_err(|_| "Failed to emit event")
     }
-    
+
     fn report_complete(&self) -> Result<(), &'static str> {
         self.handle
             .emit(
@@ -284,9 +299,9 @@ async fn download_with_streaming(
             // Unknown size, emit progress updates at reasonable intervals
             // For example, every 256KB
             if downloaded - last_bytes_update >= 256 * 1024 {
-            // We can't calculate percentage, but we can still show activity
-            // Report with bytes downloaded instead of percentage
-            reporter.report_progress(None, Some(downloaded))?;
+                // We can't calculate percentage, but we can still show activity
+                // Report with bytes downloaded instead of percentage
+                reporter.report_progress(None, Some(downloaded))?;
 
                 last_bytes_update = downloaded;
             }
@@ -315,33 +330,39 @@ pub struct SiteMetadata {
 /// Fetch metadata specifically for Twitter/X posts using their oEmbed API
 async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
     // Use Twitter's oEmbed API for reliable metadata extraction
-    let encoded_url = url.replace("&", "%26").replace("?", "%3F").replace("=", "%3D");
+    let encoded_url = url
+        .replace("&", "%26")
+        .replace("?", "%3F")
+        .replace("=", "%3D");
     let oembed_url = format!("https://publish.twitter.com/oembed?url={}", encoded_url);
-    
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-    
+
     let response = client
         .get(&oembed_url)
         .send()
         .await
         .map_err(|e| format!("Twitter oEmbed request failed: {}", e))?;
-    
+
     if !response.status().is_success() {
-        return Err(format!("Twitter oEmbed returned status: {}", response.status()));
+        return Err(format!(
+            "Twitter oEmbed returned status: {}",
+            response.status()
+        ));
     }
-    
+
     let oembed_data: serde_json::Value = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse Twitter oEmbed response: {}", e))?;
-    
+
     // Extract metadata from oEmbed response
     let author_name = oembed_data["author_name"].as_str().unwrap_or("Twitter");
     let html = oembed_data["html"].as_str().unwrap_or("");
-    
+
     // Parse the HTML to extract the tweet text
     let document = Html::parse_document(html);
     let text_selector = Selector::parse("p").unwrap();
@@ -359,13 +380,11 @@ async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
                 .to_string()
         })
         .unwrap_or_default();
-    
+
     // Note: Twitter's oEmbed API does not provide images for regular tweets
     // Images are only available for video tweets via thumbnail_url
-    let thumbnail_url = oembed_data["thumbnail_url"]
-        .as_str()
-        .map(|s| s.to_string());
-    
+    let thumbnail_url = oembed_data["thumbnail_url"].as_str().map(|s| s.to_string());
+
     let metadata = SiteMetadata {
         domain: "https://x.com/".to_string(),
         og_title: Some(format!("{} on X", author_name)),
@@ -377,7 +396,7 @@ async fn fetch_twitter_metadata(url: &str) -> Result<SiteMetadata, String> {
         description: Some(format!("Post by {}", author_name)),
         favicon: Some("https://abs.twimg.com/favicons/twitter.3.ico".to_string()),
     };
-    
+
     Ok(metadata)
 }
 
@@ -386,7 +405,7 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
     if url.contains("twitter.com") || url.contains("x.com") {
         return fetch_twitter_metadata(url).await;
     }
-    
+
     // Extract and normalize domain
     let domain = {
         let parts: Vec<&str> = url.split('/').collect();
@@ -404,9 +423,9 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
             domain
         }
     };
-    
+
     let mut html_chunk = Vec::new();
-    
+
     let client = reqwest::Client::new();
     let mut response = client
         .get(url)
@@ -414,14 +433,14 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     // Read the response in chunks
     loop {
         let chunk = response.chunk().await.map_err(|e| e.to_string())?;
         match chunk {
             Some(data) => {
                 html_chunk.extend_from_slice(&data);
-                
+
                 if let Ok(current_html) = String::from_utf8(html_chunk.clone()) {
                     if let Some(head_end) = current_html.find("</head>") {
                         html_chunk.truncate(head_end + 7);
@@ -432,12 +451,12 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
             None => break,
         }
     }
-    
+
     let html_string = String::from_utf8(html_chunk).map_err(|e| e.to_string())?;
     let document = Html::parse_document(&html_string);
     let meta_selector = Selector::parse("meta").unwrap();
     let link_selector = Selector::parse("link").unwrap();
-    
+
     let mut metadata = SiteMetadata {
         domain: domain.clone(),
         og_title: None,
@@ -449,7 +468,7 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
         description: None,
         favicon: None,
     };
-    
+
     // Process favicon links
     let mut favicon_candidates = Vec::new();
     for link in document.select(&link_selector) {
@@ -467,7 +486,7 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
                         } else {
                             format!("{}/{}", domain.trim_end_matches('/'), href)
                         };
-                        
+
                         favicon_candidates.push((favicon_url, rel.to_lowercase()));
                     }
                     _ => {}
@@ -487,31 +506,32 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
         // 3. shortcut icon with .png extension
         // 4. any other icon
         // 5. fallback to /favicon.ico
-        
-        let favicon = favicon_candidates.iter()
-            .find(|(_url, rel)| 
-                rel == "apple-touch-icon")
-            .or_else(|| 
-                favicon_candidates.iter()
-                    .find(|(url, _)| 
-                        url.ends_with(".png")))
-            .or_else(|| 
-                favicon_candidates.iter()
-                    .find(|(_, rel)| 
-                        rel == "icon" || rel == "shortcut icon"))
+
+        let favicon = favicon_candidates
+            .iter()
+            .find(|(_url, rel)| rel == "apple-touch-icon")
+            .or_else(|| {
+                favicon_candidates
+                    .iter()
+                    .find(|(url, _)| url.ends_with(".png"))
+            })
+            .or_else(|| {
+                favicon_candidates
+                    .iter()
+                    .find(|(_, rel)| rel == "icon" || rel == "shortcut icon")
+            })
             .map(|(url, _)| url.clone())
-            .or_else(|| 
+            .or_else(||
                 // Fallback to /favicon.ico
-                Some(format!("{}/favicon.ico", domain.trim_end_matches('/')))
-            );
-        
+                Some(format!("{}/favicon.ico", domain.trim_end_matches('/'))));
+
         metadata.favicon = favicon;
     }
-    
+
     // Process meta tags (existing code)
     for meta in document.select(&meta_selector) {
         let element = meta.value();
-        
+
         if let Some(property) = element.attr("property") {
             if let Some(content) = element.attr("content") {
                 match property {
@@ -528,14 +548,14 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
                             format!("{}{}", domain.trim_end_matches('/'), content)
                         };
                         metadata.og_image = Some(image_url);
-                    },
+                    }
                     "og:url" => metadata.og_url = Some(content.to_string()),
                     "og:type" => metadata.og_type = Some(content.to_string()),
                     _ => {}
                 }
             }
         }
-        
+
         if let Some(name) = element.attr("name") {
             if let Some(content) = element.attr("content") {
                 match name {
@@ -545,12 +565,12 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
                         if metadata.og_title.is_none() {
                             metadata.og_title = Some(content.to_string());
                         }
-                    },
+                    }
                     "twitter:description" => {
                         if metadata.og_description.is_none() {
                             metadata.og_description = Some(content.to_string());
                         }
-                    },
+                    }
                     "twitter:image" => {
                         if metadata.og_image.is_none() {
                             let image_url = if content.starts_with("https://") {
@@ -564,18 +584,18 @@ pub async fn fetch_site_metadata(url: &str) -> Result<SiteMetadata, String> {
                             };
                             metadata.og_image = Some(image_url);
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
         }
     }
-    
+
     // Extract title from title tag
     if let Some(title_element) = document.select(&Selector::parse("title").unwrap()).next() {
         metadata.title = Some(title_element.text().collect::<String>());
     }
-    
+
     Ok(metadata)
 }
 
@@ -587,7 +607,7 @@ pub async fn check_url_live(url: &str) -> Result<bool, &'static str> {
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|_| "Failed to create HTTP client")?;
-    
+
     // Try a HEAD request first (more efficient)
     match client.head(url).send().await {
         Ok(response) => {
@@ -597,12 +617,7 @@ pub async fn check_url_live(url: &str) -> Result<bool, &'static str> {
         Err(_) => {
             // If HEAD fails, try a GET request with minimal range
             // Some servers don't support HEAD requests
-            match client
-                .get(url)
-                .header("Range", "bytes=0-1")
-                .send()
-                .await
-            {
+            match client.get(url).header("Range", "bytes=0-1").send().await {
                 Ok(response) => {
                     // Accept both 200 (full content) and 206 (partial content)
                     let status = response.status();

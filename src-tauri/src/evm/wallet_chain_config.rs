@@ -73,10 +73,7 @@ fn default_rpc_urls_for_key(key: &str) -> Vec<&'static str> {
             "https://arbitrum.publicnode.com",
         ],
         "local" => vec!["http://localhost:8545"],
-        "mainnet" => vec![
-            "https://ethereum.publicnode.com",
-            "https://1rpc.io/eth",
-        ],
+        "mainnet" => vec!["https://ethereum.publicnode.com", "https://1rpc.io/eth"],
         // `rpc.sepolia.org` often returns Cloudflare 522; prefer publicnode / 1rpc / drpc first.
         "sepolia" => vec![
             "https://ethereum-sepolia-rpc.publicnode.com",
@@ -125,7 +122,8 @@ fn build_ordered_networks() -> Vec<WalletNetworkConfig> {
             .tokens
             .get("USDT")
             .unwrap_or_else(|| panic!("wallet-assets.json {:?}: missing USDT", k));
-        let chain_id = chain_id_for_key(k).unwrap_or_else(|| panic!("unknown chain id for {:?}", k));
+        let chain_id =
+            chain_id_for_key(k).unwrap_or_else(|| panic!("unknown chain id for {:?}", k));
         out.push(WalletNetworkConfig {
             key: k.to_string(),
             chain_id,
@@ -196,8 +194,14 @@ mod tests {
         assert_eq!(local.display_name, "Local Anvil");
         assert_eq!(local.native_symbol, "ETH");
         assert_eq!(local.native_decimals, 18);
-        assert!(!local.usdc_address.is_empty(), "local USDC address is configured");
-        assert!(!local.usdt_address.is_empty(), "local USDT address is configured");
+        assert!(
+            !local.usdc_address.is_empty(),
+            "local USDC address is configured"
+        );
+        assert!(
+            !local.usdt_address.is_empty(),
+            "local USDT address is configured"
+        );
         assert_eq!(local.usdc_decimals, 6);
         assert_eq!(local.usdt_decimals, 6);
     }
@@ -212,7 +216,10 @@ mod tests {
 
     #[test]
     fn network_by_key_rejects_anvil_alias() {
-        assert!(network_by_key("anvil").is_none(), "only 'local' is canonical");
+        assert!(
+            network_by_key("anvil").is_none(),
+            "only 'local' is canonical"
+        );
     }
 
     #[test]
@@ -295,5 +302,4 @@ mod tests {
         assert!(urls.iter().any(|u| u.contains("g.alchemy.com")));
         assert!(urls.iter().any(|u| u.contains("publicnode.com")));
     }
-
 }

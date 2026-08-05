@@ -48,7 +48,10 @@ fn is_restricted_non_loopback_ip(host: &str) -> bool {
                 || is_carrier_grade_nat(v4)
         }
         IpAddr::V6(v6) => {
-            v6.is_unspecified() || is_unique_local_v6(v6) || is_link_local_v6(v6) || is_documentation_v6(v6)
+            v6.is_unspecified()
+                || is_unique_local_v6(v6)
+                || is_link_local_v6(v6)
+                || is_documentation_v6(v6)
         }
     }
 }
@@ -140,11 +143,7 @@ pub fn resolve_gov_read_network(
     };
     let urls = rpc_urls_or_default(net, rpc_urls_override);
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
     Ok(GovReadNetwork {
         key: net.key.clone(),
@@ -198,7 +197,9 @@ mod tests {
 
     #[test]
     fn allowed_rpc_url_rules() {
-        assert!(is_allowed_rpc_url("https://eth-sepolia.g.alchemy.com/v2/key"));
+        assert!(is_allowed_rpc_url(
+            "https://eth-sepolia.g.alchemy.com/v2/key"
+        ));
         assert!(is_allowed_rpc_url("http://localhost:8545"));
         assert!(is_allowed_rpc_url("http://127.0.0.1:8545"));
         assert!(is_allowed_rpc_url("https://127.0.0.1:8545"));
@@ -209,11 +210,9 @@ mod tests {
 
     #[test]
     fn override_urls_win_over_defaults() {
-        let ctx = resolve_gov_read_network(
-            "sepolia",
-            Some(vec!["https://custom.example/rpc".into()]),
-        )
-        .expect("resolve");
+        let ctx =
+            resolve_gov_read_network("sepolia", Some(vec!["https://custom.example/rpc".into()]))
+                .expect("resolve");
         assert_eq!(ctx.rpc_urls, vec!["https://custom.example/rpc"]);
     }
 
@@ -255,8 +254,11 @@ pub fn parse_top_hat_id(raw: &str) -> Result<alloy::primitives::U256, String> {
         return Err("top_hat_id must be non-empty".to_string());
     }
     if s.starts_with("0x") || s.starts_with("0X") {
-        alloy::primitives::U256::from_str_radix(s.trim_start_matches("0x").trim_start_matches("0X"), 16)
-            .map_err(|e| format!("invalid hex top_hat_id: {e}"))
+        alloy::primitives::U256::from_str_radix(
+            s.trim_start_matches("0x").trim_start_matches("0X"),
+            16,
+        )
+        .map_err(|e| format!("invalid hex top_hat_id: {e}"))
     } else {
         alloy::primitives::U256::from_str_radix(s, 10)
             .map_err(|e| format!("invalid decimal top_hat_id: {e}"))

@@ -99,7 +99,8 @@ impl AudioRecorder {
             }
 
             let device_sample_rate = *self.device_sample_rate.lock().unwrap();
-            let resampled_samples = audio::resample_mono_i16(&samples, device_sample_rate, TARGET_SAMPLE_RATE)?;
+            let resampled_samples =
+                audio::resample_mono_i16(&samples, device_sample_rate, TARGET_SAMPLE_RATE)?;
 
             let spec = hound::WavSpec {
                 channels: 1,

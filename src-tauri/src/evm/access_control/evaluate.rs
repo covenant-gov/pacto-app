@@ -193,20 +193,14 @@ pub async fn evaluate_squad_capabilities<R: Runtime>(
     let roster = match resolve_acl_roster_address(app, pid) {
         Ok(a) => a,
         Err(_) => {
-            return Ok(build_snapshot(
-                pid,
-                HatContext::default(),
-                false,
-                false,
-            ));
+            return Ok(build_snapshot(pid, HatContext::default(), false, false));
         }
     };
 
     let chain = load_chain_context(app, pid, rpc_urls.clone()).await?;
     let (provider, _ctx) = connect_gov_read_provider(chain.network.as_str(), rpc_urls).await?;
 
-    let wears_captain =
-        is_wearer(&provider, chain.hats, roster, chain.captain_hat_id).await?;
+    let wears_captain = is_wearer(&provider, chain.hats, roster, chain.captain_hat_id).await?;
     let wears_crew = is_wearer(&provider, chain.hats, roster, chain.crew_hat_id).await?;
     let safe_wears_captain =
         is_wearer(&provider, chain.hats, chain.safe, chain.captain_hat_id).await?;

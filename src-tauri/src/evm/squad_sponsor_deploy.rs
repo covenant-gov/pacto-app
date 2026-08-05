@@ -17,6 +17,7 @@ use super::contracts::pacto_sponsor::ISquadSponsorFactory::{
 };
 use super::contracts::pacto_sponsor::SquadVariant;
 use super::gov_read::parse_top_hat_id;
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::call::eth_call_decode;
 use super::rpc::signer::{
@@ -31,7 +32,6 @@ use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id, squad_variant_label,
 };
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -39,7 +39,8 @@ use crate::db;
 const DEPLOY_REQUIRED_CAPABILITY: GovCapability = GovCapability::CaptainResign;
 
 pub(crate) fn parse_required_deposit_wei(raw: Option<&str>) -> Result<U256, String> {
-    let deposit = parse_deposit_wei(raw).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
+    let deposit =
+        parse_deposit_wei(raw).map_err(|e| wallet_err_json("INVALID_DEPOSIT", e, None))?;
     if deposit.is_zero() {
         return Err(wallet_err_json(
             "INVALID_DEPOSIT",
@@ -108,8 +109,7 @@ enum VariantInputs {
 
 /// Requested top hat must be non-zero and match the parent's persisted Pacto Gov infra.
 fn checked_top_hat_id(raw: &str, stored: Option<&str>) -> Result<U256, String> {
-    let top_hat =
-        parse_top_hat_id(raw).map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
+    let top_hat = parse_top_hat_id(raw).map_err(|e| wallet_err_json("INVALID_TOP_HAT", e, None))?;
     if top_hat.is_zero() {
         return Err(wallet_err_json(
             "INVALID_TOP_HAT",
@@ -173,7 +173,10 @@ fn onchain_variant_result_label(v: SquadVariant) -> &'static str {
 }
 
 /// Payload extras recoverable from the factory registry record alone (no deploy tx, no clone reads).
-fn reconcile_payload_extras(variant: SquadVariant, top_hat: U256) -> Vec<(&'static str, serde_json::Value)> {
+fn reconcile_payload_extras(
+    variant: SquadVariant,
+    top_hat: U256,
+) -> Vec<(&'static str, serde_json::Value)> {
     match variant {
         SquadVariant::SPONSOR => vec![("topHatId", json!(top_hat.to_string()))],
         _ => vec![],
@@ -282,11 +285,7 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
 
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let read_provider = connect_read_provider(&urls).await?;
@@ -375,16 +374,17 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     let tx = contract_call_request(factory, calldata).with_value(deposit);
     let receipt = send_and_confirm(&provider, tx, variant.confirm_timeout_message()).await?;
 
-    let (sponsor, onchain_variant, linked_hat) = read_squad_record(&read_provider, factory, squad_id)
-        .await
-        .map_err(|e| {
-            wallet_err_json_with_tx_hash(
-                "PARSE_DEPLOY",
-                e,
-                None,
-                format!("0x{:x}", receipt.transaction_hash),
-            )
-        })?;
+    let (sponsor, onchain_variant, linked_hat) =
+        read_squad_record(&read_provider, factory, squad_id)
+            .await
+            .map_err(|e| {
+                wallet_err_json_with_tx_hash(
+                    "PARSE_DEPLOY",
+                    e,
+                    None,
+                    format!("0x{:x}", receipt.transaction_hash),
+                )
+            })?;
 
     let paymaster = addrs.pacto_sponsor_paymaster;
     let sponsor_hex = format!("{:#x}", sponsor);
@@ -492,14 +492,14 @@ mod tests {
         sponsor_preflight_decision, sponsor_provider_payload, squad_id_from_parent_id,
         SponsorDeployVariant, SponsorPreflight, DEPLOY_REQUIRED_CAPABILITY,
     };
-    use alloy::primitives::{Address, U256};
-    use alloy::sol_types::SolCall;
     use crate::evm::access_control::GovCapability;
     use crate::evm::contracts::pacto_sponsor::ISquadSponsorFactory::{
         createSquadSponsorCall, createSquadSponsorExtCall,
     };
     use crate::evm::contracts::pacto_sponsor::SquadVariant;
     use crate::evm::squad_sponsor_common::parse_signer_wallet;
+    use alloy::primitives::{Address, U256};
+    use alloy::sol_types::SolCall;
 
     fn err_code(err: &str) -> String {
         serde_json::from_str::<serde_json::Value>(err)
@@ -568,7 +568,10 @@ mod tests {
     fn resolve_hats_registry_prefers_gov_config_then_sponsor_book() {
         let gov = Address::repeat_byte(0x33);
         let sponsor = Address::repeat_byte(0x44);
-        assert_eq!(resolve_hats_registry(Some(gov), Some(sponsor)).unwrap(), gov);
+        assert_eq!(
+            resolve_hats_registry(Some(gov), Some(sponsor)).unwrap(),
+            gov
+        );
         assert_eq!(resolve_hats_registry(None, Some(sponsor)).unwrap(), sponsor);
         assert_eq!(
             err_code(&resolve_hats_registry(None, None).unwrap_err()),
@@ -616,7 +619,10 @@ mod tests {
     fn already_deployed_onchain_err_carries_variant_and_sponsor() {
         let err = already_deployed_onchain_err("0x1111111111111111111111111111111111111111", "ext");
         let v: serde_json::Value = serde_json::from_str(&err).expect("json");
-        assert_eq!(v.get("code").and_then(|c| c.as_str()), Some("ALREADY_DEPLOYED"));
+        assert_eq!(
+            v.get("code").and_then(|c| c.as_str()),
+            Some("ALREADY_DEPLOYED")
+        );
         assert_eq!(v.get("variant").and_then(|c| c.as_str()), Some("ext"));
         assert_eq!(
             v.get("sponsorAddress").and_then(|c| c.as_str()),
@@ -796,7 +802,10 @@ mod tests {
             )
             .expect("row");
         assert_eq!(chain, "sepolia");
-        assert_eq!(canonical, crate::evm::normalize_hex_address(sponsor).unwrap());
+        assert_eq!(
+            canonical,
+            crate::evm::normalize_hex_address(sponsor).unwrap()
+        );
         assert_eq!(payload_back, payload_v1);
 
         // Re-persisting (reconcile or re-announce) updates in place instead of duplicating.
@@ -844,7 +853,10 @@ mod tests {
     #[test]
     fn parse_signer_wallet_rejects_unknown_for_deploy() {
         assert_eq!(parse_signer_wallet(None, "default").unwrap(), "default");
-        assert_eq!(parse_signer_wallet(Some("squad"), "default").unwrap(), "squad");
+        assert_eq!(
+            parse_signer_wallet(Some("squad"), "default").unwrap(),
+            "squad"
+        );
         assert!(parse_signer_wallet(Some("imported"), "default").is_err());
     }
 
@@ -887,7 +899,8 @@ mod tests {
         }
         .abi_encode();
 
-        let mut expected = selector("createSquadSponsor(bytes32,uint256,address,uint256[])").to_vec();
+        let mut expected =
+            selector("createSquadSponsor(bytes32,uint256,address,uint256[])").to_vec();
         expected.extend_from_slice(squad_id.as_slice());
         expected.extend_from_slice(&top_hat.to_be_bytes::<32>());
         expected.extend_from_slice(&[0u8; 12]);

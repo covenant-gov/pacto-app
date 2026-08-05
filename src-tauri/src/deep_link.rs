@@ -34,17 +34,17 @@ pub struct DeepLinkAction {
 pub fn parse_deep_link(url_str: &str) -> Option<DeepLinkAction> {
     // Normalize the URL for parsing
     let url_str = url_str.trim();
-    
+
     // Handle vector:// scheme
     if url_str.starts_with("vector://") {
         return parse_vector_scheme(url_str);
     }
-    
+
     // Handle https://vectorapp.io/ URLs (for mobile app links)
     if url_str.starts_with("https://vectorapp.io/") || url_str.starts_with("http://vectorapp.io/") {
         return parse_web_url(url_str);
     }
-    
+
     None
 }
 
@@ -73,11 +73,11 @@ fn parse_web_url(url_str: &str) -> Option<DeepLinkAction> {
 /// Parse path segments and return the appropriate action
 fn parse_path_segments(path: &str) -> Option<DeepLinkAction> {
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    
+
     if segments.is_empty() {
         return None;
     }
-    
+
     match segments[0] {
         "profile" if segments.len() >= 2 => {
             let npub = segments[1];
@@ -115,16 +115,16 @@ fn validate_npub(npub: &str) -> bool {
 pub fn handle_deep_link<R: Runtime>(handle: &AppHandle<R>, urls: Vec<String>) {
     for url in urls {
         println!("[DeepLink] Received URL: {}", url);
-        
+
         if let Some(action) = parse_deep_link(&url) {
             println!("[DeepLink] Parsed action: {:?}", action);
-            
+
             // Store the action for later retrieval (in case frontend isn't ready yet)
             if let Ok(mut pending) = PENDING_DEEP_LINK.lock() {
                 *pending = Some(action.clone());
                 println!("[DeepLink] Stored pending action for later retrieval");
             }
-            
+
             // Also emit event to frontend (in case it's already listening)
             if let Err(e) = handle.emit("deep_link_action", &action) {
                 println!("[DeepLink] Failed to emit event: {:?}", e);

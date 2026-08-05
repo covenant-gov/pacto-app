@@ -24,7 +24,8 @@ pub fn resolve_acl_roster_address<R: Runtime>(
     let member = account_manager::get_current_account()
         .map_err(|e| wallet_err_json("ACL_NO_ACCOUNT", e, None))?;
 
-    if let Some(account_id) = db::get_squad_member_evm_account_id(app, pid, Some(member.as_str()))? {
+    if let Some(account_id) = db::get_squad_member_evm_account_id(app, pid, Some(member.as_str()))?
+    {
         let conn = account_manager::get_db_connection(app)?;
         let addr: Option<String> = conn
             .query_row(

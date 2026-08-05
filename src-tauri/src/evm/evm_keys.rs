@@ -42,7 +42,9 @@ fn derive_evm_from_nostr_secret(nostr_secret: &[u8; 32]) -> Result<(Vec<u8>, Str
 }
 
 /// Return `(evm_private_key_hex, evm_address)` e.g. for inclusion in LoginKeyPair.
-pub fn derive_evm_hex_from_nostr_secret(nostr_secret: &[u8; 32]) -> Result<(String, String), String> {
+pub fn derive_evm_hex_from_nostr_secret(
+    nostr_secret: &[u8; 32],
+) -> Result<(String, String), String> {
     let (secret_bytes, address) = derive_evm_from_nostr_secret(nostr_secret)?;
     let evm_private_key_hex = format!("0x{}", hex::encode(secret_bytes));
     Ok((evm_private_key_hex, address))
@@ -60,7 +62,10 @@ pub fn derive_eth_bip44_v1_from_mnemonic_phrase(
 }
 
 /// Same as [`derive_eth_bip44_v1_from_mnemonic_phrase`] but takes the BIP-39 seed bytes (empty passphrase).
-fn derive_eth_bip44_v1_from_seed(seed: &[u8], address_index: u32) -> Result<(String, String), String> {
+fn derive_eth_bip44_v1_from_seed(
+    seed: &[u8],
+    address_index: u32,
+) -> Result<(String, String), String> {
     let path = format!("m/44'/60'/0'/0/{}", address_index);
     let path: bip32::DerivationPath = path
         .parse()
@@ -80,7 +85,10 @@ fn derive_eth_bip44_v1_from_seed(seed: &[u8], address_index: u32) -> Result<(Str
 /// Normalize user-supplied `0x` + 40 hex to lowercase; checksumming not required for RPC.
 pub fn normalize_hex_address(s: &str) -> Option<String> {
     let t = s.trim();
-    let h = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
+    let h = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .unwrap_or(t);
     if h.len() != 40 {
         return None;
     }
@@ -98,8 +106,7 @@ mod tests {
     #[test]
     fn bip44_abandon_mnemonic_index_0_matches_cast() {
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-        let (_k, addr) =
-            derive_eth_bip44_v1_from_mnemonic_phrase(phrase, 0).expect("derive");
+        let (_k, addr) = derive_eth_bip44_v1_from_mnemonic_phrase(phrase, 0).expect("derive");
         assert_eq!(
             addr.to_lowercase(),
             "0x9858effd232b4033e47d90003d41ec34ecaeda94"

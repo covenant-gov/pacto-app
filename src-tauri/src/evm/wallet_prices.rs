@@ -154,22 +154,15 @@ async fn eth_call(rpc_url: &str, to: &str, data: &str) -> Result<Vec<u8>, String
         ]
     });
 
-    let resp = client
-        .post(rpc_url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
+    let resp =
+        client.post(rpc_url).json(&body).send().await.map_err(|e| {
             wallet_security::redact_urls_in_text(&format!("RPC request failed: {}", e))
         })?;
 
     let status = resp.status();
-    let j: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| {
-            wallet_security::redact_urls_in_text(&format!("RPC response not JSON: {}", e))
-        })?;
+    let j: serde_json::Value = resp.json().await.map_err(|e| {
+        wallet_security::redact_urls_in_text(&format!("RPC response not JSON: {}", e))
+    })?;
 
     if let Some(err) = j.get("error") {
         let msg = format!("RPC error: {}", err.get("message").unwrap_or(err));

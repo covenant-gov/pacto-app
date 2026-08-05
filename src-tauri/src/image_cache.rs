@@ -15,16 +15,16 @@
 //! accounts - if multiple accounts have the same contact, they share the cached image.
 //! The original URL is hashed with SHA-256 (truncated) to create the filename.
 
+use log::{debug, info, warn};
+use once_cell::sync::Lazy;
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::time::Duration;
-use sha2::{Sha256, Digest};
-use tauri::{AppHandle, Runtime, Emitter};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Semaphore;
-use once_cell::sync::Lazy;
-use log::{info, warn, debug};
-use serde_json::json;
 
-use crate::net::{ProgressReporter, download_with_reporter};
+use crate::net::{download_with_reporter, ProgressReporter};
 use std::collections::HashSet;
 use tokio::sync::Mutex;
 
@@ -33,7 +33,8 @@ static DOWNLOAD_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| Semaphore::new(4));
 
 /// Track URLs currently being downloaded to prevent duplicate downloads
 /// (e.g., when messages re-render from Pending to Sent)
-static DOWNLOADS_IN_PROGRESS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+static DOWNLOADS_IN_PROGRESS: Lazy<Mutex<HashSet<String>>> =
+    Lazy::new(|| Mutex::new(HashSet::new()));
 
 /// Maximum entries in DOWNLOADS_IN_PROGRESS before forced cleanup
 const MAX_IN_PROGRESS_ENTRIES: usize = 100;
@@ -101,7 +102,11 @@ impl<'a, R: Runtime> InlineImageProgressReporter<'a, R> {
 }
 
 impl<R: Runtime> ProgressReporter for InlineImageProgressReporter<'_, R> {
-    fn report_progress(&self, percentage: Option<u8>, bytes_downloaded: Option<u64>) -> Result<(), &'static str> {
+    fn report_progress(
+        &self,
+        percentage: Option<u8>,
+        bytes_downloaded: Option<u64>,
+    ) -> Result<(), &'static str> {
         let mut payload = json!({
             "url": self.url
         });
@@ -275,7 +280,10 @@ pub fn precache_image_bytes<R: Runtime>(
     }
 
     let path_str = file_path.to_string_lossy().to_string();
-    info!("[ImageCache] Pre-cached {:?} {} -> {}", image_type, url, path_str);
+    info!(
+        "[ImageCache] Pre-cached {:?} {} -> {}",
+        image_type, url, path_str
+    );
 
     CacheResult::Cached(path_str)
 }
@@ -297,7 +305,9 @@ pub async fn cache_image<R: Runtime>(
     }
 
     // Acquire semaphore permit to limit concurrent downloads
-    let _permit = DOWNLOAD_SEMAPHORE.acquire().await
+    let _permit = DOWNLOAD_SEMAPHORE
+        .acquire()
+        .await
         .map_err(|e| format!("Semaphore error: {}", e));
 
     if _permit.is_err() {
@@ -365,18 +375,12 @@ pub async fn cache_image<R: Runtime>(
 }
 
 /// Cache an avatar for a user profile
-pub async fn cache_avatar<R: Runtime>(
-    handle: &AppHandle<R>,
-    avatar_url: &str,
-) -> CacheResult {
+pub async fn cache_avatar<R: Runtime>(handle: &AppHandle<R>, avatar_url: &str) -> CacheResult {
     cache_image(handle, avatar_url, ImageType::Avatar).await
 }
 
 /// Cache a banner for a user profile
-pub async fn cache_banner<R: Runtime>(
-    handle: &AppHandle<R>,
-    banner_url: &str,
-) -> CacheResult {
+pub async fn cache_banner<R: Runtime>(handle: &AppHandle<R>, banner_url: &str) -> CacheResult {
     cache_image(handle, banner_url, ImageType::Banner).await
 }
 
@@ -388,8 +392,7 @@ pub fn remove_cached_image<R: Runtime>(
     image_type: ImageType,
 ) -> Result<(), String> {
     if let Some(path) = get_cached_path(handle, url, image_type) {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to remove cached image: {}", e))?;
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to remove cached image: {}", e))?;
         info!("[ImageCache] Removed cached image: {}", path);
     }
     Ok(())
@@ -418,9 +421,7 @@ pub fn clear_cache<R: Runtime>(
 }
 
 /// Get total cache size in bytes
-pub fn get_cache_size<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<u64, String> {
+pub fn get_cache_size<R: Runtime>(handle: &AppHandle<R>) -> Result<u64, String> {
     let app_data = crate::test_sandbox::test_data_dir(handle)
         .map_err(|e| format!("Failed to get app data directory: {}", e))?;
     let cache_dir = app_data.join("cache");
@@ -471,9 +472,7 @@ pub async fn get_or_cache_image<R: Runtime>(
 
 /// Tauri command: Clear all image caches
 #[tauri::command]
-pub async fn clear_image_cache<R: Runtime>(
-    handle: AppHandle<R>,
-) -> Result<u64, String> {
+pub async fn clear_image_cache<R: Runtime>(handle: AppHandle<R>) -> Result<u64, String> {
     let mut total = 0;
     total += clear_cache(&handle, ImageType::Avatar)?;
     total += clear_cache(&handle, ImageType::Banner)?;
@@ -521,7 +520,10 @@ fn is_https_url(url: &str) -> bool {
 fn is_private_host(host: &str) -> bool {
     // Block obvious private hostnames
     let host_lower = host.to_lowercase();
-    if host_lower == "localhost" || host_lower.ends_with(".local") || host_lower.ends_with(".internal") {
+    if host_lower == "localhost"
+        || host_lower.ends_with(".local")
+        || host_lower.ends_with(".internal")
+    {
         return true;
     }
 
@@ -558,7 +560,10 @@ pub async fn cleanup_stale_downloads() {
     let mut in_progress = DOWNLOADS_IN_PROGRESS.lock().await;
     if in_progress.len() > MAX_IN_PROGRESS_ENTRIES {
         // If we have too many entries, something is wrong - clear them all
-        warn!("[ImageCache] Clearing {} stale in-progress entries", in_progress.len());
+        warn!(
+            "[ImageCache] Clearing {} stale in-progress entries",
+            in_progress.len()
+        );
         in_progress.clear();
     }
 }
@@ -598,7 +603,10 @@ pub async fn cache_url_image<R: Runtime>(
     {
         let mut in_progress = DOWNLOADS_IN_PROGRESS.lock().await;
         if in_progress.contains(&url) {
-            debug!("[ImageCache] Download already in progress, frontend will get path via event: {}", url);
+            debug!(
+                "[ImageCache] Download already in progress, frontend will get path via event: {}",
+                url
+            );
             return Ok(None);
         }
         // Mark as in-progress (clone here is necessary for the set)
@@ -625,19 +633,30 @@ pub async fn cache_url_image<R: Runtime>(
 
     // Helper to emit failure event so frontend can remove spinner
     let emit_failure = |handle: &AppHandle<R>, url: &str| {
-        handle.emit("inline_image_cached", json!({
-            "url": url,
-            "path": serde_json::Value::Null
-        })).ok();
+        handle
+            .emit(
+                "inline_image_cached",
+                json!({
+                    "url": url,
+                    "path": serde_json::Value::Null
+                }),
+            )
+            .ok();
     };
 
     // Download with progress reporting (10s timeout)
-    debug!("[ImageCache] Downloading inline image with progress: {}", url);
+    debug!(
+        "[ImageCache] Downloading inline image with progress: {}",
+        url
+    );
     let bytes = match download_with_reporter(&url, &reporter, Some(Duration::from_secs(10))).await {
         Ok(b) => b,
         Err(e) => {
             cleanup().await;
-            warn!("[ImageCache] Failed to download inline image {}: {}", url, e);
+            warn!(
+                "[ImageCache] Failed to download inline image {}: {}",
+                url, e
+            );
             emit_failure(&handle, &url);
             return Ok(None);
         }
@@ -681,10 +700,15 @@ pub async fn cache_url_image<R: Runtime>(
 
     // Emit completion event so ALL loading indicators for this URL get updated
     // (handles cases like message re-rendering or multiple instances of same image)
-    handle.emit("inline_image_cached", json!({
-        "url": url,
-        "path": path_str.clone()
-    })).ok();
+    handle
+        .emit(
+            "inline_image_cached",
+            json!({
+                "url": url,
+                "path": path_str.clone()
+            }),
+        )
+        .ok();
 
     Ok(Some(path_str))
 }

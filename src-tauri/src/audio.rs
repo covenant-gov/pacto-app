@@ -12,6 +12,8 @@ use std::fs::File;
 
 // Desktop-only imports for notification sound playback
 #[cfg(desktop)]
+use crate::db;
+#[cfg(desktop)]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 #[cfg(desktop)]
 use serde::{Deserialize, Serialize};
@@ -25,15 +27,15 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 #[cfg(desktop)]
 use std::time::{Duration, Instant};
-#[cfg(desktop)]
-use tauri::{command, AppHandle, Runtime};
 #[cfg(all(desktop, not(debug_assertions)))]
 use tauri::Manager;
 #[cfg(desktop)]
-use crate::db;
+use tauri::{command, AppHandle, Runtime};
 
 // Shared imports for resampling (all platforms)
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
@@ -194,13 +196,9 @@ fn save_raw_samples(path: &Path, samples: &[f32]) -> Result<(), String> {
     }
 
     // Write raw f32 samples as bytes
-    let bytes: Vec<u8> = samples
-        .iter()
-        .flat_map(|s| s.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
 
-    let mut file = File::create(path)
-        .map_err(|e| format!("Failed to create cache file: {}", e))?;
+    let mut file = File::create(path).map_err(|e| format!("Failed to create cache file: {}", e))?;
     file.write_all(&bytes)
         .map_err(|e| format!("Failed to write cache file: {}", e))?;
 
@@ -210,8 +208,7 @@ fn save_raw_samples(path: &Path, samples: &[f32]) -> Result<(), String> {
 #[cfg(desktop)]
 /// Load samples from a .raw file
 fn load_raw_samples(path: &Path) -> Result<Vec<f32>, String> {
-    let mut file = File::open(path)
-        .map_err(|e| format!("Failed to open cache file: {}", e))?;
+    let mut file = File::open(path).map_err(|e| format!("Failed to open cache file: {}", e))?;
 
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)
@@ -300,7 +297,11 @@ fn get_resampling_params() -> SincInterpolationParameters {
 /// Resample mono f32 audio samples to a target sample rate
 ///
 /// Used by: notification sounds, general audio processing
-pub fn resample_mono_f32(samples: Vec<f32>, from_rate: u32, to_rate: u32) -> Result<Vec<f32>, String> {
+pub fn resample_mono_f32(
+    samples: Vec<f32>,
+    from_rate: u32,
+    to_rate: u32,
+) -> Result<Vec<f32>, String> {
     if from_rate == to_rate {
         return Ok(samples);
     }
@@ -325,7 +326,11 @@ pub fn resample_mono_f32(samples: Vec<f32>, from_rate: u32, to_rate: u32) -> Res
 /// Resample mono i16 audio samples to a target sample rate
 ///
 /// Used by: voice recording (converts i16 -> f32 -> resample -> i16)
-pub fn resample_mono_i16(samples: &[i16], from_rate: u32, to_rate: u32) -> Result<Vec<i16>, String> {
+pub fn resample_mono_i16(
+    samples: &[i16],
+    from_rate: u32,
+    to_rate: u32,
+) -> Result<Vec<i16>, String> {
     if from_rate == to_rate {
         return Ok(samples.to_vec());
     }
@@ -468,7 +473,10 @@ fn decode_audio_internal(path: &Path, to_mono: bool) -> Result<(Vec<f32>, u32, u
         .map_err(|e| format!("Failed to create decoder: {}", e))?;
 
     let sample_rate = codec_params.sample_rate.ok_or("Unknown sample rate")?;
-    let channels = codec_params.channels.ok_or("Unknown channel count")?.count();
+    let channels = codec_params
+        .channels
+        .ok_or("Unknown channel count")?
+        .count();
 
     let mut all_samples = Vec::new();
     let mut sample_buf = None;
@@ -718,8 +726,8 @@ pub fn play_notification_sound<R: Runtime>(
     }
 
     // Cache miss - need to decode/load
-    let path = get_bundled_sound_path(handle, sound)
-        .ok_or_else(|| "Sound file not found".to_string())?;
+    let path =
+        get_bundled_sound_path(handle, sound).ok_or_else(|| "Sound file not found".to_string())?;
 
     // For custom sounds, load the pre-resampled .raw file directly
     let samples = if let NotificationSound::Custom(custom_path) = sound {
@@ -728,8 +736,13 @@ pub fn play_notification_sound<R: Runtime>(
         let custom_file = Path::new(custom_path);
         if custom_file.exists() && custom_file.extension().map(|e| e == "raw").unwrap_or(false) {
             // Parse the cached sample rate from filename (e.g., "discord_ping_48000" -> 48000)
-            let stem = custom_file.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-            let cached_rate: u32 = stem.rsplit('_').next()
+            let stem = custom_file
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            let cached_rate: u32 = stem
+                .rsplit('_')
+                .next()
                 .and_then(|r| r.parse().ok())
                 .ok_or("Invalid cache filename format")?;
 
@@ -945,15 +958,17 @@ pub async fn select_custom_notification_sound<R: Runtime>(
 
     match file_result {
         Some(path) => {
-            let path_str = path.as_path().map(|p| p.to_string_lossy().to_string())
+            let path_str = path
+                .as_path()
+                .map(|p| p.to_string_lossy().to_string())
                 .ok_or_else(|| "Invalid file path".to_string())?;
 
             let path_ref = Path::new(&path_str);
 
             // Check file size (max 1MB for notification sounds)
             const MAX_SIZE_BYTES: u64 = 1024 * 1024; // 1MB
-            let metadata = std::fs::metadata(path_ref)
-                .map_err(|e| format!("Failed to read file: {}", e))?;
+            let metadata =
+                std::fs::metadata(path_ref).map_err(|e| format!("Failed to read file: {}", e))?;
             if metadata.len() > MAX_SIZE_BYTES {
                 return Err("FILE_TOO_LARGE".to_string());
             }
@@ -1013,7 +1028,12 @@ fn import_custom_sound<R: Runtime>(
     save_raw_samples(&dest_path, &resampled)?;
 
     #[cfg(debug_assertions)]
-    println!("[Audio] Imported custom sound: {} samples at {}Hz -> {:?}", resampled.len(), device_rate, dest_path);
+    println!(
+        "[Audio] Imported custom sound: {} samples at {}Hz -> {:?}",
+        resampled.len(),
+        device_rate,
+        dest_path
+    );
 
     Ok(dest_path.to_string_lossy().to_string())
 }

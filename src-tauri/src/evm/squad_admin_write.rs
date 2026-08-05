@@ -10,6 +10,7 @@ use super::access_control::{require_capability, with_gov_write_lock, GovCapabili
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, enableExecutorCall, enableFullPermissionCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -17,7 +18,6 @@ use super::rpc::{
     connect_signing_provider, contract_call_request, parse_address, send_and_confirm,
     wallet_err_json,
 };
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
 use crate::db;
 
@@ -72,11 +72,7 @@ async fn squad_admin_write<R: Runtime>(
 
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
@@ -252,7 +248,9 @@ mod tests {
     #[test]
     fn bytes32_role_tag_rejects_empty_and_overlong() {
         assert!(bytes32_role_tag("").is_err());
-        assert!(bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err());
+        assert!(
+            bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err()
+        );
         assert!(bytes32_role_tag("FULL").is_ok());
     }
 }

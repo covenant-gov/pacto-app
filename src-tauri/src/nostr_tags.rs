@@ -136,12 +136,7 @@ mod tests {
         let tag = e_tag([id.clone(), String::new(), "reply".to_string()]);
         assert_eq!(
             tag.to_vec(),
-            vec![
-                "e".to_string(),
-                id,
-                String::new(),
-                "reply".to_string()
-            ]
+            vec!["e".to_string(), id, String::new(), "reply".to_string()]
         );
     }
 

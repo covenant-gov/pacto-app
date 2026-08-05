@@ -29,8 +29,8 @@ fn parse_mutiny_id(raw: &str) -> Result<U256, String> {
 }
 
 fn encode_start_to_crew_member(proposed: &str) -> Result<Vec<u8>, String> {
-    let addr = parse_address(proposed.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     Ok(startMutinyToCrewMemberCall {
         _proposedCrewMember: addr,
     }
@@ -160,8 +160,7 @@ async fn mutiny_write<R: Runtime>(
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", module))?;
     let (tx_hash, chain, chain_id) =
-        send_gov_module_call(app, network, parent, module, calldata, capability, rpc_urls)
-            .await?;
+        send_gov_module_call(app, network, parent, module, calldata, capability, rpc_urls).await?;
     Ok(MutinyWriteResult {
         tx_hash,
         chain,
@@ -201,8 +200,8 @@ pub async fn mutiny_start_to_committee<R: Runtime>(
     proposed: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let addr = parse_address(proposed.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToCommitteeCall {
         _proposedMultisigCommittee: addr,
     }
@@ -228,8 +227,8 @@ pub async fn mutiny_start_to_arbitrary_eoa<R: Runtime>(
     proposed: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let addr = parse_address(proposed.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToArbitraryEoaCall {
         _proposedArbitraryEoa: addr,
     }
@@ -255,8 +254,8 @@ pub async fn mutiny_start_to_arbitrary_contract<R: Runtime>(
     proposed: String,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<MutinyWriteResult, String> {
-    let addr = parse_address(proposed.trim())
-        .map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
+    let addr =
+        parse_address(proposed.trim()).map_err(|e| wallet_err_json("INVALID_ADDRESS", e, None))?;
     let calldata = startMutinyToArbitraryContractCall {
         _proposedArbitraryContract: addr,
     }
@@ -363,15 +362,15 @@ pub async fn mutiny_captain_resign<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        encode_captain_resign, encode_cast_vote, encode_execute_mutiny, encode_start_to_crew_member,
-        parse_mutiny_id,
+        encode_captain_resign, encode_cast_vote, encode_execute_mutiny,
+        encode_start_to_crew_member, parse_mutiny_id,
     };
-    use alloy::primitives::U256;
-    use alloy::sol_types::SolCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::{
         captainResignCall, castVoteCall, executeMutinyCall, startMutinyToCrewMemberCall,
     };
     use crate::evm::rpc::parse_address;
+    use alloy::primitives::U256;
+    use alloy::sol_types::SolCall;
 
     const ADDR: &str = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 

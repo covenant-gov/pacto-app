@@ -54,8 +54,14 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
 /// Select the subset of `migrations` at or below `ceiling`. Extracted so the
 /// filtering logic — the actual fix — is unit-testable independent of a
 /// database connection.
-fn migrations_to_baseline(migrations: &[refinery::Migration], ceiling: i32) -> Vec<&refinery::Migration> {
-    migrations.iter().filter(|m| m.version() <= ceiling).collect()
+fn migrations_to_baseline(
+    migrations: &[refinery::Migration],
+    ceiling: i32,
+) -> Vec<&refinery::Migration> {
+    migrations
+        .iter()
+        .filter(|m| m.version() <= ceiling)
+        .collect()
 }
 
 /// Stamp an existing database as already migrated to the pre-refinery
@@ -78,7 +84,9 @@ fn baseline_existing_account(conn: &mut rusqlite::Connection) -> Result<(), Stri
         .format(&Rfc3339)
         .map_err(|e| format!("Failed to format baseline timestamp: {}", e))?;
 
-    let tx = conn.transaction().map_err(|e| format!("Failed to start baseline transaction: {}", e))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to start baseline transaction: {}", e))?;
     tx.execute_batch(
         "CREATE TABLE refinery_schema_history (
             version INTEGER PRIMARY KEY,
@@ -225,11 +233,9 @@ mod tests {
         run_migrations(&mut conn).expect("baseline should run");
 
         let count: i32 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM refinery_schema_history",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM refinery_schema_history", [], |row| {
+                row.get(0)
+            })
             .expect("history should exist");
         assert_eq!(
             count, 30,
@@ -311,7 +317,11 @@ mod tests {
         run_migrations(&mut conn).expect("migrations should run from scratch");
 
         let last_version: i32 = conn
-            .query_row("SELECT MAX(version) FROM refinery_schema_history", [], |row| row.get(0))
+            .query_row(
+                "SELECT MAX(version) FROM refinery_schema_history",
+                [],
+                |row| row.get(0),
+            )
             .expect("history should exist");
         assert_eq!(
             last_version, 30,
@@ -387,7 +397,7 @@ mod tests {
 
         // Stamp V1 as applied so refinery runs V2..V27 instead of trying to re-create V1 tables.
         let runner = embedded::migrations::runner();
-    let migrations = runner.get_migrations();
+        let migrations = runner.get_migrations();
         let v1 = migrations
             .iter()
             .find(|m| m.version() == 1)
@@ -416,11 +426,9 @@ mod tests {
         assert!(has_virtual_bucket, "events should have virtual_bucket");
 
         let migrated_event: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM events WHERE id = 'msg1'",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM events WHERE id = 'msg1'", [], |row| {
+                row.get(0)
+            })
             .expect("count events");
         assert_eq!(migrated_event, 1, "V1 message should be migrated to events");
     }

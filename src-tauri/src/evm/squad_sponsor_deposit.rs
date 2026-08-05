@@ -7,22 +7,22 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_sponsor::ISquadSponsorBase::depositCall;
-use super::rpc::{
-    connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
-    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
-};
+use super::gov_read::rpc_urls_or_default;
+use super::pacto_chain_config;
 use super::rpc::signer::{
     load_active_squad_embedded_signer, load_squad_roster_embedded_signer,
     require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
+};
+use super::rpc::{
+    connect_read_provider, connect_signing_provider, contract_call_request, parse_address,
+    send_and_confirm, wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::squad_sponsor_common::{
     parse_deposit_wei, parse_signer_wallet, read_squad_record, require_parent_member,
     squad_id_from_parent_id,
 };
 use super::squad_sponsor_read::read_sponsor_pool;
-use super::gov_read::rpc_urls_or_default;
 use super::wallet_chain_config;
-use super::pacto_chain_config;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,8 +50,8 @@ pub(super) fn require_non_empty_parent_id(parent_id: &str) -> Result<&str, Strin
 
 /// Deposit amount in wei; rejects empty/invalid input and zero-value deposits.
 fn parse_deposit_amount(raw: &str) -> Result<U256, String> {
-    let amount = parse_deposit_wei(Some(raw))
-        .map_err(|e| wallet_err_json("INVALID_AMOUNT", e, None))?;
+    let amount =
+        parse_deposit_wei(Some(raw)).map_err(|e| wallet_err_json("INVALID_AMOUNT", e, None))?;
     if amount.is_zero() {
         return Err(wallet_err_json(
             "INVALID_AMOUNT",
@@ -82,8 +82,7 @@ fn resolve_sponsor_from_registry(
     explicit: Option<&str>,
 ) -> Result<Address, String> {
     if let Some(raw) = explicit.map(str::trim).filter(|s| !s.is_empty()) {
-        let addr =
-            parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
+        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
         if registry_sponsor != addr {
             return Err(wallet_err_json(
                 "SPONSOR_REGISTRY",
@@ -119,11 +118,7 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
 
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let read_provider = connect_read_provider(&urls).await?;
@@ -156,16 +151,17 @@ pub async fn deposit_squad_sponsor<R: Runtime>(
     .await?;
 
     let read_provider = connect_read_provider(&urls).await?;
-    let (pool_balance, _, _, _) = read_sponsor_pool(&read_provider, sponsor)
-        .await
-        .map_err(|e| {
-            wallet_err_json_with_tx_hash(
-                "SPONSOR_READ",
-                e,
-                None,
-                format!("0x{:x}", receipt.transaction_hash),
-            )
-        })?;
+    let (pool_balance, _, _, _) =
+        read_sponsor_pool(&read_provider, sponsor)
+            .await
+            .map_err(|e| {
+                wallet_err_json_with_tx_hash(
+                    "SPONSOR_READ",
+                    e,
+                    None,
+                    format!("0x{:x}", receipt.transaction_hash),
+                )
+            })?;
 
     Ok(SquadSponsorDepositResult {
         tx_hash: format!("0x{:x}", receipt.transaction_hash),
@@ -197,7 +193,10 @@ mod tests {
             let err = require_non_empty_parent_id(blank).unwrap_err();
             assert_eq!(err_code(&err), "INVALID_PARENT");
         }
-        assert_eq!(require_non_empty_parent_id("  squad-1 ").unwrap(), "squad-1");
+        assert_eq!(
+            require_non_empty_parent_id("  squad-1 ").unwrap(),
+            "squad-1"
+        );
     }
 
     #[test]
@@ -227,8 +226,14 @@ mod tests {
     fn signer_wallet_selection_defaults_to_default() {
         assert_eq!(parse_signer_wallet(None, "default").unwrap(), "default");
         assert_eq!(parse_signer_wallet(Some(""), "default").unwrap(), "default");
-        assert_eq!(parse_signer_wallet(Some(" squad "), "default").unwrap(), "squad");
-        assert_eq!(parse_signer_wallet(Some("SQUAD"), "default").unwrap(), "squad");
+        assert_eq!(
+            parse_signer_wallet(Some(" squad "), "default").unwrap(),
+            "squad"
+        );
+        assert_eq!(
+            parse_signer_wallet(Some("SQUAD"), "default").unwrap(),
+            "squad"
+        );
         let err = parse_signer_wallet(Some("hardware"), "default").unwrap_err();
         assert_eq!(err_code(&err), "INVALID_SIGNER");
     }
@@ -238,7 +243,10 @@ mod tests {
         let reg = parse_address(ADDR_A).unwrap();
         assert_eq!(resolve_sponsor_from_registry(reg, None).unwrap(), reg);
         assert_eq!(resolve_sponsor_from_registry(reg, Some("")).unwrap(), reg);
-        assert_eq!(resolve_sponsor_from_registry(reg, Some("   ")).unwrap(), reg);
+        assert_eq!(
+            resolve_sponsor_from_registry(reg, Some("   ")).unwrap(),
+            reg
+        );
     }
 
     #[test]

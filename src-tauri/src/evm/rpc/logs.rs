@@ -4,9 +4,7 @@ use alloy::primitives::{Address, B256};
 use alloy::providers::Provider;
 use alloy::rpc::types::{Filter, Log};
 
-use super::config::{
-    BLOCK_NUMBER_TIMEOUT, GET_LOGS_CHUNK_TIMEOUT, GET_LOGS_INTER_CHUNK_DELAY,
-};
+use super::config::{BLOCK_NUMBER_TIMEOUT, GET_LOGS_CHUNK_TIMEOUT, GET_LOGS_INTER_CHUNK_DELAY};
 use super::errors::wallet_err_json;
 use crate::evm::wallet_security;
 
@@ -41,24 +39,24 @@ pub async fn get_logs_chunked<P: Provider>(
                 filter = filter.event_signature(topics.to_vec());
             }
         }
-        let batch = match tokio::time::timeout(GET_LOGS_CHUNK_TIMEOUT, provider.get_logs(&filter)).await
-        {
-            Ok(Ok(logs)) => logs,
-            Ok(Err(e)) => {
-                return Err(wallet_err_json(
-                    "GET_LOGS",
-                    wallet_security::redact_urls_in_text(&e.to_string()),
-                    None,
-                ));
-            }
-            Err(_) => {
-                return Err(wallet_err_json(
-                    "GET_LOGS",
-                    format!("eth_getLogs timed out for blocks {start}-{end}"),
-                    None,
-                ));
-            }
-        };
+        let batch =
+            match tokio::time::timeout(GET_LOGS_CHUNK_TIMEOUT, provider.get_logs(&filter)).await {
+                Ok(Ok(logs)) => logs,
+                Ok(Err(e)) => {
+                    return Err(wallet_err_json(
+                        "GET_LOGS",
+                        wallet_security::redact_urls_in_text(&e.to_string()),
+                        None,
+                    ));
+                }
+                Err(_) => {
+                    return Err(wallet_err_json(
+                        "GET_LOGS",
+                        format!("eth_getLogs timed out for blocks {start}-{end}"),
+                        None,
+                    ));
+                }
+            };
         out.extend(batch);
         if end == to_block {
             break;

@@ -122,14 +122,9 @@ fn resolve_required(
     ))
 }
 
-fn resolve_optional(
-    env_primary: &str,
-    net_key: &str,
-    book_value: Option<&str>,
-) -> Option<Address> {
-    env_addr_optional(env_primary, net_key).or_else(|| {
-        book_value.and_then(|raw| parse_book_addr(raw).ok())
-    })
+fn resolve_optional(env_primary: &str, net_key: &str, book_value: Option<&str>) -> Option<Address> {
+    env_addr_optional(env_primary, net_key)
+        .or_else(|| book_value.and_then(|raw| parse_book_addr(raw).ok()))
 }
 
 #[derive(Clone, Debug)]
@@ -190,11 +185,7 @@ pub fn pacto_gov_deploy_addresses(net_key: &str) -> Result<PactoGovDeployAddress
             net_key,
             book.and_then(|b| b.nave_pirata_registry.as_deref()),
         ),
-        hats: resolve_optional(
-            "PACTO_HATS",
-            net_key,
-            book.and_then(|b| b.hats.as_deref()),
-        ),
+        hats: resolve_optional("PACTO_HATS", net_key, book.and_then(|b| b.hats.as_deref())),
         role_hat_clones_factory: resolve_optional(
             "PACTO_ROLE_HAT_CLONES_FACTORY",
             net_key,
@@ -226,7 +217,9 @@ pub fn erc4337_account_implementation(net_key: &str) -> Option<Address> {
     )
 }
 
-pub fn squad_sponsor_deploy_addresses(net_key: &str) -> Result<SquadSponsorDeployAddresses, String> {
+pub fn squad_sponsor_deploy_addresses(
+    net_key: &str,
+) -> Result<SquadSponsorDeployAddresses, String> {
     let book = book_for(net_key).and_then(|n| n.squad_sponsor.as_ref());
     Ok(SquadSponsorDeployAddresses {
         squad_sponsor_factory: resolve_required(
@@ -356,9 +349,18 @@ mod tests {
         let singleton = address!("0x2222222222222222222222222222222222222222");
         let fallback = address!("0x3333333333333333333333333333333333333333");
         let _guard = EnvVarGuard::new()
-            .set("PACTO_SAFE_PROXY_FACTORY", "0x1111111111111111111111111111111111111111")
-            .set("PACTO_SAFE_SINGLETON", "0x2222222222222222222222222222222222222222")
-            .set("PACTO_SAFE_FALLBACK_HANDLER", "0x3333333333333333333333333333333333333333");
+            .set(
+                "PACTO_SAFE_PROXY_FACTORY",
+                "0x1111111111111111111111111111111111111111",
+            )
+            .set(
+                "PACTO_SAFE_SINGLETON",
+                "0x2222222222222222222222222222222222222222",
+            )
+            .set(
+                "PACTO_SAFE_FALLBACK_HANDLER",
+                "0x3333333333333333333333333333333333333333",
+            );
         let safe = safe_factory_addresses("sepolia", 11_155_111).expect("env override");
         assert_eq!(safe.proxy_factory, factory);
         assert_eq!(safe.singleton, singleton);
