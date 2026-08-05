@@ -365,7 +365,9 @@ fn reset_with_connection(
     let classification = classify_store(store_path, encryption_key);
     if classification != StoreClassification::Legacy {
         put_setting(conn, RESET_MARKER_KEY, "complete")?;
-        prune_archives(profile_dir, now)?;
+        if let Err(e) = prune_archives(profile_dir, now) {
+            eprintln!("[MLS Reset] Failed to prune archives: {e}");
+        }
         return Ok(ResetOutcome::default());
     }
 
@@ -390,7 +392,10 @@ fn reset_with_connection(
 
     archive_store_directory(mls_dir, now)?;
     put_setting(conn, RESET_MARKER_KEY, "complete")?;
-    prune_archives(profile_dir, now)?;
+    // Marker is committed; prune must not fail the first open after a successful reset.
+    if let Err(e) = prune_archives(profile_dir, now) {
+        eprintln!("[MLS Reset] Failed to prune archives after reset: {e}");
+    }
 
     Ok(ResetOutcome {
         reset_performed: true,
@@ -577,6 +582,41 @@ mod tests {
 
         let outcome = reset_with_connection(&conn, &mls, &db_path, &[0; 32], 5).unwrap();
         assert!(!outcome.reset_performed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_reset_tolerates_prune_failure_after_marker() {
+        let root = temp_dir("legacy-prune-failure");
+        let mls = root.join("mls");
+        std::fs::create_dir_all(&mls).unwrap();
+        let db_path = mls.join("vector-mls.db");
+        store(&db_path, Some(104));
+
+        // Old archive that prune will try to delete; make removal fail on Unix.
+        let sticky = root.join(format!("{ARCHIVE_PREFIX}1"));
+        std::fs::create_dir_all(&sticky).unwrap();
+        std::fs::write(sticky.join("hold"), b"x").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&sticky, std::fs::Permissions::from_mode(0o555)).unwrap();
+        }
+
+        let conn = app_db(&root.join("app.db"));
+        let now = ARCHIVE_RETENTION_SECS + 100;
+        let outcome = reset_with_connection(&conn, &mls, &db_path, &[0; 32], now).unwrap();
+        assert!(outcome.reset_performed);
+        assert_eq!(
+            setting(&conn, RESET_MARKER_KEY).unwrap().as_deref(),
+            Some("complete")
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&sticky, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 

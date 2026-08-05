@@ -3893,8 +3893,9 @@ pub async fn load_mls_groups<R: Runtime>(
     Ok(groups)
 }
 
-/// Persist a harvest, keeping only groups with a matching `mls_groups` row
-/// (matched by either `group_id` or `engine_group_id`). `INSERT OR IGNORE`
+/// Persist a harvest, keeping groups that match an `mls_groups` row by
+/// `group_id` or `engine_group_id` (case-insensitive for hex ids).
+/// Unmatched harvest keys are logged and skipped. `INSERT OR IGNORE`
 /// against the migration's unique `(group_id, admin_npub)` index makes a
 /// re-run of the harvest produce no duplicate rows.
 pub(crate) fn persist_legacy_group_admins_conn(
@@ -3913,8 +3914,10 @@ pub(crate) fn persist_legacy_group_admins_conn(
         for row in rows {
             let (group_id, engine_group_id) = row.map_err(|e| format!("Failed to read mls_groups row: {}", e))?;
             canonical_group_ids.insert(group_id.clone(), group_id.clone());
+            canonical_group_ids.insert(group_id.to_lowercase(), group_id.clone());
             if !engine_group_id.is_empty() {
-                canonical_group_ids.insert(engine_group_id, group_id);
+                canonical_group_ids.insert(engine_group_id.clone(), group_id.clone());
+                canonical_group_ids.insert(engine_group_id.to_lowercase(), group_id);
             }
         }
     }
@@ -3925,8 +3928,14 @@ pub(crate) fn persist_legacy_group_admins_conn(
         .unwrap_or(0);
 
     let mut persisted = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
     for (harvested_group_id, admins) in &harvest.admins_by_group {
-        let Some(group_id) = canonical_group_ids.get(harvested_group_id) else {
+        let Some(group_id) = canonical_group_ids
+            .get(harvested_group_id)
+            .or_else(|| canonical_group_ids.get(&harvested_group_id.to_lowercase()))
+            .cloned()
+        else {
+            unmatched.push(harvested_group_id.clone());
             continue;
         };
         for admin_npub in admins {
@@ -3937,6 +3946,16 @@ pub(crate) fn persist_legacy_group_admins_conn(
                 )
                 .map_err(|e| format!("Failed to persist legacy admin for {}: {}", group_id, e))?;
         }
+    }
+
+    if !unmatched.is_empty() {
+        let preview: Vec<&str> = unmatched.iter().take(5).map(String::as_str).collect();
+        eprintln!(
+            "[MLS Reset] Harvested {} group id(s) with no mls_groups match (admins dropped for those): {}{}",
+            unmatched.len(),
+            preview.join(", "),
+            if unmatched.len() > 5 { ", …" } else { "" }
+        );
     }
 
     Ok(persisted)
@@ -4068,6 +4087,29 @@ mod legacy_mls_store_harvest_tests {
         let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
         assert_eq!(loaded.get("wire-id"), Some(&vec!["npub1viaenginematch".to_string()]));
         assert!(!loaded.contains_key("engine-id"));
+    }
+
+    #[test]
+    fn persist_matches_group_id_case_insensitively() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "abcdef0123456789", "");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "ABCDEF0123456789".to_string(),
+            vec!["npub1casefold".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 1);
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(
+            loaded.get("abcdef0123456789"),
+            Some(&vec!["npub1casefold".to_string()])
+        );
     }
 
     #[test]
