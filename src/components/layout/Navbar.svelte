@@ -69,6 +69,7 @@
   import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
+  import { squadRecreateRequest } from '../../stores/squad-recreate';
 
   const translate = get(t);
   $: orderedSquads = orderSquads($squads, $squadNavOrder);
@@ -555,6 +556,14 @@
 
   $: if (showOrganizeSquadModal) {
     setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
+  }
+
+  $: if ($squadRecreateRequest) {
+    const prefill = $squadRecreateRequest;
+    squadRecreateRequest.set(null);
+    openOrganizeSquadModal();
+    organizeSquadName = prefill.name;
+    organizeSquadMembers = prefill.memberNpubs;
   }
 </script>
 

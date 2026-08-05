@@ -48,6 +48,7 @@
 	"messaging.channel.mlsResetArchiveNote": "Your previous encrypted MLS state is kept locally for about one week for troubleshooting, then removed.",
 	"messaging.channel.mlsResetMultipleAdmins": "A security upgrade reset this channel’s local encryption state. Ask one of the last admins recorded on this device to restore your access:",
 	"messaging.channel.mlsResetNoAdminRecord": "A security upgrade reset this channel’s local encryption state, but this device has no record of an admin who can restore it. Contact the squad and arrange a new invitation or re-create the squad.",
+	"messaging.channel.mlsResetRecreateButton": "Re-create this squad",
 	"messaging.channel.mlsResetSingleAdminOther": "This squad had only one admin, so it cannot be restored after the upgrade. The last admin recorded on this device must re-create the squad and invite members again:",
 	"messaging.channel.mlsResetSingleAdminSelf": "You were the only admin recorded for this squad. No other admin can restore it after the upgrade; re-create the squad and invite its members again.",
 	"messaging.channel.mlsResetTitle": "This channel needs to be restored",

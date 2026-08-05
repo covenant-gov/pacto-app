@@ -23,6 +23,7 @@ mod account_manager;
 mod mls;
 pub use mls::MlsService;
 mod mls_store_reset;
+mod mls_store_reset_state;
 
 
 use db::save_chat_messages;
@@ -6863,7 +6864,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         MlsService::new_persistent_for_keypackage_refresh(&handle)
             .map_err(|e| e.to_string())?,
     );
-    let force_refresh = mls_store_reset::keypackage_refresh_required(&handle)?;
+    let force_refresh = mls_store_reset_state::keypackage_refresh_required(&handle)?;
     let cache = cache && !force_refresh;
 
     // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
@@ -6993,7 +6994,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     }
 
     if force_refresh {
-        mls_store_reset::mark_keypackage_refreshed(&handle)?;
+        mls_store_reset_state::mark_keypackage_refreshed(&handle)?;
     }
     if let Err(e) = replay_reset_pending_welcomes(&handle).await {
         // Keep the durable wrapper-id queue for the next login when a relay or
@@ -7012,7 +7013,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 /// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
 /// so clearing `discarded_giftwraps` alone cannot recover an old invitation.
 async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
-    let ids = mls_store_reset::pending_wrapper_ids(handle)?;
+    let ids = mls_store_reset_state::pending_wrapper_ids(handle)?;
     if ids.is_empty() {
         return Ok(());
     }
@@ -7049,7 +7050,7 @@ async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Res
             remaining.push(wrapper_id);
         }
     }
-    mls_store_reset::retain_pending_wrapper_ids(handle, &remaining)
+    mls_store_reset_state::retain_pending_wrapper_ids(handle, &remaining)
 }
 
 /// Create a new MLS group with initial member devices
@@ -7617,8 +7618,8 @@ async fn do_accept_mls_welcome<R: Runtime>(
     }
 
     crate::catch_up::resolve_welcome_for_handle(&handle, &wrapper_event_id_hex).await;
-    mls_store_reset::mark_group_restored(&handle, &nostr_group_id)?;
-    mls_store_reset::emit_reset_state(&handle)?;
+    mls_store_reset_state::mark_group_restored(&handle, &nostr_group_id)?;
+    mls_store_reset_state::emit_reset_state(&handle)?;
 
     if let Some(app) = TAURI_APP.get() {
         let _ = app.emit(
@@ -7699,9 +7700,9 @@ async fn get_mls_group_metadata() -> Result<Vec<serde_json::Value>, String> {
 }
 
 #[tauri::command]
-fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset::MlsStoreResetGroupState>, String> {
+fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset_state::MlsStoreResetGroupState>, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-    mls_store_reset::reset_group_states(handle)
+    mls_store_reset_state::reset_group_states(handle)
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -7715,7 +7716,7 @@ struct GroupMembers {
 /// This ensures chat.participants is always up-to-date
 pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
     if let Some(handle) = TAURI_APP.get() {
-        if mls_store_reset::is_group_state_lost(handle, &group_id)? {
+        if mls_store_reset_state::is_group_state_lost(handle, &group_id)? {
             // The fresh engine has no membership yet. Keep the app DB's former
             // participant list until a welcome restores this group.
             return Ok(());

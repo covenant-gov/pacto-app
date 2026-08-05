@@ -910,7 +910,7 @@
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
             {#if activeMlsReset}
-              <MlsResetNotice state={activeMlsReset} />
+              <MlsResetNotice state={activeMlsReset} squadName={activeParent?.name ?? channelName} />
             {:else}
               <MessageInput
                 channelName={channelName}
@@ -1006,7 +1006,7 @@
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
     {#if activeMlsReset}
-      <MlsResetNotice state={activeMlsReset} />
+      <MlsResetNotice state={activeMlsReset} squadName={activeParent?.name ?? channelName} />
     {:else}
       <MessageInput
         channelName={channelName}

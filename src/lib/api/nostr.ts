@@ -517,10 +517,10 @@ export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
 
 /** A squad channel whose local MLS state was archived during the MDK upgrade. */
 export interface MlsStoreResetGroupState {
-  group_id: string;
-  state_lost: boolean;
-  admin_npubs: string[];
-  single_admin: boolean;
+  groupId: string;
+  stateLost: boolean;
+  adminNpubs: string[];
+  singleAdmin: boolean;
 }
 
 export async function getMlsStoreResetState(): Promise<MlsStoreResetGroupState[]> {

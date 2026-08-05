@@ -21,21 +21,21 @@ describe('mls reset state', () => {
 
   it('distinguishes multiple admins, one admin, and no recorded admins', () => {
     applyMlsStoreResetState([
-      { group_id: 'multi', state_lost: true, admin_npubs: ['a', 'b'], single_admin: false },
-      { group_id: 'single', state_lost: true, admin_npubs: ['a'], single_admin: false },
-      { group_id: 'missing', state_lost: true, admin_npubs: [], single_admin: false },
+      { groupId: 'multi', stateLost: true, adminNpubs: ['a', 'b'], singleAdmin: false },
+      { groupId: 'single', stateLost: true, adminNpubs: ['a'], singleAdmin: false },
+      { groupId: 'missing', stateLost: true, adminNpubs: [], singleAdmin: false },
     ]);
 
     const state = get(mlsResetByGroupId);
-    expect(state.multi.single_admin).toBe(false);
-    expect(state.single.single_admin).toBe(true);
-    expect(state.missing.admin_npubs).toEqual([]);
+    expect(state.multi.singleAdmin).toBe(false);
+    expect(state.single.singleAdmin).toBe(true);
+    expect(state.missing.adminNpubs).toEqual([]);
   });
 
   it('hydrates from the backend and removes restored groups', async () => {
     getMlsStoreResetState
       .mockResolvedValueOnce([
-        { group_id: 'lost', state_lost: true, admin_npubs: ['a', 'b'], single_admin: false },
+        { groupId: 'lost', stateLost: true, adminNpubs: ['a', 'b'], singleAdmin: false },
       ])
       .mockResolvedValueOnce([]);
 
@@ -47,10 +47,10 @@ describe('mls reset state', () => {
 
   it('does not restore an old account response after state is cleared', async () => {
     let resolveRequest!: (groups: Array<{
-      group_id: string;
-      state_lost: boolean;
-      admin_npubs: string[];
-      single_admin: boolean;
+      groupId: string;
+      stateLost: boolean;
+      adminNpubs: string[];
+      singleAdmin: boolean;
     }>) => void;
     getMlsStoreResetState.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -61,16 +61,45 @@ describe('mls reset state', () => {
     const refresh = refreshMlsStoreResetState();
     resetMlsStoreResetState();
     resolveRequest([
-      { group_id: 'old-account', state_lost: true, admin_npubs: [], single_admin: false },
+      { groupId: 'old-account', stateLost: true, adminNpubs: [], singleAdmin: false },
     ]);
     await refresh;
 
     expect(get(mlsResetByGroupId)).toEqual({});
   });
 
+  it('keeps a fresher mls_store_reset event over a stale in-flight refresh result', async () => {
+    const { promise, resolve: resolveInitialFetch } = Promise.withResolvers<Array<{
+      groupId: string;
+      stateLost: boolean;
+      adminNpubs: string[];
+      singleAdmin: boolean;
+    }>>();
+    getMlsStoreResetState.mockReturnValueOnce(promise);
+
+    // Post-login refresh kicks off but has not resolved yet.
+    const refresh = refreshMlsStoreResetState();
+
+    // The mls_store_reset event listener fires directly with fresher state
+    // while the refresh fetch is still in flight.
+    applyMlsStoreResetState([
+      { groupId: 'fresh', stateLost: true, adminNpubs: ['a'], singleAdmin: true },
+    ]);
+
+    // The original fetch finally resolves with older/stale data.
+    resolveInitialFetch([
+      { groupId: 'stale', stateLost: true, adminNpubs: [], singleAdmin: false },
+    ]);
+    await refresh;
+
+    expect(get(mlsResetByGroupId)).toEqual({
+      fresh: { groupId: 'fresh', stateLost: true, adminNpubs: ['a'], singleAdmin: true },
+    });
+  });
+
   it('ignores records that are not marked lost', () => {
     applyMlsStoreResetState([
-      { group_id: 'restored', state_lost: false, admin_npubs: ['a'], single_admin: true },
+      { groupId: 'restored', stateLost: false, adminNpubs: ['a'], singleAdmin: true },
     ]);
     expect(get(mlsResetByGroupId)).toEqual({});
   });

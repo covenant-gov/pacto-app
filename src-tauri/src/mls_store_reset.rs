@@ -1,15 +1,22 @@
+//! Reset-execution machinery: detects a legacy (pre-0.8.0 MDK) store, harvests
+//! its admin/welcome data by direct SQL, archives the legacy directory, and
+//! marks the account as reset. `mls_store_reset_state` owns the ongoing
+//! read/mutate settings API that the Tauri command layer polls afterward.
+
 use once_cell::sync::Lazy;
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use nostr_sdk::ToBech32;
+use rusqlite::{Connection, OpenFlags};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
+
+use crate::mls_store_reset_state::{
+    put_json_setting, put_setting, setting, KEYPACKAGE_REFRESH_KEY, LostGroups, LOST_GROUPS_KEY,
+    PENDING_WRAPPERS_KEY,
+};
 
 const RESET_MARKER_KEY: &str = "mls_store_reset_v1";
-const LOST_GROUPS_KEY: &str = "mls_store_reset_lost_groups";
-const PENDING_WRAPPERS_KEY: &str = "mls_store_reset_pending_wrappers";
-const KEYPACKAGE_REFRESH_KEY: &str = "mls_store_keypackage_refresh_required";
 const ARCHIVE_RETENTION_SECS: u64 = 7 * 24 * 60 * 60;
 const ARCHIVE_PREFIX: &str = "mls.archive.";
 
@@ -29,9 +36,6 @@ pub(crate) struct ResetOutcome {
     pub pending_wrapper_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-struct LostGroups(Vec<String>);
-
 fn account_lock(account: &str) -> Result<Arc<Mutex<()>>, String> {
     let mut locks = ACCOUNT_RESET_LOCKS
         .lock()
@@ -40,40 +44,6 @@ fn account_lock(account: &str) -> Result<Arc<Mutex<()>>, String> {
         .entry(account.to_string())
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone())
-}
-
-fn setting(conn: &Connection, key: &str) -> Result<Option<String>, String> {
-    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
-        row.get(0)
-    })
-    .optional()
-    .map_err(|e| format!("Failed to read MLS reset setting {key}: {e}"))
-}
-
-fn put_setting(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
-    conn.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        rusqlite::params![key, value],
-    )
-    .map_err(|e| format!("Failed to write MLS reset setting {key}: {e}"))?;
-    Ok(())
-}
-
-fn json_setting<T: serde::de::DeserializeOwned + Default>(
-    conn: &Connection,
-    key: &str,
-) -> Result<T, String> {
-    match setting(conn, key)? {
-        Some(value) => serde_json::from_str(&value)
-            .map_err(|e| format!("Invalid MLS reset setting {key}: {e}")),
-        None => Ok(T::default()),
-    }
-}
-
-fn put_json_setting<T: Serialize>(conn: &Connection, key: &str, value: &T) -> Result<(), String> {
-    let encoded = serde_json::to_string(value)
-        .map_err(|e| format!("Failed to encode MLS reset setting {key}: {e}"))?;
-    put_setting(conn, key, &encoded)
 }
 
 fn history_version(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
@@ -215,6 +185,155 @@ fn known_group_ids(conn: &Connection) -> Result<Vec<String>, String> {
         .map_err(|e| format!("Failed to read reset group: {e}"))
 }
 
+/// True when `mls_dir` is missing from disk but `profile_dir` still holds an
+/// archive from a prior reset. This can only happen if a previous
+/// `archive_store_directory` recreate AND its rollback both failed, leaving
+/// the legacy data archived with the directory never restored. Treating a
+/// missing directory as "fresh" here would silently abandon that archive.
+fn mls_dir_missing_with_stale_archive(mls_dir: &Path, profile_dir: &Path) -> bool {
+    if mls_dir.exists() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(profile_dir) else {
+        return false;
+    };
+    entries
+        .filter_map(Result::ok)
+        .any(|entry| entry.path().is_dir() && archive_timestamp(&entry.path()).is_some())
+}
+
+// ============================================================================
+// Legacy MLS Store Admin/Welcome Harvest
+// ============================================================================
+
+/// Direct-SQL harvest of a legacy (pre-0.8.0) MDK store: admin keys per group
+/// plus pending welcome wrapper ids. Never opens MDK — the legacy store is
+/// plain unencrypted SQLite, so a bare `rusqlite` read-only connection can
+/// inspect it before MDK 0.8.0 ever touches the file.
+pub(crate) struct LegacyStoreHarvest {
+    /// group wire id (lowercase hex of `nostr_group_id`) -> canonical admin npubs
+    pub admins_by_group: std::collections::BTreeMap<String, Vec<String>>,
+    /// `welcomes.wrapper_event_id` values still `state = 'pending'`, lowercase hex
+    pub pending_wrapper_ids: Vec<String>,
+}
+
+pub(crate) fn legacy_store_table_exists(conn: &rusqlite::Connection, name: &str) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        rusqlite::params![name],
+        |row| row.get::<_, i32>(0),
+    )
+    .map(|count| count > 0)
+    .unwrap_or(false)
+}
+
+/// The legacy `groups.nostr_group_id` / `welcomes.wrapper_event_id` columns are
+/// declared TEXT but MDK actually binds them as 32-byte blobs, so SQLite stores
+/// them under BLOB storage class regardless of the declared affinity. Accept
+/// either: hex-encode a blob directly, or accept a 64-char hex string as a
+/// defensive fallback for a row that happens to store it as text.
+fn legacy_id_to_hex(value: rusqlite::types::Value) -> Option<String> {
+    match value {
+        rusqlite::types::Value::Blob(bytes) => Some(hex::encode(bytes)),
+        rusqlite::types::Value::Text(text) => {
+            let trimmed = text.trim();
+            (trimmed.len() == 64 && trimmed.bytes().all(|b| b.is_ascii_hexdigit()))
+                .then(|| trimmed.to_lowercase())
+        }
+        _ => None,
+    }
+}
+
+/// Parse one legacy `admin_pubkeys` array element into its canonical npub.
+/// The legacy column stores hex; the current account is compared as an npub
+/// downstream, so an unnormalized value would break that comparison.
+fn parse_legacy_admin_pubkey(raw: &str) -> Option<String> {
+    let pubkey = nostr_sdk::PublicKey::from_hex(raw)
+        .or_else(|_| nostr_sdk::PublicKey::parse(raw))
+        .ok()?;
+    pubkey.to_bech32().ok()
+}
+
+fn harvest_legacy_group_admins(conn: &rusqlite::Connection) -> std::collections::BTreeMap<String, Vec<String>> {
+    let mut out = std::collections::BTreeMap::new();
+    let Ok(mut stmt) = conn.prepare("SELECT nostr_group_id, admin_pubkeys FROM groups") else {
+        return out;
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        let group_id: rusqlite::types::Value = row.get(0)?;
+        let admin_json: String = row.get(1)?;
+        Ok((group_id, admin_json))
+    }) else {
+        return out;
+    };
+
+    for row in rows {
+        let Ok((group_id_value, admin_json)) = row else { continue };
+        let Some(group_id) = legacy_id_to_hex(group_id_value) else { continue };
+        // Malformed JSON drops this group's entry without aborting the scan;
+        // a well-formed array of non-key strings parses to no admins, which
+        // also drops the entry rather than persisting an empty admin list.
+        let Ok(raw_keys) = serde_json::from_str::<Vec<String>>(&admin_json) else { continue };
+        let admins: Vec<String> = raw_keys.iter().filter_map(|k| parse_legacy_admin_pubkey(k)).collect();
+        if !admins.is_empty() {
+            out.insert(group_id, admins);
+        }
+    }
+    out
+}
+
+fn harvest_legacy_pending_wrapper_ids(conn: &rusqlite::Connection) -> Vec<String> {
+    let Ok(mut stmt) = conn.prepare("SELECT wrapper_event_id FROM welcomes WHERE state = 'pending'") else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, rusqlite::types::Value>(0)) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).filter_map(legacy_id_to_hex).collect()
+}
+
+/// Read `groups` and `welcomes` out of a legacy (pre-0.8.0) MDK store by
+/// direct SQL. Never opens MDK. Missing/unreadable tables yield an empty
+/// harvest (nothing to recover, but the store itself was readable); a store
+/// that can't be opened at all is returned as an error so the caller can
+/// fail closed instead of treating an I/O failure as "no admins to save".
+fn harvest_legacy_mls_store(store_path: &std::path::Path) -> Result<LegacyStoreHarvest, String> {
+    let mut harvest = LegacyStoreHarvest {
+        admins_by_group: std::collections::BTreeMap::new(),
+        pending_wrapper_ids: Vec::new(),
+    };
+
+    let conn = rusqlite::Connection::open_with_flags(store_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("Failed to open legacy MLS store {}: {e}", store_path.display()))?;
+
+    if legacy_store_table_exists(&conn, "groups") {
+        harvest.admins_by_group = harvest_legacy_group_admins(&conn);
+    }
+    if legacy_store_table_exists(&conn, "welcomes") {
+        harvest.pending_wrapper_ids = harvest_legacy_pending_wrapper_ids(&conn);
+    }
+
+    Ok(harvest)
+}
+
+pub(crate) fn load_all_legacy_group_admins_conn(
+    conn: &rusqlite::Connection,
+) -> Result<std::collections::BTreeMap<String, Vec<String>>, String> {
+    let mut stmt = conn
+        .prepare("SELECT group_id, admin_npub FROM mls_legacy_admins ORDER BY group_id, admin_npub")
+        .map_err(|e| format!("Failed to prepare legacy admin scan: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|e| format!("Failed to scan legacy admins: {}", e))?;
+
+    let mut out: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    for row in rows {
+        let (group_id, admin_npub) = row.map_err(|e| format!("Failed to read legacy admin row: {}", e))?;
+        out.entry(group_id).or_default().push(admin_npub);
+    }
+    Ok(out)
+}
+
 fn reset_with_connection(
     conn: &Connection,
     mls_dir: &Path,
@@ -227,8 +346,20 @@ fn reset_with_connection(
         .ok_or_else(|| "MLS directory has no profile parent".to_string())?;
 
     if setting(conn, RESET_MARKER_KEY)?.as_deref() == Some("complete") {
-        prune_archives(profile_dir, now)?;
+        // Best-effort: a stuck archive directory (held-open handle, read-only
+        // FS) must never block every future MLS engine acquisition.
+        if let Err(e) = prune_archives(profile_dir, now) {
+            eprintln!("[MLS Reset] Failed to prune archives: {e}");
+        }
         return Ok(ResetOutcome::default());
+    }
+
+    if mls_dir_missing_with_stale_archive(mls_dir, profile_dir) {
+        return Err(format!(
+            "MLS directory {} is missing but an archived legacy store exists under {}; refusing to classify as fresh",
+            mls_dir.display(),
+            profile_dir.display()
+        ));
     }
 
     let classification = classify_store(store_path, encryption_key);
@@ -238,7 +369,9 @@ fn reset_with_connection(
         return Ok(ResetOutcome::default());
     }
 
-    let harvest = crate::db::harvest_legacy_mls_store(store_path);
+    let harvest = harvest_legacy_mls_store(store_path).map_err(|e| {
+        format!("Aborting MLS reset: failed to harvest legacy admins before archiving: {e}")
+    })?;
     let pending_wrapper_ids = harvest.pending_wrapper_ids.clone();
     let lost_groups = LostGroups(known_group_ids(conn)?);
 
@@ -286,118 +419,10 @@ pub(crate) fn ensure_store_ready<R: Runtime>(
     result
 }
 
-fn with_account_connection<R: Runtime, T>(
-    handle: &AppHandle<R>,
-    f: impl FnOnce(&Connection) -> Result<T, String>,
-) -> Result<T, String> {
-    let conn = crate::account_manager::get_db_connection(handle)?;
-    let result = f(&conn);
-    crate::account_manager::return_db_connection(conn);
-    result
-}
-
-pub(crate) fn keypackage_refresh_required<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<bool, String> {
-    with_account_connection(handle, |conn| {
-        Ok(setting(conn, KEYPACKAGE_REFRESH_KEY)?.as_deref() == Some("true"))
-    })
-}
-
-pub(crate) fn mark_keypackage_refreshed<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
-    with_account_connection(handle, |conn| {
-        put_setting(conn, KEYPACKAGE_REFRESH_KEY, "false")
-    })
-}
-
-pub(crate) fn pending_wrapper_ids<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<Vec<String>, String> {
-    with_account_connection(handle, |conn| json_setting(conn, PENDING_WRAPPERS_KEY))
-}
-
-pub(crate) fn retain_pending_wrapper_ids<R: Runtime>(
-    handle: &AppHandle<R>,
-    ids: &[String],
-) -> Result<(), String> {
-    with_account_connection(handle, |conn| {
-        put_json_setting(conn, PENDING_WRAPPERS_KEY, &ids)
-    })
-}
-
-pub(crate) fn lost_group_ids<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
-    with_account_connection(handle, |conn| {
-        Ok(json_setting::<LostGroups>(conn, LOST_GROUPS_KEY)?.0)
-    })
-}
-
-pub(crate) fn is_group_state_lost<R: Runtime>(
-    handle: &AppHandle<R>,
-    group_id: &str,
-) -> Result<bool, String> {
-    Ok(lost_group_ids(handle)?.iter().any(|id| id == group_id))
-}
-
-pub(crate) fn mark_group_restored<R: Runtime>(
-    handle: &AppHandle<R>,
-    group_id: &str,
-) -> Result<(), String> {
-    with_account_connection(handle, |conn| {
-        let mut lost = json_setting::<LostGroups>(conn, LOST_GROUPS_KEY)?;
-        lost.0.retain(|id| id != group_id);
-        put_json_setting(conn, LOST_GROUPS_KEY, &lost)
-    })
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct MlsStoreResetGroupState {
-    pub group_id: String,
-    pub state_lost: bool,
-    pub admin_npubs: Vec<String>,
-    pub single_admin: bool,
-}
-
-fn reset_group_states_conn(conn: &Connection) -> Result<Vec<MlsStoreResetGroupState>, String> {
-    let lost = json_setting::<LostGroups>(conn, LOST_GROUPS_KEY)?;
-    let mut states = Vec::with_capacity(lost.0.len());
-    for group_id in lost.0 {
-        let mut stmt = conn
-            .prepare(
-                "SELECT admin_npub FROM mls_legacy_admins WHERE group_id = ?1 ORDER BY admin_npub",
-            )
-            .map_err(|e| format!("Failed to prepare reset admin query: {e}"))?;
-        let admin_npubs = stmt
-            .query_map([&group_id], |row| row.get::<_, String>(0))
-            .map_err(|e| format!("Failed to query reset admins: {e}"))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Failed to read reset admins: {e}"))?;
-        let single_admin = admin_npubs.len() == 1;
-        states.push(MlsStoreResetGroupState {
-            group_id,
-            state_lost: true,
-            admin_npubs,
-            single_admin,
-        });
-    }
-    Ok(states)
-}
-
-pub(crate) fn reset_group_states<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<Vec<MlsStoreResetGroupState>, String> {
-    with_account_connection(handle, reset_group_states_conn)
-}
-
-pub(crate) fn emit_reset_state<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
-    let groups = reset_group_states(handle)?;
-    handle
-        .emit("mls_store_reset", groups)
-        .map_err(|e| format!("Failed to emit MLS reset state: {e}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mls_store_reset_state::json_setting;
     use std::sync::{Arc, Barrier};
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -537,6 +562,45 @@ mod tests {
             );
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn fast_complete_path_tolerates_prune_failure() {
+        let root = temp_dir("fast-path-prune-failure");
+        // profile_dir intentionally never created so prune_archives fails to
+        // scan it; the fast-complete path must not propagate that error.
+        let profile_dir = root.join("missing-profile");
+        let mls = profile_dir.join("mls");
+        let db_path = mls.join("vector-mls.db");
+        let conn = app_db(&root.join("app.db"));
+        put_setting(&conn, RESET_MARKER_KEY, "complete").unwrap();
+
+        let outcome = reset_with_connection(&conn, &mls, &db_path, &[0; 32], 5).unwrap();
+        assert!(!outcome.reset_performed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_mls_dir_with_stale_archive_fails_closed() {
+        let root = temp_dir("stale-archive");
+        let mls = root.join("mls");
+        let db_path = mls.join("vector-mls.db");
+        // Simulate a prior archive whose directory recreate+rollback both
+        // failed: an archive exists but `mls` itself is gone.
+        let archive = root.join("mls.archive.10");
+        std::fs::create_dir_all(&archive).unwrap();
+        let conn = app_db(&root.join("app.db"));
+
+        let result = reset_with_connection(&conn, &mls, &db_path, &[0; 32], 20);
+        assert!(result.is_err());
+        assert_ne!(
+            setting(&conn, RESET_MARKER_KEY).unwrap().as_deref(),
+            Some("complete"),
+            "must not silently reclassify the account as fresh"
+        );
+        assert!(!mls.exists());
+        assert!(archive.exists(), "the stale archive must not be touched");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -708,48 +772,6 @@ mod tests {
         );
         std::fs::remove_dir_all(root).unwrap();
     }
-    #[test]
-    fn reset_state_distinguishes_multiple_single_and_no_admin_records() {
-        let root = temp_dir("reset-state");
-        let conn = app_db(&root.join("app.db"));
-        put_json_setting(
-            &conn,
-            LOST_GROUPS_KEY,
-            &LostGroups(vec!["multi".into(), "single".into(), "missing".into()]),
-        )
-        .unwrap();
-        for (group, admin) in [
-            ("multi", "npub-a"),
-            ("multi", "npub-b"),
-            ("single", "npub-a"),
-        ] {
-            conn.execute(
-                "INSERT INTO mls_legacy_admins(group_id, admin_npub, harvested_at) VALUES (?1, ?2, 1)",
-                rusqlite::params![group, admin],
-            )
-            .unwrap();
-        }
-
-        let states = reset_group_states_conn(&conn).unwrap();
-        let multi = states
-            .iter()
-            .find(|state| state.group_id == "multi")
-            .unwrap();
-        let single = states
-            .iter()
-            .find(|state| state.group_id == "single")
-            .unwrap();
-        let missing = states
-            .iter()
-            .find(|state| state.group_id == "missing")
-            .unwrap();
-        assert_eq!(multi.admin_npubs, vec!["npub-a", "npub-b"]);
-        assert!(!multi.single_admin);
-        assert!(single.single_admin);
-        assert!(missing.admin_npubs.is_empty());
-        assert!(!missing.single_admin);
-        std::fs::remove_dir_all(root).unwrap();
-    }
 
     #[test]
     #[ignore = "requires MLS_LEGACY_FIXTURE pointing at a copied pre-upgrade mls directory"]
@@ -797,5 +819,352 @@ mod tests {
         );
         drop(conn);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    mod legacy_harvest {
+        use super::*;
+
+        fn unique_fixture_path(name: &str) -> PathBuf {
+            let pid = std::process::id();
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            std::env::temp_dir().join(format!("pacto-legacy-mls-fixture-{}-{}-{}.sqlite", name, pid, nanos))
+        }
+
+        struct FixtureGroup {
+            nostr_group_id: [u8; 32],
+            name: &'static str,
+            admin_pubkeys_json: String,
+        }
+
+        struct FixtureWelcome {
+            wrapper_event_id: [u8; 32],
+            state: &'static str,
+        }
+
+        /// Build a legacy (pre-0.8.0) MDK store fixture stamped at `history_version`,
+        /// with `groups`/`welcomes` shaped like MDK rev f46875e. `history_version`
+        /// selects the `groups` column set: 100 uses the V100 initial shape
+        /// (`group_type`, no image columns); 104+ uses the post-V104 shape
+        /// (`group_type` dropped, `image_key`/`image_nonce`/`image_hash` added).
+        /// Both `nostr_group_id` and `wrapper_event_id` are written as real BLOBs,
+        /// matching the actual on-disk store (the TEXT column declaration lies).
+        fn write_legacy_store_fixture(
+            path: &Path,
+            history_version: i32,
+            groups: &[FixtureGroup],
+            welcomes: &[FixtureWelcome],
+        ) {
+            let conn = rusqlite::Connection::open(path).expect("open legacy fixture db");
+            conn.execute_batch(
+                "CREATE TABLE _refinery_schema_history_nostr_mls (
+                    version INTEGER PRIMARY KEY,
+                    name VARCHAR(255),
+                    applied_on VARCHAR(255),
+                    checksum VARCHAR(255)
+                );",
+            )
+            .expect("create legacy history table");
+            conn.execute(
+                "INSERT INTO _refinery_schema_history_nostr_mls (version, name, applied_on, checksum)
+                 VALUES (?1, 'fixture', '2024-01-01T00:00:00Z', 'fixture')",
+                rusqlite::params![history_version],
+            )
+            .expect("stamp legacy history");
+
+            if history_version >= 104 {
+                conn.execute_batch(
+                    "CREATE TABLE groups (
+                        mls_group_id BLOB PRIMARY KEY,
+                        nostr_group_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        admin_pubkeys JSONB NOT NULL,
+                        last_message_id BLOB,
+                        last_message_at INTEGER,
+                        epoch INTEGER NOT NULL,
+                        state TEXT NOT NULL,
+                        image_key BLOB,
+                        image_nonce BLOB,
+                        image_hash BLOB
+                    );",
+                )
+                .expect("create v104 groups table");
+            } else {
+                conn.execute_batch(
+                    "CREATE TABLE groups (
+                        mls_group_id BLOB PRIMARY KEY,
+                        nostr_group_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        admin_pubkeys JSONB NOT NULL,
+                        last_message_id BLOB,
+                        last_message_at INTEGER,
+                        group_type TEXT NOT NULL,
+                        epoch INTEGER NOT NULL,
+                        state TEXT NOT NULL
+                    );",
+                )
+                .expect("create v100 groups table");
+            }
+            conn.execute_batch(
+                "CREATE TABLE welcomes (
+                    id BLOB PRIMARY KEY,
+                    event JSONB NOT NULL,
+                    mls_group_id BLOB NOT NULL,
+                    nostr_group_id TEXT NOT NULL,
+                    group_name TEXT NOT NULL,
+                    group_description TEXT NOT NULL,
+                    group_admin_pubkeys JSONB NOT NULL,
+                    group_relays JSONB NOT NULL,
+                    welcomer BLOB NOT NULL,
+                    member_count INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    wrapper_event_id BLOB NOT NULL
+                );",
+            )
+            .expect("create welcomes table");
+
+            for (idx, group) in groups.iter().enumerate() {
+                let mls_group_id = vec![idx as u8; 32];
+                if history_version >= 104 {
+                    conn.execute(
+                        "INSERT INTO groups (mls_group_id, nostr_group_id, name, description, admin_pubkeys, epoch, state)
+                         VALUES (?1, ?2, ?3, '', ?4, 1, 'active')",
+                        rusqlite::params![mls_group_id, group.nostr_group_id.to_vec(), group.name, group.admin_pubkeys_json],
+                    )
+                    .expect("insert v104 group");
+                } else {
+                    conn.execute(
+                        "INSERT INTO groups (mls_group_id, nostr_group_id, name, description, admin_pubkeys, group_type, epoch, state)
+                         VALUES (?1, ?2, ?3, '', ?4, 'mls_group', 1, 'active')",
+                        rusqlite::params![mls_group_id, group.nostr_group_id.to_vec(), group.name, group.admin_pubkeys_json],
+                    )
+                    .expect("insert v100 group");
+                }
+            }
+
+            for (idx, welcome) in welcomes.iter().enumerate() {
+                let id = vec![(100 + idx) as u8; 32];
+                let mls_group_id = vec![0u8; 32];
+                conn.execute(
+                    "INSERT INTO welcomes (id, event, mls_group_id, nostr_group_id, group_name, group_description,
+                        group_admin_pubkeys, group_relays, welcomer, member_count, state, wrapper_event_id)
+                     VALUES (?1, '{}', ?2, ?3, '', '', '[]', '[]', ?4, 1, ?5, ?6)",
+                    rusqlite::params![
+                        id,
+                        mls_group_id,
+                        mls_group_id,
+                        vec![0u8; 32],
+                        welcome.state,
+                        welcome.wrapper_event_id.to_vec(),
+                    ],
+                )
+                .expect("insert welcome");
+            }
+        }
+
+        fn cleanup(path: &Path) {
+            let _ = std::fs::remove_file(path);
+        }
+
+        #[test]
+        fn harvests_two_admins_for_a_known_group() {
+            let path = unique_fixture_path("two-admins");
+            let keys_a = nostr_sdk::Keys::generate();
+            let keys_b = nostr_sdk::Keys::generate();
+            let group_id = [0xABu8; 32];
+            write_legacy_store_fixture(
+                &path,
+                104,
+                &[FixtureGroup {
+                    nostr_group_id: group_id,
+                    name: "squad",
+                    admin_pubkeys_json: serde_json::to_string(&[keys_a.public_key().to_hex(), keys_b.public_key().to_hex()]).unwrap(),
+                }],
+                &[],
+            );
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            let group_hex = hex::encode(group_id);
+            let admins = harvest.admins_by_group.get(&group_hex).expect("group present");
+            assert_eq!(admins.len(), 2);
+            assert!(admins.contains(&keys_a.public_key().to_bech32().unwrap()));
+            assert!(admins.contains(&keys_b.public_key().to_bech32().unwrap()));
+
+            cleanup(&path);
+        }
+
+        #[test]
+        fn harvests_exactly_one_key_when_member_is_sole_admin() {
+            let path = unique_fixture_path("sole-admin");
+            let keys = nostr_sdk::Keys::generate();
+            let group_id = [0x11u8; 32];
+            write_legacy_store_fixture(
+                &path,
+                104,
+                &[FixtureGroup {
+                    nostr_group_id: group_id,
+                    name: "solo",
+                    admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()]).unwrap(),
+                }],
+                &[],
+            );
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            let group_hex = hex::encode(group_id);
+            assert_eq!(harvest.admins_by_group.len(), 1);
+            assert_eq!(harvest.admins_by_group[&group_hex], vec![keys.public_key().to_bech32().unwrap()]);
+
+            cleanup(&path);
+        }
+
+        #[test]
+        fn harvest_returns_empty_when_groups_table_absent() {
+            let path = unique_fixture_path("no-groups-table");
+            {
+                let conn = rusqlite::Connection::open(&path).expect("open");
+                conn.execute_batch("CREATE TABLE unrelated (id INTEGER PRIMARY KEY);").unwrap();
+            }
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            assert!(harvest.admins_by_group.is_empty());
+            assert!(harvest.pending_wrapper_ids.is_empty());
+
+            cleanup(&path);
+        }
+
+        #[test]
+        fn harvest_returns_error_when_store_cannot_be_opened() {
+            let path = unique_fixture_path("cannot-open");
+            assert!(!path.exists());
+            assert!(
+                harvest_legacy_mls_store(&path).is_err(),
+                "a store that can't be opened must surface an error, not an empty harvest"
+            );
+        }
+
+        #[test]
+        fn malformed_admin_pubkeys_json_skips_only_that_group() {
+            let path = unique_fixture_path("malformed-json");
+            let keys = nostr_sdk::Keys::generate();
+            let good_group = [0x22u8; 32];
+            let bad_group = [0x33u8; 32];
+            let conn = rusqlite::Connection::open(&path).expect("open");
+            conn.execute_batch(
+                "CREATE TABLE groups (
+                    mls_group_id BLOB PRIMARY KEY,
+                    nostr_group_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    admin_pubkeys JSONB NOT NULL
+                );",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO groups (mls_group_id, nostr_group_id, name, admin_pubkeys) VALUES (?1, ?2, 'good', ?3)",
+                rusqlite::params![vec![1u8; 32], good_group.to_vec(), serde_json::to_string(&[keys.public_key().to_hex()]).unwrap()],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO groups (mls_group_id, nostr_group_id, name, admin_pubkeys) VALUES (?1, ?2, 'bad', 'not json')",
+                rusqlite::params![vec![2u8; 32], bad_group.to_vec()],
+            )
+            .unwrap();
+            drop(conn);
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            assert!(harvest.admins_by_group.contains_key(&hex::encode(good_group)));
+            assert!(!harvest.admins_by_group.contains_key(&hex::encode(bad_group)));
+
+            cleanup(&path);
+        }
+
+        #[test]
+        fn non_key_string_in_admin_pubkeys_array_drops_only_that_entry() {
+            let path = unique_fixture_path("non-key-string");
+            let good_group = [0x44u8; 32];
+            let junk_group = [0x55u8; 32];
+            let keys = nostr_sdk::Keys::generate();
+            write_legacy_store_fixture(
+                &path,
+                104,
+                &[
+                    FixtureGroup {
+                        nostr_group_id: good_group,
+                        name: "good",
+                        admin_pubkeys_json: serde_json::to_string(&[keys.public_key().to_hex()]).unwrap(),
+                    },
+                    FixtureGroup {
+                        nostr_group_id: junk_group,
+                        name: "junk",
+                        admin_pubkeys_json: serde_json::to_string(&["not-a-pubkey"]).unwrap(),
+                    },
+                ],
+                &[],
+            );
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            assert!(harvest.admins_by_group.contains_key(&hex::encode(good_group)));
+            assert!(
+                !harvest.admins_by_group.contains_key(&hex::encode(junk_group)),
+                "an entry whose only admin key is unparseable must persist nothing"
+            );
+
+            cleanup(&path);
+        }
+
+        #[test]
+        fn v104_fixture_returns_same_fields_as_v100_fixture() {
+            let keys = nostr_sdk::Keys::generate();
+            let group_id = [0x66u8; 32];
+            let admin_json = serde_json::to_string(&[keys.public_key().to_hex()]).unwrap();
+
+            let path_v100 = unique_fixture_path("v100");
+            write_legacy_store_fixture(
+                &path_v100,
+                100,
+                &[FixtureGroup { nostr_group_id: group_id, name: "g", admin_pubkeys_json: admin_json.clone() }],
+                &[],
+            );
+            let path_v104 = unique_fixture_path("v104");
+            write_legacy_store_fixture(
+                &path_v104,
+                104,
+                &[FixtureGroup { nostr_group_id: group_id, name: "g", admin_pubkeys_json: admin_json }],
+                &[],
+            );
+
+            let harvest_v100 = harvest_legacy_mls_store(&path_v100).expect("harvest v100");
+            let harvest_v104 = harvest_legacy_mls_store(&path_v104).expect("harvest v104");
+            assert_eq!(harvest_v100.admins_by_group, harvest_v104.admins_by_group);
+
+            cleanup(&path_v100);
+            cleanup(&path_v104);
+        }
+
+        #[test]
+        fn pending_wrapper_ids_are_returned_but_accepted_are_not() {
+            let path = unique_fixture_path("pending-welcomes");
+            let pending_id = [0x77u8; 32];
+            let accepted_id_a = [0x78u8; 32];
+            let accepted_id_b = [0x79u8; 32];
+            write_legacy_store_fixture(
+                &path,
+                104,
+                &[],
+                &[
+                    FixtureWelcome { wrapper_event_id: pending_id, state: "pending" },
+                    FixtureWelcome { wrapper_event_id: accepted_id_a, state: "accepted" },
+                    FixtureWelcome { wrapper_event_id: accepted_id_b, state: "accepted" },
+                ],
+            );
+
+            let harvest = harvest_legacy_mls_store(&path).expect("harvest");
+            assert_eq!(harvest.pending_wrapper_ids, vec![hex::encode(pending_id)]);
+
+            cleanup(&path);
+        }
     }
 }
