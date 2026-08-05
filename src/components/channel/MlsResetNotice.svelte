@@ -36,6 +36,7 @@
         </li>
       {/each}
     </ul>
+    <p class="rollout-note">{$t('messaging.channel.mlsResetRolloutNote')}</p>
   {:else if state.singleAdmin && state.adminNpubs.length === 1}
     {@const admin = state.adminNpubs[0]}
     {#if admin === currentUserNpub}
@@ -109,6 +110,11 @@
   }
 
   .archive-note {
+    color: var(--text-secondary, #b8b8c2);
+    font-size: 0.85rem;
+  }
+
+  .rollout-note {
     color: var(--text-secondary, #b8b8c2);
     font-size: 0.85rem;
   }

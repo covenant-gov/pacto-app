@@ -25,7 +25,9 @@ Decrypted **application messages** are integrated into the same **chat/message m
 
 Before MDK 0.8.0 opens the store, `mls_store_reset.rs` reads the MDK refinery history directly. Stores from the old V100–V104 series are harvested and the entire `<npub>/mls/` directory—database, WAL, and SHM together—is moved to `<npub>/mls.archive.<timestamp>/`. A fresh encrypted store is then created. Archive directories are removed after seven days.
 
-The app keeps message history, chat names, and participant lists in `vector.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored.
+Seven-day retention bounds disk exposure; it does **not** revoke credentials. Until an upgraded admin restores a member (remove-then-re-add advances the epoch past the archived leaf), or members abandon an unrecovered/re-created old channel, anyone who obtains the archive can still participate as that member on the live group. Sole-admin squads never get that revoke path and must re-create, then stop using the old channel.
+
+The app keeps message history, chat names, and participant lists in `vector.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored. Multi-admin rollout must leave one admin on the pre-upgrade build until others are restored.
 
 ## Nostr interaction
 

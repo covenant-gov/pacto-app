@@ -246,6 +246,8 @@ test.describe('MLS reset explanation', () => {
     await expect(notice).toContainText('Bob Admin');
     await expect(notice).toContainText('npub-b');
     await expect(notice).toContainText('Restore access');
+    await expect(notice).toContainText('Upgrade co-admins one at a time');
+    await expect(notice).toContainText('does not revoke');
   });
 
   test('uses re-create wording for a sole admin and missing-record wording for none', async ({ page }) => {
