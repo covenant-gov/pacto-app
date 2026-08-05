@@ -9155,6 +9155,8 @@ pub fn run() {
             account_manager::list_all_accounts,
             account_manager::check_any_account_exists,
             account_manager::switch_account,
+            // Storage-format compatibility commands
+            storage_format::get_storage_compatibility,
             // Session management commands (U4)
             session::check_session,
             session::session_heartbeat,

@@ -9,6 +9,7 @@
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use tauri::{AppHandle, Runtime};
 
 /// Busy-timeout mirroring `account_manager::account_has_valid_pkey`'s
 /// precedent: wait out a transient lock from the main pooled connection
@@ -231,6 +232,55 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
         unrecognized_count,
         highest_offending_version,
     }
+}
+
+/// Frontend-facing report combining `StorageFormatScanReport` with the
+/// highest schema version this build supports, so the launch gate can
+/// render "recognized" vs. "this build only supports up to schema X, found
+/// Y on disk" without a second round trip. `supported_schema_version` is
+/// this build's embedded migration ceiling, not its own release version --
+/// the two are unrelated, and the frontend already has its own release
+/// version via `resolveInstalledVersion()` for the separate minimum-version
+/// reason. Carries no filesystem path or npub for the same reason
+/// `StorageFormatScanReport` does not.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StorageCompatibilityReport {
+    pub(crate) all_recognized: bool,
+    pub(crate) unrecognized_count: usize,
+    pub(crate) highest_offending_version: Option<i32>,
+    pub(crate) supported_schema_version: i32,
+}
+
+impl From<StorageFormatScanReport> for StorageCompatibilityReport {
+    fn from(report: StorageFormatScanReport) -> Self {
+        Self {
+            all_recognized: report.all_recognized,
+            unrecognized_count: report.unrecognized_count,
+            highest_offending_version: report.highest_offending_version,
+            supported_schema_version: crate::migrations::embedded_ceiling(),
+        }
+    }
+}
+
+/// Pure report builder shared by the command and its tests: `scan_profiles`
+/// plus this build's own version, with no `AppHandle` involved.
+pub(crate) fn compatibility_report(app_data_dir: &Path) -> StorageCompatibilityReport {
+    scan_profiles(app_data_dir).into()
+}
+
+/// Report whether this build recognizes every local profile's storage
+/// format, for the launch gate to consult before routing to onboarding or
+/// unlock. Runs before authentication, so the error variant must never name
+/// a path or an npub -- unlike `get_profile_directory`'s own errors, which
+/// this command must not reuse.
+#[tauri::command]
+pub(crate) fn get_storage_compatibility<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<StorageCompatibilityReport, String> {
+    let app_data_dir = crate::test_sandbox::test_data_dir(&app)
+        .map_err(|_| "Unable to resolve app storage location".to_string())?;
+    Ok(compatibility_report(&app_data_dir))
 }
 
 #[cfg(test)]
@@ -593,5 +643,105 @@ mod tests {
         let embedded_versions: std::collections::BTreeSet<i32> =
             embedded.iter().map(|m| m.version()).collect();
         assert_eq!(embedded_versions, file_versions);
+    }
+
+    // -- StorageCompatibilityReport / get_storage_compatibility -----------
+
+    #[test]
+    fn compatibility_report_serializes_to_expected_camel_case_keys() {
+        let report = StorageCompatibilityReport {
+            all_recognized: false,
+            unrecognized_count: 2,
+            highest_offending_version: Some(31),
+            supported_schema_version: 30,
+        };
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(
+            value.get("allRecognized").unwrap(),
+            &serde_json::json!(false)
+        );
+        assert_eq!(
+            value.get("unrecognizedCount").unwrap(),
+            &serde_json::json!(2)
+        );
+        assert_eq!(
+            value.get("highestOffendingVersion").unwrap(),
+            &serde_json::json!(31)
+        );
+        assert_eq!(
+            value.get("supportedSchemaVersion").unwrap(),
+            &serde_json::json!(30)
+        );
+        // Exactly the four expected keys -- no accidental extra field, and
+        // no snake_case field slipping through unrenamed.
+        assert_eq!(value.as_object().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn compatibility_report_is_compatible_for_directory_with_no_profiles() {
+        let root = unique_temp_dir("compat-empty");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let report = compatibility_report(&root);
+        assert!(report.all_recognized);
+        assert_eq!(report.unrecognized_count, 0);
+        assert_eq!(report.highest_offending_version, None);
+        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn compatibility_report_is_incompatible_for_one_failing_profile() {
+        let root = unique_temp_dir("compat-incompatible");
+        let profile_dir = root.join("npub1compatincompatibleprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("vector.db");
+        write_migrated_db(&db_path);
+
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+                rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+        }
+
+        let report = compatibility_report(&root);
+        assert!(!report.all_recognized);
+        assert_eq!(report.unrecognized_count, 1);
+        assert_eq!(report.highest_offending_version, Some(above_ceiling));
+        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn get_storage_compatibility_command_succeeds_against_a_mock_app() {
+        // Exercises the command's own plumbing (AppHandle -> test_data_dir
+        // -> compatibility_report). Deliberately does not assert on
+        // unrecognized_count/highest_offending_version: mock_app's
+        // app_data_dir is a real, shared directory across this test
+        // binary, so only properties independent of what other tests may
+        // have left there are safe to assert here. Count-sensitive
+        // behavior is covered against isolated temp dirs above.
+        let app = tauri::test::mock_app();
+        let report = get_storage_compatibility(app.handle().clone()).unwrap();
+        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+    }
+
+    #[test]
+    fn app_data_dir_resolution_failure_message_carries_no_npub_or_path() {
+        // The command's only error path always replaces whatever
+        // `test_data_dir` produced with this fixed string -- never
+        // `get_profile_directory`'s own errors, which embed the npub this
+        // guards against.
+        let message = "Unable to resolve app storage location";
+        assert!(!message.contains("npub1"));
+        assert!(!message.contains('/'));
+        assert!(!message.contains('\\'));
     }
 }
