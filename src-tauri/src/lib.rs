@@ -87,6 +87,9 @@ mod audio;
 // Per-account SQLite schema and data migrations (refinery).
 mod migrations;
 
+// Read-only storage-format recognition for the app database (no migration).
+mod storage_format;
+
 // Salt/key-derivation migration engine (U2)
 mod migration;
 
