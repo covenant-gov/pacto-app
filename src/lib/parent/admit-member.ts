@@ -3,7 +3,7 @@
  */
 
 import { get } from 'svelte/store';
-import { inviteMemberToGroup, getMlsGroupMembers, sendDmMessage } from '../api/nostr';
+import { inviteMemberToGroup, sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { openCustomChannelTargets } from './channel-access';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
@@ -23,15 +23,6 @@ export type AdmitMemberResult = {
   openChannelsInvited: number;
   error?: string;
 };
-
-async function alreadyInGroup(groupId: string, memberNpub: string): Promise<boolean> {
-  try {
-    const result = await getMlsGroupMembers(groupId);
-    return (result.members ?? []).includes(memberNpub);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Under-the-hood notify so the joiner auto-accepts the channel welcome and attaches catalog.
@@ -74,19 +65,18 @@ export async function admitMemberToSquad(opts: {
   admitInFlight.add(key);
 
   try {
-    if (!(await alreadyInGroup(announcementsGid, npub))) {
-      try {
-        await inviteMemberToGroup(announcementsGid, npub);
-      } catch (e) {
-        const lastErr = friendlyMessage(getInvokeErrorMessage(e));
-        admitInFlight.delete(key);
-        return {
-          ok: false,
-          announcementsOk: false,
-          openChannelsInvited: 0,
-          error: lastErr || 'Could not add to announcements.',
-        };
-      }
+    // Always invite: an existing leaf is a Restore (remove-then-re-add) after MLS store reset.
+    try {
+      await inviteMemberToGroup(announcementsGid, npub);
+    } catch (e) {
+      const lastErr = friendlyMessage(getInvokeErrorMessage(e));
+      admitInFlight.delete(key);
+      return {
+        ok: false,
+        announcementsOk: false,
+        openChannelsInvited: 0,
+        error: lastErr || 'Could not add to announcements.',
+      };
     }
 
     const liveParent = get(squads).find((s) => s.id === parent.id) ?? parent;
@@ -112,7 +102,6 @@ async function inviteOpenChannelsInBackground(
   try {
     for (const ch of openCustomChannelTargets(parent.channels)) {
       try {
-        if (await alreadyInGroup(ch.groupId, npub)) continue;
         await inviteMemberToGroup(ch.groupId, npub);
         try {
           await notifyChannelWelcome(parent, ch.groupId, ch.name, npub);
