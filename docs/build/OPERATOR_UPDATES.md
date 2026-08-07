@@ -71,3 +71,63 @@ Repeat on at least one additional desktop platform before promoting a release br
 - **macOS: update downloads but fails to install with "Failed to move the new app into place":** the app is likely sandboxed or installed with permissions that prevent replacing `/Applications/pacto.app`. Ensure the app is installed by dragging to `/Applications`, run `xattr -r -d com.apple.quarantine /Applications/pacto.app`, and approve any system prompt for administrator privileges.
 - **Unsigned builds and Gatekeeper:** Pacto is currently unsigned. On macOS, removing the quarantine attribute before first launch is required; otherwise Gatekeeper translocation can cause the updater to modify a temporary copy instead of the app in `/Applications`. On Windows, unsigned installers may trigger SmartScreen; users should choose "More info" → "Run anyway".
 - **Linux AppImage: blank window / `Could not create default EGL display: EGL_BAD_PARAMETER. Aborting...` on Wayland (Fedora, Arch, NixOS):** the AppImage bundles its own `libwebkit2gtk`; newer Ubuntu-built copies hit an upstream webkit2gtk EGL platform-detection bug on non-Ubuntu Wayland compositors, while the `.deb`/`.rpm` (which use the host's system `libwebkit2gtk`) are unaffected. `publish-tauri` now builds the `x86_64-unknown-linux-gnu` target on `ubuntu-22.04` — the oldest LTS still shipping `libwebkit2gtk-4.1-dev` — per Tauri's own guidance to build on the oldest supported base system. The `aarch64-unknown-linux-gnu` target stays on `ubuntu-24.04-arm` because the `glslc` apt package `whisper-rs`/`ggml-vulkan` needs at build time is not published for Ubuntu 22.04 (LunarG's Vulkan SDK, used on x86_64 instead, has no arm64 build); arm64 AppImage users may still hit this bug until an arm64-compatible `glslc` source is found.
+
+## Marking a release as breaking
+
+A release that ships an incompatible on-disk change (a new database migration older builds cannot read) must raise the update floor so older clients are told to update instead of failing to unlock their data. This is separate from ordinary version bumps — most releases do not need it.
+
+### Raising the floor ahead of a release
+
+1. Edit `scripts/release-compatibility.json` and raise `minimumCompatibleVersion` to the lowest version that can still safely open the on-disk data this release writes, e.g.:
+   ```json
+   { "minimumCompatibleVersion": "0.6.0" }
+   ```
+2. Commit it on the branch that will be tagged.
+3. Tag and push as usual (see **Release workflow** above). After the whole platform matrix in `publish-tauri` finishes, the `stamp-updater-compatibility` job in `.github/workflows/release.yaml` runs `node scripts/stamp-updater-compatibility.mjs`, downloads the just-published `latest.json`, merges in the tracked value as `minimum_compatible_version`, and re-uploads it to the same release. No separate step is required.
+
+**The tracked value must not exceed the version being released.** The stamping job validates the candidate against the release's own `version` field before it uploads anything; if `minimumCompatibleVersion` is higher than the tag, the job throws and refuses to publish the stamped manifest — the release keeps its installers but its `latest.json` is left unstamped (or stamped with whatever it already had), rather than being written with an impossible floor.
+
+**What clients below the floor experience:** on launch, a client whose installed version compares lower than `minimum_compatible_version` is shown a non-dismissible update-required screen — not a crash, and not a silent failure. The user cannot proceed into the app until they update.
+
+### Correcting a wrong value
+
+Use these in priority order.
+
+**1. Primary: re-run the dispatchable workflow.** `.github/workflows/release-compatibility.yaml` re-stamps an already-published tag's `latest.json` without a new signed release. Trigger it either from the GitHub Actions UI (`release-compatibility` workflow → **Run workflow**, fill in `tag` and optionally `override`), or from the CLI:
+   ```bash
+   gh workflow run release-compatibility.yaml -f tag=v0.6.0 -f override=0.5.4
+   ```
+   Omitting `override` re-stamps using whatever `minimumCompatibleVersion` is currently tracked in `scripts/release-compatibility.json` on the default branch. This runs the identical validator as the automatic post-release step, so an out-of-range value is refused the same way.
+
+**2. Emergency fallback: run the script locally.** If GitHub Actions itself is unavailable, someone with `gh` authenticated and push access to the repository can run the exact same script directly:
+   ```bash
+   node scripts/stamp-updater-compatibility.mjs v0.6.0 0.5.4
+   ```
+   The first argument is the tag, the second is the override value. This local invocation calls the same exported `validateMinimumVersion` / `mergeMinimumVersion` functions the automated job uses — it is not a bypass, and an out-of-range value fails the same validation.
+
+   **After using either path to correct a value, mirror the final value back into the tracked `scripts/release-compatibility.json` and commit it.** The workflow and the local script both operate on the *published* `latest.json` only; they never write the tracked file. If the tracked file is left at the old value, the next tagged release re-runs the automatic stamping job with that stale value and silently regresses the correction.
+
+## Recovering a machine the local storage-format check blocked
+
+This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `vector.db` on launch and finds a migration history that this build doesn't recognize — for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
+
+The block screen deliberately does not show which npub or file path is at fault, so recovery is manual:
+
+1. Note the schema version number the block screen reports.
+2. Profile directories live under `<app_data_dir>/npub1…/vector.db` — see [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) for the full on-disk layout. `<app_data_dir>` here is Tauri's per-OS app data directory *including* this app's identifier (`io.pacto`, from `src-tauri/tauri.conf.json`):
+   - macOS: `~/Library/Application Support/io.pacto/`
+   - Windows: `%APPDATA%\io.pacto\`
+   - Linux: `$XDG_DATA_HOME/io.pacto/` (usually `~/.local/share/io.pacto/`)
+3. For each `npub1…` subdirectory, open its `vector.db` with a `sqlite3` client and check the highest applied version:
+   ```bash
+   sqlite3 "<app_data_dir>/npub1exampleaddress/vector.db" \
+     "SELECT version, name, applied_on FROM refinery_schema_history ORDER BY version DESC LIMIT 1;"
+   ```
+4. The one profile whose `version` matches the number from the block screen is the offender. Move that single directory aside (e.g. rename `npub1…` to `npub1…-quarantined`) — do not delete it.
+5. Relaunch the app. Every other account on the machine unblocks immediately; the moved-aside profile no longer participates in account discovery until it is restored (e.g. by a build that recognizes its schema).
+
+## Limits of this gate
+
+- **The manifest is unsigned.** `latest.json`, including `minimum_compatible_version`, carries no signature — only the platform installers themselves are Ed25519-signed. Anyone who can write to the release's assets can alter the manifest.
+- **The gate is forward-only.** It cannot reach installs from before this feature shipped; those clients have no code path that reads `minimum_compatible_version`.
+- **The remote (minimum-version) trigger fails open by design**, so anyone able to interfere with the manifest fetch — blackholing it or corrupting the response — can suppress it entirely for a given client. The local storage-format trigger above is the one that survives this: it never depends on the network, so it cannot be defeated the same way.

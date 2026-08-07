@@ -11,5 +11,12 @@
 	"updater.primary.downloading": "Downloading…",
 	"updater.primary.installing": "Installing…",
 	"updater.primary.retry": "Retry",
-	"updater.primary.downloadAndInstall": "Download and install"
+	"updater.primary.downloadAndInstall": "Download and install",
+	"updater.gate.minimumVersionTitle": "Update required",
+	"updater.gate.minimumVersionDescription": "This release ({installed}) is no longer supported. Update to at least {required} to continue.",
+	"updater.gate.storageFormatTitle": "This build cannot open your data",
+	"updater.gate.storageFormatDescription": "Your data was written by a newer version of Pacto. {count, plural, one {One profile is} other {# profiles are}} affected on this machine, and every account is blocked until it is resolved.",
+	"updater.gate.storageFormatNonTransient": "This is not a temporary problem, and retrying will not help. Update to the version that wrote this data, or see the manual recovery steps in the operator documentation.",
+	"updater.gate.retry": "Retry",
+	"updater.gate.releasePageLink": "View the latest release"
 }

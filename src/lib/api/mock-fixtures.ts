@@ -26,6 +26,12 @@ export const authFixtures: Record<string, MockCommandHandler> = {
   },
   connect: () => true,
   check_any_account_exists: () => mockState.encryptedKey !== null,
+  get_storage_compatibility: () => ({
+    allRecognized: true,
+    unrecognizedCount: 0,
+    highestOffendingVersion: null,
+    supportedSchemaVersion: 0,
+  }),
   get_current_account: () => (mockState.encryptedKey ? MOCK_NPUB : ''),
   get_evm_address: () => mockState.evmAddress,
   set_evm_address: (args) => {

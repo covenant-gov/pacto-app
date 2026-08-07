@@ -12,7 +12,29 @@ mod embedded {
 /// Hard-coded, not derived from the embedded set — deriving it from
 /// `get_migrations()` would silently raise the ceiling every time a new
 /// migration is added, reintroducing the defect this constant exists to fix.
-const PRE_REFINERY_CEILING: i32 = 27;
+pub(crate) const PRE_REFINERY_CEILING: i32 = 27;
+
+/// Highest version in the embedded migration set. Derived at compile time
+/// from `embed_migrations!`, unlike `PRE_REFINERY_CEILING` which is pinned
+/// to a historical commit: this ceiling is meant to move every time a
+/// migration file is added, because it exists to recognize a database
+/// written by a *newer* build than the one running, not to gate the
+/// baseline-detection behavior `PRE_REFINERY_CEILING` protects.
+pub(crate) fn embedded_ceiling() -> i32 {
+    embedded::migrations::runner()
+        .get_migrations()
+        .iter()
+        .map(|m| m.version())
+        .max()
+        .unwrap_or(0)
+}
+
+/// The full embedded migration set (version, name, checksum), for read-only
+/// parity comparison against a database's applied history without running
+/// anything.
+pub(crate) fn embedded_migration_set() -> Vec<refinery::Migration> {
+    embedded::migrations::runner().get_migrations().clone()
+}
 
 /// Run all refinery migrations on the supplied connection.
 ///

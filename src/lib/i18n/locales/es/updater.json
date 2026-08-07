@@ -11,5 +11,12 @@
 	"updater.primary.downloading": "Descargando…",
 	"updater.primary.installing": "Instalando…",
 	"updater.primary.retry": "Reintentar",
-	"updater.primary.downloadAndInstall": "Descargar e instalar"
+	"updater.primary.downloadAndInstall": "Descargar e instalar",
+	"updater.gate.minimumVersionTitle": "Actualización requerida",
+	"updater.gate.minimumVersionDescription": "Esta versión ({installed}) ya no es compatible. Actualiza al menos a {required} para continuar.",
+	"updater.gate.storageFormatTitle": "Esta versión no puede abrir tus datos",
+	"updater.gate.storageFormatDescription": "Tus datos fueron escritos por una versión más reciente de Pacto. {count, plural, one {Hay 1 perfil afectado} other {Hay # perfiles afectados}} en esta máquina, y todas las cuentas están bloqueadas hasta resolverlo.",
+	"updater.gate.storageFormatNonTransient": "Esto no es un problema temporal y reintentar no ayudará. Actualiza a la versión que escribió estos datos, o consulta los pasos de recuperación manual en la documentación para operadores.",
+	"updater.gate.retry": "Reintentar",
+	"updater.gate.releasePageLink": "Ver la última versión"
 }

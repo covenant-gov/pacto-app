@@ -47,9 +47,15 @@ import {
   backupVerified,
   backupVerificationModalOpen,
 } from './backup-verification';
+import { awaitGateBeforeAuth, freezeGate } from '../lib/updater/update-gate';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock('../lib/updater/update-gate', () => ({
+  awaitGateBeforeAuth: vi.fn(),
+  freezeGate: vi.fn(),
 }));
 
 vi.mock('../lib/api/auth', () => ({
@@ -116,6 +122,8 @@ describe('auth', () => {
     vi.mocked(apiCheckSession).mockReset();
     vi.mocked(apiSessionHeartbeat).mockReset();
     vi.mocked(invoke).mockReset();
+    vi.mocked(awaitGateBeforeAuth).mockReset().mockResolvedValue('clear');
+    vi.mocked(freezeGate).mockReset();
     backupVerified.set(null);
     backupVerificationModalOpen.set(false);
   });
@@ -308,6 +316,29 @@ describe('auth', () => {
       await expect(createAccount('123456')).rejects.toThrow('key gen failed');
       expect(get(authError)).toBe('key gen failed');
     });
+
+    it('freezes the gate exactly once on success', async () => {
+      vi.mocked(apiCreateAccount).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await createAccount('123456');
+
+      expect(freezeGate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not authenticate and issues no backend call when the gate is blocked', async () => {
+      vi.mocked(awaitGateBeforeAuth).mockResolvedValue('blocked');
+
+      await createAccount('123456');
+
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(apiCreateAccount).not.toHaveBeenCalled();
+      expect(encryptAndSaveKey).not.toHaveBeenCalled();
+      expect(runPostLoginNetworkSync).not.toHaveBeenCalled();
+      expect(freezeGate).not.toHaveBeenCalled();
+      expect(get(authLoading)).toBe(false);
+    });
   });
 
   describe('importAccount', () => {
@@ -329,6 +360,30 @@ describe('auth', () => {
     it('rejects an invalid recovery phrase', async () => {
       vi.mocked(validateRecoveryPhraseForImport).mockReturnValue(false);
       await expect(importAccount('bad phrase', '123456')).rejects.toThrow('Enter a valid 12- or 24-word recovery phrase');
+    });
+
+    it('freezes the gate exactly once on success', async () => {
+      vi.mocked(validateRecoveryPhraseForImport).mockReturnValue(true);
+      vi.mocked(loginWithRecoveryPhrase).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await importAccount('word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12', '123456');
+
+      expect(freezeGate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not authenticate and issues no backend call when the gate is blocked', async () => {
+      vi.mocked(awaitGateBeforeAuth).mockResolvedValue('blocked');
+
+      await importAccount('word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12', '123456');
+
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(loginWithRecoveryPhrase).not.toHaveBeenCalled();
+      expect(encryptAndSaveKey).not.toHaveBeenCalled();
+      expect(runPostLoginNetworkSync).not.toHaveBeenCalled();
+      expect(freezeGate).not.toHaveBeenCalled();
+      expect(get(authLoading)).toBe(false);
     });
   });
 
@@ -352,6 +407,30 @@ describe('auth', () => {
       vi.mocked(loadAndDecryptKey).mockRejectedValue(new Error('bad pin'));
       await expect(unlockWithPin('123456')).rejects.toThrow('bad pin');
       expect(get(authError)).toBe('bad pin');
+    });
+
+    it('freezes the gate exactly once on success', async () => {
+      vi.mocked(loadAndDecryptKey).mockResolvedValue(keys.private);
+      vi.mocked(login).mockResolvedValue(keys);
+      vi.mocked(getCurrentAccount).mockResolvedValue(npub);
+
+      await unlockWithPin('123456');
+
+      expect(freezeGate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not authenticate and issues no backend call when the gate is blocked', async () => {
+      vi.mocked(awaitGateBeforeAuth).mockResolvedValue('blocked');
+
+      await unlockWithPin('123456');
+
+      expect(get(isAuthenticated)).toBe(false);
+      expect(get(currentUser)).toBeNull();
+      expect(loadAndDecryptKey).not.toHaveBeenCalled();
+      expect(login).not.toHaveBeenCalled();
+      expect(runPostLoginNetworkSync).not.toHaveBeenCalled();
+      expect(freezeGate).not.toHaveBeenCalled();
+      expect(get(authLoading)).toBe(false);
     });
   });
 

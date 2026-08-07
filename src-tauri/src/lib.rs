@@ -87,6 +87,9 @@ mod audio;
 // Per-account SQLite schema and data migrations (refinery).
 mod migrations;
 
+// Read-only storage-format recognition for the app database (no migration).
+mod storage_format;
+
 // Salt/key-derivation migration engine (U2)
 mod migration;
 
@@ -9157,6 +9160,8 @@ pub fn run() {
             account_manager::list_all_accounts,
             account_manager::check_any_account_exists,
             account_manager::switch_account,
+            // Storage-format compatibility commands
+            storage_format::get_storage_compatibility,
             // Session management commands (U4)
             session::check_session,
             session::session_heartbeat,

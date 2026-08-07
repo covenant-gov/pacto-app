@@ -48,22 +48,6 @@ fn account_lock(account: &str) -> Result<Arc<Mutex<()>>, String> {
         .clone())
 }
 
-fn history_version(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_refinery_schema_history_nostr_mls')",
-        [],
-        |row| row.get(0),
-    )?;
-    if !exists {
-        return Ok(None);
-    }
-    conn.query_row(
-        "SELECT MAX(version) FROM _refinery_schema_history_nostr_mls",
-        [],
-        |row| row.get(0),
-    )
-}
-
 fn classify_version(version: Option<i64>, table_exists: bool) -> StoreClassification {
     match version {
         Some(1..=5) => StoreClassification::Current,
@@ -76,12 +60,9 @@ fn classify_version(version: Option<i64>, table_exists: bool) -> StoreClassifica
 }
 
 fn inspect_connection(conn: &Connection) -> Result<StoreClassification, rusqlite::Error> {
-    let table_exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_refinery_schema_history_nostr_mls')",
-        [],
-        |row| row.get(0),
-    )?;
-    let version = history_version(conn)?;
+    let (table_exists, rows) =
+        crate::storage_format::read_history_table(conn, "_refinery_schema_history_nostr_mls")?;
+    let version = rows.iter().map(|row| i64::from(row.version)).max();
     Ok(classify_version(version, table_exists))
 }
 
@@ -503,14 +484,20 @@ mod tests {
     fn store(path: &Path, version: Option<i64>) {
         let conn = Connection::open(path).unwrap();
         conn.execute_batch(
-            "CREATE TABLE _refinery_schema_history_nostr_mls (version INTEGER);
+            "CREATE TABLE _refinery_schema_history_nostr_mls (
+                version INTEGER PRIMARY KEY,
+                name VARCHAR(255),
+                applied_on VARCHAR(255),
+                checksum VARCHAR(255)
+             );
              CREATE TABLE groups (nostr_group_id TEXT, admin_pubkeys JSONB);
              CREATE TABLE welcomes (wrapper_event_id TEXT, state TEXT);",
         )
         .unwrap();
         if let Some(version) = version {
             conn.execute(
-                "INSERT INTO _refinery_schema_history_nostr_mls(version) VALUES (?1)",
+                "INSERT INTO _refinery_schema_history_nostr_mls (version, name, applied_on, checksum)
+                 VALUES (?1, 'fixture', '2024-01-01T00:00:00Z', 'fixture')",
                 [version],
             )
             .unwrap();
@@ -770,8 +757,14 @@ mod tests {
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(&format!(
             "PRAGMA key = \"x'{}'\";
-             CREATE TABLE _refinery_schema_history_nostr_mls (version INTEGER);
-             INSERT INTO _refinery_schema_history_nostr_mls(version) VALUES (5);",
+             CREATE TABLE _refinery_schema_history_nostr_mls (
+                version INTEGER PRIMARY KEY,
+                name VARCHAR(255),
+                applied_on VARCHAR(255),
+                checksum VARCHAR(255)
+             );
+             INSERT INTO _refinery_schema_history_nostr_mls (version, name, applied_on, checksum)
+             VALUES (5, 'fixture', '2024-01-01T00:00:00Z', 'fixture');",
             hex::encode(key)
         ))
         .unwrap();

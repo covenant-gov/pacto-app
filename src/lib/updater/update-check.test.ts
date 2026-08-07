@@ -9,6 +9,8 @@ import {
   relaunchApp,
   updateStatus,
   resetUpdateStatus,
+  resetMemoizedUpdateCheckForTest,
+  getMemoizedUpdateCheck,
   setIsDevBuildForTest,
   buildCommitHash,
   buildVersion,
@@ -38,6 +40,7 @@ const mockedShowToast = vi.mocked(showToast);
 beforeEach(() => {
   vi.resetAllMocks();
   resetUpdateStatus();
+  resetMemoizedUpdateCheckForTest();
 });
 
 afterEach(() => {
@@ -53,6 +56,46 @@ function expectStatus(status: UpdateState['status'], extra?: Partial<UpdateState
     }
   }
 }
+
+describe('getMemoizedUpdateCheck', () => {
+  it('coalesces concurrent callers into one underlying check() call', async () => {
+    setIsDevBuildForTest(false);
+    const { promise, resolve } = Promise.withResolvers<UpdaterUpdate>();
+    mockedCheck.mockReturnValue(promise);
+
+    const first = getMemoizedUpdateCheck();
+    const second = getMemoizedUpdateCheck();
+    resolve({ version: '0.3.0' } as UpdaterUpdate);
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(mockedCheck).toHaveBeenCalledTimes(1);
+    expect(firstResult).toBe(secondResult);
+  });
+
+  it('makes a fresh request after a successful call settles', async () => {
+    setIsDevBuildForTest(false);
+    mockedCheck.mockResolvedValueOnce({ version: '0.3.0' } as UpdaterUpdate);
+    await getMemoizedUpdateCheck();
+
+    mockedCheck.mockResolvedValueOnce({ version: '0.4.0' } as UpdaterUpdate);
+    const second = await getMemoizedUpdateCheck();
+
+    expect(mockedCheck).toHaveBeenCalledTimes(2);
+    expect(second).toEqual({ version: '0.4.0' });
+  });
+
+  it('makes a fresh request after a rejection settles - a retry is not stuck replaying the same failure', async () => {
+    setIsDevBuildForTest(false);
+    mockedCheck.mockRejectedValueOnce(new Error('network unreachable'));
+    await expect(getMemoizedUpdateCheck()).rejects.toThrow('network unreachable');
+
+    mockedCheck.mockResolvedValueOnce({ version: '0.3.0' } as UpdaterUpdate);
+    const retry = await getMemoizedUpdateCheck();
+
+    expect(mockedCheck).toHaveBeenCalledTimes(2);
+    expect(retry).toEqual({ version: '0.3.0' });
+  });
+});
 
 describe('checkForUpdates', () => {
   it('falls back to the build version when getVersion() returns 0.0.0', async () => {
