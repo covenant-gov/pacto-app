@@ -229,8 +229,8 @@ export async function createAccount(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
-    await maybeApplyLocalDevDefaults(npub);
     freezeGate();
+    await maybeApplyLocalDevDefaults(npub);
 
     dmLog('createAccount: done');
     authLoading.set(false);
@@ -285,8 +285,8 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
       npub: npub,
       pubkey: keys.public
     });
-    await maybeApplyLocalDevDefaults(npub);
     freezeGate();
+    await maybeApplyLocalDevDefaults(npub);
     await markBackupVerified(true);
     authLoading.set(false);
     runPostLoginNetworkSync(npub);
@@ -325,8 +325,8 @@ export async function unlockWithPin(pin: string): Promise<void> {
       npub: npub,
       pubkey: keys.public
     });
-    await maybeApplyLocalDevDefaults(npub);
     freezeGate();
+    await maybeApplyLocalDevDefaults(npub);
 
     dmLog('unlockWithPin: done');
   } catch (error: unknown) {

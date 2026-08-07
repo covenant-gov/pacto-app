@@ -261,6 +261,31 @@ describe('awaitGateBeforeAuth', () => {
       vi.useRealTimers();
     }
   });
+
+  it('freezes on clear so a late remote cannot flip to blocked mid-auth', async () => {
+    vi.useFakeTimers();
+    try {
+      const { promise: remotePromise, resolve: releaseRemote } =
+        Promise.withResolvers<FakeUpdate | null>();
+      mockedGetMemoizedUpdateCheck.mockReturnValue(remotePromise as never);
+
+      await resolveGateAtLaunch();
+      expect(currentState()).toEqual({ status: 'clear' });
+
+      const resultPromise = awaitGateBeforeAuth(20);
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(resultPromise).resolves.toBe('clear');
+
+      releaseRemote(
+        fakeUpdate({ version: '0.4.0', rawJson: { minimum_compatible_version: '0.4.0' } }),
+      );
+      await flushMicrotasks();
+
+      expect(currentState()).toEqual({ status: 'clear' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('freezeGate', () => {

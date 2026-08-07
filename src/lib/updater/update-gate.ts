@@ -172,7 +172,8 @@ export async function resolveGateAtLaunch(): Promise<void> {
  * Awaited as the first statement inside every authentication path's try
  * block, ahead of any backend call. Resolves immediately once the remote
  * verdict has settled; otherwise waits under a bounded timeout and treats
- * expiry as fail-open, matching R4.
+ * expiry as fail-open, matching R4. Freezes the gate before returning so a
+ * late remote verdict cannot flip mid-auth (R9).
  */
 export async function awaitGateBeforeAuth(timeoutMs = AUTH_AWAIT_TIMEOUT_MS): Promise<'clear' | 'blocked'> {
   if (!remoteSettled) {
@@ -181,14 +182,17 @@ export async function awaitGateBeforeAuth(timeoutMs = AUTH_AWAIT_TIMEOUT_MS): Pr
       setTimeout(resolve, timeoutMs);
     });
   }
-  return gate.current.status === 'blocked' ? 'blocked' : 'clear';
+  const verdict = gate.current.status === 'blocked' ? 'blocked' : 'clear';
+  // Commit before returning so a late remote cannot flip mid-auth (R9).
+  gate.freeze();
+  return verdict;
 }
 
 /**
- * Marks the gate verdict final. Called on every authentication success
- * path. A remote verdict arriving after this point is recorded by
- * `resolveRemoteVerdict` but never applied - the store's own setter drops
- * it - so it can only take effect at the next launch (R9).
+ * Marks the gate verdict final. Idempotent with the freeze inside
+ * `awaitGateBeforeAuth`; still called on auth success so the success path
+ * documents R9 even when the await already committed. A remote verdict
+ * arriving after freeze is never applied.
  */
 export function freezeGate(): void {
   gate.freeze();
