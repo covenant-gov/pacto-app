@@ -7,9 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Bump @tauri-apps npm packages to match cargo-updated tauri crates
+- Install default rustls crypto provider to fix startup panic
+- Eliminate svelte-check warnings across frontend components
+- Enable additional TypeScript strictness checks and fix findings
+- Recover channels after the mls store reset
+- Harden mls store reset recovery and split reset module boundaries
+- Expose mls restore access for post-upgrade members
+- Prefill squad recreate with preserved mls members
+- Harden mls harvest matching and post-reset prune
+- Quarantine gift-wrap timeouts and harden mls reset floors
+- Harden mls prune-test cleanup and clear unused rust imports
+
+
+### Chores
+- Record upgrade task completion
+
+
+### Documentation
+- Explain the mls reset recovery model
+- Clarify mls upgrade rollout and archive non-revocation
+
+
+### Features
+- Mandatory update gate for breaking releases (#202)
+
+
+### Other
+- Cargo update to patch mls-crypto, openssl, quinn-proto, tar, tauri cves
+- Pnpm update to patch vitest critical + vite/kit/svelte/astro cascade
+- Pnpm.overrides for residual cookie/esbuild/ws transitive pins
+- Upgrade nostr and MDK dependencies
+
+
+### Styling
+- Run cargo fmt across src-tauri
+
+
+### Testing
+- Keep the archive-move failure gate honest under root
+
+## v0.5.2
+
+### Bug Fixes
 - Recover missed dm/giftwrap traffic on long-lived sessions
 - Harden session-recovery sync state machine against restart, panic, and clock races
 - Close wake-sync race and relay-toggle staleness in the DM sync UI
+
+
+### Chores
+- Bump version to 0.5.2 (release)
 
 ## v0.5.1
 
