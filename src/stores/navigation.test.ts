@@ -15,16 +15,19 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   LAST_SQUAD_ID_PREFIX,
   LAST_CHANNEL_ID_PREFIX,
   LAST_CHANNEL_BY_SQUAD_PREFIX,
   LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX,
+  SQUAD_NAV_ORDER_PREFIX,
   dashboardPollReplicaNonceByParentId,
   squadAllowlistNonceByParentId,
   squadTrackedTokensNonceByParentId,
   squadBotMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
+import { parseSquadNavOrder } from '../lib/squad/squad-nav-order';
 
 function mockStorage() {
   const store = new Map<string, string>();
@@ -60,6 +63,7 @@ describe('navigation', () => {
     lastOpenedChannelId.set(null);
     lastChannelBySquadId.set({});
     lastHubChannelNameBySquadId.set({});
+    squadNavOrder.set([]);
     dashboardPollReplicaNonceByParentId.set({});
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
@@ -128,6 +132,27 @@ describe('navigation', () => {
     expect(JSON.parse(storage.get(`${LAST_HUB_CHANNEL_NAME_BY_SQUAD_PREFIX}_npub1abc`) ?? '{}')).toEqual({
       s1: 'announcements',
     });
+  });
+
+  it('persists squad nav order under an npub-scoped key', () => {
+    setCurrentNpubForPersistence('npub1abc');
+    squadNavOrder.set(['s2', 's1']);
+    expect(JSON.parse(storage.get(`${SQUAD_NAV_ORDER_PREFIX}_npub1abc`) ?? '[]')).toEqual(['s2', 's1']);
+  });
+
+  it('parseSquadNavOrder treats corrupt storage as empty', () => {
+    expect(parseSquadNavOrder('{bad')).toEqual([]);
+    expect(parseSquadNavOrder('[1,2]')).toEqual([]);
+  });
+
+  it('does not leak squad nav order across accounts', () => {
+    setCurrentNpubForPersistence('npub1a');
+    squadNavOrder.set(['only-a']);
+    expect(JSON.parse(storage.get(`${SQUAD_NAV_ORDER_PREFIX}_npub1a`) ?? '[]')).toEqual(['only-a']);
+    setCurrentNpubForPersistence('npub1b');
+    squadNavOrder.set(['only-b']);
+    expect(JSON.parse(storage.get(`${SQUAD_NAV_ORDER_PREFIX}_npub1b`) ?? '[]')).toEqual(['only-b']);
+    expect(JSON.parse(storage.get(`${SQUAD_NAV_ORDER_PREFIX}_npub1a`) ?? '[]')).toEqual(['only-a']);
   });
 
   it('skips persistence when no npub is set', () => {

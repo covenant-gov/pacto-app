@@ -8,7 +8,6 @@ import {
   buildPlainMessageProps,
 } from './resolve-dm-message-presentation';
 import type { DmMessage } from '../../stores/dm';
-import type { PactoAppInboxEntry } from '../pacto-app-inbox';
 import type { NostrProfile } from '../api/nostr';
 
 const NPUB_A = 'npub1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -78,7 +77,7 @@ const WALLET_TX_ANNOUNCEMENT = JSON.stringify({
   from_evm_address: EVM_A,
 });
 
-function msg(overrides: Partial<PactoAppInboxEntry> = {}): DmMessage {
+function msg(overrides: Partial<DmMessage> = {}): DmMessage {
   return {
     id: 'm1',
     content: 'hello',
@@ -148,12 +147,11 @@ describe('resolveDmMessagePresentation', () => {
     });
   });
 
-  it('classifies channel-in-squad JSON', () => {
+  it('treats channel-in-squad JSON as structured notice (no invite card)', () => {
     const p = resolveDmMessagePresentation(msg({ content: CHANNEL_IN_SQUAD }));
-    expect(p.kind).toBe('channel-in-squad');
-    if (p.kind === 'channel-in-squad') {
-      expect(p.payload.channelGroupId).toBe('cg1');
-      expect(p.payload.channelName).toBe('general');
+    expect(p.kind).toBe('structured-notice');
+    if (p.kind === 'structured-notice') {
+      expect(p.text).toBe('Channel join');
     }
   });
 
@@ -224,7 +222,7 @@ describe('resolveDmMessagePresentation', () => {
 
 describe('isInvitePresentation', () => {
   it('covers invite kinds only', () => {
-    expect(isInvitePresentation({ kind: 'channel-in-squad', payload: {} as never })).toBe(true);
+    expect(isInvitePresentation({ kind: 'channel-in-squad', payload: {} as never })).toBe(false);
     expect(isInvitePresentation({ kind: 'squad-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'squad-pair-invite', payload: {} as never })).toBe(true);
     expect(isInvitePresentation({ kind: 'plain' })).toBe(false);
@@ -233,17 +231,7 @@ describe('isInvitePresentation', () => {
 });
 
 describe('inviteInviterNpub', () => {
-  it('reads inviterNpub from Pacto App inbox entries', () => {
-    const entry = msg({ inviterNpub: `  ${NPUB_A}  ` });
-    expect(inviteInviterNpub(entry, '__pacto_app__')).toBe(NPUB_A);
-  });
-
-  it('falls back to content inviter for Pacto App entries without inviterNpub', () => {
-    const entry = msg({ content: SQUAD_INVITE });
-    expect(inviteInviterNpub(entry, '__pacto_app__')).toBe(NPUB_A);
-  });
-
-  it('resolves peer npub for non-app threads', () => {
+  it('resolves peer npub from the DM sender', () => {
     const message = msg({ npub: NPUB_B, content: 'hi' });
     expect(inviteInviterNpub(message, NPUB_B)).toBe(NPUB_B);
   });

@@ -1,6 +1,5 @@
 /**
- * Pacto App synthetic DM thread (local inbox for squad / squad-pair invites).
- * See ai-docs/networks/RNF_PLAN.md RNF-4.
+ * Squad / squad-pair invite DM wire format, delivery, and attribution.
  */
 import {
   formatSquadInviteMessage,
@@ -9,24 +8,6 @@ import {
   type SquadInvitePayload,
 } from './api/nostr';
 import type { DmMessage } from '../stores/app';
-import { dedupeWalletTxAnnouncements } from './wallet/dm-messages';
-
-export const PACTO_APP_DM_THREAD_ID = '__pacto_app__';
-export const PACTO_APP_DISPLAY_NAME = 'Inbox';
-
-export interface PactoAppInboxEntry extends DmMessage {
-  /** Npub of the user who sent the invite (for display + DM deep link). */
-  inviterNpub: string;
-}
-
-export function isPactoAppThreadId(id: string | null | undefined): boolean {
-  return id === PACTO_APP_DM_THREAD_ID;
-}
-
-/** Squad / squad-pair invites routed to the Pacto App inbox. */
-export function isPactoAppRoutableInviteContent(content: string): boolean {
-  return parseSquadInviteMessage(content) !== null;
-}
 
 export function resolveInviteInviterNpub(
   message: DmMessage,
@@ -39,25 +20,7 @@ export function resolveInviteInviterNpub(
   return peerNpub;
 }
 
-export function toPactoAppInboxEntry(message: DmMessage, inviterNpub: string): PactoAppInboxEntry {
-  return { ...message, inviterNpub };
-}
-
-export function mergePactoAppInboxEntry(
-  list: PactoAppInboxEntry[],
-  entry: PactoAppInboxEntry
-): PactoAppInboxEntry[] {
-  if (list.some((m) => m.id === entry.id)) return list;
-  return [...list, entry].sort((a, b) => a.at - b.at);
-}
-
-/** Drop squad invite rows from a peer DM thread (shown in Pacto App instead). */
-export function filterPeerThreadMessages(messages: DmMessage[]): DmMessage[] {
-  const filtered = messages.filter((m) => !isPactoAppRoutableInviteContent(m.content ?? ''));
-  return dedupeWalletTxAnnouncements(filtered);
-}
-
-/** Send squad / squad-pair invite over Nostr; recipient ingests into Pacto App inbox locally. */
+/** Send a squad / squad-pair invite over Nostr as a regular DM. */
 export async function sendSquadInviteDm(
   inviteeNpub: string,
   payload: Omit<SquadInvitePayload, 'type'>,

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { WALLET_ASSETS_CHAIN_IDS, WALLET_CHAIN_GROUPS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -20,6 +22,12 @@
   } from '../../lib/wallet/rpc-prefs';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { showToast } from '../../stores/toast';
+
+  const tFn = get(t);
+
+  function tokenSourceLabel(source: string): string {
+    return $t(source === 'custom' ? 'settings.tokenSourceCustom' : 'settings.tokenSourceCatalog');
+  }
 
   export let accountNpub: string | null = null;
   export let enabledSet: Set<SupportedChainId>;
@@ -120,25 +128,25 @@
       return;
     }
     newRpcUrl = '';
-    showToast('Personal RPC added.');
+    showToast(tFn('settings.toast.personalRpcAdded'));
   }
 
   function onRemovePersonalRpc(url: string) {
     if (!accountNpub) return;
     removePersonalRpc(accountNpub, rpcNetworkFilter, url);
-    showToast('Personal RPC removed.');
+    showToast(tFn('settings.toast.personalRpcRemoved'));
   }
 </script>
 
 <section class="evm-extras-section evm-extras-section--first" aria-labelledby="wallet-networks-heading">
-  <h2 id="wallet-networks-heading" class="evm-extras-h2">Enabled chains</h2>
+  <h2 id="wallet-networks-heading" class="evm-extras-h2">{$t('settings.enabledChainsTitle')}</h2>
   <p class="evm-extras-hint">
-    Enable chains you use. At least one must stay on. Affects Send, balances, and the DM wallet sidebar.
+    {$t('settings.enabledChainsHint')}
   </p>
   <div class="evm-extras-chain-groups">
     {#each WALLET_CHAIN_GROUPS as group (group.id)}
       <div class="evm-extras-chain-group">
-        <h3 class="evm-extras-chain-group-label">{group.label}</h3>
+        <h3 class="evm-extras-chain-group-label">{$t(group.label)}</h3>
         <ul class="evm-extras-toggle-list">
           {#each group.chains as chain (chain)}
             <li>
@@ -161,14 +169,14 @@
 
 <section class="evm-extras-section" aria-labelledby="wallet-tokens-heading">
   <div class="evm-extras-section-head">
-    <h2 id="wallet-tokens-heading" class="evm-extras-h2">Tokens to track</h2>
-    <button type="button" class="evm-extras-btn" on:click={onImportTokens}>Import tokens</button>
+    <h2 id="wallet-tokens-heading" class="evm-extras-h2">{$t('settings.tokensToTrackTitle')}</h2>
+    <button type="button" class="evm-extras-btn" on:click={onImportTokens}>{$t('settings.importTokensButton')}</button>
   </div>
-  <p class="evm-extras-hint">Tracked assets appear in Send and in the DM wallet sidebar (per network).</p>
+  <p class="evm-extras-hint">{$t('settings.trackedTokensHint')}</p>
   <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-token-network-select">Network</label>
+    <label class="evm-extras-filter-label" for="evm-token-network-select">{$t('wallet.networkLabel')}</label>
     <select id="evm-token-network-select" class="evm-extras-select" bind:value={tokenNetworkFilter}>
-      <option value="all">All networks</option>
+      <option value="all">{$t('settings.allNetworksOption')}</option>
       {#each enabledChainIdsOrdered as chainId (chainId)}
         <option value={chainId}>
           {getWalletNetworkDisplayName(chainId)}
@@ -177,10 +185,10 @@
     </select>
   </div>
   {#if watchedRows.length === 0}
-    <p class="evm-extras-empty">No extra tokens yet. Native ETH balances still show when RPCs are available.</p>
+    <p class="evm-extras-empty">{$t('settings.noExtraTokensYet')}</p>
   {:else if filteredWatchedRows.length === 0}
     <p class="evm-extras-empty">
-      No tokens tracked on {tokenNetworkFilter === 'all' ? 'this filter' : getWalletNetworkDisplayName(tokenNetworkFilter)}.
+      {$t('settings.noTokensOnFilter', { values: { network: tokenNetworkFilter === 'all' ? $t('settings.thisFilterFallback') : getWalletNetworkDisplayName(tokenNetworkFilter) } })}
     </p>
   {:else}
     <ul class="evm-extras-token-list">
@@ -190,9 +198,9 @@
             <span class="evm-extras-token-sym">{row.symbol}</span>
             <span class="evm-extras-token-net">{getWalletNetworkDisplayName(row.network)}</span>
             <code class="evm-extras-token-addr">{row.address.slice(0, 10)}…{row.address.slice(-6)}</code>
-            <span class="evm-extras-token-src">{row.source}</span>
+            <span class="evm-extras-token-src">{tokenSourceLabel(row.source)}</span>
           </div>
-          <button type="button" class="evm-extras-btn-text" on:click={() => onRemoveWatchedRow(row)}>Remove</button>
+          <button type="button" class="evm-extras-btn-text" on:click={() => onRemoveWatchedRow(row)}>{$t('settings.remove')}</button>
         </li>
       {/each}
     </ul>
@@ -200,13 +208,13 @@
 </section>
 
 <section class="evm-extras-section" aria-labelledby="wallet-rpc-heading">
-  <h2 id="wallet-rpc-heading" class="evm-extras-h2">RPC endpoints</h2>
+  <h2 id="wallet-rpc-heading" class="evm-extras-h2">{$t('settings.rpcEndpointsTitle')}</h2>
   <p class="evm-extras-hint">
-    Choose which JSON-RPC endpoint Pacto uses for balances, reads, and on-chain actions on each network.
+    {$t('settings.rpcEndpointsHint')}
   </p>
 
   <div class="evm-extras-token-filters">
-    <label class="evm-extras-filter-label" for="evm-rpc-network-select">Network</label>
+    <label class="evm-extras-filter-label" for="evm-rpc-network-select">{$t('wallet.networkLabel')}</label>
     <select id="evm-rpc-network-select" class="evm-extras-select" bind:value={rpcNetworkFilter}>
       {#each enabledChainIdsOrdered as chainId (chainId)}
         <option value={chainId}>
@@ -217,14 +225,14 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">Personal RPC</h3>
+    <h3 class="evm-extras-h3">{$t('settings.personalRpcTitle')}</h3>
     {#if personalRpcs.length === 0}
       <p class="evm-extras-empty evm-extras-rpc-empty">
-        No personal RPC yet.
+        {$t('settings.noPersonalRpcYet')}
         <button type="button" class="evm-extras-inline-link" on:click={openAlchemySignup}>
-          Get a free RPC
+          {$t('settings.getFreeRpcLink')}
         </button>
-        from a provider below, then paste it under Add RPC.
+        {$t('settings.addRpcHint')}
       </p>
     {:else}
       <ul class="evm-extras-rpc-list">
@@ -232,7 +240,7 @@
           <li class="evm-extras-rpc-row">
             <code class="evm-extras-rpc-url" title={url}>{formatRpcDisplay(url)}</code>
             <button type="button" class="evm-extras-btn-text" on:click={() => onRemovePersonalRpc(url)}>
-              Remove
+              {$t('settings.remove')}
             </button>
           </li>
         {/each}
@@ -241,7 +249,7 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <h3 class="evm-extras-h3">Add RPC</h3>
+    <h3 class="evm-extras-h3">{$t('settings.addRpcTitle')}</h3>
     <div class="evm-extras-rpc-add">
       <input
         id="evm-add-rpc-input"
@@ -253,7 +261,7 @@
         bind:value={newRpcUrl}
         on:keydown={(e) => e.key === 'Enter' && submitAddRpc()}
       />
-      <button type="button" class="evm-extras-btn" on:click={submitAddRpc}>Add</button>
+      <button type="button" class="evm-extras-btn" on:click={submitAddRpc}>{$t('settings.addRpcButton')}</button>
     </div>
     {#if addRpcError}
       <p class="evm-extras-field-error" role="alert">{addRpcError}</p>
@@ -261,51 +269,50 @@
   </div>
 
   <div class="evm-extras-rpc-block">
-    <label class="evm-extras-filter-label" for="evm-default-rpc-select">Default RPC</label>
+    <label class="evm-extras-filter-label" for="evm-default-rpc-select">{$t('settings.defaultRpcTitle')}</label>
     <select
       id="evm-default-rpc-select"
       class="evm-extras-select evm-extras-select--wide"
       bind:value={selectedDefaultRpc}
       on:change={onDefaultRpcChange}
     >
-      <option value="">Curated defaults (automatic)</option>
+      <option value="">{$t('settings.defaultRpcCuratedDefaults')}</option>
       {#each defaultRpcOptions as opt (opt.value)}
         <option value={opt.value}>{opt.label}</option>
       {/each}
     </select>
-    <p class="evm-extras-field-hint">Includes your personal RPCs and curated public endpoints for this network.</p>
+    <p class="evm-extras-field-hint">{$t('settings.defaultRpcHint')}</p>
   </div>
 
   <div class="evm-extras-rpc-providers">
     <div class="evm-extras-rpc-providers-head">
-      <h3 class="evm-extras-h3">RPC API Providers</h3>
+      <h3 class="evm-extras-h3">{$t('settings.rpcApiProvidersTitle')}</h3>
       <div class="evm-extras-provider-buttons">
         <button type="button" class="evm-extras-btn evm-extras-btn-secondary" on:click={openAlchemySignup}>
-          Alchemy
+          {$t('settings.alchemyProvider')}
         </button>
         <span class="evm-extras-provider-sep" aria-hidden="true">|</span>
         <button type="button" class="evm-extras-btn evm-extras-btn-secondary" on:click={openPocketSignup}>
-          Pocket
+          {$t('settings.pocketProvider')}
         </button>
       </div>
     </div>
     <p class="evm-extras-field-hint">
-      These providers offer free subscriptions that have high enough limits for basic squad on-chain activities.
+      {$t('settings.rpcProvidersHint')}
     </p>
   </div>
 </section>
 
 <section class="evm-extras-section evm-extras-section--last" aria-labelledby="wallet-external-heading">
-  <h2 id="wallet-external-heading" class="evm-extras-h2">Using this address in an external wallet</h2>
+  <h2 id="wallet-external-heading" class="evm-extras-h2">{$t('settings.externalWalletTitle')}</h2>
   <div class="evm-extras-external-copy">
     <p>
-      If you want to use the same key pair outside Pacto, import your private key into a well-established wallet app
-      (MetaMask, Rabby, etc.). Export one key at a time from the account list above.
+      {$t('settings.externalWalletParagraph1')}
     </p>
     <p>
-      Pacto is built primarily for <strong>governance</strong> with an in-app wallet for squad operations—not for
-      browsing arbitrary DeFi or unreviewed smart contracts. If you need that kind of power-user activity, a dedicated
-      external wallet is a better fit; Pacto is not designed to be your everyday wallet across the whole ecosystem.
+      <!-- eslint-disable svelte/no-at-html-tags -->
+      {@html $t('settings.externalWalletParagraph2')}
+      <!-- eslint-enable svelte/no-at-html-tags -->
     </p>
   </div>
 </section>
@@ -641,14 +648,6 @@
     margin: 0;
     font-size: 0.875rem;
     color: var(--text-muted);
-  }
-
-  .evm-extras-code {
-    font-size: 0.8em;
-    padding: 2px 6px;
-    background: var(--bg-elevated);
-    border-radius: 4px;
-    word-break: break-all;
   }
 
   .evm-extras-external-copy {

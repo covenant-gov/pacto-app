@@ -2,14 +2,19 @@
   import { loadAndDecryptKey } from '../../lib/api/encryption';
   import { exportEvmAccountKeyPlaintext, exportRecoveryPhrase } from '../../lib/api/auth';
   import { listEvmAccounts } from '../../lib/wallet/evm-accounts';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { copyTextToClipboard } from '../../lib/wallet/clipboard-copy';
   import { portal } from '../../lib/utils/portal';
   import { showToast } from '../../stores/toast';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   export let npub = '';
   export let onClose: () => void = () => {};
+
+  const tFn = get(t);
 
   type Phase = 'pin' | 'export';
 
@@ -27,7 +32,7 @@
   }
 
   let phase: Phase = 'pin';
-  let pinDigits = ['', '', '', '', '', ''];
+  let pinDigits = Array(6).fill('');
   let pinError = '';
   let busy = false;
   let bundle: ExportBundle | null = null;
@@ -35,6 +40,9 @@
   let pinInputs: HTMLInputElement[] = [];
 
   let wasOpen = false;
+
+  $: pinDigitCount = $appConfig.pinDigitCount;
+  $: if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
 
   $: {
     if (open && !wasOpen && phase === 'pin') {
@@ -48,7 +56,7 @@
 
   function resetState() {
     phase = 'pin';
-    pinDigits = ['', '', '', '', '', ''];
+    pinDigits = Array(pinDigitCount).fill('');
     pinError = '';
     busy = false;
     bundle = null;
@@ -67,13 +75,19 @@
     revealed = next;
   }
 
-  async function copyValue(id: string, value: string, label: string) {
+  async function copyValue(id: string, value: string, _label: string) {
     if (!value) return;
+    const labelKey =
+      id === 'seed'
+        ? 'export.modal.label.seedPhrase'
+        : id === 'nsec'
+          ? 'export.modal.label.nsec'
+          : 'export.modal.label.privateKey';
     const ok = await copyTextToClipboard(value);
     if (ok) {
-      showToast(`${label} copied`);
+      showToast(tFn('export.toast.copied', { values: { label: tFn(labelKey) } }));
     } else {
-      showToast(`Could not copy ${label.toLowerCase()}`);
+      showToast(tFn('export.toast.couldNotCopy', { values: { label: tFn(labelKey) } }));
     }
   }
 
@@ -105,8 +119,8 @@
   async function handlePinSubmit() {
     if (busy) return;
     const pinValue = pinDigits.join('');
-    if (pinValue.length !== 6) {
-      pinError = 'PIN must be 6 digits';
+    if (pinValue.length !== pinDigitCount) {
+      pinError = tFn('auth.pinMustBeSixDigits', { values: { count: pinDigitCount } });
       return;
     }
 
@@ -117,10 +131,10 @@
       revealed = new Set();
       phase = 'export';
     } catch (e) {
-      pinError = 'Incorrect PIN or export failed';
+      pinError = tFn('auth.incorrectPinOrExportFailed');
       console.error('Export all failed:', e);
-      showToast(getInvokeErrorMessage(e, 'Could not export secrets.'));
-      pinDigits = ['', '', '', '', '', ''];
+      showToast(getInvokeErrorMessage(e, tFn('export.error.couldNotExportSecrets')));
+      pinDigits = Array(pinDigitCount).fill('');
       setTimeout(() => pinInputs[0]?.focus(), 100);
     } finally {
       busy = false;
@@ -136,7 +150,7 @@
     }
     pinDigits[index] = value;
     pinError = '';
-    if (value && index < 5) pinInputs[index + 1]?.focus();
+    if (value && index < pinDigitCount - 1) pinInputs[index + 1]?.focus();
     if (pinDigits.every((d) => d !== '')) void handlePinSubmit();
   }
 
@@ -151,7 +165,7 @@
       event.preventDefault();
     } else if (event.key === 'ArrowLeft' && index > 0) {
       pinInputs[index - 1]?.focus();
-    } else if (event.key === 'ArrowRight' && index < 5) {
+    } else if (event.key === 'ArrowRight' && index < pinDigitCount - 1) {
       pinInputs[index + 1]?.focus();
     } else if (event.key === 'Enter') {
       void handlePinSubmit();
@@ -160,13 +174,13 @@
 
   function handlePinPaste(event: ClipboardEvent) {
     event.preventDefault();
-    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, 6);
+    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, pinDigitCount);
     digits.forEach((digit, i) => {
-      if (i < 6) pinDigits[i] = digit;
+      if (i < pinDigitCount) pinDigits[i] = digit;
     });
-    const lastIndex = Math.min(digits.length - 1, 5);
+    const lastIndex = Math.min(digits.length - 1, pinDigitCount - 1);
     pinInputs[lastIndex]?.focus();
-    if (digits.length === 6) void handlePinSubmit();
+    if (digits.length === pinDigitCount) void handlePinSubmit();
   }
 
   function evmRowLabel(row: EvmSecretRow): string {
@@ -192,8 +206,8 @@
       tabindex="0"
     >
       {#if phase === 'pin'}
-        <h2 id="export-all-title">Enter PIN</h2>
-        <p class="modal-subtitle">Enter your PIN to export all account secrets for backup or migration.</p>
+        <h2 id="export-all-title">{$t('auth.pinEnterTitle')}</h2>
+        <p class="modal-subtitle">{$t('export.modal.pinSubtitle.all')}</p>
 
         {#if pinError}
           <div class="modal-error" role="alert">{pinError}</div>
@@ -209,7 +223,7 @@
               class="pin-box"
               value={digit}
               disabled={busy}
-              aria-label="PIN digit {i + 1}"
+              aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
               on:input={(e) => handlePinInput(i, e)}
               on:keydown={(e) => handlePinKeydown(i, e)}
               on:paste={handlePinPaste}
@@ -218,25 +232,25 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>Cancel</button>
+          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
           <button
             type="button"
             class="btn-confirm"
             on:click={handlePinSubmit}
             disabled={busy || pinDigits.some((d) => d === '')}
           >
-            {busy ? 'Verifying…' : 'Continue'}
+            {busy ? $t('commons.verifying') : $t('auth.continue')}
           </button>
         </div>
       {:else if bundle}
-        <h2 id="export-all-title">Export all</h2>
+        <h2 id="export-all-title">{$t('export.modal.title.all')}</h2>
         <p class="modal-warning">
-          Anyone with these secrets can control your account. Store offline and never share them.
+          {$t('export.modal.warning.all')}
         </p>
 
         <div class="export-sections">
           <section class="export-section">
-            <h3 class="export-section-title">Seed phrase</h3>
+            <h3 class="export-section-title">{$t('export.modal.section.seedPhrase')}</h3>
             {#if bundle.seed}
               <div class="secret-value-shell">
                 <div class="secret-value-main">
@@ -251,8 +265,10 @@
                     type="button"
                     class="btn-reveal-secret"
                     aria-pressed={revealed.has('seed')}
-                    aria-label={revealed.has('seed') ? 'Hide seed phrase' : 'Reveal seed phrase'}
-                    title={revealed.has('seed') ? 'Hide' : 'Reveal'}
+                    aria-label={revealed.has('seed')
+                      ? $t('export.modal.hide.seedPhrase')
+                      : $t('export.modal.reveal.seedPhrase')}
+                    title={revealed.has('seed') ? $t('commons.hide') : $t('commons.reveal')}
                     on:click={() => toggleReveal('seed')}
                   >
                     {#if revealed.has('seed')}
@@ -269,8 +285,8 @@
                   <button
                     type="button"
                     class="btn-copy"
-                    aria-label="Copy seed phrase"
-                    title="Copy"
+                    aria-label={$t('export.modal.aria.copySeedPhrase')}
+                    title={$t('settings.copy')}
                     on:click={() => copyValue('seed', bundle!.seed ?? '', 'Seed phrase')}
                   >
                     <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -281,12 +297,12 @@
                 </div>
               </div>
             {:else}
-              <p class="export-unavailable">Not stored for this account.</p>
+              <p class="export-unavailable">{$t('export.modal.unavailable.seed')}</p>
             {/if}
           </section>
 
           <section class="export-section">
-            <h3 class="export-section-title">Nostr private key</h3>
+            <h3 class="export-section-title">{$t('export.modal.section.nostrPrivateKey')}</h3>
             <code class="export-label">{npub || 'nPub'}</code>
             <div class="secret-value-shell">
               <div class="secret-value-main">
@@ -301,8 +317,10 @@
                   type="button"
                   class="btn-reveal-secret"
                   aria-pressed={revealed.has('nsec')}
-                  aria-label={revealed.has('nsec') ? 'Hide nsec' : 'Reveal nsec'}
-                  title={revealed.has('nsec') ? 'Hide' : 'Reveal'}
+                  aria-label={revealed.has('nsec')
+                    ? $t('export.modal.hide.nsec')
+                    : $t('export.modal.reveal.nsec')}
+                  title={revealed.has('nsec') ? $t('commons.hide') : $t('commons.reveal')}
                   on:click={() => toggleReveal('nsec')}
                 >
                   {#if revealed.has('nsec')}
@@ -319,8 +337,8 @@
                 <button
                   type="button"
                   class="btn-copy"
-                  aria-label="Copy nsec"
-                  title="Copy"
+                  aria-label={$t('export.modal.aria.copyNsec')}
+                  title={$t('settings.copy')}
                   on:click={() => copyValue('nsec', bundle!.nsec, 'nsec')}
                 >
                   <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -333,9 +351,9 @@
           </section>
 
           <section class="export-section">
-            <h3 class="export-section-title">EVM private keys</h3>
+            <h3 class="export-section-title">{$t('export.modal.section.evmPrivateKeys')}</h3>
             {#if bundle.evmKeys.length === 0}
-              <p class="export-unavailable">No EVM accounts on this device.</p>
+              <p class="export-unavailable">{$t('export.modal.unavailable.evm')}</p>
             {:else}
               <ul class="evm-export-list">
                 {#each bundle.evmKeys as row (row.id)}
@@ -355,8 +373,10 @@
                           type="button"
                           class="btn-reveal-secret"
                           aria-pressed={revealed.has(rowKey)}
-                          aria-label={revealed.has(rowKey) ? 'Hide private key' : 'Reveal private key'}
-                          title={revealed.has(rowKey) ? 'Hide' : 'Reveal'}
+                          aria-label={revealed.has(rowKey)
+                            ? $t('export.modal.hide.privateKey')
+                            : $t('export.modal.reveal.privateKey')}
+                          title={revealed.has(rowKey) ? $t('commons.hide') : $t('commons.reveal')}
                           on:click={() => toggleReveal(rowKey)}
                         >
                           {#if revealed.has(rowKey)}
@@ -373,8 +393,8 @@
                         <button
                           type="button"
                           class="btn-copy"
-                          aria-label="Copy private key for {row.address}"
-                          title="Copy"
+                          aria-label={$t('export.modal.aria.copyPrivateKeyForAddress', { values: { address: row.address } })}
+                          title={$t('settings.copy')}
                           on:click={() => copyValue(rowKey, row.privateKey, 'Private key')}
                         >
                           <svg class="copy-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -392,7 +412,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-close" on:click={handleClose}>Close</button>
+          <button type="button" class="btn-close" on:click={handleClose}>{$t('commons.close')}</button>
         </div>
       {/if}
     </div>

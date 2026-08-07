@@ -5,6 +5,7 @@
 
 import { get } from 'svelte/store';
 import { connect as apiConnect } from '../api/auth';
+import { monitorRelayConnections } from '../api/relays';
 import { fetchMessages, refreshProfileNow, syncMlsGroupsNow } from '../api/nostr';
 import { dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
@@ -17,7 +18,24 @@ import {
 } from '../../stores/startup-check';
 import { isDevBuild } from '../updater/update-check';
 
+/** True once `runPostLoginNetworkSync` has been called this process; app restart resets it. */
+export let hasRunPostLoginNetworkSyncThisSession = false;
+
+/** Reset the per-process guard. Used by tests; app restart naturally resets it. */
+export function resetPostLoginNetworkSyncSession(): void {
+  hasRunPostLoginNetworkSyncThisSession = false;
+}
+
 export function runPostLoginNetworkSync(npub: string): void {
+  // Set synchronously (not inside the async IIFE below) so a caller that checks this flag
+  // right after triggering login — e.g. +page.svelte's onMount fallback — sees it before
+  // its own mount logic runs, even though the actual sync work below is still in flight.
+  hasRunPostLoginNetworkSyncThisSession = true;
+  // Also set synchronously: wake-sync's focus/visibilitychange/resume listeners are
+  // installed in the same onMount pass and only guard against a competing catch-up
+  // fetch by checking dmSyncStatus. Setting this after `await apiConnect()` would leave
+  // a gap where a wake event landing before the connect resolves slips past that guard.
+  dmSyncStatus.set('syncing');
   scheduleCommonsStartupPrefetch();
   void (async () => {
     try {
@@ -28,8 +46,9 @@ export function runPostLoginNetworkSync(npub: string): void {
       console.error('connect after login failed:', e);
     }
 
+    monitorRelayConnections().catch((e) => console.error('monitor_relay_connections failed:', e));
+
     dmLog('post-login: fetchMessages(true)');
-    dmSyncStatus.set('syncing');
     fetchMessages(true).catch((e) => console.error('fetch_messages failed:', e));
 
     try {

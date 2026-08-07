@@ -16,7 +16,6 @@
   import { getEvmAddress } from '../../lib/api/auth';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
   import { notifyUserAction } from '../../lib/utils/desktop-notify';
-  import { isPactoAppThreadId, PACTO_APP_DISPLAY_NAME } from '../../lib/pacto-app-inbox';
   import { isScrollAtBottom } from '../../lib/dm/dm-unread';
   import { shouldStackWithPrevious } from '../../lib/dm/message-stack';
   import { dmThreadScrolledToBottom } from '../../stores/app';
@@ -36,16 +35,26 @@
     appendDmThreadAnnouncement,
     reciprocatedWalletPeerInfoRequestIds,
   } from '../../stores/app';
+  import { dmSyncStatusEffective } from '../../stores/dm';
+  import SyncStatusIndicator from './SyncStatusIndicator.svelte';
+  import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
 
   export let npub: string;
   export let messages: DmMessage[] = [];
   export let canLoadOlder = false;
   export let loadingOlder = false;
   export let onLoadOlder: () => void = () => {};
-  export let onSend: (content: string) => void | boolean | Promise<boolean> = () => {};
+  export let onSend: (content: string, repliedTo?: string) => void | boolean | Promise<boolean> = () => {};
+  export let onSendFile:
+    | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
+    | undefined = undefined;
   export let onTyping: () => void = () => {};
   export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
   export let onAcceptChannelInSquad: (
@@ -71,6 +80,52 @@
   export let onOpenInviterChat: ((inviterNpub: string) => void) | undefined = undefined;
   /** Called when the user scrolls to the bottom — marks messages read up to `messageId`. */
   export let onMarkReadUpTo: (messageId: string) => void = () => {};
+
+  let replyToMessageId: string | null = null;
+  let replyPreview: string | undefined = undefined;
+
+  function onReply(event: CustomEvent<{ messageId: string }>) {
+    const messageId = event.detail.messageId;
+    const msg = messages.find((m) => m.id === messageId);
+    if (!msg) return;
+    replyToMessageId = messageId;
+    replyPreview =
+      msg.attachments && msg.attachments.length > 0
+        ? 'Attachment'
+        : msg.content && msg.content.length > 0
+          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
+          : 'Message';
+  }
+
+  function cancelReply() {
+    replyToMessageId = null;
+    replyPreview = undefined;
+  }
+
+  async function handleSend(content: string, repliedTo?: string) {
+    const result = await Promise.resolve(onSend(content, repliedTo ?? ''));
+    if (result !== false) {
+      cancelReply();
+    }
+    return result;
+  }
+
+  async function handleSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    if (!onSendFile) return;
+    await onSendFile(bytes, fileName, repliedTo, useCompression);
+    cancelReply();
+  }
+
+  let prevNpubForReply: string | null = null;
+  $: if (npub !== prevNpubForReply) {
+    prevNpubForReply = npub;
+    cancelReply();
+  }
 
   function lastReadableMessageId(): string | null {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -108,7 +163,6 @@
     notifyIfAtBottom();
   }
 
-  $: isPactoAppThread = isPactoAppThreadId(npub);
   let appliedWalletGrantIds = new Set<string>();
   let appliedWalletGrantsForNpub: string | null = null;
   let reciprocalGrantInFlight = new Set<string>();
@@ -173,7 +227,7 @@
           }
           if (!myAddr) {
             reciprocalGrantInFlight.delete(g.request_id);
-            showToast('Add or select a wallet to finish sharing your payout address.');
+            showToast(tFn('messaging.dm.wallet.addWalletForPayout'));
             return;
           }
           if (
@@ -200,14 +254,14 @@
           }
           if (sendResult === false) {
             reciprocalGrantInFlight.delete(g.request_id);
-            showToast('Could not share your address. Open the chat to try again.');
+            showToast(tFn('messaging.dm.wallet.shareAddressError'));
             return;
           }
           reciprocatedWalletPeerInfoRequestIds.update((ids) =>
             ids.includes(g.request_id) ? ids : [...ids, g.request_id]
           );
           dmWalletPeerExchangeTick.update((t: number) => t + 1);
-          showToast('Wallet addresses exchanged for this chat.');
+          showToast(tFn('messaging.dm.wallet.addressExchanged'));
         } catch {
           reciprocalGrantInFlight.delete(g.request_id);
         }
@@ -244,16 +298,14 @@
     dmThreadScrolledToBottom.set(false);
   }
 
-  $: contactProfile = isPactoAppThread ? null : npub ? $profiles[npub] : null;
+  $: contactProfile = npub ? $profiles[npub] : null;
   $: peerBlockedByMe = contactProfile?.blocked === true;
-  $: contactAvatarSrc = isPactoAppThread ? null : getProfileAvatarSrc(contactProfile);
-  $: contactDisplayName = isPactoAppThread
-    ? PACTO_APP_DISPLAY_NAME
-    : contactProfile
-      ? getProfileDisplayName(contactProfile)
-      : npub
-        ? truncateNpub(npub)
-        : 'Unknown';
+  $: contactAvatarSrc = getProfileAvatarSrc(contactProfile);
+  $: contactDisplayName = contactProfile
+    ? getProfileDisplayName(contactProfile)
+    : npub
+      ? truncateNpub(npub)
+      : $t('messaging.message.replyUnknown');
 
   let menuOpen = false;
   let showNicknameEdit = false;
@@ -291,17 +343,17 @@
       if (nowBlocked) {
         appendDmThreadAnnouncement(
           npub,
-          `You blocked ${peerLabel}. New messages from this user are ignored.`
+          tFn('messaging.dm.thread.blockedAnnouncement', { values: { peerLabel } })
         );
-        showToast('Blocked. New messages from this user are ignored. Relays may still deliver data to the app.');
-        notifyUserAction('Blocked user', `${peerLabel} is blocked.`);
+        showToast(tFn('messaging.dm.thread.blockToast'));
+        notifyUserAction(tFn('messaging.dm.thread.blockedNotifyTitle'), tFn('messaging.dm.thread.blockedNotifyBody', { values: { peerLabel } }));
       } else {
-        appendDmThreadAnnouncement(npub, `You unblocked ${peerLabel}.`);
-        showToast('User unblocked.');
-        notifyUserAction('Unblocked user', `${peerLabel} is unblocked.`);
+        appendDmThreadAnnouncement(npub, tFn('messaging.dm.thread.unblockedAnnouncement', { values: { peerLabel } }));
+        showToast(tFn('messaging.dm.thread.unblockToast'));
+        notifyUserAction(tFn('messaging.dm.thread.unblockedNotifyTitle'), tFn('messaging.dm.thread.unblockedNotifyBody', { values: { peerLabel } }));
       }
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Could not update block status.');
+      showToast(e instanceof Error ? e.message : tFn('messaging.dm.thread.blockError'));
     }
   }
 
@@ -328,7 +380,7 @@
       await onSaveNickname(nicknameEditValue.trim());
       showNicknameEdit = false;
     } catch (e: unknown) {
-      nicknameError = e instanceof Error ? e.message : 'Failed to set nickname';
+      nicknameError = e instanceof Error ? e.message : tFn('messaging.dm.thread.nicknameError');
     } finally {
       nicknameSaving = false;
     }
@@ -344,11 +396,11 @@
 
 <div class="dm-thread">
   <div class="dm-thread-header">
-    <div class="dm-thread-header-avatar" class:pacto-app-avatar={isPactoAppThread}>
+    <div class="dm-thread-header-avatar">
       {#if contactAvatarSrc}
         <img src={contactAvatarSrc} alt="" class="dm-thread-header-avatar-img" />
       {:else}
-        <span class="dm-thread-header-avatar-placeholder">{isPactoAppThread ? 'I' : contactDisplayName.charAt(0).toUpperCase()}</span>
+        <span class="dm-thread-header-avatar-placeholder">{contactDisplayName.charAt(0).toUpperCase()}</span>
       {/if}
     </div>
     <div class="dm-thread-header-info">
@@ -357,15 +409,15 @@
           <input
             type="text"
             class="dm-thread-nickname-input"
-            placeholder="Nickname"
+            placeholder={$t('messaging.dm.thread.nicknamePlaceholder')}
             bind:value={nicknameEditValue}
             on:keydown={(e) => e.key === 'Escape' && cancelNicknameEdit()}
           />
           <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-save" on:click={saveNickname} disabled={nicknameSaving}>
-            {nicknameSaving ? 'Saving…' : 'Save'}
+            {nicknameSaving ? $t('messaging.dm.thread.savingNickname') : $t('messaging.dm.thread.saveNickname')}
           </button>
           <button type="button" class="dm-thread-nickname-btn dm-thread-nickname-cancel" on:click={cancelNicknameEdit} disabled={nicknameSaving}>
-            Cancel
+            {$t('messaging.dm.thread.cancel')}
           </button>
         </div>
         {#if nicknameError}
@@ -375,12 +427,14 @@
         <div class="dm-thread-header-title-row">
           <div class="dm-thread-title-left">
             <h3 class="dm-thread-title">{contactDisplayName}</h3>
-            {#if showOptionsMenu && !isPactoAppThread}
+            <SyncStatusIndicator status={$dmSyncStatusEffective} />
+            {#if showOptionsMenu}
+              <NotificationLevelIndicator chatId={npub} onOpen={() => (menuOpen = true)} />
               <div class="dm-thread-header-actions">
                 <button
                   type="button"
                   class="dm-thread-dropdown-trigger"
-                  title="Options"
+                  title={$t('messaging.dm.thread.optionsTitle')}
                   on:click={() => (menuOpen = !menuOpen)}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
@@ -394,22 +448,23 @@
                 {#if menuOpen}
                   <div class="dm-thread-dropdown" role="menu">
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={openNicknameEdit}>
-                      Set Nickname
+                      {$t('messaging.dm.thread.setNickname')}
                     </button>
                     <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={toggleBlockUser}>
-                      {$profiles[npub]?.blocked ? 'Unblock User' : 'Block User'}
+                      {$profiles[npub]?.blocked ? $t('messaging.dm.thread.unblockUser') : $t('messaging.dm.thread.blockUser')}
                     </button>
                     {#if showPinOption}
                       {#if $pinnedDmNpubs.has(npub)}
                         <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={unpinDm}>
-                          Unpin DM
+                          {$t('messaging.dm.thread.unpinDm')}
                         </button>
                       {:else}
                         <button type="button" class="dm-thread-dropdown-item" role="menuitem" on:click={pinDm}>
-                          Pin DM
+                          {$t('messaging.dm.thread.pinDm')}
                         </button>
                       {/if}
                     {/if}
+                    <NotificationLevelMenu chatId={npub} onSelect={() => (menuOpen = false)} />
                     {#if onDeleteChat}
                       <button
                         type="button"
@@ -420,7 +475,7 @@
                           onDeleteChat();
                         }}
                       >
-                        Delete Chat
+                        {$t('messaging.dm.thread.deleteChat')}
                       </button>
                     {/if}
                   </div>
@@ -428,12 +483,12 @@
               </div>
             {/if}
           </div>
-          {#if showWalletButton && !isPactoAppThread}
+          {#if showWalletButton}
             <button
               type="button"
               class="dm-thread-wallet-btn"
-              title={$dmWalletSidebarVisible ? 'Close wallet' : 'Open wallet'}
-              aria-label={$dmWalletSidebarVisible ? 'Close wallet sidebar' : 'Open wallet sidebar'}
+              title={$dmWalletSidebarVisible ? $t('messaging.dm.thread.closeWallet') : $t('messaging.dm.thread.openWallet')}
+              aria-label={$dmWalletSidebarVisible ? $t('messaging.dm.thread.closeWalletSidebar') : $t('messaging.dm.thread.openWalletSidebar')}
               aria-expanded={$dmWalletSidebarVisible}
               aria-controls="wallet-bar"
               on:click={() => toggleWalletSidebar()}
@@ -456,13 +511,12 @@
             </button>
           {/if}
         </div>
-        {#if !isPactoAppThread}
         <div class="dm-thread-npub-row">
           <span class="dm-thread-npub">{truncateNpub(npub)}</span>
           <button
             type="button"
             class="dm-thread-copy-btn"
-            title="Copy full npub"
+            title={$t('messaging.dm.thread.copyNpub')}
             on:click={() => navigator.clipboard?.writeText(npub)}
           >
             <span class="dm-thread-copy-icon" aria-hidden="true">
@@ -473,7 +527,6 @@
             </span>
           </button>
         </div>
-        {/if}
       {/if}
     </div>
   </div>
@@ -481,7 +534,7 @@
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>
-          {loadingOlder ? 'Loading…' : 'Load older messages'}
+          {loadingOlder ? $t('messaging.dm.thread.loading') : $t('messaging.dm.thread.loadOlder')}
         </button>
       </div>
     {/if}
@@ -490,7 +543,6 @@
         <DmMessageRouter
           {msg}
           {npub}
-          {isPactoAppThread}
           {contactDisplayName}
           {fulfilledWalletRequestIds}
           {acceptingSquadInviteId}
@@ -504,27 +556,30 @@
           {onDeclineWalletPeerInfoRequest}
           {onOpenInviterChat}
           compact={shouldStackWithPrevious(messages[i - 1], msg)}
+          on:reply={onReply}
         />
       {/each}
     {:else}
-      <p class="dm-thread-placeholder">No messages yet</p>
+      <p class="dm-thread-placeholder">{$t('messaging.dm.thread.noMessages')}</p>
     {/if}
   </div>
   {#if ($typingByChat[npub]?.length ?? 0) > 0}
-    <p class="dm-thread-typing" role="status">Typing…</p>
+    <p class="dm-thread-typing" role="status">{$t('messaging.dm.thread.typing')}</p>
   {/if}
   {#if $dmSendError}
     <p class="dm-thread-error" role="alert">{$dmSendError}</p>
   {/if}
-  {#if !isPactoAppThread}
   <MessageInput
     channelName={truncateNpub(npub)}
-    placeholderOverride={peerBlockedByMe ? `Blocked #${truncateNpub(npub)}` : undefined}
+    placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
     disabled={peerBlockedByMe}
-    onSend={onSend}
+    onSend={handleSend}
+    onSendFile={handleSendFile}
     onTyping={onTyping}
+    repliedTo={replyToMessageId ?? undefined}
+    repliedToPreview={replyPreview}
+    onCancelReply={cancelReply}
   />
-  {/if}
 </div>
 
 <style>

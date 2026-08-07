@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { Squad } from '../../stores/app';
   import {
     ANNOUNCEMENTS_CHANNEL_NAME,
@@ -37,6 +39,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     squadNetworkTick,
   } from '../../lib/squad/squad-network';
   import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
+  import {
+    clearSquadRpcPrimary,
+    effectiveSquadRpcConfig,
+    setSquadRpcBackup,
+    setSquadRpcPrimary,
+    squadRpcTick,
+    type SquadRpcConfig,
+  } from '../../lib/squad/squad-rpc';
+  import { publishSquadRpcUpdated } from '../../lib/squad/squad-rpc-share';
   import { currentUser } from '../../stores/auth';
   import friendsIcon from '../../icons/friends.svg';
   import ParentDashboardMembersPanel from './dashboard/ParentDashboardMembersPanel.svelte';
@@ -79,12 +90,12 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import { squadMemberEvmByParentId } from '../../stores/squads';
 
   type ParentDashboardView = SquadDashboardChannelMode;
-  const DASHBOARD_VIEWS: { id: ParentDashboardView; label: string }[] = [
-    { id: 'status', label: 'Status' },
-    { id: 'governance', label: 'Governance' },
-    { id: 'treasury', label: 'Treasury' },
-    { id: 'roles', label: 'Roles' },
-    { id: 'crew', label: 'Crew' },
+  const DASHBOARD_VIEWS: ParentDashboardView[] = [
+    'status',
+    'governance',
+    'treasury',
+    'roles',
+    'crew',
   ];
 
   $: dashboardView = $squadDashboardChannelMode;
@@ -172,6 +183,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
   /** Established squad network (override → infra chain), or null until the first deploy picks one. */
   $: squadNetwork = resolveSquadNetwork({ override: squadNetworkOverride, infraChain: infraSquadChain });
+  let squadRpcConfig: SquadRpcConfig | null = null;
+  $: {
+    void $squadRpcTick;
+    squadRpcConfig = effectiveSquadRpcConfig($currentUser?.npub, parentId, squadNetwork);
+  }
   $: governanceTreasurySafe = governanceTreasurySafeForParent(
     treasurySafes ?? [],
     parentId ?? '',
@@ -188,6 +204,33 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     const gid = parentId.trim();
     saveSquadNetworkOverride(npub, gid, chain);
     void publishSquadNetworkUpdated(gid);
+  }
+
+  async function handleSetSquadRpcPrimary(url: string): Promise<string | void> {
+    const tFn = get(t);
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
+    const res = setSquadRpcPrimary(npub, parentId.trim(), squadNetwork, url);
+    if (!res.ok) return tFn(res.error);
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return tFn('squad.rpc.error.publishFailed');
+  }
+
+  async function handleSetSquadRpcBackup(url: string): Promise<string | void> {
+    const tFn = get(t);
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return tFn('squad.rpc.error.selectNetworkFirst');
+    const res = setSquadRpcBackup(npub, parentId.trim(), squadNetwork, url);
+    if (!res.ok) return tFn(res.error);
+    const published = await publishSquadRpcUpdated(parentId.trim());
+    if (!published) return tFn('squad.rpc.error.publishFailed');
+  }
+
+  async function handleClearSquadRpcPrimary(): Promise<void> {
+    const npub = $currentUser?.npub;
+    if (!npub || !parentId?.trim() || !squadNetwork) return;
+    clearSquadRpcPrimary(npub, parentId.trim(), squadNetwork);
+    await publishSquadRpcUpdated(parentId.trim());
   }
   $: memberEvmOptionsForRoles = channelMembers
     .map((npub) => {
@@ -259,7 +302,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       treasuryProposalsRefreshing = false;
     }
     treasuryProposalsError = '';
-    const result = await fetchTreasuryProposals({ network: pactoNetwork, treasuryAuthority: ta });
+    const result = await fetchTreasuryProposals({
+      network: pactoNetwork,
+      treasuryAuthority: ta,
+      parentId,
+    });
     if (isSupersededLoaderKey(treasuryProposalsKey, key)) return;
     treasuryProposalsLoading = false;
     treasuryProposalsRefreshing = false;
@@ -309,7 +356,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       hatsTreeRefreshing = false;
     }
     hatsTreeError = '';
-    const result = await fetchHatsTree({ network: pactoNetwork, topHatId: topHat });
+    const result = await fetchHatsTree({ network: pactoNetwork, topHatId: topHat, parentId });
     if (isSupersededLoaderKey(hatsTreeKey, key)) return;
     hatsTreeLoading = false;
     hatsTreeRefreshing = false;
@@ -363,6 +410,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       squadMemberEvmByNpub,
       squadAdminProxy: squadAdminCtx?.proxy ?? null,
       squadAdminChain: squadAdminCtx?.chain ?? null,
+      parentId,
       protocolWearerCandidates: protocolCandidates,
     });
     if (isSupersededLoaderKey(rolesTreeAnnotationsKey, key)) return;
@@ -463,7 +511,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
       });
     } catch (e) {
       if (isSupersededLoaderKey(sponsorExtKey, key)) return;
-      sponsorExtError = getInvokeErrorMessage(e, 'Could not load sponsor eligibility.');
+      sponsorExtError = getInvokeErrorMessage(e, $t('governance.error.couldNotLoadSponsorEligibility'));
       if (!sponsorExtStatus) sponsorExtStatus = null;
     } finally {
       if (!isSupersededLoaderKey(sponsorExtKey, key)) sponsorExtLoading = false;
@@ -625,30 +673,30 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
         <button
           type="button"
           class="channel-members-btn"
-          title="Members"
+          title={$t('governance.members.title')}
           on:click={toggleMembersPanel}
-          aria-label={$showMembersPanel ? 'Close channel members' : 'View channel members'}
+          aria-label={$showMembersPanel ? $t('governance.members.close') : $t('governance.members.view')}
           aria-expanded={$showMembersPanel}
         >
           <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
         </button>
       </div>
     </div>
-    <div class="dashboard-view-nav" role="tablist" aria-label="Dashboard section">
-      <span class="dashboard-view-nav-label" aria-hidden="true">Mode</span>
+    <div class="dashboard-view-nav" role="tablist" aria-label={$t('governance.dashboardSection')}>
+      <span class="dashboard-view-nav-label" aria-hidden="true">{$t('governance.mode')}</span>
       <div class="dashboard-mode-switcher" role="group">
-        {#each DASHBOARD_VIEWS as v (v.id)}
+        {#each DASHBOARD_VIEWS as v (v)}
           <button
             type="button"
             role="tab"
             class="dashboard-mode-segment"
-            class:active={dashboardView === v.id}
-            aria-selected={dashboardView === v.id}
-            on:click={() => selectDashboardView(v.id)}
-            on:mouseenter={() => prefetchDashboardTabIntent(v.id)}
-            on:focus={() => prefetchDashboardTabIntent(v.id)}
+            class:active={dashboardView === v}
+            aria-selected={dashboardView === v}
+            on:click={() => selectDashboardView(v)}
+            on:mouseenter={() => prefetchDashboardTabIntent(v)}
+            on:focus={() => prefetchDashboardTabIntent(v)}
           >
-            {v.label}
+            {$t(`governance.dashboardView.${v}`)}
           </button>
         {/each}
       </div>
@@ -678,6 +726,10 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {squadNetwork}
               squadNetworkFromInfra={infraSquadChain != null}
               onSetSquadNetwork={setSquadNetwork}
+              {squadRpcConfig}
+              onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
+              onSetSquadRpcBackup={handleSetSquadRpcBackup}
+              onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
               hasGovernance={hasPactoGov}
               {hasSquadAdmin}
               {captainWearers}
@@ -686,7 +738,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenCrewBootstrap={() => selectDashboardView('governance')}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Status tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.status')}</p>
           {/await}
           </div>
         {/if}
@@ -696,7 +748,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             <GovernanceTab
               {squadInfraRows}
               {pactoPayload}
-              pactoGovTopHatId={pactoGovRow?.canonicalRef ?? ''}
               pactoGovChain={pactoGovRow?.chain}
               parentId={parentId ?? ''}
               myAddress={myGovernanceAddress}
@@ -712,7 +763,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {hasSponsor}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Governance tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.governance')}</p>
           {/await}
           </div>
         {/if}
@@ -738,7 +789,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenLaunchpad={openLaunchpad}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Roles tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.roles')}</p>
           {/await}
           </div>
         {/if}
@@ -762,7 +813,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               onOpenImportSafe={openSetSafe}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Treasury tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.treasury')}</p>
           {/await}
           </div>
         {/if}
@@ -795,7 +846,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {crewWearers}
             />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">Could not load Crew tab.</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>
           {/await}
           </div>
         {/if}
@@ -1001,16 +1052,6 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     font-size: 0.875rem;
     color: var(--text-muted);
     margin: 0;
-  }
-
-  .btn-primary {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
-    border: none;
   }
 
   .dashboard-tab-load-error {

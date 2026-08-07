@@ -64,13 +64,14 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ['**/src-tauri/**'],
+      ignored: ['**/src-tauri/**', '**/build-agent/**'],
     },
   },
 
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    setupFiles: ['src/test-setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**'],

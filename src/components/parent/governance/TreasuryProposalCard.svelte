@@ -8,6 +8,8 @@
     treasuryProposalOutcomeLabel,
     type ProposalVoteUiState,
   } from '$lib/governance/treasury-proposal-ui';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let proposal: TreasuryProposalDto;
   export let hasVoted: boolean | undefined = undefined;
@@ -16,6 +18,8 @@
   export let voteDisabledReason = '';
   export let onVoteYea: (() => void) | undefined = undefined;
   export let onVoteNay: (() => void) | undefined = undefined;
+
+  const tFn = get(t);
 
   $: voteState = resolveProposalVoteUiState({ proposal, hasVoted, voterAddress });
   $: isActive = isTreasuryProposalActive(proposal.status);
@@ -26,34 +30,33 @@
   function voteStateLabel(state: ProposalVoteUiState): string {
     switch (state) {
       case 'loading':
-        return 'Checking your vote…';
+        return tFn('governance.proposal.voteStatus.loading');
       case 'no_evm':
-        return 'Share your squad EVM address to vote';
+        return tFn('governance.proposal.voteStatus.noEvm');
       case 'voted':
-        return 'You voted on this proposal';
+        return tFn('governance.proposal.voteStatus.voted');
       case 'not_voted':
-        return 'You have not voted yet';
+        return tFn('governance.proposal.voteStatus.notVoted');
       default:
-        return 'Vote status unavailable';
+        return tFn('governance.proposal.voteStatus.unavailable');
     }
   }
 </script>
 
 <li class="proposal-card" class:proposal-card-active={isActive} class:proposal-card-past={isPast}>
   <div class="proposal-card-head">
-    <span class="proposal-card-tool">Treasury Authority</span>
+    <span class="proposal-card-tool">{$t('governance.title.treasuryAuthority')}</span>
     <span class="proposal-card-status" class:proposal-card-status-active={isActive}>{treasuryProposalStatusLabel(proposal.status)}</span>
   </div>
-  <p class="proposal-card-title">Proposal #{proposal.proposalId}</p>
+  <p class="proposal-card-title">{$t('governance.proposal.title', { values: { id: proposal.proposalId } })}</p>
   {#if outcome && isPast}
     <p class="proposal-card-outcome">{outcome}</p>
   {/if}
   <p class="proposal-card-meta muted">
-    Yeas {proposal.yeas} / nays {proposal.nays} · snapshot {proposal.snapshot} · deadline 
-    {new Date(proposal.deadline * 1000).toLocaleString()}
+    {$t('governance.proposal.meta', { values: { yeas: proposal.yeas, nays: proposal.nays, snapshot: proposal.snapshot, deadline: new Date(proposal.deadline * 1000).toLocaleString() } })}
   </p>
   <p class="proposal-card-target muted">
-    Target <code class="proposal-card-ref">{proposal.to}</code>
+    {$t('governance.proposal.target')} <code class="proposal-card-ref">{proposal.to}</code>
   </p>
   {#if isActive}
     <p class="proposal-vote-state muted">{voteStateLabel(voteState)}</p>
@@ -63,23 +66,23 @@
           type="button"
           class="btn-primary proposal-vote-btn"
           disabled={votePending || voteLocked || !onVoteYea}
-          title={voteLocked ? voteDisabledReason : 'Vote yea'}
+          title={voteLocked ? voteDisabledReason : tFn('governance.proposal.voteYea')}
           on:click={() => {
             if (!voteLocked) onVoteYea?.();
           }}
         >
-          Vote yea
+          {tFn('governance.proposal.voteYea')}
         </button>
         <button
           type="button"
           class="btn-secondary proposal-vote-btn"
           disabled={votePending || voteLocked || !onVoteNay}
-          title={voteLocked ? voteDisabledReason : 'Vote nay'}
+          title={voteLocked ? voteDisabledReason : tFn('governance.proposal.voteNay')}
           on:click={() => {
             if (!voteLocked) onVoteNay?.();
           }}
         >
-          Vote nay
+          {tFn('governance.proposal.voteNay')}
         </button>
       </div>
       {#if voteLocked}

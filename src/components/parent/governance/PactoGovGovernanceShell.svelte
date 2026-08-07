@@ -11,6 +11,7 @@
     getSquadCapabilities,
     type SquadCapabilitiesDto,
     type MutinyStatusDto,
+    type QuartermasterPendingActionDto,
     type QuartermasterStatusDto,
     type TreasuryProposalDto,
   } from '../../../lib/governance/api';
@@ -27,10 +28,13 @@
   } from '../../../lib/governance/governance-privilege';
   import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
+  import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let payload: PactoGovProviderPayloadV1;
   export let network: string;
@@ -48,6 +52,8 @@
   type GovSubMode = 'proposals' | 'crew' | 'captain';
   type MutinySnapshot = { status: MutinyStatusDto; hasVoted: boolean };
 
+  const tFn = get(t);
+
   let govSubMode: GovSubMode = 'proposals';
   let mutinyCaptain = '';
   let capabilities: SquadCapabilitiesDto | null = null;
@@ -60,6 +66,11 @@
 
   let qmStatus: QuartermasterStatusDto | null = null;
   let qmHydrateKey = '';
+
+  let qmPending: QuartermasterPendingActionDto[] = [];
+  let qmPendingLoading = false;
+  let qmPendingError = '';
+  let qmPendingHydrateKey = '';
 
   let rosterBalanceRaw = '0';
   let rosterBalanceKnown = false;
@@ -98,9 +109,13 @@
     hasSponsorInfra: hasSponsor,
   });
 
-  $: if (parentId.trim() && parentId.trim() !== capabilitiesLoadKey) {
-    capabilitiesLoadKey = parentId.trim();
-    void loadCapabilities(parentId.trim());
+  $: {
+    const pid = parentId.trim();
+    const key = `${pid}|${network}`;
+    if (pid && key !== capabilitiesLoadKey) {
+      capabilitiesLoadKey = key;
+      void loadCapabilities(pid);
+    }
   }
 
   $: {
@@ -119,13 +134,22 @@
     }
   }
 
+  $: {
+    const key = `${parentId}|${network}|${payload.quartermaster ?? ''}|pending`;
+    if (key !== qmPendingHydrateKey && parentId.trim() && payload.quartermaster?.trim()) {
+      qmPendingHydrateKey = key;
+      void reloadQmPending();
+    }
+  }
+
   async function loadCapabilities(pid: string) {
+    const key = `${pid}|${network}`;
     try {
-      const snap = await getSquadCapabilities(pid);
-      if (pid !== capabilitiesLoadKey) return;
+      const snap = await getSquadCapabilities(pid, network);
+      if (key !== capabilitiesLoadKey) return;
       capabilities = snap;
     } catch {
-      if (pid !== capabilitiesLoadKey) return;
+      if (key !== capabilitiesLoadKey) return;
       capabilities = null;
     }
   }
@@ -172,7 +196,7 @@
         key,
         parentId,
         async () => {
-          const next = await getMutinyStatus({ network, mutinyModule });
+          const next = await getMutinyStatus({ network, mutinyModule, parentId });
           let voted = false;
           if (next.activeMutinyId !== '0' && privilege.myAddress) {
             voted = await mutinyHasVoted({
@@ -180,6 +204,7 @@
               mutinyModule,
               mutinyId: next.activeMutinyId,
               voter: privilege.myAddress,
+              parentId,
             });
           }
           return { status: next, hasVoted: voted };
@@ -218,7 +243,7 @@
       const next = await fetchGovModuleReadCached(
         key,
         parentId,
-        () => getQuartermasterStatus({ network, quartermaster }),
+        () => getQuartermasterStatus({ network, quartermaster, parentId }),
         { force: force || !!peeked },
       );
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
@@ -227,6 +252,29 @@
       if (hydrateKey !== `${parentId}|${network}|${quartermaster}`) return;
       if (!peeked) qmStatus = null;
     }
+  }
+
+  async function reloadQmPending() {
+    const quartermaster = payload.quartermaster?.trim();
+    if (!quartermaster) {
+      qmPending = [];
+      qmPendingError = '';
+      return;
+    }
+    const hydrateKey = `${parentId}|${network}|${quartermaster}|pending`;
+    qmPendingLoading = qmPending.length === 0;
+    const result = await fetchQuartermasterPendingActions({ network, quartermaster, parentId });
+    if (hydrateKey !== `${parentId}|${network}|${quartermaster}|pending`) return;
+    qmPendingLoading = false;
+    qmPending = result.pending;
+    qmPendingError = result.error;
+  }
+
+  function refreshAllProposals() {
+    onRefreshProposals();
+    void reloadMutiny(true);
+    void reloadQm(true);
+    void reloadQmPending();
   }
 
   async function executeMutinyFromBoard() {
@@ -239,17 +287,18 @@
         mutinyModule,
         mutinyId: mutinyStatus.activeMutinyId,
       });
-      showToast('Execute mutiny submitted.');
+      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeMutiny') } }));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Execute mutiny failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.executeMutiny') } })));
     }
   }
 
   onMount(() => {
-    if (parentId.trim()) {
-      capabilitiesLoadKey = parentId.trim();
-      void loadCapabilities(parentId.trim());
+    const pid = parentId.trim();
+    if (pid) {
+      capabilitiesLoadKey = `${pid}|${network}`;
+      void loadCapabilities(pid);
     }
   });
 
@@ -260,21 +309,21 @@
   }
 
   const subModes: { id: GovSubMode; label: string }[] = [
-    { id: 'proposals', label: 'Proposals' },
-    { id: 'crew', label: 'Crew' },
-    { id: 'captain', label: 'Captain' },
+    { id: 'proposals', label: tFn('governance.shell.tab.proposals') },
+    { id: 'crew', label: tFn('governance.shell.tab.crew') },
+    { id: 'captain', label: tFn('governance.shell.tab.captain') },
   ];
 </script>
 
 <div class="gov-shell">
   <div class="role-chip" role="status">
-    You · <strong>{privilege.roleLabel}</strong>
+    {$t('governance.shell.you')} · <strong>{$t(privilege.roleLabel)}</strong>
     {#if privilege.myAddress}
       <code class="role-addr">{shortAddr(privilege.myAddress)}</code>
     {/if}
   </div>
 
-  <div class="submode-tabs" role="tablist" aria-label="Governance sub-modes">
+  <div class="submode-tabs" role="tablist" aria-label={$t('governance.shell.subModesAria')}>
     {#each subModes as mode (mode.id)}
       <button
         type="button"
@@ -289,20 +338,24 @@
     {/each}
   </div>
 
-  <section class="submode-panel" role="tabpanel" aria-label={govSubMode}>
+  <div class="submode-panel" role="tabpanel" tabindex="0" aria-label={subModes.find((m) => m.id === govSubMode)?.label ?? govSubMode}>
     {#if govSubMode === 'proposals'}
       <GovProposalsBoard
         {network}
         {parentId}
         treasuryAuthority={payload.treasuryAuthority ?? ''}
-        mutinyModule={payload.mutinyModule ?? ''}
+        quartermaster={payload.quartermaster ?? ''}
         {privilege}
         proposals={treasuryProposals}
         proposalsLoading={treasuryProposalsLoading}
         proposalsError={treasuryProposalsError}
         {mutinyStatus}
         {mutinyLoading}
-        {onRefreshProposals}
+        {qmPending}
+        {qmPendingLoading}
+        {qmPendingError}
+        mutinyMode={!!qmStatus?.mutinyActive || !!(mutinyStatus && mutinyStatus.activeMutinyId !== '0' && !mutinyStatus.executed)}
+        onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
       />
@@ -316,7 +369,7 @@
         proposals={treasuryProposals}
         {mutinyStatus}
         mutinyHasVotedFlag={mutinyHasVotedFlag}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
       />
@@ -333,13 +386,16 @@
         {qmStatus}
         {memberEvmOptions}
         {captainWearers}
-        {onRefreshProposals}
+        onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
-        onRefreshQm={() => reloadQm(true)}
+        onRefreshQm={() => {
+          void reloadQm(true);
+          void reloadQmPending();
+        }}
         {fundingHint}
       />
     {/if}
-  </section>
+  </div>
 </div>
 
 <style>

@@ -6,6 +6,9 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { dmLog, dmError } from '../../lib/utils/dm-debug';
   import { isValidNpub } from '../../lib/utils/npub';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
 
   let npub = '';
   let messageText = '';
@@ -27,7 +30,7 @@
     if (!trimmedNpub || !trimmedContent) return;
 
     if (!isValidNpub(trimmedNpub)) {
-      $dmSendError = 'Please enter a valid npub (must start with npub1).';
+      $dmSendError = tFn('messaging.dm.newChat.invalidNpub');
       return;
     }
 
@@ -67,7 +70,7 @@
       const ok = await sendDmMessage(trimmedNpub, contentToSend);
       dmLog('MessengerChatView sendDmMessage result', { ok });
       if (!ok) {
-        $dmSendError = 'Could not deliver to relays. Message may appear as pending or failed.';
+        $dmSendError = tFn('messaging.dm.newChat.deliverError');
       }
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
@@ -90,17 +93,17 @@
 
 <div class="messenger-chat-view">
   <div class="header">
-    <h2 class="title">New Chat</h2>
-    <p class="subtitle">Enter their npub and a message to start a conversation</p>
+    <h2 class="title">{$t('messaging.dm.newChat.title')}</h2>
+    <p class="subtitle">{$t('messaging.dm.newChat.subtitle')}</p>
   </div>
 
   <form class="form" on:submit|preventDefault={handleSend}>
-    <label class="label" for="npub-input">Recipient (npub)</label>
+    <label class="label" for="npub-input">{$t('messaging.dm.newChat.recipientLabel')}</label>
     <input
       id="npub-input"
       type="text"
       class="input"
-      placeholder="npub1..."
+      placeholder={$t('messaging.dm.newChat.recipientPlaceholder')}
       bind:value={npub}
       disabled={sending}
       autocomplete="off"
@@ -108,14 +111,14 @@
       aria-describedby={npub.trim().length > 0 && !isValidNpub(npub.trim()) ? 'npub-hint' : undefined}
     />
     {#if npub.trim().length > 0 && !isValidNpub(npub.trim())}
-      <p id="npub-hint" class="hint" role="status">Must start with npub1 and be at least 57 characters.</p>
+      <p id="npub-hint" class="hint" role="status">{$t('messaging.dm.newChat.npubHint')}</p>
     {/if}
 
-    <label class="label" for="message-input">Message</label>
+    <label class="label" for="message-input">{$t('messaging.dm.newChat.messageLabel')}</label>
     <textarea
       id="message-input"
       class="textarea"
-      placeholder="Type a message..."
+      placeholder={$t('messaging.dm.newChat.messagePlaceholder')}
       bind:value={messageText}
       disabled={sending}
       rows="4"
@@ -127,10 +130,10 @@
 
     <div class="actions">
       <button type="button" class="btn btn-secondary" on:click={handleCancel} disabled={sending}>
-        Cancel
+        {$t('messaging.dm.newChat.cancel')}
       </button>
       <button type="submit" class="btn btn-primary" disabled={!canSend}>
-        {sending ? 'Sending…' : 'Send'}
+        {sending ? $t('messaging.dm.newChat.sending') : $t('messaging.dm.newChat.send')}
       </button>
     </div>
   </form>

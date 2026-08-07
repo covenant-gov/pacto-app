@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import {
     addCustomRelay,
+    getRelayLogs,
+    getRelayMetrics,
+    hasRelayHealthData,
     listRelays,
     relayModeLabel,
     relayStatusLabel,
@@ -9,10 +13,15 @@
     setRelayEnabled,
     validateRelayUrlInput,
     type RelayInfo,
+    type RelayLog,
+    type RelayMetrics,
     type RelayMode,
   } from '../../lib/api/relays';
+  import { formatFileSize } from '../../lib/messaging/attachment-composer';
+  import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
+  import { setRelayEnabledLocally } from '../../stores/dm';
   import { currentUser } from '../../stores/auth';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
@@ -30,7 +39,7 @@
       copiedNpub = true;
       setTimeout(() => (copiedNpub = false), 2000);
     } catch (_) {
-      showToast('Could not copy nPub.');
+      showToast($t('settings.toast.couldNotCopyNpub'));
     }
   }
 
@@ -45,24 +54,92 @@
 
   let busyUrl: string | null = null;
 
+  type RelayDetailState = {
+    loading: boolean;
+    error: string | null;
+    metrics: RelayMetrics | null;
+    logs: RelayLog[];
+  };
+
+  function relaySlug(url: string): string {
+    return url.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
+  let openUrls = new Set<string>();
+  let detailByUrl: Record<string, RelayDetailState> = {};
+
+  function toggleDetail(url: string) {
+    const next = new Set(openUrls);
+    if (next.has(url)) {
+      next.delete(url);
+      openUrls = next;
+      return;
+    }
+    next.add(url);
+    openUrls = next;
+    if (!detailByUrl[url]) void loadDetail(url);
+  }
+
+  async function loadDetail(url: string) {
+    const previous = detailByUrl[url];
+    detailByUrl = {
+      ...detailByUrl,
+      [url]: { loading: true, error: null, metrics: previous?.metrics ?? null, logs: previous?.logs ?? [] },
+    };
+    const startedAt = Date.now();
+    try {
+      const [metrics, logs] = await Promise.all([getRelayMetrics(url), getRelayLogs(url)]);
+      await waitForMinSpin(startedAt);
+      detailByUrl = { ...detailByUrl, [url]: { loading: false, error: null, metrics, logs } };
+    } catch (e) {
+      await waitForMinSpin(startedAt);
+      detailByUrl = {
+        ...detailByUrl,
+        [url]: {
+          loading: false,
+          error: getInvokeErrorMessage(e, $t('settings.toast.couldNotLoadRelayDetail')),
+          metrics: previous?.metrics ?? null,
+          logs: previous?.logs ?? [],
+        },
+      };
+    }
+  }
+
+  function unixToTimestamp(unixSeconds: number): string {
+    return formatMessageTimestamp(new Date(unixSeconds * 1000).toISOString());
+  }
+
   const MODE_OPTIONS: { value: RelayMode; label: string }[] = [
-    { value: 'both', label: 'Read & write' },
-    { value: 'read', label: 'Read only' },
-    { value: 'write', label: 'Write only' },
+    { value: 'both', label: $t('settings.relayModeBoth') },
+    { value: 'read', label: $t('settings.relayModeRead') },
+    { value: 'write', label: $t('settings.relayModeWrite') },
   ];
 
   onMount(() => {
     void refreshRelays();
   });
 
+  // Keeps the refresh spinner visible long enough to register as feedback;
+  // local/cached fetches can otherwise resolve within a single frame.
+  const MIN_SPIN_MS = 400;
+
+  async function waitForMinSpin(startedAt: number) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < MIN_SPIN_MS) {
+      await new Promise((resolve) => setTimeout(resolve, MIN_SPIN_MS - elapsed));
+    }
+  }
+
   async function refreshRelays() {
     loading = true;
     loadError = null;
+    const startedAt = Date.now();
     try {
       relays = await listRelays();
     } catch (e) {
-      loadError = getInvokeErrorMessage(e, 'Could not load relays.');
+      loadError = getInvokeErrorMessage(e, $t('settings.toast.couldNotLoadRelays'));
     } finally {
+      await waitForMinSpin(startedAt);
       loading = false;
     }
   }
@@ -77,9 +154,9 @@
       newRelayUrl = '';
       newRelayMode = 'both';
       await refreshRelays();
-      showToast('Custom relay added.');
+      showToast($t('settings.toast.customRelayAdded'));
     } catch (e) {
-      addError = getInvokeErrorMessage(e, 'Could not add relay.');
+      addError = getInvokeErrorMessage(e, $t('settings.toast.couldNotAddRelay'));
       showToast(addError);
     } finally {
       adding = false;
@@ -94,10 +171,11 @@
 
     try {
       await setRelayEnabled(relay, enabled);
+      setRelayEnabledLocally(relay.url, enabled);
       await refreshRelays();
     } catch (e) {
       relays = relays.map((r) => (r.url === relay.url ? { ...r, enabled: previous } : r));
-      showToast(getInvokeErrorMessage(e, 'Could not update relay.'));
+      showToast(getInvokeErrorMessage(e, $t('settings.toast.couldNotUpdateRelay')));
     } finally {
       busyUrl = null;
     }
@@ -110,12 +188,12 @@
       const removed = await removeCustomRelay(relay.url);
       if (removed) {
         await refreshRelays();
-        showToast('Custom relay removed.');
+        showToast($t('settings.toast.customRelayRemoved'));
       } else {
-        showToast('Relay not found.');
+        showToast($t('settings.toast.relayNotFound'));
       }
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not remove relay.'));
+      showToast(getInvokeErrorMessage(e, $t('settings.toast.couldNotRemoveRelay')));
     } finally {
       busyUrl = null;
     }
@@ -131,12 +209,14 @@
   }
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-nostr" title="Nostr settings">
+<SettingsCollapsibleSection sectionId="settings-nostr" title={$t('settings.nostrSettingsTitle')}>
 
   <div class="nostr-npub-block" aria-labelledby="nostr-npub-heading">
-    <h3 id="nostr-npub-heading" class="nostr-settings-subheading">nPub</h3>
+    <h3 id="nostr-npub-heading" class="nostr-settings-subheading">{$t('settings.npubLabel')}</h3>
     <p class="nostr-npub-note">
-      Same as <strong>Account ID</strong>  — your sharable public Nostr identity on relays, that is linked to your EVM accounts within the Pacto client.
+      {$t('settings.npubNotePrefix')}
+      <strong>{$t('settings.accountId')}</strong>
+      {$t('settings.npubNoteSuffix')}
     </p>
     {#if userNpub}
       <div class="nostr-npub-row">
@@ -144,8 +224,8 @@
         <button
           type="button"
           class="nostr-npub-copy-btn"
-          aria-label={copiedNpub ? 'Copied' : 'Copy nPub'}
-          title={copiedNpub ? 'Copied' : 'Copy'}
+          aria-label={copiedNpub ? $t('settings.copied') : $t('settings.copyNpub')}
+          title={copiedNpub ? $t('settings.copied') : $t('settings.copy')}
           on:click={copyNpub}
         >
           <svg
@@ -166,27 +246,26 @@
         </button>
       </div>
       <button type="button" class="nostr-export-key-btn" on:click={() => (exportModalOpen = true)}>
-        Export key
+        {$t('settings.exportKey')}
       </button>
     {:else}
-      <p class="nostr-settings-muted">Log in to see your nPub.</p>
+      <p class="nostr-settings-muted">{$t('settings.loginToSeeNpub')}</p>
     {/if}
   </div>
 
   <p class="nostr-settings-lead">
-    Relays power your Kind 0 profile, direct messages, and squad channels. Defaults ship with the app; add your own
-    <code class="nostr-settings-code">wss://</code> endpoints when needed.
+    {$t('settings.relaysLead', { values: { wss: 'wss://' } })}
   </p>
 
   <div class="nostr-add-relay" aria-labelledby="nostr-add-relay-heading">
-    <h3 id="nostr-add-relay-heading" class="nostr-settings-subheading">Add custom relay</h3>
+    <h3 id="nostr-add-relay-heading" class="nostr-settings-subheading">{$t('settings.addCustomRelayTitle')}</h3>
     <div class="nostr-add-relay-row">
       <label class="nostr-add-relay-field nostr-add-relay-field--grow">
-        <span class="nostr-add-relay-label">Relay URL</span>
+        <span class="nostr-add-relay-label">{$t('settings.relayUrlLabel')}</span>
         <input
           type="url"
           class="nostr-add-relay-input"
-          placeholder="wss://relay.example.com"
+          placeholder={$t('settings.relayUrlPlaceholder')}
           bind:value={newRelayUrl}
           disabled={adding}
           autocomplete="off"
@@ -195,7 +274,7 @@
         />
       </label>
       <label class="nostr-add-relay-field">
-        <span class="nostr-add-relay-label">Mode</span>
+        <span class="nostr-add-relay-label">{$t('settings.relayModeLabel')}</span>
         <select class="nostr-add-relay-select" bind:value={newRelayMode} disabled={adding}>
           {#each MODE_OPTIONS as opt (opt.value)}
             <option value={opt.value}>{opt.label}</option>
@@ -203,7 +282,7 @@
         </select>
       </label>
       <button type="button" class="nostr-add-relay-btn" disabled={adding} on:click={handleAddRelay}>
-        {adding ? 'Adding…' : 'Add'}
+        {adding ? $t('settings.adding') : $t('settings.add')}
       </button>
     </div>
     {#if addError}
@@ -213,61 +292,133 @@
 
   <div class="nostr-relay-list-wrap" aria-labelledby="nostr-relay-list-heading">
     <div class="nostr-relay-list-head">
-      <h3 id="nostr-relay-list-heading" class="nostr-settings-subheading">Connected relays</h3>
+      <h3 id="nostr-relay-list-heading" class="nostr-settings-subheading">{$t('settings.connectedRelaysTitle')}</h3>
       <RefreshIconButton
         disabled={loading}
         spinning={loading}
-        ariaLabel={loading ? 'Refreshing relays' : 'Refresh relays'}
+        ariaLabel={loading ? $t('settings.refreshingRelays') : $t('settings.refreshRelays')}
         on:click={refreshRelays}
       />
     </div>
 
     {#if loading && relays.length === 0}
-      <p class="nostr-settings-muted">Loading relays…</p>
+      <p class="nostr-settings-muted">{$t('settings.loadingRelays')}</p>
     {:else if loadError}
       <p class="nostr-settings-error" role="alert">{loadError}</p>
     {:else if relays.length === 0}
-      <p class="nostr-settings-muted">No relays configured.</p>
+      <p class="nostr-settings-muted">{$t('settings.noRelaysConfigured')}</p>
     {:else}
       <ul class="nostr-relay-list">
         {#each relays as relay (relay.url)}
-          <li class="nostr-relay-row">
-            <div class="nostr-relay-main">
-              <code class="nostr-relay-url">{relay.url}</code>
-              <div class="nostr-relay-meta">
-                {#if relay.is_default}
-                  <span class="nostr-relay-badge">Default</span>
-                {/if}
+          {@const relayDetailId = `nostr-relay-detail-${relaySlug(relay.url)}`}
+          <li class="nostr-relay-row-wrap">
+            <div class="nostr-relay-row">
+              <button
+                type="button"
+                class="nostr-relay-detail-toggle"
+                aria-expanded={openUrls.has(relay.url)}
+                aria-controls={relayDetailId}
+                aria-label={$t('settings.relayDetailToggle')}
+                on:click={() => toggleDetail(relay.url)}
+              >
+                <span class="nostr-relay-chevron" aria-hidden="true">{openUrls.has(relay.url) ? '−' : '+'}</span>
+              </button>
+              <div class="nostr-relay-main">
+                <code class="nostr-relay-url">{relay.url}</code>
+                <div class="nostr-relay-meta">
+                  {#if relay.is_default}
+                    <span class="nostr-relay-badge">{$t('settings.defaultRelayBadge')}</span>
+                  {/if}
+                  {#if relay.is_custom}
+                    <span class="nostr-relay-badge nostr-relay-badge--custom">{$t('settings.customRelayBadge')}</span>
+                  {/if}
+                  <span class="nostr-relay-mode">{relayModeLabel(relay.mode)}</span>
+                  <span class="nostr-relay-status {statusClass(relay.status, relay.enabled)}">
+                    {relay.enabled ? relayStatusLabel(relay.status) : $t('settings.relayOff')}
+                  </span>
+                </div>
+              </div>
+              <div class="nostr-relay-actions">
+                <label class="nostr-relay-toggle">
+                  <input
+                    type="checkbox"
+                    checked={relay.enabled}
+                    disabled={busyUrl === relay.url}
+                    on:change={(e) => handleToggleEnabled(relay, e.currentTarget.checked)}
+                  />
+                  <span>{$t('settings.relayEnabledLabel')}</span>
+                </label>
                 {#if relay.is_custom}
-                  <span class="nostr-relay-badge nostr-relay-badge--custom">Custom</span>
+                  <button
+                    type="button"
+                    class="nostr-relay-remove-btn"
+                    disabled={busyUrl === relay.url}
+                    on:click={() => handleRemove(relay)}
+                  >
+                    {$t('settings.remove')}
+                  </button>
                 {/if}
-                <span class="nostr-relay-mode">{relayModeLabel(relay.mode)}</span>
-                <span class="nostr-relay-status {statusClass(relay.status, relay.enabled)}">
-                  {relay.enabled ? relayStatusLabel(relay.status) : 'Off'}
-                </span>
               </div>
             </div>
-            <div class="nostr-relay-actions">
-              <label class="nostr-relay-toggle">
-                <input
-                  type="checkbox"
-                  checked={relay.enabled}
-                  disabled={busyUrl === relay.url}
-                  on:change={(e) => handleToggleEnabled(relay, e.currentTarget.checked)}
-                />
-                <span>Enabled</span>
-              </label>
-              {#if relay.is_custom}
-                <button
-                  type="button"
-                  class="nostr-relay-remove-btn"
-                  disabled={busyUrl === relay.url}
-                  on:click={() => handleRemove(relay)}
-                >
-                  Remove
-                </button>
-              {/if}
-            </div>
+            {#if openUrls.has(relay.url)}
+              {@const detail = detailByUrl[relay.url]}
+              <div class="nostr-relay-detail" id={relayDetailId}>
+                {#if detail?.loading && !detail.metrics}
+                  <p class="nostr-settings-muted">{$t('settings.loadingRelayDetail')}</p>
+                {:else}
+                  <div class="nostr-relay-detail-head">
+                    <RefreshIconButton
+                      spinning={detail?.loading ?? false}
+                      disabled={detail?.loading ?? false}
+                      ariaLabel={detail?.loading ? $t('settings.refreshingRelayDetail') : $t('settings.refreshRelayDetail')}
+                      on:click={() => loadDetail(relay.url)}
+                    />
+                  </div>
+                  {#if detail?.error}
+                    <p class="nostr-settings-error" role="alert">{detail.error}</p>
+                  {/if}
+                  {#if detail?.metrics}
+                    {#if hasRelayHealthData(detail.metrics)}
+                      <dl class="nostr-relay-detail-stats">
+                        <div>
+                          <dt>{$t('settings.relayPingLabel')}</dt>
+                          <dd>{detail.metrics.ping_ms !== null ? `${detail.metrics.ping_ms} ms` : '—'}</dd>
+                        </div>
+                        <div>
+                          <dt>{$t('settings.relayLastCheckedLabel')}</dt>
+                          <dd>{detail.metrics.last_check !== null ? unixToTimestamp(detail.metrics.last_check) : '—'}</dd>
+                        </div>
+                      </dl>
+                    {:else}
+                      <p class="nostr-settings-muted">{$t('settings.relayNotYetChecked')}</p>
+                    {/if}
+                    <dl class="nostr-relay-detail-stats">
+                      <div>
+                        <dt>{$t('settings.relayApproxBytesLabel')}</dt>
+                        <dd>{formatFileSize(detail.metrics.bytes_up)} ↑ / {formatFileSize(detail.metrics.bytes_down)} ↓</dd>
+                      </div>
+                      <div>
+                        <dt>{$t('settings.relayApproxEventsLabel')}</dt>
+                        <dd>{detail.metrics.events_sent} ↑ / {detail.metrics.events_received} ↓</dd>
+                      </div>
+                    </dl>
+                    {#if detail.logs.length > 0}
+                      <div class="nostr-relay-detail-logs">
+                        <h4 class="nostr-relay-detail-logs-title">{$t('settings.relayRecentActivityLabel')}</h4>
+                        <ul class="nostr-relay-detail-log-list">
+                          {#each detail.logs as log (log.timestamp + log.message)}
+                            <li class="nostr-relay-detail-log-entry nostr-relay-detail-log-entry--{log.level}">
+                              <span class="nostr-relay-detail-log-time">{unixToTimestamp(log.timestamp)}</span>
+                              <span class="nostr-relay-detail-log-message">{log.message}</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
+                  {/if}
+                {/if}
+              </div>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -600,5 +751,113 @@
   .nostr-relay-remove-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  .nostr-relay-detail-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .nostr-relay-detail-toggle:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+  }
+
+  .nostr-relay-chevron {
+    display: block;
+  }
+
+  .nostr-relay-detail {
+    /* No explicit width: this app has no global box-sizing:border-box reset,
+       so `width: 100%` (content-box) would add padding/border on top of the
+       container's full width and overflow past `.nostr-relay-row` above it.
+       `width: auto` (the block default) self-adjusts to match exactly. */
+    margin-top: 4px;
+    padding: 12px 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    background: var(--bg-panel);
+  }
+
+  .nostr-relay-detail-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .nostr-relay-detail-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 28px;
+    margin: 0 0 10px 0;
+  }
+
+  .nostr-relay-detail-stats dt {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .nostr-relay-detail-stats dd {
+    margin: 2px 0 0 0;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+  }
+
+  .nostr-relay-detail-logs-title {
+    margin: 0 0 6px 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .nostr-relay-detail-log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nostr-relay-detail-log-entry {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .nostr-relay-detail-log-entry--warn {
+    color: var(--warning);
+  }
+
+  .nostr-relay-detail-log-entry--error {
+    color: var(--danger);
+  }
+
+  .nostr-relay-detail-log-time {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .nostr-relay-detail-log-message {
+    word-break: break-word;
   }
 </style>

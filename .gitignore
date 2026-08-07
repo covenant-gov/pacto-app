@@ -4,6 +4,10 @@ tauri-dev.log
 node_modules
 .pnpm-store/
 /build
+/build-agent
+/test-results
+/test_sandbox
+/test_fixtures
 /.svelte-kit
 /package
 .env
@@ -19,3 +23,13 @@ landing/dist
 landing/pnpm-lock.yaml
 landing/public/pacto-release.json
 .worktrees/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+# Build artifacts
+*.AppImage
+src-tauri/target/

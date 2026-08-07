@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::nostr_tags;
 use crate::stored_event::event_kind;
 use crate::{db, get_nostr_client, message::Message, TAURI_APP};
 
@@ -59,7 +60,10 @@ pub fn hash_poll_payload(title: &str, description: &str, options_json: &str) -> 
 }
 
 fn validate_options(opts: &[PollOptionWire]) -> bool {
-    opts.len() >= 2 && opts.iter().all(|o| !o.id.trim().is_empty() && !o.label.trim().is_empty())
+    opts.len() >= 2
+        && opts
+            .iter()
+            .all(|o| !o.id.trim().is_empty() && !o.label.trim().is_empty())
 }
 
 /// Try parse vote wire from JSON content.
@@ -68,9 +72,7 @@ pub fn try_parse_vote(content: &str) -> Option<DashboardPollVoteWire> {
     if v.schema != "pacto.dashboard_poll.v1" || v.action != "vote" {
         return None;
     }
-    if v.parent_id.trim().is_empty()
-        || v.poll_id.trim().is_empty()
-        || v.option_id.trim().is_empty()
+    if v.parent_id.trim().is_empty() || v.poll_id.trim().is_empty() || v.option_id.trim().is_empty()
     {
         return None;
     }
@@ -96,8 +98,7 @@ pub fn try_parse_create_announce(content: &str) -> Option<DashboardPollAnnounceE
 }
 
 pub fn has_dashboard_poll_d_tag(tags: &Tags) -> bool {
-    tags.find(TagKind::d())
-        .and_then(|t| t.content())
+    nostr_tags::d_content(&tags)
         .map(|c| c == DASHBOARD_POLL_D_TAG)
         .unwrap_or(false)
 }
@@ -129,8 +130,8 @@ pub fn db_insert_poll_create<R: Runtime>(
 ) -> Result<PollCreateUpsert, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
     let res = (|| {
-        let options_json = serde_json::to_string(&payload.options)
-            .map_err(|e| format!("options json: {}", e))?;
+        let options_json =
+            serde_json::to_string(&payload.options).map_err(|e| format!("options json: {}", e))?;
         let h = hash_poll_payload(&payload.title, &payload.description, &options_json);
 
         let existed: Option<String> = conn
@@ -278,13 +279,13 @@ pub async fn list_dashboard_polls<R: Runtime>(
                 ))
             })
             .map_err(|e| e.to_string())?;
-        mapped
-            .filter_map(|r| r.ok())
-            .collect()
+        mapped.filter_map(|r| r.ok()).collect()
     };
 
     let mut out = Vec::new();
-    for (poll_id, parent_id, title, description, options_json, created_at_ms, created_by_npub) in rows {
+    for (poll_id, parent_id, title, description, options_json, created_at_ms, created_by_npub) in
+        rows
+    {
         let opts: Vec<PollOptionWire> =
             serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
 
@@ -295,9 +296,11 @@ pub async fn list_dashboard_polls<R: Runtime>(
                     "SELECT option_id, COUNT(*) FROM dashboard_poll_votes WHERE poll_id = ?1 GROUP BY option_id",
                 )
                 .map_err(|e| e.to_string())?;
-            let vmapped = vstmt.query_map([&poll_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-            }).map_err(|e| e.to_string())?;
+            let vmapped = vstmt
+                .query_map([&poll_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .map_err(|e| e.to_string())?;
             vmapped.filter_map(|r| r.ok()).collect()
         };
         for (oid, c) in vote_rows {
@@ -380,20 +383,16 @@ pub async fn send_dashboard_poll_create<R: Runtime>(
     let ms = (final_time.as_millis() % 1000) as u64;
 
     let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-        .tag(Tag::custom(TagKind::d(), [DASHBOARD_POLL_D_TAG]))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("parent")),
-            [&parent_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
-            [&poll_id],
-        ))
-        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["announcements"]))
-        .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [&parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [&poll_id]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["announcements"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]));
 
     let built = rumor.build(pk);
-    let create_hex = built.id.ok_or_else(|| "poll create rumor id missing".to_string())?;
+    let create_hex = built
+        .id
+        .ok_or_else(|| "poll create rumor id missing".to_string())?;
     let create_id = create_hex.to_hex();
     crate::mls::send_mls_message(&mls_group_id, built, None).await?;
 
@@ -476,21 +475,12 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     let ms = (final_time.as_millis() % 1000) as u64;
 
     let rumor = EventBuilder::new(Kind::ApplicationSpecificData, &content)
-        .tag(Tag::custom(TagKind::d(), [DASHBOARD_POLL_D_TAG]))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("parent")),
-            [&parent_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("poll")),
-            [&poll_id],
-        ))
-        .tag(Tag::custom(
-            TagKind::Custom(std::borrow::Cow::Borrowed("option")),
-            [&option_id],
-        ))
-        .tag(Tag::custom(TagKind::custom("pacto_bucket"), ["polls"]))
-        .tag(Tag::custom(TagKind::custom("ms"), [ms.to_string()]));
+        .tag(nostr_tags::d_tag([DASHBOARD_POLL_D_TAG]))
+        .tag(nostr_tags::custom_tag("parent", [&parent_id]))
+        .tag(nostr_tags::custom_tag("poll", [&poll_id]))
+        .tag(nostr_tags::custom_tag("option", [&option_id]))
+        .tag(nostr_tags::custom_tag("pacto_bucket", ["polls"]))
+        .tag(nostr_tags::custom_tag("ms", [ms.to_string()]));
 
     let built = rumor.build(pk);
     let vote_id = built.id.ok_or("rumor id missing")?.to_hex();
@@ -499,13 +489,7 @@ pub async fn send_dashboard_poll_vote<R: Runtime>(
     let voter = pk.to_bech32().map_err(|e| e.to_string())?;
     let voted_at = final_time.as_millis() as i64;
     let _ = db_apply_vote(
-        &handle,
-        &parent_id,
-        &poll_id,
-        &voter,
-        &option_id,
-        &vote_id,
-        voted_at,
+        &handle, &parent_id, &poll_id, &voter, &option_id, &vote_id, voted_at,
     )?;
     emit_poll_replica_updated(&parent_id, Some(&poll_id));
     Ok(())

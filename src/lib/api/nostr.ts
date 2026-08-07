@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./index";
 import type { TreasurySafeEntry } from "../treasury/treasury-safes";
 import type { VirtualBucket } from "../mls/virtual-channel-bucket";
 import { dmLog } from "../utils/dm-debug";
@@ -33,7 +33,6 @@ export interface NostrProfile {
   about: string;
   website: string;
   nip05: string;
-  muted: boolean;
   /** Local-only: hidden from DM lists; incoming DMs discarded after decrypt. */
   blocked?: boolean;
   bot: boolean;
@@ -195,16 +194,27 @@ export async function updateProfile(params: {
  * Backend: upload_avatar. Emits profile_upload_progress.
  */
 export async function uploadAvatar(
-  filepath: string,
+  bytes: string,
   uploadType: 'avatar' | 'banner'
 ): Promise<string> {
   dmLog('upload_avatar', { uploadType });
   const url = (await invoke('upload_avatar', {
-    filepath,
-    upload_type: uploadType,
+    bytes,
+    uploadType,
   })) as string;
   dmLog('upload_avatar result', { urlLen: url?.length ?? 0 });
   return url;
+}
+
+/**
+ * Get a resized/compressed preview of a local image as a base64 data URI.
+ * Backend: get_image_preview_base64.
+ */
+export async function getImagePreviewBase64(filePath: string, quality: number): Promise<string> {
+  return (await invoke('get_image_preview_base64', {
+    filePath,
+    quality,
+  })) as string;
 }
 
 /**
@@ -286,6 +296,115 @@ export async function sendDmMessage(
   })) as boolean;
   dmLog('message result', { ok });
   return ok;
+}
+
+/** React to a message with an emoji. Backend: react_to_message. */
+export async function reactToMessage(
+  referenceId: string,
+  chatId: string,
+  emoji: string
+): Promise<boolean> {
+  dmLog('react_to_message', {
+    referenceId: referenceId.slice(0, 20) + '…',
+    chatId: chatId.slice(0, 20) + '…',
+    emoji,
+  });
+  const ok = (await invoke('react_to_message', { referenceId, chatId, emoji })) as boolean;
+  dmLog('react_to_message result', { ok });
+  return ok;
+}
+
+/** Fetch OpenGraph/link-preview metadata for a message containing a URL. Backend: fetch_msg_metadata. */
+export async function fetchMsgMetadata(chatId: string, msgId: string): Promise<boolean> {
+  dmLog('fetch_msg_metadata', { chatId: chatId.slice(0, 20) + '…', msgId: msgId.slice(0, 12) });
+  const ok = (await invoke('fetch_msg_metadata', { chatId, msgId })) as boolean;
+  dmLog('fetch_msg_metadata result', { ok });
+  return ok;
+}
+
+/** Send a file as an attachment. Backend: send_file_bytes. */
+export async function sendFileBytes(
+  receiver: string,
+  repliedTo: string,
+  fileBytes: number[] | Uint8Array,
+  fileName: string,
+  useCompression: boolean
+): Promise<boolean> {
+  dmLog('send_file_bytes', {
+    receiver: receiver.slice(0, 20) + '…',
+    fileName,
+    fileBytesLen: fileBytes.length,
+    useCompression,
+  });
+  const ok = (await invoke('send_file_bytes', {
+    receiver,
+    repliedTo,
+    fileBytes,
+    fileName,
+    useCompression,
+  })) as boolean;
+  dmLog('send_file_bytes result', { ok });
+  return ok;
+}
+
+/** Download an attachment for a message. Backend: download_attachment. */
+export async function downloadAttachment(
+  npub: string,
+  msgId: string,
+  attachmentId: string
+): Promise<boolean> {
+  dmLog('download_attachment', {
+    npub: npub.slice(0, 20) + '…',
+    msgId: msgId.slice(0, 20) + '…',
+    attachmentId,
+  });
+  const ok = (await invoke('download_attachment', { npub, msgId, attachmentId })) as boolean;
+  dmLog('download_attachment result', { ok });
+  return ok;
+}
+
+/** Save an attachment's decrypted file via a native save dialog. Backend: save_attachment_as.
+ * Returns the saved path, or an empty string if the user cancelled the dialog. */
+export async function saveAttachmentAs(
+  chatId: string,
+  messageId: string,
+  attachmentId: string
+): Promise<string> {
+  dmLog('save_attachment_as', {
+    chatId: chatId.slice(0, 20) + '…',
+    messageId: messageId.slice(0, 20) + '…',
+    attachmentId,
+  });
+  const path = (await invoke('save_attachment_as', {
+    npub: chatId,
+    msgId: messageId,
+    attachmentId,
+  })) as string;
+  dmLog('save_attachment_as result', { path });
+  return path;
+}
+
+/** Fetch or cache a remote image locally. Backend: get_or_cache_image. Returns local path or null. */
+export async function getOrCacheImage(
+  url: string,
+  imageType: string
+): Promise<string | null> {
+  dmLog('get_or_cache_image', { url: url.slice(0, 60) + '…', imageType });
+  const path = (await invoke('get_or_cache_image', { url, imageType })) as string | null;
+  dmLog('get_or_cache_image result', { cached: !!path });
+  return path;
+}
+
+/** Decode a blurhash to a base64 data URL. Backend: decode_blurhash. */
+export async function decodeBlurhash(
+  blurhash: string,
+  width: number,
+  height: number
+): Promise<string> {
+  dmLog('decode_blurhash', { blurhash: blurhash.slice(0, 12) + '…', width, height });
+  const dataUrl = (await invoke('decode_blurhash', { blurhash, width, height })) as string;
+  dmLog('decode_blurhash result', { hasDataUrl: !!dataUrl });
+  return dataUrl;
 }
 
 // --- MLS / Squads ---
@@ -396,6 +515,18 @@ export async function getMlsGroupMetadata(): Promise<MlsGroupMetadataItem[]> {
   return meta;
 }
 
+/** A squad channel whose local MLS state was archived during the MDK upgrade. */
+export interface MlsStoreResetGroupState {
+  groupId: string;
+  stateLost: boolean;
+  adminNpubs: string[];
+  singleAdmin: boolean;
+}
+
+export async function getMlsStoreResetState(): Promise<MlsStoreResetGroupState[]> {
+  return (await invoke('get_mls_store_reset_state')) as MlsStoreResetGroupState[];
+}
+
 /** Structured payload for squad / squad-pair invite (DM until RNF-4 Pacto App thread). */
 export interface SquadInvitePayload {
   type: 'squad_invite';
@@ -404,6 +535,10 @@ export interface SquadInvitePayload {
   kind?: 'squad' | 'squad-pair';
   pairedSquads?: [{ id: string; name: string }, { id: string; name: string }];
   invitedByNpub?: string;
+  /** Consent claim correlation; admitters match this after Accept. */
+  inviteId?: string;
+  /** Announcements members who may run admit when invitee Accepts. */
+  admitterNpubs?: string[];
 }
 
 const SQUAD_INVITE_TYPE = 'squad_invite';
@@ -415,6 +550,9 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
       const p = parsed as { squadName?: string; groupId?: string };
       if (typeof p.squadName === 'string' && typeof p.groupId === 'string') {
         const raw = parsed as SquadInvitePayload;
+        const admitterNpubs = Array.isArray(raw.admitterNpubs)
+          ? raw.admitterNpubs.filter((n): n is string => typeof n === 'string' && n.startsWith('npub1'))
+          : undefined;
         return {
           type: SQUAD_INVITE_TYPE,
           squadName: raw.squadName,
@@ -422,6 +560,8 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
           kind: raw.kind === 'squad-pair' ? 'squad-pair' : raw.kind === 'squad' ? 'squad' : undefined,
           pairedSquads: raw.pairedSquads,
           invitedByNpub: typeof raw.invitedByNpub === 'string' ? raw.invitedByNpub : undefined,
+          inviteId: typeof raw.inviteId === 'string' ? raw.inviteId : undefined,
+          admitterNpubs: admitterNpubs?.length ? admitterNpubs : undefined,
         };
       }
     }
@@ -542,10 +682,22 @@ export async function leaveMlsGroup(groupId: string): Promise<void> {
 export async function syncMlsGroupsNow(groupId?: string | null): Promise<{ synced: number; total: number }> {
   dmLog('sync_mls_groups_now', { groupId: groupId ?? '(all)' });
   const [synced, total] = (await invoke('sync_mls_groups_now', {
-    group_id: groupId ?? null,
+    groupId: groupId ?? null,
   })) as [number, number];
   dmLog('sync_mls_groups_now result', { synced, total });
   return { synced, total };
+}
+
+/**
+ * Force a deep rescan: re-walk up to ~30 days of DM history in 2-day slices
+ * (stops after 15 consecutive empty slices). Backend: deep_rescan.
+ * Rejects with "Already Scanning! ..." if a sync is already in progress.
+ */
+export async function deepRescan(): Promise<boolean> {
+  dmLog('deep_rescan');
+  const ok = (await invoke('deep_rescan')) as boolean;
+  dmLog('deep_rescan done', ok);
+  return ok;
 }
 
 /** Local replica row for dashboard polls (SQLite + MLS ingest). */

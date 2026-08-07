@@ -1,12 +1,13 @@
 import { writable, derived, get } from 'svelte/store';
-import { listen } from '@tauri-apps/api/event';
+import { listen } from '../lib/api';
 import { fetchNostrProfile, loadNostrProfile, startNotifs, syncAllProfiles } from '../lib/api/nostr';
 import type { NostrProfile } from '../lib/api/nostr';
 export type { NostrProfile };
 import { dmLog } from '../lib/utils/dm-debug';
 import { getProfileDisplayName } from '../lib/utils/profile';
-import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, type DmChatState } from './dm';
-import { hydrateDmUnreadFromInitChats } from './dm-unread';
+import { activeDmId, dmChatsByNpub, blockedDmNpubs, dmSyncStatus, lastCatchUpSuccess, type DmChatState } from './dm';
+import { hydrateUnreadCounts } from './unread';
+import { hydrateCatchUpCount } from './catch-up';
 import { currentUser } from './auth';
 
 type InitFinishedPayload = {
@@ -49,6 +50,14 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       const dmNpubs = chats.filter((c) => typeof c.id === 'string' && (c.id.startsWith('npub1') || c.chat_type === 'DirectMessage')).map((c) => c.id as string);
       console.log('[Squad/Invite] init_finished: chats total=', chats.length, 'dm npubs=', dmNpubs.length, 'ids (first 5)=', dmNpubs.slice(0, 5).map((id) => id.slice(0, 24) + '…'));
       if (!payload) return;
+
+      // Backend-owned per-chat unread map (R14): hydrate once chats are known to
+      // exist, independent of whether this payload happens to include a chats array.
+      hydrateUnreadCounts().catch((e) => console.error('hydrateUnreadCounts failed:', e));
+
+      // Catch up tab badge count (R14, same authority): lightweight hydrate
+      // now, full entry list loads lazily when Catch up is opened.
+      hydrateCatchUpCount().catch((e) => console.error('hydrateCatchUpCount failed:', e));
 
       if (payload.profiles) {
         const profilesMap: Record<string, NostrProfile> = {};
@@ -98,13 +107,6 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
           };
         }
         dmChatsByNpub.set(map);
-        hydrateDmUnreadFromInitChats(
-          dmChats as Array<{
-            id: string;
-            last_read?: string;
-            messages?: Array<{ id: string; mine?: boolean }>;
-          }>,
-        );
         dmLog('init_finished: dmChatsByNpub set', Object.keys(map).length, 'DMs (Friends/Requests/Pending)');
         console.log('[Squad/Invite] init_finished: dmChatsByNpub keys=', Object.keys(map).map((k) => k.slice(0, 20) + '…'));
 
@@ -128,8 +130,11 @@ const INIT_LISTENER_KEY = '__pacto_init_finished_unlisten';
       dmLog('init_finished: calling startNotifs()');
       startNotifs().catch((e) => console.error('notifs failed:', e));
 
-      // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only)
+      // Clear initial sync banner (login or page load had set syncing; backend may not emit sync_finished for init-only).
+      // Set lastCatchUpSuccess here too so the behind/stalled predicate doesn't drift stale
+      // off a completion that never went through the sync_finished handler.
       dmSyncStatus.set('finished');
+      lastCatchUpSuccess.set(Date.now());
       setTimeout(() => dmSyncStatus.set('idle'), 2500);
     });
 

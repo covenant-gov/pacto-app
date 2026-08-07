@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { GovernanceUpdatedPayload } from '../../lib/announcements';
   import { parseSupportedChainId, explorerAddressUrl } from '../../lib/wallet/chains';
   import {
@@ -14,6 +16,8 @@
   export let authorName: string;
   export let authorNpub: string | undefined = undefined;
   export let timestamp: string;
+
+  const tFn = get(t);
 
   function shortAddr(addr: string): string {
     const a = addr.trim();
@@ -33,23 +37,23 @@
   }
 
   function governanceSummary(provider: string, name: string): string {
-    const who = name.trim() || 'A member';
+    const who = name.trim() || tFn('announcements.governanceUpdated.aMember');
     switch (provider.trim().toLowerCase()) {
       case 'sponsor':
-        return `${who} deployed the squad sponsor`;
+        return tFn('announcements.governanceUpdated.sponsor', { values: { who } });
       case 'pacto_gov':
-        return `${who} deployed Pacto Gov`;
+        return tFn('announcements.governanceUpdated.pactoGov', { values: { who } });
       case 'squad_admin':
-        return `${who} deployed Squad Admin`;
+        return tFn('announcements.governanceUpdated.squadAdmin', { values: { who } });
       case 'gnosis_safe':
-        return `${who} linked a treasury Safe`;
+        return tFn('announcements.governanceUpdated.gnosisSafe', { values: { who } });
       default:
-        return `${who} updated squad infrastructure`;
+        return tFn('announcements.governanceUpdated.default', { values: { who } });
     }
   }
 
   $: displayName =
-    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || 'A member';
+    (authorNpub ? getProfileDisplayName($profiles[authorNpub]) : '') || authorName || tFn('announcements.governanceUpdated.aMember');
   $: chainId = parseSupportedChainId(payload.chain);
   $: networkLabel = getWalletNetworkDisplayName(chainId);
   $: contractAddr = payload.canonical_ref?.trim() ?? '';
@@ -83,7 +87,7 @@
   {#if explorerTxUrl}
     <p class="gov-updated-tx">
       <a class="gov-updated-explorer-link" href={explorerTxUrl} target="_blank" rel="external noopener noreferrer">
-        View deployment transaction
+        {$t('announcements.governanceUpdated.viewDeploymentTx')}
       </a>
     </p>
   {/if}

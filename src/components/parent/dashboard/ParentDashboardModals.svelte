@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import LaunchpadModal from '../governance/LaunchpadModal.svelte';
   import SquadRolesModal from '../governance/SquadRolesModal.svelte';
   import ChainIdSelect from '../../wallet/ChainIdSelect.svelte';
@@ -85,8 +86,6 @@
   export let onDeployPactoGov: () => void = () => {};
   export let onDeployGovAndSponsor: () => void = () => {};
   export let onDeployExtSponsor: () => void = () => {};
-  export let onDeploySafe: () => void = () => {};
-  export let onImportSafe: () => void = () => {};
 
   let DeploySafeModalComponent: Awaited<ReturnType<typeof loadDeploySafeModal>> | null = null;
   let DeploySquadAdminComponent: Awaited<ReturnType<typeof loadDeploySquadAdminModal>> | null = null;
@@ -136,7 +135,7 @@
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy wizard…</p>
+      <p class="wizard-loading-text">{$t('governance.importSafe.wizardLoading')}</p>
     </div>
   {/if}
 {/if}
@@ -152,7 +151,7 @@
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy modal…</p>
+      <p class="wizard-loading-text">{$t('governance.importSafe.modalLoading')}</p>
     </div>
   {/if}
 {/if}
@@ -171,7 +170,7 @@
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy modal…</p>
+      <p class="wizard-loading-text">{$t('governance.importSafe.modalLoading')}</p>
     </div>
   {/if}
 {/if}
@@ -203,7 +202,7 @@
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy wizard…</p>
+      <p class="wizard-loading-text">{$t('governance.importSafe.wizardLoading')}</p>
     </div>
   {/if}
 {/if}
@@ -218,7 +217,7 @@
     />
   {:else}
     <div class="modal-overlay wizard-loading-overlay" role="status" aria-live="polite">
-      <p class="wizard-loading-text">Loading deploy wizard…</p>
+      <p class="wizard-loading-text">{$t('governance.importSafe.wizardLoading')}</p>
     </div>
   {/if}
 {/if}
@@ -226,37 +225,35 @@
 {#if showSetSafeModal}
   <div class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="set-safe-title">
     <div class="modal-content">
-      <h3 id="set-safe-title">Import Safe</h3>
-      <p class="modal-desc">
-        Add a Safe to this squad treasury. Members see automated treasury notices in #my-dashboard Alerts.
-      </p>
-      <label class="modal-field-label" for="import-safe-addr">Contract address</label>
+      <h3 id="set-safe-title">{$t('governance.importSafe.title')}</h3>
+      <p class="modal-desc">{$t('governance.importSafe.desc')}</p>
+      <label class="modal-field-label" for="import-safe-addr">{$t('governance.importSafe.addressLabel')}</label>
       <input
         id="import-safe-addr"
         type="text"
         class="input-address"
-        placeholder="0x..."
+        placeholder={$t('governance.importSafe.addressPlaceholder')}
         bind:value={setSafeInput}
         aria-invalid={setSafeError ? 'true' : undefined}
         aria-describedby={setSafeError ? 'set-safe-error' : undefined}
       />
-      <label class="modal-field-label" for="import-safe-chain">Network</label>
+      <label class="modal-field-label" for="import-safe-chain">{$t('governance.importSafe.networkLabel')}</label>
       <ChainIdSelect id="import-safe-chain" bind:value={setSafeChain} disabled={setSafeSaving} />
-      <label class="modal-field-label" for="import-safe-label">Label (optional)</label>
+      <label class="modal-field-label" for="import-safe-label">{$t('governance.importSafe.labelLabel')}</label>
       <input
         id="import-safe-label"
         type="text"
         class="input-address"
-        placeholder="e.g. Operations"
+        placeholder={$t('governance.importSafe.labelPlaceholder')}
         bind:value={setSafeLabel}
       />
       {#if setSafeError}
         <p id="set-safe-error" class="input-error" role="alert">{setSafeError}</p>
       {/if}
       <div class="modal-actions">
-        <button type="button" class="btn-secondary" on:click={onCloseSetSafe} disabled={setSafeSaving}>Cancel</button>
+        <button type="button" class="btn-secondary" on:click={onCloseSetSafe} disabled={setSafeSaving}>{$t('governance.common.cancel')}</button>
         <button type="button" class="btn-primary" on:click={onConfirmSetSafe} disabled={setSafeSaving}
-          >{setSafeSaving ? 'Saving…' : 'Add to treasury'}</button
+          >{setSafeSaving ? $t('governance.importSafe.adding') : $t('governance.importSafe.add')}</button
         >
       </div>
     </div>

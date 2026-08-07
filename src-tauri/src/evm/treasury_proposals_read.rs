@@ -127,12 +127,13 @@ pub async fn list_treasury_proposals<R: Runtime>(
     network: String,
     treasury_authority: String,
     max_scan: Option<u32>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<Vec<TreasuryProposalDto>, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
     let scan = max_scan.unwrap_or(DEFAULT_MAX_SCAN).clamp(1, HARD_MAX_SCAN);
 
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     list_treasury_proposals_on_chain(&provider, ta, scan).await
 }
 
@@ -143,15 +144,16 @@ pub async fn treasury_proposal_has_voted<R: Runtime>(
     treasury_authority: String,
     proposal_id: String,
     voter: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<bool, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
-    let voter_addr = parse_address(voter.trim())
-        .map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
+    let voter_addr =
+        parse_address(voter.trim()).map_err(|e| wallet_err_json("INVALID_VOTER", e, None))?;
     let pid = U256::from_str_radix(proposal_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_PROPOSAL_ID", e.to_string(), None))?;
 
-    let (provider, _ctx) = connect_gov_read_provider(network.as_str()).await?;
+    let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
     eth_call_decode(
         &provider,
         ta,

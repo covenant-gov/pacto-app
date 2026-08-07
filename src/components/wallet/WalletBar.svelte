@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { getEvmAddress } from '../../lib/api/auth';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
@@ -35,6 +36,8 @@
   import WalletImportTokensModal from './WalletImportTokensModal.svelte';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
+  const tFn = get(t);
+
   /** Active DM counterparty npub */
   export let npub: string;
 
@@ -58,7 +61,7 @@
     ? getProfileDisplayName(contactProfile)
     : npub
       ? truncateNpub(npub)
-      : 'Unknown';
+      : tFn('wallet.anonymous');
 
   let summaryLoading = true;
   let summaryError: string | null = null;
@@ -117,12 +120,12 @@
     const peerNpub = npub;
     if (!me || !peerNpub || walletInfoRequestSending) return;
     if (peerWalletReady) {
-      showToast('You already have a payout address for this contact.');
+      showToast(tFn('wallet.alreadyHavePayoutAddress'));
       return;
     }
     const post = postDmPlaintext;
     if (!post) {
-      showToast('Use the desktop app to send this request.');
+      showToast(tFn('wallet.useDesktopAppForRequest'));
       return;
     }
     walletInfoRequestSending = true;
@@ -131,7 +134,7 @@
         (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
       if (npub !== peerNpub) return;
       if (!myAddr) {
-        showToast('Add or select a wallet before requesting theirs.');
+        showToast(tFn('wallet.addOrSelectWallet'));
         return;
       }
       const json = formatWalletPeerInfoRequest({
@@ -141,12 +144,12 @@
       const ok = await post(json);
       if (npub !== peerNpub) return;
       if (ok) {
-        showToast('Request sent. Waiting for your contact to accept.');
+        showToast(tFn('wallet.requestSent'));
       } else {
-        showToast('Could not send the request. Check your connection.');
+        showToast(tFn('wallet.couldNotSendRequest'));
       }
     } catch {
-      showToast('Could not send the request.');
+      showToast(tFn('wallet.couldNotSendRequestShort'));
     } finally {
       walletInfoRequestSending = false;
     }
@@ -193,8 +196,8 @@
 
   /** Friendly per-network read failure copy (raw RPC text stays off the primary line). */
   function networkErrorMessage(net: WalletSummaryNetwork): string {
-    if (net.network === 'local') return 'Anvil not detected';
-    return `Couldn't reach ${getWalletNetworkDisplayName(net.network as SupportedChainId)}`;
+    if (net.network === 'local') return tFn('wallet.anvilNotDetected');
+    return tFn('wallet.couldNotReachNetwork', { values: { network: getWalletNetworkDisplayName(net.network as SupportedChainId) } });
   }
 
   /**
@@ -272,13 +275,13 @@
   }
 </script>
 
-<aside id="wallet-bar" class="wallet-bar" aria-label="Wallet">
+<aside id="wallet-bar" class="wallet-bar" aria-label={$t('wallet.walletTitle')}>
   <div class="wallet-bar-header">
-    <h2 class="wallet-bar-title">Wallet</h2>
+    <h2 class="wallet-bar-title">{$t('wallet.walletTitle')}</h2>
   </div>
 
   <div class="wallet-bar-peer">
-    <p class="wallet-bar-peer-label">With this chat</p>
+    <p class="wallet-bar-peer-label">{$t('wallet.withThisChat')}</p>
     <div class="wallet-bar-peer-row">
       <div class="wallet-bar-peer-avatar">
         {#if contactAvatarSrc}
@@ -294,41 +297,41 @@
     </div>
     <p class="wallet-bar-hint">
       {#if peerWalletReady}
-        Send and Request use this contact. Use the wallet button in the chat header to hide this panel.
+        {$t('wallet.walletBarReadyHint')}
       {:else}
-        First exchange payout addresses privately with this contact, then you can send or request payment.
+        {$t('wallet.walletBarNotReadyHint')}
       {/if}
     </p>
   </div>
 
   <section class="wallet-bar-section" aria-labelledby="wallet-balance-heading">
     <div class="wallet-bar-section-head">
-      <h3 id="wallet-balance-heading" class="wallet-bar-section-title">Balance</h3>
+      <h3 id="wallet-balance-heading" class="wallet-bar-section-title">{$t('wallet.balanceTitle')}</h3>
       <RefreshIconButton
         disabled={summaryLoading}
         spinning={summaryLoading}
-        ariaLabel={summaryLoading ? 'Refreshing balances' : 'Refresh balances'}
+        ariaLabel={summaryLoading ? $t('wallet.refreshingBalances') : $t('wallet.refreshBalances')}
         on:click={refreshSummary}
       />
     </div>
     {#if summaryLoading && !summary}
-      <p class="wallet-bar-placeholder">Loading balances…</p>
+      <p class="wallet-bar-placeholder">{$t('wallet.loadingBalances')}</p>
     {:else if summary}
       {#if summaryError}
         <p class="wallet-bar-stale" role="status">
-          Could not refresh balances. Showing last known amounts.
+          {$t('wallet.couldNotRefreshBalances')}
           <span class="wallet-bar-stale-detail">{summaryError}</span>
         </p>
       {/if}
       <div class="wallet-bar-filters">
-        <label class="wallet-bar-filter-label" for="wallet-bar-network-select">Network</label>
+        <label class="wallet-bar-filter-label" for="wallet-bar-network-select">{$t('wallet.networkLabel')}</label>
         <select
           id="wallet-bar-network-select"
           class="wallet-bar-select"
           bind:value={networkFilter}
           on:change={saveNetworkFilter}
         >
-          <option value="all">All enabled networks</option>
+          <option value="all">{$t('wallet.allEnabledNetworks')}</option>
           {#each networkDropdownChainIds as chainId (chainId)}
             <option value={chainId}>{getWalletNetworkDisplayName(chainId)}</option>
           {/each}
@@ -338,15 +341,15 @@
           class="wallet-bar-btn wallet-bar-btn-import"
           on:click={() => (importTokensModalOpen = true)}
         >
-          Import tokens
+          {$t('wallet.importTokens')}
         </button>
       </div>
       <p class="wallet-bar-total">
-        Total (approx.) <strong>${barTotalUsdApprox.toFixed(2)}</strong>
-        <span class="wallet-bar-total-meta">via {summary.prices.source}</span>
+        {$t('wallet.totalApprox')} <strong>${barTotalUsdApprox.toFixed(2)}</strong>
+        <span class="wallet-bar-total-meta">{$t('wallet.viaSource', { values: { source: summary.prices.source } })}</span>
       </p>
       {#if networksForBalance.length === 0}
-        <p class="wallet-bar-placeholder">No networks match this filter.</p>
+        <p class="wallet-bar-placeholder">{$t('wallet.noNetworksMatchFilter')}</p>
       {:else}
         <ul class="wallet-bar-netlist">
           {#each networksForBalance as net (net.network)}
@@ -377,15 +380,14 @@
     {:else if summaryError}
       <p class="wallet-bar-error" role="alert">{summaryError}</p>
     {:else}
-      <p class="wallet-bar-placeholder">No balance data.</p>
+      <p class="wallet-bar-placeholder">{$t('wallet.noBalanceData')}</p>
     {/if}
   </section>
 
   {#if !peerWalletReady}
     <div class="wallet-bar-init">
       <p class="wallet-bar-init-text">
-        Their payout address for this chat is not on your device yet. Send a private request to exchange
-        addresses. When they accept, both of you can send to each other.
+        {$t('wallet.exchangeAddressesHint')}
       </p>
       <button
         type="button"
@@ -393,7 +395,7 @@
         disabled={walletInfoRequestSending || !$currentUser}
         on:click={sendWalletInfoRequest}
       >
-        {walletInfoRequestSending ? 'Sending…' : 'Send exchange request'}
+        {walletInfoRequestSending ? $t('wallet.sending') : $t('wallet.sendExchangeRequest')}
       </button>
     </div>
   {:else}
@@ -406,10 +408,10 @@
           sendModalOpen = true;
         }}
       >
-        Send
+        {$t('wallet.send')}
       </button>
       <button type="button" class="wallet-bar-btn wallet-bar-btn-secondary" on:click={() => (requestModalOpen = true)}>
-        Request
+        {$t('wallet.request')}
       </button>
     </div>
   {/if}
@@ -567,7 +569,7 @@
   }
 
   .wallet-bar-section-head .wallet-bar-section-title {
-    margin: 0;
+    margin-bottom: 0;
   }
 
   .wallet-bar-filters {

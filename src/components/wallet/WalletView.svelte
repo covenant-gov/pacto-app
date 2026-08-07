@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { getEvmAddress } from '../../lib/api/auth';
   import { currentUser } from '../../stores/auth';
   import {
@@ -38,6 +40,9 @@
   import EvmWalletExtras from '../settings/EvmWalletExtras.svelte';
   import { portal } from '../../lib/utils/portal';
   import { settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
+  import { appConfig } from '../../stores/app-config';
+
+  const tFn = get(t);
 
   /** When true, omit the standalone page title (embedded under Settings → EVM). */
   export let embeddedInSettings = false;
@@ -48,6 +53,8 @@
   let watchedRows: WatchedErc20Row[] = [];
   let enabledSet = new Set<SupportedChainId>(defaultWalletEnabledChains());
   let tokenNetworkFilter: 'all' | SupportedChainId = DEFAULT_PREFERRED_NETWORK;
+
+  $: walletAccountLabelMaxLength = $appConfig.walletAccountLabelMaxLength;
 
   $: accountNpub = $currentUser?.npub ?? null;
 
@@ -189,9 +196,9 @@
           purpose: accountFormPurpose,
         });
         if (setReceiving) {
-          showToast('Receiving address saved. Publishing profile metadata…');
+          showToast(tFn('wallet.receivingAddressSaved'));
         } else {
-          showToast('Account added.');
+          showToast(get(t)('wallet.accountAdded'));
         }
       } else if (editId) {
         const isAdvanced = accountFormPurpose === 'advanced';
@@ -213,9 +220,9 @@
           setDefaultShared: setShared,
         });
         if (setReceiving) {
-          showToast('Receiving address saved. Publishing profile metadata…');
+          showToast(tFn('wallet.receivingAddressSaved'));
         } else {
-          showToast('Account updated.');
+          showToast(tFn('wallet.accountUpdated'));
         }
       }
       accountFormMode = null;
@@ -223,7 +230,7 @@
       await refreshEvmAddress();
     } catch (e) {
       showToast(
-        getInvokeErrorMessage(e, mode === 'add' ? 'Could not add account.' : 'Could not update account.')
+        getInvokeErrorMessage(e, mode === 'add' ? tFn('wallet.couldNotAddAccount') : tFn('wallet.couldNotUpdateAccount'))
       );
     } finally {
       accountFormBusy = false;
@@ -235,7 +242,7 @@
       await setActiveEvmAccount(id);
       await refreshEvmAddress();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not switch account.'));
+      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSwitchAccount')));
     }
   }
 
@@ -243,15 +250,15 @@
     try {
       await setActiveAdvancedEvmAccount(id);
       await refreshEvmAddress();
-      showToast('Advanced signing account updated.');
+      showToast(tFn('wallet.advancedSigningAccountUpdated'));
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Could not switch advanced account.'));
+      showToast(getInvokeErrorMessage(e, tFn('wallet.couldNotSwitchAdvancedAccount')));
     }
   }
 
   async function submitImportKey() {
     if (!importKeyInput.trim()) {
-      showToast('Paste a private key (0x + 64 hex).');
+      showToast(tFn('wallet.pastePrivateKey'));
       return;
     }
     importKeyBusy = true;
@@ -260,9 +267,9 @@
       importKeyModalOpen = false;
       importKeyInput = '';
       await refreshEvmAddress();
-      showToast('Advanced account imported. Not used for squad roster or governance.');
+      showToast(tFn('wallet.advancedAccountImported'));
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Import failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('wallet.importFailed')));
     } finally {
       importKeyBusy = false;
     }
@@ -282,10 +289,9 @@
   <div class="wallet-view-inner">
     {#if !embeddedInSettings}
       <header class="wallet-view-header">
-        <h1 id="wallet-view-title" class="wallet-view-title">EVM Wallet</h1>
+        <h1 id="wallet-view-title" class="wallet-view-title">{$t('wallet.evmWalletTitle')}</h1>
         <p class="wallet-view-lead">
-          Your embedded EVM wallet: send to any address, receive by sharing your address, and manage networks and tokens. Payment requests with
-          contacts stay in <strong>DMs</strong> (in-chat wallet panel). Nostr profile, backup, and logout: <strong>Settings</strong>.
+          {$t('wallet.evmWalletLead', { values: { dms: $t('wallet.dmWallet'), settings: $t('wallet.settings') } })}
         </p>
       </header>
     {/if}
@@ -302,7 +308,7 @@
         </section>
       {:else}
         <section class="wallet-view-section wallet-view-actions-section" aria-labelledby="wallet-actions-heading">
-          <h2 id="wallet-actions-heading" class="visually-hidden">Wallet actions</h2>
+          <h2 id="wallet-actions-heading" class="visually-hidden">{$t('wallet.walletActions')}</h2>
           <div class="wallet-view-action-row">
             <button
               type="button"
@@ -310,7 +316,7 @@
               on:click={() => (homeSendOpen = true)}
               disabled={!evmAddress}
             >
-              Send
+              {$t('wallet.send')}
             </button>
             <button
               type="button"
@@ -318,11 +324,11 @@
               on:click={() => (receiveOpen = true)}
               disabled={!evmAddress}
             >
-              Receive
+              {$t('wallet.receive')}
             </button>
           </div>
           {#if !evmAddress}
-            <p class="wallet-view-hint wallet-view-hint-tight">Unlock or wait for your wallet address to load to use Send and Receive.</p>
+            <p class="wallet-view-hint wallet-view-hint-tight">{$t('wallet.unlockWalletHint')}</p>
           {/if}
         </section>
       {/if}
@@ -364,9 +370,7 @@
 
     {#if !embeddedInSettings}
       <aside class="wallet-view-alpha" role="note">
-        <strong>Alpha software.</strong>
-        Wallet and key handling have not been reviewed by an independent security audit. Use only funds you can afford to lose. See
-        <code class="wallet-view-code">docs/audits/README.md</code> in the repository.
+        {$t('wallet.alphaSoftware', { values: { docsPath: $t('wallet.docsPath') } })}
       </aside>
     {/if}
   </div>
@@ -413,53 +417,53 @@
   <div class="wallet-view-modal" role="dialog" aria-labelledby="account-form-title" aria-modal="true">
     <h2 id="account-form-title" class="wallet-view-h2">
       {#if accountFormMode === 'add'}
-        {accountFormIsAdvanced ? 'Add advanced account' : 'Add new account'}
+        {accountFormIsAdvanced ? $t('wallet.addAdvancedAccount') : $t('wallet.addNewAccount')}
       {:else if accountFormIsAdvanced}
-        Edit advanced account
+        {$t('wallet.editAdvancedAccount')}
       {:else}
-        Edit squad account
+        {$t('wallet.editSquadAccount')}
       {/if}
     </h2>
     {#if accountFormMode === 'add'}
       {#if accountFormIsAdvanced}
         <p class="wallet-view-hint wallet-view-hint-warn">
-          Advanced accounts are not used for squad roster, governance, treasury deploy, or your profile receiving address.
+          {$t('wallet.advancedAccountWarning')}
         </p>
         <p class="wallet-view-hint">
-          Creates a new derived address from your recovery phrase, tagged advanced-only.
+          {$t('wallet.advancedAccountCreateHint')}
         </p>
       {:else}
         <p class="wallet-view-hint">
-          Creates a new squad address from your recovery phrase. Name is optional and only stored on this device.
+          {$t('wallet.squadAccountCreateHint')}
         </p>
       {/if}
     {:else if accountFormIsAdvanced}
-      <p class="wallet-view-hint">Update the display name. Advanced accounts cannot be squad signers or receiving addresses.</p>
+      <p class="wallet-view-hint">{$t('wallet.advancedAccountEditHint')}</p>
     {:else if embeddedInSettings}
-      <p class="wallet-view-hint">Update the display name. Signer and receiver are set in Default EVM account above.</p>
+      <p class="wallet-view-hint">{$t('wallet.squadAccountEditHintSettings')}</p>
     {:else}
       <p class="wallet-view-hint">
-        Update the display name and whether this account is the signer or published receiving address. Name is only stored on this device.
+        {$t('wallet.squadAccountEditHint')}
       </p>
     {/if}
-    <label class="wallet-view-edit-label" for="account-form-name">Name</label>
+    <label class="wallet-view-edit-label" for="account-form-name">{$t('wallet.nameLabel')}</label>
     <input
       id="account-form-name"
       type="text"
       class="wallet-view-add-account-input"
-      maxlength="64"
-      placeholder="e.g. Squad Name"
+      maxlength={walletAccountLabelMaxLength}
+      placeholder={$t('wallet.accountNamePlaceholder')}
       bind:value={accountFormLabel}
       disabled={accountFormBusy}
     />
     {#if !accountFormIsAdvanced && !embeddedInSettings}
       <label class="wallet-view-import-check">
         <input type="checkbox" bind:checked={accountFormSetSigning} disabled={accountFormBusy} />
-        Use as signing address (Send, balances, DM wallet)
+        {$t('wallet.useAsSigningAddress')}
       </label>
       <label class="wallet-view-import-check">
         <input type="checkbox" bind:checked={accountFormSetReceiving} disabled={accountFormBusy} />
-        Use as receiving address (profile / Kind 0; republishes your profile)
+        {$t('wallet.useAsReceivingAddress')}
       </label>
     {/if}
     <div class="wallet-view-modal-actions">
@@ -469,15 +473,15 @@
         disabled={accountFormBusy}
         on:click={closeAccountFormModal}
       >
-        Cancel
+        {$t('wallet.cancel')}
       </button>
       <button type="button" class="wallet-view-btn" disabled={accountFormBusy} on:click={submitAccountForm}>
         {#if accountFormBusy}
-          {accountFormMode === 'add' ? 'Adding…' : 'Saving…'}
+          {accountFormMode === 'add' ? $t('wallet.adding') : $t('wallet.saving')}
         {:else if accountFormMode === 'add'}
-          Add account
+          {$t('wallet.addAccount')}
         {:else}
-          Save
+          {$t('wallet.save')}
         {/if}
       </button>
     </div>
@@ -495,17 +499,17 @@
     }}
   ></div>
   <div class="wallet-view-modal" role="dialog" aria-labelledby="import-pk-title" aria-modal="true">
-    <h2 id="import-pk-title" class="wallet-view-h2">Import advanced private key</h2>
+    <h2 id="import-pk-title" class="wallet-view-h2">{$t('wallet.importAdvancedPrivateKey')}</h2>
     <p class="wallet-view-hint wallet-view-hint-warn">
-      Imported keys are always advanced-purpose. They cannot be squad signers, roster addresses, or profile receiving addresses.
+      {$t('wallet.importedKeyWarning')}
     </p>
     <p class="wallet-view-hint">
-      Paste a standalone Ethereum private key (32-byte secret). It is encrypted like your other keys. Not recoverable from your recovery phrase.
+      {$t('wallet.importedKeyHint')}
     </p>
     <textarea
       class="wallet-view-import-textarea"
       rows="3"
-      placeholder="0x…"
+      placeholder={$t('wallet.privateKeyPlaceholder')}
       bind:value={importKeyInput}
       disabled={importKeyBusy}
     ></textarea>
@@ -519,10 +523,10 @@
           importKeyInput = '';
         }}
       >
-        Cancel
+        {$t('wallet.cancel')}
       </button>
       <button type="button" class="wallet-view-btn" disabled={importKeyBusy} on:click={submitImportKey}>
-        {importKeyBusy ? 'Importing…' : 'Import'}
+        {importKeyBusy ? $t('wallet.importing') : $t('wallet.import')}
       </button>
     </div>
   </div>
@@ -594,359 +598,6 @@
 
   .wallet-view-btn-action-secondary:hover:not(:disabled) {
     background: var(--bg-hover);
-  }
-
-  .wallet-view-btn-action-outline {
-    background: transparent;
-    color: var(--accent);
-    border: 1px dashed var(--border);
-  }
-
-  .wallet-view-btn-action-outline:hover {
-    border-color: var(--accent);
-    background: rgba(80, 200, 180, 0.06);
-  }
-
-  .wallet-view-btn-action:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  .wallet-view-hint-tight {
-    margin-top: 10px;
-    margin-bottom: 0;
-  }
-
-  .wallet-view-title {
-    margin: 0 0 10px;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .wallet-view-lead {
-    margin: 0;
-    font-size: 0.9375rem;
-    line-height: 1.55;
-    color: var(--text-secondary);
-  }
-
-  .wallet-view-section {
-    margin-bottom: 32px;
-    padding-bottom: 28px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .wallet-view-section:last-of-type {
-    border-bottom: none;
-  }
-
-  .wallet-view-section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-
-  .wallet-view-h2 {
-    margin: 0 0 8px;
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .wallet-view-section-head .wallet-view-h2 {
-    margin-bottom: 0;
-  }
-
-  .wallet-view-hint {
-    margin: 0 0 14px;
-    font-size: 0.8125rem;
-    line-height: 1.5;
-    color: var(--text-muted);
-  }
-
-  .wallet-view-hint-warn {
-    color: var(--text-primary);
-  }
-
-  .wallet-view-toggle-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .wallet-view-toggle {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 0.9375rem;
-    color: var(--text-primary);
-  }
-
-  .wallet-view-toggle input {
-    accent-color: var(--accent);
-  }
-
-  .wallet-view-chain-id {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-family: var(--font-mono, ui-monospace, monospace);
-  }
-
-  .wallet-view-btn {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: none;
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    font-size: 0.875rem;
-    cursor: pointer;
-  }
-
-  .wallet-view-btn:hover {
-    background: var(--accent-hover);
-  }
-
-  .wallet-view-btn-secondary {
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-  }
-
-  .wallet-view-btn-secondary:hover {
-    background: var(--bg-hover);
-  }
-
-  .wallet-view-token-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .wallet-view-token-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-  }
-
-  .wallet-view-token-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    min-width: 0;
-  }
-
-  .wallet-view-token-sym {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .wallet-view-token-net {
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-  }
-
-  .wallet-view-token-addr {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .wallet-view-token-src {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-
-  .wallet-view-btn-text {
-    background: none;
-    border: none;
-    color: var(--danger);
-    font-size: 0.8125rem;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .wallet-view-btn-text:hover {
-    text-decoration: underline;
-  }
-
-  .wallet-view-empty {
-    margin: 0;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .wallet-view-code {
-    font-size: 0.8em;
-    padding: 2px 6px;
-    background: var(--bg-elevated);
-    border-radius: 4px;
-    word-break: break-all;
-  }
-
-  .wallet-view-account-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .wallet-view-account-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .wallet-view-account-row {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 10px 14px;
-    padding: 12px 14px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-  }
-
-  .wallet-view-account-active {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(80, 200, 180, 0.25);
-  }
-
-  .wallet-view-account-select {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    margin: 0;
-    min-width: 0;
-  }
-
-  .wallet-view-account-select input {
-    accent-color: var(--accent);
-  }
-
-  .wallet-view-account-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .wallet-view-account-scheme {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-  }
-
-  .wallet-view-account-idx {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-family: ui-monospace, monospace;
-  }
-
-  .wallet-view-account-name {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    font-weight: 500;
-  }
-
-  .wallet-view-account-addr {
-    font-size: 0.78rem;
-    color: var(--text-primary);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .wallet-view-account-tools {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .wallet-view-account-more {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: border-color 0.2s;
-  }
-
-  .wallet-view-account-more:hover:not(:disabled) {
-    border-color: var(--accent);
-    background: var(--bg-hover);
-  }
-
-  .wallet-view-account-more:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .wallet-view-account-copy-icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .wallet-view-account-copy-icon-btn:hover:not(:disabled) {
-    border-color: var(--text-muted);
-    background: var(--bg-elevated);
-    color: var(--accent);
-  }
-
-  .wallet-view-account-copy-icon-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .wallet-view-account-copy-svg {
-    display: block;
-  }
-
-  .wallet-view-account-badge {
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--accent);
-    text-transform: uppercase;
   }
 
   .wallet-view-modal-backdrop {

@@ -25,11 +25,11 @@
 //! - **Reactions**: `Kind::Reaction` - Emoji reactions to messages
 //! - **Typing Indicators**: `Kind::ApplicationSpecificData` - Real-time typing status
 
-use std::borrow::Cow;
+use crate::message::ImageMetadata;
+use crate::nostr_tags;
+use crate::{Attachment, Message, Reaction, StoredEvent, StoredEventBuilder, TAURI_APP};
 use nostr_sdk::prelude::*;
 use tauri::Manager;
-use crate::{Message, Attachment, Reaction, TAURI_APP, StoredEvent, StoredEventBuilder};
-use crate::message::ImageMetadata;
 
 /// Protocol-agnostic rumor event representation
 ///
@@ -84,10 +84,7 @@ pub enum RumorProcessingResult {
     /// An emoji reaction to a message
     Reaction(Reaction),
     /// A typing indicator update
-    TypingIndicator {
-        profile_id: String,
-        until: u64,
-    },
+    TypingIndicator { profile_id: String, until: u64 },
     /// Unknown event type - stored for future compatibility
     /// The frontend will render this as "Unknown Event" placeholder
     UnknownEvent(StoredEvent),
@@ -131,21 +128,15 @@ pub async fn process_rumor(
 ) -> Result<RumorProcessingResult, String> {
     match rumor.kind {
         // Text messages
-        Kind::PrivateDirectMessage => {
-            process_text_message(rumor, context).await
-        }
+        Kind::PrivateDirectMessage => process_text_message(rumor, context).await,
         // File attachments
-        k if k.as_u16() == 15 => {
-            process_file_attachment(rumor, context).await
-        }
+        k if k.as_u16() == 15 => process_file_attachment(rumor, context).await,
         // Message edits
         k if k.as_u16() == crate::stored_event::event_kind::MESSAGE_EDIT => {
             process_edit_event(rumor, context).await
         }
         // Emoji reactions
-        Kind::Reaction => {
-            process_reaction(rumor, context).await
-        }
+        Kind::Reaction => process_reaction(rumor, context).await,
         // Application-specific data (typing, dashboard polls, etc.)
         Kind::ApplicationSpecificData => {
             if crate::dashboard_poll::has_dashboard_poll_d_tag(&rumor.tags) {
@@ -155,9 +146,7 @@ pub async fn process_rumor(
             }
         }
         // Unknown or unsupported kind - store for future compatibility
-        _ => {
-            process_unknown_event(rumor, context).await
-        }
+        _ => process_unknown_event(rumor, context).await,
     }
 }
 
@@ -170,15 +159,14 @@ async fn process_unknown_event(
     context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     // Convert tags to Vec<Vec<String>> format
-    let tags: Vec<Vec<String>> = rumor.tags.iter()
-        .map(|tag| {
-            tag.as_slice().iter().map(|s| s.to_string()).collect()
-        })
+    let tags: Vec<Vec<String>> = rumor
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().iter().map(|s| s.to_string()).collect())
         .collect();
 
     // Extract reference_id from e-tag if present
-    let reference_id = rumor.tags
-        .find(TagKind::e())
+    let reference_id = nostr_tags::find_e(&rumor.tags)
         .and_then(|tag| tag.content())
         .map(|s| s.to_string());
 
@@ -188,7 +176,7 @@ async fn process_unknown_event(
         .content(rumor.content)
         .tags(tags)
         .reference_id(reference_id)
-        .created_at(rumor.created_at.as_u64())
+        .created_at(rumor.created_at.as_secs())
         .mine(context.is_mine)
         .npub(rumor.pubkey.to_bech32().ok())
         .build();
@@ -205,14 +193,14 @@ async fn process_text_message(
 ) -> Result<RumorProcessingResult, String> {
     // Extract reply reference if present
     let replied_to = extract_reply_reference(&rumor);
-    
+
     // Extract millisecond-precision timestamp
     let ms_timestamp = extract_millisecond_timestamp(&rumor);
 
-    let tag_vec: Vec<Vec<String>> = rumor.tags.iter()
-        .map(|tag| {
-            tag.as_slice().iter().map(|s| s.to_string()).collect()
-        })
+    let tag_vec: Vec<Vec<String>> = rumor
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().iter().map(|s| s.to_string()).collect())
         .collect();
     let vb = crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
         Kind::PrivateDirectMessage.as_u16(),
@@ -248,7 +236,7 @@ async fn process_text_message(
         rumor_kind: None,
         virtual_bucket: vb,
     };
-    
+
     Ok(RumorProcessingResult::TextMessage(msg))
 }
 
@@ -264,43 +252,42 @@ async fn process_file_attachment(
     context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     // Extract decryption parameters
-    let decryption_key = rumor.tags
-        .find(TagKind::Custom(Cow::Borrowed("decryption-key")))
+    let decryption_key = nostr_tags::find_custom(&rumor.tags, "decryption-key")
         .and_then(|tag| tag.content())
         .ok_or("Missing decryption-key tag")?
         .to_string();
-    
-    let decryption_nonce = rumor.tags
-        .find(TagKind::Custom(Cow::Borrowed("decryption-nonce")))
+
+    let decryption_nonce = nostr_tags::find_custom(&rumor.tags, "decryption-nonce")
         .and_then(|tag| tag.content())
         .ok_or("Missing decryption-nonce tag")?
         .to_string();
-    
+
     // Extract original file hash (ox tag) if present
-    let original_file_hash = rumor.tags
-        .find(TagKind::Custom(Cow::Borrowed("ox")))
+    let original_file_hash = nostr_tags::find_custom(&rumor.tags, "ox")
         .and_then(|tag| tag.content())
         .map(|s| s.to_string());
-    
+
     // Extract content storage URL
     let content_url = rumor.content.clone();
-    
+
     // Skip attachments with empty file hash - these are corrupted uploads
-    const EMPTY_FILE_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const EMPTY_FILE_HASH: &str =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     if content_url.contains(EMPTY_FILE_HASH) {
-        eprintln!("Skipping attachment with empty file hash in URL: {}", content_url);
+        eprintln!(
+            "Skipping attachment with empty file hash in URL: {}",
+            content_url
+        );
         return Err("Attachment contains empty file hash - skipping".to_string());
     }
-    
+
     // Extract image metadata if provided
     let img_meta: Option<ImageMetadata> = {
-        let blurhash_opt = rumor.tags
-            .find(TagKind::Custom(Cow::Borrowed("blurhash")))
+        let blurhash_opt = nostr_tags::find_custom(&rumor.tags, "blurhash")
             .and_then(|tag| tag.content())
             .map(|s| s.to_string());
-        
-        let dimensions_opt = rumor.tags
-            .find(TagKind::Custom(Cow::Borrowed("dim")))
+
+        let dimensions_opt = nostr_tags::find_custom(&rumor.tags, "dim")
             .and_then(|tag| tag.content())
             .and_then(|s| {
                 // Parse "widthxheight" format
@@ -313,49 +300,53 @@ async fn process_file_attachment(
                     None
                 }
             });
-        
+
         // Only create ImageMetadata if we have all required fields
         match (blurhash_opt, dimensions_opt) {
-            (Some(blurhash), Some((width, height))) => {
-                Some(ImageMetadata {
-                    blurhash,
-                    width,
-                    height,
-                })
-            },
-            _ => None
+            (Some(blurhash), Some((width, height))) => Some(ImageMetadata {
+                blurhash,
+                width,
+                height,
+            }),
+            _ => None,
         }
     };
-    
+
     // Figure out the file extension from the mime-type
-    let mime_type = rumor.tags
-        .find(TagKind::Custom(Cow::Borrowed("file-type")))
+    let mime_type = nostr_tags::find_custom(&rumor.tags, "file-type")
         .and_then(|tag| tag.content())
         .ok_or("Missing file-type tag")?;
+
+    // Extract the sender's original file name, when supplied. Optional: an
+    // absent tag means None, never an error. The extension is derived from
+    // the trusted `file-type` tag above, never from this untrusted value.
+    let file_name = nostr_tags::find_custom(&rumor.tags, "filename")
+        .and_then(|tag| tag.content())
+        .and_then(crate::message::sanitize_incoming_file_name);
     let extension = crate::util::extension_from_mime(mime_type);
-    
+
     // Get the handle for path resolution
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-    
+
     // Choose the appropriate base directory based on platform
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {
         tauri::path::BaseDirectory::Download
     };
-    
+
     // Resolve the directory path
-    let dir = handle.path()
-        .resolve("vector", base_directory)
+    let dir = handle
+        .path()
+        .resolve("pacto", base_directory)
         .map_err(|e| format!("Failed to resolve directory: {}", e))?;
-    
+
     // Grab the reported file size
-    let reported_size = rumor.tags
-        .find(TagKind::Custom(Cow::Borrowed("size")))
+    let reported_size = nostr_tags::find_custom(&rumor.tags, "size")
         .and_then(|tag| tag.content())
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
-    
+
     // Determine file path and download status
     let (file_hash, file_path, downloaded) = if let Some(ox_hash) = original_file_hash {
         // We have an original hash - check if file exists locally
@@ -370,19 +361,23 @@ async fn process_file_attachment(
     } else {
         // No original hash - use nonce as placeholder ID
         let nonce_file_path = dir.join(format!("{}.{}", decryption_nonce, extension));
-        (decryption_nonce.clone(), nonce_file_path.to_string_lossy().to_string(), false)
+        (
+            decryption_nonce.clone(),
+            nonce_file_path.to_string_lossy().to_string(),
+            false,
+        )
     };
-    
+
     // Extract reply reference if present
     let replied_to = extract_reply_reference(&rumor);
-    
+
     // Extract millisecond-precision timestamp
     let ms_timestamp = extract_millisecond_timestamp(&rumor);
 
-    let tag_vec: Vec<Vec<String>> = rumor.tags.iter()
-        .map(|tag| {
-            tag.as_slice().iter().map(|s| s.to_string()).collect()
-        })
+    let tag_vec: Vec<Vec<String>> = rumor
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().iter().map(|s| s.to_string()).collect())
         .collect();
     let vb = crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
         15,
@@ -403,8 +398,9 @@ async fn process_file_attachment(
         downloading: false,
         downloaded,
         webxdc_topic: None,
+        file_name,
     };
-    
+
     // Create the message with attachment
     let msg = Message {
         id: rumor.id.to_hex(),
@@ -433,7 +429,7 @@ async fn process_file_attachment(
         rumor_kind: None,
         virtual_bucket: vb,
     };
-    
+
     Ok(RumorProcessingResult::FileAttachment(msg))
 }
 
@@ -445,22 +441,22 @@ async fn process_reaction(
     _context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     // Find the reference event (the message being reacted to)
-    let reference_tag = rumor.tags
-        .find(TagKind::e())
-        .ok_or("Reaction missing reference event tag")?;
-    
-    let reference_id = reference_tag.content()
+    let reference_tag =
+        nostr_tags::find_e(&rumor.tags).ok_or("Reaction missing reference event tag")?;
+
+    let reference_id = reference_tag
+        .content()
         .ok_or("Reaction reference tag has no content")?
         .to_string();
-    
+
     // Create the reaction
     let reaction = Reaction {
         id: rumor.id.to_hex(),
         reference_id,
-        author_id: rumor.pubkey.to_hex(),
+        author_id: rumor.pubkey.to_bech32().unwrap_or_default(),
         emoji: rumor.content,
     };
-    
+
     Ok(RumorProcessingResult::Reaction(reaction))
 }
 
@@ -472,11 +468,11 @@ async fn process_edit_event(
     context: RumorContext,
 ) -> Result<RumorProcessingResult, String> {
     // Find the reference event (the message being edited)
-    let reference_tag = rumor.tags
-        .find(TagKind::e())
-        .ok_or("Edit event missing reference event tag")?;
+    let reference_tag =
+        nostr_tags::find_e(&rumor.tags).ok_or("Edit event missing reference event tag")?;
 
-    let message_id = reference_tag.content()
+    let message_id = reference_tag
+        .content()
         .ok_or("Edit reference tag has no content")?
         .to_string();
 
@@ -484,10 +480,10 @@ async fn process_edit_event(
     let edited_at = extract_millisecond_timestamp(&rumor);
 
     // Convert tags to Vec<Vec<String>> format for storage
-    let tags: Vec<Vec<String>> = rumor.tags.iter()
-        .map(|tag| {
-            tag.as_slice().iter().map(|s| s.to_string()).collect()
-        })
+    let tags: Vec<Vec<String>> = rumor
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().iter().map(|s| s.to_string()).collect())
         .collect();
 
     // Create StoredEvent for persistence
@@ -497,7 +493,7 @@ async fn process_edit_event(
         .content(rumor.content.clone())
         .tags(tags)
         .reference_id(Some(message_id.clone()))
-        .created_at(rumor.created_at.as_u64())
+        .created_at(rumor.created_at.as_secs())
         .mine(context.is_mine)
         .npub(rumor.pubkey.to_bech32().ok())
         .build();
@@ -520,30 +516,32 @@ async fn process_app_specific(
     // Check if this is a typing indicator
     if is_typing_indicator(&rumor) {
         // Validate expiration tag (must be within 30 seconds)
-        let expiry_tag = rumor.tags
-            .find(TagKind::Expiration)
+        let expiry_tag = nostr_tags::find_expiration(&rumor.tags)
             .ok_or("Typing indicator missing expiration tag")?;
-        
-        let expiry_timestamp: u64 = expiry_tag.content()
+
+        let expiry_timestamp: u64 = expiry_tag
+            .content()
             .ok_or("Expiration tag has no content")?
             .parse()
             .map_err(|_| "Invalid expiration timestamp")?;
-        
+
         // Check if the expiry timestamp is reasonable (not expired, and not too far in the future)
         let current_timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("System time error: {}", e))?
             .as_secs();
-        
+
         // Reject expired or future-dated typing indicators (more than 30 sec in the future)
         if expiry_timestamp <= current_timestamp || expiry_timestamp > current_timestamp + 30 {
             return Ok(RumorProcessingResult::Ignored);
         }
-        
+
         // Valid typing indicator (not expired and within reasonable time window)
-        let profile_id = rumor.pubkey.to_bech32()
+        let profile_id = rumor
+            .pubkey
+            .to_bech32()
             .map_err(|e| format!("Failed to convert pubkey to bech32: {}", e))?;
-        
+
         return Ok(RumorProcessingResult::TypingIndicator {
             profile_id,
             until: expiry_timestamp,
@@ -562,21 +560,21 @@ async fn process_app_specific(
 /// Combines the rumor's created_at (seconds) with a custom "ms" tag
 /// to provide millisecond precision for accurate message ordering.
 fn extract_millisecond_timestamp(rumor: &RumorEvent) -> u64 {
-    match rumor.tags.find(TagKind::Custom(Cow::Borrowed("ms"))) {
+    match nostr_tags::find_custom(&rumor.tags, "ms") {
         Some(ms_tag) => {
             // Get the ms value and append it to the timestamp
             if let Some(ms_str) = ms_tag.content() {
                 if let Ok(ms_value) = ms_str.parse::<u64>() {
                     // Validate that ms is between 0-999
                     if ms_value <= 999 {
-                        return rumor.created_at.as_u64() * 1000 + ms_value;
+                        return rumor.created_at.as_secs() * 1000 + ms_value;
                     }
                 }
             }
             // Fallback to seconds if ms tag is invalid
-            rumor.created_at.as_u64() * 1000
+            rumor.created_at.as_secs() * 1000
         }
-        None => rumor.created_at.as_u64() * 1000
+        None => rumor.created_at.as_secs() * 1000,
     }
 }
 
@@ -585,7 +583,7 @@ fn extract_millisecond_timestamp(rumor: &RumorEvent) -> u64 {
 /// Looks for an "e" tag with the "reply" marker to identify
 /// which message this rumor is replying to.
 fn extract_reply_reference(rumor: &RumorEvent) -> String {
-    match rumor.tags.find(TagKind::e()) {
+    match nostr_tags::find_e(&rumor.tags) {
         Some(tag) => {
             if tag.is_reply() {
                 tag.content().unwrap_or("").to_string()
@@ -604,15 +602,14 @@ fn extract_reply_reference(rumor: &RumorEvent) -> String {
 /// - content "typing"
 fn is_typing_indicator(rumor: &RumorEvent) -> bool {
     // Check d tag
-    let has_vector_tag = rumor.tags
-        .find(TagKind::d())
+    let has_vector_tag = nostr_tags::find_d(&rumor.tags)
         .and_then(|tag| tag.content())
         .map(|content| content == "vector")
         .unwrap_or(false);
-    
+
     // Check content
     let is_typing_content = rumor.content == "typing";
-    
+
     has_vector_tag && is_typing_content
 }
 
@@ -691,7 +688,10 @@ async fn process_dashboard_poll_rumor(
             rumor_kind: Some(crate::stored_event::event_kind::APPLICATION_SPECIFIC),
             virtual_bucket: Some("polls".to_string()),
         };
-        crate::dashboard_poll::emit_poll_replica_updated(&env.payload.parent_id, Some(&env.payload.poll_id));
+        crate::dashboard_poll::emit_poll_replica_updated(
+            &env.payload.parent_id,
+            Some(&env.payload.poll_id),
+        );
         return Ok(RumorProcessingResult::DashboardPollCreate(msg));
     }
 

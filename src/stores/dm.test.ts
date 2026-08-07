@@ -16,9 +16,6 @@ import {
   activeDmId,
   backendDmMessages,
   dmThreadAnnouncementsByNpub,
-  pactoAppInboxMessages,
-  appendPactoAppInboxMessage,
-  reconcilePeerThreadInvites,
   appendPendingOutboundDmMessage,
   removeOutboundDmMessage,
   patchOutboundDmMessage,
@@ -39,33 +36,21 @@ import {
   dmWalletPeerExchangeTick,
   dmSyncStatus,
   dmSendError,
+  seedRelayHealth,
+  applyRelayStatusChange,
+  setRelayEnabledLocally,
+  relayStatusByUrl,
+  dmSyncStatusEffective,
+  lastCatchUpSuccess,
   lastOpenedDmByTab,
   type DmChatSnapshot,
   type DmMessage,
-  PACTO_APP_DM_THREAD_ID,
 } from './dm';
-import {
-  toPactoAppInboxEntry,
-  isPactoAppRoutableInviteContent,
-} from '../lib/pacto-app-inbox';
 import {
   activeTopNavTab,
   activeView,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
-
-vi.mock('../lib/pacto-app-inbox', () => ({
-  toPactoAppInboxEntry: vi.fn((message: DmMessage, inviterNpub: string) => ({
-    ...message,
-    inviterNpub,
-  })),
-  mergePactoAppInboxEntry: vi.fn((list: unknown[], entry: unknown) => [...list, entry]),
-  isPactoAppRoutableInviteContent: vi.fn(() => false),
-  resolveInviteInviterNpub: vi.fn((_message: DmMessage, peerNpub: string) => peerNpub),
-  PACTO_APP_DM_THREAD_ID: '__pacto_app__',
-  PACTO_APP_DISPLAY_NAME: 'Inbox',
-  isPactoAppThreadId: vi.fn((id: string | null | undefined) => id === '__pacto_app__'),
-}));
 
 function makeChat(npub: string, flags: { hasFromMe?: boolean; hasFromThem?: boolean; lastAt?: number } = {}) {
   return {
@@ -102,7 +87,6 @@ describe('dm', () => {
     activeDmId.set(null);
     backendDmMessages.set({});
     dmThreadAnnouncementsByNpub.set({});
-    pactoAppInboxMessages.set([]);
     messageCountByChat.set({});
     loadedOffsetByChat.set({});
     typingByChat.set({});
@@ -114,6 +98,8 @@ describe('dm', () => {
     dmWalletPeerExchangeTick.set(0);
     dmSyncStatus.set('idle');
     dmSendError.set(null);
+    relayStatusByUrl.set({});
+    lastCatchUpSuccess.set(null);
     lastOpenedDmByTab.set({ friends: null, requests: null, pending: null, search: null, pinned: null });
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();
@@ -179,10 +165,6 @@ describe('dm', () => {
   });
 
   describe('dmSidebarCategoryForNpub', () => {
-    it('returns pinned for pacto app thread', () => {
-      expect(dmSidebarCategoryForNpub(PACTO_APP_DM_THREAD_ID, {}, new Set())).toBe('pinned');
-    });
-
     it('classifies by chat flags', () => {
       const chats = {
         alice: makeChat('alice', { hasFromMe: true, hasFromThem: true }),
@@ -222,36 +204,6 @@ describe('dm', () => {
       activeDmId.set('alice');
       const storage = (globalThis as unknown as { localStorage: Storage }).localStorage;
       expect(storage.getItem('pacto_last_dm_npub_npub1abc')).toBe('alice');
-    });
-  });
-
-  describe('pacto app inbox', () => {
-    it('appends a pacto app inbox message', () => {
-      const message = { id: 'm1', content: 'hello', at: 1, mine: false } as DmMessage;
-      appendPactoAppInboxMessage(message, 'inviter');
-      const list = get(pactoAppInboxMessages);
-      expect(list.length).toBe(1);
-      expect(list[0]).toMatchObject({ id: 'm1', inviterNpub: 'inviter' });
-      expect(toPactoAppInboxEntry).toHaveBeenCalledWith(message, 'inviter');
-    });
-  });
-
-  describe('reconcilePeerThreadInvites', () => {
-    it('moves routable invite messages into the pacto app inbox', () => {
-      vi.mocked(isPactoAppRoutableInviteContent).mockImplementation((content: string) => content === 'invite');
-      backendDmMessages.set({
-        alice: [
-          { id: 'm1', content: 'invite', at: 1, mine: false } as DmMessage,
-          { id: 'm2', content: 'hello', at: 2, mine: false } as DmMessage,
-        ],
-      });
-      pactoAppInboxMessages.set([]);
-
-      reconcilePeerThreadInvites();
-
-      expect(get(backendDmMessages)['alice']).toEqual([{ id: 'm2', content: 'hello', at: 2, mine: false }]);
-      expect(get(pactoAppInboxMessages).length).toBe(1);
-      expect(isPactoAppRoutableInviteContent).toHaveBeenCalledWith('invite');
     });
   });
 
@@ -345,6 +297,45 @@ describe('dm', () => {
       expect(get(messageCountByChat)['alice']).toBe(3);
       expect(get(loadedOffsetByChat)['alice']).toBe(0);
       expect(get(pinnedDmNpubs).has('alice')).toBe(true);
+    });
+  });
+
+  describe('relay health', () => {
+    it('setRelayEnabledLocally patches enabled on a tracked relay without touching status', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'connected', enabled: true }]);
+
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      expect(get(relayStatusByUrl)['wss://relay.example']).toMatchObject({
+        status: 'connected',
+        enabled: false,
+      });
+    });
+
+    it('is a no-op when the relay has never been tracked', () => {
+      setRelayEnabledLocally('wss://unknown.example', false);
+      expect(get(relayStatusByUrl)['wss://unknown.example']).toBeUndefined();
+    });
+
+    it('clears the stalled indicator immediately when a down relay is disabled in Settings', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'disconnected', enabled: true }]);
+      lastCatchUpSuccess.set(null);
+      dmSyncStatus.set('idle');
+
+      expect(get(dmSyncStatusEffective)).toBe('stalled');
+
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      expect(get(dmSyncStatusEffective)).toBe('behind');
+    });
+
+    it('applyRelayStatusChange preserves the enabled flag set by setRelayEnabledLocally', () => {
+      seedRelayHealth([{ url: 'wss://relay.example', status: 'connected', enabled: true }]);
+      setRelayEnabledLocally('wss://relay.example', false);
+
+      applyRelayStatusChange('wss://relay.example', 'disconnected');
+
+      expect(get(relayStatusByUrl)['wss://relay.example']?.enabled).toBe(false);
     });
   });
 });

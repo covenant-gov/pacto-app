@@ -15,6 +15,9 @@ pub struct SquadChannelRow {
     pub name: String,
     pub group_id: String,
     pub order: i32,
+    /// Custom channels: "open" | "closed". Omitted on hub rows / legacy rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -69,7 +72,12 @@ fn now_ms() -> i64 {
 }
 
 fn normalize_kind(raw: Option<&str>) -> Result<String, String> {
-    match raw.unwrap_or(KIND_SQUAD).trim().to_ascii_lowercase().as_str() {
+    match raw
+        .unwrap_or(KIND_SQUAD)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         KIND_SQUAD => Ok(KIND_SQUAD.to_string()),
         KIND_SQUAD_PAIR => Ok(KIND_SQUAD_PAIR.to_string()),
         other if other.is_empty() => Ok(KIND_SQUAD.to_string()),
@@ -78,7 +86,12 @@ fn normalize_kind(raw: Option<&str>) -> Result<String, String> {
 }
 
 fn normalize_visibility(raw: Option<&str>) -> Result<String, String> {
-    match raw.unwrap_or(VIS_PRIVATE).trim().to_ascii_lowercase().as_str() {
+    match raw
+        .unwrap_or(VIS_PRIVATE)
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
         VIS_PRIVATE => Ok(VIS_PRIVATE.to_string()),
         VIS_PUBLIC => Ok(VIS_PUBLIC.to_string()),
         other if other.is_empty() => Ok(VIS_PRIVATE.to_string()),
@@ -100,7 +113,10 @@ fn normalize_commons_tag(raw: &str) -> Option<String> {
     Some(t)
 }
 
-fn normalize_commons_tags(raw: Option<&[String]>, visibility: &str) -> Result<Option<Vec<String>>, String> {
+fn normalize_commons_tags(
+    raw: Option<&[String]>,
+    visibility: &str,
+) -> Result<Option<Vec<String>>, String> {
     if visibility != VIS_PUBLIC {
         return Ok(None);
     }
@@ -110,12 +126,16 @@ fn normalize_commons_tags(raw: Option<&[String]>, visibility: &str) -> Result<Op
     if tags.is_empty() {
         return Ok(None);
     }
-    if tags.len() > 3 {
-        return Err("commonsTags must contain 1 to 3 tags".to_string());
+    if tags.len() > crate::app_config::COMMONS_MAX_TAGS {
+        return Err(format!(
+            "commonsTags must contain 1 to {} tags",
+            crate::app_config::COMMONS_MAX_TAGS
+        ));
     }
     let mut out: Vec<String> = Vec::new();
     for item in tags {
-        let t = normalize_commons_tag(item).ok_or_else(|| format!("Invalid commons tag: {item}"))?;
+        let t =
+            normalize_commons_tag(item).ok_or_else(|| format!("Invalid commons tag: {item}"))?;
         if !out.contains(&t) {
             out.push(t);
         }
@@ -141,7 +161,10 @@ fn validate_channels(channels: &[SquadChannelRow]) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_paired_squads(kind: &str, paired: Option<&[PairedSquadRef]>) -> Result<Option<Vec<PairedSquadRef>>, String> {
+fn validate_paired_squads(
+    kind: &str,
+    paired: Option<&[PairedSquadRef]>,
+) -> Result<Option<Vec<PairedSquadRef>>, String> {
     match kind {
         KIND_SQUAD_PAIR => {
             let Some(ps) = paired else {
@@ -211,17 +234,19 @@ fn row_from_query(
     created_at_ms: i64,
     updated_at_ms: i64,
 ) -> Result<SquadRow, String> {
-    let channels: Vec<SquadChannelRow> =
-        serde_json::from_str(channels_json.as_str()).map_err(|e| format!("Invalid channels JSON: {e}"))?;
+    let channels: Vec<SquadChannelRow> = serde_json::from_str(channels_json.as_str())
+        .map_err(|e| format!("Invalid channels JSON: {e}"))?;
     let commons_tags = match commons_tags_json {
         Some(raw) if !raw.trim().is_empty() => Some(
-            serde_json::from_str(raw.as_str()).map_err(|e| format!("Invalid commons_tags JSON: {e}"))?,
+            serde_json::from_str(raw.as_str())
+                .map_err(|e| format!("Invalid commons_tags JSON: {e}"))?,
         ),
         _ => None,
     };
     let paired_squads = match paired_squads_json {
         Some(raw) if !raw.trim().is_empty() => Some(
-            serde_json::from_str(raw.as_str()).map_err(|e| format!("Invalid paired_squads JSON: {e}"))?,
+            serde_json::from_str(raw.as_str())
+                .map_err(|e| format!("Invalid paired_squads JSON: {e}"))?,
         ),
         _ => None,
     };
@@ -239,19 +264,22 @@ fn row_from_query(
     })
 }
 
-pub(crate) fn upsert_squad_inner(conn: &rusqlite::Connection, row: &SquadRow) -> Result<(), String> {
+pub(crate) fn upsert_squad_inner(
+    conn: &rusqlite::Connection,
+    row: &SquadRow,
+) -> Result<(), String> {
     let channels_json =
         serde_json::to_string(&row.channels).map_err(|e| format!("channels serialize: {e}"))?;
     let commons_tags_json = match &row.commons_tags {
-        Some(tags) => Some(
-            serde_json::to_string(tags).map_err(|e| format!("commons_tags serialize: {e}"))?,
-        ),
+        Some(tags) => {
+            Some(serde_json::to_string(tags).map_err(|e| format!("commons_tags serialize: {e}"))?)
+        }
         None => None,
     };
     let paired_squads_json = match &row.paired_squads {
-        Some(ps) => Some(
-            serde_json::to_string(ps).map_err(|e| format!("paired_squads serialize: {e}"))?,
-        ),
+        Some(ps) => {
+            Some(serde_json::to_string(ps).map_err(|e| format!("paired_squads serialize: {e}"))?)
+        }
         None => None,
     };
 
@@ -288,7 +316,7 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
     let mut stmt = conn
         .prepare(
             "SELECT id, name, icon_url, kind, visibility, commons_tags, paired_squads, channels, created_at_ms, updated_at_ms
-             FROM squads ORDER BY updated_at_ms DESC",
+             FROM squads ORDER BY created_at_ms ASC, id ASC",
         )
         .map_err(|e| format!("Failed to prepare list squads: {e}"))?;
     let rows = stmt
@@ -309,8 +337,18 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
         .map_err(|e| format!("Failed to list squads: {e}"))?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, name, icon_url, kind, visibility, commons_tags, paired_squads, channels, created, updated) =
-            row.map_err(|e| format!("Failed to read squad row: {e}"))?;
+        let (
+            id,
+            name,
+            icon_url,
+            kind,
+            visibility,
+            commons_tags,
+            paired_squads,
+            channels,
+            created,
+            updated,
+        ) = row.map_err(|e| format!("Failed to read squad row: {e}"))?;
         out.push(row_from_query(
             id,
             name,
@@ -327,7 +365,10 @@ pub(crate) fn list_squads_inner(conn: &rusqlite::Connection) -> Result<Vec<Squad
     Ok(out)
 }
 
-pub(crate) fn get_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -> Result<Option<SquadRow>, String> {
+pub(crate) fn get_squad_inner(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+) -> Result<Option<SquadRow>, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Ok(None);
@@ -355,29 +396,45 @@ pub(crate) fn get_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -> R
         .optional()
         .map_err(|e| format!("Failed to read squad: {e}"))?;
     Ok(match row {
-        Some((id, name, icon_url, kind, visibility, commons_tags, paired_squads, channels, created, updated)) => {
-            Some(row_from_query(
-                id,
-                name,
-                icon_url,
-                kind,
-                visibility,
-                commons_tags,
-                paired_squads,
-                channels,
-                created,
-                updated,
-            )?)
-        }
+        Some((
+            id,
+            name,
+            icon_url,
+            kind,
+            visibility,
+            commons_tags,
+            paired_squads,
+            channels,
+            created,
+            updated,
+        )) => Some(row_from_query(
+            id,
+            name,
+            icon_url,
+            kind,
+            visibility,
+            commons_tags,
+            paired_squads,
+            channels,
+            created,
+            updated,
+        )?),
         None => None,
     })
 }
 
-pub(crate) fn delete_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -> Result<(), String> {
+pub(crate) fn delete_squad_inner(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+) -> Result<(), String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Err("parentId must be non-empty".to_string());
     }
+    // Gathered before the delete below removes the row this reads from.
+    let channel_ids: Vec<String> = get_squad_inner(conn, pid)?
+        .map(|row| row.channels.into_iter().map(|c| c.group_id).collect())
+        .unwrap_or_default();
     conn.execute(
         "DELETE FROM squad_member_evm_account WHERE parent_id = ?1",
         rusqlite::params![pid],
@@ -391,6 +448,15 @@ pub(crate) fn delete_squad_inner(conn: &rusqlite::Connection, parent_id: &str) -
     crate::squad_bot::delete_squad_bot_rows(conn, pid)?;
     conn.execute("DELETE FROM squads WHERE id = ?1", rusqlite::params![pid])
         .map_err(|e| format!("Failed to delete squad: {e}"))?;
+    // Catch up entries reference chat/channel ids, not squad ids (KD1 —
+    // references only); clean up via the channel list gathered above,
+    // never a cascade (foreign keys are not enforced on these connections).
+    if let Err(e) = crate::catch_up::delete_entries_for_chats(conn, &channel_ids) {
+        eprintln!(
+            "[CatchUp] Failed to delete entries for squad {}'s channels: {}",
+            pid, e
+        );
+    }
     Ok(())
 }
 
@@ -403,7 +469,10 @@ pub fn list_squads<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<SquadRow>, St
 }
 
 #[command]
-pub fn get_squad<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<Option<SquadRow>, String> {
+pub fn get_squad<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Option<SquadRow>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let out = get_squad_inner(&conn, parent_id.as_str())?;
     crate::account_manager::return_db_connection(conn);
@@ -411,8 +480,19 @@ pub fn get_squad<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<
 }
 
 #[command]
-pub fn upsert_squad<R: Runtime>(handle: AppHandle<R>, squad: SquadUpsert) -> Result<SquadRow, String> {
+pub fn upsert_squad<R: Runtime>(
+    handle: AppHandle<R>,
+    squad: SquadUpsert,
+) -> Result<SquadRow, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
+    let mut squad = squad;
+    squad.name = squad.name.trim().to_string();
+    if squad.name.len() > crate::app_config::SQUAD_NAME_MAX_LENGTH {
+        return Err(format!(
+            "Squad name must be at most {} characters",
+            crate::app_config::SQUAD_NAME_MAX_LENGTH
+        ));
+    }
     let mut row = prepare_row(squad)?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
     if let Some(existing) = get_squad_inner(&conn, row.id.as_str())? {
@@ -444,11 +524,13 @@ mod tests {
                 name: "announcements".to_string(),
                 group_id: "grp-announce".to_string(),
                 order: 0,
+                access: None,
             },
             SquadChannelRow {
                 name: "personal-alerts".to_string(),
                 group_id: "grp-announce".to_string(),
                 order: 1,
+                access: None,
             },
         ]
     }
@@ -505,6 +587,14 @@ mod tests {
                 label TEXT NOT NULL DEFAULT '',
                 imported_enc TEXT,
                 purpose TEXT NOT NULL DEFAULT 'squad'
+            );
+            CREATE TABLE catch_up_entries (
+                id TEXT PRIMARY KEY NOT NULL,
+                source_event_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                chat_id TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                resolved_at INTEGER
             );",
         )
         .expect("schema");
@@ -531,25 +621,35 @@ mod tests {
         updated.created_at_ms = 9999;
         updated.updated_at_ms = 2000;
         upsert_squad_inner(&conn, &updated).expect("upsert");
-        let got = get_squad_inner(&conn, "grp-announce").expect("get").expect("row");
+        let got = get_squad_inner(&conn, "grp-announce")
+            .expect("get")
+            .expect("row");
         assert_eq!(got.name, "Beta");
         assert_eq!(got.created_at_ms, 1000);
         assert_eq!(got.updated_at_ms, 2000);
     }
 
     #[test]
-    fn list_squads_orders_by_updated_at_desc() {
+    fn list_squads_orders_by_created_at_asc() {
         let conn = test_conn();
         let mut older = prepare_row(sample_upsert("s-old", "Old")).expect("prepare");
-        older.updated_at_ms = 1000;
+        older.created_at_ms = 1000;
+        older.updated_at_ms = 9000;
         upsert_squad_inner(&conn, &older).expect("upsert old");
         let mut newer = prepare_row(sample_upsert("s-new", "New")).expect("prepare");
+        newer.created_at_ms = 5000;
         newer.updated_at_ms = 5000;
         upsert_squad_inner(&conn, &newer).expect("upsert new");
+        // Mutation bumps older updated_at further; list order must stay created_at.
+        let mut bumped = get_squad_inner(&conn, "s-old").expect("get").expect("row");
+        bumped.updated_at_ms = 99_000;
+        bumped.name = "Old-bumped".into();
+        upsert_squad_inner(&conn, &bumped).expect("bump");
         let listed = list_squads_inner(&conn).expect("list");
         assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].id, "s-new");
-        assert_eq!(listed[1].id, "s-old");
+        assert_eq!(listed[0].id, "s-old");
+        assert_eq!(listed[1].id, "s-new");
+        assert_eq!(listed[0].name, "Old-bumped");
     }
 
     #[test]
@@ -573,9 +673,13 @@ mod tests {
         )
         .expect("roster");
         delete_squad_inner(&conn, "grp-announce").expect("delete");
-        assert!(get_squad_inner(&conn, "grp-announce").expect("get").is_none());
+        assert!(get_squad_inner(&conn, "grp-announce")
+            .expect("get")
+            .is_none());
         let binding_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM squad_member_evm_account", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM squad_member_evm_account", [], |r| {
+                r.get(0)
+            })
             .expect("count bindings");
         assert_eq!(binding_count, 0);
         let evm_count: i64 = conn
@@ -627,10 +731,16 @@ mod tests {
 
     #[test]
     fn normalize_commons_tag_filters() {
-        assert_eq!(normalize_commons_tag(" #Foo_Bar "), Some("foo_bar".to_string()));
+        assert_eq!(
+            normalize_commons_tag(" #Foo_Bar "),
+            Some("foo_bar".to_string())
+        );
         assert_eq!(normalize_commons_tag("new"), None);
         assert_eq!(normalize_commons_tag("a"), Some("a".to_string()));
-        assert_eq!(normalize_commons_tag("a_very_long_tag_exceeding_32_chars_limit"), None);
+        assert_eq!(
+            normalize_commons_tag("a_very_long_tag_exceeding_32_chars_limit"),
+            None
+        );
         assert_eq!(normalize_commons_tag("bad-tag"), None);
         assert_eq!(normalize_commons_tag("bad!tag"), None);
     }
@@ -638,7 +748,10 @@ mod tests {
     #[test]
     fn normalize_commons_tags_private_returns_none() {
         assert_eq!(normalize_commons_tags(None, VIS_PRIVATE).unwrap(), None);
-        assert_eq!(normalize_commons_tags(Some(&["tag".to_string()]), VIS_PRIVATE).unwrap(), None);
+        assert_eq!(
+            normalize_commons_tags(Some(&["tag".to_string()]), VIS_PRIVATE).unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -651,7 +764,16 @@ mod tests {
         assert_eq!(normalize_commons_tags(None, VIS_PUBLIC).unwrap(), None);
         assert_eq!(normalize_commons_tags(Some(&[]), VIS_PUBLIC).unwrap(), None);
         assert!(normalize_commons_tags(Some(&["new".to_string()]), VIS_PUBLIC).is_err());
-        assert!(normalize_commons_tags(Some(&["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()]), VIS_PUBLIC).is_err());
+        assert!(normalize_commons_tags(
+            Some(&[
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string()
+            ]),
+            VIS_PUBLIC
+        )
+        .is_err());
     }
 
     #[test]
@@ -663,8 +785,14 @@ mod tests {
         let mut input = sample_upsert("pair", "Pair");
         input.kind = Some(KIND_SQUAD_PAIR.to_string());
         input.paired_squads = Some(vec![
-            PairedSquadRef { id: "a".to_string(), name: "A".to_string() },
-            PairedSquadRef { id: "b".to_string(), name: "B".to_string() },
+            PairedSquadRef {
+                id: "a".to_string(),
+                name: "A".to_string(),
+            },
+            PairedSquadRef {
+                id: "b".to_string(),
+                name: "B".to_string(),
+            },
         ]);
         let row = prepare_row(input).unwrap();
         assert_eq!(row.paired_squads.as_ref().unwrap().len(), 2);
@@ -674,9 +802,10 @@ mod tests {
     fn paired_squads_rejects_non_two() {
         let mut input = sample_upsert("pair", "Pair");
         input.kind = Some(KIND_SQUAD_PAIR.to_string());
-        input.paired_squads = Some(vec![
-            PairedSquadRef { id: "a".to_string(), name: "A".to_string() },
-        ]);
+        input.paired_squads = Some(vec![PairedSquadRef {
+            id: "a".to_string(),
+            name: "A".to_string(),
+        }]);
         assert!(prepare_row(input).is_err());
     }
 
@@ -695,7 +824,10 @@ mod tests {
         let mut input = sample_upsert("grp", "Squad");
         input.icon_url = Some("  https://example.com/icon.png  ".to_string());
         let row = prepare_row(input).unwrap();
-        assert_eq!(row.icon_url, Some("https://example.com/icon.png".to_string()));
+        assert_eq!(
+            row.icon_url,
+            Some("https://example.com/icon.png".to_string())
+        );
 
         let mut input = sample_upsert("grp", "Squad");
         input.icon_url = Some("   ".to_string());
@@ -706,19 +838,37 @@ mod tests {
     #[test]
     fn validate_channels_rejects_blank_fields() {
         let mut input = sample_upsert("grp", "Squad");
-        input.channels = vec![SquadChannelRow { name: "  ".to_string(), group_id: "g".to_string(), order: 0 }];
+        input.channels = vec![SquadChannelRow {
+            name: "  ".to_string(),
+            group_id: "g".to_string(),
+            order: 0,
+            access: None,
+        }];
         assert!(prepare_row(input).is_err());
 
         let mut input = sample_upsert("grp", "Squad");
-        input.channels = vec![SquadChannelRow { name: "n".to_string(), group_id: "  ".to_string(), order: 0 }];
+        input.channels = vec![SquadChannelRow {
+            name: "n".to_string(),
+            group_id: "  ".to_string(),
+            order: 0,
+            access: None,
+        }];
         assert!(prepare_row(input).is_err());
     }
 
     #[test]
     fn row_from_query_rejects_invalid_channels_json() {
         let result = row_from_query(
-            "id".to_string(), "name".to_string(), None, KIND_SQUAD.to_string(), VIS_PRIVATE.to_string(),
-            None, None, "not-json".to_string(), 1, 2,
+            "id".to_string(),
+            "name".to_string(),
+            None,
+            KIND_SQUAD.to_string(),
+            VIS_PRIVATE.to_string(),
+            None,
+            None,
+            "not-json".to_string(),
+            1,
+            2,
         );
         assert!(result.is_err());
     }

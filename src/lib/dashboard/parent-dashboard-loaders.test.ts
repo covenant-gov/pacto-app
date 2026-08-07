@@ -5,6 +5,7 @@ import {
   fetchDashboardChannelMembers,
   fetchTreasuryProposalVoteMap,
   fetchTreasuryProposals,
+  fetchQuartermasterPendingActions,
   fetchHatsTree,
   fetchSettingsChainMemberMaps,
   fetchRolesTreeAnnotations,
@@ -16,6 +17,7 @@ import {
   getMemberHatWearers,
   getNavePirataDeployment,
   getSquadAdminExecutorRoles,
+  listQuartermasterPending,
   listTreasuryProposals,
   treasuryProposalHasVoted,
 } from '../governance/api';
@@ -32,6 +34,7 @@ vi.mock('../evm/read-plane-limiter', () => ({
 const mockedInvoke = vi.mocked(invoke);
 const mockedGetMlsGroupMembers = vi.mocked(getMlsGroupMembers);
 const mockedListTreasuryProposals = vi.mocked(listTreasuryProposals);
+const mockedListQuartermasterPending = vi.mocked(listQuartermasterPending);
 const mockedTreasuryProposalHasVoted = vi.mocked(treasuryProposalHasVoted);
 const mockedGetHatsTree = vi.mocked(getHatsTree);
 const mockedGetNavePirataDeployment = vi.mocked(getNavePirataDeployment);
@@ -189,6 +192,40 @@ describe('fetchTreasuryProposals', () => {
 
     expect(result.proposals).toEqual([]);
     expect(result.error).toBe('rpc down');
+  });
+});
+
+describe('fetchQuartermasterPendingActions', () => {
+  it('returns pending actions on success', async () => {
+    const pending = [{ kind: 'add' as const, address: '0xadd', executableAt: '99' }];
+    mockedListQuartermasterPending.mockResolvedValueOnce(pending);
+
+    const result = await fetchQuartermasterPendingActions({
+      network: 'sepolia',
+      quartermaster: '0xqm',
+      parentId: 'parent1',
+    });
+
+    expect(mockedListQuartermasterPending).toHaveBeenCalledWith({
+      network: 'sepolia',
+      parentId: 'parent1',
+      quartermaster: '0xqm',
+    });
+    expect(result.pending).toEqual(pending);
+    expect(result.error).toBe('');
+  });
+
+  it('returns an error message on failure', async () => {
+    mockedListQuartermasterPending.mockRejectedValueOnce(new Error('logs failed'));
+
+    const result = await fetchQuartermasterPendingActions({
+      network: 'sepolia',
+      quartermaster: '0xqm',
+      parentId: 'parent1',
+    });
+
+    expect(result.pending).toEqual([]);
+    expect(result.error).toBe('logs failed');
   });
 });
 

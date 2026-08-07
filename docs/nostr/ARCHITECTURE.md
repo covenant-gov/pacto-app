@@ -2,6 +2,12 @@
 
 High-level map of how Nostr is used in this codebase. For **DM vs MLS** commands, events, and sync, see **[`../messaging/OVERVIEW.md`](../messaging/OVERVIEW.md)**.
 
+## Dependency line
+
+The backend uses `nostr-sdk` **0.44.1**, `nostr-blossom` **0.44.0**, and resolves the core `nostr` crate at **0.44.7**. MDK 0.8.0 uses the same line, so Cargo no longer carries the former git-pinned 0.43 graph.
+
+Construction and inspection of Nostr tags go through `src-tauri/src/nostr_tags.rs`; event signing and Nostr JSON conversion go through `src-tauri/src/nostr_sign.rs`. These app-local seams bound the next protocol-library API migration instead of spreading it through messaging call sites.
+
 ## Transport and kinds (summary)
 
 | Path | Wire | Inner (after decrypt / MLS process) |

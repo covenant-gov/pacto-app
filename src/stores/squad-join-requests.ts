@@ -5,6 +5,9 @@ import {
   fanOutBotJoinDmsToMls,
   loadPendingJoinRequestsFromMls,
 } from '../lib/squad/squad-join-mls';
+import { recordActionNeededEntry, resolveCatchUpEntry } from '../lib/api/catch-up';
+import { announcementsGroupIdForSquad } from './squad-hub-alerts';
+import { squads } from './squads';
 
 /** Squad-wide pending join requests from MLS join_requests bucket. */
 export const pendingJoinRequestsBySquadId = writable<Record<string, CommonsJoinRequestDto[]>>({});
@@ -56,6 +59,24 @@ function setErrorForSquad(squadId: string, error: string | null): void {
   });
 }
 
+/**
+ * Join requests arrive over the MLS join_requests bucket, entirely outside
+ * the backend rumor pipeline that already writes Catch up entries, so this
+ * fetch path is the only place that can observe one (Approach #4 of U9: a
+ * derived condition with no backend event to hook). `recordActionNeededEntry`
+ * is conflict-tolerant, so re-observing an already-recorded pending request
+ * on a later fetch is a harmless no-op.
+ */
+function recordCatchUpEntriesForJoinRequests(squadId: string, requests: CommonsJoinRequestDto[]): void {
+  if (requests.length === 0) return;
+  const squad = get(squads).find((s) => s.id === squadId);
+  const groupId = squad ? announcementsGroupIdForSquad(squad) : null;
+  if (!groupId) return;
+  for (const request of requests) {
+    recordActionNeededEntry(groupId, `join-request:${request.eventId}`).catch(() => {});
+  }
+}
+
 async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequestDto[]> {
   const id = squadId.trim();
   setErrorForSquad(id, null);
@@ -70,6 +91,7 @@ async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequest
   try {
     const requests = await loadPendingJoinRequestsFromMls(id);
     setPendingForSquad(id, requests);
+    recordCatchUpEntriesForJoinRequests(id, requests);
     return requests;
   } catch (e) {
     const message = getInvokeErrorMessage(e, 'Could not load join requests.');
@@ -124,6 +146,7 @@ export function removePendingJoinRequest(squadId: string, eventId: string): void
     if (next.length === list.length) return m;
     return { ...m, [id]: next };
   });
+  resolveCatchUpEntry(`join-request:${eid}`).catch(() => {});
 }
 
 export function resetSquadJoinRequestStores(): void {

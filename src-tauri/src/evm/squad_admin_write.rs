@@ -10,6 +10,7 @@ use super::access_control::{require_capability, with_gov_write_lock, GovCapabili
 use super::contracts::pacto_gov::read_bindings::ISquadAdminBase::{
     createRoleCall, enableExecutorCall, enableFullPermissionCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -25,8 +26,11 @@ pub fn bytes32_role_tag(label: &str) -> Result<B256, String> {
     if trimmed.is_empty() {
         return Err("role label must be non-empty".to_string());
     }
-    if trimmed.len() > 32 {
-        return Err("role label must be at most 32 ASCII characters".to_string());
+    if trimmed.len() > crate::app_config::ROLE_LABEL_MAX_LENGTH as usize {
+        return Err(format!(
+            "role label must be at most {} ASCII characters",
+            crate::app_config::ROLE_LABEL_MAX_LENGTH
+        ));
     }
     if !trimmed.is_ascii() {
         return Err("role label must be ASCII".to_string());
@@ -52,6 +56,7 @@ async fn squad_admin_write<R: Runtime>(
     squad_admin_proxy: String,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     let admin = parse_address(squad_admin_proxy.trim())
         .map_err(|e| wallet_err_json("INVALID_SQUAD_ADMIN", e, None))?;
@@ -65,18 +70,14 @@ async fn squad_admin_write<R: Runtime>(
         ));
     };
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let parent = resolve_squad_admin_parent(&app, parent_id.as_str(), squad_admin_proxy.trim())?;
 
-    require_capability(&app, parent.as_str(), capability).await?;
+    require_capability(&app, parent.as_str(), capability, rpc_urls).await?;
     require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
 
     let _write_guard = with_gov_write_lock(parent.as_str()).await;
@@ -160,6 +161,7 @@ pub async fn squad_admin_create_role<R: Runtime>(
     parent_id: String,
     squad_admin_proxy: String,
     role_label: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let role = bytes32_role_tag(role_label.as_str())
@@ -172,6 +174,7 @@ pub async fn squad_admin_create_role<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminCreateRole,
+        rpc_urls,
     )
     .await
 }
@@ -184,6 +187,7 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
     squad_admin_proxy: String,
     executor_address: String,
     role_label: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
@@ -202,6 +206,7 @@ pub async fn squad_admin_enable_executor<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminEnableExecutor,
+        rpc_urls,
     )
     .await
 }
@@ -214,6 +219,7 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
     squad_admin_proxy: String,
     executor_address: String,
     enable: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadAdminWriteResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
     let exec = parse_address(executor_address.trim())
@@ -230,6 +236,7 @@ pub async fn squad_admin_enable_full_permission<R: Runtime>(
         squad_admin_proxy,
         calldata,
         GovCapability::SquadAdminEnableFull,
+        rpc_urls,
     )
     .await
 }
@@ -241,7 +248,9 @@ mod tests {
     #[test]
     fn bytes32_role_tag_rejects_empty_and_overlong() {
         assert!(bytes32_role_tag("").is_err());
-        assert!(bytes32_role_tag(&"a".repeat(33)).is_err());
+        assert!(
+            bytes32_role_tag(&"a".repeat(crate::app_config::ROLE_LABEL_MAX_LENGTH + 1)).is_err()
+        );
         assert!(bytes32_role_tag("FULL").is_ok());
     }
 }

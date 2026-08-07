@@ -10,13 +10,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tauri::{AppHandle, Runtime};
 
-use crate::db;
 use super::contracts::erc20::IERC20;
 use super::evm_accounts;
 use super::rpc::signer::load_embedded_signer;
 use super::wallet_chain_config;
 use super::wallet_prices;
 use super::wallet_security;
+use crate::db;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -73,8 +73,14 @@ pub struct Erc20TransferSpec {
     pub decimals: u8,
 }
 
-use super::rpc::{call::{eth_call_decode, eth_call_u256}, parse_address, wallet_err_json};
-use super::rpc::{connect_read_provider, connect_signing_provider, send_and_confirm, send_transaction_only, wait_for_transaction_receipt};
+use super::rpc::{
+    call::{eth_call_decode, eth_call_u256},
+    parse_address, wallet_err_json,
+};
+use super::rpc::{
+    connect_read_provider, connect_signing_provider, send_and_confirm, send_transaction_only,
+    wait_for_transaction_receipt,
+};
 
 fn format_decimal(raw: U256, decimals: u8) -> String {
     use alloy::primitives::utils::format_units;
@@ -216,8 +222,9 @@ pub async fn get_wallet_summary<R: Runtime>(
 ) -> Result<WalletSummary, String> {
     let _ = evm_accounts::ensure_ready(app.clone()).await;
     let _ = db::repair_evm_address_if_needed(&app).await;
-    let addr_str = db::read_stored_evm_address(app.clone())?
-        .ok_or_else(|| "No EVM address for this account. Log in again or set your wallet address.".to_string())?;
+    let addr_str = db::read_stored_evm_address(app.clone())?.ok_or_else(|| {
+        "No EVM address for this account. Log in again or set your wallet address.".to_string()
+    })?;
     let owner = parse_address(&addr_str)?;
 
     let prices = wallet_prices::wallet_get_usd_spot_prices()
@@ -226,10 +233,7 @@ pub async fn get_wallet_summary<R: Runtime>(
             wallet_security::redact_urls_in_text(&format!("USD prices unavailable: {}", e))
         })?;
 
-    let enabled: HashSet<String> = enabled_chains
-        .iter()
-        .map(|c| c.to_lowercase())
-        .collect();
+    let enabled: HashSet<String> = enabled_chains.iter().map(|c| c.to_lowercase()).collect();
 
     let mut networks_out = Vec::new();
     let mut total_usd = 0.0_f64;
@@ -307,7 +311,10 @@ pub struct EvmNativeBalance {
 
 /// Native ETH balance for an arbitrary `0x` address on one wallet network key.
 #[tauri::command]
-pub async fn get_evm_native_balance(network: String, address: String) -> Result<EvmNativeBalance, String> {
+pub async fn get_evm_native_balance(
+    network: String,
+    address: String,
+) -> Result<EvmNativeBalance, String> {
     let owner = parse_address(address.trim())?;
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -501,16 +508,14 @@ fn map_dm_peer_send_address(to_npub: &str, dm_peer: Option<&str>) -> Result<Addr
         ));
     };
 
-    parse_address(peer_raw).map_err(|e| {
-        wallet_err_json(
-            "INVALID_PEER_EVM_ADDRESS",
-            e,
-            Some(to_npub.to_string()),
-        )
-    })
+    parse_address(peer_raw)
+        .map_err(|e| wallet_err_json("INVALID_PEER_EVM_ADDRESS", e, Some(to_npub.to_string())))
 }
 
-fn resolve_peer_send_address<R: Runtime>(app: &AppHandle<R>, to_npub: &str) -> Result<Address, String> {
+fn resolve_peer_send_address<R: Runtime>(
+    app: &AppHandle<R>,
+    to_npub: &str,
+) -> Result<Address, String> {
     let dm_peer = db::get_dm_peer_evm_stored(app, to_npub)
         .map_err(|e| wallet_err_json("DB_ERROR", e, Some(to_npub.to_string())))?;
     map_dm_peer_send_address(to_npub, dm_peer.as_deref())
@@ -542,11 +547,7 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     };
 
     let asset_up = asset.to_uppercase();
-    if erc20_transfer.is_none()
-        && asset_up != "ETH"
-        && asset_up != "USDC"
-        && asset_up != "USDT"
-    {
+    if erc20_transfer.is_none() && asset_up != "ETH" && asset_up != "USDC" && asset_up != "USDT" {
         return Err(wallet_err_json(
             "UNSUPPORTED_ASSET",
             format!("Unknown asset: {}", asset),
@@ -577,17 +578,16 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
     }
 
     let _ = evm_accounts::ensure_ready(app.clone()).await;
-    evm_accounts::require_squad_purpose_signer(app.clone()).await.map_err(|e| {
-        wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None)
-    })?;
+    evm_accounts::require_squad_purpose_signer(app.clone())
+        .await
+        .map_err(|e| wallet_err_json("SQUAD_SIGNER_REQUIRED", e, None))?;
 
     let (_signer, wallet) = load_embedded_signer(app.clone()).await?;
     let provider = connect_signing_provider(&urls, wallet).await?;
 
     let tx = if asset_up == "ETH" && erc20_transfer.is_none() {
-        let v = parse_units(&amount, net.native_decimals).map_err(|e| {
-            wallet_err_json("INVALID_AMOUNT", format!("{}", e), None)
-        })?;
+        let v = parse_units(&amount, net.native_decimals)
+            .map_err(|e| wallet_err_json("INVALID_AMOUNT", format!("{}", e), None))?;
         TransactionRequest::default()
             .with_to(to_addr.into())
             .with_value(v.into())
@@ -605,12 +605,10 @@ pub async fn wallet_build_and_send_transaction<R: Runtime>(
                 None,
             ));
         };
-        let v = parse_units(&amount, dec).map_err(|e| {
-            wallet_err_json("INVALID_AMOUNT", format!("{}", e), None)
-        })?;
-        let token: Address = parse_address(token_addr_s).map_err(|e| {
-            wallet_err_json("INVALID_TOKEN_ADDRESS", e, None)
-        })?;
+        let v = parse_units(&amount, dec)
+            .map_err(|e| wallet_err_json("INVALID_AMOUNT", format!("{}", e), None))?;
+        let token: Address = parse_address(token_addr_s)
+            .map_err(|e| wallet_err_json("INVALID_TOKEN_ADDRESS", e, None))?;
         let call = IERC20::transferCall {
             to: to_addr,
             amount: v.into(),
@@ -664,9 +662,9 @@ pub async fn wallet_wait_for_transaction(
             None,
         ));
     }
-    let tx_hash: TxHash = hash.parse().map_err(|_| {
-        wallet_err_json("INVALID_TX_HASH", "Invalid transaction hash.", None)
-    })?;
+    let tx_hash: TxHash = hash
+        .parse()
+        .map_err(|_| wallet_err_json("INVALID_TX_HASH", "Invalid transaction hash.", None))?;
     let urls = wallet_chain_config::rpc_urls_for(net);
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
@@ -700,7 +698,8 @@ mod resolve_peer_send_address_tests {
 
     #[test]
     fn empty_npub_is_missing_recipient() {
-        let err = map_dm_peer_send_address("", Some("0x1111111111111111111111111111111111111111")).unwrap_err();
+        let err = map_dm_peer_send_address("", Some("0x1111111111111111111111111111111111111111"))
+            .unwrap_err();
         assert_eq!(err_code(&err), "MISSING_RECIPIENT");
     }
 

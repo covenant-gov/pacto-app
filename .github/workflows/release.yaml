@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release-notes:
     runs-on: ubuntu-24.04
@@ -65,9 +68,9 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: 'macos-latest' # for Intel based macs.
             args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-24.04'
+          - platform: 'ubuntu-22.04' # oldest LTS providing libwebkit2gtk-4.1-dev; avoids a newer-webkit2gtk EGL/Wayland init bug on non-Ubuntu compositors and maximizes glibc compat for the AppImage/deb.
             args: '--target x86_64-unknown-linux-gnu'
-          - platform: 'ubuntu-24.04-arm'
+          - platform: 'ubuntu-24.04-arm' # stays on Noble: Ubuntu's own glslc/shaderc apt package (needed by whisper-rs/ggml-vulkan on arm64, where LunarG's SDK isn't published) only exists from 24.04 onward.
             args: '--target aarch64-unknown-linux-gnu'
           - platform: 'windows-latest'
             args: '--target x86_64-pc-windows-msvc'
@@ -125,7 +128,7 @@ jobs:
           else
             # Install Vulkan SDK with glslc compiler
             wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-            sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+            sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
             sudo apt-get update
             sudo apt-get install -y vulkan-sdk
           fi
@@ -182,19 +185,72 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_COMMIT_HASH: ${{ github.sha }}
           VITE_APP_VERSION: ${{ github.ref_name }}
+          COPYFILE_DISABLE: 1
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pacto ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          releaseDraft: false
+          prerelease: false
           args: ${{ matrix.args }}
           uploadUpdaterJson: true
           retryAttempts: 3
           uploadWorkflowArtifacts: true
 
       - name: Upload CHANGELOG to release
-        if: matrix.platform == 'ubuntu-24.04'
+        if: matrix.platform == 'ubuntu-22.04'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" CHANGELOG.md --clobber
+
+  update-homebrew-tap:
+    # Points covenant-gov/homebrew-pacto's Cask at the DMGs just published above.
+    # Requires HOMEBREW_TAP_TOKEN: a PAT (or fine-grained token) with contents:write
+    # on homebrew-pacto, since GITHUB_TOKEN here only covers this repo.
+    needs: publish-tauri
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout homebrew-pacto
+        uses: actions/checkout@v6
+        with:
+          repository: covenant-gov/homebrew-pacto
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-pacto
+
+      - name: Download macOS release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$TAG" --repo covenant-gov/pacto-app \
+            --pattern 'Pacto_*_aarch64.dmg' --pattern 'Pacto_*_x64.dmg' --dir dmgs
+
+      - name: Update Cask
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          ARM_SHA="$(sha256sum "dmgs/Pacto_${VERSION}_aarch64.dmg" | cut -d' ' -f1)"
+          INTEL_SHA="$(sha256sum "dmgs/Pacto_${VERSION}_x64.dmg" | cut -d' ' -f1)"
+          CASK=homebrew-pacto/Casks/pacto.rb
+          sed -i \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 arm:   \".*\"/  sha256 arm:   \"${ARM_SHA}\"/" \
+            -e "s/^         intel: \".*\"/         intel: \"${INTEL_SHA}\"/" \
+            -e 's|/pacto_#{version}_#{arch}\.dmg|/Pacto_#{version}_#{arch}.dmg|' \
+            "$CASK"
+          cat "$CASK"
+
+      - name: Open PR against homebrew-pacto
+        uses: peter-evans/create-pull-request@v8
+        with:
+          sign-commits: true
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-pacto
+          commit-message: "chore: bump cask to ${{ github.ref_name }}"
+          title: "chore: bump cask to ${{ github.ref_name }}"
+          body: |
+            Automated from covenant-gov/pacto-app's `${{ github.ref_name }}` release publish.
+          branch: "chore/bump-${{ github.ref_name }}"
+          base: main
+          delete-branch: true

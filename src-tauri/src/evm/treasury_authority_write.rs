@@ -5,10 +5,10 @@ use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
+use super::access_control::GovCapability;
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
     captainVoteCall, crewVoteCall, executeCall, proposeCall, Operation,
 };
-use super::access_control::GovCapability;
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::rpc::{parse_address, wallet_err_json};
 
@@ -49,6 +49,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
     value_wei: String,
     data_hex: String,
     operation: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -56,8 +57,8 @@ pub async fn treasury_authority_propose<R: Runtime>(
         parse_address(to.trim()).map_err(|e| wallet_err_json("INVALID_TARGET", e, None))?;
     let value = U256::from_str_radix(value_wei.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_VALUE", e.to_string(), None))?;
-    let data = parse_data_hex(data_hex.as_str())
-        .map_err(|e| wallet_err_json("INVALID_DATA", e, None))?;
+    let data =
+        parse_data_hex(data_hex.as_str()).map_err(|e| wallet_err_json("INVALID_DATA", e, None))?;
     let op = parse_operation(operation.as_str())
         .map_err(|e| wallet_err_json("INVALID_OPERATION", e, None))?;
 
@@ -76,6 +77,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
         ta,
         calldata,
         GovCapability::ProposeTreasury,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -94,6 +96,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
     treasury_authority: String,
     proposal_id: String,
     support: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -112,6 +115,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
         ta,
         calldata,
         GovCapability::CrewVote,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -130,6 +134,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
     treasury_authority: String,
     proposal_id: String,
     support: bool,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
@@ -148,6 +153,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
         ta,
         calldata,
         GovCapability::CaptainVote,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {
@@ -165,16 +171,14 @@ pub async fn treasury_authority_execute<R: Runtime>(
     parent_id: String,
     treasury_authority: String,
     proposal_id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<TreasuryAuthorityWriteResult, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
     let pid_u = U256::from_str_radix(proposal_id.trim(), 10)
         .map_err(|e| wallet_err_json("INVALID_PROPOSAL_ID", e.to_string(), None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", ta))?;
-    let calldata = executeCall {
-        _proposalId: pid_u,
-    }
-    .abi_encode();
+    let calldata = executeCall { _proposalId: pid_u }.abi_encode();
     let (tx_hash, chain, chain_id) = send_gov_module_call(
         app,
         network,
@@ -182,6 +186,7 @@ pub async fn treasury_authority_execute<R: Runtime>(
         ta,
         calldata,
         GovCapability::ExecuteTreasury,
+        rpc_urls,
     )
     .await?;
     Ok(TreasuryAuthorityWriteResult {

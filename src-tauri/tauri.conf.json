@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pacto",
-  "version": "0.3.2",
+  "productName": "Pacto",
+  "version": "0.5.2",
   "identifier": "io.pacto",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "pacto",
+        "title": "Pacto",
         "minWidth": 400,
         "width": 1000,
         "minHeight": 400,
@@ -27,8 +27,11 @@
     "security": {
       "csp": null,
       "assetProtocol": {
+        "enable": true,
         "scope": [
-          "$APPDATA/cache/**"
+          "$APPDATA/cache/**",
+          "$DOWNLOAD/pacto/**",
+          "$DOCUMENT/pacto/**"
         ]
       }
     }
@@ -47,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJGMDhCRkUyNUZDM0Q1NEIKUldSTDFjTmY0cjhJTHgxZVlNbE5JbC9QZHhwdTRITDFGK3c3Y2VMN0llQlF3ZmgrN2JnRE9CWmMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwNjYyNEVCQ0FEQkQyQUMKUldTczB0dks2eVJtb0c5YmdDWGRvdEVjdEswWVBWanJZaC9TRGc1d1hRUHhuMHEvZTU0TURFTHgK",
       "endpoints": [
         "https://github.com/covenant-gov/pacto-app/releases/latest/download/latest.json"
       ],

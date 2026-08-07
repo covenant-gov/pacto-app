@@ -8,9 +8,12 @@ use tauri::{AppHandle, Runtime};
 use super::contracts::pacto_sponsor::ISquadSponsorBase::{
     paymasterCall, squadIdCall, totalSharesCall,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
 use super::rpc::{call::eth_call_decode, connect_read_provider, parse_address, wallet_err_json};
-use super::squad_sponsor_common::{read_squad_record, squad_id_from_parent_id, squad_variant_label};
+use super::squad_sponsor_common::{
+    read_squad_record, squad_id_from_parent_id, squad_variant_label,
+};
 use super::wallet_chain_config;
 
 #[derive(Serialize)]
@@ -48,6 +51,7 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
     network: String,
     parent_id: String,
     sponsor_address: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadSponsorSummary, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -70,39 +74,37 @@ pub async fn get_squad_sponsor_summary<R: Runtime>(
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
     let provider = connect_read_provider(&urls).await?;
     let factory = addrs.squad_sponsor_factory;
     let squad_id = squad_id_from_parent_id(pid);
 
-    let (sponsor, variant, top_hat) =
-        if let Some(raw) = sponsor_address.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            let addr =
-                parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
-            let (reg, v, hat) = read_squad_record(&provider, factory, squad_id)
-                .await
-                .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
-            if reg != addr {
-                return Err(wallet_err_json(
-                    "SPONSOR_REGISTRY",
-                    "sponsor address does not match factory registry for parent id",
-                    None,
-                ));
-            }
-            (addr, v, hat)
-        } else {
-            read_squad_record(&provider, factory, squad_id)
-                .await
-                .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?
-        };
+    let (sponsor, variant, top_hat) = if let Some(raw) = sponsor_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let addr = parse_address(raw).map_err(|e| wallet_err_json("INVALID_SPONSOR", e, None))?;
+        let (reg, v, hat) = read_squad_record(&provider, factory, squad_id)
+            .await
+            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?;
+        if reg != addr {
+            return Err(wallet_err_json(
+                "SPONSOR_REGISTRY",
+                "sponsor address does not match factory registry for parent id",
+                None,
+            ));
+        }
+        (addr, v, hat)
+    } else {
+        read_squad_record(&provider, factory, squad_id)
+            .await
+            .map_err(|e| wallet_err_json("SPONSOR_LOOKUP", e, None))?
+    };
 
     let (pool_balance, total_shares, paymaster, on_chain_squad_id) =
         read_sponsor_pool(&provider, sponsor)

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { Component } from 'svelte';
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import Navbar from '../components/layout/Navbar.svelte';
   import TopNavbar from '../components/layout/TopNavbar.svelte';
   import CommonsView from '../components/commons/CommonsView.svelte';
@@ -14,6 +15,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import MessengerNavbar from '../components/dm/MessengerNavbar.svelte';
   import MessengerChatView from '../components/dm/MessengerChatView.svelte';
   import DmThread from '../components/dm/DmThread.svelte';
+  import CatchUpView from '../components/catch-up/CatchUpView.svelte';
   import WalletBar from '../components/wallet/WalletBar.svelte';
   import ResizableSidebar from '../components/ui/ResizableSidebar.svelte';
   import Toast from '../components/ui/Toast.svelte';
@@ -22,6 +24,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     getDmMessages,
     getChatMessageCount,
     sendDmMessage,
+    sendFileBytes,
     queueProfileSync,
     fetchMessages,
     markAsRead,
@@ -32,6 +35,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     addParentTreasurySafe,
   } from '../lib/api/nostr';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
+  import { resolveCatchUpEntry } from '../lib/api/catch-up';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
   import { parseSupportedChainId } from '../lib/wallet/chains';
   import { resumePendingWalletTxConfirmations } from '../lib/wallet/wallet-dm-transfer';
@@ -39,6 +43,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import {
     formatWalletPeerInfoGrant,
     formatWalletPeerInfoDecline,
+    dedupeWalletTxAnnouncements,
     type WalletPeerInfoRequestPayload,
   } from '../lib/wallet/dm-messages';
   import { getEvmAddress } from '../lib/api/auth';
@@ -47,10 +52,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import { getInvokeErrorMessage, friendlyMessage } from '../lib/utils/tauri-errors';
   import { parseWalletTxRequest } from '../lib/wallet/dm-messages';
   import { dmLog, dmError } from '../lib/utils/dm-debug';
-  import {
-    isPactoAppThreadId,
-    filterPeerThreadMessages,
-  } from '../lib/pacto-app-inbox';
+  import { hasRunPostLoginNetworkSyncThisSession } from '../lib/app/post-login-sync';
   import { isAuthenticated, currentUser, checkSession, sessionHeartbeat, maybeRequireSession } from '../stores/auth';
   import {
     squads,
@@ -67,8 +69,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmThreadAnnouncementsByNpub,
     appendPendingOutboundDmMessage,
     removeOutboundDmMessage,
-    pactoAppInboxMessages,
-    reconcilePeerThreadInvites,
     backendGroupMessages,
     ungroupedChannels,
     messageCountByChat,
@@ -107,11 +107,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     declinedWalletPeerInfoRequestMessageIds,
     dmWalletPeerExchangeTick,
   } from '../stores/app';
-  import {
-    clearDmUnread,
-    clearPactoAppInboxUnread,
-    syncUnreadCountForNpub,
-  } from '../stores/dm-unread';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import {
     closeCommonsBroadcastModal,
@@ -494,9 +489,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       const current = $activeDmId;
       const currentInList =
         !!current &&
-        (tab === 'pinned' && isPactoAppThreadId(current)
-          ? true
-          : list.some((e: DmEntry) => e.npub === current));
+        list.some((e: DmEntry) => e.npub === current);
       if (!currentInList) {
         const lastOpened = $lastOpenedDmByTab[tab];
         const stillInList = lastOpened && list.some((e: DmEntry) => e.npub === lastOpened);
@@ -577,17 +570,14 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   $: mergedDmMessages = (() => {
     const id = $activeDmId;
     if (!id) return [];
-    if (isPactoAppThreadId(id)) {
-      return [...$pactoAppInboxMessages].sort((a: DmMessage, b: DmMessage) => a.at - b.at);
-    }
-    const backend = filterPeerThreadMessages([...($backendDmMessages[id] ?? [])]);
+    const backend = dedupeWalletTxAnnouncements([...($backendDmMessages[id] ?? [])]);
     const announcements = [...($dmThreadAnnouncementsByNpub[id] ?? [])];
     const list = [...backend, ...announcements];
     list.sort((a: DmMessage, b: DmMessage) => a.at - b.at);
     return list;
   })();
 
-  $: if ($activeTopNavTab === 'dms' && $activeDmId && $currentUser?.npub && !isPactoAppThreadId($activeDmId)) {
+  $: if ($activeTopNavTab === 'dms' && $activeDmId && $currentUser?.npub) {
     resumePendingWalletTxConfirmations($activeDmId, mergedDmMessages, {
       fromNpub: $currentUser.npub,
       sendDm: handleDmSend,
@@ -597,16 +587,11 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   function handleMarkReadUpTo(messageId: string) {
     const id = get(activeDmId);
     if (!id || !messageId) return;
-    if (isPactoAppThreadId(id)) {
-      clearPactoAppInboxUnread(messageId);
-      return;
-    }
-    clearDmUnread(id, messageId);
     markAsRead(id, messageId).catch(() => {});
   }
 
   // Load backend messages when active DM changes; queue profile sync, get total count.
-  $: if ($activeDmId && $activeTopNavTab === 'dms' && !isPactoAppThreadId($activeDmId)) {
+  $: if ($activeDmId && $activeTopNavTab === 'dms') {
     const npub = $activeDmId;
     dmLog('open conversation', { npub: npub.slice(0, 20) + '…', tab: 'dms' });
     queueProfileSync(npub).catch(() => {});
@@ -620,7 +605,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     getDmMessages(npub, PAGE_SIZE, 0)
       .then((msgs) => {
         dmLog('open conversation: messages loaded', { npub: npub.slice(0, 20) + '…', count: msgs.length });
-        const loaded = filterPeerThreadMessages(msgs as DmMessage[]);
+        const loaded = dedupeWalletTxAnnouncements(msgs as DmMessage[]);
         backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
           const existing = byNpub[npub] ?? [];
           const loadedIds = new Set(loaded.map((m) => m.id));
@@ -629,10 +614,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
           const merged = [...loaded, ...fromExisting];
           return { ...byNpub, [npub]: merged };
         });
-        reconcilePeerThreadInvites();
         loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [npub]: PAGE_SIZE }));
-        const merged = filterPeerThreadMessages(get(backendDmMessages)[npub] ?? loaded);
-        syncUnreadCountForNpub(npub, merged);
       })
       .catch((err) => {
         dmError('open conversation: getDmMessages failed', err);
@@ -673,7 +655,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
 
   async function loadOlder() {
     const npub = $activeDmId;
-    if (!npub || loadingOlder || isPactoAppThreadId(npub)) return;
+    if (!npub || loadingOlder) return;
     const currentOffset = $loadedOffsetByChat[npub] ?? PAGE_SIZE;
     loadingOlder = true;
     dmLog('loadOlder', { npub: npub.slice(0, 20) + '…', offset: currentOffset });
@@ -682,7 +664,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[npub] ?? [];
         const ids = new Set(list.map((m) => m.id));
-        const newMsgs = filterPeerThreadMessages(older as DmMessage[]).filter((m) => !ids.has(m.id));
+        const newMsgs = dedupeWalletTxAnnouncements(older as DmMessage[]).filter((m) => !ids.has(m.id));
         if (newMsgs.length === 0) return byNpub;
         dmLog('loadOlder: prepending', { count: newMsgs.length });
         return { ...byNpub, [npub]: [...newMsgs, ...list] };
@@ -700,7 +682,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
 
   $: canLoadOlder =
     $activeDmId &&
-    !isPactoAppThreadId($activeDmId) &&
     !loadingOlder &&
     (($messageCountByChat[$activeDmId] ?? 0) > ($backendDmMessages[$activeDmId]?.length ?? 0));
 
@@ -785,9 +766,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     }, 400);
   }
 
-  async function handleDmSend(content: string): Promise<boolean> {
+  async function handleDmSend(content: string, repliedTo?: string): Promise<boolean> {
     const id = $activeDmId;
-    if (!id || isPactoAppThreadId(id)) return false;
+    if (!id) return false;
     if (!(await maybeRequireSession())) {
       dmLog('handleDmSend: session locked, aborting');
       return false;
@@ -798,7 +779,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     dmLog('handleDmSend', { receiver: id.slice(0, 20) + '…', contentLen: content.length });
     $dmSendError = null;
     try {
-      const ok = await sendDmMessage(id, content);
+      const ok = await sendDmMessage(id, content, repliedTo ?? '');
       dmLog('handleDmSend result', { ok });
       if (!ok) {
         $dmSendError = friendlyMessage(
@@ -812,6 +793,36 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSend error', e);
       return false;
+    }
+  }
+
+  async function handleDmSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    const id = $activeDmId;
+    if (!id) return;
+    if (!(await maybeRequireSession())) {
+      dmLog('handleDmSendFile: session locked, aborting');
+      return;
+    }
+    dmLog('handleDmSendFile', { receiver: id.slice(0, 20) + '…', fileName });
+    $dmSendError = null;
+    try {
+      const ok = await sendFileBytes(id, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      dmLog('handleDmSendFile result', { ok });
+      if (!ok) {
+        $dmSendError = friendlyMessage(
+          'Could not deliver attachment. It may appear as pending or failed.',
+          'dm_send'
+        );
+      }
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      $dmSendError = friendlyMessage(raw, 'dm_send');
+      dmError('handleDmSendFile error', e);
     }
   }
 
@@ -926,9 +937,15 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   onMount(() => {
     syncSquadsHubSelection();
 
-    // Pull DMs from Nostr relays when app loads (if already authenticated)
-    if ($isAuthenticated) {
-      dmLog('onMount: authenticated, calling fetchMessages(true)');
+    // Pull DMs from Nostr relays when app loads, but only as a fallback for a session
+    // that was already authenticated before this mount (e.g. restored via Login.svelte's
+    // "backend session alive, HMR reload" branch) without going through
+    // createAccount/importAccount/unlockWithPin — those already trigger this via
+    // runPostLoginNetworkSync before +page.svelte ever mounts (mounting is gated on
+    // isAuthenticated by +layout.svelte), so re-firing here would be a redundant,
+    // overlapping init sync.
+    if ($isAuthenticated && !hasRunPostLoginNetworkSyncThisSession) {
+      dmLog('onMount: authenticated without a prior post-login sync, calling fetchMessages(true)');
       dmSyncStatus.set('syncing');
       fetchMessages(true).catch((e) => dmError('onMount: fetchMessages(true) failed', e));
       clearUngroupedChannels();
@@ -991,15 +1008,20 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 loadingOlder={loadingOlder}
                 onLoadOlder={loadOlder}
                 onSend={handleDmSend}
+                onSendFile={handleDmSendFile}
                 onTyping={handleDmTyping}
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
-                onDeclineSquad={(msg: DmMessage) =>
-                  declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]))}
-                onDeclineChannelInSquad={(msg: DmMessage) =>
+                onDeclineSquad={(msg: DmMessage) => {
+                  declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+                  resolveCatchUpEntry(msg.id).catch(() => {});
+                }}
+                onDeclineChannelInSquad={(msg: DmMessage) => {
                   declinedChannelInviteMessageIds.update((ids: string[]) =>
                     ids.includes(msg.id) ? ids : [...ids, msg.id]
-                  )}
+                  );
+                  resolveCatchUpEntry(msg.id).catch(() => {});
+                }}
                 onOpenInviterChat={openInviterDm}
                 onMarkReadUpTo={handleMarkReadUpTo}
                 acceptingSquadInviteId={$acceptingSquadInviteId}
@@ -1018,9 +1040,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                     throw new Error(getInvokeErrorMessage(e, 'Failed to set nickname'), { cause: e });
                   }
                 }}
-                onDeleteChat={isPactoAppThreadId($activeDmId)
-                  ? undefined
-                  : () => {
+                onDeleteChat={() => {
                   const id = $activeDmId;
                   if (!id) return;
                   const snapshot: DmChatSnapshot = {
@@ -1036,13 +1056,12 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                     showToast('Could not delete chat. Please try again.');
                   });
                 }}
-                showWalletButton={($activeDmTab === 'friends' || $activeDmTab === 'pinned') &&
-                  !isPactoAppThreadId($activeDmId) /* wallet: Friends + Pinned only; not Pending/Requests/new chat */ }
+                showWalletButton={$activeDmTab === 'friends' || $activeDmTab === 'pinned' /* wallet: Friends + Pinned only; not Pending/Requests/new chat */}
               />
               {/key}
             {:else}
               <div class="dm-empty">
-                <p>Select a conversation or start a new chat</p>
+                <p>{$t('app.dm.empty')}</p>
               </div>
             {/if}
             </div>
@@ -1061,6 +1080,8 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
             {/if}
           </div>
         </div>
+      {:else if $activeTopNavTab === 'catchup'}
+        <CatchUpView />
       {:else}
         <div class="parent-area">
           <ParentNavbar />
@@ -1147,12 +1168,12 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
             {#if ChatViewComponent}
               <svelte:component this={ChatViewComponent} />
             {:else}
-              <p class="surface-loading muted" role="status">Loading channel…</p>
+              <p class="surface-loading muted" role="status">{$t('app.loading.channel')}</p>
             {/if}
           {:else if $activeSquadId && !openHubParent}
-            <p class="surface-loading muted" role="status">Loading squad…</p>
+            <p class="surface-loading muted" role="status">{$t('app.loading.squad')}</p>
           {:else}
-            <p class="surface-loading muted" role="status">Select a squad channel</p>
+            <p class="surface-loading muted" role="status">{$t('app.selectSquadChannel')}</p>
           {/if}
           </div>
         </div>
@@ -1204,8 +1225,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     flex-direction: column;
   }
 
-  .parent-area,
-  .squads-area {
+  .parent-area {
     flex: 1;
     min-width: 0;
     min-height: 0;

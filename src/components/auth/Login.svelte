@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import WelcomeScreen from './WelcomeScreen.svelte';
   import KeyImport from './KeyImport.svelte';
   import PinInput from './PinInput.svelte';
-  import { get } from 'svelte/store';
   import { checkAuthStatus, createAccount, importAccount, unlockWithPin, authLoading, authError, clearAuthError, checkSession, isAuthenticated, currentUser } from '../../stores/auth';
+  import { appConfig } from '../../stores/app-config';
   import { validateRecoveryPhraseForImport } from '../../lib/api/encryption';
 
   type AuthStep = 'checking' | 'welcome' | 'import' | 'pin-create' | 'pin-confirm' | 'pin-unlock';
@@ -14,6 +16,8 @@
   let firstPin: string = '';
   let error: string | null = null;
   let unlockInFlight = false;
+
+  $: pinDigitCount = $appConfig.pinDigitCount;
 
   // Check if user has stored encrypted key on mount, and confirm backend session state.
   onMount(async () => {
@@ -52,7 +56,7 @@
   // --- Key Import Actions ---
   function handleKeyImported(key: string) {
     if (!validateRecoveryPhraseForImport(key)) {
-      error = 'Enter a valid 12- or 24-word recovery phrase';
+      error = get(t)('auth.errorInvalidRecoveryPhrase');
       return;
     }
 
@@ -77,7 +81,7 @@
 
   async function handlePinConfirm(pin: string) {
     if (pin !== firstPin) {
-      error = "PINs don't match";
+      error = get(t)('auth.errorPinsDontMatch');
       currentStep = 'pin-create';
       firstPin = '';
       return;
@@ -93,7 +97,7 @@
       }
       // On success, auth store will handle state and user will see app
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to create account';
+      error = e instanceof Error ? e.message : get(t)('auth.errorCreateAccountFailed');
       currentStep = 'pin-create';
       firstPin = '';
     }
@@ -106,7 +110,7 @@
       await unlockWithPin(pin);
       // On success, auth store will handle state and user will see app
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Incorrect PIN';
+      error = e instanceof Error ? e.message : get(t)('auth.errorIncorrectPin');
       // Stay on unlock screen for retry
     } finally {
       unlockInFlight = false;
@@ -141,7 +145,7 @@
   {#if currentStep === 'checking'}
     <div class="checking-screen" role="status" aria-live="polite">
       <div class="checking-spinner"></div>
-      <p class="checking-text">Checking your account…</p>
+      <p class="checking-text">{$t('auth.checkingAccount')}</p>
     </div>
   {:else if currentStep === 'welcome'}
     <WelcomeScreen
@@ -158,32 +162,35 @@
   {:else if currentStep === 'pin-create'}
     <div class="pin-screen">
       <PinInput
-        title="Create your PIN"
+        title={$t('auth.pinCreateTitle')}
         onComplete={handlePinCreate}
         onErrorClear={() => { error = null; clearAuthError(); }}
         onBack={handlePinCreateBack}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>
   {:else if currentStep === 'pin-confirm'}
     <div class="pin-screen">
       <PinInput
-        title="Confirm your PIN"
+        title={$t('auth.pinConfirmTitle')}
         onComplete={handlePinConfirm}
         onErrorClear={() => { error = null; clearAuthError(); }}
         onBack={handlePinConfirmBack}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>
   {:else if currentStep === 'pin-unlock'}
     <div class="pin-screen">
       <PinInput
-        title="Enter your PIN"
+        title={$t('auth.pinEnterTitle')}
         onComplete={handlePinUnlock}
         onErrorClear={() => { error = null; clearAuthError(); }}
         isProcessing={$authLoading}
+        {pinDigitCount}
         {error}
       />
     </div>

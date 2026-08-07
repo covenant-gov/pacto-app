@@ -41,15 +41,14 @@ const mocks = vi.hoisted(() => {
     typingByChat: createMockStore<Record<string, string[]>>({}),
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
     dashboardPollReplicaNonceByParentId: createMockStore<Record<string, number>>({}),
-    activeDmId: createMockStore<string | null>(null),
+    lastCatchUpSuccess: createMockStore<number | null>(null),
   };
 
   const mockFunctions = {
-    appendPactoAppInboxMessage: vi.fn(),
-    reconcilePeerThreadInvites: vi.fn(),
     bumpMembershipVersion: vi.fn(),
     handleMlsWelcomeAccepted: vi.fn(),
     handleChannelAddedToSquad: vi.fn(),
+    notifyPendingInviteWelcome: vi.fn(),
     updateChannelNameIfPlaceholder: vi.fn(),
     listPendingMlsWelcomes: vi.fn(),
     fetchMessages: vi.fn(),
@@ -57,14 +56,17 @@ const mocks = vi.hoisted(() => {
     syncMlsGroupsNow: vi.fn(),
     parseAnnouncement: vi.fn(),
     parseWalletTxAnnouncement: vi.fn(),
-    isPactoAppRoutableInviteContent: vi.fn(),
-    resolveInviteInviterNpub: vi.fn(),
-    incrementDmUnread: vi.fn(),
+    mergeUnreadCounts: vi.fn(),
     dmLog: vi.fn(),
     dmError: vi.fn(),
+    listRelays: vi.fn(),
+    seedRelayHealth: vi.fn(),
+    applyRelayStatusChange: vi.fn(),
+    installSyncHealthTicker: vi.fn(() => vi.fn()),
+    applyMlsStoreResetState: vi.fn(),
+    refreshMlsStoreResetState: vi.fn(),
   };
 
-  const dmThreadScrolledToBottom = createMockStore<boolean>(false);
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
   const showMigrationCompleteToast = vi.fn((message: string) => {
     migrationCompleteToast.set({ shown: true, message });
@@ -78,7 +80,6 @@ const mocks = vi.hoisted(() => {
     listen,
     mockStores,
     mockFunctions,
-    dmThreadScrolledToBottom,
     migrationCompleteToast,
     showMigrationCompleteToast,
     dropSessionState,
@@ -97,6 +98,10 @@ vi.mock('../api/nostr', () => ({
   syncMlsGroupsNow: (...args: unknown[]) => mocks.mockFunctions.syncMlsGroupsNow(...args),
 }));
 
+vi.mock('../api/relays', () => ({
+  listRelays: (...args: unknown[]) => mocks.mockFunctions.listRelays(...args),
+}));
+
 vi.mock('../announcements', () => ({
   parseAnnouncement: (...args: unknown[]) => mocks.mockFunctions.parseAnnouncement(...args),
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED: 'governance_updated',
@@ -112,18 +117,13 @@ vi.mock('../wallet/dm-messages', () => ({
   },
 }));
 
-vi.mock('../pacto-app-inbox', () => ({
-  isPactoAppRoutableInviteContent: (...args: unknown[]) =>
-    mocks.mockFunctions.isPactoAppRoutableInviteContent(...args),
-  resolveInviteInviterNpub: (...args: unknown[]) =>
-    mocks.mockFunctions.resolveInviteInviterNpub(...args),
-}));
-
 vi.mock('../invites/accept-invite', () => ({
   handleChannelAddedToSquad: (...args: unknown[]) =>
     mocks.mockFunctions.handleChannelAddedToSquad(...args),
   handleMlsWelcomeAccepted: (...args: unknown[]) =>
     mocks.mockFunctions.handleMlsWelcomeAccepted(...args),
+  notifyPendingInviteWelcome: (...args: unknown[]) =>
+    mocks.mockFunctions.notifyPendingInviteWelcome(...args),
 }));
 
 vi.mock('../squad/squad-catalog', () => ({
@@ -147,21 +147,26 @@ vi.mock('../../stores/app', () => ({
   backendDmMessages: mocks.mockStores.backendDmMessages,
   backendGroupMessages: mocks.mockStores.backendGroupMessages,
   dmChatsByNpub: mocks.mockStores.dmChatsByNpub,
-  appendPactoAppInboxMessage: (...args: unknown[]) =>
-    mocks.mockFunctions.appendPactoAppInboxMessage(...args),
-  reconcilePeerThreadInvites: (...args: unknown[]) =>
-    mocks.mockFunctions.reconcilePeerThreadInvites(...args),
   dmSyncStatus: mocks.mockStores.dmSyncStatus,
   typingByChat: mocks.mockStores.typingByChat,
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
   bumpMembershipVersion: (...args: unknown[]) => mocks.mockFunctions.bumpMembershipVersion(...args),
   dashboardPollReplicaNonceByParentId: mocks.mockStores.dashboardPollReplicaNonceByParentId,
-  activeDmId: mocks.mockStores.activeDmId,
+  lastCatchUpSuccess: mocks.mockStores.lastCatchUpSuccess,
+  seedRelayHealth: (...args: unknown[]) => mocks.mockFunctions.seedRelayHealth(...args),
+  applyRelayStatusChange: (...args: unknown[]) => mocks.mockFunctions.applyRelayStatusChange(...args),
+  installSyncHealthTicker: mocks.mockFunctions.installSyncHealthTicker,
 }));
 
-vi.mock('../../stores/dm-unread', () => ({
-  incrementDmUnread: (...args: unknown[]) => mocks.mockFunctions.incrementDmUnread(...args),
-  dmThreadScrolledToBottom: mocks.dmThreadScrolledToBottom,
+vi.mock('../../stores/unread', () => ({
+  mergeUnreadCounts: (...args: unknown[]) => mocks.mockFunctions.mergeUnreadCounts(...args),
+}));
+
+vi.mock('../../stores/mls-reset', () => ({
+  applyMlsStoreResetState: (...args: unknown[]) =>
+    mocks.mockFunctions.applyMlsStoreResetState(...args),
+  refreshMlsStoreResetState: (...args: unknown[]) =>
+    mocks.mockFunctions.refreshMlsStoreResetState(...args),
 }));
 
 function emit(event: string, payload: unknown): void {
@@ -192,9 +197,24 @@ const handlers: AppEventHandlers = {
 
 describe('subscribeAppEvents', () => {
   let unsubscribe: (() => void) | undefined;
+  const windowAddEventListener = vi.fn();
+  const windowRemoveEventListener = vi.fn();
+  const documentAddEventListener = vi.fn();
+  const documentRemoveEventListener = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // installWakeSyncHandlers (called from subscribeAppEvents) touches window/document;
+    // this suite runs in the 'node' test environment, so stub the bare minimum it needs.
+    vi.stubGlobal('window', {
+      addEventListener: windowAddEventListener,
+      removeEventListener: windowRemoveEventListener,
+    });
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      addEventListener: documentAddEventListener,
+      removeEventListener: documentRemoveEventListener,
+    });
     Object.keys(mocks.registered).forEach((k) => delete mocks.registered[k]);
     mocks.mockStores.backendDmMessages.set({});
     mocks.mockStores.backendGroupMessages.set({});
@@ -203,23 +223,27 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
     mocks.mockStores.dashboardPollReplicaNonceByParentId.set({});
-    mocks.mockStores.activeDmId.set(null);
-    mocks.dmThreadScrolledToBottom.set(false);
-    mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(false);
+    mocks.mockStores.lastCatchUpSuccess.set(null);
+    mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue(null);
     mocks.mockFunctions.parseWalletTxAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.parseAnnouncement.mockReturnValue(null);
     mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
     mocks.mockFunctions.fetchMessages.mockResolvedValue(undefined);
+    mocks.mockFunctions.syncMlsGroupsNow.mockResolvedValue(undefined);
+    mocks.mockFunctions.listRelays.mockResolvedValue([]);
+    mocks.mockFunctions.installSyncHealthTicker.mockReturnValue(vi.fn());
+    mocks.mockFunctions.refreshMlsStoreResetState.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     unsubscribe?.();
     unsubscribe = undefined;
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('registers expected event listeners', async () => {
-    subscribeAppEvents(handlers);
+    unsubscribe = subscribeAppEvents(handlers);
     await Promise.resolve();
     const expected = [
       'message_new',
@@ -227,9 +251,12 @@ describe('subscribeAppEvents', () => {
       'sync_slice_finished',
       'sync_progress',
       'sync_finished',
+      'relay_status_change',
       'typing-update',
       'mls_message_new',
+      'unread_counts_changed',
       'mls_invite_received',
+      'mls_store_reset',
       'mls_welcome_accepted',
       'channel_added_to_squad',
       'mls_group_updated',
@@ -243,6 +270,39 @@ describe('subscribeAppEvents', () => {
       expect(mocks.registered[e], `missing listener for ${e}`).toBeDefined();
       expect(mocks.registered[e].length).toBe(1);
     }
+
+    expect(windowAddEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+    expect(documentAddEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(documentAddEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
+
+    unsubscribe();
+    unsubscribe = undefined;
+
+    expect(windowRemoveEventListener).toHaveBeenCalledWith('focus', expect.any(Function));
+    expect(documentRemoveEventListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    expect(documentRemoveEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
+  });
+
+  it('hydrates reset state and applies live reset events', async () => {
+    // Serde rename_all = camelCase on MlsStoreResetGroupState — the live emit shape.
+    const payload = [
+      { groupId: 'group-a', stateLost: true, adminNpubs: ['a', 'b'], singleAdmin: false },
+    ];
+    unsubscribe = subscribeAppEvents(handlers);
+    await Promise.resolve();
+    expect(mocks.mockFunctions.refreshMlsStoreResetState).toHaveBeenCalledTimes(1);
+    emit('mls_store_reset', payload);
+    expect(mocks.mockFunctions.applyMlsStoreResetState).toHaveBeenCalledWith(payload);
+    expect(mocks.mockFunctions.applyMlsStoreResetState).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          groupId: 'group-a',
+          stateLost: true,
+          adminNpubs: ['a', 'b'],
+          singleAdmin: false,
+        }),
+      ])
+    );
   });
 
   it('unsubscribes clears timeouts and unlisten promises', () => {
@@ -265,27 +325,21 @@ describe('subscribeAppEvents', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'group1', message: dmMessage() });
       expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
     });
 
-    it('appends pacto inbox message for routable invite content from others', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
-      mocks.mockFunctions.resolveInviteInviterNpub.mockReturnValue('npub1inviter');
+    it('syncs MLS groups eagerly for an incoming squad invite DM', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
-      const message = dmMessage({ mine: false });
-      emit('message_new', { chat_id: 'npub1chat', message });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'msg1' }),
-        'npub1inviter'
-      );
-      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
+      expect(mocks.mockFunctions.syncMlsGroupsNow).toHaveBeenCalledWith('g1');
+      expect(mocks.mockStores.backendDmMessages.get()['npub1chat']).toHaveLength(1);
     });
 
-    it('does not append inbox message for own routable invite', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
+    it('does not sync MLS groups for an own outgoing squad invite DM', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).not.toHaveBeenCalled();
+      expect(mocks.mockFunctions.syncMlsGroupsNow).not.toHaveBeenCalled();
     });
 
     it('adds message to backendDmMessages for normal DM content', () => {
@@ -295,28 +349,6 @@ describe('subscribeAppEvents', () => {
       const chatMessages = mocks.mockStores.backendDmMessages.get()['npub1chat'];
       expect(chatMessages).toHaveLength(1);
       expect(chatMessages![0].id).toBe('m1');
-    });
-
-    it('increments unread for inbound message when not active thread', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1other');
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
-      expect(mocks.mockFunctions.incrementDmUnread).toHaveBeenCalledWith('npub1chat');
-    });
-
-    it('does not increment unread for own message', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1chat');
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: true }) });
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
-    });
-
-    it('does not increment unread when thread is active and scrolled to bottom', () => {
-      unsubscribe = subscribeAppEvents(handlers);
-      mocks.mockStores.activeDmId.set('npub1chat');
-      mocks.dmThreadScrolledToBottom.set(true);
-      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ mine: false }) });
-      expect(mocks.mockFunctions.incrementDmUnread).not.toHaveBeenCalled();
     });
 
     it('updates dmChatsByNpub metadata', () => {
@@ -344,6 +376,14 @@ describe('subscribeAppEvents', () => {
     });
   });
 
+  describe('unread_counts_changed', () => {
+    it('merges the payload into the unread store', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('unread_counts_changed', { npub1chat: 3, group1: 0 });
+      expect(mocks.mockFunctions.mergeUnreadCounts).toHaveBeenCalledWith({ npub1chat: 3, group1: 0 });
+    });
+  });
+
   describe('message_update', () => {
     it('replaces message in DM backend for npub1 chat', () => {
       unsubscribe = subscribeAppEvents(handlers);
@@ -357,17 +397,16 @@ describe('subscribeAppEvents', () => {
       expect(list[0].id).toBe('new1');
     });
 
-    it('handles routable invite update in DM chat', () => {
-      mocks.mockFunctions.isPactoAppRoutableInviteContent.mockReturnValue(true);
-      mocks.mockFunctions.resolveInviteInviterNpub.mockReturnValue('npub1inviter');
+    it('syncs MLS groups eagerly for an incoming squad invite DM update', () => {
+      mocks.mockFunctions.parseSquadInviteMessage.mockReturnValue({ groupId: 'g1' });
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_update', {
         chat_id: 'npub1chat',
         old_id: 'old1',
         message: dmMessage({ mine: false }),
       });
-      expect(mocks.mockFunctions.appendPactoAppInboxMessage).toHaveBeenCalled();
-      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      expect(mocks.mockFunctions.syncMlsGroupsNow).toHaveBeenCalledWith('g1');
+      expect(mocks.mockStores.backendDmMessages.get()['npub1chat']).toHaveLength(1);
     });
 
     it('updates group messages for non-npub1 chat', () => {
@@ -422,14 +461,56 @@ describe('subscribeAppEvents', () => {
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('finished');
     });
 
-    it('sync_finished reconciles invites and returns to idle after timeout', () => {
+    it('sync_finished returns to idle after timeout', () => {
       vi.useFakeTimers();
       unsubscribe = subscribeAppEvents(handlers);
       emit('sync_finished', {});
-      expect(mocks.mockFunctions.reconcilePeerThreadInvites).toHaveBeenCalled();
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('finished');
       vi.advanceTimersByTime(2500);
       expect(mocks.mockStores.dmSyncStatus.get()).toBe('idle');
+    });
+
+    it('sync_finished sets lastCatchUpSuccess to now', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      const before = Date.now();
+      emit('sync_finished', {});
+      const value = mocks.mockStores.lastCatchUpSuccess.get();
+      expect(value).not.toBeNull();
+      expect(value as number).toBeGreaterThanOrEqual(before);
+    });
+  });
+
+  describe('relay_status_change', () => {
+    it('forwards url/status to applyRelayStatusChange', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('relay_status_change', { url: 'wss://relay.one', status: 'disconnected' });
+      expect(mocks.mockFunctions.applyRelayStatusChange).toHaveBeenCalledWith(
+        'wss://relay.one',
+        'disconnected'
+      );
+    });
+  });
+
+  describe('startup relay health seeding', () => {
+    it('seeds relayStatusByUrl from listRelays on subscribe', async () => {
+      mocks.mockFunctions.listRelays.mockResolvedValue([
+        { url: 'wss://relay.one', status: 'connected', is_default: true, is_custom: false, enabled: true, mode: 'both' },
+      ]);
+      unsubscribe = subscribeAppEvents(handlers);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(mocks.mockFunctions.seedRelayHealth).toHaveBeenCalledWith([
+        { url: 'wss://relay.one', status: 'connected', enabled: true },
+      ]);
+    });
+
+    it('starts the sync health ticker and stops it on cleanup', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      expect(mocks.mockFunctions.installSyncHealthTicker).toHaveBeenCalled();
+      const cleanupFn = mocks.mockFunctions.installSyncHealthTicker.mock.results[0]?.value;
+      unsubscribe();
+      unsubscribe = undefined;
+      expect(cleanupFn).toHaveBeenCalled();
     });
   });
 
@@ -512,6 +593,14 @@ describe('subscribeAppEvents', () => {
       await Promise.resolve();
       expect(mocks.mockFunctions.listPendingMlsWelcomes).toHaveBeenCalled();
       expect(mocks.mockStores.pendingMlsWelcomes.get()).toEqual([{ group_id: 'g1' }]);
+      expect(mocks.mockFunctions.notifyPendingInviteWelcome).toHaveBeenCalledWith(null);
+    });
+
+    it('mls_invite_received wakes accept waiters with group_id', async () => {
+      mocks.mockFunctions.listPendingMlsWelcomes.mockResolvedValue([]);
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('mls_invite_received', { group_id: 'g-ann' });
+      expect(mocks.mockFunctions.notifyPendingInviteWelcome).toHaveBeenCalledWith('g-ann');
     });
 
     it('mls_welcome_accepted refreshes welcomes and handles acceptance', async () => {

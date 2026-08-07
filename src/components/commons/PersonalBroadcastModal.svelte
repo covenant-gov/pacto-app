@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import UserCommonsBroadcastPanel from './UserCommonsBroadcastPanel.svelte';
   import { currentUser } from '../../stores/auth';
@@ -18,14 +19,14 @@
   onClose={onClose}
   dismissible={!publishing}
 >
-  <h2 id="personal-broadcast-title">Personal broadcast</h2>
+  <h2 id="personal-broadcast-title">{$t('commons.broadcast.personalTitle')}</h2>
   <p id="personal-broadcast-description" class="broadcast-modal-lead">
-    Share a public message in Commons so others can find you by tag.
+    {$t('commons.broadcast.personalLead')}
   </p>
   {#if userNpub}
     <UserCommonsBroadcastPanel {userNpub} bind:publishing onPublished={onClose} />
   {:else}
-    <p class="broadcast-private-note">Log in to publish a broadcast.</p>
+    <p class="broadcast-private-note">{$t('commons.broadcast.loginPrompt')}</p>
   {/if}
 </Modal>
 

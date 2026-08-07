@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { showToast } from '../../stores/toast';
   import CommonsTagPicker from './CommonsTagPicker.svelte';
   import {
@@ -28,6 +30,8 @@
   let activeBroadcast: CommonsBroadcastLocalState | null = null;
   let cooldownLabel = '';
   let cooldownTimer: ReturnType<typeof setInterval> | null = null;
+
+  const tFn = get(t);
 
   $: onCooldown = !!activeBroadcast;
   $: canSubmit =
@@ -82,7 +86,7 @@
         submitError = result.error;
         return;
       }
-      showToast('Broadcast published to Commons.');
+      showToast(tFn('commons.broadcast.publishToast'));
       message = '';
       tags = [];
       commonsUserHasActiveBroadcast.set(true);
@@ -95,36 +99,36 @@
 </script>
 
 <form class="user-broadcast-panel" on:submit|preventDefault={handleSubmit}>
-  <span class="broadcast-label">Tags (1–3)</span>
-  <CommonsTagPicker bind:selected={tags} maxTags={3} disabled={onCooldown || publishing} />
+  <span class="broadcast-label">{$t('commons.broadcast.tagsLabelPersonal')}</span>
+  <CommonsTagPicker bind:selected={tags} disabled={onCooldown || publishing} />
 
   {#if loadingActive}
-    <p class="broadcast-muted">Checking active broadcast…</p>
+    <p class="broadcast-muted">{$t('commons.broadcast.checkingActive')}</p>
   {:else if onCooldown && activeBroadcast}
     <p class="broadcast-cooldown" role="status">
-      Active until broadcast expires ({cooldownLabel} remaining).
+      {$t('commons.broadcast.cooldownStatus', { values: { cooldownLabel } })}
     </p>
     <p class="broadcast-muted broadcast-cooldown-detail">
       “{activeBroadcast.message}” · {formatCommonsBroadcastDuration(activeBroadcast.durationHours)}
       {#if activeBroadcast.audience}
-        · {activeBroadcast.audience === 'new_user' ? 'New user' : 'Active user'}
+        · {activeBroadcast.audience === 'new_user' ? $t('commons.broadcast.audienceNew') : $t('commons.broadcast.audienceActive')}
       {/if}
     </p>
   {/if}
 
-  <label class="broadcast-label" for="user-commons-broadcast-message">Message</label>
+  <label class="broadcast-label" for="user-commons-broadcast-message">{$t('commons.broadcast.messageLabel')}</label>
   <textarea
     id="user-commons-broadcast-message"
     class="broadcast-textarea"
     rows="4"
-    placeholder="What should people know before they message you?"
+    placeholder={$t('commons.broadcast.personalPlaceholder')}
     bind:value={message}
     disabled={onCooldown || publishing}
     required
   ></textarea>
 
-  <span class="broadcast-label">Duration</span>
-  <div class="broadcast-duration" role="radiogroup" aria-label="Broadcast duration">
+  <span class="broadcast-label">{$t('commons.broadcast.durationLabel')}</span>
+  <div class="broadcast-duration" role="radiogroup" aria-label={$t('commons.broadcast.durationAriaLabel')}>
     {#each COMMONS_BROADCAST_DURATION_ROWS as row, rowIndex (rowIndex)}
       <div class="broadcast-duration-row">
         {#each row as opt (opt.hours)}
@@ -136,7 +140,7 @@
               bind:group={durationHours}
               disabled={onCooldown || publishing}
             />
-            <span>{opt.label}</span>
+            <span>{$t(opt.label, { values: { hours: opt.hours } })}</span>
           </label>
         {/each}
       </div>
@@ -149,7 +153,7 @@
 
   <div class="broadcast-actions">
     <button type="submit" class="broadcast-btn-submit" disabled={!canSubmit}>
-      {publishing ? 'Publishing…' : onCooldown ? 'On cooldown' : 'Broadcast'}
+      {publishing ? $t('commons.broadcast.publishing') : onCooldown ? $t('commons.broadcast.onCooldown') : $t('commons.broadcast.broadcast')}
     </button>
   </div>
 </form>

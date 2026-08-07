@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import Message from './Message.svelte';
   import InviteCard from './InviteCard.svelte';
   import WalletTxRequestCard from '../wallet/WalletTxRequestCard.svelte';
@@ -8,6 +9,7 @@
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
+  import { t } from 'svelte-i18n';
   import {
     acceptedSquadInviteIds,
     declinedSquadInviteIds,
@@ -33,10 +35,11 @@
     buildPlainMessageProps,
   } from '../../lib/dm/resolve-dm-message-presentation';
   import { isWalletTxAnnouncementOnChainPending } from '../../lib/wallet/dm-messages';
+  import { reactToMessage } from '../../lib/api/nostr';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
 
   export let msg: DmMessage;
   export let npub: string;
-  export let isPactoAppThread: boolean;
   export let contactDisplayName: string;
   export let fulfilledWalletRequestIds: ReadonlySet<string>;
   export let acceptingSquadInviteId: string | null = null;
@@ -67,9 +70,32 @@
     ? getInviterDisplayFromNpub(inviterNpubForCard, $profiles)
     : { inviterName: '', inviterAvatarSrc: null };
   $: openInviter =
-    isPactoAppThread && !msg.mine && inviterNpubForCard && onOpenInviterChat
+    !msg.mine && inviterNpubForCard && inviterNpubForCard !== npub && onOpenInviterChat
       ? () => onOpenInviterChat!(inviterNpubForCard!)
       : undefined;
+
+  const dispatch = createEventDispatcher<{ reply: { messageId: string } }>();
+
+  async function onReact(messageId: string, emoji: string) {
+    try {
+      await reactToMessage(messageId, npub, emoji);
+    } catch (e: unknown) {
+      clearPendingReactions(messageId);
+      showToast(e instanceof Error ? e.message : 'Could not add reaction');
+    }
+  }
+
+  function onCopy(_messageId: string, text: string) {
+    if (!navigator.clipboard) {
+      showToast('Copy not available on this device');
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(() => showToast('Could not copy message'));
+  }
+
+  function onReply(messageId: string) {
+    dispatch('reply', { messageId });
+  }
 </script>
 
 {#if presentation.kind === 'local-announcement'}
@@ -197,20 +223,29 @@
 {:else if presentation.kind === 'bot-join-response'}
   <div class="dm-thread-announcement" role="status">
     {#if presentation.payload.status === 'accepted'}
-      Join request for {presentation.payload.squadName} was accepted
+      {$t('messaging.dm.thread.joinRequestAccepted', { values: { squadName: presentation.payload.squadName } })}
     {:else}
-      Join request for {presentation.payload.squadName} was rejected
+      {$t('messaging.dm.thread.joinRequestRejected', { values: { squadName: presentation.payload.squadName } })}
     {/if}
   </div>
 {:else if presentation.kind === 'bot-join-dm'}
   <div class="dm-thread-announcement" role="status">
-    Join request for {presentation.payload.squadName}
+    {$t('messaging.dm.thread.joinRequestPending', { values: { squadName: presentation.payload.squadName } })}
   </div>
 {:else if presentation.kind === 'structured-notice'}
   <div class="dm-thread-announcement" role="status">{presentation.text}</div>
 {:else}
   <Message
     {...buildPlainMessageProps(msg, npub, $profiles, $currentUser?.npub)}
+    reactions={msg.reactions}
+    attachments={msg.attachments}
+    previewMetadata={msg.preview_metadata}
+    profiles={$profiles}
+    currentUserNpub={$currentUser?.npub}
+    chatId={npub}
+    {onReact}
+    {onCopy}
+    {onReply}
     {compact}
   />
 {/if}

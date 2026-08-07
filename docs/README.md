@@ -3,12 +3,16 @@
 These docs are **tracked in git** and are the primary map for humans and coding agents: architecture, storage, messaging, and operational behavior.
 
 | Area | Purpose |
-|------|---------|
+|------|--------|
+| **[svelte5-reference.md](./svelte5-reference.md)** | **Svelte 5 runes, patterns, events, snippets, TypeScript, and migration notes** for frontend development |
+| **[BEADS.md](./BEADS.md)** | **Issue tracking with Beads (`bd`)**: install, sync, daily workflow, and DoltHub setup |
 | **[CONCEPTS.md](../CONCEPTS.md)** | Shared vocabulary / acronyms (npub, MLS, roster EVM, ACL, …) |
 | **[security/CRYPTOGRAPHY.md](./security/CRYPTOGRAPHY.md)** | **PIN-derived encryption, per-device salt, migration, and MLS encryption** (contributor/technical) |
 | **[user/UNDERSTANDING_ENCRYPTION.md](./user/UNDERSTANDING_ENCRYPTION.md)** | **User-facing explanation of PIN, salt, and group encryption** (non-technical) |
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
+| **[messaging/ATTACHMENTS.md](./messaging/ATTACHMENTS.md)** | Encrypted attachment uploads: Blossom blob vs media servers, host-visible metadata, caveats |
+| **[messaging/SYNC_STATUS.md](./messaging/SYNC_STATUS.md)** | Gift-wrap backfill loop (modes, slices, events) and the header sync dot it drives |
 | **[nostr/](./nostr/)** | Relay-facing behavior, rumor pipeline, module index |
 | **[mls/](./mls/)** | MDK engine, storage split, invites, eviction & leave |
 | **[storage-layout/](./storage-layout/)** | SQLite schema, paths, logout, local message encryption |
@@ -20,6 +24,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
 | **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
+| **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu) |
 | **[testing/](./testing/)** | Test coverage status and backend phased testing plan ([README](./testing/README.md)) |

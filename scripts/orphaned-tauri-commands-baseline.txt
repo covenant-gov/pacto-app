@@ -1,0 +1,86 @@
+# Pre-existing Tauri commands that scripts/check-orphaned-tauri-commands.mjs
+# flags as unreferenced by any frontend invoke() call, as of the audit that
+# added this check (2026-07-29). Grandfathered so the check gates only NEW
+# wiring gaps, not this backlog.
+#
+# Do NOT add a command here to silence a failure for code you just wrote —
+# that defeats the check. Only add an entry when you've confirmed by hand
+# that the command is genuinely invoked through a path this scan can't see
+# (e.g. Android-only interop), and say so in a comment. Otherwise wire the
+# missing invoke() call instead.
+#
+# This list is not triaged: most of these may be true dead code (unshipped
+# features, superseded by later refactors, or genuinely orphaned like
+# monitor_relay_connections was before this fix) rather than false
+# positives. Removing entries as they get wired up or deleted is welcome.
+accept_invite_code
+add_mls_member_device
+cache_android_file
+cache_file_bytes
+cache_url_image
+check_fawkes_badge
+clear_all_android_file_cache
+clear_android_file_cache
+clear_cached_file
+clear_compression_cache
+clear_image_cache
+clear_storage
+create_mls_group
+debug_hot_reload_sync
+delete_whisper_model
+download_whisper_model
+edit_message
+evict_chat_messages
+file_message
+file_message_compressed
+forward_attachment
+generate_blurhash_preview
+get_cached_bytes_compression_status
+get_cached_file_info
+get_cached_image_preview
+get_chat_messages_paginated
+get_compression_status
+get_custom_relays
+get_evm_pkey
+get_file_hash_index
+get_image_cache_stats
+get_invited_users
+get_media_servers
+get_messages_around_id
+get_notification_settings
+get_or_create_invite_code
+get_pending_deep_link
+get_platform_features
+get_storage_info
+get_theme
+is_scanning
+list_group_cursors
+list_models
+load_mls_device_id
+load_mls_keypackages
+paste_message
+preview_notification_sound
+queue_chat_profiles_sync
+refresh_keypackages_for_contact
+regenerate_device_keypackage
+remove_mls_member_device
+remove_setting
+run_maintenance
+select_custom_notification_sound
+send_cached_compressed_file
+send_cached_file
+set_notification_settings
+set_seed
+start_cached_bytes_compression
+start_image_precompression
+start_recording
+stop_recording
+switch_account
+test_login_fixture
+toggle_muted
+transcribe
+update_relay_mode
+update_status
+update_unread_counter
+validate_relay_url_cmd
+voice_message

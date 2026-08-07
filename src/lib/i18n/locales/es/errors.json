@@ -1,0 +1,7 @@
+{
+	"errors.fallback": "Algo salió mal",
+	"errors.migrationGate": "Desbloquea para actualizar la seguridad de la cuenta.",
+	"errors.dm.invalidNpub": "Ingresa un npub válido (comienza con npub1).",
+	"errors.dm.notInitialized": "Inicia sesión primero.",
+	"errors.dm.invalidRequest": "Solicitud inválida. Inténtalo de nuevo."
+}

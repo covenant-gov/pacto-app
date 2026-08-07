@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { COMMONS_TAG_TREE, type CommonsTagCategory } from '../../lib/commons/tag-catalog';
+  import { t } from 'svelte-i18n';
+  import { COMMONS_TAG_TREE, localizeCommonsTagCategory, type CommonsTagCategory } from '../../lib/commons/tag-catalog';
 
   export let categories: CommonsTagCategory[] = COMMONS_TAG_TREE;
   export let activeTags: string[] = [];
@@ -10,6 +11,8 @@
   export let expandAll = false;
   /** Denser typography for modal / inline pickers. */
   export let compact = false;
+
+  $: localizedCategories = categories.map((c) => localizeCommonsTagCategory($t, c));
 
   let openIds = new Set<string>();
 
@@ -23,9 +26,9 @@
   }
 </script>
 
-<div class="commons-menu" class:commons-menu-compact={compact} role="group" aria-label="Browse tags">
+<div class="commons-menu" class:commons-menu-compact={compact} role="group" aria-label={$t('commons.tagMenu.browseTags')}>
   <ul class="commons-menu-list" role="list">
-    {#each categories as category (category.id)}
+    {#each localizedCategories as category (category.id)}
       {@const open = expandAll || openIds.has(category.id)}
       <li class="commons-menu-row">
         <button

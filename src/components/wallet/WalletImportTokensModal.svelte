@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import type { SupportedChainId } from '../../lib/wallet/chains';
   import { WALLET_ASSETS_CHAIN_IDS, getWalletNetworkDisplayName } from '../../lib/wallet/assets';
@@ -11,6 +12,7 @@
     type CatalogSearchEntry,
     type WatchedErc20Row,
   } from '../../lib/wallet/watched-tokens';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   export let onClose: () => void;
@@ -32,6 +34,8 @@
   let customDecimalsStr = '18';
 
   let lastOpened = false;
+
+  $: customTokenSymbolMaxLength = $appConfig.customTokenSymbolMaxLength;
 
   $: catalog = buildCatalogSearchEntries();
 
@@ -83,7 +87,7 @@
     if (!accountNpub) return;
     const sym = customSymbol.trim().toUpperCase();
     const dec = Number.parseInt(customDecimalsStr, 10);
-    if (!sym || sym.length > 16 || !/^[A-Z0-9]+$/.test(sym)) return;
+    if (!sym || sym.length > customTokenSymbolMaxLength || !/^[A-Z0-9]+$/.test(sym)) return;
     if (!isHexAddress(customAddress)) return;
     if (!Number.isInteger(dec) || dec < 0 || dec > 36) return;
     const id = customTokenId(customNetwork, customAddress);
@@ -110,7 +114,7 @@
     return Number.isInteger(d) && d >= 0 && d <= 36;
   })();
 
-  $: customSymbolValid = /^[A-Z0-9]{1,16}$/.test(customSymbol.trim().toUpperCase());
+  $: customSymbolValid = customSymbol.trim().length > 0 && customSymbol.trim().length <= customTokenSymbolMaxLength && /^[A-Z0-9]+$/.test(customSymbol.trim().toUpperCase());
 
   $: canSaveCustom =
     accountNpub != null &&
@@ -122,25 +126,24 @@
 {#if open}
   <Modal {titleId} descriptionId={descId} {onClose} dismissible={true}>
     <div class="w-import-head">
-      <h2 id={titleId}>Import tokens</h2>
-      <button type="button" class="w-import-close" aria-label="Close" on:click={onClose}>×</button>
+      <h2 id={titleId}>{$t('wallet.importTokensTitle')}</h2>
+      <button type="button" class="w-import-close" aria-label={$t('wallet.close')} on:click={onClose}>×</button>
     </div>
     <p id={descId} class="w-import-desc">
-      Choose tokens from the catalog or add a contract manually. Balances and Send use this list for the
-      selected networks.
+      {$t('wallet.importTokensDesc')}
     </p>
 
     {#if !accountNpub}
-      <p class="w-import-warn" role="status">Sign in to manage imported tokens.</p>
+      <p class="w-import-warn" role="status">{$t('wallet.signInToManageTokens')}</p>
     {:else}
-      <div class="w-import-tabs" role="tablist" aria-label="Import mode">
+      <div class="w-import-tabs" role="tablist" aria-label={$t('wallet.importMode')}>
         <button
           type="button"
           role="tab"
           class="w-import-tab"
           aria-selected={tab === 'search'}
           class:w-import-tab-active={tab === 'search'}
-          on:click={() => (tab = 'search')}>Search</button
+          on:click={() => (tab = 'search')}>{$t('wallet.searchTab')}</button
         >
         <button
           type="button"
@@ -148,22 +151,22 @@
           class="w-import-tab"
           aria-selected={tab === 'custom'}
           class:w-import-tab-active={tab === 'custom'}
-          on:click={() => (tab = 'custom')}>Custom token</button
+          on:click={() => (tab = 'custom')}>{$t('wallet.customTokenTab')}</button
         >
       </div>
 
       {#if tab === 'search'}
         <label class="w-import-label">
-          <span class="w-import-label-text">Search</span>
+          <span class="w-import-label-text">{$t('wallet.searchLabel')}</span>
           <input
             class="w-import-input"
             type="search"
-            placeholder="Search by symbol or network"
+            placeholder={$t('wallet.searchPlaceholder')}
             bind:value={searchQuery}
             autocomplete="off"
           />
         </label>
-        <ul class="w-import-list" role="listbox" aria-label="Catalog tokens">
+        <ul class="w-import-list" role="listbox" aria-label={$t('wallet.catalogTokens')}>
           {#each filteredCatalog as entry (entry.id)}
             <li class="w-import-row">
               <label class="w-import-check-label">
@@ -179,18 +182,18 @@
               </label>
             </li>
           {:else}
-            <li class="w-import-empty">No matching tokens.</li>
+            <li class="w-import-empty">{$t('wallet.noMatchingTokens')}</li>
           {/each}
         </ul>
         <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" on:click={onClose}>Cancel</button>
+          <button type="button" class="w-import-btn-secondary" on:click={onClose}>{$t('wallet.cancel')}</button>
           <button type="button" class="w-import-btn-primary" on:click={saveCatalogSelection}
-            >Save</button
+            >{$t('wallet.save')}</button
           >
         </div>
       {:else}
         <label class="w-import-label">
-          <span class="w-import-label-text">Network</span>
+          <span class="w-import-label-text">{$t('wallet.networkLabel')}</span>
           <select class="w-import-select" bind:value={customNetwork} disabled={networkScope !== 'all'}>
             {#each WALLET_ASSETS_CHAIN_IDS as cid (cid)}
               <option value={cid as SupportedChainId}>{getWalletNetworkDisplayName(cid as SupportedChainId)}</option>
@@ -198,29 +201,29 @@
           </select>
         </label>
         <label class="w-import-label">
-          <span class="w-import-label-text">Token contract</span>
+          <span class="w-import-label-text">{$t('wallet.tokenContractLabel')}</span>
           <input
             class="w-import-input"
             type="text"
-            placeholder="0x…"
+            placeholder={$t('wallet.tokenContractPlaceholder')}
             bind:value={customAddress}
             autocomplete="off"
             spellcheck="false"
           />
         </label>
         <label class="w-import-label">
-          <span class="w-import-label-text">Symbol</span>
+          <span class="w-import-label-text">{$t('wallet.symbolLabel')}</span>
           <input
             class="w-import-input"
             type="text"
-            placeholder="e.g. DAI"
+            placeholder={$t('wallet.symbolPlaceholder')}
             bind:value={customSymbol}
-            maxlength="16"
+            maxlength={customTokenSymbolMaxLength}
             autocomplete="off"
           />
         </label>
         <label class="w-import-label">
-          <span class="w-import-label-text">Decimals</span>
+          <span class="w-import-label-text">{$t('wallet.decimalsLabel')}</span>
           <input
             class="w-import-input"
             type="text"
@@ -230,15 +233,15 @@
           />
         </label>
         <p class="w-import-hint">
-          Only the address format is checked. Malicious tokens exist; verify the contract before sending.
+          {$t('wallet.tokenSecurityHint')}
         </p>
         <div class="w-import-actions">
-          <button type="button" class="w-import-btn-secondary" on:click={onClose}>Cancel</button>
+          <button type="button" class="w-import-btn-secondary" on:click={onClose}>{$t('wallet.cancel')}</button>
           <button
             type="button"
             class="w-import-btn-primary"
             disabled={!canSaveCustom}
-            on:click={saveCustomToken}>Import token</button
+            on:click={saveCustomToken}>{$t('wallet.importToken')}</button
           >
         </div>
       {/if}

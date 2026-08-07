@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import {
     commonsTagArtSrc,
     commonsTagGradient,
     findCommonsTagCategory,
+    localizeCommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
 
   export let categoryId: string;
@@ -14,31 +16,32 @@
   export let onClearFocus: () => void = () => {};
 
   $: category = findCommonsTagCategory(categoryId);
-  $: art = category ? commonsTagArtSrc(category) : null;
+  $: localizedCategory = category ? localizeCommonsTagCategory($t, category) : null;
+  $: art = localizedCategory ? commonsTagArtSrc(localizedCategory) : null;
   $: activeSet = new Set(activeTags);
 </script>
 
-{#if category}
-  <div class="commons-category-focus" role="region" aria-label="{category.title} tags">
+{#if localizedCategory}
+  <div class="commons-category-focus" role="region" aria-label={$t('commons.categoryFocus.tagsAria', { values: { title: localizedCategory.title } })}>
     <div class="commons-category-focus-tile-wrap">
       <button
         type="button"
         class="commons-category-focus-tile"
-        style={art ? '' : `background-image: ${commonsTagGradient(category.id)}`}
-        aria-label="Close {category.title} and show all categories"
+        style={art ? '' : `background-image: ${commonsTagGradient(localizedCategory.id)}`}
+        aria-label={$t('commons.categoryFocus.closeAria', { values: { title: localizedCategory.title } })}
         on:click={onClearFocus}
       >
         {#if art}
           <img class="commons-category-focus-art" src={art} alt="" loading="eager" decoding="async" />
         {/if}
         <span class="commons-category-focus-scrim" aria-hidden="true"></span>
-        <span class="commons-category-focus-title">{category.title}</span>
+        <span class="commons-category-focus-title">{localizedCategory.title}</span>
         <span class="commons-category-focus-frame" aria-hidden="true"></span>
       </button>
     </div>
 
     <ul class="commons-category-focus-tags" role="list">
-      {#each category.children as child (child.tag)}
+      {#each localizedCategory.children as child (child.tag)}
         {@const count = countsByTag[child.tag] ?? 0}
         {@const isActive = !categoryAllMode && activeSet.has(child.tag)}
         <li>

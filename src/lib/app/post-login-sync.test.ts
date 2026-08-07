@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { runPostLoginNetworkSync } from './post-login-sync';
+import { writable } from 'svelte/store';
+import { runPostLoginNetworkSync, hasRunPostLoginNetworkSyncThisSession, resetPostLoginNetworkSyncSession } from './post-login-sync';
+import { installWakeSyncHandlers } from './wake-sync';
 import * as updateCheck from '../updater/update-check';
 import {
   startupCheckEnabled,
@@ -10,15 +12,25 @@ import {
 
 const scheduleCommonsStartupPrefetch = vi.fn();
 const apiConnect = vi.fn();
+const monitorRelayConnections = vi.fn().mockResolvedValue(undefined);
 const fetchMessages = vi.fn();
 const refreshProfileNow = vi.fn();
 const syncMlsGroupsNow = vi.fn();
-const dmSyncStatusSet = vi.fn();
+// Backed by a real writable store (not just a spy) so wake-sync's own `get(dmSyncStatus)`
+// guard observes the same state this module writes — needed to test the two modules'
+// interaction, not just that `.set` was called.
+const dmSyncStatusStore = writable<'idle' | 'syncing' | 'finished' | 'behind' | 'stalled'>('idle');
+const dmSyncStatusSet = vi.fn((...args: [string]) => dmSyncStatusStore.set(args[0] as never));
 const dmLog = vi.fn();
+const dmError = vi.fn();
 const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
 vi.mock('../api/auth', () => ({
   connect: (...args: unknown[]) => apiConnect(...args),
+}));
+
+vi.mock('../api/relays', () => ({
+  monitorRelayConnections: (...args: unknown[]) => monitorRelayConnections(...args),
 }));
 
 vi.mock('../api/nostr', () => ({
@@ -29,10 +41,15 @@ vi.mock('../api/nostr', () => ({
 
 vi.mock('../utils/dm-debug', () => ({
   dmLog: (...args: unknown[]) => dmLog(...args),
+  dmError: (...args: unknown[]) => dmError(...args),
 }));
 
 vi.mock('../../stores/dm', () => ({
-  dmSyncStatus: { set: (...args: unknown[]) => dmSyncStatusSet(...args) },
+  dmSyncStatus: {
+    set: (...args: unknown[]) => dmSyncStatusSet(...(args as [string])),
+    subscribe: (...args: Parameters<typeof dmSyncStatusStore.subscribe>) =>
+      dmSyncStatusStore.subscribe(...args),
+  },
 }));
 
 vi.mock('../commons/commons-prefetch', () => ({
@@ -52,17 +69,22 @@ describe('runPostLoginNetworkSync', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    dmSyncStatusStore.set('idle');
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
+    resetPostLoginNetworkSyncSession();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     consoleError.mockClear();
+    dmSyncStatusStore.set('idle');
     resetStartupCheckSession();
     startupCheckEnabled.set(false);
+    resetPostLoginNetworkSyncSession();
   });
+
 
   async function flushAsync(): Promise<void> {
     await vi.advanceTimersByTimeAsync(0);
@@ -90,6 +112,59 @@ describe('runPostLoginNetworkSync', () => {
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
     expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     expect(dmLog).toHaveBeenCalledWith('post-login: network sync done');
+    expect(monitorRelayConnections).toHaveBeenCalled();
+  });
+
+  it('does not let a focus event during pending apiConnect() bypass the wake-sync guard', async () => {
+    // Regression: wake-sync's only guard against a competing catch-up fetch is
+    // `dmSyncStatus === 'syncing'`. If that flip happened only after `await apiConnect()`,
+    // a focus/visibilitychange/resume event landing while connect is still pending would
+    // slip past the guard and fire fetchMessages(false) against a still-zero watermark.
+    const connectDeferred = Promise.withResolvers<void>();
+    apiConnect.mockReturnValue(connectDeferred.promise);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+
+    const handlers: { focus: (() => void) | null } = { focus: null };
+    vi.stubGlobal('window', {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === 'focus') handlers.focus = handler;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as Window);
+    vi.stubGlobal('document', {
+      visibilityState: 'visible',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    } as unknown as Document);
+
+    const cleanupWakeSync = installWakeSyncHandlers();
+
+    runPostLoginNetworkSync('npub1test');
+    // dmSyncStatus flips to 'syncing' synchronously, before apiConnect() resolves.
+    expect(dmSyncStatusSet).toHaveBeenCalledWith('syncing');
+
+    expect(handlers.focus).toBeTruthy();
+    handlers.focus?.();
+    await vi.advanceTimersByTimeAsync(50); // past wake-sync's debounce window
+
+    expect(fetchMessages).not.toHaveBeenCalled();
+
+    cleanupWakeSync();
+    connectDeferred.resolve();
+    await flushAsync();
+  });
+
+  it('sets hasRunPostLoginNetworkSyncThisSession synchronously, before any async work starts', () => {
+    // Regression: +page.svelte's onMount fallback reads this flag right after
+    // isAuthenticated flips true (mounting is gated on it by +layout.svelte). If the flag
+    // only flipped after an await, that fallback would race ahead and fire a second,
+    // overlapping fetchMessages(true) alongside this function's own call.
+    expect(hasRunPostLoginNetworkSyncThisSession).toBe(false);
+    apiConnect.mockReturnValue(Promise.withResolvers<void>().promise); // never resolves
+    runPostLoginNetworkSync('npub1test');
+    expect(hasRunPostLoginNetworkSyncThisSession).toBe(true);
   });
 
   it('logs connect errors and continues', async () => {
@@ -108,6 +183,20 @@ describe('runPostLoginNetworkSync', () => {
     expect(console.error).toHaveBeenCalledWith('connect after login failed:', err);
     expect(dmSyncStatusSet).toHaveBeenCalledWith('syncing');
     expect(refreshProfileNow).toHaveBeenCalledWith('npub1test');
+  });
+
+  it('logs monitorRelayConnections rejection', async () => {
+    apiConnect.mockResolvedValue(undefined);
+    fetchMessages.mockResolvedValue(undefined);
+    refreshProfileNow.mockResolvedValue(undefined);
+    syncMlsGroupsNow.mockResolvedValue(undefined);
+    const err = new Error('monitor failed');
+    monitorRelayConnections.mockRejectedValueOnce(err);
+
+    runPostLoginNetworkSync('npub1test');
+    await flushAsync();
+
+    expect(console.error).toHaveBeenCalledWith('monitor_relay_connections failed:', err);
   });
 
   it('logs fetchMessages rejection', async () => {

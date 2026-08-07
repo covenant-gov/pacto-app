@@ -1,10 +1,12 @@
 <script lang="ts">
   import { currentUser } from '../../stores/auth';
   import { activeView } from '../../stores/app';
+  import { t } from 'svelte-i18n';
   import SettingsPage from '../settings/SettingsPage.svelte';
   import ProfileSection from '../settings/ProfileSection.svelte';
   import NostrSettingsSection from '../settings/NostrSettingsSection.svelte';
   import AppSettingsSection from '../settings/AppSettingsSection.svelte';
+  import NotificationsSection from '../settings/NotificationsSection.svelte';
   import DangerZoneSection from '../settings/DangerZoneSection.svelte';
   import WalletView from '../wallet/WalletView.svelte';
   import SettingsCollapsibleSection from '../settings/SettingsCollapsibleSection.svelte';
@@ -25,13 +27,14 @@
 
       <SettingsCollapsibleSection
         sectionId="settings-evm"
-        title="EVM settings"
+        title={$t('settings.evmSettingsTitle')}
         sectionClass="settings-section--evm"
       >
         <WalletView embeddedInSettings />
       </SettingsCollapsibleSection>
 
       <AppSettingsSection />
+      <NotificationsSection />
     {/if}
 
     <DangerZoneSection />

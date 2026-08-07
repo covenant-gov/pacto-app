@@ -6,8 +6,8 @@ use tauri::{AppHandle, Runtime};
 use super::rpc::{parse_address, wallet_err_json};
 use alloy::providers::Provider;
 
-use super::contracts::pacto_sponsor::SquadVariant;
 use super::contracts::pacto_sponsor::ISquadSponsorFactory::squadsCall;
+use super::contracts::pacto_sponsor::SquadVariant;
 use super::rpc::call::eth_call_decode;
 
 /// Membership decision from the gathered signals (MLS group row, squad EVM binding, roster EVM address).
@@ -82,8 +82,17 @@ pub fn squad_id_from_parent_id(parent_id: &str) -> B256 {
     B256::from(keccak256(parent_id.trim().as_bytes()))
 }
 
-pub fn parse_signer_wallet(raw: Option<&str>, default: &'static str) -> Result<&'static str, String> {
-    match raw.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(default).to_ascii_lowercase().as_str() {
+pub fn parse_signer_wallet(
+    raw: Option<&str>,
+    default: &'static str,
+) -> Result<&'static str, String> {
+    match raw
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default)
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "squad" => Ok("squad"),
         "default" => Ok("default"),
         other => Err(wallet_err_json(
@@ -125,9 +134,7 @@ pub async fn read_squad_record<P: Provider>(
     factory: Address,
     squad_id: B256,
 ) -> Result<(Address, SquadVariant, U256), String> {
-    let call = squadsCall {
-        squadId: squad_id,
-    };
+    let call = squadsCall { squadId: squad_id };
     let decoded = eth_call_decode(provider, factory, &call).await?;
     let sponsor = decoded.sponsor;
     if sponsor.is_zero() {
@@ -193,7 +200,10 @@ mod tests {
     fn sponsor_lookup_err_maps_to_retryable_lookup_code() {
         let err = sponsor_lookup_err("rpc timeout".to_string());
         let v: serde_json::Value = serde_json::from_str(&err).expect("json");
-        assert_eq!(v.get("code").and_then(|c| c.as_str()), Some("SPONSOR_LOOKUP"));
+        assert_eq!(
+            v.get("code").and_then(|c| c.as_str()),
+            Some("SPONSOR_LOOKUP")
+        );
         assert_eq!(
             v.get("message").and_then(|m| m.as_str()),
             Some("rpc timeout")
@@ -211,8 +221,14 @@ mod tests {
 
     #[test]
     fn parse_deposit_wei_decimal() {
-        assert_eq!(parse_deposit_wei(Some("1000")).unwrap(), U256::from(1000u64));
-        assert_eq!(parse_deposit_wei(Some("  1000  ")).unwrap(), U256::from(1000u64));
+        assert_eq!(
+            parse_deposit_wei(Some("1000")).unwrap(),
+            U256::from(1000u64)
+        );
+        assert_eq!(
+            parse_deposit_wei(Some("  1000  ")).unwrap(),
+            U256::from(1000u64)
+        );
     }
 
     #[test]
@@ -246,8 +262,14 @@ mod tests {
     fn parse_signer_wallet_defaults_and_rejects_unknown() {
         assert_eq!(parse_signer_wallet(None, "squad").unwrap(), "squad");
         assert_eq!(parse_signer_wallet(Some(""), "default").unwrap(), "default");
-        assert_eq!(parse_signer_wallet(Some("DEFAULT"), "squad").unwrap(), "default");
-        assert_eq!(parse_signer_wallet(Some("squad"), "default").unwrap(), "squad");
+        assert_eq!(
+            parse_signer_wallet(Some("DEFAULT"), "squad").unwrap(),
+            "default"
+        );
+        assert_eq!(
+            parse_signer_wallet(Some("squad"), "default").unwrap(),
+            "squad"
+        );
         assert!(parse_signer_wallet(Some("hardware"), "squad").is_err());
     }
 }

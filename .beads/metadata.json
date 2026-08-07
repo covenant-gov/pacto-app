@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "pacto_app",
+  "project_id": "92266af9-015c-4218-b6e3-ec8e2cdcc64f"
+}

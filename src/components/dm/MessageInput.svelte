@@ -1,30 +1,548 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy, onMount } from 'svelte';
   import smileFaceIcon from '../../icons/smile-face.svg';
+  import attachmentIcon from '../../icons/attachment.svg';
+  import imageIcon from '../../icons/image.svg';
+  import fileIcon from '../../icons/file.svg';
   import { getEmojiList, recentEmojisStore, addToRecentEmojis, searchEmojis } from '../../stores/emojis';
+  import { showToast } from '../../stores/toast';
+  import {
+    pendingFilePreview,
+    clearPendingAttachment,
+    buildPendingFile,
+    formatFileSize,
+    isImageFile,
+    shouldCompressImage,
+    isAttachmentOversized,
+    isDesktopFilePickerAvailable,
+    getMimeTypeForExtension,
+    generatePendingId,
+    MAX_ATTACHMENT_BYTES,
+    type PendingFileAttachment,
+  } from '../../lib/messaging/attachment-composer';
+  import { dropActive, registerAttachmentDrop } from '../../lib/messaging/attachment-drop';
+  import { portal } from '../../lib/utils/portal';
+  import {
+    buildMentionCandidates,
+    filterMentionCandidates,
+    findActiveAtTrigger,
+    replaceAtTrigger,
+    type MentionCandidate,
+  } from '../../lib/messaging/mention-autocomplete';
+  import type { NostrProfile } from '../../lib/api/nostr';
+  import type { Mention } from '../../lib/messaging/mentions';
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  import { invoke } from '@tauri-apps/api/core';
 
   export let channelName: string = "";
   /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
   export let placeholderOverride: string | undefined = undefined;
-  export let onSend: (content: string) => void = () => {};
+  export let onSend: (content: string, repliedTo?: string) => void = () => {};
+  /** Optional: called for squad channels with a body + mention list so the caller can build the envelope. */
+  export let onSendMentions: ((body: string, mentions: Mention[], repliedTo?: string) => void) | undefined = undefined;
+  /** Optional: called with the bytes of a pending file attachment when the user sends it. */
+  export let onSendFile:
+    | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
+    | undefined = undefined;
+  /** Optional squad context; when provided, typing `@` opens the member mention picker. */
+  export let squadMlsGroupId: string | undefined = undefined;
+  export let squadRosterNpubs: string[] | undefined = undefined;
+  export let squadProfiles: Record<string, NostrProfile | undefined> | undefined = undefined;
+  /** Optional: current user's npub; excluded from mention candidates so you cannot @ yourself. */
+  export let currentUserNpub: string | undefined = undefined;
   /** Optional: called when user types (e.g. to send typing indicator). */
   export let onTyping: (() => void) | undefined = undefined;
   /** When true, input and send are disabled (e.g. channel still being created). */
   export let disabled: boolean = false;
+  /** Optional id of the message this reply is attached to. */
+  export let repliedTo: string | undefined = undefined;
+  /** Optional preview text of the replied-to message (shown instead of the generic label). */
+  export let repliedToPreview: string | undefined = undefined;
+  /** Optional: called when the user cancels the reply state. */
+  export let onCancelReply: (() => void) | undefined = undefined;
 
-  $: inputPlaceholder = placeholderOverride ?? `Message #${channelName}`;
+  $: inputPlaceholder = placeholderOverride ?? $t('messaging.messageInput.placeholder', { values: { channelName } });
+  const fullEmojiList = getEmojiList();
 
   let messageText = "";
   let textareaEl: HTMLTextAreaElement | undefined;
-  let emojiPickerOpen = false;
+  let inputWrapperEl: HTMLDivElement | undefined;
+
+  // Media panel (emoji + GIFs)
+  let emojiPanelOpen = false;
+  let emojiPanelTab: 'emoji' | 'gifs' = 'emoji';
   let emojiSearchQuery = "";
+
+  // Attachment type menu
+  let attachmentMenuOpen = false;
+
+  // Mention picker state
+  let mentionPickerOpen = false;
+  let mentionQuery = "";
+  let mentionSelectedIndex = 0;
+  let mentionStartIndex = 0;
+  let mentionEndIndex = 0;
+  let mentions: Mention[] = [];
+  let mentionPickerEl: HTMLDivElement | undefined;
+  let mentionSnappedHeight: number | null = null;
+
+  // Attachment + reply state
+  let fileInput: HTMLInputElement | undefined;
+  let pendingInputAccept = '';
+  let pendingInputCapture: 'environment' | undefined = undefined;
+  let isSendingAttachment = false;
+  let dropUnregister: (() => void) | undefined;
+  let composerDestroyed = false;
+  const desktopPickerAvailable = isDesktopFilePickerAvailable();
+
+  onMount(() => {
+    void (async () => {
+      const unregister = await registerAttachmentDrop((paths) => {
+        const first = paths[0];
+        if (first) void setPendingFromPath(first);
+      });
+      if (composerDestroyed) {
+        unregister();
+      } else {
+        dropUnregister = unregister;
+      }
+    })();
+  });
+
+  onDestroy(() => {
+    clearPendingAttachment();
+    composerDestroyed = true;
+    dropUnregister?.();
+  });
+
+  $: excludedNpubs = (() => {
+    const set = new Set<string>();
+    if (currentUserNpub) set.add(currentUserNpub);
+    for (const m of mentions) set.add(m.npub);
+    return set;
+  })();
+  $: mentionCandidates = squadMlsGroupId
+    ? buildMentionCandidates(squadRosterNpubs ?? [], squadProfiles ?? {}, excludedNpubs)
+    : [];
+  $: filteredMentions = filterMentionCandidates(mentionCandidates, mentionQuery);
+
   $: if (disabled) {
-    emojiPickerOpen = false;
+    emojiPanelOpen = false;
     emojiSearchQuery = '';
+    attachmentMenuOpen = false;
+    closeMentionPicker();
   }
 
-  const fullEmojiList = getEmojiList();
-  /** Cap browse/search so opening the picker does not mount ~1k+ buttons and freeze the UI. */
+  function closeMentionPicker() {
+    mentionPickerOpen = false;
+    mentionQuery = '';
+    mentionSelectedIndex = 0;
+    mentionStartIndex = 0;
+    mentionEndIndex = 0;
+  }
+
+  function openMentionPickerAtCursor() {
+    if (!textareaEl || !squadMlsGroupId) return;
+    const trigger = findActiveAtTrigger(messageText, textareaEl.selectionStart ?? messageText.length);
+    if (!trigger) {
+      closeMentionPicker();
+      return;
+    }
+    mentionPickerOpen = true;
+    mentionQuery = trigger.query;
+    mentionStartIndex = trigger.start;
+    mentionEndIndex = trigger.end;
+    mentionSelectedIndex = 0;
+  }
+
+  async function selectMention(candidate: MentionCandidate) {
+    const trigger = { start: mentionStartIndex, end: mentionEndIndex };
+    const result = replaceAtTrigger(messageText, trigger, candidate.alias);
+    messageText = result.value;
+    mentions = [...mentions, { npub: candidate.npub, alias: candidate.alias }];
+    closeMentionPicker();
+    await tick();
+    if (textareaEl) {
+      textareaEl.setSelectionRange(result.cursor, result.cursor);
+      textareaEl.focus();
+    }
+    onTyping?.();
+  }
+
+  function removeStaleMentions(text: string): Mention[] {
+    if (mentions.length === 0) return [];
+    return mentions.filter((m) => text.includes(`@${m.alias}`));
+  }
+
+  function handleMentionKeydown(event: KeyboardEvent) {
+    if (!mentionPickerOpen) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      mentionSelectedIndex = Math.min(mentionSelectedIndex + 1, filteredMentions.length - 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      mentionSelectedIndex = Math.max(mentionSelectedIndex - 1, 0);
+    } else if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+      const candidate = filteredMentions[mentionSelectedIndex];
+      if (candidate) void selectMention(candidate);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMentionPicker();
+    }
+  }
+
+  async function handleSubmit(event: Event) {
+    event.preventDefault();
+    if (disabled || isSendingAttachment) return;
+    if (mentionPickerOpen && filteredMentions[mentionSelectedIndex]) {
+      void selectMention(filteredMentions[mentionSelectedIndex]);
+      return;
+    }
+    const pending = $pendingFilePreview;
+    if (pending && onSendFile) {
+      await sendPendingAttachment(pending);
+      return;
+    }
+    const body = messageText.trim();
+    if (!body) return;
+    const pruned = removeStaleMentions(body);
+    if (onSendMentions && squadMlsGroupId) {
+      onSendMentions(body, pruned, repliedTo);
+    } else {
+      onSend(body, repliedTo);
+    }
+    messageText = "";
+    mentions = [];
+    closeMentionPicker();
+  }
+
+  async function sendPendingAttachment(pending: PendingFileAttachment) {
+    if (!onSendFile) return;
+    isSendingAttachment = true;
+    try {
+      let bytes: ArrayBuffer;
+      if (pending.filePath) {
+        const { readFile } = await import('@tauri-apps/plugin-fs');
+        const data = await readFile(pending.filePath);
+        bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      } else if (pending.file) {
+        bytes = await pending.file.arrayBuffer();
+      } else {
+        throw new Error('No file data available for attachment');
+      }
+      const repliedToId = repliedTo ?? '';
+      await onSendFile!(bytes, pending.fileName, repliedToId, shouldCompressImage(pending.fileName));
+      clearPendingAttachment();
+      messageText = "";
+      mentions = [];
+      closeMentionPicker();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to send attachment', undefined, undefined, {
+        error: true,
+      });
+    } finally {
+      isSendingAttachment = false;
+    }
+  }
+
+  const IMAGE_VIDEO_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'mp4', 'mov', 'webm', 'mkv', 'avi'];
+  const IMAGE_VIDEO_FILTER = {
+    name: 'Photos & Videos',
+    extensions: IMAGE_VIDEO_EXTENSIONS,
+  };
+
+  async function setPendingFromPath(path: string) {
+    try {
+      const info = await invoke<{ size: number; name: string; extension: string }>('get_file_info', {
+        filePath: path,
+      });
+      if (isAttachmentOversized(info.size)) {
+        showToast(
+          get(t)('messaging.messageInput.tooLarge', {
+            values: { size: formatFileSize(info.size), max: formatFileSize(MAX_ATTACHMENT_BYTES) },
+          }),
+          undefined,
+          undefined,
+          { error: true },
+        );
+        return;
+      }
+      const previewUrl = isImageFile(info.name)
+        ? await invoke<string>('get_image_preview_base64', { filePath: path, quality: 25 }).catch(() => undefined)
+        : undefined;
+      const extension = info.extension.toLowerCase();
+      pendingFilePreview.set({
+        id: generatePendingId(),
+        key: '',
+        nonce: '',
+        extension,
+        url: previewUrl ?? '',
+        path,
+        size: info.size,
+        fileName: info.name,
+        filePath: path,
+        previewUrl,
+        mimeType: getMimeTypeForExtension(extension),
+      });
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : get(t)('messaging.messageInput.readFailed'),
+        undefined,
+        undefined,
+        { error: true },
+      );
+    }
+  }
+
+  async function chooseDesktopAttachment(kind: 'media' | 'file') {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: kind === 'media' ? [IMAGE_VIDEO_FILTER] : undefined,
+      });
+      if (selected === null) return;
+      const path = Array.isArray(selected) ? selected[0] : selected;
+      await setPendingFromPath(path);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : get(t)('messaging.messageInput.readFailed'),
+        undefined,
+        undefined,
+        { error: true },
+      );
+    }
+  }
+
+  function handleFileInputChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (isAttachmentOversized(file.size)) {
+      showToast(
+        get(t)('messaging.messageInput.tooLarge', {
+          values: { size: formatFileSize(file.size), max: formatFileSize(MAX_ATTACHMENT_BYTES) },
+        }),
+        undefined,
+        undefined,
+        { error: true },
+      );
+      input.value = '';
+      return;
+    }
+    pendingFilePreview.set(buildPendingFile(file));
+    input.value = '';
+  }
+
+  function handlePaste(event: ClipboardEvent) {
+    const file = event.clipboardData?.files?.[0];
+    if (!file) return;
+    event.preventDefault();
+    if (isAttachmentOversized(file.size)) {
+      showToast(
+        get(t)('messaging.messageInput.tooLarge', {
+          values: { size: formatFileSize(file.size), max: formatFileSize(MAX_ATTACHMENT_BYTES) },
+        }),
+        undefined,
+        undefined,
+        { error: true },
+      );
+      return;
+    }
+    try {
+      pendingFilePreview.set(buildPendingFile(file));
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : get(t)('messaging.messageInput.pasteFailed'),
+        undefined,
+        undefined,
+        { error: true },
+      );
+    }
+  }
+
+  function closeAttachmentMenu() {
+    attachmentMenuOpen = false;
+  }
+
+  function toggleAttachmentMenu(event: MouseEvent) {
+    event.stopPropagation();
+    if (disabled || isSendingAttachment) return;
+    attachmentMenuOpen = !attachmentMenuOpen;
+    if (attachmentMenuOpen) {
+      emojiPanelOpen = false;
+      emojiSearchQuery = '';
+    }
+  }
+
+  async function pickAttachmentType(kind: 'media' | 'file' | 'camera', event: MouseEvent) {
+    event.stopPropagation();
+    closeAttachmentMenu();
+    if (disabled || isSendingAttachment) return;
+    if (kind === 'camera') {
+      pendingInputAccept = 'image/*';
+      pendingInputCapture = 'environment';
+      await tick();
+      fileInput?.click();
+      return;
+    }
+    pendingInputCapture = undefined;
+    if (isDesktopFilePickerAvailable()) {
+      await chooseDesktopAttachment(kind);
+    } else {
+      pendingInputAccept = kind === 'media'
+        ? 'image/*,video/*'
+        : '';
+      await tick();
+      fileInput?.click();
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (disabled) return;
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleSubmit(event);
+    } else if (event.key === 'Enter' && event.shiftKey) {
+      // Allow default: insert newline in textarea (do not send)
+    } else {
+      handleMentionKeydown(event);
+      onTyping?.();
+    }
+  }
+
+  function handleInput() {
+    openMentionPickerAtCursor();
+    onTyping?.();
+  }
+
+  const MENTION_PICKER_GAP = 8;
+  const MENTION_PICKER_MAX_HEIGHT = 240;
+  const MENTION_PICKER_MAX_WIDTH = 320;
+  const MENTION_PICKER_MIN_HEIGHT = 96;
+
+  type MentionPickerPlacement = {
+    left: number;
+    edge: 'top' | 'bottom';
+    offset: number;
+    maxHeight: number;
+  };
+
+  /** Anchors the picker to the input box, aligned to the x-position of the active `@`. */
+  function computeMentionPickerPlacement(
+    text: string,
+    startIndex: number,
+    ta: HTMLTextAreaElement | undefined,
+    wrapper: HTMLDivElement | undefined,
+  ): MentionPickerPlacement | null {
+    if (!ta || !wrapper) return null;
+    const computed = window.getComputedStyle(ta);
+    const clone = document.createElement('div');
+    clone.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: -9999px;
+      visibility: hidden;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      width: ${ta.clientWidth}px;
+      font: ${computed.font};
+      line-height: ${computed.lineHeight};
+      padding: ${computed.paddingTop} ${computed.paddingRight} ${computed.paddingBottom} ${computed.paddingLeft};
+      border: ${computed.borderWidth} solid transparent;
+    `;
+    clone.textContent = text.slice(0, startIndex);
+    const marker = document.createElement('span');
+    marker.textContent = '@';
+    clone.appendChild(marker);
+    document.body.appendChild(clone);
+    const caretOffsetLeft = marker.getBoundingClientRect().left - clone.getBoundingClientRect().left;
+    document.body.removeChild(clone);
+
+    const taRect = ta.getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const left = Math.max(
+      MENTION_PICKER_GAP,
+      Math.min(
+        taRect.left + caretOffsetLeft,
+        window.innerWidth - MENTION_PICKER_MAX_WIDTH - MENTION_PICKER_GAP,
+      ),
+    );
+
+    // Grow upward from the top edge of the input box so the panel stays flush with it.
+    const spaceAbove = wrapperRect.top - MENTION_PICKER_GAP * 2;
+    if (spaceAbove >= MENTION_PICKER_MIN_HEIGHT) {
+      return {
+        left,
+        edge: 'bottom',
+        offset: window.innerHeight - wrapperRect.top + MENTION_PICKER_GAP,
+        maxHeight: Math.min(MENTION_PICKER_MAX_HEIGHT, spaceAbove),
+      };
+    }
+    const top = wrapperRect.bottom + MENTION_PICKER_GAP;
+    return {
+      left,
+      edge: 'top',
+      offset: top,
+      maxHeight: Math.min(MENTION_PICKER_MAX_HEIGHT, window.innerHeight - top - MENTION_PICKER_GAP),
+    };
+  }
+
+  /** Trims the panel to the last fully visible row so an overflowing list never slices a member. */
+  async function snapMentionPickerToWholeRows(
+    _candidates: MentionCandidate[],
+    placement: MentionPickerPlacement | null,
+  ) {
+    mentionSnappedHeight = null;
+    if (!placement) return;
+    await tick();
+    const el = mentionPickerEl;
+    if (!el) return;
+    const items = el.querySelectorAll<HTMLElement>('.mention-item');
+    if (items.length === 0) return;
+    const styles = window.getComputedStyle(el);
+    const chromeBottom =
+      parseFloat(styles.paddingBottom) + parseFloat(styles.borderBottomWidth);
+    const elTop = el.getBoundingClientRect().top;
+    const scrollTop = el.querySelector<HTMLElement>('.mention-list')?.scrollTop ?? 0;
+    const heightThrough = (item: HTMLElement) =>
+      item.getBoundingClientRect().bottom - elTop + scrollTop + chromeBottom;
+
+    if (heightThrough(items[items.length - 1]) <= placement.maxHeight) return;
+    let snapped: number | null = null;
+    for (const item of items) {
+      const height = heightThrough(item);
+      if (height > placement.maxHeight) break;
+      snapped = height;
+    }
+    mentionSnappedHeight = snapped;
+  }
+
+  /** Keeps the keyboard-selected row inside the scrollable panel. */
+  async function scrollMentionSelectionIntoView(index: number) {
+    await tick();
+    mentionPickerEl?.querySelectorAll<HTMLElement>('.mention-item')[index]?.scrollIntoView({
+      block: 'nearest',
+    });
+  }
+
+  $: mentionPickerPlacement = mentionPickerOpen
+    ? computeMentionPickerPlacement(messageText, mentionStartIndex, textareaEl, inputWrapperEl)
+    : null;
+
+  $: void snapMentionPickerToWholeRows(filteredMentions, mentionPickerPlacement);
+
+  $: mentionPickerStyle = mentionPickerPlacement
+    ? `left: ${mentionPickerPlacement.left}px; ${mentionPickerPlacement.edge}: ${mentionPickerPlacement.offset}px; max-height: ${Math.min(mentionPickerPlacement.maxHeight, mentionSnappedHeight ?? mentionPickerPlacement.maxHeight)}px;`
+    : '';
+
+  $: if (mentionPickerOpen) void scrollMentionSelectionIntoView(mentionSelectedIndex);
+
+  /** Cap browse/search so opening the panel does not mount ~1k+ buttons and freeze the UI. */
   const EMOJI_BROWSE_LIMIT = 100;
   const EMOJI_SEARCH_LIMIT = 80;
   const EMOJI_GRID_BROWSE = (() => {
@@ -53,32 +571,6 @@
     return out;
   })();
 
-  function handleSubmit(event: Event) {
-    event.preventDefault();
-    if (disabled) return;
-    if (messageText.trim()) {
-      onSend(messageText);
-      messageText = "";
-    }
-  }
-
-  function handleKeydown(event: KeyboardEvent) {
-    if (disabled) return;
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      handleSubmit(event);
-    } else if (event.key === 'Enter' && event.shiftKey) {
-      // Allow default: insert newline in textarea (do not send)
-    } else {
-      onTyping?.();
-    }
-  }
-
-  function handleInput() {
-    onTyping?.();
-  }
-
   async function insertEmoji(emoji: string) {
     if (disabled) return;
     const ta = textareaEl;
@@ -87,7 +579,7 @@
     messageText = messageText.slice(0, start) + emoji + messageText.slice(end);
     const entry = fullEmojiList.find((e) => e.emoji === emoji);
     if (entry) addToRecentEmojis(entry);
-    await closeEmojiPicker({ refocusComposer: true });
+    await closeEmojiPanel({ refocusComposer: true });
     onTyping?.();
     await tick();
     if (textareaEl) {
@@ -96,92 +588,220 @@
     }
   }
 
-  async function closeEmojiPicker(opts?: { refocusComposer?: boolean }) {
-    emojiPickerOpen = false;
+  async function closeEmojiPanel(opts?: { refocusComposer?: boolean }) {
+    emojiPanelOpen = false;
     emojiSearchQuery = '';
+    emojiPanelTab = 'emoji';
     if (opts?.refocusComposer) {
       await tick();
       textareaEl?.focus();
     }
   }
 
-  function toggleEmojiPicker(event: MouseEvent) {
+  function openEmojiPanel(event: MouseEvent) {
     event.stopPropagation();
-    if (emojiPickerOpen) {
-      void closeEmojiPicker();
-      return;
-    }
+    if (disabled) return;
+    emojiPanelOpen = true;
+    emojiPanelTab = 'emoji';
     emojiSearchQuery = '';
-    emojiPickerOpen = true;
+    attachmentMenuOpen = false;
+  }
+
+  function switchEmojiPanelTab(tab: 'emoji' | 'gifs') {
+    emojiPanelTab = tab;
   }
 
   function handleEmojiSearchKeydown(event: KeyboardEvent) {
     event.stopPropagation();
     if (event.key === 'Escape') {
       event.preventDefault();
-      void closeEmojiPicker({ refocusComposer: true });
+      void closeEmojiPanel({ refocusComposer: true });
+    }
+  }
+
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    if (emojiPanelOpen) {
+      event.preventDefault();
+      void closeEmojiPanel({ refocusComposer: true });
+    }
+    if (attachmentMenuOpen) {
+      event.preventDefault();
+      closeAttachmentMenu();
     }
   }
 
   function handleClickOutside(event: MouseEvent) {
-    if (!emojiPickerOpen) return;
     const target = event.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest?.('.emoji-picker') || target.closest?.('.emoji-trigger-btn')) return;
-    void closeEmojiPicker();
+    const insideEmoji = target.closest?.('.emoji-panel') || target.closest?.('.emoji-trigger-btn');
+    if (emojiPanelOpen && !insideEmoji) {
+      void closeEmojiPanel();
+    }
+    const insideAttach = target.closest?.('.attachment-menu') || target.closest?.('.attachment-trigger-btn');
+    if (attachmentMenuOpen && !insideAttach) {
+      closeAttachmentMenu();
+    }
   }
 </script>
 
-<svelte:window on:pointerdown={handleClickOutside} />
+<svelte:window on:pointerdown={handleClickOutside} on:keydown={handleGlobalKeydown} />
 
 <div class="message-input-container" class:disabled>
+  {#if $dropActive}
+    <div class="drop-target-overlay" aria-hidden="true">
+      <span>{$t('messaging.messageInput.dropToAttach')}</span>
+    </div>
+  {/if}
   <form on:submit|preventDefault={handleSubmit}>
-    <div class="input-wrapper">
+    {#if repliedTo}
+      <div class="reply-preview" role="region" aria-label="{$t('messaging.messageInput.replyingTo')} {repliedToPreview ?? $t('messaging.message.replyToDefault')}">
+        <span class="reply-preview-label">{$t('messaging.messageInput.replyingTo')} {repliedToPreview ?? $t('messaging.message.replyToDefault')}</span>
+        {#if onCancelReply}
+          <button
+            type="button"
+            class="reply-preview-cancel"
+            aria-label={$t('messaging.messageInput.cancelReplyAria')}
+            title={$t('messaging.messageInput.cancelReplyAria')}
+            on:click={onCancelReply}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path
+                d="M3 3l8 8M11 3L3 11"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+        {/if}
+      </div>
+    {/if}
+    {#if $pendingFilePreview}
+      <div class="attachment-preview" role="region" aria-label={$t('messaging.messageInput.pendingAttachmentAria')}>
+        {#if $pendingFilePreview.previewUrl && isImageFile($pendingFilePreview.fileName)}
+          <img
+            src={$pendingFilePreview.previewUrl}
+            alt=""
+            class="attachment-preview-thumb"
+          />
+        {:else}
+          <div class="attachment-preview-icon" aria-hidden="true">
+            <img src={fileIcon} alt="" width="16" height="16" />
+          </div>
+        {/if}
+        <div class="attachment-preview-info">
+          <span class="attachment-preview-name">{$pendingFilePreview.fileName}</span>
+          <span class="attachment-preview-size">{formatFileSize($pendingFilePreview.size)}</span>
+        </div>
+        <button
+          type="button"
+          class="attachment-preview-remove"
+          aria-label={$t('messaging.messageInput.removeAttachmentAria')}
+          title={$t('messaging.messageInput.removeAttachmentAria')}
+          disabled={isSendingAttachment}
+          on:click={clearPendingAttachment}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path
+              d="M3 3l8 8M11 3L3 11"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    {/if}
+    <div class="input-wrapper" bind:this={inputWrapperEl}>
+      <button
+        type="button"
+
+        class="attachment-trigger-btn"
+        disabled={disabled || isSendingAttachment}
+        aria-label={$t('messaging.messageInput.attachFile')}
+        aria-expanded={attachmentMenuOpen}
+        aria-haspopup="menu"
+        title={$t('messaging.messageInput.attachFile')}
+        on:click={toggleAttachmentMenu}
+      >
+        <img src={attachmentIcon} alt="" width="20" height="20" />
+      </button>
+      {#if attachmentMenuOpen && !disabled}
+        <div
+          class="attachment-menu"
+          role="menu"
+          aria-label={$t('messaging.messageInput.attachmentOptions')}
+          tabindex="-1"
+          on:pointerdown|stopPropagation
+        >
+          <button
+            type="button"
+            class="attachment-menu-item"
+            role="menuitem"
+            on:click={(e) => pickAttachmentType('media', e)}
+          >
+            <img src={imageIcon} alt="" width="20" height="20" />
+            <span>{$t('messaging.messageInput.photoOrVideo')}</span>
+          </button>
+          <button
+            type="button"
+            class="attachment-menu-item"
+            role="menuitem"
+            on:click={(e) => pickAttachmentType('file', e)}
+          >
+            <img src={fileIcon} alt="" width="20" height="20" />
+            <span>{$t('messaging.messageInput.fileOption')}</span>
+          </button>
+          {#if !desktopPickerAvailable}
+            <button
+              type="button"
+              class="attachment-menu-item"
+              role="menuitem"
+              on:click={(e) => pickAttachmentType('camera', e)}
+            >
+              <img src={imageIcon} alt="" width="20" height="20" />
+              <span>{$t('messaging.messageInput.takePhoto')}</span>
+            </button>
+          {/if}
+        </div>
+      {/if}
       <button
         type="button"
         class="emoji-trigger-btn"
-        disabled={disabled}
-        aria-label="Insert emoji"
-        aria-expanded={emojiPickerOpen}
-        aria-haspopup="grid"
-        title="Insert emoji"
-        on:click={toggleEmojiPicker}
+        disabled={disabled || isSendingAttachment}
+        aria-label={$t('messaging.messageInput.insertEmojiAria')}
+        aria-expanded={emojiPanelOpen}
+        aria-haspopup="dialog"
+        title={$t('messaging.messageInput.insertEmojiAria')}
+        on:click={openEmojiPanel}
       >
         <img src={smileFaceIcon} alt="" width="20" height="20" />
       </button>
-      <textarea
-        bind:this={textareaEl}
-        bind:value={messageText}
-        on:keydown={handleKeydown}
-        on:input={handleInput}
-        placeholder={inputPlaceholder}
-        class="message-input"
-        rows="1"
-        {disabled}
-      ></textarea>
-      {#if emojiPickerOpen && !disabled}
+      {#if emojiPanelOpen && !disabled}
         <div
-          class="emoji-picker"
+          class="emoji-panel"
           role="dialog"
-          aria-label="Emoji picker"
+          aria-label={$t('messaging.messageInput.insertEmojiAria')}
+          tabindex="-1"
           on:pointerdown|stopPropagation
         >
-          <div class="emoji-picker-search">
+          <div class="emoji-panel-search">
             <input
               type="text"
               class="emoji-search-input"
-              placeholder="Search emoji…"
+              placeholder={emojiPanelTab === 'gifs' ? 'Search GIFs…' : $t('messaging.messageInput.searchEmojiPlaceholder')}
               bind:value={emojiSearchQuery}
               on:click|stopPropagation
               on:keydown={handleEmojiSearchKeydown}
-              aria-label="Search emoji"
+              aria-label={emojiPanelTab === 'gifs' ? 'Search GIFs' : $t('messaging.messageInput.searchEmojiAria')}
             />
             <button
               type="button"
               class="emoji-picker-close"
-              aria-label="Close emoji picker"
-              title="Close"
-              on:click|stopPropagation={() => closeEmojiPicker({ refocusComposer: true })}
+              aria-label={$t('messaging.messageInput.closePanelAria')}
+              title={$t('messaging.messageInput.close')}
+              on:click|stopPropagation={() => closeEmojiPanel({ refocusComposer: true })}
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                 <path
@@ -193,73 +813,161 @@
               </svg>
             </button>
           </div>
-          {#if emojiSearchQuery.trim()}
-            <div class="emoji-picker-section">
-              {#if searchResults.length > 0}
-                <div class="emoji-picker-grid">
-                  {#each searchResults as entry (entry.emoji)}
-                    <button
-                      type="button"
-                      class="emoji-picker-item"
-                      role="gridcell"
-                      aria-label="Insert {entry.emoji}"
-                      on:click={() => insertEmoji(entry.emoji)}
-                    >
-                      {entry.emoji}
-                    </button>
-                  {/each}
+          <div class="emoji-panel-body">
+            {#if emojiPanelTab === 'emoji'}
+              {#if emojiSearchQuery.trim()}
+                <div class="emoji-picker-section">
+                  {#if searchResults.length > 0}
+                    <div class="emoji-picker-grid">
+                      {#each searchResults as entry (entry.emoji)}
+                        <button
+                          type="button"
+                          class="emoji-picker-item"
+                          role="gridcell"
+                          aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
+                          on:click={() => insertEmoji(entry.emoji)}
+                        >
+                          {entry.emoji}
+                        </button>
+                      {/each}
+                    </div>
+                    {#if searchResults.length >= EMOJI_SEARCH_LIMIT}
+                    <p class="emoji-picker-hint">{$t('messaging.messageInput.emojiSearchHint', { values: { limit: EMOJI_SEARCH_LIMIT } })}</p>
+                    {/if}
+                  {:else}
+                    <p class="emoji-picker-empty">{$t('messaging.messageInput.noEmojisFound', { values: { query: emojiSearchQuery.trim() } })}</p>
+                  {/if}
                 </div>
-                {#if searchResults.length >= EMOJI_SEARCH_LIMIT}
-                  <p class="emoji-picker-hint">Showing top {EMOJI_SEARCH_LIMIT} matches — refine your search</p>
-                {/if}
               {:else}
-                <p class="emoji-picker-empty">No emojis found for "{emojiSearchQuery.trim()}"</p>
-              {/if}
-            </div>
-          {:else}
-            {#if recentEmojis.length > 0}
-              <div class="emoji-picker-section">
-                <span class="emoji-picker-label">Recent</span>
-                <div class="emoji-picker-row">
-                  {#each recentEmojis as entry (entry.emoji)}
-                    <button
-                      type="button"
-                      class="emoji-picker-item"
-                      role="gridcell"
-                      aria-label="Insert {entry.emoji}"
-                      on:click={() => insertEmoji(entry.emoji)}
-                    >
-                      {entry.emoji}
-                    </button>
-                  {/each}
+                {#if recentEmojis.length > 0}
+                  <div class="emoji-picker-section">
+                    <span class="emoji-picker-label">{$t('messaging.messageInput.recent')}</span>
+                    <div class="emoji-picker-row">
+                      {#each recentEmojis as entry (entry.emoji)}
+                        <button
+                          type="button"
+                          class="emoji-picker-item"
+                          role="gridcell"
+                          aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji: entry.emoji } })}
+                          on:click={() => insertEmoji(entry.emoji)}
+                        >
+                          {entry.emoji}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+                <div class="emoji-picker-section">
+                  <span class="emoji-picker-label">{$t('messaging.messageInput.smileysAndMore')}</span>
+                  <div class="emoji-picker-grid">
+                    {#each EMOJI_GRID_BROWSE as emoji (emoji)}
+                      <button
+                        type="button"
+                        class="emoji-picker-item"
+                        role="gridcell"
+                        aria-label={$t('messaging.messageInput.insertEmojiNamed', { values: { emoji } })}
+                        on:click={() => insertEmoji(emoji)}
+                      >
+                        {emoji}
+                      </button>
+                    {/each}
+                  </div>
+                  <p class="emoji-picker-hint">{$t('messaging.messageInput.searchForMore')}</p>
                 </div>
+              {/if}
+            {:else}
+              <div class="emoji-panel-placeholder">
+                <p>{$t('messaging.messageInput.gifsComingSoon')}</p>
               </div>
             {/if}
-            <div class="emoji-picker-section">
-              <span class="emoji-picker-label">Smileys &amp; more</span>
-              <div class="emoji-picker-grid">
-                {#each EMOJI_GRID_BROWSE as emoji (emoji)}
-                  <button
-                    type="button"
-                    class="emoji-picker-item"
-                    role="gridcell"
-                    aria-label="Insert {emoji}"
-                    on:click={() => insertEmoji(emoji)}
-                  >
-                    {emoji}
-                  </button>
-                {/each}
-              </div>
-              <p class="emoji-picker-hint">Search for more emojis</p>
-            </div>
+          </div>
+          <div class="emoji-panel-tabs" role="tablist" aria-label={$t('messaging.messageInput.mediaPanelTabsAria')}>
+            <button
+              type="button"
+              class="emoji-panel-tab"
+              class:active={emojiPanelTab === 'emoji'}
+              role="tab"
+              aria-selected={emojiPanelTab === 'emoji'}
+              aria-controls="emoji-panel-body"
+              on:click={() => switchEmojiPanelTab('emoji')}
+            >
+              {$t('messaging.messageInput.emojiTab')}
+            </button>
+            <button
+              type="button"
+              class="emoji-panel-tab"
+              class:active={emojiPanelTab === 'gifs'}
+              role="tab"
+              aria-selected={emojiPanelTab === 'gifs'}
+              aria-controls="emoji-panel-body"
+              on:click={() => switchEmojiPanelTab('gifs')}
+            >
+              {$t('messaging.messageInput.gifsTab')}
+            </button>
+          </div>
+        </div>
+      {/if}
+      <textarea
+        bind:this={textareaEl}
+        bind:value={messageText}
+        on:keydown={handleKeydown}
+        on:input={handleInput}
+        on:paste={handlePaste}
+        placeholder={inputPlaceholder}
+        class="message-input"
+        rows="1"
+        disabled={disabled || isSendingAttachment}
+      ></textarea>
+      {#if mentionPickerOpen && !disabled}
+        <div
+          class="mention-picker"
+          bind:this={mentionPickerEl}
+          role="dialog"
+          aria-label={$t('messaging.messageInput.mentionMember')}
+          tabindex="-1"
+          style={mentionPickerStyle}
+          use:portal
+          on:pointerdown|stopPropagation
+        >
+          {#if filteredMentions.length > 0}
+            <ul class="mention-list" role="listbox" aria-label={$t('messaging.messageInput.mentionCandidates')}>
+              {#each filteredMentions as candidate, i (candidate.npub)}
+                <li
+                  role="option"
+                  aria-selected={i === mentionSelectedIndex}
+                  class="mention-item"
+                  class:selected={i === mentionSelectedIndex}
+                  title={candidate.npub}
+                  on:click|stopPropagation={() => selectMention(candidate)}
+                  on:keydown={(e) => e.key === 'Enter' && selectMention(candidate)}
+                  on:mouseenter={() => (mentionSelectedIndex = i)}
+                >
+                  {#if candidate.avatar}
+                    <img src={candidate.avatar} alt="" class="mention-avatar" />
+                  {:else}
+                    <div class="mention-avatar mention-avatar-placeholder" aria-hidden="true">
+                      <span>{candidate.displayName.charAt(0).toUpperCase()}</span>
+                    </div>
+                  {/if}
+                  <div class="mention-info">
+                    <span class="mention-name">{candidate.displayName}</span>
+                    {#if candidate.trustSignal}
+                      <span class="mention-trust">{candidate.trustSignal}</span>
+                    {/if}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="mention-empty">{$t('messaging.messageInput.noMembersFound', { values: { query: mentionQuery } })}</p>
           {/if}
         </div>
       {/if}
       <button
         type="button"
         class="send-button"
-        disabled={disabled || !messageText.trim()}
-        aria-label="Send message"
+        disabled={disabled || isSendingAttachment || (!messageText.trim() && !$pendingFilePreview)}
+        aria-label={$t('messaging.messageInput.sendMessage')}
         on:click={handleSubmit}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -267,6 +975,16 @@
         </svg>
       </button>
     </div>
+    <input
+      type="file"
+      bind:this={fileInput}
+      accept={pendingInputAccept}
+      capture={pendingInputCapture}
+      on:change={handleFileInputChange}
+      style="display: none;"
+      aria-hidden="true"
+      tabindex="-1"
+    />
   </form>
 </div>
 
@@ -274,10 +992,27 @@
   .message-input-container {
     padding: 16px;
     background: var(--border-subtle);
+    position: relative;
   }
 
   .message-input-container.disabled {
     opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .drop-target-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    border: 2px dashed var(--text-primary);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    z-index: 50;
     pointer-events: none;
   }
 
@@ -300,7 +1035,8 @@
     background: var(--border);
   }
 
-  .emoji-trigger-btn {
+  .emoji-trigger-btn,
+  .attachment-trigger-btn {
     flex-shrink: 0;
     background: none;
     border: none;
@@ -314,38 +1050,80 @@
     transition: color 0.15s, background 0.15s;
   }
 
-  .emoji-trigger-btn:hover:not(:disabled) {
+  .emoji-trigger-btn:hover:not(:disabled),
+  .attachment-trigger-btn:hover:not(:disabled) {
     color: var(--text-primary);
     background: var(--code-border);
   }
 
-  .emoji-trigger-btn:disabled {
+  .emoji-trigger-btn:disabled,
+  .attachment-trigger-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .emoji-trigger-btn img {
+  .emoji-trigger-btn img,
+  .attachment-trigger-btn img {
     display: block;
   }
 
-  .emoji-picker {
+  .attachment-menu {
     position: absolute;
     bottom: calc(100% + 8px);
     left: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px;
+    min-width: 180px;
+    padding: 6px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-    max-height: 320px;
-    overflow-y: auto;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     z-index: 100;
   }
 
-  .emoji-picker-search {
+  .attachment-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .attachment-menu-item:hover {
+    background: var(--bg-hover);
+  }
+
+  .attachment-menu-item img {
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .emoji-panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    width: 320px;
+    max-height: 360px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    overflow: hidden;
+  }
+
+  .emoji-panel-search {
     position: sticky;
     top: 0;
     z-index: 1;
@@ -353,9 +1131,9 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-    margin: -8px -8px 0;
-    padding: 8px 8px 6px;
+    padding: 10px 10px 6px;
     background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .emoji-search-input {
@@ -399,6 +1177,55 @@
     background: var(--bg-hover);
   }
 
+  .emoji-panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .emoji-panel-placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    min-height: 160px;
+  }
+
+  .emoji-panel-tabs {
+    display: flex;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+  }
+
+  .emoji-panel-tab {
+    flex: 1;
+    padding: 10px 8px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.1s, border-color 0.1s;
+  }
+
+  .emoji-panel-tab:hover {
+    color: var(--text-primary);
+  }
+
+  .emoji-panel-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
   .emoji-picker-empty {
     margin: 0;
     padding: 12px 0;
@@ -434,20 +1261,20 @@
 
   .emoji-picker-grid {
     display: grid;
-    grid-template-columns: repeat(10, 1fr);
+    grid-template-columns: repeat(8, 1fr);
     gap: 2px;
   }
 
   .emoji-picker-item {
-    width: 28px;
-    height: 28px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: none;
     border: none;
-    border-radius: 4px;
-    font-size: 1.25rem;
+    border-radius: 6px;
+    font-size: 1.5rem;
     cursor: pointer;
     transition: background 0.1s;
   }
@@ -503,5 +1330,211 @@
     width: 20px;
     height: 20px;
   }
-</style>
 
+  .mention-picker {
+    position: fixed;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-width: 220px;
+    max-width: 320px;
+    max-height: 240px;
+    overflow: hidden;
+    padding: 6px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    z-index: 1000;
+  }
+
+  .mention-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .mention-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .mention-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg-hover);
+  }
+
+  .mention-avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid var(--border-subtle);
+  }
+
+  .mention-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .mention-item:hover,
+  .mention-item.selected {
+    background: var(--bg-hover);
+  }
+
+  .mention-name {
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 500;
+  }
+
+  .mention-trust {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+  }
+
+  .mention-empty {
+    margin: 0;
+    padding: 12px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  .reply-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-hover);
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .reply-preview-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .reply-preview-cancel {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .reply-preview-cancel:hover {
+    color: var(--text-primary);
+    background: var(--code-border);
+  }
+
+  .attachment-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-hover);
+    border-radius: 8px;
+    min-width: 0;
+  }
+
+  .attachment-preview-thumb {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+    background: var(--bg-elevated);
+  }
+
+  .attachment-preview-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border-radius: 4px;
+  }
+
+  .attachment-preview-icon img {
+    display: block;
+  }
+
+  .attachment-preview-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .attachment-preview-name {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-preview-size {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .attachment-preview-remove {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .attachment-preview-remove:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--code-border);
+  }
+
+  .attachment-preview-remove:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+</style>

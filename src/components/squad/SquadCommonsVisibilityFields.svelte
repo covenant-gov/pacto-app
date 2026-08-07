@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import CommonsTagPicker from '../commons/CommonsTagPicker.svelte';
   import type { SquadVisibility } from '../../stores/squads';
 
@@ -16,24 +17,23 @@
 </script>
 
 <fieldset class="commons-visibility-fieldset">
-  <legend class="commons-visibility-legend">Commons</legend>
+  <legend class="commons-visibility-legend">{$t('commons.visibility.legend')}</legend>
   <label class="commons-visibility-option">
     <input type="radio" name={fieldsetName} value="private" bind:group={visibility} {disabled} />
-    <span>Commons off</span>
+    <span>{$t('commons.visibility.off')}</span>
   </label>
   <label class="commons-visibility-option">
     <input type="radio" name={fieldsetName} value="public" bind:group={visibility} {disabled} />
-    <span>Commons on</span>
+    <span>{$t('commons.visibility.on')}</span>
   </label>
   <p class="commons-visibility-hint muted">
-    Your squad stays private and encrypted. Commons only posts a public discovery card with 3 tags
-    while you broadcast.
+    {$t('commons.visibility.hint')}
   </p>
 </fieldset>
 
 {#if visibility === 'public'}
-  <span class="commons-tags-label">Tags (exactly 3)</span>
-  <CommonsTagPicker bind:selected={tags} maxTags={3} {disabled} placeholder="Search tags…" />
+  <span class="commons-tags-label">{$t('commons.broadcast.tagsLabel')}</span>
+  <CommonsTagPicker bind:selected={tags} {disabled} placeholder={$t('commons.tagPicker.searchPlaceholder')} />
   {#if tagError}
     <p class="commons-tags-error" role="alert">{tagError}</p>
   {/if}

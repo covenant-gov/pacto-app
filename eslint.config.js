@@ -2,10 +2,11 @@ import js from '@eslint/js';
 import globals from 'globals';
 import svelte from 'eslint-plugin-svelte';
 import ts from 'typescript-eslint';
+import intlifySvelte from '@intlify/eslint-plugin-svelte';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
-	{ ignores: ['.svelte-kit/', 'build/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/', 'landing/.astro/', 'landing/dist/'] },
+	{ ignores: ['.svelte-kit/', 'build/', 'build-agent/', 'coverage/', 'dist/', 'node_modules/', 'src-tauri/target/', 'static/js/', 'landing/.astro/', 'landing/dist/', 'test-results/', 'test_sandbox/', '.worktrees/'] },
 	js.configs.recommended,
 	...ts.configs.recommended,
 	...svelte.configs.recommended,
@@ -37,6 +38,15 @@ export default [
 			'svelte/prefer-svelte-reactivity': 'off',
 			'svelte/no-immutable-reactive-statements': 'off',
 			'svelte/no-reactive-literals': 'off'
+		}
+	},
+	// i18n linting: catch untranslated raw text in Svelte components.
+	// Locale JSON key parity is enforced by src/lib/i18n/messages.test.ts.
+	{
+		files: ['**/*.svelte'],
+		plugins: { '@intlify/svelte': intlifySvelte },
+		rules: {
+			'@intlify/svelte/no-raw-text': ['warn', { ignorePattern: '^[0-9\\s\\W]+$' }]
 		}
 	},
 	// Temporary suppressions for files whose remaining lint errors require

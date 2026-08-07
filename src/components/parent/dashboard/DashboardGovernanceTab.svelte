@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import PactoGovGovernanceShell from '../governance/PactoGovGovernanceShell.svelte';
   import { resolveGovernanceProvider } from '../../../lib/governance/governance-provider';
   import type { TreasuryProposalDto, SquadInfraDto } from '../../../lib/governance/api';
@@ -9,7 +10,6 @@
 
   export let squadInfraRows: SquadInfraDto[] | undefined = undefined;
   export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
-  export let pactoGovTopHatId = '';
   export let pactoGovChain: string | undefined = undefined;
   export let parentId = '';
   export let myAddress = '';
@@ -31,30 +31,29 @@
 
 <section class="governance-section" aria-labelledby="governance-heading">
   <div class="governance-heading-row">
-    <h3 id="governance-heading" class="section-heading">Governance</h3>
+    <h3 id="governance-heading" class="section-heading">{$t('governance.governance.title')}</h3>
     <button type="button" class="btn-primary governance-deploy-btn" on:click={onOpenLaunchpad}>
-      Deploy
+      {$t('governance.governance.deploy')}
     </button>
   </div>
 
   {#if provider === 'none'}
     <p class="dashboard-placeholder-text muted">
-      Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.
+      {$t('governance.governance.placeholder')}
     </p>
   {:else if provider === 'abi_modules'}
     <p class="dashboard-placeholder-text muted">
-      Custom ABI governance modules are reserved for a future pathway. Use Pacto Gov or contract allowlist
-      (Status) for now.
+      {$t('governance.governance.abiModules')}
     </p>
   {:else if pactoPayload?.treasuryAuthority}
     <p class="gov-network muted">
-      Pacto Gov on <strong>{getWalletNetworkDisplayName(parseSupportedChainId(network))}</strong>
+      {$t('governance.governance.pactoGovOn', { values: { network: getWalletNetworkDisplayName(parseSupportedChainId(network)) } })}
       {#if openCount}
-        · {openCount} open proposal{openCount === 1 ? '' : 's'}
+        · {$t('governance.governance.openProposals', { values: { count: openCount } })}
       {/if}
     </p>
     {#if treasuryProposalsRefreshing}
-      <p class="dashboard-refresh-note muted" role="status">Refreshing proposals…</p>
+      <p class="dashboard-refresh-note muted" role="status">{$t('governance.governance.refreshing')}</p>
     {/if}
     <PactoGovGovernanceShell
       payload={pactoPayload}
@@ -72,7 +71,7 @@
     />
   {:else}
     <p class="dashboard-placeholder-text muted">
-      Deploy Pacto Gov from the launchpad to enable treasury proposals and governance actions.
+      {$t('governance.governance.placeholder')}
     </p>
   {/if}
 </section>

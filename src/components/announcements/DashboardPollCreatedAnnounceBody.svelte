@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type { DashboardPollCreatedPayload } from '../../lib/announcements';
   import { formatMessageTimestamp } from '../../lib/utils/message-formatting';
 
@@ -8,11 +9,10 @@
 </script>
 
 <div class="poll-announce-body">
-  <p class="poll-announce-badge">New poll</p>
+  <p class="poll-announce-badge">{$t('announcements.pollCreated.badge')}</p>
   <h3 class="poll-announce-title">{payload.title}</h3>
   <p class="poll-announce-hint">
-    Open <strong>Dashboard → Polls</strong> for this squad or network to cast your vote. Tallies sync for everyone in
-    #announcements.
+    {$t('announcements.pollCreated.hint')}
   </p>
   <p class="poll-announce-meta">
     {#if authorName}{authorName}{/if}

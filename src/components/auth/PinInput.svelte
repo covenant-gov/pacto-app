@@ -1,20 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
 
-  export let title: string = 'Enter PIN';
+  export let title: string;
   export let onComplete: (pin: string) => void;
   export let isProcessing: boolean = false;
   export let error: string | null = null;
   export let onErrorClear: (() => void) | undefined = undefined;
   export let onBack: (() => void) | undefined = undefined;
+  export let pinDigitCount: number = 6;
 
-  let digits: string[] = ['', '', '', '', '', ''];
+  let digits: string[] = Array(pinDigitCount).fill('');
   let inputs: HTMLInputElement[] = [];
   let isShaking = false;
   let lastClearedForError: string | null = null;
 
   function clearInputs() {
-    digits = ['', '', '', '', '', ''];
+    digits = Array(pinDigitCount).fill('');
     inputs.forEach((input) => {
       if (input) input.value = '';
     });
@@ -39,7 +41,7 @@
     digits[index] = value;
     target.value = value;
 
-    if (value && index < 5) {
+    if (value && index < pinDigitCount - 1) {
       inputs[index + 1]?.focus();
     }
 
@@ -64,19 +66,19 @@
   function handlePaste(event: ClipboardEvent) {
     event.preventDefault();
     const pastedData = event.clipboardData?.getData('text') || '';
-    const cleaned = pastedData.replace(/[^0-9]/g, '').slice(0, 6);
+    const cleaned = pastedData.replace(/[^0-9]/g, '').slice(0, pinDigitCount);
 
     cleaned.split('').forEach((digit, i) => {
-      if (i < 6) {
+      if (i < pinDigitCount) {
         digits[i] = digit;
         inputs[i].value = digit;
       }
     });
 
-    if (cleaned.length < 6) {
+    if (cleaned.length < pinDigitCount) {
       inputs[cleaned.length]?.focus();
     } else {
-      inputs[5]?.blur();
+      inputs[pinDigitCount - 1]?.blur();
       if (digits.every((d) => d !== '') && !isProcessing) {
         onComplete(digits.join(''));
       }
@@ -118,7 +120,7 @@
         on:keydown={(e) => handleKeydown(i, e)}
         on:paste={handlePaste}
         class="pin-digit"
-        aria-label={`PIN digit ${i + 1}`}
+        aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
       />
     {/each}
   </div>
@@ -126,13 +128,13 @@
   {#if isProcessing}
     <div class="pin-processing" role="status">
       <div class="spinner"></div>
-      <p>Processing...</p>
+      <p>{$t('auth.processing')}</p>
     </div>
   {/if}
 
   {#if onBack && error}
     <button type="button" class="btn-back" on:click={onBack} disabled={isProcessing}>
-      Back
+      {$t('auth.back')}
     </button>
   {/if}
 </div>

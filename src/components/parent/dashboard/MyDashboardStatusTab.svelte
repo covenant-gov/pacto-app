@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import RotateSquadKeyModal from './RotateSquadKeyModal.svelte';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
@@ -32,7 +35,7 @@
         copiedRosterEvm = false;
       }, 2000);
     } else {
-      showToast('Could not copy address.');
+      showToast(tFn('governance.myStatus.toastCopyFailed'));
     }
   }
 
@@ -44,8 +47,8 @@
       const ok = await requestSquadStateSync(gid);
       showToast(
         ok
-          ? 'Sync requested — online members will re-share keys and governance.'
-          : 'Could not request sync. Try again when connected.',
+          ? tFn('governance.myStatus.toastSyncRequested')
+          : tFn('governance.myStatus.toastSyncFailed'),
       );
     } finally {
       syncRequesting = false;
@@ -61,25 +64,25 @@
 </script>
 
 <section class="dashboard-section" aria-labelledby="my-status-checklist-heading">
-  <h3 id="my-status-checklist-heading" class="section-heading">Checklist</h3>
+  <h3 id="my-status-checklist-heading" class="section-heading">{$t('governance.myStatus.checklist')}</h3>
   <ul class="checklist" role="list">
     <li class="checklist-item">
       {#if rosterKeyNeeded === null}
         <span class="check-pending" aria-hidden="true">…</span>
-        <span>Squad roster EVM key</span>
+        <span>{$t('governance.myStatus.rosterKey')}</span>
       {:else if rosterKeyNeeded || !myRosterEvm}
         <span class="check-todo" aria-hidden="true">○</span>
-        <span>Set your squad roster EVM key</span>
+        <span>{$t('governance.myStatus.setRosterKey')}</span>
       {:else}
         <span class="check-done" aria-hidden="true">✓</span>
-        <span>Squad roster EVM key set</span>
+        <span>{$t('governance.myStatus.rosterKeySet')}</span>
       {/if}
     </li>
   </ul>
 </section>
 
 <section class="dashboard-section" aria-labelledby="my-status-evm-heading">
-  <h3 id="my-status-evm-heading" class="section-heading">Your squad EVM address</h3>
+  <h3 id="my-status-evm-heading" class="section-heading">{$t('governance.myStatus.yourEvmAddress')}</h3>
   {#if announcementsGroupId && parentId}
     <div class="user-roster-key-box">
       {#if myRosterEvm}
@@ -88,8 +91,8 @@
           <button
             type="button"
             class="user-roster-copy-btn"
-            aria-label={copiedRosterEvm ? 'Copied' : 'Copy EVM address'}
-            title={copiedRosterEvm ? 'Copied' : 'Copy'}
+            aria-label={copiedRosterEvm ? $t('governance.myStatus.copied') : $t('governance.myStatus.copyEvmAddress')}
+            title={copiedRosterEvm ? $t('governance.myStatus.copied') : $t('governance.myStatus.copy')}
             on:click={copyRosterEvm}
           >
             <svg
@@ -110,7 +113,7 @@
           </button>
         </div>
       {:else}
-        <span class="muted">Not shared yet — check Alerts to set a roster signer.</span>
+        <span class="muted">{$t('governance.myStatus.notShared')}</span>
       {/if}
     </div>
     <button
@@ -119,10 +122,10 @@
       disabled={!ROTATE_SQUAD_KEY_ENABLED}
       on:click={() => (rotateModalOpen = true)}
     >
-      Rotate EVM key
+      {$t('governance.myStatus.rotateEvmKey')}
     </button>
   {:else}
-    <p class="muted">No announcements channel for this squad.</p>
+    <p class="muted">{$t('governance.myStatus.noChannel')}</p>
   {/if}
 </section>
 
@@ -130,18 +133,15 @@
 
 {#if announcementsGroupId && parentId}
   <section class="dashboard-section sync-section" aria-labelledby="my-status-sync-heading">
-    <h3 id="my-status-sync-heading" class="section-heading">Squad sync</h3>
-    <p class="muted sync-hint">
-      Ask online members to re-share roster EVM addresses and governance announces if your Crew or
-      dashboard looks incomplete.
-    </p>
+    <h3 id="my-status-sync-heading" class="section-heading">{$t('governance.myStatus.squadSync')}</h3>
+    <p class="muted sync-hint">{$t('governance.myStatus.syncHint')}</p>
     <button
       type="button"
       class="btn-secondary"
       disabled={syncRequesting || !announcementsGroupId}
       on:click={() => void onRequestSync()}
     >
-      {syncRequesting ? 'Requesting…' : 'Request sync'}
+      {syncRequesting ? $t('governance.myStatus.requestingSync') : $t('governance.myStatus.requestSync')}
     </button>
   </section>
 {/if}

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { get } from 'svelte/store';
+import { invoke } from '@tauri-apps/api/core';
 import { check } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
-import { relaunch } from '@tauri-apps/plugin-process';
 import {
   checkForUpdates,
   downloadAndInstallUpdate,
@@ -21,7 +21,7 @@ import { showToast } from '../../stores/toast';
 
 vi.mock('@tauri-apps/plugin-updater');
 vi.mock('@tauri-apps/api/app');
-vi.mock('@tauri-apps/plugin-process');
+vi.mock('@tauri-apps/api/core');
 vi.mock('../../stores/toast', () => ({
   showToast: vi.fn(),
   toastMessage: { set: vi.fn(), subscribe: vi.fn() },
@@ -32,7 +32,7 @@ vi.mock('../../stores/toast', () => ({
 
 const mockedCheck = vi.mocked(check);
 const mockedGetVersion = vi.mocked(getVersion);
-const mockedRelaunch = vi.mocked(relaunch);
+const mockedInvoke = vi.mocked(invoke);
 const mockedShowToast = vi.mocked(showToast);
 
 beforeEach(() => {
@@ -180,10 +180,11 @@ describe('downloadAndInstallUpdate', () => {
 });
 
 describe('relaunchApp', () => {
-  it('calls the process plugin relaunch function', async () => {
-    mockedRelaunch.mockResolvedValue(undefined);
+  it('calls the backend relaunch command', async () => {
+    mockedInvoke.mockResolvedValue(undefined);
     await relaunchApp();
-    expect(mockedRelaunch).toHaveBeenCalledTimes(1);
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    expect(mockedInvoke).toHaveBeenCalledWith('relaunch_app');
   });
 });
 

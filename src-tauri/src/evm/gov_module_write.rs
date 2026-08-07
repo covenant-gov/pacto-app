@@ -7,6 +7,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
+use super::gov_read::rpc_urls_or_default;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
@@ -29,6 +30,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     to: Address,
     calldata: Vec<u8>,
     capability: GovCapability,
+    rpc_urls_override: Option<Vec<String>>,
 ) -> Result<(String, String, u64), String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
@@ -39,7 +41,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     };
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls_override.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
@@ -53,7 +55,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         ));
     }
 
-    require_capability(&app, pid, capability).await?;
+    require_capability(&app, pid, capability, rpc_urls_override).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
     let _write_guard = with_gov_write_lock(pid).await;
@@ -81,8 +83,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     let required = estimate_eoa_cost_wei(&read_provider, signer.address(), to, &calldata).await;
     match select_write_path(balance, required, has_sponsor_infra) {
         WritePath::Sponsored => {
-            match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone())
-                .await
+            match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await
             {
                 Ok(user_op_hash) => {
                     // The write guard must stay held through inclusion: returning now would let
@@ -204,9 +205,8 @@ pub fn resolve_parent_id_for_module<R: Runtime>(
     module_address: &str,
 ) -> Result<String, String> {
     if let Some(trimmed) = explicit_parent_id(parent_id) {
-        if let Some(from_infra) =
-            db::parent_id_for_canonical_infra_ref(app, module_address.trim())?
-                .filter(|s| !s.trim().is_empty())
+        if let Some(from_infra) = db::parent_id_for_canonical_infra_ref(app, module_address.trim())?
+            .filter(|s| !s.trim().is_empty())
         {
             if from_infra.trim() != trimmed {
                 return Err(wallet_err_json(
@@ -288,11 +288,15 @@ mod tests {
     fn soft_sponsor_config_classification_uses_structured_code() {
         let soft = |code: &str| format!(r#"{{"code":"{code}","message":"configure it"}}"#);
         assert!(is_soft_sponsor_config_error(&soft("BUNDLER_CONFIG")));
-        assert!(is_soft_sponsor_config_error(&soft("ERC4337_ACCOUNT_CONFIG")));
+        assert!(is_soft_sponsor_config_error(&soft(
+            "ERC4337_ACCOUNT_CONFIG"
+        )));
         assert!(!is_soft_sponsor_config_error(&soft("SPONSOR_POOL_LOW")));
         assert!(!is_soft_sponsor_config_error(&soft("PAYMASTER_REJECTED")));
         // Unparseable payloads and missing codes are hard errors.
-        assert!(!is_soft_sponsor_config_error("BUNDLER_CONFIG as plain text"));
+        assert!(!is_soft_sponsor_config_error(
+            "BUNDLER_CONFIG as plain text"
+        ));
         assert!(!is_soft_sponsor_config_error(r#"{"message":"no code"}"#));
     }
 

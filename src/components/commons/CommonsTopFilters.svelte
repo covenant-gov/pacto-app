@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import type {
     CommonsAudienceFilter,
     CommonsBrowseMode,
     CommonsSubjectFilter,
   } from '../../lib/commons/commons-feed';
-  import { findCommonsTagCategory } from '../../lib/commons/tag-catalog';
+  import { getLocalizedCommonsTagCategory } from '../../lib/commons/tag-catalog';
 
   export let tags: string[] = [];
   export let categoryId: string | null = null;
@@ -17,7 +18,9 @@
   export let onRemoveTag: ((tag: string) => void) | undefined = undefined;
   export let onClearCategory: (() => void) | undefined = undefined;
 
-  $: categoryLabel = categoryId ? (findCommonsTagCategory(categoryId)?.title ?? categoryId) : null;
+  $: categoryLabel = categoryId
+    ? (getLocalizedCommonsTagCategory($t, categoryId)?.title ?? categoryId)
+    : null;
 
   function removeTag(tag: string) {
     if (onRemoveTag) onRemoveTag(tag);
@@ -85,7 +88,7 @@
       class:is-open={isLatestActive}
       on:click={showLatest}
     >
-      Latest
+      {$t('commons.topFilters.latest')}
     </button>
     <button
       type="button"
@@ -93,7 +96,7 @@
       class:is-open={isCategoriesActive}
       on:click={showCategories}
     >
-      Categories
+      {$t('commons.topFilters.categories')}
     </button>
     <button
       type="button"
@@ -102,7 +105,7 @@
       aria-expanded={tagMenuOpen}
       on:click={toggleMenu}
     >
-      Tags
+      {$t('commons.topFilters.tags')}
       <span class="commons-filters-browse-chevron" aria-hidden="true">{tagMenuOpen ? '–' : '+'}</span>
     </button>
     {#if showSearchButton}
@@ -112,18 +115,18 @@
         class:is-open={isSearchActive}
         on:click={runTagSearch}
       >
-        Search
+        {$t('commons.topFilters.search')}
       </button>
     {/if}
 
     {#if categoryLabel}
       <ul class="commons-filters-chips" role="list">
         <li>
-          <span class="commons-filters-chip commons-filters-chip-category">ALL-{categoryLabel}</span>
+          <span class="commons-filters-chip commons-filters-chip-category">{$t('commons.topFilters.allCategory', { values: { categoryLabel } })}</span>
           <button
             type="button"
             class="commons-filters-chip-remove"
-            aria-label="Remove ALL-{categoryLabel} filter"
+            aria-label={$t('commons.topFilters.removeCategoryFilter', { values: { categoryLabel } })}
             on:click={removeCategory}
           >
             ×
@@ -138,7 +141,7 @@
             <button
               type="button"
               class="commons-filters-chip-remove"
-              aria-label="Remove tag {tag}"
+              aria-label={$t('commons.topFilters.removeTagFilter', { values: { tag } })}
               on:click={() => removeTag(tag)}
             >
               ×
@@ -150,33 +153,33 @@
   </div>
 
   <div class="commons-filters-controls">
-    <div class="commons-segmented" role="radiogroup" aria-label="Show users or squads">
+    <div class="commons-segmented" role="radiogroup" aria-label={$t('commons.topFilters.subjectAria')}>
       <label class="commons-segmented-option">
         <input type="radio" name="subject-filter" value="both" bind:group={subjectFilter} />
-        <span>All</span>
+        <span>{$t('commons.topFilters.all')}</span>
       </label>
       <label class="commons-segmented-option">
         <input type="radio" name="subject-filter" value="squads" bind:group={subjectFilter} />
-        <span>Squads</span>
+        <span>{$t('commons.topFilters.squads')}</span>
       </label>
       <label class="commons-segmented-option">
         <input type="radio" name="subject-filter" value="users" bind:group={subjectFilter} />
-        <span>Users</span>
+        <span>{$t('commons.topFilters.users')}</span>
       </label>
     </div>
 
-    <div class="commons-segmented" role="radiogroup" aria-label="User audience">
+    <div class="commons-segmented" role="radiogroup" aria-label={$t('commons.topFilters.audienceAria')}>
       <label class="commons-segmented-option">
         <input type="radio" name="audience-filter" value="any" bind:group={audienceFilter} />
-        <span>All</span>
+        <span>{$t('commons.topFilters.all')}</span>
       </label>
       <label class="commons-segmented-option">
         <input type="radio" name="audience-filter" value="new_user" bind:group={audienceFilter} />
-        <span>New</span>
+        <span>{$t('commons.topFilters.new')}</span>
       </label>
       <label class="commons-segmented-option">
         <input type="radio" name="audience-filter" value="active_user" bind:group={audienceFilter} />
-        <span>Active</span>
+        <span>{$t('commons.topFilters.active')}</span>
       </label>
     </div>
   </div>

@@ -1,15 +1,17 @@
-use std::borrow::Cow;
-use std::sync::Arc;
+use futures_util::FutureExt;
 use lazy_static::lazy_static;
 use nostr_sdk::prelude::*;
 use once_cell::sync::OnceCell;
-use tokio::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
-use tauri_plugin_notification::NotificationExt;
-use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
+use std::future::Future;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tokio::sync::Mutex;
 
 mod crypto;
+
+mod test_sandbox;
 
 mod squad_catalog;
 
@@ -20,7 +22,8 @@ mod account_manager;
 
 mod mls;
 pub use mls::MlsService;
-
+mod mls_store_reset;
+mod mls_store_reset_state;
 
 use db::save_chat_messages;
 
@@ -32,7 +35,7 @@ mod net;
 mod blossom;
 
 mod util;
-use util::{get_file_type_description, calculate_file_hash, format_bytes};
+use util::{calculate_file_hash, format_bytes, get_file_type_description};
 
 mod evm;
 
@@ -44,7 +47,12 @@ mod android;
 mod whisper;
 
 mod message;
-pub use message::{Message, Attachment, Reaction};
+use message::extract_mention_notification_body;
+pub use message::{Attachment, Message, Reaction};
+
+mod notification;
+
+mod catch_up;
 
 mod profile;
 pub use profile::{Profile, Status};
@@ -52,7 +60,7 @@ pub use profile::{Profile, Status};
 mod profile_sync;
 
 mod chat;
-pub use chat::{Chat, ChatType, ChatMetadata};
+pub use chat::{Chat, ChatMetadata, ChatType, NotificationLevel};
 
 mod dashboard_poll;
 
@@ -62,11 +70,11 @@ mod squad_bot;
 mod virtual_channel_bucket;
 
 mod rumor;
-pub use rumor::{RumorEvent, RumorContext, RumorProcessingResult, ConversationType, process_rumor};
+pub use rumor::{process_rumor, ConversationType, RumorContext, RumorEvent, RumorProcessingResult};
 
 // Flat event storage layer (protocol-aligned)
 mod stored_event;
-pub use stored_event::{StoredEvent, StoredEventBuilder, event_kind};
+pub use stored_event::{event_kind, StoredEvent, StoredEventBuilder};
 
 mod deep_link;
 
@@ -88,6 +96,13 @@ mod session;
 // Repo-root `.env` → process env (debug builds)
 mod operator_env;
 
+// Application-wide configuration constants and IPC snapshot.
+mod app_config;
+
+// App-local seams over the nostr symbols the 0.45 line removes.
+mod nostr_sign;
+mod nostr_tags;
+
 /// # Trusted Relays
 ///
 /// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
@@ -102,21 +117,43 @@ pub(crate) static TRUSTED_RELAYS: &[&str] = &[
 
 /// # Blossom Media Servers
 ///
-/// A list of Blossom servers for file uploads with automatic failover.
-/// The system will try each server in order until one succeeds.
-static BLOSSOM_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
+/// Two ordered lists with automatic failover: the first server that accepts wins.
+///
+/// The split exists because message attachments are AES-256-GCM ciphertext, and
+/// most public Blossom servers sniff the blob and whitelist media types — they
+/// reject opaque bytes with 415 regardless of the `Content-Type` header. Profile
+/// media is plaintext and is published to public nostr profiles, so it prefers a
+/// widely mirrored CDN that serves a real media extension.
+/// See `docs/messaging/ATTACHMENTS.md`.
+static BLOSSOM_BLOB_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
+static BLOSSOM_MEDIA_SERVERS: OnceCell<std::sync::Mutex<Vec<String>>> = OnceCell::new();
 
-/// Initialize default Blossom servers
-fn init_blossom_servers() -> Vec<String> {
+/// Servers that accept opaque blobs (encrypted message attachments).
+fn init_blossom_blob_servers() -> Vec<String> {
+    vec!["https://nostr.download".to_string()]
+}
+
+/// Servers for plaintext profile media (avatars, banners).
+fn init_blossom_media_servers() -> Vec<String> {
     vec![
         "https://blossom.primal.net".to_string(),
+        "https://nostr.download".to_string(),
     ]
 }
 
-/// Get the list of Blossom servers (internal function)
-pub(crate) fn get_blossom_servers() -> Vec<String> {
-    BLOSSOM_SERVERS
-        .get_or_init(|| std::sync::Mutex::new(init_blossom_servers()))
+/// Upload targets for encrypted attachments.
+pub(crate) fn get_blossom_blob_servers() -> Vec<String> {
+    BLOSSOM_BLOB_SERVERS
+        .get_or_init(|| std::sync::Mutex::new(init_blossom_blob_servers()))
+        .lock()
+        .unwrap()
+        .clone()
+}
+
+/// Upload targets for plaintext profile media.
+pub(crate) fn get_blossom_media_servers() -> Vec<String> {
+    BLOSSOM_MEDIA_SERVERS
+        .get_or_init(|| std::sync::Mutex::new(init_blossom_media_servers()))
         .lock()
         .unwrap()
         .clone()
@@ -142,7 +179,10 @@ fn mnemonic_seed_clear() {
 }
 
 pub(crate) fn mnemonic_seed_get() -> Option<String> {
-    MNEMONIC_SEED.lock().expect("mnemonic mutex poisoned").clone()
+    MNEMONIC_SEED
+        .lock()
+        .expect("mnemonic mutex poisoned")
+        .clone()
 }
 
 // Replaceable Nostr client (cleared on logout so create_account/login can set a new one without restart).
@@ -183,28 +223,46 @@ struct PendingInviteAcceptance {
 
 static PENDING_INVITE: OnceCell<PendingInviteAcceptance> = OnceCell::new();
 
-// Track which MLS welcomes we've already sent notifications for (by wrapper_event_id)
-lazy_static! {
-    static ref NOTIFIED_WELCOMES: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
-}
-
 // TEMPORARY cache of wrapper_event_ids for fast duplicate detection during INIT SYNC ONLY
 // - Populated at init with recent wrapper_ids (last 30 days) to avoid SQL queries for each historical event
 // - Only used for historical sync events (is_new = false), NOT for real-time new events
 // - Cleared when sync finishes to free memory
 lazy_static! {
-    static ref WRAPPER_ID_CACHE: Mutex<std::collections::HashSet<String>> = Mutex::new(std::collections::HashSet::new());
+    static ref WRAPPER_ID_CACHE: Mutex<std::collections::HashSet<String>> =
+        Mutex::new(std::collections::HashSet::new());
 }
 
+/// Consecutive handling timeouts per gift-wrap wrapper id. After
+/// `GIFTWRAP_TIMEOUT_DISCARD_AFTER`, the wrapper is quarantined like a panic.
+const GIFTWRAP_TIMEOUT_DISCARD_AFTER: u32 = 3;
+lazy_static! {
+    static ref GIFTWRAP_TIMEOUT_COUNTS: std::sync::Mutex<std::collections::HashMap<String, u32>> =
+        std::sync::Mutex::new(std::collections::HashMap::new());
+}
 
+/// Returns true once the same wrapper has timed out `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times.
+fn note_giftwrap_timeout(wrapper_event_id: &str) -> bool {
+    let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() else {
+        return true;
+    };
+    let entry = counts.entry(wrapper_event_id.to_string()).or_insert(0);
+    *entry = entry.saturating_add(1);
+    *entry >= GIFTWRAP_TIMEOUT_DISCARD_AFTER
+}
 
+fn clear_giftwrap_timeout_count(wrapper_event_id: &str) {
+    if let Ok(mut counts) = GIFTWRAP_TIMEOUT_COUNTS.lock() {
+        counts.remove(wrapper_event_id);
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 enum SyncMode {
-    ForwardSync,   // Initial sync from most recent message going backward
-    BackwardSync,  // Syncing historically old messages
-    DeepRescan,    // Deep rescan mode - continues until 30 days of no events
-    Finished       // Sync complete
+    ForwardSync,  // Initial sync from most recent message going backward
+    BackwardSync, // Syncing historically old messages
+    DeepRescan,   // Deep rescan mode - continues until 30 days of no events
+    CatchUp,      // Bounded forward walk from last_catch_up_until to now (wake/reconnect recovery)
+    Finished,     // Sync complete
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -212,11 +270,22 @@ struct ChatState {
     profiles: Vec<Profile>,
     chats: Vec<Chat>,
     is_syncing: bool,
-    sync_window_start: u64,  // Start timestamp of current window
-    sync_window_end: u64,    // End timestamp of current window
+    sync_window_start: u64, // Start timestamp of current window
+    sync_window_end: u64,   // End timestamp of current window
     sync_mode: SyncMode,
     sync_empty_iterations: u8, // Counter for consecutive empty iterations
     sync_total_iterations: u8, // Counter for total iterations in current mode
+    last_catch_up_until: u64,  // Unix timestamp of the last time an account-wide sync reached "now"
+    // Monotonic-clock reading (seconds since MONOTONIC_EPOCH, immune to wall-clock jumps) at
+    // the same moment `last_catch_up_until` was recorded. `None` until the first catch-up
+    // completes in this process. See `should_enter_catch_up`.
+    #[serde(skip)]
+    last_catch_up_monotonic: Option<u64>,
+    // True while a slice's window has been claimed (window advanced) but its fetch/processing
+    // has not yet completed. Guards the continuation branches below against a concurrent
+    // fetch_messages(false) call (e.g. a wake trigger racing the normal continuation loop)
+    // advancing sync_window_end a second time before the first call's fetch finishes.
+    slice_in_flight: bool,
 }
 
 impl ChatState {
@@ -230,6 +299,9 @@ impl ChatState {
             sync_mode: SyncMode::Finished,
             sync_empty_iterations: 0,
             sync_total_iterations: 0,
+            last_catch_up_until: 0,
+            last_catch_up_monotonic: None,
+            slice_in_flight: false,
         }
     }
 
@@ -241,7 +313,11 @@ impl ChatState {
     /// Load a Vector Profile in to the state from our SlimProfile database format
     async fn from_db_profile(&mut self, slim: SlimProfile) {
         // Check if profile already exists
-        if let Some(position) = self.profiles.iter().position(|profile| profile.id == slim.id) {
+        if let Some(position) = self
+            .profiles
+            .iter()
+            .position(|profile| profile.id == slim.id)
+        {
             // Replace existing profile
             let mut full_profile = slim.to_profile();
 
@@ -258,19 +334,19 @@ impl ChatState {
             self.profiles.push(slim.to_profile());
         }
     }
-    
+
     /// Merge multiple Vector Profiles from SlimProfile format in to the state at once
     async fn merge_db_profiles(&mut self, slim_profiles: Vec<SlimProfile>) {
         for slim in slim_profiles {
             self.from_db_profile(slim).await;
         }
     }
-    
+
     /// Get a profile by ID
     fn get_profile(&self, id: &str) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.id == id)
     }
-    
+
     /// Get a mutable profile by ID
     fn get_profile_mut(&mut self, id: &str) -> Option<&mut Profile> {
         self.profiles.iter_mut().find(|p| p.id == id)
@@ -280,7 +356,7 @@ impl ChatState {
     pub(crate) fn get_chat(&self, id: &str) -> Option<&Chat> {
         self.chats.iter().find(|c| c.id == id)
     }
-    
+
     /// Get a mutable chat by ID
     fn get_chat_mut(&mut self, id: &str) -> Option<&mut Chat> {
         self.chats.iter_mut().find(|c| c.id == id)
@@ -293,18 +369,22 @@ impl ChatState {
             let chat = Chat::new_dm(their_npub.to_string());
             self.chats.push(chat);
         }
-        
+
         their_npub.to_string()
     }
 
     /// Create or get an MLS group chat
-    fn create_or_get_mls_group_chat(&mut self, group_id: &str, participants: Vec<String>) -> String {
+    fn create_or_get_mls_group_chat(
+        &mut self,
+        group_id: &str,
+        participants: Vec<String>,
+    ) -> String {
         // Check if chat already exists
         if self.get_chat(group_id).is_none() {
             let chat = Chat::new_mls_group(group_id.to_string(), participants);
             self.chats.push(chat);
         }
-        
+
         group_id.to_string()
     }
 
@@ -314,7 +394,7 @@ impl ChatState {
             Some(chat) => {
                 // Add the message to the existing chat
                 chat.internal_add_message(message)
-            },
+            }
             None => {
                 // Chat doesn't exist, create it and add the message
                 // Determine chat type based on chat_id format
@@ -345,7 +425,6 @@ impl ChatState {
         is_msg_added
     }
 
-
     /// Add a message to a chat via its participant npub
     fn add_message_to_participant(&mut self, their_npub: &str, message: Message) -> bool {
         // Ensure profiles exist for the participant
@@ -354,79 +433,88 @@ impl ChatState {
             let mut profile = Profile::new();
             profile.id = their_npub.to_string();
             profile.mine = false; // It's not our profile
-            
+
             // Update the frontend about the new profile
             if let Some(handle) = TAURI_APP.get() {
                 handle.emit("profile_update", &profile).unwrap();
             }
-            
+
             // Add to our profiles list
             self.profiles.push(profile);
         }
-        
+
         // Create or get the chat ID
         let chat_id = self.create_dm_chat(their_npub);
-        
+
         // Add the message to the chat
         self.add_message_to_chat(&chat_id, message)
     }
-    
-    /// Count unread messages across all profiles
-    fn count_unread_messages(&self) -> u32 {
-        let mut total_unread = 0;
-         
-        // Count unread messages in all chats
+
+    /// Per-chat unread counts (R14, R15: includes MLS groups, not only DM
+    /// peers — every entry in `self.chats` is walked the same way
+    /// regardless of type). A chat at Nothing contributes zero (R17, KD4)
+    /// via U2's badge-contribution predicate: every message this walk
+    /// counts is at least Record tier (an own message, which would be
+    /// Passive, already stops the walk below), so contribution reduces to
+    /// the chat's own level.
+    fn unread_counts_by_chat(&self) -> std::collections::HashMap<String, u32> {
+        let mut counts = std::collections::HashMap::new();
+
         for chat in &self.chats {
-            // Skip muted chats entirely
-            if chat.muted {
+            if !notification::contributes_to_badge(
+                notification::Tier::Record,
+                chat.notification_level,
+            ) {
                 continue;
             }
 
-            // Skip chats where the corresponding profile is muted (for DMs)
-            let mut skip_for_profile_mute = false;
-            match chat.chat_type {
-                ChatType::DirectMessage => {
-                    // For DMs, chat.id is the other participant's npub
-                    if let Some(profile) = self.get_profile(&chat.id) {
-                        if profile.muted || profile.blocked {
-                            skip_for_profile_mute = true;
-                        }
+            // Skip DM chats whose peer is blocked. The old profile-level
+            // mute skip is gone (KTD6) — DM muting is the chat-level check
+            // above, since a DM chat's id is its peer's npub.
+            let mut skip_for_profile_block = false;
+            if let ChatType::DirectMessage = chat.chat_type {
+                if let Some(profile) = self.get_profile(&chat.id) {
+                    if profile.blocked {
+                        skip_for_profile_block = true;
                     }
                 }
-                ChatType::MlsGroup => {
-                    // For MLS groups, muting is handled at the chat level (already checked above)
-                    // No additional profile-level muting needed
-                }
             }
-            if skip_for_profile_mute {
+            if skip_for_profile_block {
                 continue;
             }
 
             // Find the last read message ID for this chat
             let last_read_id = &chat.last_read;
-            
+
             // Walk backwards from the end to count unread messages
             // Stop when we hit: 1) our own message, or 2) the last_read message
-            let mut unread_count = 0;
+            let mut unread_count: u32 = 0;
             for msg in chat.messages.iter().rev() {
                 // If we hit our own message, stop - we clearly read everything before it
                 if msg.mine {
                     break;
                 }
-                
+
                 // If we hit the last_read message, stop - everything at and before this is read
                 if !last_read_id.is_empty() && msg.id == *last_read_id {
                     break;
                 }
-                
+
                 // Count this message as unread
                 unread_count += 1;
             }
-            
-            total_unread += unread_count as u32;
+
+            if unread_count > 0 {
+                counts.insert(chat.id.clone(), unread_count);
+            }
         }
-        
-        total_unread
+
+        counts
+    }
+
+    /// Total unread count across every chat (feeds the OS dock badge).
+    fn count_unread_messages(&self) -> u32 {
+        self.unread_counts_by_chat().values().sum()
     }
 
     /// Find a message by its ID across all chats
@@ -448,7 +536,756 @@ impl ChatState {
         }
         None
     }
+}
 
+/// Grace period after a Finished account-wide sync before a `fetch_messages(false)` call
+/// (wake/reconnect trigger) is worth re-checking for missed events.
+const CATCH_UP_GRACE_SECS: u64 = 60;
+/// Overlap subtracted from `last_catch_up_until` on CatchUp entry, to avoid missing events
+/// that landed exactly at the boundary of the previous sync.
+const CATCH_UP_OVERLAP_SECS: u64 = 30;
+/// Max span of a single CatchUp slice, matching the initial login window.
+const CATCH_UP_SLICE_SECS: u64 = 60 * 60 * 24 * 2;
+
+lazy_static! {
+    /// Arbitrary fixed point captured at process start. `Instant::elapsed()` against this is a
+    /// monotonic clock reading immune to wall-clock adjustments (NTP, manual changes, sleep/
+    /// resume skew) — used to detect catch-up staleness even when the wall clock lies.
+    static ref MONOTONIC_EPOCH: std::time::Instant = std::time::Instant::now();
+}
+
+/// Seconds elapsed since `MONOTONIC_EPOCH`. Not itself unit-tested (it reads the real clock);
+/// `should_enter_catch_up` and friends take the reading as a plain `u64` parameter so their
+/// staleness logic is.
+fn monotonic_now_secs() -> u64 {
+    MONOTONIC_EPOCH.elapsed().as_secs()
+}
+
+/// Should a Finished, account-wide sync be promoted into a bounded CatchUp walk?
+/// True once the grace window since the last successful catch-up has elapsed, judged by
+/// whichever clock shows more elapsed time: the wall clock (`now` vs. `last_catch_up_until`)
+/// or a monotonic clock reading (`now_monotonic` vs. `last_catch_up_monotonic`, seconds since
+/// an arbitrary process-start epoch). The wall clock alone is not reliable here: a backward
+/// step (NTP correction, manual clock change, or clock skew on sleep/resume) can make
+/// `now.saturating_sub(last_catch_up_until)` read small or zero even though real time — which
+/// the monotonic clock still measures correctly, being immune to wall-clock adjustments — has
+/// genuinely moved on. `last_catch_up_monotonic` is `None` before any catch-up has completed
+/// in this process; the wall-clock delta alone decides in that case (matching the already-
+/// covered "never recorded" / zero-watermark behavior).
+fn should_enter_catch_up(
+    last_catch_up_until: u64,
+    now: u64,
+    last_catch_up_monotonic: Option<u64>,
+    now_monotonic: u64,
+) -> bool {
+    let wall_clock_elapsed = now.saturating_sub(last_catch_up_until);
+    let elapsed = match last_catch_up_monotonic {
+        Some(anchor) => std::cmp::max(wall_clock_elapsed, now_monotonic.saturating_sub(anchor)),
+        None => wall_clock_elapsed,
+    };
+    elapsed > CATCH_UP_GRACE_SECS
+}
+
+/// Computes the next CatchUp slice, walking FORWARD from `window_start` towards `now` in
+/// `CATCH_UP_SLICE_SECS`-bounded steps. `window_start` is `last_catch_up_until` on first
+/// entry (`apply_overlap = true`, to re-cover the boundary) or the previous slice's `until`
+/// on every later slice of the same walk (`apply_overlap = false`). Returns
+/// `(since, until, is_last_slice)`; `is_last_slice` is true once the slice reaches `now`.
+fn catch_up_window(window_start: u64, now: u64, apply_overlap: bool) -> (u64, u64, bool) {
+    let raw_since = if apply_overlap {
+        window_start.saturating_sub(CATCH_UP_OVERLAP_SECS)
+    } else {
+        window_start
+    };
+    // A zero watermark means "no catch-up ever recorded" (fresh `ChatState`), not a
+    // decades-stale window. Floor it the same way `single_relay_fetch_since` floors its
+    // no-prior-catch-up fallback, so the first promotion on a fresh session starts at most
+    // `CATCH_UP_SLICE_SECS` back instead of walking forward from the Unix epoch.
+    let since = if window_start == 0 {
+        std::cmp::max(raw_since, now.saturating_sub(CATCH_UP_SLICE_SECS))
+    } else {
+        raw_since
+    };
+    let until = std::cmp::min(now, since + CATCH_UP_SLICE_SECS);
+    let is_last_slice = until >= now;
+    (since, until, is_last_slice)
+}
+
+/// Full entry gate for promoting a Finished, account-wide sync into CatchUp. Requires no
+/// sync already in flight — the same `is_syncing` in-flight guard `ForwardSync` sets when
+/// the login sync starts — so a duplicate wake/reconnect trigger arriving while a CatchUp
+/// (or any other) walk is still running never spawns a second, parallel window.
+fn should_promote_to_catch_up(
+    mode: SyncMode,
+    is_syncing: bool,
+    last_catch_up_until: u64,
+    now: u64,
+    last_catch_up_monotonic: Option<u64>,
+    now_monotonic: u64,
+) -> bool {
+    mode == SyncMode::Finished
+        && !is_syncing
+        && should_enter_catch_up(
+            last_catch_up_until,
+            now,
+            last_catch_up_monotonic,
+            now_monotonic,
+        )
+}
+
+/// Bounds a single-relay reconnect fetch: caps it at the 2-day `CATCH_UP_SLICE_SECS` window,
+/// but narrows it to the gap since the last recorded account-wide catch-up (with the same
+/// overlap used by `catch_up_window`) when that gap is smaller. A relay reconnecting shortly
+/// after a full catch-up therefore does not redundantly re-fetch the whole 2-day window, while
+/// a relay with no prior catch-up (`last_catch_up_until == 0`) or a long outage still gets the
+/// full 2-day cap.
+fn single_relay_fetch_since(last_catch_up_until: u64, now: u64) -> u64 {
+    let two_day_floor = now.saturating_sub(CATCH_UP_SLICE_SECS);
+    let recent_bound = last_catch_up_until.saturating_sub(CATCH_UP_OVERLAP_SECS);
+    std::cmp::max(two_day_floor, recent_bound)
+}
+
+/// Branch-selection for the next sync slice, extracted from `fetch_messages` so the
+/// ForwardSync/BackwardSync/DeepRescan/CatchUp continuation and promotion logic is
+/// unit-testable without a Tauri `AppHandle` or Nostr client. Mutates `state` to claim the
+/// returned window (and, on promotion, to enter `SyncMode::CatchUp`) exactly as the inlined
+/// version did, including setting `slice_in_flight` so a concurrent call sees the claim.
+/// Returns `None` when there is nothing to do this call: a slice is already claimed by a
+/// concurrent invocation (`slice_in_flight`), or the account-wide sync is `Finished` and
+/// still within the catch-up grace window.
+fn next_sync_slice(
+    state: &mut ChatState,
+    now: u64,
+    now_monotonic: u64,
+) -> Option<(u64, u64, bool)> {
+    if state.slice_in_flight {
+        return None;
+    }
+
+    let (since, until, is_last) = if state.sync_mode == SyncMode::ForwardSync {
+        // Forward sync (filling gaps from last message to now)
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::BackwardSync {
+        // Backward sync (historically old messages)
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::DeepRescan {
+        // Deep rescan mode - scan backwards in 2-day increments until 30 days of no events
+        let window_start = state.sync_window_start;
+        let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
+        state.sync_window_start = new_window_start;
+        state.sync_window_end = window_start;
+        (new_window_start, window_start, false)
+    } else if state.sync_mode == SyncMode::CatchUp {
+        // Continuing a CatchUp walk: advance forward from the previous slice's `until`.
+        let (since, until, is_last) = catch_up_window(state.sync_window_end, now, false);
+        state.sync_window_start = since;
+        state.sync_window_end = until;
+        (since, until, is_last)
+    } else if should_promote_to_catch_up(
+        state.sync_mode,
+        state.is_syncing,
+        state.last_catch_up_until,
+        now,
+        state.last_catch_up_monotonic,
+        now_monotonic,
+    ) {
+        // Stale account-wide sync (wake/reconnect trigger past the grace window):
+        // promote into a bounded forward CatchUp walk instead of returning None below.
+        let (since, until, is_last) = catch_up_window(state.last_catch_up_until, now, true);
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_empty_iterations = 0;
+        state.sync_total_iterations = 0;
+        state.sync_window_start = since;
+        state.sync_window_end = until;
+        (since, until, is_last)
+    } else {
+        // Finished within the grace window, or unknown state: nothing to do.
+        return None;
+    };
+
+    state.slice_in_flight = true;
+    Some((since, until, is_last))
+}
+
+/// Post-fetch continue/terminate decision, extracted from `fetch_messages` for the same
+/// reason as `next_sync_slice`. `events_found` is `total_events_count` for DeepRescan and
+/// `new_messages_count` for every other mode — the caller selects which. `oldest_message_time`
+/// is the oldest message timestamp across all chats, read only for the ForwardSync ->
+/// BackwardSync transition. Always releases `slice_in_flight` before returning, whether the
+/// walk continues or terminates, so the next slice (continuation loop or a racing
+/// wake/reconnect trigger) can proceed.
+fn record_slice_result(
+    state: &mut ChatState,
+    new_messages_count: u16,
+    events_found: u16,
+    catch_up_is_last_slice: bool,
+    oldest_message_time: Option<u64>,
+    now: u64,
+    now_monotonic: u64,
+) -> bool {
+    let mut continue_sync = true;
+
+    state.sync_total_iterations += 1;
+
+    if events_found > 0 {
+        state.sync_empty_iterations = 0;
+    } else {
+        state.sync_empty_iterations += 1;
+    }
+
+    if state.sync_mode == SyncMode::ForwardSync {
+        // Forward sync transitions to backward sync after:
+        // 1. Finding messages and going 3 more iterations without messages, or
+        // 2. Going 5 iterations without finding any messages
+        let enough_empty_iterations = state.sync_empty_iterations >= 5;
+        let found_then_empty = new_messages_count > 0 && state.sync_empty_iterations >= 3;
+
+        if found_then_empty || enough_empty_iterations {
+            state.sync_mode = SyncMode::BackwardSync;
+            state.sync_empty_iterations = 0;
+            state.sync_total_iterations = 0;
+
+            if let Some(oldest_ts) = oldest_message_time {
+                state.sync_window_end = oldest_ts;
+                state.sync_window_start = oldest_ts - (60 * 60 * 24 * 2); // 2 days before oldest
+            } else {
+                // Still start backward sync, but from recent history
+                let thirty_days_ago = now - (60 * 60 * 24 * 30);
+                state.sync_window_end = thirty_days_ago;
+                state.sync_window_start = thirty_days_ago - (60 * 60 * 24 * 2);
+            }
+        }
+    } else if state.sync_mode == SyncMode::BackwardSync {
+        // For backward sync, continue until no messages found for 5 consecutive iterations
+        if state.sync_empty_iterations >= 5 {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else if state.sync_mode == SyncMode::DeepRescan {
+        // For deep rescan, continue until no messages found for 15 consecutive iterations
+        // (30 days of no events at 2 days/iteration)
+        if state.sync_empty_iterations >= 15 {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else if state.sync_mode == SyncMode::CatchUp {
+        // CatchUp terminates once the slice we just processed reached "now" (not on empty
+        // iterations — a quiet inbox is a perfectly valid CatchUp outcome).
+        if catch_up_is_last_slice {
+            state.sync_mode = SyncMode::Finished;
+            continue_sync = false;
+        }
+    } else {
+        continue_sync = false; // Unknown state, stop syncing
+    }
+    // Every path that lands here with `continue_sync == false` is a normal completion of a
+    // full account-wide walk (BackwardSync/DeepRescan exhausting empty iterations, or CatchUp
+    // reaching "now") — advance the watermark. A failed relay event stream never reaches this
+    // function at all (it returns early with its own reset), so there's no "failed" case to
+    // gate out separately here.
+    if !continue_sync {
+        state.last_catch_up_until = now;
+        state.last_catch_up_monotonic = Some(now_monotonic);
+    }
+    state.slice_in_flight = false;
+    continue_sync
+}
+
+#[cfg(test)]
+mod unread_count_tests {
+    use super::*;
+
+    fn unread_message(id: &str, mine: bool) -> Message {
+        Message {
+            id: id.to_string(),
+            content: "hi".to_string(),
+            at: 1,
+            mine,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn nothing_level_chat_contributes_zero_to_map_and_total() {
+        let mut state = ChatState::new();
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::Nothing;
+        chat.messages.push(unread_message("m1", false));
+        chat.messages.push(unread_message("m2", false));
+        state.chats.push(chat);
+
+        assert!(state.unread_counts_by_chat().is_empty());
+        assert_eq!(state.count_unread_messages(), 0);
+    }
+
+    #[test]
+    fn mentions_chat_total_ignores_nothing_chat_unread() {
+        let mut state = ChatState::new();
+
+        let mut counted = Chat::new_dm("npub1peer".to_string());
+        counted.notification_level = NotificationLevel::Mentions;
+        counted.messages.push(unread_message("m1", false));
+        counted.messages.push(unread_message("m2", false));
+        state.chats.push(counted);
+
+        let mut silenced = Chat::new_dm("npub1other".to_string());
+        silenced.notification_level = NotificationLevel::Nothing;
+        silenced.messages.push(unread_message("m3", false));
+        silenced.messages.push(unread_message("m4", false));
+        silenced.messages.push(unread_message("m5", false));
+        state.chats.push(silenced);
+
+        assert_eq!(state.count_unread_messages(), 2);
+    }
+
+    #[test]
+    fn map_includes_mls_chats_keyed_by_group_id() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group(
+            "group-abc".to_string(),
+            vec!["npub1a".to_string(), "npub1b".to_string()],
+        );
+        group.messages.push(unread_message("m1", false));
+        state.chats.push(group);
+
+        let counts = state.unread_counts_by_chat();
+        assert_eq!(counts.get("group-abc"), Some(&1));
+    }
+
+    #[test]
+    fn reverse_walk_stops_at_own_most_recent_message_for_mls_chats() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group("group-abc".to_string(), vec!["npub1a".to_string()]);
+        group.messages.push(unread_message("m1", false));
+        group.messages.push(unread_message("m2", true)); // own message: stop here
+        group.messages.push(unread_message("m3", false));
+        group.messages.push(unread_message("m4", false));
+        state.chats.push(group);
+
+        let counts = state.unread_counts_by_chat();
+        assert_eq!(counts.get("group-abc"), Some(&2));
+    }
+
+    #[test]
+    fn marking_mls_chat_read_drops_its_count_to_zero() {
+        let mut state = ChatState::new();
+        let mut group = Chat::new_mls_group("group-abc".to_string(), vec!["npub1a".to_string()]);
+        group.messages.push(unread_message("m1", false));
+        group.messages.push(unread_message("m2", false));
+        state.chats.push(group);
+        assert_eq!(state.unread_counts_by_chat().get("group-abc"), Some(&2));
+
+        // Same watermark logic `mark_as_read` applies: pick the last non-mine message.
+        let chat = state
+            .chats
+            .iter_mut()
+            .find(|c| c.id == "group-abc")
+            .unwrap();
+        assert!(chat.set_as_read());
+
+        assert!(state.unread_counts_by_chat().get("group-abc").is_none());
+        assert_eq!(state.count_unread_messages(), 0);
+    }
+
+    #[test]
+    fn raising_a_nothing_chat_to_mentions_recounts_its_already_received_messages() {
+        let mut state = ChatState::new();
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::Nothing;
+        chat.messages.push(unread_message("m1", false));
+        chat.messages.push(unread_message("m2", false));
+        state.chats.push(chat);
+        assert_eq!(state.count_unread_messages(), 0);
+
+        state.chats[0].notification_level = NotificationLevel::Mentions;
+        assert_eq!(state.count_unread_messages(), 2);
+    }
+
+    #[test]
+    fn blocked_dm_peer_contributes_zero_even_at_all_level() {
+        let mut state = ChatState::new();
+        let mut profile = Profile::new();
+        profile.id = "npub1peer".to_string();
+        profile.blocked = true;
+        state.profiles.push(profile);
+
+        let mut chat = Chat::new_dm("npub1peer".to_string());
+        chat.notification_level = NotificationLevel::All;
+        chat.messages.push(unread_message("m1", false));
+        state.chats.push(chat);
+
+        assert!(state.unread_counts_by_chat().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod catch_up_tests {
+    use super::{
+        catch_up_window, should_enter_catch_up, should_promote_to_catch_up,
+        single_relay_fetch_since, SyncMode, CATCH_UP_GRACE_SECS, CATCH_UP_OVERLAP_SECS,
+        CATCH_UP_SLICE_SECS,
+    };
+
+    #[test]
+    fn within_grace_window_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 30; // 30s ago, well within the 60s grace window
+        assert!(!should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn promotion_blocked_while_a_sync_is_already_in_flight() {
+        // The in-flight guard: even with a stale watermark, a sync already running
+        // (is_syncing = true) must not spawn a second, parallel CatchUp window.
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago: stale enough on its own
+        assert!(!should_promote_to_catch_up(
+            SyncMode::Finished,
+            true,
+            last_catch_up_until,
+            now,
+            None,
+            0
+        ));
+        assert!(should_promote_to_catch_up(
+            SyncMode::Finished,
+            false,
+            last_catch_up_until,
+            now,
+            None,
+            0
+        ));
+    }
+
+    #[test]
+    fn promotion_only_fires_from_finished_mode() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        for mode in [
+            SyncMode::ForwardSync,
+            SyncMode::BackwardSync,
+            SyncMode::DeepRescan,
+            SyncMode::CatchUp,
+        ] {
+            assert!(!should_promote_to_catch_up(
+                mode,
+                false,
+                last_catch_up_until,
+                now,
+                None,
+                0
+            ));
+        }
+    }
+
+    #[test]
+    fn exactly_at_grace_boundary_does_not_enter_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - CATCH_UP_GRACE_SECS;
+        assert!(!should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn stale_last_catch_up_enters_catch_up() {
+        let now = 1_000_000u64;
+        let last_catch_up_until = now - 60 * 60; // 1 hour ago (the test name already conveys the scenario)
+        assert!(should_enter_catch_up(last_catch_up_until, now, None, 0));
+    }
+
+    #[test]
+    fn zero_watermark_enters_catch_up() {
+        // A never-recorded (0) watermark is maximally stale and must enter catch-up.
+        let now = 1_000_000u64;
+        assert!(should_enter_catch_up(0, now, None, 0));
+    }
+
+    #[test]
+    fn first_slice_covers_a_single_two_day_window_ending_at_now() {
+        // last_catch_up_until 1 hour ago fetches a single 2-day window ending at now.
+        let now = 2_000_000u64;
+        let last_catch_up_until = now - 60 * 60;
+        let (since, until, is_last) = catch_up_window(last_catch_up_until, now, true);
+
+        assert_eq!(since, last_catch_up_until - 30); // overlap applied
+        assert_eq!(until, now); // capped at now, well inside the 2-day slice cap
+        assert!(is_last);
+    }
+
+    #[test]
+    fn zero_watermark_floors_to_two_day_cap_instead_of_the_unix_epoch() {
+        // A fresh ChatState's last_catch_up_until is 0 (never recorded), not a genuine
+        // decades-old watermark. Mirrors single_relay_fetch_falls_back_to_two_day_cap_with_no_prior_catch_up:
+        // the walk must start no further back than the 2-day slice cap.
+        let now = 2_000_000_000u64;
+        let (since, until, is_last) = catch_up_window(0, now, true);
+
+        assert!(since >= now - CATCH_UP_SLICE_SECS);
+        assert_eq!(until, now);
+        assert!(is_last);
+    }
+
+    #[test]
+    fn zero_watermark_still_promotes_to_catch_up() {
+        let now = 2_000_000_000u64;
+        assert!(should_promote_to_catch_up(
+            SyncMode::Finished,
+            false,
+            0,
+            now,
+            None,
+            0
+        ));
+    }
+
+    #[test]
+    fn wide_gap_produces_bounded_forward_slices_until_reaching_now() {
+        // A gap wider than one slice must walk FORWARD (not backward) in
+        // CATCH_UP_SLICE_SECS-bounded steps, ending exactly at `now`.
+        let now = 10 * CATCH_UP_SLICE_SECS + 1_000;
+        let last_catch_up_until = 500u64; // gap spans several slices
+
+        let (since1, until1, is_last1) = catch_up_window(last_catch_up_until, now, true);
+        assert_eq!(since1, last_catch_up_until - 30);
+        assert_eq!(until1, since1 + CATCH_UP_SLICE_SECS);
+        assert!(
+            until1 < now,
+            "first slice of a wide gap must not reach now yet"
+        );
+        assert!(!is_last1);
+
+        // Next slice continues forward from the previous slice's `until`, no overlap.
+        let (since2, until2, is_last2) = catch_up_window(until1, now, false);
+        assert_eq!(since2, until1);
+        assert!(
+            since2 > since1,
+            "window must advance forward, never backward"
+        );
+        assert!(!is_last2);
+
+        // Walk remaining slices until the loop terminates at `now`.
+        let mut since = since2;
+        let mut until = until2;
+        let mut is_last = is_last2;
+        let mut iterations = 1;
+        while !is_last {
+            let (s, u, last) = catch_up_window(until, now, false);
+            assert!(s >= since, "window must never move backward");
+            since = s;
+            until = u;
+            is_last = last;
+            iterations += 1;
+            assert!(iterations < 100, "catch-up walk did not terminate");
+        }
+        assert_eq!(until, now);
+    }
+
+    #[test]
+    fn single_relay_fetch_falls_back_to_two_day_cap_with_no_prior_catch_up() {
+        // last_catch_up_until == 0 (never recorded): full 2-day cap, not the recent-gap bound.
+        let now = 2_000_000_000u64;
+        assert_eq!(single_relay_fetch_since(0, now), now - CATCH_UP_SLICE_SECS);
+    }
+
+    #[test]
+    fn single_relay_fetch_narrows_to_recent_catch_up_gap() {
+        // Reconnecting 10 minutes after a full account-wide catch-up must not re-fetch 2 days.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 600;
+        let since = single_relay_fetch_since(last_catch_up_until, now);
+        assert_eq!(since, last_catch_up_until - CATCH_UP_OVERLAP_SECS);
+        assert!(
+            since > now - CATCH_UP_SLICE_SECS,
+            "narrowed window must be tighter than the 2-day cap"
+        );
+    }
+
+    #[test]
+    fn single_relay_fetch_stays_capped_at_two_days_for_a_long_outage() {
+        // A relay down far longer than 2 days must not walk back further than the cap.
+        let now = 2_000_000_000u64;
+        let last_catch_up_until = now - 10 * CATCH_UP_SLICE_SECS;
+        assert_eq!(
+            single_relay_fetch_since(last_catch_up_until, now),
+            now - CATCH_UP_SLICE_SECS
+        );
+    }
+}
+
+#[cfg(test)]
+mod fetch_messages_state_machine_tests {
+    use super::{
+        next_sync_slice, record_slice_result, ChatState, SyncMode, CATCH_UP_GRACE_SECS,
+        CATCH_UP_SLICE_SECS,
+    };
+
+    #[test]
+    fn promotion_claims_a_catch_up_slice_and_marks_it_in_flight() {
+        // Fresh ChatState: Finished, not syncing, never caught up. A wake/reconnect trigger
+        // must promote into CatchUp and claim the slice.
+        let mut state = ChatState::new();
+        let now = 2_000_000_000u64;
+
+        let result = next_sync_slice(&mut state, now, 0);
+
+        assert!(result.is_some());
+        let (since, until, is_last) = result.unwrap();
+        assert!(since >= now - CATCH_UP_SLICE_SECS);
+        assert_eq!(until, now);
+        assert!(is_last);
+        assert_eq!(state.sync_mode, SyncMode::CatchUp);
+        assert!(state.is_syncing);
+        assert!(state.slice_in_flight);
+    }
+
+    #[test]
+    fn continuation_advances_the_catch_up_window_forward() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000;
+        state.sync_window_end = 5_000;
+        let now = 5_000 + CATCH_UP_SLICE_SECS * 3;
+
+        let (since, until, is_last) = next_sync_slice(&mut state, now, 0).unwrap();
+
+        // Continuation has no overlap and starts exactly where the previous slice ended.
+        assert_eq!(since, 5_000);
+        assert_eq!(until, 5_000 + CATCH_UP_SLICE_SECS);
+        assert!(!is_last);
+        assert_eq!(state.sync_window_start, since);
+        assert_eq!(state.sync_window_end, until);
+        assert!(state.slice_in_flight);
+    }
+
+    #[test]
+    fn a_concurrent_call_is_rejected_while_a_slice_is_in_flight() {
+        // This is the regression guard for the concurrency bug: a second fetch_messages(false)
+        // call (wake trigger racing the normal continuation loop, or vice versa) must not
+        // advance sync_window_end a second time while the first call's slice is still in flight.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000;
+        state.sync_window_end = 5_000;
+        state.slice_in_flight = true; // another call already claimed this slice
+
+        let result = next_sync_slice(&mut state, 50_000, 0);
+
+        assert!(
+            result.is_none(),
+            "a concurrent call must be rejected as a no-op duplicate"
+        );
+        // The window must be untouched: the in-flight call's own window is still authoritative.
+        assert_eq!(state.sync_window_start, 1_000);
+        assert_eq!(state.sync_window_end, 5_000);
+    }
+
+    #[test]
+    fn catch_up_terminates_on_the_last_slice_and_advances_the_watermark() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        let now = 2_000_000_000u64;
+
+        let continue_sync = record_slice_result(
+            &mut state, /* new_messages_count */ 0, /* events_found */ 0,
+            /* catch_up_is_last_slice */ true, /* oldest_message_time */ None, now, 0,
+        );
+
+        assert!(
+            !continue_sync,
+            "CatchUp reaching its last slice must terminate the walk"
+        );
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(
+            state.last_catch_up_until, now,
+            "a normal completion must advance the watermark"
+        );
+        assert!(
+            !state.slice_in_flight,
+            "the claim must be released once the slice is recorded"
+        );
+    }
+
+    #[test]
+    fn catch_up_continues_and_releases_the_in_flight_claim_when_not_the_last_slice() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::CatchUp;
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        let last_catch_up_until_before = state.last_catch_up_until;
+
+        let continue_sync = record_slice_result(&mut state, 0, 0, false, None, 2_000_000_000u64, 0);
+
+        assert!(continue_sync);
+        assert_eq!(
+            state.sync_mode,
+            SyncMode::CatchUp,
+            "walk keeps going until the last slice"
+        );
+        assert_eq!(
+            state.last_catch_up_until, last_catch_up_until_before,
+            "no watermark advance mid-walk"
+        );
+        assert!(
+            !state.slice_in_flight,
+            "the claim must be released so the next slice can proceed"
+        );
+    }
+
+    #[test]
+    fn backward_sync_terminates_after_five_empty_iterations_and_advances_the_watermark() {
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::BackwardSync;
+        state.is_syncing = true;
+        state.sync_empty_iterations = 4;
+        state.slice_in_flight = true;
+        let now = 2_000_000_000u64;
+
+        let continue_sync = record_slice_result(&mut state, 0, 0, false, None, now, 0);
+
+        assert!(!continue_sync);
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(state.last_catch_up_until, now);
+    }
+
+    #[test]
+    fn a_backward_wall_clock_jump_does_not_suppress_a_catch_up_that_was_otherwise_due() {
+        // Regression guard: an NTP correction or manual clock change stepping the wall clock
+        // backward must not make a genuinely due catch-up look fresh. The monotonic reading
+        // (immune to wall-clock adjustments) is what actually elapsed and must win.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::Finished;
+        state.is_syncing = false;
+        state.last_catch_up_until = 1_000_000; // wall clock at the last successful catch-up
+        state.last_catch_up_monotonic = Some(1_000); // monotonic reading at that same moment
+
+        // The wall clock has jumped BACKWARD: it now reads before the last catch-up watermark,
+        // so the wall-clock delta alone would saturate to 0 and hide the staleness.
+        let now_wall_clock = 999_000u64;
+        assert!(now_wall_clock < state.last_catch_up_until);
+
+        // Real (monotonic) time has genuinely moved on well past the grace window.
+        let now_monotonic = 1_000 + CATCH_UP_GRACE_SECS + 30;
+
+        let result = next_sync_slice(&mut state, now_wall_clock, now_monotonic);
+
+        assert!(
+            result.is_some(),
+            "monotonic elapsed time must still trigger the overdue catch-up"
+        );
+        assert_eq!(state.sync_mode, SyncMode::CatchUp);
+    }
 }
 
 lazy_static! {
@@ -456,60 +1293,84 @@ lazy_static! {
 }
 
 #[tauri::command]
-async fn fetch_messages<R: Runtime>(
-    handle: AppHandle<R>,
-    init: bool,
-    relay_url: Option<String>
-) {
+async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool, relay_url: Option<String>) {
     let client = get_nostr_client().expect("Nostr client not initialized");
 
     // Grab our pubkey
-    let signer = client.signer().await.unwrap();
-    let my_public_key = signer.get_public_key().await.unwrap();
+    let signer = match client.signer().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[Sync] Failed to get Nostr signer: {}", e);
+            return;
+        }
+    };
+    let my_public_key = match signer.get_public_key().await {
+        Ok(pk) => pk,
+        Err(e) => {
+            eprintln!("[Sync] Failed to get public key from signer: {}", e);
+            return;
+        }
+    };
 
     // If relay_url is provided, this is a single-relay sync that bypasses global state
     if relay_url.is_some() {
-        // Single relay sync - always fetch last 2 days
+        // Single relay sync - bounded by the 2-day cap, narrowed to the gap since the last
+        // account-wide catch-up. Read-only lock: does not mutate ChatState.
         let now = Timestamp::now();
-        let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
-        
+        let last_catch_up_until = STATE.lock().await.last_catch_up_until;
+        let since = single_relay_fetch_since(last_catch_up_until, now.as_secs());
+
         let filter = Filter::new()
             .pubkey(my_public_key)
             .kind(Kind::GiftWrap)
-            .since(Timestamp::from_secs(two_days_ago))
+            .since(Timestamp::from_secs(since))
             .until(now);
 
         // Fetch from specific relay only
-        let mut events = client
-            .stream_events_from(vec![relay_url.unwrap()], filter, std::time::Duration::from_secs(30))
+        let relay_url_str = relay_url.unwrap();
+        let mut events = match client
+            .stream_events_from(
+                vec![relay_url_str.clone()],
+                filter,
+                std::time::Duration::from_secs(30),
+            )
             .await
-            .unwrap();
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!(
+                    "[Single-Relay Sync] Failed to fetch events from {}: {}",
+                    relay_url_str, e
+                );
+                return;
+            }
+        };
 
         // Process events without affecting global sync state
         while let Some(event) = events.next().await {
-            handle_event(event, false).await;
+            handle_event_guarded(event, false).await;
         }
-        
+
         // Also sync MLS group messages after single-relay reconnection
         if let Err(e) = sync_mls_groups_now(None).await {
             eprintln!("[Single-Relay Sync] Failed to sync MLS groups: {}", e);
         }
-        
+
         return; // Exit early for single-relay syncs
     }
 
     // Regular sync logic with global state management
-    let (since_timestamp, until_timestamp) = {
+    let (since_timestamp, until_timestamp, catch_up_is_last_slice) = {
         let mut state = STATE.lock().await;
-        
+
         if init {
             // Set current account for SQL mode if profile database exists
             // This must be done BEFORE loading chats/messages so SQL mode is active
             let signer = client.signer().await.unwrap();
             let my_public_key = signer.get_public_key().await.unwrap();
             let npub = my_public_key.to_bech32().unwrap();
-            
-            let app_data = handle.path().app_data_dir().ok();
+
+            let app_data = crate::test_sandbox::test_data_dir(&handle).ok();
             if let Some(data_dir) = app_data {
                 let profile_db = data_dir.join(&npub).join("vector.db");
                 if profile_db.exists() {
@@ -517,7 +1378,7 @@ async fn fetch_messages<R: Runtime>(
                     println!("[Startup] Set current account for SQL mode: {}", npub);
                 }
             }
-            
+
             // Load our DB (if we haven't already; i.e: our profile is the single loaded profile since login)
             let mut needs_integrity_check = false;
             if state.profiles.len() == 1 {
@@ -536,38 +1397,50 @@ async fn fetch_messages<R: Runtime>(
                     // Load MLS groups to check for evicted status
                     let mls_groups: Option<Vec<mls::MlsGroupMetadata>> =
                         db::load_mls_groups(&handle).await.ok();
-                    
+
                     // Convert slim chats to full chats and load their messages
                     for slim_chat in slim_chats {
                         let mut chat = slim_chat.to_chat();
-                        
+
                         // Skip MLS group chats that are marked as evicted
                         // MLS group chat IDs are just the group_id (no prefix)
                         if chat.chat_type == ChatType::MlsGroup {
                             if let Some(ref groups) = mls_groups {
-                                if let Some(group) = groups.iter().find(|g| g.group_id.as_str() == chat.id()) {
+                                if let Some(group) =
+                                    groups.iter().find(|g| g.group_id.as_str() == chat.id())
+                                {
                                     if group.evicted {
-                                        println!("[Startup] Skipping evicted MLS group chat: {}", chat.id());
+                                        println!(
+                                            "[Startup] Skipping evicted MLS group chat: {}",
+                                            chat.id()
+                                        );
                                         continue; // Skip this chat
                                     }
                                 }
                             }
                         }
-                        
+
                         // Load only the last message for preview (optimization: full messages loaded on-demand by frontend)
-                        let last_messages_result = db::get_chat_last_messages(&handle, &chat.id(), 1).await;
+                        let last_messages_result =
+                            db::get_chat_last_messages(&handle, &chat.id(), 1).await;
                         if let Ok(last_messages) = last_messages_result {
                             for message in last_messages {
                                 // Check if this message has downloaded attachments (for integrity check)
-                                if !needs_integrity_check && message.attachments.iter().any(|att| att.downloaded) {
+                                if !needs_integrity_check
+                                    && message.attachments.iter().any(|att| att.downloaded)
+                                {
                                     needs_integrity_check = true;
                                 }
                                 chat.internal_add_message(message);
                             }
                         } else {
-                            eprintln!("Failed to load last message for chat {}: {:?}", chat.id(), last_messages_result);
+                            eprintln!(
+                                "Failed to load last message for chat {}: {:?}",
+                                chat.id(),
+                                last_messages_result
+                            );
                         }
-                        
+
                         // Ensure profiles exist for all chat participants
                         for participant in chat.participants() {
                             if state.get_profile(participant).is_none() {
@@ -583,150 +1456,126 @@ async fn fetch_messages<R: Runtime>(
                         state.chats.push(chat);
 
                         // Sort the chats by their last received message
-                        state.chats.sort_by(|a, b| b.last_message_time().cmp(&a.last_message_time()));
+                        state
+                            .chats
+                            .sort_by(|a, b| b.last_message_time().cmp(&a.last_message_time()));
                     }
                 } else {
-                    eprintln!("Failed to load chats from database: {:?}", slim_chats_result);
+                    eprintln!(
+                        "Failed to load chats from database: {:?}",
+                        slim_chats_result
+                    );
                 }
             }
-            
+
             if needs_integrity_check {
                 // Clean up empty file attachments first
                 cleanup_empty_file_attachments(&handle, &mut state).await;
-                
+
                 // Check integrity without dropping state
                 check_attachment_filesystem_integrity(&handle, &mut state).await;
-                
+
                 // Preload ID caches for maximum performance
                 if let Err(e) = db::preload_id_caches(&handle).await {
                     eprintln!("[Cache] Failed to preload ID caches: {}", e);
                 }
-                
+
                 // Preload wrapper_event_ids for fast duplicate detection during sync
                 // Load last 30 days of wrapper_ids to cover typical sync window
                 if let Ok(wrapper_ids) = db::load_recent_wrapper_ids(&handle, 30).await {
                     let mut cache = WRAPPER_ID_CACHE.lock().await;
                     *cache = wrapper_ids;
                 }
-                
+
                 // Build dm_flags (has_from_me / has_from_them per DM) from DB so frontend can show Friends vs Requests vs Pending
                 let mut dm_flags = serde_json::Map::new();
                 for chat in &state.chats {
                     if chat.id().starts_with("npub1") || chat.chat_type == ChatType::DirectMessage {
-                        if let Ok((has_from_me, has_from_them)) = db::get_dm_sent_received(&handle, chat.id()) {
+                        if let Ok((has_from_me, has_from_them)) =
+                            db::get_dm_sent_received(&handle, chat.id())
+                        {
                             dm_flags.insert(chat.id().clone(), serde_json::json!({ "has_from_me": has_from_me, "has_from_them": has_from_them }));
                         }
                     }
                 }
                 // Send the state to our frontend to signal finalised init with a full state
-                handle.emit("init_finished", serde_json::json!({
-                    "profiles": &state.profiles,
-                    "chats": &state.chats,
-                    "dm_flags": serde_json::Value::Object(dm_flags)
-                })).unwrap();
+                handle
+                    .emit(
+                        "init_finished",
+                        serde_json::json!({
+                            "profiles": &state.profiles,
+                            "chats": &state.chats,
+                            "dm_flags": serde_json::Value::Object(dm_flags)
+                        }),
+                    )
+                    .unwrap();
             } else {
                 // Even if no integrity check needed, still clean up empty files
                 cleanup_empty_file_attachments(&handle, &mut state).await;
-                
+
                 // Preload ID caches for maximum performance
                 if let Err(e) = db::preload_id_caches(&handle).await {
                     eprintln!("[Cache] Failed to preload ID caches: {}", e);
                 }
-                
+
                 // Preload wrapper_event_ids for fast duplicate detection during sync
                 // Load last 30 days of wrapper_ids to cover typical sync window
                 if let Ok(wrapper_ids) = db::load_recent_wrapper_ids(&handle, 30).await {
                     let mut cache = WRAPPER_ID_CACHE.lock().await;
                     *cache = wrapper_ids;
                 }
-                
+
                 // Build dm_flags (has_from_me / has_from_them per DM) from DB so frontend can show Friends vs Requests vs Pending
                 let mut dm_flags = serde_json::Map::new();
                 for chat in &state.chats {
                     if chat.id().starts_with("npub1") || chat.chat_type == ChatType::DirectMessage {
-                        if let Ok((has_from_me, has_from_them)) = db::get_dm_sent_received(&handle, chat.id()) {
+                        if let Ok((has_from_me, has_from_them)) =
+                            db::get_dm_sent_received(&handle, chat.id())
+                        {
                             dm_flags.insert(chat.id().clone(), serde_json::json!({ "has_from_me": has_from_me, "has_from_them": has_from_them }));
                         }
                     }
                 }
                 // No integrity check needed, send init immediately
-                handle.emit("init_finished", serde_json::json!({
-                    "profiles": &state.profiles,
-                    "chats": &state.chats,
-                    "dm_flags": serde_json::Value::Object(dm_flags)
-                })).unwrap();
+                handle
+                    .emit(
+                        "init_finished",
+                        serde_json::json!({
+                            "profiles": &state.profiles,
+                            "chats": &state.chats,
+                            "dm_flags": serde_json::Value::Object(dm_flags)
+                        }),
+                    )
+                    .unwrap();
             }
 
             // ALWAYS begin with an initial sync of at least the last 2 days
             let now = Timestamp::now();
 
             state.is_syncing = true;
+            state.slice_in_flight = true;
             state.sync_mode = SyncMode::ForwardSync;
             state.sync_empty_iterations = 0;
             state.sync_total_iterations = 0;
 
             // Initial 2-day window: now - 2 days → now
-            let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
+            let two_days_ago = now.as_secs() - (60 * 60 * 24 * 2);
 
             state.sync_window_start = two_days_ago;
-            state.sync_window_end = now.as_u64();
+            state.sync_window_end = now.as_secs();
 
-            (
-                Timestamp::from_secs(two_days_ago),
-                now
-            )
-        } else if state.sync_mode == SyncMode::ForwardSync {
-            // Forward sync (filling gaps from last message to now)
-            let window_start = state.sync_window_start;
-
-            // Adjust window for next iteration (go back in time in 2-day increments)
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
-            )
-        } else if state.sync_mode == SyncMode::BackwardSync {
-            // Backward sync (historically old messages)
-            let window_start = state.sync_window_start;
-
-            // Move window backward in time in 2-day increments
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
-            )
-        } else if state.sync_mode == SyncMode::DeepRescan {
-            // Deep rescan mode - scan backwards in 2-day increments until 30 days of no events
-            let window_start = state.sync_window_start;
-
-            // Move window backward in time in 2-day increments
-            let new_window_end = window_start;
-            let new_window_start = window_start - (60 * 60 * 24 * 2); // Always 2 days
-
-            // Update state with new window
-            state.sync_window_start = new_window_start;
-            state.sync_window_end = new_window_end;
-
-            (
-                Timestamp::from_secs(new_window_start),
-                Timestamp::from_secs(new_window_end)
-            )
+            (Timestamp::from_secs(two_days_ago), now, false)
         } else {
-            // Sync finished or in unknown state
-            // Return dummy values, won't be used as we'll end sync
-            (Timestamp::now(), Timestamp::now())
+            match next_sync_slice(&mut state, Timestamp::now().as_secs(), monotonic_now_secs()) {
+                Some((since, until, is_last)) => (
+                    Timestamp::from_secs(since),
+                    Timestamp::from_secs(until),
+                    is_last,
+                ),
+                // Nothing to do: a slice is already in flight for a concurrent call, or the
+                // sync is Finished within the catch-up grace window.
+                None => return,
+            }
         }
     };
 
@@ -744,11 +1593,16 @@ async fn fetch_messages<R: Runtime>(
 
     // Emit our current "Sync Range" to the frontend (only for general syncs, not single-relay)
     if relay_url.is_none() {
-        handle.emit("sync_progress", serde_json::json!({
-            "since": since_timestamp.as_u64(),
-            "until": until_timestamp.as_u64(),
-            "mode": format!("{:?}", STATE.lock().await.sync_mode)
-        })).unwrap();
+        handle
+            .emit(
+                "sync_progress",
+                serde_json::json!({
+                    "since": since_timestamp.as_secs(),
+                    "until": until_timestamp.as_secs(),
+                    "mode": format!("{:?}", STATE.lock().await.sync_mode)
+                }),
+            )
+            .unwrap();
     }
 
     // Fetch GiftWraps related to us within the time window
@@ -760,16 +1614,32 @@ async fn fetch_messages<R: Runtime>(
 
     let mut event_stream = if let Some(url) = &relay_url {
         // Fetch from specific relay
-        client
+        match client
             .stream_events_from(vec![url], filter, std::time::Duration::from_secs(30))
             .await
-            .unwrap()
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[Sync] Relay event stream failed for {}: {}", url, e);
+                let mut state = STATE.lock().await;
+                abandon_sync_slice(&mut state);
+                return;
+            }
+        }
     } else {
         // Fetch from all relays
-        client
+        match client
             .stream_events(filter, std::time::Duration::from_secs(60))
             .await
-            .unwrap()
+        {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
+                let mut state = STATE.lock().await;
+                abandon_sync_slice(&mut state);
+                return;
+            }
+        }
     };
 
     // Count total events fetched (for DeepRescan) and new messages added (for other modes)
@@ -777,7 +1647,7 @@ async fn fetch_messages<R: Runtime>(
     let mut new_messages_count: u16 = 0;
     while let Some(event) = event_stream.next().await {
         // Count the amount of accepted (new) events
-        if handle_event(event, false).await {
+        if handle_event_guarded(event, false).await {
             new_messages_count += 1;
         }
     }
@@ -786,10 +1656,6 @@ async fn fetch_messages<R: Runtime>(
     let total_events_count = new_messages_count as u16;
     let should_continue = {
         let mut state = STATE.lock().await;
-        let mut continue_sync = true;
-
-        // Increment total iterations counter
-        state.sync_total_iterations += 1;
 
         // For DeepRescan, use total events count; for other modes, use new messages count
         let events_found = if state.sync_mode == SyncMode::DeepRescan {
@@ -798,81 +1664,23 @@ async fn fetch_messages<R: Runtime>(
             new_messages_count
         };
 
-        // Update state based on if events were found
-        if events_found > 0 {
-            state.sync_empty_iterations = 0;
-        } else {
-            state.sync_empty_iterations += 1;
-        }
+        // Oldest message timestamp across all chats, needed only for the ForwardSync ->
+        // BackwardSync transition; computed here since it needs `state.chats`.
+        let oldest_message_time = state
+            .chats
+            .iter()
+            .filter_map(|chat| chat.last_message_time())
+            .min();
 
-        if state.sync_mode == SyncMode::ForwardSync {
-            // Forward sync transitions to backward sync after:
-            // 1. Finding messages and going 3 more iterations without messages, or
-            // 2. Going 5 iterations without finding any messages
-            let enough_empty_iterations = state.sync_empty_iterations >= 5;
-            let found_then_empty = new_messages_count > 0 && state.sync_empty_iterations >= 3;
-
-            if found_then_empty || enough_empty_iterations {
-                // Time to switch mode - calculate oldest timestamp while holding lock
-                let mut oldest_timestamp = None;
-                
-                // Check each chat's messages for oldest timestamp
-                for chat in &state.chats {
-                    if let Some(oldest_msg_time) = chat.last_message_time() {
-                        match oldest_timestamp {
-                            None => oldest_timestamp = Some(oldest_msg_time),
-                            Some(current_oldest) => {
-                                if oldest_msg_time < current_oldest {
-                                    oldest_timestamp = Some(oldest_msg_time);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Switch to backward sync mode
-                state.sync_mode = SyncMode::BackwardSync;
-                state.sync_empty_iterations = 0;
-                state.sync_total_iterations = 0;
-
-                if let Some(oldest_ts) = oldest_timestamp {
-                    state.sync_window_end = oldest_ts;
-                    state.sync_window_start = oldest_ts - (60 * 60 * 24 * 2); // 2 days before oldest
-                } else {
-                    // Still start backward sync, but from recent history
-                    let now = Timestamp::now().as_u64();
-                    let thirty_days_ago = now - (60 * 60 * 24 * 30);
-
-                    state.sync_window_end = thirty_days_ago;
-                    state.sync_window_start = thirty_days_ago - (60 * 60 * 24 * 2);
-                }
-            }
-        } else if state.sync_mode == SyncMode::BackwardSync {
-            // For backward sync, continue until:
-            // No messages found for 5 consecutive iterations
-            let enough_empty_iterations = state.sync_empty_iterations >= 5;
-
-            if enough_empty_iterations {
-                // We've completed backward sync
-                state.sync_mode = SyncMode::Finished;
-                continue_sync = false;
-            }
-        } else if state.sync_mode == SyncMode::DeepRescan {
-            // For deep rescan, continue until:
-            // No messages found for 15 consecutive iterations (30 days of no events)
-            // Each iteration is 2 days, so 15 iterations = 30 days
-            let enough_empty_iterations = state.sync_empty_iterations >= 15;
-
-            if enough_empty_iterations {
-                // We've completed deep rescan
-                state.sync_mode = SyncMode::Finished;
-                continue_sync = false;
-            }
-        } else {
-            continue_sync = false; // Unknown state, stop syncing
-        }
-
-        continue_sync
+        record_slice_result(
+            &mut state,
+            new_messages_count,
+            events_found,
+            catch_up_is_last_slice,
+            oldest_message_time,
+            Timestamp::now().as_secs(),
+            monotonic_now_secs(),
+        )
     };
 
     if should_continue {
@@ -888,8 +1696,10 @@ async fn fetch_messages<R: Runtime>(
             state.is_syncing = false;
             state.sync_empty_iterations = 0;
             state.sync_total_iterations = 0;
+            // last_catch_up_until was already advanced inside record_slice_result for the
+            // normal-completion case; nothing further to do here.
         } // Release lock before emitting event
-        
+
         // Clear the wrapper_id cache - it's only needed during sync
         {
             let mut cache = WRAPPER_ID_CACHE.lock().await;
@@ -897,12 +1707,15 @@ async fn fetch_messages<R: Runtime>(
             cache.clear();
             cache.shrink_to_fit();
             // Each entry: 64-char hex String (~88 bytes) + HashSet overhead (~48 bytes) ≈ 136 bytes
-            println!("[Startup] Sync Complete - Dumped NIP-59 Decryption Cache (~{} KB Memory freed)", (cache_size * 136) / 1024);
+            println!(
+                "[Startup] Sync Complete - Dumped NIP-59 Decryption Cache (~{} KB Memory freed)",
+                (cache_size * 136) / 1024
+            );
         }
 
         if relay_url.is_none() {
             handle.emit("sync_finished", ()).unwrap();
-            
+
             // Now that regular sync is complete and chats are loaded, sync MLS groups
             // This ensures chat data is in memory before MLS tries to sync participants
             let handle_clone = handle.clone();
@@ -912,7 +1725,7 @@ async fn fetch_messages<R: Runtime>(
                 if let Err(e) = sync_mls_groups_now(None).await {
                     eprintln!("[MLS] Post-sync MLS group sync failed: {}", e);
                 }
-                
+
                 // After MLS sync completes, check if weekly VACUUM is needed
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 if let Err(e) = db::check_and_vacuum_if_needed(&handle_clone).await {
@@ -926,56 +1739,56 @@ async fn fetch_messages<R: Runtime>(
 /// Removes attachments with empty file hash from all messages
 /// Also removes messages that have ONLY corrupted attachments (no content)
 /// This cleans up corrupted uploads that resulted in 0-byte files
-async fn cleanup_empty_file_attachments<R: Runtime>(
-    handle: &AppHandle<R>,
-    state: &mut ChatState,
-) {
-    const EMPTY_FILE_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+async fn cleanup_empty_file_attachments<R: Runtime>(handle: &AppHandle<R>, state: &mut ChatState) {
+    const EMPTY_FILE_HASH: &str =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let mut cleaned_count = 0;
     let mut chats_to_update = Vec::new();
-    
+
     for chat in &mut state.chats {
         let mut chat_had_changes = false;
-        
+
         // First pass: remove attachments with empty file hash
         for message in &mut chat.messages {
             let original_count = message.attachments.len();
-            
+
             // Remove attachments with empty file hash in their URL
-            message.attachments.retain(|attachment| {
-                !attachment.url.contains(EMPTY_FILE_HASH)
-            });
-            
+            message
+                .attachments
+                .retain(|attachment| !attachment.url.contains(EMPTY_FILE_HASH));
+
             let removed = original_count - message.attachments.len();
             if removed > 0 {
                 cleaned_count += removed;
                 chat_had_changes = true;
             }
         }
-        
+
         // Second pass: remove messages that are now empty (no content, no attachments)
         let messages_before = chat.messages.len();
-        chat.messages.retain(|message| {
-            !message.content.is_empty() || !message.attachments.is_empty()
-        });
-        
+        chat.messages
+            .retain(|message| !message.content.is_empty() || !message.attachments.is_empty());
+
         if chat.messages.len() < messages_before {
             chat_had_changes = true;
         }
-        
+
         // If this chat had changes, save all its messages
         if chat_had_changes {
             chats_to_update.push((chat.id(), chat.messages.clone()));
         }
     }
-    
+
     // Save updated chats to database
     for (chat_id, messages) in chats_to_update {
         if let Err(e) = save_chat_messages(handle.clone(), &chat_id, &messages).await {
-            eprintln!("Failed to save chat after cleaning empty attachments: {}", e);
+            eprintln!(
+                "Failed to save chat after cleaning empty attachments: {}",
+                e
+            );
         }
     }
-    
+
     if cleaned_count > 0 {
         eprintln!("Cleaned up {} empty file attachments", cleaned_count);
     }
@@ -989,10 +1802,10 @@ async fn check_attachment_filesystem_integrity<R: Runtime>(
 ) {
     let mut total_checked = 0;
     let mut chats_with_updates = std::collections::HashMap::new();
-    
+
     // Capture the starting timestamp
     let start_time = std::time::Instant::now();
-    
+
     // First pass: count total attachments to check
     let mut total_attachments = 0;
     for chat in &state.chats {
@@ -1004,29 +1817,36 @@ async fn check_attachment_filesystem_integrity<R: Runtime>(
             }
         }
     }
-    
+
     // Iterate through all chats and their messages with mutable access to update downloaded status
     for (chat_idx, chat) in state.chats.iter_mut().enumerate() {
         let mut updated_messages = Vec::new();
-        
+
         for message in &mut chat.messages {
             let mut message_updated = false;
-            
+
             for attachment in &mut message.attachments {
                 // Only check attachments that are marked as downloaded
                 if attachment.downloaded {
                     total_checked += 1;
-                    
+
                     // Emit progress every 2 attachments or on the last one, but only if process has taken >1 second
-                    if (total_checked % 2 == 0 || total_checked == total_attachments) && start_time.elapsed().as_secs() >= 1 {
-                        handle.emit("progress_operation", serde_json::json!({
-                            "type": "progress",
-                            "current": total_checked,
-                            "total": total_attachments,
-                            "message": "Checking file integrity"
-                        })).unwrap();
+                    if (total_checked % 2 == 0 || total_checked == total_attachments)
+                        && start_time.elapsed().as_secs() >= 1
+                    {
+                        handle
+                            .emit(
+                                "progress_operation",
+                                serde_json::json!({
+                                    "type": "progress",
+                                    "current": total_checked,
+                                    "total": total_attachments,
+                                    "message": "Checking file integrity"
+                                }),
+                            )
+                            .unwrap();
                     }
-                    
+
                     // Check if the file exists on the filesystem
                     let file_path = std::path::Path::new(&attachment.path);
                     if !file_path.exists() {
@@ -1037,31 +1857,36 @@ async fn check_attachment_filesystem_integrity<R: Runtime>(
                     }
                 }
             }
-            
+
             // If any attachment in this message was updated, we need to save the message
             if message_updated {
                 updated_messages.push(message.clone());
             }
         }
-        
+
         // If any messages in this chat were updated, store them for database update
         if !updated_messages.is_empty() {
             chats_with_updates.insert(chat_idx, updated_messages);
         }
     }
-    
+
     // Update database for any messages with missing attachments
     if !chats_with_updates.is_empty() {
         // Only emit progress if process has taken >1 second
         if start_time.elapsed().as_secs() >= 1 {
-            handle.emit("progress_operation", serde_json::json!({
-                "type": "progress",
-                "total": chats_with_updates.len(),
-                "current": 0,
-                "message": "Updating database..."
-            })).unwrap();
+            handle
+                .emit(
+                    "progress_operation",
+                    serde_json::json!({
+                        "type": "progress",
+                        "total": chats_with_updates.len(),
+                        "current": 0,
+                        "message": "Updating database..."
+                    }),
+                )
+                .unwrap();
         }
-        
+
         // Save updated messages for each chat that had changes
         let mut saved_count = 0;
         let total_chats = chats_with_updates.len();
@@ -1077,15 +1902,22 @@ async fn check_attachment_filesystem_integrity<R: Runtime>(
             } else {
                 saved_count += 1;
             }
-            
+
             // Emit progress for database updates, but only if process has taken >1 second
-            if ((saved_count) % 5 == 0 || saved_count == total_chats) && start_time.elapsed().as_secs() >= 1 {
-                handle.emit("progress_operation", serde_json::json!({
-                    "type": "progress",
-                    "current": saved_count,
-                    "total": total_chats,
-                    "message": "Updating database"
-                })).unwrap();
+            if ((saved_count) % 5 == 0 || saved_count == total_chats)
+                && start_time.elapsed().as_secs() >= 1
+            {
+                handle
+                    .emit(
+                        "progress_operation",
+                        serde_json::json!({
+                            "type": "progress",
+                            "current": saved_count,
+                            "total": total_chats,
+                            "message": "Updating database"
+                        }),
+                    )
+                    .unwrap();
             }
         }
     }
@@ -1101,11 +1933,11 @@ async fn start_typing(receiver: String) -> bool {
     match PublicKey::from_bech32(receiver.as_str()) {
         Ok(pubkey) => {
             // This is a DM - use NIP-17 gift wrapping
-            
+
             // Build and broadcast the Typing Indicator
             let rumor = EventBuilder::new(Kind::ApplicationSpecificData, "typing")
                 .tag(Tag::public_key(pubkey))
-                .tag(Tag::custom(TagKind::d(), vec!["vector"]))
+                .tag(nostr_tags::d_tag(vec!["vector"]))
                 .tag(Tag::expiration(Timestamp::from_secs(
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1143,7 +1975,7 @@ async fn start_typing(receiver: String) -> bool {
 
             // Build the typing indicator rumor
             let rumor = EventBuilder::new(Kind::ApplicationSpecificData, "typing")
-                .tag(Tag::custom(TagKind::d(), vec!["vector"]))
+                .tag(nostr_tags::d_tag(vec!["vector"]))
                 .tag(Tag::expiration(Timestamp::from_secs(
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1173,7 +2005,7 @@ async fn get_chat_messages_paginated<R: Runtime>(
 ) -> Result<Vec<Message>, String> {
     // Load messages from database
     let messages = db::get_chat_messages_paginated(&handle, &chat_id, limit, offset).await?;
-    
+
     // Also add these messages to the backend state for cache synchronization
     // This ensures operations like fetch_msg_metadata can find the messages
     if !messages.is_empty() {
@@ -1189,7 +2021,7 @@ async fn get_chat_messages_paginated<R: Runtime>(
             chat.messages.sort_by_key(|m| m.at);
         }
     }
-    
+
     Ok(messages)
 }
 
@@ -1216,7 +2048,8 @@ async fn get_message_views<R: Runtime>(
     let chat_int_id = db::resolve_chat_id_for_message_load(&handle, &chat_id)?;
 
     // Get materialized message views from events
-    let messages = db::get_message_views(&handle, chat_int_id, limit, offset, virtual_bucket_filter).await?;
+    let messages =
+        db::get_message_views(&handle, chat_int_id, limit, offset, virtual_bucket_filter).await?;
 
     // Sync to backend state for cache compatibility (uses binary search for efficient insertion)
     if !messages.is_empty() {
@@ -1249,7 +2082,8 @@ async fn get_messages_around_id<R: Runtime>(
     target_message_id: String,
     context_before: usize,
 ) -> Result<Vec<Message>, String> {
-    let messages = db::get_messages_around_id(&handle, &chat_id, &target_message_id, context_before).await?;
+    let messages =
+        db::get_messages_around_id(&handle, &chat_id, &target_message_id, context_before).await?;
 
     // Sync to backend state so fetch_msg_metadata and other functions can find these messages
     if !messages.is_empty() {
@@ -1299,11 +2133,309 @@ async fn get_file_hash_index<R: Runtime>(
     db::build_file_hash_index(&handle).await
 }
 
+/// Outcome of attempting to process an MLS Welcome extracted from a gift-wrapped rumor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WelcomeOutcome {
+    /// `process_welcome` succeeded.
+    Processed,
+    /// The MDK engine gave a permanent verdict (a known replay error); retrying
+    /// will never succeed, so the wrapper can be treated as handled.
+    PermanentFailure,
+    /// Everything else (MLS service/engine init failure, task join failure, or an
+    /// unrecognized `process_welcome` error); may succeed on a later retry.
+    TransientFailure,
+}
+
+impl WelcomeOutcome {
+    /// Whether this outcome should be recorded as permanently handled so historical
+    /// resync stops retrying it.
+    fn should_mark_handled(self) -> bool {
+        matches!(
+            self,
+            WelcomeOutcome::Processed | WelcomeOutcome::PermanentFailure
+        )
+    }
+}
+
+/// Classify a `process_welcome` error message as permanent (no retry will ever help)
+/// or transient (may succeed later). Once a welcome permanently fails (e.g. no
+/// matching key package after a seed restore), the MDK engine marks the wrapper
+/// event processed/failed forever; these replay errors carry no new information.
+fn classify_welcome_error(msg: &str) -> WelcomeOutcome {
+    const PERMANENT_ERRORS: [&str; 2] = [
+        "missing welcome for processed welcome",
+        "processed welcome not found",
+    ];
+    if PERMANENT_ERRORS.contains(&msg) {
+        WelcomeOutcome::PermanentFailure
+    } else {
+        WelcomeOutcome::TransientFailure
+    }
+}
+
+#[cfg(test)]
+mod welcome_outcome_tests {
+    use super::{classify_welcome_error, WelcomeOutcome};
+
+    #[test]
+    fn classifies_missing_welcome_for_processed_welcome_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("missing welcome for processed welcome"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_processed_welcome_not_found_as_permanent() {
+        assert_eq!(
+            classify_welcome_error("processed welcome not found"),
+            WelcomeOutcome::PermanentFailure
+        );
+    }
+
+    #[test]
+    fn classifies_unknown_error_as_transient() {
+        assert_eq!(
+            classify_welcome_error("database is locked"),
+            WelcomeOutcome::TransientFailure
+        );
+    }
+
+    #[test]
+    fn only_processed_and_permanent_failure_should_mark_handled() {
+        assert!(WelcomeOutcome::Processed.should_mark_handled());
+        assert!(WelcomeOutcome::PermanentFailure.should_mark_handled());
+        assert!(!WelcomeOutcome::TransientFailure.should_mark_handled());
+    }
+}
+
+/// Per-event ceiling on gift-wrap handling. An unwind is not the only way one inbound
+/// event can end the intake loop: a payload that allocates or spins never unwinds, so a
+/// deadline is the only bound that catches it.
+const EVENT_HANDLING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Result of one bounded gift-wrap intake attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IntakeOutcome {
+    /// Handling completed; carries `handle_event`'s accepted-as-new verdict.
+    Handled(bool),
+    /// Handling unwound. A payload that panics does so deterministically, so the
+    /// wrapper is permanently unhandleable and is recorded as discarded.
+    Panicked,
+    /// Handling exceeded the deadline. Retryable until the same wrapper times out
+    /// `GIFTWRAP_TIMEOUT_DISCARD_AFTER` times in this process, then quarantined.
+    TimedOut,
+}
+
+impl IntakeOutcome {
+    /// Whether `handle_event` accepted the event as new.
+    fn accepted_new(self) -> bool {
+        matches!(self, IntakeOutcome::Handled(true))
+    }
+
+    /// Whether the failure repeats on every retry, so the wrapper should be recorded
+    /// as discarded rather than re-fetched on each launch. Timeouts need the per-id
+    /// counter in `note_giftwrap_timeout` — use that path from `handle_event_guarded`.
+    fn is_permanent_failure(self) -> bool {
+        matches!(self, IntakeOutcome::Panicked)
+    }
+}
+
+/// Run one intake attempt behind a failure boundary: catch an unwind, and abandon an
+/// attempt that outlives `deadline`. Generic over the attempt so the boundary is
+/// exercisable without a live relay.
+async fn bounded_intake<F>(
+    wrapper_event_id: &str,
+    attempt: F,
+    deadline: std::time::Duration,
+) -> IntakeOutcome
+where
+    F: Future<Output = bool>,
+{
+    let guarded = std::panic::AssertUnwindSafe(attempt).catch_unwind();
+    match tokio::time::timeout(deadline, guarded).await {
+        Ok(Ok(accepted)) => IntakeOutcome::Handled(accepted),
+        Ok(Err(_)) => {
+            eprintln!(
+                "[Intake] Gift wrap {} panicked while being handled; discarding it",
+                wrapper_event_id
+            );
+            IntakeOutcome::Panicked
+        }
+        Err(_) => {
+            eprintln!(
+                "[Intake] Gift wrap {} exceeded the {}s handling deadline; abandoned for retry",
+                wrapper_event_id,
+                deadline.as_secs()
+            );
+            IntakeOutcome::TimedOut
+        }
+    }
+}
+
+/// Handle one inbound gift wrap so a hostile payload costs one event instead of the
+/// whole intake path. Every intake caller goes through this rather than `handle_event`.
+async fn handle_event_guarded(event: Event, is_new: bool) -> bool {
+    let wrapper_event_id = event.id.to_hex();
+    let outcome = bounded_intake(
+        &wrapper_event_id,
+        handle_event(event, is_new),
+        EVENT_HANDLING_TIMEOUT,
+    )
+    .await;
+
+    let quarantine = match outcome {
+        IntakeOutcome::Panicked => true,
+        IntakeOutcome::TimedOut => {
+            let discard = note_giftwrap_timeout(&wrapper_event_id);
+            if discard {
+                eprintln!(
+                    "[Intake] Gift wrap {} timed out {} times; discarding it",
+                    wrapper_event_id, GIFTWRAP_TIMEOUT_DISCARD_AFTER
+                );
+            }
+            discard
+        }
+        IntakeOutcome::Handled(_) => {
+            clear_giftwrap_timeout_count(&wrapper_event_id);
+            false
+        }
+    };
+
+    if quarantine {
+        if let Some(handle) = TAURI_APP.get() {
+            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+        }
+        WRAPPER_ID_CACHE.lock().await.insert(wrapper_event_id);
+    }
+
+    outcome.accepted_new()
+}
+
+/// Park the walk and release *both* sync in-flight guards. Every `fetch_messages` path
+/// that returns before `record_slice_result` must use this: clearing `is_syncing` alone
+/// still refuses every later slice, because `next_sync_slice` bails on `slice_in_flight`.
+fn abandon_sync_slice(state: &mut ChatState) {
+    state.is_syncing = false;
+    state.slice_in_flight = false;
+    state.sync_mode = SyncMode::Finished;
+    state.sync_empty_iterations = 0;
+    state.sync_total_iterations = 0;
+}
+
+#[cfg(test)]
+mod intake_boundary_tests {
+    use super::{
+        abandon_sync_slice, bounded_intake, clear_giftwrap_timeout_count, note_giftwrap_timeout,
+        ChatState, IntakeOutcome, SyncMode, GIFTWRAP_TIMEOUT_DISCARD_AFTER,
+    };
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn a_well_formed_attempt_is_untouched_by_the_boundary() {
+        let outcome = bounded_intake("ok", async { true }, Duration::from_secs(5)).await;
+        assert_eq!(outcome, IntakeOutcome::Handled(true));
+        assert!(outcome.accepted_new());
+        assert!(!outcome.is_permanent_failure());
+
+        let duplicate = bounded_intake("dup", async { false }, Duration::from_secs(5)).await;
+        assert_eq!(duplicate, IntakeOutcome::Handled(false));
+        assert!(!duplicate.accepted_new());
+        assert!(!duplicate.is_permanent_failure());
+    }
+
+    #[tokio::test]
+    async fn an_unwinding_payload_is_caught_and_treated_as_permanent() {
+        let outcome = bounded_intake(
+            "hostile",
+            async { panic!("NIP-44 v2 decrypt out of bounds") },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(outcome, IntakeOutcome::Panicked);
+        assert!(!outcome.accepted_new());
+        assert!(outcome.is_permanent_failure());
+    }
+
+    #[tokio::test]
+    async fn a_stalling_payload_is_abandoned_at_the_deadline_and_stays_retryable() {
+        let outcome = bounded_intake(
+            "stalled",
+            async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                true
+            },
+            Duration::from_millis(20),
+        )
+        .await;
+        assert_eq!(outcome, IntakeOutcome::TimedOut);
+        assert!(!outcome.accepted_new());
+        assert!(
+            !outcome.is_permanent_failure(),
+            "a single stall must stay retryable so a slow disk cannot drop a pending invitation"
+        );
+    }
+
+    #[test]
+    fn repeated_timeouts_for_the_same_wrapper_eventually_quarantine() {
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        for _ in 0..(GIFTWRAP_TIMEOUT_DISCARD_AFTER - 1) {
+            assert!(!note_giftwrap_timeout("wrap-timeout-q"));
+        }
+        assert!(note_giftwrap_timeout("wrap-timeout-q"));
+        clear_giftwrap_timeout_count("wrap-timeout-q");
+        assert!(!note_giftwrap_timeout("wrap-timeout-q"));
+    }
+
+    #[tokio::test]
+    async fn the_loop_survives_a_failure_and_processes_the_following_event() {
+        let mut accepted = 0u16;
+        for attempt in 0..3u8 {
+            let outcome = match attempt {
+                0 => bounded_intake("first", async { true }, Duration::from_secs(5)).await,
+                1 => {
+                    bounded_intake("hostile", async { panic!("boom") }, Duration::from_secs(5))
+                        .await
+                }
+                _ => bounded_intake("third", async { true }, Duration::from_secs(5)).await,
+            };
+            if outcome.accepted_new() {
+                accepted += 1;
+            }
+        }
+        assert_eq!(
+            accepted, 2,
+            "the event after the hostile one must still be accepted"
+        );
+    }
+
+    #[test]
+    fn abandoning_a_slice_releases_both_in_flight_guards() {
+        let mut state = ChatState::new();
+        state.is_syncing = true;
+        state.slice_in_flight = true;
+        state.sync_mode = SyncMode::ForwardSync;
+        state.sync_empty_iterations = 3;
+        state.sync_total_iterations = 7;
+
+        abandon_sync_slice(&mut state);
+
+        assert!(!state.is_syncing);
+        assert!(
+            !state.slice_in_flight,
+            "releasing is_syncing alone still refuses every later slice"
+        );
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+        assert_eq!(state.sync_empty_iterations, 0);
+        assert_eq!(state.sync_total_iterations, 0);
+    }
+}
+
 #[tauri::command]
 async fn handle_event(event: Event, is_new: bool) -> bool {
     // Get the wrapper (giftwrap) event ID for duplicate detection
     let wrapper_event_id = event.id.to_hex();
-    
+
     // For historical sync events (is_new = false), use the wrapper_id cache for fast duplicate detection
     // For real-time new events (is_new = true), skip cache checks - they're guaranteed to be new
     if !is_new {
@@ -1316,7 +2448,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                 return false;
             }
         }
-        
+
         // Cache miss - check database as fallback (for events older than cache window)
         if let Some(handle) = TAURI_APP.get() {
             if let Ok(exists) = db::wrapper_event_exists(handle, &wrapper_event_id).await {
@@ -1328,11 +2460,30 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
         }
     }
 
-    let client = get_nostr_client().expect("Nostr client not initialized");
-
-    // Grab our pubkey
-    let signer = client.signer().await.unwrap();
-    let my_public_key = signer.get_public_key().await.unwrap();
+    // Missing client or signer is a transient local condition, not a bad payload: return
+    // without a verdict so the wrapper stays retryable instead of unwinding into the
+    // intake boundary, which would record it as permanently discarded.
+    let Ok(client) = get_nostr_client() else {
+        eprintln!(
+            "[Intake] Nostr client not initialized; leaving gift wrap {} retryable",
+            wrapper_event_id
+        );
+        return false;
+    };
+    let Ok(signer) = client.signer().await else {
+        eprintln!(
+            "[Intake] No signer available; leaving gift wrap {} retryable",
+            wrapper_event_id
+        );
+        return false;
+    };
+    let Ok(my_public_key) = signer.get_public_key().await else {
+        eprintln!(
+            "[Intake] Signer has no public key; leaving gift wrap {} retryable",
+            wrapper_event_id
+        );
+        return false;
+    };
 
     // Unwrap the gift wrap
     match client.unwrap_gift_wrap(&event).await {
@@ -1372,9 +2523,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
             // Special handling for MLS Welcomes (not processed by rumor processor)
             if rumor.kind == Kind::MlsWelcome {
                 // Convert rumor Event -> UnsignedEvent
-                let unsigned_opt = serde_json::to_string(&rumor)
-                    .ok()
-                    .and_then(|s| nostr_sdk::UnsignedEvent::from_json(s.as_bytes()).ok());
+                let unsigned_opt = nostr_sign::unsigned_event_from(&rumor).ok();
 
                 if let Some(unsigned) = unsigned_opt {
                     // Outer giftwrap id is our wrapper id for dedup/logs
@@ -1382,41 +2531,62 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     let app_handle = TAURI_APP.get().cloned();
 
                     // Use blocking thread for non-Send MLS engine
-                    let processed = tokio::task::spawn_blocking(move || {
+                    let outcome = tokio::task::spawn_blocking(move || {
                         if app_handle.is_none() {
-                            return false;
+                            return WelcomeOutcome::TransientFailure;
                         }
                         let handle = app_handle.unwrap();
                         let svc = MlsService::new_persistent(&handle);
                         if let Ok(mls) = svc {
                             if let Ok(engine) = mls.engine() {
-                                match engine.process_welcome(&wrapper_id, &unsigned) {
-                                    Ok(_) => return true,
+                                return match engine.process_welcome(&wrapper_id, &unsigned) {
+                                    Ok(_) => WelcomeOutcome::Processed,
                                     Err(e) => {
-                                        eprintln!("[MLS] Failed to process welcome: {}", e);
-                                        return false;
+                                        let msg = e.to_string();
+                                        let outcome = classify_welcome_error(&msg);
+                                        // Permanent replay errors carry no new information;
+                                        // only log genuinely unexpected (transient) failures.
+                                        if outcome == WelcomeOutcome::TransientFailure {
+                                            eprintln!("[MLS] Failed to process welcome: {}", msg);
+                                        }
+                                        outcome
                                     }
-                                }
+                                };
                             }
                         }
-                        false
+                        WelcomeOutcome::TransientFailure
                     })
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or(WelcomeOutcome::TransientFailure);
 
-                    if processed {
+                    // Mark this wrapper event as handled so historical resyncs (every login)
+                    // don't re-unwrap and re-attempt it, but only once we have a permanent
+                    // verdict (success or a known-permanent MDK replay error). Transient
+                    // failures (init/engine/join errors) stay retryable on the next login.
+                    if outcome.should_mark_handled() {
+                        if let Some(handle) = TAURI_APP.get() {
+                            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                        }
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
+
+                    if outcome == WelcomeOutcome::Processed {
                         // Only notify UI after initial sync is complete
                         // During initial sync, invites are processed but not emitted to avoid UI updates before chats are loaded
                         let should_emit = {
                             let state = STATE.lock().await;
                             state.sync_mode == SyncMode::Finished || !state.is_syncing
                         };
-                        
+
                         if should_emit {
                             if let Some(app) = TAURI_APP.get() {
-                                let _ = app.emit("mls_invite_received", serde_json::json!({
-                                    "wrapper_event_id": wrapper_id.to_hex()
-                                }));
+                                let _ = app.emit(
+                                    "mls_invite_received",
+                                    serde_json::json!({
+                                        "wrapper_event_id": wrapper_id.to_hex()
+                                    }),
+                                );
                             }
                         }
                         return true;
@@ -1425,6 +2595,13 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     }
                 } else {
                     eprintln!("[MLS] Failed to convert rumor to UnsignedEvent");
+                    if let Some(handle) = TAURI_APP.get() {
+                        let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                    }
+                    {
+                        let mut cache = WRAPPER_ID_CACHE.lock().await;
+                        cache.insert(wrapper_event_id.clone());
+                    }
                     return false;
                 }
             }
@@ -1475,8 +2652,11 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                             // Set the wrapper event ID for database storage
                             msg.wrapper_event_id = Some(wrapper_event_id.clone());
                             if let Some(handle) = TAURI_APP.get() {
-                                match crate::squad_bot::apply_key_share_from_content(handle, &msg.content)
-                                    .await
+                                match crate::squad_bot::apply_key_share_from_content(
+                                    handle,
+                                    &msg.content,
+                                )
+                                .await
                                 {
                                     Ok(true) => {
                                         // Bot key share consumed; do not persist nsec in the DM timeline.
@@ -1488,17 +2668,26 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                                     }
                                 }
                             }
-                            handle_text_message(msg, &contact, is_mine, is_new, &wrapper_event_id).await
+                            handle_text_message(msg, &contact, is_mine, is_new, &wrapper_event_id)
+                                .await
                         }
                         RumorProcessingResult::FileAttachment(mut msg) => {
                             // Set the wrapper event ID for database storage
                             msg.wrapper_event_id = Some(wrapper_event_id.clone());
-                            handle_file_attachment(msg, &contact, is_mine, is_new, &wrapper_event_id).await
+                            handle_file_attachment(
+                                msg,
+                                &contact,
+                                is_mine,
+                                is_new,
+                                &wrapper_event_id,
+                            )
+                            .await
                         }
                         RumorProcessingResult::Reaction(reaction) => {
                             handle_reaction(reaction, &contact).await
                         }
-                        RumorProcessingResult::DashboardPollCreate(_) | RumorProcessingResult::DashboardPollVoteIngested => false,
+                        RumorProcessingResult::DashboardPollCreate(_)
+                        | RumorProcessingResult::DashboardPollVoteIngested => false,
                         RumorProcessingResult::TypingIndicator { profile_id, until } => {
                             // Update the chat's typing participants
                             let active_typers = {
@@ -1511,15 +2700,18 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                                     vec![]
                                 }
                             };
-                            
+
                             // Emit typing update event to frontend
                             if let Some(handle) = TAURI_APP.get() {
-                                let _ = handle.emit("typing-update", serde_json::json!({
-                                    "conversation_id": contact,
-                                    "typers": active_typers,
-                                }));
+                                let _ = handle.emit(
+                                    "typing-update",
+                                    serde_json::json!({
+                                        "conversation_id": contact,
+                                        "typers": active_typers,
+                                    }),
+                                );
                             }
-                            
+
                             true
                         }
                         RumorProcessingResult::UnknownEvent(mut event) => {
@@ -1528,7 +2720,12 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                             handle_unknown_event(event, &contact).await
                         }
                         RumorProcessingResult::Ignored => false,
-                        RumorProcessingResult::Edit { message_id, new_content, edited_at, mut event } => {
+                        RumorProcessingResult::Edit {
+                            message_id,
+                            new_content,
+                            edited_at,
+                            mut event,
+                        } => {
                             // Skip if this edit event was already processed (deduplication)
                             if let Some(handle) = TAURI_APP.get() {
                                 if db::event_exists(handle, &event.id).unwrap_or(false) {
@@ -1536,7 +2733,8 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                                 }
 
                                 // Save edit event to database with proper chat_id
-                                if let Ok(chat_id) = db::get_chat_id_by_identifier(handle, &contact) {
+                                if let Ok(chat_id) = db::get_chat_id_by_identifier(handle, &contact)
+                                {
                                     event.chat_id = chat_id;
                                 }
                                 event.wrapper_event_id = Some(wrapper_event_id.clone());
@@ -1551,11 +2749,14 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
 
                                     // Emit update to frontend
                                     if let Some(handle) = TAURI_APP.get() {
-                                        let _ = handle.emit("message_update", serde_json::json!({
-                                            "old_id": &message_id,
-                                            "message": &msg,
-                                            "chat_id": &contact
-                                        }));
+                                        let _ = handle.emit(
+                                            "message_update",
+                                            serde_json::json!({
+                                                "old_id": &message_id,
+                                                "message": &msg,
+                                                "chat_id": &contact
+                                            }),
+                                        );
                                     }
                                 }
                             }
@@ -1637,7 +2838,13 @@ fn try_wallet_tx_announcement_notify_body(
 }
 
 /// Handle a processed text message
-async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_new: bool, wrapper_event_id: &str) -> bool {
+async fn handle_text_message(
+    mut msg: Message,
+    contact: &str,
+    is_mine: bool,
+    is_new: bool,
+    wrapper_event_id: &str,
+) -> bool {
     // Check if message already exists in database (important for sync with partial message loading)
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
@@ -1646,7 +2853,9 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
                 // Try to backfill the wrapper_event_id for future fast lookups
                 // If backfill fails (message already has a different wrapper), add this wrapper to cache
                 // to prevent repeated processing of duplicate giftwraps
-                if let Ok(updated) = db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await {
+                if let Ok(updated) =
+                    db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await
+                {
                     if !updated {
                         // Message has a different wrapper_id - add this duplicate wrapper to cache
                         let mut cache = WRAPPER_ID_CACHE.lock().await;
@@ -1671,7 +2880,8 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
                     Ok(groups) => {
                         let aid = announcements_group_id.to_lowercase();
                         groups.iter().any(|g| {
-                            g.group_id.to_lowercase() == aid || g.engine_group_id.to_lowercase() == aid
+                            g.group_id.to_lowercase() == aid
+                                || g.engine_group_id.to_lowercase() == aid
                         })
                     }
                     Err(_) => false,
@@ -1712,10 +2922,15 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
     if was_msg_added_to_state {
         // Send it to the frontend
         if let Some(handle) = TAURI_APP.get() {
-            handle.emit("message_new", serde_json::json!({
-                "message": &msg,
-                "chat_id": contact
-            })).unwrap();
+            handle
+                .emit(
+                    "message_new",
+                    serde_json::json!({
+                        "message": &msg,
+                        "chat_id": contact
+                    }),
+                )
+                .unwrap();
         }
 
         // Backfill reply context for any messages that arrived earlier and reference this one.
@@ -1732,55 +2947,134 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
         for reply in updated_replies {
             if let Some(handle) = TAURI_APP.get() {
                 let reply_id = reply.id.clone();
-                let _ = handle.emit("message_update", serde_json::json!({
-                    "old_id": reply_id,
-                    "message": reply,
-                    "chat_id": contact
-                }));
+                let _ = handle.emit(
+                    "message_update",
+                    serde_json::json!({
+                        "old_id": reply_id,
+                        "message": reply,
+                        "chat_id": contact
+                    }),
+                );
             }
         }
 
         // OS notification: incoming DMs, and outgoing `wallet_tx_announcement` (transfer completed)
         if is_new {
             if !is_mine {
-                let display_info = {
+                let (level, blocked, single) = {
                     let state = STATE.lock().await;
+                    let level = state
+                        .get_chat(contact)
+                        .map(|c| c.notification_level)
+                        .unwrap_or_default();
                     match state.get_profile(contact) {
                         Some(profile) => {
-                            if profile.muted || profile.blocked {
-                                None
+                            let display_name = if !profile.nickname.is_empty() {
+                                profile.nickname.clone()
+                            } else if !profile.name.is_empty() {
+                                profile.name.clone()
+                            } else if !profile.display_name.is_empty() {
+                                profile.display_name.clone()
                             } else {
-                                let display_name = if !profile.nickname.is_empty() {
-                                    profile.nickname.clone()
-                                } else if !profile.name.is_empty() {
-                                    profile.name.clone()
-                                } else if !profile.display_name.is_empty() {
-                                    profile.display_name.clone()
-                                } else {
-                                    String::from("New Message")
-                                };
-                                let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
-                                    .unwrap_or_else(|| msg.content.clone());
-                                Some((display_name, body))
-                            }
+                                String::from("New Message")
+                            };
+                            let body = try_wallet_tx_announcement_notify_body(
+                                &msg.content,
+                                false,
+                                contact,
+                                &state,
+                            )
+                            .unwrap_or_else(|| msg.content.clone());
+                            (
+                                level,
+                                profile.blocked,
+                                notification::SingleEventNotification {
+                                    title: display_name,
+                                    body,
+                                },
+                            )
                         }
                         None => {
-                            let body = try_wallet_tx_announcement_notify_body(&msg.content, false, contact, &state)
-                                .unwrap_or_else(|| msg.content.clone());
-                            Some((String::from("New Message"), body))
+                            let body = try_wallet_tx_announcement_notify_body(
+                                &msg.content,
+                                false,
+                                contact,
+                                &state,
+                            )
+                            .unwrap_or_else(|| msg.content.clone());
+                            (
+                                level,
+                                false,
+                                notification::SingleEventNotification {
+                                    title: String::from("New Message"),
+                                    body,
+                                },
+                            )
                         }
                     }
                 };
-                if let Some((display_name, content)) = display_info {
-                    let notification = NotificationData::direct_message(display_name, content);
-                    show_notification_generic(notification);
+                if !blocked {
+                    if let Some(handle) = TAURI_APP.get() {
+                        let chat_display_name = single.title.clone();
+                        notification::emit(
+                            handle,
+                            notification::EventKind::DirectMessage,
+                            level,
+                            false,
+                            false,
+                            contact,
+                            &chat_display_name,
+                            single,
+                        )
+                        .await;
+                        crate::catch_up::record_admitted_event_for_handle(
+                            handle,
+                            notification::EventKind::DirectMessage,
+                            false,
+                            false,
+                            contact,
+                            &msg.id,
+                        )
+                        .await;
+                    }
                 }
             } else if let Some(body) = {
                 let state = STATE.lock().await;
                 try_wallet_tx_announcement_notify_body(&msg.content, true, contact, &state)
             } {
-                let notification = NotificationData::dm_wallet_sent(body);
-                show_notification_generic(notification);
+                if let Some(handle) = TAURI_APP.get() {
+                    let level = {
+                        let state = STATE.lock().await;
+                        state
+                            .get_chat(contact)
+                            .map(|c| c.notification_level)
+                            .unwrap_or_default()
+                    };
+                    let single = notification::SingleEventNotification {
+                        title: "Transfer sent".to_string(),
+                        body,
+                    };
+                    notification::emit(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        level,
+                        false,
+                        false,
+                        contact,
+                        "Transfer sent",
+                        single,
+                    )
+                    .await;
+                    crate::catch_up::record_admitted_event_for_handle(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        false,
+                        false,
+                        contact,
+                        &msg.id,
+                    )
+                    .await;
+                }
             }
         }
 
@@ -1801,7 +3095,13 @@ async fn handle_text_message(mut msg: Message, contact: &str, is_mine: bool, is_
 }
 
 /// Handle a processed file attachment
-async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, is_new: bool, wrapper_event_id: &str) -> bool {
+async fn handle_file_attachment(
+    mut msg: Message,
+    contact: &str,
+    is_mine: bool,
+    is_new: bool,
+    wrapper_event_id: &str,
+) -> bool {
     // Check if message already exists in database (important for sync with partial message loading)
     if let Some(handle) = TAURI_APP.get() {
         if let Ok(exists) = db::message_exists_in_db(&handle, &msg.id).await {
@@ -1810,7 +3110,9 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
                 // Try to backfill the wrapper_event_id for future fast lookups
                 // If backfill fails (message already has a different wrapper), add this wrapper to cache
                 // to prevent repeated processing of duplicate giftwraps
-                if let Ok(updated) = db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await {
+                if let Ok(updated) =
+                    db::update_wrapper_event_id(&handle, &msg.id, wrapper_event_id).await
+                {
                     if !updated {
                         // Message has a different wrapper_id - add this duplicate wrapper to cache
                         let mut cache = WRAPPER_ID_CACHE.lock().await;
@@ -1830,7 +3132,9 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
     }
 
     // Get file extension for notification
-    let extension = msg.attachments.first()
+    let extension = msg
+        .attachments
+        .first()
         .map(|att| att.extension.clone())
         .unwrap_or_else(|| String::from("file"));
 
@@ -1838,7 +3142,7 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
     let (was_msg_added_to_state, _active_typers) = {
         let mut state = STATE.lock().await;
         let added = state.add_message_to_participant(contact, msg.clone());
-        
+
         // Clear typing indicator for the sender (they just sent a message)
         let typers = if let Some(chat) = state.get_chat_mut(contact) {
             chat.update_typing_participant(contact.to_string(), 0); // 0 = clear immediately
@@ -1846,7 +3150,7 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
         } else {
             Vec::new()
         };
-        
+
         (added, typers)
     };
 
@@ -1854,38 +3158,83 @@ async fn handle_file_attachment(mut msg: Message, contact: &str, is_mine: bool, 
     if was_msg_added_to_state {
         // Send it to the frontend
         if let Some(handle) = TAURI_APP.get() {
-            handle.emit("message_new", serde_json::json!({
-                "message": &msg,
-                "chat_id": contact
-            })).unwrap();
+            handle
+                .emit(
+                    "message_new",
+                    serde_json::json!({
+                        "message": &msg,
+                        "chat_id": contact
+                    }),
+                )
+                .unwrap();
         }
 
         // Send OS notification for incoming files (only after confirming message is new)
         if !is_mine && is_new {
-            let display_info = {
+            let (level, blocked, single) = {
                 let state = STATE.lock().await;
+                let level = state
+                    .get_chat(contact)
+                    .map(|c| c.notification_level)
+                    .unwrap_or_default();
                 match state.get_profile(contact) {
                     Some(profile) => {
-                        if profile.muted || profile.blocked {
-                            None
+                        let display_name = if !profile.nickname.is_empty() {
+                            profile.nickname.clone()
+                        } else if !profile.name.is_empty() {
+                            profile.name.clone()
                         } else {
-                            let display_name = if !profile.nickname.is_empty() {
-                                profile.nickname.clone()
-                            } else if !profile.name.is_empty() {
-                                profile.name.clone()
-                            } else {
-                                String::from("New Message")
-                            };
-                            Some((display_name, extension.clone()))
-                        }
+                            String::from("New Message")
+                        };
+                        let file_description =
+                            "Sent a ".to_string() + &get_file_type_description(&extension);
+                        (
+                            level,
+                            profile.blocked,
+                            notification::SingleEventNotification {
+                                title: display_name,
+                                body: file_description,
+                            },
+                        )
                     }
-                    None => Some((String::from("New Message"), extension.clone())),
+                    None => {
+                        let file_description =
+                            "Sent a ".to_string() + &get_file_type_description(&extension);
+                        (
+                            level,
+                            false,
+                            notification::SingleEventNotification {
+                                title: String::from("New Message"),
+                                body: file_description,
+                            },
+                        )
+                    }
                 }
             };
-            if let Some((display_name, file_extension)) = display_info {
-                let file_description = "Sent a ".to_string() + &get_file_type_description(&file_extension);
-                let notification = NotificationData::direct_message(display_name, file_description);
-                show_notification_generic(notification);
+            if !blocked {
+                if let Some(handle) = TAURI_APP.get() {
+                    let chat_display_name = single.title.clone();
+                    notification::emit(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        level,
+                        false,
+                        false,
+                        contact,
+                        &chat_display_name,
+                        single,
+                    )
+                    .await;
+                    crate::catch_up::record_admitted_event_for_handle(
+                        handle,
+                        notification::EventKind::DirectMessage,
+                        false,
+                        false,
+                        contact,
+                        &msg.id,
+                    )
+                    .await;
+                }
             }
         }
 
@@ -1909,22 +3258,25 @@ async fn handle_reaction(reaction: Reaction, _contact: &str) -> bool {
     // Use a single lock scope to avoid nested locks
     let (reaction_added, chat_id_for_save) = {
         let mut state = STATE.lock().await;
-        let reaction_added = if let Some((chat_id, msg_mut)) = state.find_chat_and_message_mut(&reaction.reference_id) {
+        let reaction_added = if let Some((chat_id, msg_mut)) =
+            state.find_chat_and_message_mut(&reaction.reference_id)
+        {
             msg_mut.add_reaction(reaction.clone(), Some(chat_id))
         } else {
             // Message not found in any chat - this can happen during sync
             // TODO: track these "ahead" reactions and re-apply them once sync has finished
             false
         };
-        
+
         // If reaction was added, get the chat_id for saving
         let chat_id_for_save = if reaction_added {
-            state.find_message(&reaction.reference_id)
+            state
+                .find_message(&reaction.reference_id)
                 .map(|(chat, _)| chat.id().clone())
         } else {
             None
         };
-        
+
         (reaction_added, chat_id_for_save)
     };
 
@@ -1934,10 +3286,11 @@ async fn handle_reaction(reaction: Reaction, _contact: &str) -> bool {
             // Get only the message that was updated
             let updated_message = {
                 let state = STATE.lock().await;
-                state.find_message(&reaction.reference_id)
+                state
+                    .find_message(&reaction.reference_id)
                     .map(|(_, msg)| msg.clone())
             };
-            
+
             if let Some(msg) = updated_message {
                 let _ = db::save_message(handle.clone(), &chat_id, &msg).await;
             }
@@ -1960,10 +3313,13 @@ async fn handle_unknown_event(mut event: StoredEvent, contact: &str) -> bool {
                     return false;
                 }
                 // Emit event to frontend (it can render as "Unknown Event" placeholder)
-                let _ = handle.emit("event_new", serde_json::json!({
-                    "event": event,
-                    "chat_id": contact
-                }));
+                let _ = handle.emit(
+                    "event_new",
+                    serde_json::json!({
+                        "event": event,
+                        "chat_id": contact
+                    }),
+                );
                 true
             }
             Err(_) => {
@@ -1976,7 +3332,6 @@ async fn handle_unknown_event(mut event: StoredEvent, contact: &str) -> bool {
         false
     }
 }
-
 
 /*
 MLS live subscriptions overview (using Marmot/MDK):
@@ -2031,15 +3386,10 @@ async fn notifs() -> Result<bool, String> {
     let pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
 
     // Live GiftWraps to us (DMs, files, MLS welcomes)
-    let giftwrap_filter = Filter::new()
-        .pubkey(pubkey)
-        .kind(Kind::GiftWrap)
-        .limit(0);
+    let giftwrap_filter = Filter::new().pubkey(pubkey).kind(Kind::GiftWrap).limit(0);
 
     // Live MLS group wrappers (Kind::MlsGroupMessage). Broad subscribe; we'll filter by membership in handler.
-    let mls_msg_filter = Filter::new()
-        .kind(Kind::MlsGroupMessage)
-        .limit(0);
+    let mls_msg_filter = Filter::new().kind(Kind::MlsGroupMessage).limit(0);
 
     // Subscribe to both filters
     let gift_sub_id = match client.subscribe(giftwrap_filter, None).await {
@@ -2054,18 +3404,23 @@ async fn notifs() -> Result<bool, String> {
     // Begin watching for notifications from our subscriptions
     match client
         .handle_notifications(|notification| async {
+            if let RelayPoolNotification::Message { relay_url, message: RelayMessage::Event { event, .. } } = &notification {
+                // `RelayPoolNotification::Event` below is deduplicated pool-wide (fires only the
+                // first time a given event is seen), which would undercount `events_received` for
+                // every relay that isn't first to deliver a given event. `Message` fires once per
+                // relay per delivery, so it's the correct source for per-relay receive counting.
+                record_event_received(&relay_url.to_string(), event);
+            }
             if let RelayPoolNotification::Event { event, subscription_id, .. } = notification {
                 if subscription_id == gift_sub_id {
                     // Handle DMs/files/vector-specific + MLS welcomes inside giftwrap
-                    handle_event(*event, true).await;
+                    handle_event_guarded(*event, true).await;
                 } else if subscription_id == mls_sub_id {
                     // Handle live MLS group message wrappers
                     let ev = (*event).clone();
 
                     // Extract group wire id from 'h' tag
-                    let group_wire_id_opt = ev
-                        .tags
-                        .find(TagKind::SingleLetter(SingleLetterTag::lowercase(Alphabet::H)))
+                    let group_wire_id_opt = nostr_tags::find_letter(&ev.tags, Alphabet::H)
                         .and_then(|t| t.content().map(|s| s.to_string()));
 
                     if let Some(group_wire_id) = group_wire_id_opt {
@@ -2081,7 +3436,7 @@ async fn notifs() -> Result<bool, String> {
                         if !is_member {
                             return Ok(false);
                         }
-                        
+
                         // Resolve my pubkey for filtering and 'mine' flag
                         let (my_pubkey, my_pubkey_bech32) = {
                             let client = get_nostr_client().unwrap();
@@ -2095,7 +3450,7 @@ async fn notifs() -> Result<bool, String> {
                                 (None, String::new())
                             }
                         };
-                        
+
                         // Skip processing our own events - they're already processed locally when sent
                         if let Some(my_pk) = my_pubkey {
                             if ev.pubkey == my_pk {
@@ -2108,12 +3463,12 @@ async fn notifs() -> Result<bool, String> {
                         let my_npub_for_block = my_pubkey_bech32.clone();
                         let group_id_for_persist = group_wire_id.clone();
                         let group_id_for_emit = group_wire_id.clone();
-                        
+
                         // Process message and persist in one blocking operation to avoid Send issues
                         let emit_record = tokio::task::spawn_blocking(move || {
                             // Use runtime handle to drive async operations from blocking context
                             let rt = tokio::runtime::Handle::current();
-                            
+
                             // Create MLS service and process message
                             let svc = MlsService::new_persistent(&app_handle).ok()?;
                             let engine = svc.engine().ok()?;
@@ -2132,20 +3487,20 @@ async fn notifs() -> Result<bool, String> {
                                                 created_at: msg.created_at,
                                                 pubkey: msg.pubkey,
                                             };
-    
+
                                             let is_mine = !my_npub_for_block.is_empty() && msg.pubkey.to_bech32().unwrap() == my_npub_for_block;
-    
+
                                             // Process through unified rumor processor
                                             let processed = rt.block_on(async {
                                                 use crate::rumor::{process_rumor, RumorContext, ConversationType, RumorProcessingResult};
-                                                
+
                                                 let rumor_context = RumorContext {
                                                     sender: msg.pubkey,
                                                     is_mine,
                                                     conversation_id: group_id_for_persist.clone(),
                                                     conversation_type: ConversationType::MlsGroup,
                                                 };
-                                                
+
                                                 match process_rumor(rumor_event, rumor_context).await {
                                                     Ok(result) => {
                                                         match result {
@@ -2160,19 +3515,16 @@ async fn notifs() -> Result<bool, String> {
                                                                 // Clear typing indicator for this sender (they just sent a message)
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
 
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
 
                                                                     // Add message to chat
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    
-                                                                    // Check if we should send notification (not muted, not mine)
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
-                                                                    
+
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
+
                                                                     // Clear typing indicator for sender
                                                                     let typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0); // 0 = clear immediately
@@ -2180,16 +3532,15 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    
-                                                                    (added, typers, notify)
+
+                                                                    (added, typers, level)
                                                                 };
-                                                                
-                                                                // Send OS notification for new group messages
-                                                                if was_added && should_notify {
-                                                                    // Get sender name and group name for notification
+
+                                                                // Route every group text message through the single tier-aware emit (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
-                                                                        
+
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
                                                                             if !profile.nickname.is_empty() {
                                                                                 profile.nickname.clone()
@@ -2201,21 +3552,43 @@ async fn notifs() -> Result<bool, String> {
                                                                         } else {
                                                                             "Someone".to_string()
                                                                         };
-                                                                        
+
                                                                         let group = if let Some(chat) = state.get_chat(&group_id_for_persist) {
                                                                             chat.metadata.get_name().unwrap_or("Group Chat").to_string()
                                                                         } else {
                                                                             "Group Chat".to_string()
                                                                         };
-                                                                        
+
                                                                         (sender, group)
                                                                     };
-                                                                    
-                                                                    // Create notification for text message
-                                                                    let notification = NotificationData::group_message(sender_name, group_name, message.content.clone());
-                                                                    show_notification_generic(notification);
+
+                                                                    let mention_hit = crate::message::envelope_names_npub(&message.content, &my_npub_for_block);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: extract_mention_notification_body(&message.content),
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            level,
+                                                                            message.mine,
+                                                                            mention_hit,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            message.mine,
+                                                                            mention_hit,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
-                                                                
+
                                                                 // Save to database if message was added
                                                                 if was_added {
                                                                     if let Some(handle) = TAURI_APP.get() {
@@ -2224,7 +3597,7 @@ async fn notifs() -> Result<bool, String> {
                                                                             let state = crate::STATE.lock().await;
                                                                             state.get_chat(&group_id_for_persist).cloned()
                                                                         };
-                                                                        
+
                                                                         if let Some(chat) = chat_to_save {
                                                                             use crate::db::{save_chat, save_chat_messages};
                                                                             let _ = save_chat(handle.clone(), &chat).await;
@@ -2248,19 +3621,16 @@ async fn notifs() -> Result<bool, String> {
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
                                                                 let is_file = true;
 
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
 
                                                                     // Add message to chat
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    
-                                                                    // Check if we should send notification (not muted, not mine)
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
-                                                                    
+
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
+
                                                                     // Clear typing indicator for sender
                                                                     let typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0); // 0 = clear immediately
@@ -2268,16 +3638,15 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    
-                                                                    (added, typers, notify)
+
+                                                                    (added, typers, level)
                                                                 };
-                                                                
-                                                                // Send OS notification for new group messages
-                                                                if was_added && should_notify {
-                                                                    // Get sender name and group name for notification
+
+                                                                // Route every group file message through the single tier-aware emit (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
-                                                                        
+
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
                                                                             if !profile.nickname.is_empty() {
                                                                                 profile.nickname.clone()
@@ -2289,30 +3658,50 @@ async fn notifs() -> Result<bool, String> {
                                                                         } else {
                                                                             "Someone".to_string()
                                                                         };
-                                                                        
+
                                                                         let group = if let Some(chat) = state.get_chat(&group_id_for_persist) {
                                                                             chat.metadata.get_name().unwrap_or("Group Chat").to_string()
                                                                         } else {
                                                                             "Group Chat".to_string()
                                                                         };
-                                                                        
+
                                                                         (sender, group)
                                                                     };
-                                                                    
-                                                                    // Create appropriate notification (both text and files use group_message)
+
                                                                     let content = if is_file {
                                                                         let extension = message.attachments.first()
                                                                             .map(|att| att.extension.clone())
                                                                             .unwrap_or_else(|| String::from("file"));
                                                                         "Sent a ".to_string() + &get_file_type_description(&extension)
                                                                     } else {
-                                                                        message.content.clone()
+                                                                        extract_mention_notification_body(&message.content)
                                                                     };
-                                                                    let notification = NotificationData::group_message(sender_name, group_name, content);
-                                                                    
-                                                                    show_notification_generic(notification);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: content,
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            level,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::GroupMessage,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
-                                                                
+
                                                                 // Save to database if message was added
                                                                 if was_added {
                                                                     if let Some(handle) = TAURI_APP.get() {
@@ -2321,7 +3710,7 @@ async fn notifs() -> Result<bool, String> {
                                                                             let state = crate::STATE.lock().await;
                                                                             state.get_chat(&group_id_for_persist).cloned()
                                                                         };
-                                                                        
+
                                                                         if let Some(chat) = chat_to_save {
                                                                             use crate::db::save_chat;
                                                                             let _ = save_chat(handle.clone(), &chat).await;
@@ -2342,7 +3731,7 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         false
                                                                     };
-                                                                    
+
                                                                     // Get chat_id for saving if reaction was added
                                                                     let chat_id_for_save = if added {
                                                                         state.find_message(&reaction.reference_id)
@@ -2350,10 +3739,10 @@ async fn notifs() -> Result<bool, String> {
                                                                     } else {
                                                                         None
                                                                     };
-                                                                    
+
                                                                     (added, chat_id_for_save)
                                                                 };
-                                                                
+
                                                                 // Save the updated message to database immediately (like DM reactions)
                                                                 if was_added {
                                                                     if let Some(chat_id) = chat_id_for_save {
@@ -2363,14 +3752,14 @@ async fn notifs() -> Result<bool, String> {
                                                                                 state.find_message(&reaction.reference_id)
                                                                                     .map(|(_, msg)| msg.clone())
                                                                             };
-                                                                            
+
                                                                             if let Some(msg) = updated_message {
                                                                                 let _ = db::save_message(handle.clone(), &chat_id, &msg).await;
                                                                             }
                                                                         }
                                                                     }
                                                                 }
-                                                                
+
                                                                 None // Don't emit as message
                                                             }
                                                             RumorProcessingResult::DashboardPollCreate(mut message) => {
@@ -2380,23 +3769,22 @@ async fn notifs() -> Result<bool, String> {
                                                                     }
                                                                 }
                                                                 let sender_npub = msg.pubkey.to_bech32().unwrap_or_default();
-                                                                let (was_added, _active_typers, should_notify) = {
+                                                                let (was_added, _active_typers, level) = {
                                                                     let mut state = crate::STATE.lock().await;
                                                                     let added = state.add_message_to_chat(&group_id_for_persist, message.clone());
-                                                                    let notify = if let Some(chat) = state.get_chat(&group_id_for_persist) {
-                                                                        !chat.muted && !message.mine
-                                                                    } else {
-                                                                        false
-                                                                    };
+                                                                    let level = state.get_chat(&group_id_for_persist)
+                                                                        .map(|c| c.notification_level)
+                                                                        .unwrap_or_default();
                                                                     let _typers = if let Some(chat) = state.get_chat_mut(&group_id_for_persist) {
                                                                         chat.update_typing_participant(sender_npub.clone(), 0);
                                                                         chat.get_active_typers()
                                                                     } else {
                                                                         Vec::new()
                                                                     };
-                                                                    (added, _typers, notify)
+                                                                    (added, _typers, level)
                                                                 };
-                                                                if was_added && should_notify {
+                                                                // A new poll needs every member's vote — routed as an action prompt (KTD4).
+                                                                if was_added {
                                                                     let (sender_name, group_name) = {
                                                                         let state = crate::STATE.lock().await;
                                                                         let sender = if let Some(profile) = state.get_profile(&sender_npub) {
@@ -2417,12 +3805,30 @@ async fn notifs() -> Result<bool, String> {
                                                                         };
                                                                         (sender, group)
                                                                     };
-                                                                    let notification = NotificationData::group_message(
-                                                                        sender_name,
-                                                                        group_name,
-                                                                        "New poll — vote in Dashboard → Polls.".to_string(),
-                                                                    );
-                                                                    show_notification_generic(notification);
+                                                                    let single = notification::SingleEventNotification {
+                                                                        title: format!("{} - {}", sender_name, group_name),
+                                                                        body: "New poll — vote in Dashboard → Polls.".to_string(),
+                                                                    };
+                                                                    if let Some(handle) = TAURI_APP.get() {
+                                                                        notification::emit(
+                                                                            handle,
+                                                                            notification::EventKind::ActionPrompt,
+                                                                            level,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &group_name,
+                                                                            single,
+                                                                        ).await;
+                                                                        crate::catch_up::record_admitted_event_for_handle(
+                                                                            handle,
+                                                                            notification::EventKind::ActionPrompt,
+                                                                            message.mine,
+                                                                            false,
+                                                                            &group_id_for_persist,
+                                                                            &message.id,
+                                                                        ).await;
+                                                                    }
                                                                 }
                                                                 if was_added {
                                                                     if let Some(handle) = TAURI_APP.get() {
@@ -2447,6 +3853,7 @@ async fn notifs() -> Result<bool, String> {
                                                                             let _ = save_chat(handle.clone(), &chat).await;
                                                                             let _ = save_chat_messages(handle.clone(), &group_id_for_persist, &chat.messages).await;
                                                                         }
+                                                                        schedule_debounced_unread_recompute(handle.clone());
                                                                     }
                                                                     Some(message)
                                                                 } else {
@@ -2465,7 +3872,7 @@ async fn notifs() -> Result<bool, String> {
                                                                         Vec::new()
                                                                     }
                                                                 };
-                                                                
+
                                                                 // Emit typing update event
                                                                 if let Some(handle) = TAURI_APP.get() {
                                                                     let _ = handle.emit("typing-update", serde_json::json!({
@@ -2473,7 +3880,7 @@ async fn notifs() -> Result<bool, String> {
                                                                         "typers": active_typers
                                                                     }));
                                                                 }
-                                                                
+
                                                                 None // Don't emit as message
                                                             }
                                                             RumorProcessingResult::UnknownEvent(mut event) => {
@@ -2529,14 +3936,14 @@ async fn notifs() -> Result<bool, String> {
                                                     }
                                                 }
                                             });
-    
+
                                             processed
                                         }
                                         mdk_core::prelude::MessageProcessingResult::Commit { mls_group_id } => {
                                             // Commit processed - member list may have changed
                                             // Check if we're still a member of this group
                                             let my_pubkey_hex = my_npub_for_block.clone();
-                                            
+
                                             // Only evict if we can POSITIVELY CONFIRM removal
                                             let membership_check = engine.get_members(&mls_group_id)
                                                 .ok()
@@ -2545,12 +3952,12 @@ async fn notifs() -> Result<bool, String> {
                                                         .ok()
                                                         .map(|pk| members.contains(&pk))
                                                 });
-                                            
+
                                             match membership_check {
                                                 Some(false) => {
                                                     // Successfully checked and confirmed NOT a member - evict!
                                                     eprintln!("[MLS] Eviction detected via Commit - group: {}", group_id_for_persist);
-                                                    
+
                                                     // Perform full cleanup using the helper method
                                                     rt.block_on(async {
                                                         if let Err(e) = svc.cleanup_evicted_group(&group_id_for_persist).await {
@@ -2629,13 +4036,13 @@ async fn notifs() -> Result<bool, String> {
                                 }
                                 Err(e) => {
                                     let error_msg = e.to_string();
-                                    
+
                                     // Check if this is an eviction error
                                     if error_msg.contains("evicted from it") ||
                                        error_msg.contains("after being evicted") ||
                                        error_msg.contains("own leaf not found") {
                                         eprintln!("[MLS] Eviction detected in live subscription - group: {}", group_id_for_persist);
-                                        
+
                                         // Perform full cleanup using the helper method
                                         rt.block_on(async {
                                             if let Err(e) = svc.cleanup_evicted_group(&group_id_for_persist).await {
@@ -2673,6 +4080,7 @@ async fn notifs() -> Result<bool, String> {
                                 &record.content,
                                 record.npub.as_deref(),
                             );
+                            schedule_debounced_unread_recompute(handle.clone());
                         }
                     }
                 }
@@ -2700,16 +4108,18 @@ pub(crate) const DEFAULT_RELAYS: &[&str] = &[
 /// Check if a URL is a default relay
 fn is_default_relay(url: &str) -> bool {
     let normalized = url.trim().trim_end_matches('/').to_lowercase();
-    DEFAULT_RELAYS.iter().any(|r| r.to_lowercase() == normalized)
+    DEFAULT_RELAYS
+        .iter()
+        .any(|r| r.to_lowercase() == normalized)
 }
 
 // ============================================================================
 // Relay Metrics & Logging
 // ============================================================================
 
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
-use once_cell::sync::Lazy;
 
 /// Metrics tracked per relay
 #[derive(serde::Serialize, Clone, Debug)]
@@ -2717,7 +4127,7 @@ pub struct RelayMetrics {
     pub ping_ms: Option<u64>,
     pub bytes_up: u64,
     pub bytes_down: u64,
-    pub last_check: Option<u64>,  // Unix timestamp
+    pub last_check: Option<u64>, // Unix timestamp
     pub events_received: u64,
     pub events_sent: u64,
 }
@@ -2738,8 +4148,8 @@ impl Default for RelayMetrics {
 /// A single log entry for a relay
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct RelayLog {
-    pub timestamp: u64,  // Unix timestamp
-    pub level: String,   // "info", "warn", "error"
+    pub timestamp: u64, // Unix timestamp
+    pub level: String,  // "info", "warn", "error"
     pub message: String,
 }
 
@@ -2767,6 +4177,12 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
 
     if let Ok(mut logs) = RELAY_LOGS.write() {
         let relay_logs = logs.entry(normalized).or_insert_with(VecDeque::new);
+        let is_repeat = relay_logs
+            .front()
+            .is_some_and(|last| last.level == log.level && last.message == log.message);
+        if is_repeat {
+            return;
+        }
         relay_logs.push_front(log);
         // Keep only last 10 logs
         while relay_logs.len() > 10 {
@@ -2779,8 +4195,177 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
 fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
     let normalized = url.trim().trim_end_matches('/').to_lowercase();
     if let Ok(mut metrics) = RELAY_METRICS.write() {
-        let relay_metrics = metrics.entry(normalized).or_insert_with(RelayMetrics::default);
+        let relay_metrics = metrics
+            .entry(normalized)
+            .or_insert_with(RelayMetrics::default);
         update_fn(relay_metrics);
+    }
+}
+
+/// Approximate wire size of an event via its serialized JSON length.
+fn event_size(event: &Event) -> u64 {
+    nostr_sign::event_json(event).len() as u64
+}
+
+/// Record that a relay delivered an event: increments `events_received` and adds the
+/// event's serialized size to `bytes_down`.
+fn record_event_received(relay_url: &str, event: &Event) {
+    let size = event_size(event);
+    update_relay_metrics(relay_url, |m| {
+        m.events_received += 1;
+        m.bytes_down += size;
+    });
+}
+
+/// Record the outcome of publishing an event: increments `events_sent`/`bytes_up` for each
+/// accepted relay, and logs the rejection reason for each relay that rejected it. Called at
+/// each `send_event`/`send_event_to` call site with the `Output` those calls already return —
+/// not hooked into the notification stream, since sent events aren't tracked in the local DB.
+pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
+    let size = event_size(event);
+    for relay_url in &output.success {
+        let url = relay_url.to_string();
+        update_relay_metrics(&url, |m| {
+            m.events_sent += 1;
+            m.bytes_up += size;
+        });
+    }
+    for (relay_url, reason) in &output.failed {
+        add_relay_log(&relay_url.to_string(), "warn", reason);
+    }
+}
+
+#[cfg(test)]
+mod relay_metrics_tests {
+    use super::{get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome};
+    use crate::nostr_sign;
+    use nostr_sdk::prelude::{EventBuilder, Keys, Kind, Output, RelayUrl};
+    use std::collections::{HashMap, HashSet};
+
+    fn test_event(content: &str) -> nostr_sdk::Event {
+        nostr_sign::sign_with(
+            EventBuilder::new(Kind::TextNote, content),
+            &Keys::generate(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn accepted_relays_get_events_sent_and_bytes_up() {
+        let event = test_event("published");
+        let accepted = RelayUrl::parse("wss://test-send-outcome-accepted.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([accepted.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(accepted.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 1);
+        assert_eq!(
+            metrics.bytes_up,
+            nostr_sign::event_json(&event).len() as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_relays_get_a_warn_log_and_no_sent_count() {
+        let event = test_event("rejected");
+        let rejected = RelayUrl::parse("wss://test-send-outcome-rejected.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::new(),
+            failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics = get_relay_metrics(rejected.to_string()).await.unwrap();
+        assert_eq!(metrics.events_sent, 0);
+        assert_eq!(metrics.bytes_up, 0);
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].level, "warn");
+        assert_eq!(logs[0].message, "rate-limited");
+    }
+
+    #[tokio::test]
+    async fn multiple_accepted_relays_each_get_their_own_counters() {
+        let event = test_event("fanout");
+        let relay_a = RelayUrl::parse("wss://test-send-outcome-fanout-a.example").unwrap();
+        let relay_b = RelayUrl::parse("wss://test-send-outcome-fanout-b.example").unwrap();
+        let output = Output {
+            val: event.id,
+            success: HashSet::from([relay_a.clone(), relay_b.clone()]),
+            failed: HashMap::new(),
+        };
+        record_send_outcome(&event, &output);
+
+        let metrics_a = get_relay_metrics(relay_a.to_string()).await.unwrap();
+        let metrics_b = get_relay_metrics(relay_b.to_string()).await.unwrap();
+        assert_eq!(metrics_a.events_sent, 1);
+        assert_eq!(metrics_b.events_sent, 1);
+    }
+
+    #[tokio::test]
+    async fn accumulates_events_received_and_bytes_down_for_same_relay() {
+        let url = "wss://test-record-received-accumulate.example";
+        let event_a = test_event("first");
+        let event_b = test_event("second, a little longer");
+        record_event_received(url, &event_a);
+        record_event_received(url, &event_b);
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 2);
+        assert_eq!(
+            metrics.bytes_down,
+            (nostr_sign::event_json(&event_a).len() + nostr_sign::event_json(&event_b).len())
+                as u64
+        );
+    }
+
+    #[tokio::test]
+    async fn normalizes_relay_url_without_leaking_across_distinct_relays() {
+        let canonical = "wss://test-record-received-normalize.example";
+        let variant = "WSS://Test-Record-Received-Normalize.example/";
+        let other = "wss://test-record-received-other.example";
+        record_event_received(canonical, &test_event("one"));
+        record_event_received(variant, &test_event("two"));
+        record_event_received(other, &test_event("three"));
+
+        let canonical_metrics = get_relay_metrics(canonical.to_string()).await.unwrap();
+        let other_metrics = get_relay_metrics(other.to_string()).await.unwrap();
+        assert_eq!(canonical_metrics.events_received, 2);
+        assert_eq!(other_metrics.events_received, 1);
+    }
+
+    #[tokio::test]
+    async fn get_relay_metrics_reflects_recorded_events() {
+        let url = "wss://test-record-received-readpath.example";
+        record_event_received(url, &test_event("readable"));
+
+        let metrics = get_relay_metrics(url.to_string()).await.unwrap();
+        assert_eq!(metrics.events_received, 1);
+        assert!(metrics.bytes_down > 0);
+    }
+
+    #[tokio::test]
+    async fn repeated_identical_send_failures_collapse_into_one_log_entry() {
+        let rejected = RelayUrl::parse("wss://test-send-outcome-repeated-failure.example").unwrap();
+        for i in 0..3 {
+            let event = test_event(&format!("retry {i}"));
+            let output = Output {
+                val: event.id,
+                success: HashSet::new(),
+                failed: HashMap::from([(rejected.clone(), "rate-limited".to_string())]),
+            };
+            record_send_outcome(&event, &output);
+        }
+
+        let logs = get_relay_logs(rejected.to_string()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].message, "rate-limited");
     }
 }
 
@@ -2788,7 +4373,8 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
 #[tauri::command]
 async fn get_relay_metrics(url: String) -> Result<RelayMetrics, String> {
     let normalized = url.trim().trim_end_matches('/').to_lowercase();
-    let metrics = RELAY_METRICS.read()
+    let metrics = RELAY_METRICS
+        .read()
         .map_err(|_| "Failed to read metrics")?
         .get(&normalized)
         .cloned()
@@ -2800,7 +4386,8 @@ async fn get_relay_metrics(url: String) -> Result<RelayMetrics, String> {
 #[tauri::command]
 async fn get_relay_logs(url: String) -> Result<Vec<RelayLog>, String> {
     let normalized = url.trim().trim_end_matches('/').to_lowercase();
-    let logs = RELAY_LOGS.read()
+    let logs = RELAY_LOGS
+        .read()
         .map_err(|_| "Failed to read logs")?
         .get(&normalized)
         .map(|l| l.iter().cloned().collect())
@@ -2827,7 +4414,9 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
 
     // Get custom relays from DB
     let custom_relays = get_custom_relays(handle.clone()).await.unwrap_or_default();
-    let disabled_defaults = get_disabled_default_relays(&handle).await.unwrap_or_default();
+    let disabled_defaults = get_disabled_default_relays(&handle)
+        .await
+        .unwrap_or_default();
 
     // Get all connected relays from client pool
     let pool_relays = client.relays().await;
@@ -2837,10 +4426,15 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
     // First, add all default relays (even if disabled)
     for default_url in DEFAULT_RELAYS {
         let url_str = default_url.to_string();
-        let is_disabled = disabled_defaults.iter().any(|d| d.to_lowercase() == url_str.to_lowercase());
+        let is_disabled = disabled_defaults
+            .iter()
+            .any(|d| d.to_lowercase() == url_str.to_lowercase());
 
         // Check if this relay is in the pool
-        let (status, mode) = if let Some((_, relay)) = pool_relays.iter().find(|(u, _)| u.to_string().to_lowercase() == url_str.to_lowercase()) {
+        let (status, mode) = if let Some((_, relay)) = pool_relays
+            .iter()
+            .find(|(u, _)| u.to_string().to_lowercase() == url_str.to_lowercase())
+        {
             let status = match relay.status() {
                 RelayStatus::Initialized => "initialized",
                 RelayStatus::Pending => "pending",
@@ -2869,7 +4463,10 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
     // Then add custom relays
     for custom in &custom_relays {
         // Check if this relay is in the pool
-        let status = if let Some((_, relay)) = pool_relays.iter().find(|(u, _)| u.to_string().to_lowercase() == custom.url.to_lowercase()) {
+        let status = if let Some((_, relay)) = pool_relays
+            .iter()
+            .find(|(u, _)| u.to_string().to_lowercase() == custom.url.to_lowercase())
+        {
             match relay.status() {
                 RelayStatus::Initialized => "initialized",
                 RelayStatus::Pending => "pending",
@@ -2879,7 +4476,8 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
                 RelayStatus::Terminated => "terminated",
                 RelayStatus::Banned => "banned",
                 RelayStatus::Sleeping => "sleeping",
-            }.to_string()
+            }
+            .to_string()
         } else {
             "disabled".to_string()
         };
@@ -2900,7 +4498,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
 /// Get the list of Blossom media servers (Tauri command)
 #[tauri::command]
 async fn get_media_servers() -> Vec<String> {
-    get_blossom_servers()
+    get_blossom_media_servers()
 }
 
 // ============================================================================
@@ -2913,7 +4511,7 @@ struct CustomRelay {
     url: String,
     enabled: bool,
     #[serde(default = "default_relay_mode")]
-    mode: String,  // "read" | "write" | "both"
+    mode: String, // "read" | "write" | "both"
 }
 
 fn default_relay_mode() -> String {
@@ -3027,70 +4625,79 @@ async fn get_custom_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<Custo
 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
-    let result: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["custom_relays"],
-        |row| row.get(0)
-    ).ok();
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["custom_relays"],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
 
     match result {
-        Some(json_str) => {
-            serde_json::from_str(&json_str)
-                .map_err(|e| format!("Failed to parse custom relays: {}", e))
-        }
-        None => Ok(vec![])
+        Some(json_str) => serde_json::from_str(&json_str)
+            .map_err(|e| format!("Failed to parse custom relays: {}", e)),
+        None => Ok(vec![]),
     }
 }
 
 /// Save the list of custom relays to settings
-async fn save_custom_relays<R: Runtime>(handle: &AppHandle<R>, relays: &[CustomRelay]) -> Result<(), String> {
+async fn save_custom_relays<R: Runtime>(
+    handle: &AppHandle<R>,
+    relays: &[CustomRelay],
+) -> Result<(), String> {
     if crate::account_manager::get_current_account().is_err() {
         return Err("No account selected".to_string());
     }
 
-    let json_str = serde_json::to_string(relays)
-        .map_err(|e| format!("Failed to serialize relays: {}", e))?;
+    let json_str =
+        serde_json::to_string(relays).map_err(|e| format!("Failed to serialize relays: {}", e))?;
 
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params!["custom_relays", json_str],
-    ).map_err(|e| format!("Failed to save custom relays: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to save custom relays: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
 
 /// Get the list of disabled default relays from settings
-async fn get_disabled_default_relays<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, String> {
+async fn get_disabled_default_relays<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Vec<String>, String> {
     if crate::account_manager::get_current_account().is_err() {
         return Ok(vec![]);
     }
 
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let result: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["disabled_default_relays"],
-        |row| row.get(0)
-    ).ok();
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["disabled_default_relays"],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
 
     match result {
-        Some(json_str) => {
-            serde_json::from_str(&json_str)
-                .map_err(|e| format!("Failed to parse disabled default relays: {}", e))
-        }
-        None => Ok(vec![])
+        Some(json_str) => serde_json::from_str(&json_str)
+            .map_err(|e| format!("Failed to parse disabled default relays: {}", e)),
+        None => Ok(vec![]),
     }
 }
 
 /// Save the list of disabled default relays to settings
-async fn save_disabled_default_relays<R: Runtime>(handle: &AppHandle<R>, relays: &[String]) -> Result<(), String> {
+async fn save_disabled_default_relays<R: Runtime>(
+    handle: &AppHandle<R>,
+    relays: &[String],
+) -> Result<(), String> {
     if crate::account_manager::get_current_account().is_err() {
         return Err("No account selected".to_string());
     }
@@ -3103,7 +4710,8 @@ async fn save_disabled_default_relays<R: Runtime>(handle: &AppHandle<R>, relays:
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params!["disabled_default_relays", json_str],
-    ).map_err(|e| format!("Failed to save disabled default relays: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to save disabled default relays: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -3111,7 +4719,11 @@ async fn save_disabled_default_relays<R: Runtime>(handle: &AppHandle<R>, relays:
 
 /// Toggle a default relay's enabled state
 #[tauri::command]
-async fn toggle_default_relay<R: Runtime>(handle: AppHandle<R>, url: String, enabled: bool) -> Result<bool, String> {
+async fn toggle_default_relay<R: Runtime>(
+    handle: AppHandle<R>,
+    url: String,
+    enabled: bool,
+) -> Result<bool, String> {
     // Verify it's actually a default relay
     if !is_default_relay(&url) {
         return Err("Not a default relay".to_string());
@@ -3125,7 +4737,10 @@ async fn toggle_default_relay<R: Runtime>(handle: AppHandle<R>, url: String, ena
         disabled.retain(|d| d.to_lowercase() != normalized_url.to_lowercase());
     } else {
         // Add to disabled list if not already there
-        if !disabled.iter().any(|d| d.to_lowercase() == normalized_url.to_lowercase()) {
+        if !disabled
+            .iter()
+            .any(|d| d.to_lowercase() == normalized_url.to_lowercase())
+        {
             disabled.push(normalized_url.clone());
         }
     }
@@ -3136,7 +4751,11 @@ async fn toggle_default_relay<R: Runtime>(handle: AppHandle<R>, url: String, ena
     if let Ok(client) = get_nostr_client() {
         if enabled {
             // Re-add the relay
-            match client.pool().add_relay(&normalized_url, RelayOptions::new().reconnect(false)).await {
+            match client
+                .pool()
+                .add_relay(&normalized_url, RelayOptions::new().reconnect(false))
+                .await
+            {
                 Ok(_) => {
                     let _ = client.pool().connect_relay(&normalized_url).await;
                     println!("[Relay] Enabled default relay: {}", normalized_url);
@@ -3146,7 +4765,10 @@ async fn toggle_default_relay<R: Runtime>(handle: AppHandle<R>, url: String, ena
         } else {
             // Remove the relay from pool
             if let Err(e) = client.pool().remove_relay(&normalized_url).await {
-                eprintln!("[Relay] Note: Could not disable default relay in pool: {}", e);
+                eprintln!(
+                    "[Relay] Note: Could not disable default relay in pool: {}",
+                    e
+                );
             } else {
                 println!("[Relay] Disabled default relay: {}", normalized_url);
             }
@@ -3168,7 +4790,11 @@ fn relay_options_for_mode(mode: &str) -> RelayOptions {
 
 /// Add a custom relay URL
 #[tauri::command]
-async fn add_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, mode: Option<String>) -> Result<CustomRelay, String> {
+async fn add_custom_relay<R: Runtime>(
+    handle: AppHandle<R>,
+    url: String,
+    mode: Option<String>,
+) -> Result<CustomRelay, String> {
     // Validate and normalize the URL
     let normalized_url = validate_relay_url(&url)?;
 
@@ -3207,9 +4833,16 @@ async fn add_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, mode: O
     // If we're already connected, add this relay to the pool immediately
     if let Ok(client) = get_nostr_client() {
         if client.relays().await.len() > 0 {
-            match client.pool().add_relay(&new_relay.url, relay_options_for_mode(&relay_mode)).await {
+            match client
+                .pool()
+                .add_relay(&new_relay.url, relay_options_for_mode(&relay_mode))
+                .await
+            {
                 Ok(_) => {
-                    println!("[Relay] Added custom relay to pool: {} (mode: {})", new_relay.url, relay_mode);
+                    println!(
+                        "[Relay] Added custom relay to pool: {} (mode: {})",
+                        new_relay.url, relay_mode
+                    );
                     // Connect to the new relay
                     if let Err(e) = client.pool().connect_relay(&new_relay.url).await {
                         eprintln!("[Relay] Failed to connect to new relay: {}", e);
@@ -3225,7 +4858,10 @@ async fn add_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, mode: O
 
 /// Remove a custom relay URL
 #[tauri::command]
-async fn remove_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String) -> Result<bool, String> {
+async fn remove_custom_relay<R: Runtime>(
+    handle: AppHandle<R>,
+    url: String,
+) -> Result<bool, String> {
     let mut relays = get_custom_relays(handle.clone()).await?;
 
     let url_lower = url.to_lowercase();
@@ -3254,7 +4890,11 @@ async fn remove_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String) -> R
 
 /// Toggle a custom relay's enabled state
 #[tauri::command]
-async fn toggle_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, enabled: bool) -> Result<bool, String> {
+async fn toggle_custom_relay<R: Runtime>(
+    handle: AppHandle<R>,
+    url: String,
+    enabled: bool,
+) -> Result<bool, String> {
     let mut relays = get_custom_relays(handle.clone()).await?;
 
     let url_lower = url.to_lowercase();
@@ -3281,10 +4921,17 @@ async fn toggle_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, enab
     if let Ok(client) = get_nostr_client() {
         if enabled {
             // Add and connect with proper mode
-            match client.pool().add_relay(&url, relay_options_for_mode(&relay_mode)).await {
+            match client
+                .pool()
+                .add_relay(&url, relay_options_for_mode(&relay_mode))
+                .await
+            {
                 Ok(_) => {
                     let _ = client.pool().connect_relay(&url).await;
-                    println!("[Relay] Enabled custom relay: {} (mode: {})", url, relay_mode);
+                    println!(
+                        "[Relay] Enabled custom relay: {} (mode: {})",
+                        url, relay_mode
+                    );
                 }
                 Err(e) => eprintln!("[Relay] Failed to enable relay: {}", e),
             }
@@ -3303,7 +4950,11 @@ async fn toggle_custom_relay<R: Runtime>(handle: AppHandle<R>, url: String, enab
 
 /// Update a custom relay's mode (read/write/both)
 #[tauri::command]
-async fn update_relay_mode<R: Runtime>(handle: AppHandle<R>, url: String, mode: String) -> Result<bool, String> {
+async fn update_relay_mode<R: Runtime>(
+    handle: AppHandle<R>,
+    url: String,
+    mode: String,
+) -> Result<bool, String> {
     // Validate mode
     if !["read", "write", "both"].contains(&mode.as_str()) {
         return Err("Invalid mode. Must be 'read', 'write', or 'both'".to_string());
@@ -3336,7 +4987,11 @@ async fn update_relay_mode<R: Runtime>(handle: AppHandle<R>, url: String, mode: 
         if let Ok(client) = get_nostr_client() {
             // Remove and re-add with new options
             let _ = client.pool().remove_relay(&url).await;
-            match client.pool().add_relay(&url, relay_options_for_mode(&mode)).await {
+            match client
+                .pool()
+                .add_relay(&url, relay_options_for_mode(&mode))
+                .await
+            {
                 Ok(_) => {
                     let _ = client.pool().connect_relay(&url).await;
                     println!("[Relay] Updated relay mode: {} -> {}", url, mode);
@@ -3357,11 +5012,30 @@ async fn validate_relay_url_cmd(url: String) -> Result<String, String> {
 
 // ============================================================================
 
+/// Whether a relay's current status alone (not a probe outcome) warrants a
+/// forced disconnect+reconnect from the health-check loop.
+fn relay_needs_forced_reconnect(status: RelayStatus) -> bool {
+    matches!(status, RelayStatus::Terminated | RelayStatus::Disconnected)
+}
+
+// Relay URLs with a reconnect fetch in flight (lazy_static items cannot take /// docs).
+lazy_static! {
+    static ref RELAY_FETCH_IN_FLIGHT: Mutex<std::collections::HashSet<String>> =
+        Mutex::new(std::collections::HashSet::new());
+}
+
+/// Whether a relay is allowed to start a new single-relay reconnect fetch, given the set of
+/// relay URLs that currently have one in flight.
+fn relay_fetch_may_start(in_flight: &std::collections::HashSet<String>, url: &str) -> bool {
+    !in_flight.contains(url)
+}
+
 /// Monitor relay pool connection status changes
 #[tauri::command]
 async fn monitor_relay_connections() -> Result<bool, String> {
     // Guard against multiple invocations (e.g., from hot-reloads in debug mode)
-    static MONITOR_STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static MONITOR_STARTED: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
     if MONITOR_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         // Already running, return success without spawning duplicate tasks
         return Ok(false);
@@ -3373,7 +5047,20 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     // Get the monitor and subscribe to real-time notifications
     let monitor = client.monitor().ok_or("Failed to get monitor")?;
     let mut receiver = monitor.subscribe();
-    
+
+    // RAII guard releasing a relay's RELAY_FETCH_IN_FLIGHT slot on Drop, so a panicking or
+    // erroring single-relay fetch can't strand the slot and permanently block that relay's
+    // future reconnect fetches.
+    struct InFlightGuard(String);
+    impl Drop for InFlightGuard {
+        fn drop(&mut self) {
+            let url = std::mem::take(&mut self.0);
+            tokio::spawn(async move {
+                RELAY_FETCH_IN_FLIGHT.lock().await.remove(&url);
+            });
+        }
+    }
+
     // Spawn a task to handle real-time relay status notifications
     let handle_clone = handle.clone();
     tokio::spawn(async move {
@@ -3399,13 +5086,22 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                         RelayStatus::Banned => "error",
                         _ => "info",
                     };
-                    add_relay_log(&url_str, log_level, &format!("Status changed to {}", status_str));
+                    add_relay_log(
+                        &url_str,
+                        log_level,
+                        &format!("Status changed to {}", status_str),
+                    );
 
                     // Emit relay status update to frontend
-                    handle_clone.emit("relay_status_change", serde_json::json!({
-                        "url": url_str,
-                        "status": status_str
-                    })).unwrap();
+                    handle_clone
+                        .emit(
+                            "relay_status_change",
+                            serde_json::json!({
+                                "url": url_str,
+                                "status": status_str
+                            }),
+                        )
+                        .unwrap();
 
                     // Handle reconnection logic
                     match status {
@@ -3417,13 +5113,36 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // Relay connection terminated (hard disconnect)
                         }
                         RelayStatus::Connected => {
-                            // When a relay reconnects, fetch last 2 days of messages from just that relay
+                            // When a relay reconnects, fetch its bounded catch-up window from just
+                            // that relay — skip if a fetch for this relay is already in flight so
+                            // rapid Connected/Disconnected flapping never overlaps fetches.
                             let handle_inner = handle_clone.clone();
                             let url_string = url_str.clone();
-                            tokio::spawn(async move {
-                                // fetch_messages handles both DM and MLS group syncing for single-relay reconnections
-                                fetch_messages(handle_inner, false, Some(url_string)).await;
-                            });
+                            let guard = {
+                                let mut in_flight = RELAY_FETCH_IN_FLIGHT.lock().await;
+                                if relay_fetch_may_start(&in_flight, &url_string) {
+                                    in_flight.insert(url_string.clone());
+                                    Some(InFlightGuard(url_string.clone()))
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(guard) = guard {
+                                tokio::spawn(async move {
+                                    // fetch_messages handles both DM and MLS group syncing for single-relay reconnections.
+                                    // `guard` is held across the await and dropped afterward, so a panic mid-fetch still
+                                    // releases the RELAY_FETCH_IN_FLIGHT slot via unwind.
+                                    fetch_messages(handle_inner, false, Some(url_string.clone()))
+                                        .await;
+                                    drop(guard);
+                                });
+                            } else {
+                                add_relay_log(
+                                    &url_str,
+                                    "info",
+                                    "Skipping single-relay reconnect fetch: already in flight",
+                                );
+                            }
                         }
                         _ => {}
                     }
@@ -3431,29 +5150,30 @@ async fn monitor_relay_connections() -> Result<bool, String> {
             }
         }
     });
-    
-    // Spawn aggressive health check task
+
+    // Spawn conservative health check task: measures/logs Connected relays but
+    // no longer force-disconnects them; only Terminated/Disconnected relays get
+    // reconnected here (the 5s poller below independently retries Terminated
+    // relays, but not Disconnected ones, so that case stays in this loop).
     let client_health = client.clone();
     let handle_health = handle.clone();
     tokio::spawn(async move {
         // Wait 60 seconds before starting health checks
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-        
+
         loop {
             // Get all relays
             let relays = client_health.relays().await;
             let mut unhealthy_relays = Vec::new();
-            
+
             for (url, relay) in &relays {
                 let status = relay.status();
-                
+
                 // Only test relays that claim to be connected
                 if status == RelayStatus::Connected {
                     // Create a simple query to test connectivity
-                    let test_filter = Filter::new()
-                        .kinds(vec![Kind::Metadata])
-                        .limit(1);
-                    
+                    let test_filter = Filter::new().kinds(vec![Kind::Metadata]).limit(1);
+
                     // Try to fetch with short timeout
                     let start = std::time::Instant::now();
                     let result = tokio::time::timeout(
@@ -3461,12 +5181,13 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                         client_health.fetch_events_from(
                             vec![url.to_string()],
                             test_filter,
-                            std::time::Duration::from_secs(2)
-                        )
-                    ).await;
-                    
+                            std::time::Duration::from_secs(2),
+                        ),
+                    )
+                    .await;
+
                     let elapsed = start.elapsed();
-                    
+
                     let url_str = url.to_string();
                     let ping_ms = elapsed.as_millis() as u64;
                     let now_secs = std::time::SystemTime::now()
@@ -3476,31 +5197,45 @@ async fn monitor_relay_connections() -> Result<bool, String> {
 
                     match result {
                         Ok(Ok(events)) => {
-                            // Check if we actually got events or just an empty response
+                            // Any completed round-trip is useful ping data, even an
+                            // empty/slow one — we no longer disconnect on this alone.
+                            update_relay_metrics(&url_str, |m| {
+                                m.ping_ms = Some(ping_ms);
+                                m.last_check = Some(now_secs);
+                            });
                             if events.is_empty() && elapsed.as_secs() >= 2 {
-                                // Empty response after 2+ seconds means relay is not responding properly
-                                unhealthy_relays.push((url.clone(), relay.clone()));
-                                add_relay_log(&url_str, "warn", "Health check failed: slow/empty response");
-                            } else {
-                                // Healthy - record ping time
-                                update_relay_metrics(&url_str, |m| {
-                                    m.ping_ms = Some(ping_ms);
-                                    m.last_check = Some(now_secs);
-                                });
+                                add_relay_log(
+                                    &url_str,
+                                    "warn",
+                                    "Health check: slow/empty response",
+                                );
                             }
                         }
                         Ok(Err(e)) => {
-                            // Query failed
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Query failed but the relay responded (no timeout): record the
+                            // probe attempt (R11), but don't force a reconnect — a slower-but-
+                            // alive relay shouldn't be treated the same as one that never
+                            // answers at all.
+                            update_relay_metrics(&url_str, |m| {
+                                m.last_check = Some(now_secs);
+                            });
                             add_relay_log(&url_str, "warn", &format!("Health check failed: {}", e));
                         }
                         Err(_) => {
-                            // Timeout
-                            unhealthy_relays.push((url.clone(), relay.clone()));
+                            // Full probe timeout: a materially stronger "not there" signal
+                            // than a slow-but-completed response. A Connected relay that never
+                            // answers has no other recovery path — RelayStatus never
+                            // transitions out of Connected on its own, so the reconnect-only-
+                            // on-Terminated branch below never sees it. Queue it for the same
+                            // forced disconnect+reconnect that branch already uses.
+                            update_relay_metrics(&url_str, |m| {
+                                m.last_check = Some(now_secs);
+                            });
                             add_relay_log(&url_str, "warn", "Health check failed: timeout");
+                            unhealthy_relays.push((url.clone(), relay.clone()));
                         }
                     }
-                } else if status == RelayStatus::Terminated || status == RelayStatus::Disconnected {
+                } else if relay_needs_forced_reconnect(status) {
                     // Already disconnected, add to reconnect list
                     unhealthy_relays.push((url.clone(), relay.clone()));
                 }
@@ -3520,188 +5255,119 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                 let _ = relay.try_connect(std::time::Duration::from_secs(10)).await;
 
                 // Emit status update
-                handle_health.emit("relay_health_check", serde_json::json!({
-                    "url": url_str,
-                    "healthy": false,
-                    "action": "force_reconnect"
-                })).unwrap();
+                handle_health
+                    .emit(
+                        "relay_health_check",
+                        serde_json::json!({
+                            "url": url_str,
+                            "healthy": false,
+                            "action": "force_reconnect"
+                        }),
+                    )
+                    .unwrap();
             }
-            
+
             // Wait 15 seconds before next health check round
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     });
-    
+
     // Keep the original periodic terminated relay check
     tokio::spawn(async move {
         // Wait 30 seconds before starting the polling loop
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
-        
+
         loop {
             // Check all relays every 5 seconds
             let relays = client.relays().await;
-            
+
             for (_url, relay) in relays {
                 let status = relay.status();
-                
+
                 // If relay is terminated, attempt to reconnect
                 if status == RelayStatus::Terminated {
                     let _ = relay.try_connect(std::time::Duration::from_secs(5)).await;
                 }
             }
-            
+
             // Wait 5 seconds before next check
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
-    
+
     Ok(true)
 }
 
-/// Notification type enum for different kinds of notifications
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum NotificationType {
-    DirectMessage,
-    GroupMessage,
-    GroupInvite,
-}
+#[cfg(test)]
+mod relay_health_reconnect_tests {
+    use super::{relay_fetch_may_start, relay_needs_forced_reconnect};
+    use nostr_sdk::prelude::RelayStatus;
 
-/// Generic notification data structure
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct NotificationData {
-    notification_type: NotificationType,
-    title: String,
-    body: String,
-    /// Optional group name for group-related notifications
-    group_name: Option<String>,
-    /// Optional sender name
-    sender_name: Option<String>,
-}
-
-impl NotificationData {
-    /// Create a DM notification (works for both text and file attachments)
-    fn direct_message(sender_name: String, content: String) -> Self {
-        Self {
-            notification_type: NotificationType::DirectMessage,
-            title: sender_name.clone(),
-            body: content,
-            group_name: None,
-            sender_name: Some(sender_name),
-        }
+    #[test]
+    fn terminated_and_disconnected_trigger_reconnect() {
+        assert!(relay_needs_forced_reconnect(RelayStatus::Terminated));
+        assert!(relay_needs_forced_reconnect(RelayStatus::Disconnected));
     }
 
-    /// Outgoing on-chain transfer announcement (`wallet_tx_announcement`); title is product-neutral.
-    fn dm_wallet_sent(body: String) -> Self {
-        Self {
-            notification_type: NotificationType::DirectMessage,
-            title: "Transfer sent".to_string(),
-            body,
-            group_name: None,
-            sender_name: None,
-        }
+    #[test]
+    fn connected_and_other_statuses_do_not_trigger_reconnect() {
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connected));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Initialized));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Pending));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Connecting));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Banned));
+        assert!(!relay_needs_forced_reconnect(RelayStatus::Sleeping));
     }
 
-    /// Create a group message notification (works for both text and file attachments)
-    fn group_message(sender_name: String, group_name: String, content: String) -> Self {
-        Self {
-            notification_type: NotificationType::GroupMessage,
-            title: format!("{} - {}", sender_name, group_name),
-            body: content,
-            group_name: Some(group_name),
-            sender_name: Some(sender_name),
-        }
+    #[test]
+    fn same_relay_may_not_start_a_second_fetch_while_one_is_in_flight() {
+        let mut in_flight = std::collections::HashSet::new();
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(
+            &in_flight,
+            "wss://relay.example.com"
+        ));
     }
 
-    /// Create a group invite notification
-    fn group_invite(group_name: String, inviter_name: String) -> Self {
-        Self {
-            notification_type: NotificationType::GroupInvite,
-            title: format!("Group Invite: {}", group_name),
-            body: format!("Invited by {}", inviter_name),
-            group_name: Some(group_name),
-            sender_name: Some(inviter_name),
-        }
+    #[test]
+    fn different_relay_may_start_its_own_fetch_independently() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay-a.example.com".to_string());
+        assert!(relay_fetch_may_start(
+            &in_flight,
+            "wss://relay-b.example.com"
+        ));
+    }
+
+    #[test]
+    fn relay_may_start_again_once_its_in_flight_slot_is_cleared() {
+        let mut in_flight = std::collections::HashSet::new();
+        in_flight.insert("wss://relay.example.com".to_string());
+        assert!(!relay_fetch_may_start(
+            &in_flight,
+            "wss://relay.example.com"
+        ));
+        in_flight.remove("wss://relay.example.com");
+        assert!(relay_fetch_may_start(&in_flight, "wss://relay.example.com"));
     }
 }
-
-/// Show an OS notification with generic notification data
-fn show_notification_generic(data: NotificationData) {
-    let handle = TAURI_APP.get().unwrap();
-
-    // Only send notifications if the app is not focused
-    if !handle
-        .webview_windows()
-        .iter()
-        .next()
-        .unwrap()
-        .1
-        .is_focused()
-        .unwrap()
-    {
-        // Play notification sound (non-blocking, desktop only)
-        #[cfg(desktop)]
-        {
-            let handle_clone = handle.clone();
-            std::thread::spawn(move || {
-                if let Err(e) = audio::play_notification_if_enabled(&handle_clone) {
-                    eprintln!("Failed to play notification sound: {}", e);
-                }
-            });
-        }
-
-        #[cfg(target_os = "android")]
-        {
-            // Determine summary based on notification type
-            let summary = match data.notification_type {
-                NotificationType::DirectMessage => "Private Message",
-                NotificationType::GroupMessage => "Group Message",
-                NotificationType::GroupInvite => "Group Invite",
-            };
-            
-            handle
-                .notification()
-                .builder()
-                .title(&data.title)
-                .body(&data.body)
-                .large_body(&data.body)
-                .icon("ic_notification")
-                .summary(summary)
-                .large_icon("ic_large_icon")
-                .show()
-                .unwrap_or_else(|e| eprintln!("Failed to send notification: {}", e));
-        }
-        
-        #[cfg(not(target_os = "android"))]
-        {
-            handle
-                .notification()
-                .builder()
-                .title(&data.title)
-                .body(&data.body)
-                .large_body(&data.body)
-                .show()
-                .unwrap_or_else(|e| eprintln!("Failed to send notification: {}", e));
-        }
-    }
-}
-
 
 /// Decrypts and saves an attachment to disk
-/// 
+///
 /// Returns the path to the decrypted file if successful, or an error message if unsuccessful
 async fn decrypt_and_save_attachment<R: tauri::Runtime>(
     handle: &AppHandle<R>,
     encrypted_data: &[u8],
-    attachment: &Attachment
+    attachment: &Attachment,
 ) -> Result<std::path::PathBuf, String> {
     // Attempt to decrypt the attachment
     let decrypted_data = crypto::decrypt_data(encrypted_data, &attachment.key, &attachment.nonce)
         .map_err(|e| e.to_string())?;
-    
+
     // Calculate the hash of the decrypted file
     let file_hash = calculate_file_hash(&decrypted_data);
-    
+
     // Choose the appropriate base directory based on platform
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
@@ -3710,17 +5376,18 @@ async fn decrypt_and_save_attachment<R: tauri::Runtime>(
     };
 
     // Resolve the directory path using the determined base directory
-    let dir = handle.path().resolve("vector", base_directory).unwrap();
-    
+    let dir = handle.path().resolve("pacto", base_directory).unwrap();
+
     // Use hash-based filename
     let file_path = dir.join(format!("{}.{}", file_hash, attachment.extension));
 
-    // Create the vector directory if it doesn't exist
+    // Create the pacto directory if it doesn't exist
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create directory: {}", e))?;
 
     // Save the file to disk
-    std::fs::write(&file_path, decrypted_data).map_err(|e| format!("Failed to write file: {}", e))?;
-    
+    std::fs::write(&file_path, decrypted_data)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
     Ok(file_path)
 }
 
@@ -3729,17 +5396,17 @@ async fn generate_blurhash_preview(npub: String, msg_id: String) -> Result<Strin
     // Get the first attachment from the message by searching through chats
     let img_meta = {
         let state = STATE.lock().await;
-        
+
         // Search through all chats to find the message
         let mut found_attachment = None;
-        
+
         for chat in &state.chats {
             // Check if this is the target chat (works for both DMs and group chats)
             let is_target_chat = match &chat.chat_type {
                 ChatType::MlsGroup => chat.id == npub,
                 ChatType::DirectMessage => chat.has_participant(&npub),
             };
-            
+
             if is_target_chat {
                 // Look for the message in this chat
                 if let Some(message) = chat.messages.iter().find(|m| m.id == msg_id) {
@@ -3751,16 +5418,16 @@ async fn generate_blurhash_preview(npub: String, msg_id: String) -> Result<Strin
                 }
             }
         }
-        
+
         found_attachment.ok_or_else(|| "No image attachment found".to_string())?
     };
-    
+
     // Generate the Base64 image using the decode_blurhash_to_base64 function
     let base64_image = util::decode_blurhash_to_base64(
         &img_meta.blurhash,
         img_meta.width,
         img_meta.height,
-        1.0 // Default punch value
+        1.0, // Default punch value
     );
 
     Ok(base64_image)
@@ -3792,7 +5459,11 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
 
             if is_target_chat {
                 if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                    if let Some(attachment) = message.attachments.iter_mut().find(|a| a.id == attachment_id) {
+                    if let Some(attachment) = message
+                        .attachments
+                        .iter_mut()
+                        .find(|a| a.id == attachment_id)
+                    {
                         // Check that we're not already downloading
                         if attachment.downloading {
                             return false;
@@ -3804,39 +5475,45 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                         } else {
                             tauri::path::BaseDirectory::Download
                         };
-                        
-                        if let Ok(vector_dir) = handle.path().resolve("vector", base_directory) {
-                            let file_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
+
+                        if let Ok(vector_dir) = handle.path().resolve("pacto", base_directory) {
+                            let file_path = vector_dir
+                                .join(format!("{}.{}", &attachment.id, &attachment.extension));
                             if file_path.exists() {
                                 // File already exists! Update the state and return success
                                 attachment.downloaded = true;
                                 attachment.path = file_path.to_string_lossy().to_string();
-                                
+
                                 // Emit success event
-                                handle.emit("attachment_download_result", serde_json::json!({
-                                    "profile_id": npub,
-                                    "msg_id": msg_id,
-                                    "id": attachment_id,
-                                    "success": true,
-                                    "result": file_path.to_string_lossy().to_string()
-                                })).unwrap();
-                                
+                                handle
+                                    .emit(
+                                        "attachment_download_result",
+                                        serde_json::json!({
+                                            "profile_id": npub,
+                                            "msg_id": msg_id,
+                                            "id": attachment_id,
+                                            "success": true,
+                                            "result": file_path.to_string_lossy().to_string()
+                                        }),
+                                    )
+                                    .unwrap();
+
                                 // Also update the database
                                 let chat_id_for_db = chat.id().to_string();
                                 let msg_id_clone = msg_id.clone();
                                 let attachment_id_clone = attachment_id.clone();
                                 let path_str = file_path.to_string_lossy().to_string();
                                 drop(state); // Release lock before DB call
-                                
+
                                 let _ = db::update_attachment_downloaded_status(
                                     handle,
                                     &chat_id_for_db,
                                     &msg_id_clone,
                                     &attachment_id_clone,
                                     true,
-                                    &path_str
+                                    &path_str,
                                 );
-                                
+
                                 return true;
                             }
                         }
@@ -3851,7 +5528,10 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
         }
 
         if found_attachment.is_none() {
-            eprintln!("Attachment not found for download: {} in message {}", attachment_id, msg_id);
+            eprintln!(
+                "Attachment not found for download: {} in message {}",
+                attachment_id, msg_id
+            );
             return false;
         }
 
@@ -3859,10 +5539,15 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
     };
 
     // Begin our download progress events
-    handle.emit("attachment_download_progress", serde_json::json!({
-        "id": &attachment.id,
-        "progress": 0
-    })).unwrap();
+    handle
+        .emit(
+            "attachment_download_progress",
+            serde_json::json!({
+                "id": &attachment.id,
+                "progress": 0
+            }),
+        )
+        .unwrap();
 
     // Download the file - no timeout, allow large downloads to complete
     let encrypted_data = match net::download(&attachment.url, handle, &attachment.id, None).await {
@@ -3870,17 +5555,21 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
         Err(error) => {
             // Handle download error
             let mut state = STATE.lock().await;
-            
+
             // Find and update the attachment status
             for chat in &mut state.chats {
                 let is_target_chat = match &chat.chat_type {
                     ChatType::MlsGroup => chat.id == npub,
                     ChatType::DirectMessage => chat.has_participant(&npub),
                 };
-                
+
                 if is_target_chat {
                     if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                        if let Some(attachment) = message.attachments.iter_mut().find(|a| a.id == attachment_id) {
+                        if let Some(attachment) = message
+                            .attachments
+                            .iter_mut()
+                            .find(|a| a.id == attachment_id)
+                        {
                             attachment.downloading = false;
                             attachment.downloaded = false;
                             break;
@@ -3890,32 +5579,45 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
             }
 
             // Emit the error
-            handle.emit("attachment_download_result", serde_json::json!({
-                "profile_id": npub,
-                "msg_id": msg_id,
-                "id": attachment_id,
-                "success": false,
-                "result": error
-            })).unwrap();
+            handle
+                .emit(
+                    "attachment_download_result",
+                    serde_json::json!({
+                        "profile_id": npub,
+                        "msg_id": msg_id,
+                        "id": attachment_id,
+                        "success": false,
+                        "result": error
+                    }),
+                )
+                .unwrap();
             return false;
         }
     };
 
     // Check if we got a reasonable amount of data
     if encrypted_data.len() < 16 {
-        eprintln!("Downloaded file too small: {} bytes for attachment {}", encrypted_data.len(), attachment_id);
+        eprintln!(
+            "Downloaded file too small: {} bytes for attachment {}",
+            encrypted_data.len(),
+            attachment_id
+        );
         let mut state = STATE.lock().await;
-        
+
         // Find and update the attachment status
         for chat in &mut state.chats {
             let is_target_chat = match &chat.chat_type {
                 ChatType::MlsGroup => chat.id == npub,
                 ChatType::DirectMessage => chat.has_participant(&npub),
             };
-            
+
             if is_target_chat {
                 if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                    if let Some(attachment) = message.attachments.iter_mut().find(|a| a.id == attachment_id) {
+                    if let Some(attachment) = message
+                        .attachments
+                        .iter_mut()
+                        .find(|a| a.id == attachment_id)
+                    {
                         attachment.downloading = false;
                         attachment.downloaded = false;
                         break;
@@ -3923,35 +5625,46 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                 }
             }
         }
-        
+
         // Emit a more helpful error
-        let error_msg = format!("Downloaded file too small ({} bytes). URL may be invalid or expired.", encrypted_data.len());
-        handle.emit("attachment_download_result", serde_json::json!({
-            "profile_id": npub,
-            "msg_id": msg_id,
-            "id": attachment_id,
-            "success": false,
-            "result": error_msg
-        })).unwrap();
+        let error_msg = format!(
+            "Downloaded file too small ({} bytes). URL may be invalid or expired.",
+            encrypted_data.len()
+        );
+        handle
+            .emit(
+                "attachment_download_result",
+                serde_json::json!({
+                    "profile_id": npub,
+                    "msg_id": msg_id,
+                    "id": attachment_id,
+                    "success": false,
+                    "result": error_msg
+                }),
+            )
+            .unwrap();
         return false;
     }
-    
+
     // Decrypt and save the file
     let result = decrypt_and_save_attachment(handle, &encrypted_data, &attachment).await;
-    
+
     // Process the result
     match result {
         Err(error) => {
             // Check if this is a corrupted attachment (decryption failure)
             let is_decryption_error = error.contains("aead") || error.contains("decrypt");
-            
+
             if is_decryption_error {
-                eprintln!("Decryption failed for attachment {}: corrupted keys/data mismatch", attachment_id);
+                eprintln!(
+                    "Decryption failed for attachment {}: corrupted keys/data mismatch",
+                    attachment_id
+                );
             }
-            
+
             // Handle decryption/saving error
             let mut state = STATE.lock().await;
-            
+
             // Find and update the attachment status
             let mut should_remove = false;
             for chat in &mut state.chats {
@@ -3959,16 +5672,23 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                     ChatType::MlsGroup => chat.id == npub,
                     ChatType::DirectMessage => chat.has_participant(&npub),
                 };
-                
+
                 if is_target_chat {
                     if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                        if let Some(attachment) = message.attachments.iter_mut().find(|a| a.id == attachment_id) {
+                        if let Some(attachment) = message
+                            .attachments
+                            .iter_mut()
+                            .find(|a| a.id == attachment_id)
+                        {
                             attachment.downloading = false;
                             attachment.downloaded = false;
-                            
+
                             // If it's a decryption error, mark for removal as it's corrupted
                             if is_decryption_error {
-                                eprintln!("Marking corrupted attachment for removal: {}", attachment_id);
+                                eprintln!(
+                                    "Marking corrupted attachment for removal: {}",
+                                    attachment_id
+                                );
                                 should_remove = true;
                             }
                             break;
@@ -3976,7 +5696,7 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                     }
                 }
             }
-            
+
             // Remove corrupted attachment if needed and save
             if should_remove {
                 // Collect chat_id and messages to save
@@ -3987,11 +5707,12 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                             ChatType::MlsGroup => chat.id == npub,
                             ChatType::DirectMessage => chat.has_participant(&npub),
                         };
-                        
+
                         if is_target_chat {
                             let chat_id = chat.id().to_string();
-                            
-                            if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
+
+                            if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id)
+                            {
                                 let original_count = message.attachments.len();
                                 message.attachments.retain(|a| a.id != attachment_id);
                                 if message.attachments.len() < original_count {
@@ -4003,7 +5724,7 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                     }
                     result
                 };
-                
+
                 // Drop state and save
                 drop(state);
                 if let Some((chat_id, messages)) = save_data {
@@ -4012,41 +5733,51 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
             }
 
             // Emit the error
-            handle.emit("attachment_download_result", serde_json::json!({
-                "profile_id": npub,
-                "msg_id": msg_id,
-                "id": attachment_id,
-                "success": false,
-                "result": if should_remove {
-                    "Corrupted attachment removed. Please re-send the file.".to_string()
-                } else {
-                    error
-                }
-            })).unwrap();
+            handle
+                .emit(
+                    "attachment_download_result",
+                    serde_json::json!({
+                        "profile_id": npub,
+                        "msg_id": msg_id,
+                        "id": attachment_id,
+                        "success": false,
+                        "result": if should_remove {
+                            "Corrupted attachment removed. Please re-send the file.".to_string()
+                        } else {
+                            error
+                        }
+                    }),
+                )
+                .unwrap();
             return false;
         }
         Ok(hash_file_path) => {
             // Successfully decrypted and saved
             // Extract the hash from the filename (format: {hash}.{extension})
-            let file_hash = hash_file_path.file_stem()
+            let file_hash = hash_file_path
+                .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or(&attachment_id)
                 .to_string();
-            
+
             // Update state with successful download
             {
                 let mut state = STATE.lock().await;
-                
+
                 // Find and update the attachment
                 for chat in &mut state.chats {
                     let is_target_chat = match &chat.chat_type {
                         ChatType::MlsGroup => chat.id == npub,
                         ChatType::DirectMessage => chat.has_participant(&npub),
                     };
-                    
+
                     if is_target_chat {
                         if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
-                            if let Some(attachment_index) = message.attachments.iter().position(|a| a.id == attachment_id) {
+                            if let Some(attachment_index) = message
+                                .attachments
+                                .iter()
+                                .position(|a| a.id == attachment_id)
+                            {
                                 let attachment = &mut message.attachments[attachment_index];
                                 attachment.id = file_hash.clone(); // Update ID from nonce to hash
                                 attachment.downloading = false;
@@ -4059,28 +5790,43 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                 }
 
                 // Emit the finished download with both old and new IDs
-                handle.emit("attachment_download_result", serde_json::json!({
-                    "profile_id": npub,
-                    "msg_id": msg_id,
-                    "old_id": attachment_id,
-                    "id": file_hash,
-                    "success": true,
-                })).unwrap();
+                handle
+                    .emit(
+                        "attachment_download_result",
+                        serde_json::json!({
+                            "profile_id": npub,
+                            "msg_id": msg_id,
+                            "old_id": attachment_id,
+                            "id": file_hash,
+                            "success": true,
+                        }),
+                    )
+                    .unwrap();
 
                 // Persist updated message/attachment metadata to the database
                 if let Some(handle) = TAURI_APP.get() {
                     // Find and save only the updated message
                     let updated_chat = state.get_chat(&npub).unwrap();
                     let updated_message = {
-                        updated_chat.messages.iter().find(|m| m.id == msg_id).cloned()
-                    }.unwrap();
+                        updated_chat
+                            .messages
+                            .iter()
+                            .find(|m| m.id == msg_id)
+                            .cloned()
+                    }
+                    .unwrap();
 
                     // Update the frontend state
-                    handle.emit("message_update", serde_json::json!({
-                        "old_id": &updated_message.id,
-                        "message": updated_message.clone(),
-                        "chat_id": updated_chat.id()
-                    })).unwrap();
+                    handle
+                        .emit(
+                            "message_update",
+                            serde_json::json!({
+                                "old_id": &updated_message.id,
+                                "message": updated_message.clone(),
+                                "chat_id": updated_chat.id()
+                            }),
+                        )
+                        .unwrap();
 
                     // Drop the STATE lock before performing async I/O
                     drop(state);
@@ -4088,10 +5834,161 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
                     let _ = db::save_message(handle.clone(), &npub, &updated_message).await;
                 }
             }
-            
+
             true
         }
     }
+}
+
+/// Downloads and decrypts an attachment if it is not already on disk, then opens a
+/// native save dialog and copies the plaintext file to the chosen destination.
+/// Returns the saved path, or an empty string if the user cancelled the dialog.
+#[tauri::command]
+async fn save_attachment_as(
+    npub: String,
+    msg_id: String,
+    attachment_id: String,
+) -> Result<String, String> {
+    let handle = TAURI_APP.get().ok_or("App handle not available")?;
+
+    // Locate the attachment the same way `download_attachment` does.
+    let attachment = {
+        let state = STATE.lock().await;
+        state
+            .chats
+            .iter()
+            .find(|chat| match &chat.chat_type {
+                ChatType::MlsGroup => chat.id == npub,
+                ChatType::DirectMessage => chat.has_participant(&npub),
+            })
+            .and_then(|chat| chat.messages.iter().find(|m| m.id == msg_id))
+            .and_then(|message| message.attachments.iter().find(|a| a.id == attachment_id))
+            .cloned()
+    }
+    .ok_or_else(|| {
+        format!(
+            "Attachment not found: {} in message {}",
+            attachment_id, msg_id
+        )
+    })?;
+
+    // Choose the appropriate base directory based on platform (matches `download_attachment`).
+    let base_directory = if cfg!(target_os = "ios") {
+        tauri::path::BaseDirectory::Document
+    } else {
+        tauri::path::BaseDirectory::Download
+    };
+    let vector_dir = handle
+        .path()
+        .resolve("pacto", base_directory)
+        .map_err(|e| format!("Failed to resolve download directory: {}", e))?;
+    let expected_path = vector_dir.join(format!("{}.{}", &attachment.id, &attachment.extension));
+
+    // Reuse the already-decrypted file on disk if present; otherwise fetch and decrypt it,
+    // reusing the same download + decrypt helpers as `download_attachment`.
+    let source_path = if expected_path.exists() {
+        expected_path
+    } else {
+        let encrypted_data = net::download(&attachment.url, handle, &attachment.id, None)
+            .await
+            .map_err(|e| format!("Failed to download attachment: {}", e))?;
+
+        if encrypted_data.len() < 16 {
+            return Err(format!(
+                "Downloaded file too small ({} bytes). URL may be invalid or expired.",
+                encrypted_data.len()
+            ));
+        }
+
+        let decrypted_path =
+            decrypt_and_save_attachment(handle, &encrypted_data, &attachment).await?;
+
+        // Bring shared state and the DB in sync so the app treats this attachment as downloaded,
+        // matching the bookkeeping `download_attachment` performs on success.
+        let file_hash = decrypted_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&attachment_id)
+            .to_string();
+        let updated_message = {
+            let mut state = STATE.lock().await;
+            let mut updated = None;
+            for chat in &mut state.chats {
+                let is_target_chat = match &chat.chat_type {
+                    ChatType::MlsGroup => chat.id == npub,
+                    ChatType::DirectMessage => chat.has_participant(&npub),
+                };
+                if is_target_chat {
+                    if let Some(message) = chat.messages.iter_mut().find(|m| m.id == msg_id) {
+                        if let Some(att) = message
+                            .attachments
+                            .iter_mut()
+                            .find(|a| a.id == attachment_id)
+                        {
+                            att.id = file_hash.clone();
+                            att.downloading = false;
+                            att.downloaded = true;
+                            att.path = decrypted_path.to_string_lossy().to_string();
+                        }
+                        updated = Some(message.clone());
+                    }
+                    break;
+                }
+            }
+            updated
+        };
+        if let Some(message) = updated_message {
+            handle
+                .emit(
+                    "message_update",
+                    serde_json::json!({
+                        "old_id": &message.id,
+                        "message": &message,
+                        "chat_id": &npub
+                    }),
+                )
+                .ok();
+            let _ = db::save_message(handle.clone(), &npub, &message).await;
+        }
+
+        decrypted_path
+    };
+
+    // Open a native save dialog on the Rust side — the destination path is never
+    // trusted from the webview, closing off arbitrary-path writes via IPC.
+    use tauri_plugin_dialog::DialogExt;
+    let handle_clone = handle.clone();
+    let default_name = format!("{}.{}", attachment.id, attachment.extension);
+    let dialog_result = tokio::task::spawn_blocking(move || {
+        handle_clone
+            .dialog()
+            .file()
+            .set_file_name(&default_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Task error: {}", e))?;
+
+    let dest = match dialog_result {
+        Some(path) => path
+            .as_path()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "Invalid destination path".to_string())?,
+        None => return Ok(String::new()),
+    };
+
+    // Create the destination directory if needed, then copy the plaintext file there.
+    if let Some(parent) = dest.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+        }
+    }
+
+    std::fs::copy(&source_path, &dest)
+        .map_err(|e| format!("Failed to copy attachment to destination: {}", e))?;
+
+    Ok(dest.to_string_lossy().to_string())
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -4120,30 +6017,100 @@ struct LoginKeyPair {
 #[tauri::command]
 async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     // Check if we have an active Nostr client (meaning we're already logged in)
-    let client = get_nostr_client().map_err(|_| "Backend not initialized - perform normal login".to_string())?;
-    
+    let client = get_nostr_client()
+        .map_err(|_| "Backend not initialized - perform normal login".to_string())?;
+
     // Get the current user's public key
-    let signer = client.signer().await.map_err(|e| format!("Signer error: {}", e))?;
-    let my_npub = signer.get_public_key().await
+    let signer = client
+        .signer()
+        .await
+        .map_err(|e| format!("Signer error: {}", e))?;
+    let my_npub = signer
+        .get_public_key()
+        .await
         .map_err(|e| format!("Public key error: {}", e))?
         .to_bech32()
         .map_err(|e| format!("Bech32 error: {}", e))?;
-    
+
     // Get the full state
     let state = STATE.lock().await;
-    
+
     // Verify we have meaningful state (not just an empty initialized state)
     if state.profiles.is_empty() && state.chats.is_empty() {
         return Err("Backend state is empty - perform normal login".to_string());
     }
-    
+
     // Return the full state for the frontend to hydrate
-    println!("[Debug Hot-Reload] Sending cached state to frontend ({} profiles, {} chats)",
-             state.profiles.len(), state.chats.len());
-    
+    println!(
+        "[Debug Hot-Reload] Sending cached state to frontend ({} profiles, {} chats)",
+        state.profiles.len(),
+        state.chats.len()
+    );
+
     Ok(serde_json::json!({
         "success": true,
         "npub": my_npub,
+        "profiles": &state.profiles,
+        "chats": &state.chats,
+        "is_syncing": state.is_syncing,
+        "sync_mode": format!("{:?}", state.sync_mode)
+    }))
+}
+
+/// Debug-only fixture authentication for automated end-to-end tests.
+/// Requires `PACTO_ALLOW_TEST_AUTH=1` and creates a fresh sandboxed account.
+#[cfg(debug_assertions)]
+#[tauri::command]
+async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_json::Value, String> {
+    if std::env::var("PACTO_ALLOW_TEST_AUTH").unwrap_or_default() != "1" {
+        return Err("Test auth disabled".to_string());
+    }
+
+    // Generate a fresh Nostr keypair.
+    let keys = Keys::generate();
+    let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
+
+    // Initialize the Nostr client.
+    let client = Client::builder()
+        .signer(keys.clone())
+        // Gossip is opt-in from nostr-sdk 0.44: absent a gossip database it stays off.
+        .opts(ClientOptions::new())
+        .monitor(Monitor::new(1024))
+        .build();
+    set_nostr_client(client);
+
+    // Build a minimal profile and reset state.
+    let mut profile = Profile::new();
+    profile.id = npub.clone();
+    profile.mine = true;
+    profile.name = "Fixture Account".to_string();
+    {
+        let mut st = STATE.lock().await;
+        st.clear_session();
+        st.profiles.push(profile);
+    }
+
+    // Mark the account pending before touching the filesystem so a concurrent
+    // `list_accounts` scan (e.g. the login screen's boot-time account check)
+    // can't treat the in-flight directory as an orphan and delete it before
+    // the pkey is written.
+    account_manager::set_pending_account(npub.clone())?;
+    account_manager::init_profile_database(&handle, &npub).await?;
+    account_manager::set_current_account(npub.clone())?;
+    account_manager::clear_pending_account()?;
+
+    // Set up key-derivation version 2 so test sessions can use commands that
+    // normally require a PIN-protected account (e.g. sending messages).
+    {
+        let conn = account_manager::get_db_connection(&handle)?;
+        crate::migration::create_new_account_salt(&handle, &conn)?;
+        account_manager::return_db_connection(conn);
+    }
+
+    let state = STATE.lock().await;
+    Ok(serde_json::json!({
+        "success": true,
+        "npub": npub,
         "profiles": &state.profiles,
         "chats": &state.chats,
         "is_syncing": state.is_syncing,
@@ -4155,7 +6122,7 @@ async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
 async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
         .signer(keys.clone())
-        .opts(ClientOptions::new().gossip(false))
+        .opts(ClientOptions::new())
         .monitor(Monitor::new(1024))
         .build();
     set_nostr_client(client);
@@ -4171,40 +6138,49 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     }
 
     if let Some(handle) = TAURI_APP.get() {
-        let app_data = handle.path().app_local_data_dir().ok();
+        let app_data = crate::test_sandbox::test_local_data_dir(handle).ok();
         if let Some(data_dir) = app_data {
             let profile_db = data_dir.join(&npub).join("vector.db");
             if profile_db.exists() {
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
-                let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                // `ensure_ready` re-encrypts the active EVM signer via `internal_encrypt`, which
+                // panics if `ENCRYPTION_KEY` isn't set yet. During a recovery-phrase restore this
+                // runs before the PIN is collected; the frontend's own `encryptAndSaveEvmKey` call
+                // right after PIN entry covers that case, so skip here and let the already-unlocked
+                // (PIN-entered) login path run it instead.
+                if crate::current_encryption_key().is_some() {
+                    let _ = evm::evm_accounts::ensure_ready(handle.clone()).await;
+                }
             } else if let Err(e) = account_manager::init_profile_database(handle, &npub).await {
                 eprintln!("[Login] Failed to initialize profile database: {}", e);
             } else if let Err(e) = account_manager::set_current_account(npub.clone()) {
                 eprintln!("[Login] Failed to set current account: {}", e);
             } else {
-                println!("[Login] Initialized new profile database and set current account: {}", npub);
+                println!(
+                    "[Login] Initialized new profile database and set current account: {}",
+                    npub
+                );
             }
         }
     }
 
-    let (evm_private_key, evm_address) =
-        if let Some(m) = crate::mnemonic_seed_get() {
-            evm::derive_eth_bip44_v1_from_mnemonic_phrase(&m, 0)
-                .map(|(k, a)| (Some(k), Some(a)))
-                .unwrap_or((None, None))
-        } else if let Some(handle) = TAURI_APP.get() {
-            match db::read_stored_evm_address(handle.clone()) {
-                Ok(Some(addr)) if addr.len() >= 42 => (None, Some(addr)),
-                _ => evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
-                    .map(|t| (Some(t.0), Some(t.1)))
-                    .unwrap_or((None, None)),
-            }
-        } else {
-            evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+    let (evm_private_key, evm_address) = if let Some(m) = crate::mnemonic_seed_get() {
+        evm::derive_eth_bip44_v1_from_mnemonic_phrase(&m, 0)
+            .map(|(k, a)| (Some(k), Some(a)))
+            .unwrap_or((None, None))
+    } else if let Some(handle) = TAURI_APP.get() {
+        match db::read_stored_evm_address(handle.clone()) {
+            Ok(Some(addr)) if addr.len() >= 42 => (None, Some(addr)),
+            _ => evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
                 .map(|t| (Some(t.0), Some(t.1)))
-                .unwrap_or((None, None))
-        };
+                .unwrap_or((None, None)),
+        }
+    } else {
+        evm::derive_evm_hex_from_nostr_secret(&keys.secret_key().to_secret_bytes())
+            .map(|t| (Some(t.0), Some(t.1)))
+            .unwrap_or((None, None))
+    };
 
     Ok(LoginKeyPair {
         public: npub,
@@ -4230,9 +6206,8 @@ async fn login_with_recovery_phrase(mnemonic: String) -> Result<LoginKeyPair, St
     }
     clear_nostr_client();
     let phrase = words.join(" ");
-    let keys = Keys::from_mnemonic(phrase.clone(), None).map_err(|_| {
-        "Invalid recovery phrase. Check spelling and word count.".to_string()
-    })?;
+    let keys = Keys::from_mnemonic(phrase.clone(), None)
+        .map_err(|_| "Invalid recovery phrase. Check spelling and word count.".to_string())?;
     mnemonic_seed_set(phrase);
     complete_login_from_keys(keys).await
 }
@@ -4255,10 +6230,7 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
             .map_err(|e| e.to_string())?
             .to_bech32()
             .map_err(|e| e.to_string())?;
-        let new_npub = new_keys
-            .public_key
-            .to_bech32()
-            .map_err(|e| e.to_string())?;
+        let new_npub = new_keys.public_key.to_bech32().map_err(|e| e.to_string())?;
         if prev_npub != new_npub {
             return Err(
                 "A different key is already loaded. Restart the app or use the recovery phrase import flow."
@@ -4271,7 +6243,10 @@ async fn login(import_key: String) -> Result<LoginKeyPair, String> {
                 .unwrap_or((None, None));
         return Ok(LoginKeyPair {
             public: prev_npub,
-            private: new_keys.secret_key().to_bech32().map_err(|e| e.to_string())?,
+            private: new_keys
+                .secret_key()
+                .to_bech32()
+                .map_err(|e| e.to_string())?,
             evm_private_key,
             evm_address,
         });
@@ -4297,23 +6272,31 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
     let existing_relays = client.relays().await;
 
     // Get disabled default relays
-    let disabled_defaults = get_disabled_default_relays(&handle).await.unwrap_or_default();
+    let disabled_defaults = get_disabled_default_relays(&handle)
+        .await
+        .unwrap_or_default();
 
     // Add default relays (unless disabled or already present)
     for default_url in DEFAULT_RELAYS {
-        let is_disabled = disabled_defaults.iter().any(|d| d.to_lowercase() == default_url.to_lowercase());
-        
+        let is_disabled = disabled_defaults
+            .iter()
+            .any(|d| d.to_lowercase() == default_url.to_lowercase());
+
         // Check if relay already exists in pool (case-insensitive)
-        let already_exists = existing_relays.iter().any(|(url, _)| 
-            url.to_string().to_lowercase() == default_url.to_lowercase()
-        );
-        
+        let already_exists = existing_relays
+            .iter()
+            .any(|(url, _)| url.to_string().to_lowercase() == default_url.to_lowercase());
+
         if already_exists {
             continue;
         }
-        
+
         if !is_disabled {
-            match client.pool().add_relay(*default_url, RelayOptions::new().reconnect(false)).await {
+            match client
+                .pool()
+                .add_relay(*default_url, RelayOptions::new().reconnect(false))
+                .await
+            {
                 Ok(_) => {
                     println!("[Relay] Added default relay: {}", default_url);
                     add_relay_log(default_url, "info", "Added to relay pool");
@@ -4333,10 +6316,21 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
         Ok(custom_relays) => {
             for relay in custom_relays {
                 if relay.enabled {
-                    match client.pool().add_relay(&relay.url, relay_options_for_mode(&relay.mode)).await {
+                    match client
+                        .pool()
+                        .add_relay(&relay.url, relay_options_for_mode(&relay.mode))
+                        .await
+                    {
                         Ok(_) => {
-                            println!("[Relay] Added custom relay: {} (mode: {})", relay.url, relay.mode);
-                            add_relay_log(&relay.url, "info", &format!("Added to relay pool (mode: {})", relay.mode));
+                            println!(
+                                "[Relay] Added custom relay: {} (mode: {})",
+                                relay.url, relay.mode
+                            );
+                            add_relay_log(
+                                &relay.url,
+                                "info",
+                                &format!("Added to relay pool (mode: {})", relay.mode),
+                            );
                         }
                         Err(e) => {
                             eprintln!("[Relay] Failed to add custom relay {}: {}", relay.url, e);
@@ -4354,11 +6348,13 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
     true
 }
 
-
-
 // Tauri command that uses the crypto module
 #[tauri::command]
-async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Option<String>) -> Result<String, String> {
+async fn encrypt<R: Runtime>(
+    handle: AppHandle<R>,
+    input: String,
+    password: Option<String>,
+) -> Result<String, String> {
     session::heartbeat();
     let res = if let Some(pass) = password {
         crate::migration::encrypt_with_password(&handle, &input, &pass).await?
@@ -4378,21 +6374,30 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
             // Clone the data we need before the async block
             let invite_code = pending_invite.invite_code.clone();
             let inviter_pubkey = pending_invite.inviter_pubkey.clone();
-            
+
             // Spawn the broadcast in a separate task to avoid blocking
             tokio::spawn(async move {
                 // Create and publish the acceptance event
-                let event_builder = EventBuilder::new(Kind::ApplicationSpecificData, "vector_invite_accepted")
-                    .tag(Tag::custom(TagKind::Custom("l".into()), vec!["vector"]))
-                    .tag(Tag::custom(TagKind::Custom("d".into()), vec![invite_code.as_str()]))
-                    .tag(Tag::public_key(inviter_pubkey));
-                
+                let event_builder =
+                    EventBuilder::new(Kind::ApplicationSpecificData, "vector_invite_accepted")
+                        .tag(nostr_tags::custom_tag("l", vec!["vector"]))
+                        .tag(nostr_tags::custom_tag("d", vec![invite_code.as_str()]))
+                        .tag(Tag::public_key(inviter_pubkey));
+
                 // Build the event
                 match client.sign_event_builder(event_builder).await {
                     Ok(event) => {
                         // Send only to trusted relays
-                        match client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await {
-                            Ok(_) => println!("Successfully broadcast invite acceptance to trusted relays"),
+                        match client
+                            .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+                            .await
+                        {
+                            Ok(output) => {
+                                record_send_outcome(&event, &output);
+                                println!(
+                                    "Successfully broadcast invite acceptance to trusted relays"
+                                );
+                            }
                             Err(e) => eprintln!("Failed to broadcast invite acceptance: {}", e),
                         }
                     }
@@ -4407,19 +6412,25 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
     tokio::spawn(async move {
         // Brief delay to allow encryption key to be set
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        
+
         // Skip if no account selected (migration pending)
         if crate::account_manager::get_current_account().is_err() {
             println!("[MLS] Skipping KeyPackage bootstrap - no account selected (migration may be pending)");
             return;
         }
-        
+
         println!("[MLS] Ensuring persistent device KeyPackage after PIN setup...");
         match regenerate_device_keypackage(true).await {
             Ok(info) => {
                 let device_id = info.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-                let cached = info.get("cached").and_then(|v| v.as_bool()).unwrap_or(false);
-                println!("[MLS] Device KeyPackage ready: device_id={}, cached={}", device_id, cached);
+                let cached = info
+                    .get("cached")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                println!(
+                    "[MLS] Device KeyPackage ready: device_id={}, cached={}",
+                    device_id, cached
+                );
             }
             Err(e) => eprintln!("[MLS] Device KeyPackage bootstrap failed: {}", e),
         }
@@ -4430,13 +6441,18 @@ async fn encrypt<R: Runtime>(handle: AppHandle<R>, input: String, password: Opti
 
 // Tauri command that uses the crypto module
 #[tauri::command]
-async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password: Option<String>) -> Result<String, String> {
+async fn decrypt<R: Runtime>(
+    handle: AppHandle<R>,
+    ciphertext: String,
+    password: Option<String>,
+) -> Result<String, String> {
     session::heartbeat();
     // Perform decryption
     let res = if let Some(pass) = password {
         crate::migration::decrypt_with_password(&handle, &ciphertext, &pass).await?
     } else {
-        crypto::internal_decrypt(ciphertext).await
+        crypto::internal_decrypt(ciphertext)
+            .await
             .map_err(|_| "Decryption failed".to_string())?
     };
 
@@ -4445,19 +6461,25 @@ async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password:
     tokio::spawn(async move {
         // brief delay to allow any post-login setup to settle
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-        
+
         // Skip if no account selected (e.g. setup pending)
         if crate::account_manager::get_current_account().is_err() {
             println!("[MLS] Skipping KeyPackage bootstrap - no account selected");
             return;
         }
-        
+
         println!("[MLS] Ensuring persistent device KeyPackage...");
         match regenerate_device_keypackage(true).await {
             Ok(info) => {
                 let device_id = info.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-                let cached = info.get("cached").and_then(|v| v.as_bool()).unwrap_or(false);
-                println!("[MLS] Device KeyPackage ready: device_id={}, cached={}", device_id, cached);
+                let cached = info
+                    .get("cached")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                println!(
+                    "[MLS] Device KeyPackage ready: device_id={}, cached={}",
+                    device_id, cached
+                );
             }
             Err(e) => eprintln!("[MLS] Device KeyPackage bootstrap failed: {}", e),
         }
@@ -4468,13 +6490,13 @@ async fn decrypt<R: Runtime>(handle: AppHandle<R>, ciphertext: String, password:
 
 #[tauri::command]
 async fn start_recording() -> Result<(), String> {
-    #[cfg(target_os = "android")] 
+    #[cfg(target_os = "android")]
     {
         // Check if we already have permission
         if !android::permissions::check_audio_permission().unwrap() {
             // This will block until the user responds to the permission dialog
             let granted = android::permissions::request_audio_permission_blocking()?;
-            
+
             if !granted {
                 return Err("Audio permission denied by user".to_string());
             }
@@ -4495,7 +6517,9 @@ async fn deep_rescan<R: Runtime>(handle: AppHandle<R>) -> Result<bool, String> {
     {
         let state = STATE.lock().await;
         if state.is_syncing {
-            return Err("Already Scanning! Please wait for the current scan to finish.".to_string());
+            return Err(
+                "Already Scanning! Please wait for the current scan to finish.".to_string(),
+            );
         }
     }
 
@@ -4503,22 +6527,22 @@ async fn deep_rescan<R: Runtime>(handle: AppHandle<R>) -> Result<bool, String> {
     {
         let mut state = STATE.lock().await;
         let now = Timestamp::now();
-        
+
         // Set up for deep rescan starting from now
         state.is_syncing = true;
         state.sync_mode = SyncMode::DeepRescan;
         state.sync_empty_iterations = 0;
         state.sync_total_iterations = 0;
-        
+
         // Start with a 2-day window from now
-        let two_days_ago = now.as_u64() - (60 * 60 * 24 * 2);
+        let two_days_ago = now.as_secs() - (60 * 60 * 24 * 2);
         state.sync_window_start = two_days_ago;
-        state.sync_window_end = now.as_u64();
+        state.sync_window_end = now.as_secs();
     }
 
     // Trigger the first fetch
     fetch_messages(handle, false, None).await;
-    
+
     Ok(true)
 }
 
@@ -4549,21 +6573,24 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Delete the downloads folder (vector folder in Downloads or Documents on iOS)
+    // Delete the downloads folder (pacto folder in Downloads or Documents on iOS)
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {
         tauri::path::BaseDirectory::Download
     };
-    
-    if let Ok(downloads_dir) = handle.path().resolve("vector", base_directory) {
+
+    if let Ok(downloads_dir) = handle.path().resolve("pacto", base_directory) {
         if downloads_dir.exists() {
             let _ = std::fs::remove_dir_all(&downloads_dir);
         }
     }
 
     // Delete the legacy MLS folder in AppData (for backwards compatibility)
-    if let Ok(mls_dir) = handle.path().resolve("mls", tauri::path::BaseDirectory::AppData) {
+    if let Ok(mls_dir) = handle
+        .path()
+        .resolve("mls", tauri::path::BaseDirectory::AppData)
+    {
         if mls_dir.exists() {
             let _ = std::fs::remove_dir_all(&mls_dir);
         }
@@ -4592,7 +6619,7 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     // Initialise the Nostr client
     let client = Client::builder()
         .signer(keys.clone())
-        .opts(ClientOptions::new().gossip(false))
+        .opts(ClientOptions::new())
         .monitor(Monitor::new(1024))
         .build();
     set_nostr_client(client);
@@ -4616,9 +6643,10 @@ async fn create_account() -> Result<LoginKeyPair, String> {
     account_manager::set_pending_account(npub.clone())?;
 
     // BIP-44 account #0 from the same recovery phrase as Nostr (see docs/wallet/HD_DERIVATION_V1.md).
-    let (evm_private_key, evm_address) = evm::derive_eth_bip44_v1_from_mnemonic_phrase(&mnemonic_string, 0)
-        .map(|(k, a)| (Some(k), Some(a)))
-        .unwrap_or((None, None));
+    let (evm_private_key, evm_address) =
+        evm::derive_eth_bip44_v1_from_mnemonic_phrase(&mnemonic_string, 0)
+            .map(|(k, a)| (Some(k), Some(a)))
+            .unwrap_or((None, None));
 
     Ok(LoginKeyPair {
         public: npub,
@@ -4631,7 +6659,10 @@ async fn create_account() -> Result<LoginKeyPair, String> {
 /// Sign a 32-byte Ethereum hash (hex string) with the stored EVM key.
 /// Returns a 65-byte signature as 0x-prefixed hex (r || s || v) where v is 27 or 28.
 #[tauri::command]
-async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Result<String, String> {
+async fn sign_evm_hash<R: Runtime>(
+    handle: AppHandle<R>,
+    hash_hex: String,
+) -> Result<String, String> {
     session::heartbeat();
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     // Decode hash (32 bytes).
@@ -4645,17 +6676,22 @@ async fn sign_evm_hash<R: Runtime>(handle: AppHandle<R>, hash_hex: String) -> Re
         return Err("Hash must be exactly 32 bytes".to_string());
     }
 
-    let evm_private_key = evm::evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone())
-        .await
-        .map_err(|_| "Failed to resolve EVM signing key".to_string())?;
+    let evm_private_key =
+        evm::evm_accounts::decrypt_active_evm_private_key_plaintext(handle.clone())
+            .await
+            .map_err(|_| "Failed to resolve EVM signing key".to_string())?;
 
-    let key_hex = evm_private_key.trim().strip_prefix("0x").unwrap_or(&evm_private_key);
+    let key_hex = evm_private_key
+        .trim()
+        .strip_prefix("0x")
+        .unwrap_or(&evm_private_key);
     let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
 
     use secp256k1::{ecdsa::RecoverableSignature, Message, Secp256k1, SecretKey};
 
     let sk = SecretKey::from_slice(&key_bytes).map_err(|_| "Invalid EVM secret key".to_string())?;
-    let msg = Message::from_digest_slice(&hash_bytes).map_err(|_| "Hash must be a 32-byte message".to_string())?;
+    let msg = Message::from_digest_slice(&hash_bytes)
+        .map_err(|_| "Hash must be a 32-byte message".to_string())?;
     let secp = Secp256k1::new();
     let sig: RecoverableSignature = secp.sign_ecdsa_recoverable(&msg, &sk);
 
@@ -4733,14 +6769,86 @@ async fn run_maintenance() {
     image_cache::cleanup_stale_downloads().await;
 }
 
+/// Restart the app from the Rust side after an updater install.
+///
+/// Going through `tauri::process::restart` directly (instead of the JS
+/// `plugin-process` relaunch API) avoids a known race on macOS where the
+/// event loop can exit before the new process is spawned, leaving the app
+/// closed after a successful update.
+#[cfg(desktop)]
+#[tauri::command]
+fn relaunch_app(app_handle: AppHandle) {
+    app_handle.cleanup_before_exit();
+    tauri::process::restart(&app_handle.env());
+}
+
+/// Last per-chat counts emitted to the frontend, so `update_unread_counter`
+/// can emit only the chats whose count actually changed (R14's single
+/// authority, without re-sending every chat on every recompute).
+static LAST_UNREAD_COUNTS: std::sync::LazyLock<Mutex<std::collections::HashMap<String, u32>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Guards against scheduling more than one pending debounced recompute at
+/// once (KTD9): a burst of MLS messages spawns a single delayed task, not
+/// one per message.
+static UNREAD_RECOMPUTE_PENDING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Debounce window for the MLS-arrival recompute path. The DM arrival path
+/// and explicit actions (mark-as-read, a level change) call
+/// `update_unread_counter` directly instead, so they are never delayed by
+/// this window (R17's "moves badges in the same interaction").
+const UNREAD_RECOMPUTE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Returns the entries in `current` that differ from `last` (added, or a
+/// changed value) plus a zero entry for every id in `last` no longer in
+/// `current`. Pure and STATE-independent so the "only changed chats" and
+/// "removed chats zero out" contracts are unit-testable without a database
+/// or app handle.
+fn diff_unread_counts(
+    last: &std::collections::HashMap<String, u32>,
+    current: &std::collections::HashMap<String, u32>,
+) -> std::collections::HashMap<String, u32> {
+    let mut changed: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for (chat_id, count) in current {
+        if last.get(chat_id) != Some(count) {
+            changed.insert(chat_id.clone(), *count);
+        }
+    }
+    for chat_id in last.keys() {
+        if !current.contains_key(chat_id) {
+            changed.insert(chat_id.clone(), 0);
+        }
+    }
+    changed
+}
+
+/// Immediate (non-debounced) recompute: updates the OS dock badge with the
+/// total and emits `unread_counts_changed` with only the per-chat entries
+/// whose count changed since the last emission. Every explicit caller
+/// (mark-as-read, a notification-level change) wants this path; the MLS
+/// arrival handler instead goes through `schedule_debounced_unread_recompute`.
 #[tauri::command]
 async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
     // Get the count of unread messages from the state
-    let unread_count = {
+    let (unread_count, counts_by_chat) = {
         let state = STATE.lock().await;
-        state.count_unread_messages()
+        let counts_by_chat = state.unread_counts_by_chat();
+        let unread_count: u32 = counts_by_chat.values().sum();
+        (unread_count, counts_by_chat)
     };
-    
+
+    // Emit only the chats whose count changed (added, removed, or a
+    // different value) since the last emission.
+    {
+        let mut last = LAST_UNREAD_COUNTS.lock().await;
+        let changed = diff_unread_counts(&last, &counts_by_chat);
+        if !changed.is_empty() {
+            let _ = handle.emit("unread_counts_changed", &changed);
+        }
+        *last = counts_by_chat;
+    }
+
     // Get the main window
     if let Some(window) = handle.get_webview_window("main") {
         if unread_count > 0 {
@@ -4751,7 +6859,7 @@ async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
                 let icon = tauri::include_image!("./icons/icon_badge_notification.png");
                 let _ = window.set_overlay_icon(Some(icon));
             }
-            
+
             #[cfg(not(any(target_os = "windows", target_os = "ios", target_os = "android")))]
             {
                 // On macOS, Linux, etc. use the badge if available
@@ -4764,7 +6872,7 @@ async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
                 // Remove the overlay icon on Windows
                 let _ = window.set_overlay_icon(None);
             }
-            
+
             #[cfg(not(any(target_os = "windows", target_os = "ios", target_os = "android")))]
             {
                 // Clear the badge on other platforms
@@ -4772,53 +6880,151 @@ async fn update_unread_counter<R: Runtime>(handle: AppHandle<R>) -> u32 {
             }
         }
     }
-    
+
     unread_count
+}
+
+/// Debounced recompute for the MLS arrival path (R18, KTD9): the walk
+/// contends with the rumor loop for the same global lock, and squad
+/// traffic is far heavier than DM traffic, so a recompute per message would
+/// put contention on a hot path. A burst inside the window collapses into
+/// one recompute at its end.
+fn schedule_debounced_unread_recompute<R: Runtime>(handle: AppHandle<R>) {
+    if UNREAD_RECOMPUTE_PENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return; // already scheduled
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(UNREAD_RECOMPUTE_DEBOUNCE).await;
+        UNREAD_RECOMPUTE_PENDING.store(false, std::sync::atomic::Ordering::SeqCst);
+        let _ = update_unread_counter(handle).await;
+    });
+}
+
+/// Full per-chat unread map, for the frontend's single hydrate call (R14) —
+/// no `startsWith('npub1')` filter, no client-side counting.
+#[tauri::command]
+async fn get_unread_counts() -> std::collections::HashMap<String, u32> {
+    let state = STATE.lock().await;
+    state.unread_counts_by_chat()
+}
+
+#[cfg(test)]
+mod unread_diff_and_debounce_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn map(pairs: &[(&str, u32)]) -> HashMap<String, u32> {
+        pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+    }
+
+    #[test]
+    fn diff_reports_only_added_and_changed_entries() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1), ("b", 3), ("c", 5)]);
+        let changed = diff_unread_counts(&last, &current);
+        assert_eq!(changed, map(&[("b", 3), ("c", 5)]));
+    }
+
+    #[test]
+    fn diff_zeroes_out_entries_removed_from_current() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1)]);
+        let changed = diff_unread_counts(&last, &current);
+        assert_eq!(changed, map(&[("b", 0)]));
+    }
+
+    #[test]
+    fn diff_is_empty_when_nothing_changed() {
+        let last = map(&[("a", 1), ("b", 2)]);
+        let current = map(&[("a", 1), ("b", 2)]);
+        assert!(diff_unread_counts(&last, &current).is_empty());
+    }
+
+    fn test_handle() -> AppHandle<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+            .handle()
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn burst_of_calls_collapses_into_one_pending_recompute() {
+        UNREAD_RECOMPUTE_PENDING.store(false, std::sync::atomic::Ordering::SeqCst);
+        let handle = test_handle();
+
+        schedule_debounced_unread_recompute(handle.clone());
+        assert!(UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+
+        // A second call while one is already pending must not schedule another.
+        schedule_debounced_unread_recompute(handle.clone());
+        assert!(UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+
+        // Once the debounce window elapses and the recompute runs, the guard clears.
+        tokio::time::sleep(UNREAD_RECOMPUTE_DEBOUNCE + std::time::Duration::from_millis(300)).await;
+        assert!(!UNREAD_RECOMPUTE_PENDING.load(std::sync::atomic::Ordering::SeqCst));
+    }
 }
 
 #[cfg(all(not(target_os = "android"), feature = "whisper"))]
 #[tauri::command]
-async fn transcribe<R: Runtime>(handle: AppHandle<R>, file_path: String, model_name: String, translate: bool) -> Result<whisper::TranscriptionResult, String> {
+async fn transcribe<R: Runtime>(
+    handle: AppHandle<R>,
+    file_path: String,
+    model_name: String,
+    translate: bool,
+) -> Result<whisper::TranscriptionResult, String> {
     // Convert the file path to a Path
     let path = std::path::Path::new(&file_path);
-    
+
     // Check if the file exists
     if !path.exists() {
         return Err(format!("File does not exist: {}", file_path));
     }
-    
+
     // Decode and resample to 16kHz for Whisper
     match audio::decode_and_resample(path, 16000) {
         Ok(audio_data) => {
             // Pass the resampled audio to the whisper transcribe function
             match whisper::transcribe(&handle, &model_name, translate, audio_data).await {
                 Ok(result) => Ok(result),
-                Err(e) => Err(format!("Transcription error: {}", e.to_string()))
+                Err(e) => Err(format!("Transcription error: {}", e.to_string())),
             }
-        },
-        Err(e) => Err(format!("Audio processing error: {}", e.to_string()))
+        }
+        Err(e) => Err(format!("Audio processing error: {}", e.to_string())),
     }
 }
 
 #[cfg(any(target_os = "android", not(feature = "whisper")))]
 #[tauri::command]
-async fn transcribe<R: Runtime>(_handle: AppHandle<R>, _file_path: String, _model_name: String, _translate: bool) -> Result<String, String> {
+async fn transcribe<R: Runtime>(
+    _handle: AppHandle<R>,
+    _file_path: String,
+    _model_name: String,
+    _translate: bool,
+) -> Result<String, String> {
     Err("Whisper transcription is not supported on this platform".to_string())
 }
 
 #[cfg(all(not(target_os = "android"), feature = "whisper"))]
 #[tauri::command]
-async fn download_whisper_model<R: Runtime>(handle: AppHandle<R>, model_name: String) -> Result<String, String> {
+async fn download_whisper_model<R: Runtime>(
+    handle: AppHandle<R>,
+    model_name: String,
+) -> Result<String, String> {
     // Download (or simply return the cached path of) a Whisper Model
     match whisper::download_whisper_model(&handle, &model_name).await {
         Ok(path) => Ok(path),
-        Err(e) => Err(format!("Model Download error: {}", e.to_string()))
+        Err(e) => Err(format!("Model Download error: {}", e.to_string())),
     }
 }
 
 #[cfg(any(target_os = "android", not(feature = "whisper")))]
 #[tauri::command]
-async fn download_whisper_model<R: Runtime>(_handle: AppHandle<R>, _model_name: String) -> Result<String, String> {
+async fn download_whisper_model<R: Runtime>(
+    _handle: AppHandle<R>,
+    _model_name: String,
+) -> Result<String, String> {
     Err("Whisper model download is not supported on this platform".to_string())
 }
 
@@ -4837,64 +7043,76 @@ fn generate_invite_code() -> String {
 async fn get_or_create_invite_code() -> Result<String, String> {
     session::heartbeat();
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-    
+
     // Check if we already have a stored invite code
-    if let Ok(Some(existing_code)) = db::get_sql_setting(handle.clone(), "invite_code".to_string()) {
+    if let Ok(Some(existing_code)) = db::get_sql_setting(handle.clone(), "invite_code".to_string())
+    {
         return Ok(existing_code);
     }
-    
+
     // No local code found, check the network
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
-    
+
     // Get our public key
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    
+
     // Check if we've already published an invite on the network
     let filter = Filter::new()
         .author(my_public_key)
         .kind(Kind::ApplicationSpecificData)
         .custom_tag(SingleLetterTag::lowercase(Alphabet::D), "vector")
         .limit(100);
-    
+
     let mut events = client
         .stream_events(filter, std::time::Duration::from_secs(10))
         .await
         .map_err(|e| e.to_string())?;
-    
+
     // Look for existing invite events
     while let Some(event) = events.next().await {
         if event.content == "vector_invite" {
             // Extract the r tag (invite code)
-            if let Some(r_tag) = event.tags.find(TagKind::Custom(Cow::Borrowed("r"))) {
+            if let Some(r_tag) = nostr_tags::find_custom(&event.tags, "r") {
                 if let Some(code) = r_tag.content() {
                     // Store it locally
-                    db::set_sql_setting(handle.clone(), "invite_code".to_string(), code.to_string())
-                        .map_err(|e| e.to_string())?;
+                    db::set_sql_setting(
+                        handle.clone(),
+                        "invite_code".to_string(),
+                        code.to_string(),
+                    )
+                    .map_err(|e| e.to_string())?;
                     return Ok(code.to_string());
                 }
             }
         }
     }
-    
+
     // No existing invite found anywhere, generate a new one
     let new_code = generate_invite_code();
-    
+
     // Create and publish the invite event
     let event_builder = EventBuilder::new(Kind::ApplicationSpecificData, "vector_invite")
-        .tag(Tag::custom(TagKind::d(), vec!["vector"]))
-        .tag(Tag::custom(TagKind::Custom("r".into()), vec![new_code.as_str()]));
-    
+        .tag(nostr_tags::d_tag(vec!["vector"]))
+        .tag(nostr_tags::custom_tag("r", vec![new_code.as_str()]));
+
     // Build the event
-    let event = client.sign_event_builder(event_builder).await.map_err(|e| e.to_string())?;
+    let event = client
+        .sign_event_builder(event_builder)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Send only to trusted relays
-    client.send_event_to(TRUSTED_RELAYS.iter().copied(), &event).await.map_err(|e| e.to_string())?;
-    
+    let send_output = client
+        .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+        .await
+        .map_err(|e| e.to_string())?;
+    record_send_outcome(&event, &send_output);
+
     // Store locally
     db::set_sql_setting(handle.clone(), "invite_code".to_string(), new_code.clone())
         .map_err(|e| e.to_string())?;
-    
+
     Ok(new_code)
 }
 
@@ -4903,26 +7121,29 @@ async fn get_or_create_invite_code() -> Result<String, String> {
 async fn accept_invite_code(invite_code: String) -> Result<String, String> {
     session::heartbeat();
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
-    
+
     // Validate invite code format (8 alphanumeric characters)
     if invite_code.len() != 8 || !invite_code.chars().all(|c| c.is_alphanumeric()) {
         return Err("Invalid invite code format".to_string());
     }
-    
+
     // Search for the invite event
     let filter = Filter::new()
         .kind(Kind::ApplicationSpecificData)
         .custom_tag(SingleLetterTag::lowercase(Alphabet::D), "vector")
         .custom_tag(SingleLetterTag::lowercase(Alphabet::R), &invite_code)
         .limit(1);
-    
-    
+
     // Find the invite event
     let mut events = client
-        .stream_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+        .stream_events_from(
+            TRUSTED_RELAYS.to_vec(),
+            filter,
+            std::time::Duration::from_secs(10),
+        )
         .await
         .map_err(|e| e.to_string())?;
-    
+
     let invite_event = {
         let mut found: Option<nostr_sdk::Event> = None;
         while let Some(event) = events.next().await {
@@ -4933,29 +7154,29 @@ async fn accept_invite_code(invite_code: String) -> Result<String, String> {
         }
         found.ok_or("Invite code not found")?
     };
-    
+
     // Get the inviter's public key
     let inviter_pubkey = invite_event.pubkey;
     let inviter_npub = inviter_pubkey.to_bech32().map_err(|e| e.to_string())?;
-    
+
     // Get our public key
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
-    
+
     // Check if we're trying to accept our own invite
     if inviter_pubkey == my_public_key {
         return Err("Cannot accept your own invite code".to_string());
     }
-    
+
     // Store the pending invite acceptance (will be broadcast after encryption setup)
     let pending_invite = PendingInviteAcceptance {
         invite_code: invite_code.clone(),
         inviter_pubkey: inviter_pubkey.clone(),
     };
-    
+
     // Try to set the pending invite, ignore if already set
     let _ = PENDING_INVITE.set(pending_invite);
-    
+
     // Return the inviter's npub so the frontend can initiate a chat
     Ok(inviter_npub)
 }
@@ -4964,18 +7185,20 @@ async fn accept_invite_code(invite_code: String) -> Result<String, String> {
 #[tauri::command]
 async fn get_storage_info() -> Result<serde_json::Value, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-    
+
     // Determine the base directory (Downloads on most platforms, Documents on iOS)
     let base_directory = if cfg!(target_os = "ios") {
         tauri::path::BaseDirectory::Document
     } else {
         tauri::path::BaseDirectory::Download
     };
-    
-    // Resolve the vector directory path
-    let vector_dir = handle.path().resolve("vector", base_directory)
-        .map_err(|e| format!("Failed to resolve vector directory: {}", e))?;
-    
+
+    // Resolve the pacto directory path
+    let vector_dir = handle
+        .path()
+        .resolve("pacto", base_directory)
+        .map_err(|e| format!("Failed to resolve pacto directory: {}", e))?;
+
     // Check if directory exists
     if !vector_dir.exists() {
         return Ok(serde_json::json!({
@@ -4985,14 +7208,14 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
             "type_distribution": {}
         }));
     }
-    
+
     // Calculate total size and file count
     let mut total_bytes = 0;
     let mut file_count = 0;
-    
+
     // Track file type distribution by size
     let mut type_distribution = std::collections::HashMap::new();
-    
+
     // Walk through all files in the directory
     if let Ok(entries) = std::fs::read_dir(&vector_dir) {
         for entry in entries.flatten() {
@@ -5001,7 +7224,7 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
                     let file_size = metadata.len();
                     total_bytes += file_size;
                     file_count += 1;
-                    
+
                     // Get file extension
                     if let Some(extension) = entry.file_name().to_string_lossy().split('.').last() {
                         let extension = extension.to_lowercase();
@@ -5026,7 +7249,9 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
 
         if ai_models_size > 0 {
             // Add AI models to type distribution
-            *type_distribution.entry("ai_models".to_string()).or_insert(0) += ai_models_size;
+            *type_distribution
+                .entry("ai_models".to_string())
+                .or_insert(0) += ai_models_size;
             total_bytes += ai_models_size;
         }
     }
@@ -5054,25 +7279,27 @@ async fn get_storage_info() -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn clear_storage() -> Result<serde_json::Value, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
-    
+
     // First, get the total storage size before clearing
-    let storage_info_before = get_storage_info().await.map_err(|e| format!("Failed to get storage info before clearing: {}", e))?;
+    let storage_info_before = get_storage_info()
+        .await
+        .map_err(|e| format!("Failed to get storage info before clearing: {}", e))?;
     let total_bytes_before = storage_info_before["total_bytes"].as_u64().unwrap_or(0);
-    
+
     // Lock the state to access all chats and messages
     let mut state = STATE.lock().await;
-    
+
     // Track which chats have been updated to avoid duplicate saves
     let mut updated_chats = std::collections::HashSet::new();
-    
+
     // Process each chat to clear attachment metadata in messages
     for chat in &mut state.chats {
         let mut messages_to_update = Vec::new();
-        
+
         // Iterate through all messages in this chat
         for message in &mut chat.messages {
             let mut attachment_updated = false;
-            
+
             // Iterate through all attachments and reset their properties
             for attachment in &mut message.attachments {
                 if attachment.downloaded || !attachment.path.is_empty() {
@@ -5087,36 +7314,52 @@ async fn clear_storage() -> Result<serde_json::Value, String> {
                     attachment_updated = true;
                 }
             }
-            
+
             // If any attachment was updated, add to messages to update
             if attachment_updated {
                 messages_to_update.push(message.clone());
             }
         }
-        
+
         // If we have messages to update, save them to the database
         if !messages_to_update.is_empty() {
             // Save updated messages to database
-            db::save_chat_messages(handle.clone(), chat.id(), &messages_to_update).await
-                .map_err(|e| format!("Failed to save updated messages for chat {}: {}", chat.id(), e))?;
-            
+            db::save_chat_messages(handle.clone(), chat.id(), &messages_to_update)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to save updated messages for chat {}: {}",
+                        chat.id(),
+                        e
+                    )
+                })?;
+
             // Emit message_update events for each updated message
             for message in &messages_to_update {
-                handle.emit("message_update", serde_json::json!({
-                    "old_id": &message.id,
-                    "message": message,
-                    "chat_id": chat.id()
-                })).map_err(|e| format!("Failed to emit message_update for chat {}: {}", chat.id(), e))?;
+                handle
+                    .emit(
+                        "message_update",
+                        serde_json::json!({
+                            "old_id": &message.id,
+                            "message": message,
+                            "chat_id": chat.id()
+                        }),
+                    )
+                    .map_err(|e| {
+                        format!(
+                            "Failed to emit message_update for chat {}: {}",
+                            chat.id(),
+                            e
+                        )
+                    })?;
             }
-            
+
             updated_chats.insert(chat.id().to_string());
         }
     }
-    
+
     // Clear all disk caches (images, sounds, etc.) by nuking the cache directory
-    let cache_dir = handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?
-        .join("cache");
+    let cache_dir = crate::test_sandbox::test_data_dir(handle)?.join("cache");
     if cache_dir.exists() {
         let _ = std::fs::remove_dir_all(&cache_dir);
     }
@@ -5137,7 +7380,9 @@ async fn clear_storage() -> Result<serde_json::Value, String> {
     // Get storage info after clearing to calculate freed space
     // Need to drop the state lock first since get_storage_info needs it
     drop(state);
-    let storage_info_after = get_storage_info().await.map_err(|e| format!("Failed to get storage info after clearing: {}", e))?;
+    let storage_info_after = get_storage_info()
+        .await
+        .map_err(|e| format!("Failed to get storage info after clearing: {}", e))?;
     let total_bytes_after = storage_info_after["total_bytes"].as_u64().unwrap_or(0);
 
     // Calculate freed space
@@ -5155,10 +7400,10 @@ async fn clear_storage() -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn get_invited_users(npub: String) -> Result<u32, String> {
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
-    
+
     // Convert npub to PublicKey
     let inviter_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
-    
+
     // First, get the inviter's invite code from the trusted relays
     let filter = Filter::new()
         .author(inviter_pubkey)
@@ -5167,7 +7412,11 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
         .limit(100);
 
     let mut events = client
-        .stream_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+        .stream_events_from(
+            TRUSTED_RELAYS.to_vec(),
+            filter,
+            std::time::Duration::from_secs(10),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -5175,7 +7424,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
     let mut invite_code_opt = None;
     while let Some(event) = events.next().await {
         if event.content == "vector_invite" {
-            if let Some(tag) = event.tags.find(TagKind::Custom(Cow::Borrowed("r"))) {
+            if let Some(tag) = nostr_tags::find_custom(&event.tags, "r") {
                 if let Some(content) = tag.content() {
                     invite_code_opt = Some(content.to_string());
                     break;
@@ -5192,48 +7441,47 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
         .limit(1000); // Allow fetching many acceptances
 
     let mut acceptance_events = client
-        .stream_events_from(TRUSTED_RELAYS.to_vec(), acceptance_filter, std::time::Duration::from_secs(10))
+        .stream_events_from(
+            TRUSTED_RELAYS.to_vec(),
+            acceptance_filter,
+            std::time::Duration::from_secs(10),
+        )
         .await
         .map_err(|e| e.to_string())?;
-    
+
     // Filter for acceptance events that reference our inviter and collect unique acceptors
     let mut unique_acceptors = std::collections::HashSet::new();
-    
+
     while let Some(event) = acceptance_events.next().await {
         if event.content == "vector_invite_accepted" {
             // Check if this acceptance references our inviter
-            let references_inviter = event.tags
+            let references_inviter = event
+                .tags
                 .iter()
-                .any(|tag| {
-                    if let Some(TagStandard::PublicKey { public_key, .. }) = tag.as_standardized() {
-                        *public_key == inviter_pubkey
-                    } else {
-                        false
-                    }
-                });
-            
+                .any(|tag| nostr_tags::public_key_of(tag) == Some(inviter_pubkey));
+
             if references_inviter {
                 unique_acceptors.insert(event.pubkey);
             }
         }
     }
-    
+
     Ok(unique_acceptors.len() as u32)
 }
 
 // Guy Fawkes Day 2025 - V for Vector Badge (Event Ended)
 const FAWKES_DAY_START: u64 = 1762300800; // 2025-11-05 00:00:00 UTC
-const FAWKES_DAY_END: u64 = 1762387200;   // 2025-11-06 00:00:00 UTC
+const FAWKES_DAY_END: u64 = 1762387200; // 2025-11-06 00:00:00 UTC
 
 /// Check if a user has the Guy Fawkes Day badge
 /// Verifies they have a valid badge claim event from the November 5, 2025 event
 #[tauri::command]
 async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
     let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
-    
+
     // Convert npub to PublicKey
     let user_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
-    
+
     // Fetch the user's badge claim event
     let filter = Filter::new()
         .author(user_pubkey)
@@ -5242,25 +7490,28 @@ async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
         .limit(10);
 
     let mut events = client
-        .stream_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+        .stream_events_from(
+            TRUSTED_RELAYS.to_vec(),
+            filter,
+            std::time::Duration::from_secs(10),
+        )
         .await
         .map_err(|e| e.to_string())?;
-    
+
     // Check if they have a valid badge claim from the event period
     while let Some(event) = events.next().await {
         if event.content == "fawkes_badge_claimed" {
-            let timestamp = event.created_at.as_u64();
+            let timestamp = event.created_at.as_secs();
             // Verify the timestamp is within the valid event window
             if timestamp >= FAWKES_DAY_START && timestamp < FAWKES_DAY_END {
                 return Ok(true);
             }
         }
     }
-    
+
     Ok(false)
 }
 // MLS Tauri Commands
-
 
 /// Regenerate this device's MLS KeyPackage. If `cache` is true, attempt to reuse an existing
 /// cached KeyPackage if it exists on the relay; otherwise always generate a fresh one.
@@ -5279,7 +7530,8 @@ async fn load_mls_device_id() -> Result<Option<String>, String> {
 #[tauri::command]
 async fn load_mls_keypackages() -> Result<Vec<serde_json::Value>, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
-    db::load_mls_keypackages(&handle).await
+    db::load_mls_keypackages(&handle)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -5310,6 +7562,13 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     let my_pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let owner_pubkey_b32 = my_pubkey.to_bech32().map_err(|e| e.to_string())?;
 
+    // Opening the service runs legacy-store detection before cache lookup. A reset
+    // invalidates the private init key behind the previously published KeyPackage,
+    // so cached relay state must not short-circuit fresh publication.
+    drop(MlsService::new_persistent_for_keypackage_refresh(&handle).map_err(|e| e.to_string())?);
+    let force_refresh = mls_store_reset_state::keypackage_refresh_required(&handle)?;
+    let cache = cache && !force_refresh;
+
     // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
     for relay in TRUSTED_RELAYS.iter() {
         if let Ok(relay_url) = nostr_sdk::RelayUrl::parse(relay) {
@@ -5318,7 +7577,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
                 println!("[MLS][KeyPackage] Adding TRUSTED_RELAY to pool: {}", relay);
                 client.add_relay(*relay).await.map_err(|e| e.to_string())?;
             }
-            
+
             // Connect with timeout if not already connected
             match client.relay(relay_url.clone()).await {
                 Ok(relay_instance) => {
@@ -5331,7 +7590,10 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
                 }
                 Err(_) => {
                     // Relay not in pool, add and connect
-                    println!("[MLS][KeyPackage] Adding and connecting to TRUSTED_RELAY: {}", relay);
+                    println!(
+                        "[MLS][KeyPackage] Adding and connecting to TRUSTED_RELAY: {}",
+                        relay
+                    );
                     let _ = client.add_relay(*relay).await;
                     let _ = client.connect_relay(*relay).await;
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -5346,17 +7608,29 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let cached_kp_ref: Option<String> = {
             let index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
 
-            index.iter().find(|entry| {
-                entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner_pubkey_b32.as_str())
-                    && entry.get("device_id").and_then(|v| v.as_str()) == Some(device_id.as_str())
-            })
-            .and_then(|existing| existing.get("keypackage_ref").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            index
+                .iter()
+                .find(|entry| {
+                    entry.get("owner_pubkey").and_then(|v| v.as_str())
+                        == Some(owner_pubkey_b32.as_str())
+                        && entry.get("device_id").and_then(|v| v.as_str())
+                            == Some(device_id.as_str())
+                })
+                .and_then(|existing| {
+                    existing
+                        .get("keypackage_ref")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
         };
 
         // If we have a cached reference, verify it exists on the relay
         if let Some(ref_id) = cached_kp_ref {
-            println!("[MLS][KeyPackage] Found cached reference {}, verifying on relay...", ref_id);
-            
+            println!(
+                "[MLS][KeyPackage] Found cached reference {}, verifying on relay...",
+                ref_id
+            );
+
             // Try to fetch the event from the relay to verify it exists
             if let Ok(event_id) = nostr_sdk::EventId::from_hex(&ref_id) {
                 let filter = Filter::new()
@@ -5364,11 +7638,14 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
                     .kind(Kind::MlsKeyPackage)
                     .limit(1);
 
-                match client.stream_events_from(
-                    TRUSTED_RELAYS.to_vec(),
-                    filter,
-                    std::time::Duration::from_secs(5)
-                ).await {
+                match client
+                    .stream_events_from(
+                        TRUSTED_RELAYS.to_vec(),
+                        filter,
+                        std::time::Duration::from_secs(5),
+                    )
+                    .await
+                {
                     Ok(mut events) => {
                         // Check if we got any events - if so, the cached KeyPackage exists on relay
                         if events.next().await.is_some() {
@@ -5387,8 +7664,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     }
 
     // Create device KeyPackage using persistent MLS engine inside a no-await scope
-    let (kp_encoded, kp_tags) = {
-        let mls_service = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
+    let kp_data = {
+        let mls_service = MlsService::new_persistent_for_keypackage_refresh(&handle)
+            .map_err(|e| e.to_string())?;
         let engine = mls_service.engine().map_err(|e| e.to_string())?;
         let relay_urls: Vec<nostr_sdk::RelayUrl> = TRUSTED_RELAYS
             .iter()
@@ -5401,20 +7679,30 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 
     // Build and sign event with nostr client
     let kp_event = client
-        .sign_event_builder(EventBuilder::new(Kind::MlsKeyPackage, kp_encoded).tags(kp_tags))
+        // `Kind::MlsKeyPackage` is 443, so the tag set without the `d` tag is the right one.
+        .sign_event_builder(
+            EventBuilder::new(Kind::MlsKeyPackage, kp_data.content).tags(kp_data.tags_443),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
     // Publish to TRUSTED_RELAYS
-    client
+    let send_output = client
         .send_event_to(TRUSTED_RELAYS.iter().copied(), &kp_event)
         .await
         .map_err(|e| e.to_string())?;
+    record_send_outcome(&kp_event, &send_output);
 
     // Upsert into mls_keypackage_index
     {
         let mut index = db::load_mls_keypackages(&handle).await.unwrap_or_default();
-        let now = Timestamp::now().as_u64();
+        index.retain(|entry| {
+            entry.get("owner_pubkey").and_then(|value| value.as_str())
+                != Some(owner_pubkey_b32.as_str())
+                || entry.get("device_id").and_then(|value| value.as_str())
+                    != Some(device_id.as_str())
+        });
+        let now = Timestamp::now().as_secs();
         index.push(serde_json::json!({
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
@@ -5425,12 +7713,76 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let _ = db::save_mls_keypackages(handle.clone(), &index).await;
     }
 
+    if force_refresh {
+        mls_store_reset_state::mark_keypackage_refreshed(&handle)?;
+    }
+    if let Err(e) = replay_reset_pending_welcomes(&handle).await {
+        // Keep the durable wrapper-id queue for the next login when a relay or
+        // the MLS engine is temporarily unavailable.
+        eprintln!(
+            "[MLS] Pending welcome replay after store reset deferred: {}",
+            e
+        );
+    }
+
     Ok(serde_json::json!({
         "device_id": device_id,
         "owner_pubkey": owner_pubkey_b32,
         "keypackage_ref": kp_event.id.to_hex(),
         "cached": false
     }))
+}
+
+/// Re-fetch pending pre-reset welcomes by id. Forward sync is time-windowed,
+/// so clearing `discarded_giftwraps` alone cannot recover an old invitation.
+async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Result<(), String> {
+    let ids = mls_store_reset_state::pending_wrapper_ids(handle)?;
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let client = get_nostr_client().map_err(|_| "Nostr client not initialized")?;
+    let mut remaining = Vec::new();
+    for wrapper_id in ids {
+        let Ok(event_id) = EventId::from_hex(&wrapper_id) else {
+            eprintln!(
+                "[MLS] Dropping malformed reset welcome wrapper id: {}",
+                wrapper_id
+            );
+            continue;
+        };
+        let filter = Filter::new().id(event_id).kind(Kind::GiftWrap).limit(1);
+        let event = match client
+            .stream_events_from(
+                TRUSTED_RELAYS.to_vec(),
+                filter,
+                std::time::Duration::from_secs(10),
+            )
+            .await
+        {
+            Ok(mut events) => events.next().await,
+            Err(e) => {
+                eprintln!(
+                    "[MLS] Exact welcome re-fetch failed for {}: {}",
+                    wrapper_id, e
+                );
+                None
+            }
+        };
+
+        let Some(event) = event else {
+            remaining.push(wrapper_id);
+            continue;
+        };
+        let _ = handle_event_guarded(event, true).await;
+        if !db::wrapper_event_exists(handle, &wrapper_id)
+            .await
+            .unwrap_or(false)
+        {
+            remaining.push(wrapper_id);
+        }
+    }
+    mls_store_reset_state::retain_pending_wrapper_ids(handle, &remaining)
 }
 
 /// Create a new MLS group with initial member devices
@@ -5446,7 +7798,7 @@ async fn create_mls_group(
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
-        
+
         // Use tokio runtime to run async code from blocking context
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
@@ -5461,7 +7813,8 @@ async fn create_mls_group(
 }
 
 /// Create an MLS group from a group name + member npubs (multi-device aware)
-/// - Validates non-empty group name and at least one member
+/// - Validates non-empty group name (channel name; squad display name is a separate
+///   field validated in `squad_catalog::upsert_squad`) and at least one member
 /// - For each member npub, refreshes their latest device keypackage(s)
 /// - If any member fails refresh or has zero keypackages, aborts with a clear error
 /// - Creates the MLS group and persists metadata so it's immediately discoverable
@@ -5494,6 +7847,12 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     if name.is_empty() {
         return Err("Group name must not be empty".to_string());
     }
+    if name.len() > crate::app_config::CHANNEL_NAME_MAX_LENGTH {
+        return Err(format!(
+            "Channel name must be at most {} characters",
+            crate::app_config::CHANNEL_NAME_MAX_LENGTH
+        ));
+    }
     if member_ids.is_empty() {
         return Err("Select at least one member to create a group".to_string());
     }
@@ -5505,9 +7864,9 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     for npub in member_ids {
         // Attempt to refresh and fetch device keypackages for this contact
         // If this fails for any reason, abort group creation with actionable error text
-        let devices = refresh_keypackages_for_contact(npub.clone()).await.map_err(|e| {
-            format!("Failed to refresh device keypackage for {}: {}", npub, e)
-        })?;
+        let devices = refresh_keypackages_for_contact(npub.clone())
+            .await
+            .map_err(|e| format!("Failed to refresh device keypackage for {}: {}", npub, e))?;
 
         // Choose a device. Currently: first entry. Future: prefer newest by fetched_at if available.
         let maybe_first = devices.into_iter().next();
@@ -5552,7 +7911,10 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     if result.is_ok() {
         tokio::spawn(async {
             if let Err(err) = regenerate_device_keypackage(false).await {
-                eprintln!("[MLS] Failed to regenerate device KeyPackage after group creation: {}", err);
+                eprintln!(
+                    "[MLS] Failed to regenerate device KeyPackage after group creation: {}",
+                    err
+                );
             }
         });
     }
@@ -5587,16 +7949,18 @@ async fn add_mls_member_device(
 /// Invite a new member to an existing MLS group
 /// Similar to create_group_chat, this refreshes the member's keypackages and adds them to the group
 #[tauri::command]
-async fn invite_member_to_group(
-    group_id: String,
-    member_npub: String,
-) -> Result<(), String> {
+async fn invite_member_to_group(group_id: String, member_npub: String) -> Result<(), String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
     // Refresh keypackages for the new member
-    let devices = refresh_keypackages_for_contact(member_npub.clone()).await.map_err(|e| {
-        format!("Failed to refresh device keypackage for {}: {}", member_npub, e)
-    })?;
+    let devices = refresh_keypackages_for_contact(member_npub.clone())
+        .await
+        .map_err(|e| {
+            format!(
+                "Failed to refresh device keypackage for {}: {}",
+                member_npub, e
+            )
+        })?;
 
     // Choose the first device (same policy as group creation)
     let (device_id, _kp_ref) = devices
@@ -5618,10 +7982,10 @@ async fn invite_member_to_group(
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;
-    
+
     // Sync participants array after adding member
     sync_mls_group_participants(group_id).await?;
-    
+
     Ok(())
 }
 
@@ -5648,10 +8012,10 @@ async fn remove_mls_member_device(
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;
-    
+
     // Sync participants array after removing member
     sync_mls_group_participants(group_id).await?;
-    
+
     Ok(())
 }
 
@@ -5659,9 +8023,7 @@ async fn remove_mls_member_device(
 /// If group_id is provided, sync only that group
 /// If None, sync all groups (placeholder for now)
 #[tauri::command]
-async fn sync_mls_groups_now(
-    group_id: Option<String>,
-) -> Result<(u32, u32), String> {
+async fn sync_mls_groups_now(group_id: Option<String>) -> Result<(u32, u32), String> {
     session::heartbeat();
     // Run non-Send MLS engine work on blocking thread; drive async via current runtime
     tokio::task::spawn_blocking(move || {
@@ -5679,7 +8041,8 @@ async fn sync_mls_groups_now(
                 // Multi-group sync: load MLS groups from SQL and sync each
                 let group_ids: Vec<String> = match db::load_mls_groups(&handle).await {
                     Ok(groups) => {
-                        groups.into_iter()
+                        groups
+                            .into_iter()
                             .filter(|g| !g.evicted) // Skip evicted groups
                             .map(|g| g.group_id)
                             .collect()
@@ -5703,7 +8066,7 @@ async fn sync_mls_groups_now(
                             eprintln!("[MLS] sync_group_since_cursor failed for {}: {}", gid, e);
                         }
                     }
-                    
+
                     // Sync participants array to ensure it matches actual group members
                     if let Err(e) = sync_mls_group_participants(gid.clone()).await {
                         eprintln!("[MLS] Failed to sync participants for group {}: {}", gid, e);
@@ -5717,7 +8080,6 @@ async fn sync_mls_groups_now(
     .await
     .map_err(|e| format!("Task join error: {}", e))?
 }
-
 
 /// Simplified representation of a pending MLS Welcome for UI
 #[derive(serde::Serialize)]
@@ -5799,7 +8161,11 @@ fn parse_channel_in_squad_dm(content: &str) -> Option<(String, String, String)> 
     let announcements = obj.get("announcementsGroupId").and_then(|s| s.as_str())?;
     let channel = obj.get("channelGroupId").and_then(|s| s.as_str())?;
     let name = obj.get("channelName").and_then(|s| s.as_str())?;
-    Some((announcements.to_string(), channel.to_string(), name.to_string()))
+    Some((
+        announcements.to_string(),
+        channel.to_string(),
+        name.to_string(),
+    ))
 }
 
 /// Get the welcome event id (hex) for a pending MLS welcome that matches the given channel group id.
@@ -5810,9 +8176,11 @@ fn get_pending_welcome_id_for_group_sync<R: Runtime>(
 ) -> Option<String> {
     let mls = MlsService::new_persistent(handle).ok()?;
     let engine = mls.engine().ok()?;
-    let pending = engine.get_pending_welcomes().ok()?;
+    let pending = engine.get_pending_welcomes(None).ok()?;
     let cid_lower = channel_group_id.to_lowercase();
-    let w = pending.into_iter().find(|w| hex::encode(&w.nostr_group_id).to_lowercase() == cid_lower)?;
+    let w = pending
+        .into_iter()
+        .find(|w| hex::encode(&w.nostr_group_id).to_lowercase() == cid_lower)?;
     Some(w.id.to_hex())
 }
 
@@ -5827,7 +8195,9 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             let engine = mls.engine().map_err(|e| e.to_string())?;
 
-            let pending = engine.get_pending_welcomes().map_err(|e| e.to_string())?;
+            let pending = engine
+                .get_pending_welcomes(None)
+                .map_err(|e| e.to_string())?;
 
             let mut out: Vec<SimpleWelcome> = Vec::with_capacity(pending.len());
             for w in pending {
@@ -5838,7 +8208,9 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
                     group_name: w.group_name.clone(),
                     group_description: Some(w.group_description.clone()),
                     group_image_url: None, // MDK uses group_image_hash/key/nonce instead of URL
-                    group_admin_pubkeys: w.group_admin_pubkeys.iter()
+                    group_admin_pubkeys: w
+                        .group_admin_pubkeys
+                        .iter()
                         .filter_map(|pk| pk.to_bech32().ok())
                         .collect(),
                     group_relays: w.group_relays.iter().map(|r| r.to_string()).collect(),
@@ -5852,18 +8224,24 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))??;
-    
+
     // Send notifications for new welcomes (outside blocking task)
     // Only notify for welcomes we haven't notified about before
-    {
-        let mut notified = NOTIFIED_WELCOMES.lock().await;
-        
-        for welcome in &welcomes {
-            // Skip if we've already notified about this welcome
-            if notified.contains(&welcome.wrapper_event_id) {
+    for welcome in &welcomes {
+        if let Some(handle) = TAURI_APP.get() {
+            // DB-backed dedup (R13): a `welcome`-kind entry already existing
+            // for this wrapper_event_id means already notified, and it holds
+            // across a restart because the row is in SQLite, not process memory.
+            let is_new = crate::catch_up::record_welcome_for_handle(
+                handle,
+                &welcome.nostr_group_id,
+                &welcome.wrapper_event_id,
+            )
+            .await;
+            if !is_new {
                 continue;
             }
-            
+
             // Get inviter's display name
             let inviter_name = {
                 let state = STATE.lock().await;
@@ -5879,15 +8257,31 @@ async fn list_pending_mls_welcomes() -> Result<Vec<SimpleWelcome>, String> {
                     "Someone".to_string()
                 }
             };
-            
-            let notification = NotificationData::group_invite(welcome.group_name.clone(), inviter_name);
-            show_notification_generic(notification);
-            
-            // Mark this welcome as notified
-            notified.insert(welcome.wrapper_event_id.clone());
+
+            // No chat exists yet for a not-yet-accepted welcome, so there is
+            // no per-chat level to read; default (Mentions) always
+            // interrupts for an ActionPrompt, matching the prior
+            // unconditional-notify behavior. Keyed by wrapper_event_id
+            // rather than a chat id — each invite is distinct, so
+            // per-chat coalescing does not apply here.
+            let single = notification::SingleEventNotification {
+                title: format!("Group Invite: {}", welcome.group_name),
+                body: format!("Invited by {}", inviter_name),
+            };
+            notification::emit(
+                handle,
+                notification::EventKind::ActionPrompt,
+                NotificationLevel::default(),
+                false,
+                false,
+                &welcome.wrapper_event_id,
+                &welcome.group_name,
+                single,
+            )
+            .await;
         }
     }
-    
+
     Ok(welcomes)
 }
 
@@ -5923,7 +8317,13 @@ async fn do_accept_mls_welcome<R: Runtime>(
                 nostr_group_id.clone()
             }
         };
-        (nostr_group_id, engine_group_id, group_name, welcomer_hex, wrapper_event_id_hex)
+        (
+            nostr_group_id,
+            engine_group_id,
+            group_name,
+            welcomer_hex,
+            wrapper_event_id_hex,
+        )
     };
 
     let mut groups = mls.read_groups().await.map_err(|e| e.to_string())?;
@@ -5970,10 +8370,9 @@ async fn do_accept_mls_welcome<R: Runtime>(
         }
     }
 
-    {
-        let mut notified = NOTIFIED_WELCOMES.lock().await;
-        notified.remove(&wrapper_event_id_hex);
-    }
+    crate::catch_up::resolve_welcome_for_handle(&handle, &wrapper_event_id_hex).await;
+    mls_store_reset_state::mark_group_restored(&handle, &nostr_group_id)?;
+    mls_store_reset_state::emit_reset_state(&handle)?;
 
     if let Some(app) = TAURI_APP.get() {
         let _ = app.emit(
@@ -5986,7 +8385,10 @@ async fn do_accept_mls_welcome<R: Runtime>(
     }
 
     if let Err(e) = sync_mls_group_participants(nostr_group_id.clone()).await {
-        eprintln!("[MLS] Failed to sync participants after welcome accept: {}", e);
+        eprintln!(
+            "[MLS] Failed to sync participants after welcome accept: {}",
+            e
+        );
     }
 
     if let Err(e) = mls.sync_group_since_cursor(&nostr_group_id).await {
@@ -5995,7 +8397,10 @@ async fn do_accept_mls_welcome<R: Runtime>(
             nostr_group_id, e
         );
     } else if let Some(app) = TAURI_APP.get() {
-        let _ = app.emit("mls_group_initial_sync", serde_json::json!({ "group_id": nostr_group_id }));
+        let _ = app.emit(
+            "mls_group_initial_sync",
+            serde_json::json!({ "group_id": nostr_group_id }),
+        );
     }
 
     Ok(true)
@@ -6017,7 +8422,10 @@ async fn accept_mls_welcome(welcome_event_id_hex: String) -> Result<bool, String
     if accepted {
         tokio::spawn(async {
             if let Err(err) = regenerate_device_keypackage(false).await {
-                eprintln!("[MLS] Failed to regenerate device KeyPackage after accepting welcome: {}", err);
+                eprintln!(
+                    "[MLS] Failed to regenerate device KeyPackage after accepting welcome: {}",
+                    err
+                );
             }
         });
     }
@@ -6030,9 +8438,7 @@ async fn list_mls_groups() -> Result<Vec<String>, String> {
     let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
     match db::load_mls_groups(&handle).await {
         Ok(groups) => {
-            let ids = groups.into_iter()
-                .map(|g| g.group_id)
-                .collect();
+            let ids = groups.into_iter().map(|g| g.group_id).collect();
             Ok(ids)
         }
         Err(e) => Err(format!("Failed to load MLS groups: {}", e)),
@@ -6053,6 +8459,13 @@ async fn get_mls_group_metadata() -> Result<Vec<serde_json::Value>, String> {
         .collect())
 }
 
+#[tauri::command]
+fn get_mls_store_reset_state() -> Result<Vec<mls_store_reset_state::MlsStoreResetGroupState>, String>
+{
+    let handle = TAURI_APP.get().ok_or("App handle not initialized")?;
+    mls_store_reset_state::reset_group_states(handle)
+}
+
 #[derive(serde::Serialize, Clone)]
 struct GroupMembers {
     group_id: String,
@@ -6063,16 +8476,23 @@ struct GroupMembers {
 /// Sync the participants array for an MLS group chat with the actual members from the engine
 /// This ensures chat.participants is always up-to-date
 pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), String> {
+    if let Some(handle) = TAURI_APP.get() {
+        if mls_store_reset_state::is_group_state_lost(handle, &group_id)? {
+            // The fresh engine has no membership yet. Keep the app DB's former
+            // participant list until a welcome restores this group.
+            return Ok(());
+        }
+    }
     // Get actual members from the engine
     let group_members = get_mls_group_members(group_id.clone()).await?;
-    
+
     // Update the chat's participants array
     let mut state = STATE.lock().await;
     if let Some(chat) = state.get_chat_mut(&group_id) {
         let old_count = chat.participants.len();
         chat.participants = group_members.members.clone();
         let new_count = chat.participants.len();
-        
+
         if old_count != new_count {
             eprintln!(
                 "[MLS] Synced participants for group {}: {} -> {} members",
@@ -6094,18 +8514,27 @@ pub(crate) async fn sync_mls_group_participants(group_id: String) -> Result<(), 
 
         if let Some(handle) = TAURI_APP.get() {
             if let Err(e) = db::save_chat(handle.clone(), &chat_clone).await {
-                eprintln!("[MLS] Failed to save chat after syncing participants: {}", e);
+                eprintln!(
+                    "[MLS] Failed to save chat after syncing participants: {}",
+                    e
+                );
             }
         }
     } else {
         drop(state);
-        eprintln!("[MLS] Chat not found when syncing participants: {}", group_id);
+        eprintln!(
+            "[MLS] Chat not found when syncing participants: {}",
+            group_id
+        );
     }
-    
+
     Ok(())
 }
 
-/// Get members (npubs) of an MLS group from the persistent engine (on-demand)
+/// Get members (npubs) of an MLS group from the persistent engine (on-demand).
+/// When the group is in MLS store-reset "lost" state the fresh engine has no
+/// membership — fall back to the preserved chat.participants roster so UI paths
+/// like sole-admin recreate can still invite former members.
 #[tauri::command]
 async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String> {
     // Run engine operations on a blocking thread so the outer future is Send
@@ -6117,13 +8546,17 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
             // Map wire-id/engine-id using encrypted metadata
             let meta_groups = mls.read_groups().await.unwrap_or_default();
-            let (wire_id, engine_id) = if let Some(m) = meta_groups
-                .iter()
-                .find(|g| g.group_id == group_id || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id))
-            {
+            let (wire_id, engine_id) = if let Some(m) = meta_groups.iter().find(|g| {
+                g.group_id == group_id
+                    || (!g.engine_group_id.is_empty() && g.engine_group_id == group_id)
+            }) {
                 (
                     m.group_id.clone(),
-                    if !m.engine_group_id.is_empty() { m.engine_group_id.clone() } else { m.group_id.clone() },
+                    if !m.engine_group_id.is_empty() {
+                        m.engine_group_id.clone()
+                    } else {
+                        m.group_id.clone()
+                    },
                 )
             } else {
                 (group_id.clone(), group_id.clone())
@@ -6138,7 +8571,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
             if let Ok(gid_bytes) = hex::decode(&engine_id) {
                 // Decode engine id to GroupId
                 let gid = GroupId::from_slice(&gid_bytes);
-                
+
                 // Get members via engine API
                 if let Ok(pk_list) = engine.get_members(&gid) {
                     members = pk_list
@@ -6146,16 +8579,46 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
                         .filter_map(|pk| pk.to_bech32().ok())
                         .collect();
                 }
-                
+
                 // Get admins from the group
                 if let Ok(groups) = engine.get_groups() {
                     for g in groups {
                         let gid_hex = hex::encode(g.mls_group_id.as_slice());
                         if gid_hex == engine_id {
-                            admins = g.admin_pubkeys.iter()
+                            admins = g
+                                .admin_pubkeys
+                                .iter()
                                 .filter_map(|pk| pk.to_bech32().ok())
                                 .collect();
                             break;
+                        }
+                    }
+                }
+            }
+            drop(engine);
+
+            let lost = mls_store_reset_state::is_group_state_lost(&handle, &wire_id)
+                .or_else(|_| mls_store_reset_state::is_group_state_lost(&handle, &group_id))
+                .unwrap_or(false);
+            if lost && members.is_empty() {
+                let preserved = {
+                    let state = STATE.lock().await;
+                    state
+                        .get_chat(&wire_id)
+                        .or_else(|| state.get_chat(&group_id))
+                        .map(|chat| chat.participants.clone())
+                        .unwrap_or_default()
+                };
+                if !preserved.is_empty() {
+                    members = preserved;
+                }
+                if admins.is_empty() {
+                    if let Ok(states) = mls_store_reset_state::reset_group_states(&handle) {
+                        if let Some(s) = states
+                            .into_iter()
+                            .find(|s| s.group_id == wire_id || s.group_id == group_id)
+                        {
+                            admins = s.admin_npubs;
                         }
                     }
                 }
@@ -6183,9 +8646,7 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
         let rt = tokio::runtime::Handle::current();
         rt.block_on(async move {
             let mls = MlsService::new_persistent(&handle).map_err(|e| e.to_string())?;
-            mls.leave_group(&group_id)
-                .await
-                .map_err(|e| e.to_string())
+            mls.leave_group(&group_id).await.map_err(|e| e.to_string())
         })
     })
     .await
@@ -6195,9 +8656,7 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
 //// Refresh keypackages for a contact from TRUSTED_RELAY
 //// Fetches Kind::MlsKeyPackage from the contact, updates local index, and returns (device_id, keypackage_ref)
 #[tauri::command]
-async fn refresh_keypackages_for_contact(
-    npub: String,
-) -> Result<Vec<(String, String)>, String> {
+async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
     // Resolve contact pubkey
     let contact_pubkey = PublicKey::from_bech32(&npub).map_err(|e| e.to_string())?;
 
@@ -6213,7 +8672,11 @@ async fn refresh_keypackages_for_contact(
 
     // Fetch from TRUSTED_RELAYS with short timeout
     let mut events = client
-        .stream_events_from(TRUSTED_RELAYS.to_vec(), filter, std::time::Duration::from_secs(10))
+        .stream_events_from(
+            TRUSTED_RELAYS.to_vec(),
+            filter,
+            std::time::Duration::from_secs(10),
+        )
         .await
         .map_err(|e| e.to_string())?;
 
@@ -6233,7 +8696,7 @@ async fn refresh_keypackages_for_contact(
             "owner_pubkey": owner_pubkey_b32,
             "device_id": device_id,
             "keypackage_ref": keypackage_ref,
-            "fetched_at": Timestamp::now().as_u64(),
+            "fetched_at": Timestamp::now().as_secs(),
             "expires_at": 0u64
         }));
     }
@@ -6246,8 +8709,14 @@ async fn refresh_keypackages_for_contact(
 
     // Remove any existing entries for this owner+device_id to avoid duplicates
     for new_entry in &new_entries {
-        let owner = new_entry.get("owner_pubkey").and_then(|v| v.as_str()).unwrap_or_default();
-        let device = new_entry.get("device_id").and_then(|v| v.as_str()).unwrap_or_default();
+        let owner = new_entry
+            .get("owner_pubkey")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        let device = new_entry
+            .get("device_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         index.retain(|entry| {
             let same_owner = entry.get("owner_pubkey").and_then(|v| v.as_str()) == Some(owner);
             let same_device = entry.get("device_id").and_then(|v| v.as_str()) == Some(device);
@@ -6267,7 +8736,11 @@ async fn refresh_keypackages_for_contact(
 /// Remove orphaned MLS groups from metadata that are not in engine state
 
 #[tauri::command]
-async fn queue_profile_sync(npub: String, priority: String, force_refresh: bool) -> Result<(), String> {
+async fn queue_profile_sync(
+    npub: String,
+    priority: String,
+    force_refresh: bool,
+) -> Result<(), String> {
     let sync_priority = match priority.as_str() {
         "critical" => profile_sync::SyncPriority::Critical,
         "high" => profile_sync::SyncPriority::High,
@@ -6275,7 +8748,7 @@ async fn queue_profile_sync(npub: String, priority: String, force_refresh: bool)
         "low" => profile_sync::SyncPriority::Low,
         _ => return Err(format!("Invalid priority: {}", priority)),
     };
-    
+
     profile_sync::queue_profile_sync(npub, sync_priority, force_refresh).await;
     Ok(())
 }
@@ -6310,7 +8783,10 @@ pub fn run() {
     }
 
     std::panic::set_hook(Box::new(|info| {
-        let location = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_else(|| "unknown".to_string());
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown".to_string());
         let message = if let Some(s) = info.payload().downcast_ref::<&str>() {
             s.to_string()
         } else if let Some(s) = info.payload().downcast_ref::<String>() {
@@ -6345,13 +8821,14 @@ pub fn run() {
         builder = builder.plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
-                .build()
+                .build(),
         );
-        
+
         // Single-instance plugin: ensures deep links are passed to existing instance
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // Handle deep links from single-instance (Windows/Linux)
-            let urls: Vec<String> = args.iter()
+            let urls: Vec<String> = args
+                .iter()
                 .filter(|arg| arg.starts_with("vector://") || arg.contains("vectorapp.io"))
                 .cloned()
                 .collect();
@@ -6368,10 +8845,11 @@ pub fn run() {
     builder
         .setup(|app| {
             #[cfg(desktop)]
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_process::init())?;
-            
+
             let handle = app.app_handle().clone();
 
             // Setup a graceful shutdown for our Nostr subscriptions
@@ -6436,7 +8914,7 @@ pub fn run() {
                     deep_link::handle_deep_link(&handle_for_deep_link, urls);
                 });
             }
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -6465,6 +8943,11 @@ pub fn run() {
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
             dashboard_poll::send_dashboard_poll_vote,
+            catch_up::list_catch_up_entries,
+            catch_up::catch_up_count,
+            catch_up::resolve_catch_up_entry,
+            catch_up::resolve_all_catch_up_entries,
+            catch_up::record_action_needed_entry,
             commons::commons_publish_broadcast,
             commons::commons_list_cached_broadcasts,
             commons::commons_fetch_broadcasts,
@@ -6495,7 +8978,7 @@ pub fn run() {
             profile::update_status,
             profile::upload_avatar,
             chat::mark_as_read,
-            profile::toggle_muted,
+            chat::set_notification_level,
             profile::toggle_blocked,
             profile::set_nickname,
             profile::get_profile,
@@ -6539,10 +9022,13 @@ pub fn run() {
             generate_blurhash_preview,
             decode_blurhash,
             download_attachment,
+            save_attachment_as,
             login,
             login_with_recovery_phrase,
             #[cfg(debug_assertions)]
             debug_hot_reload_sync,
+            #[cfg(debug_assertions)]
+            test_login_fixture,
             notifs,
             get_relays,
             get_media_servers,
@@ -6564,6 +9050,7 @@ pub fn run() {
             start_recording,
             stop_recording,
             update_unread_counter,
+            get_unread_counts,
             logout,
             create_account,
             get_platform_features,
@@ -6627,6 +9114,7 @@ pub fn run() {
             evm::mutiny_ops::mutiny_captain_resign,
             evm::quartermaster_ops::get_quartermaster_status,
             evm::quartermaster_ops::get_quartermaster_pending,
+            evm::quartermaster_ops::list_quartermaster_pending,
             evm::quartermaster_ops::quartermaster_request_add_crew,
             evm::quartermaster_ops::quartermaster_cancel_add_crew,
             evm::quartermaster_ops::quartermaster_execute_add_crew,
@@ -6645,6 +9133,7 @@ pub fn run() {
             sync_mls_groups_now,
             list_mls_groups,
             get_mls_group_metadata,
+            get_mls_store_reset_state,
             // MLS welcome/invite commands
             list_pending_mls_welcomes,
             accept_mls_welcome,
@@ -6689,10 +9178,13 @@ pub fn run() {
             audio::select_custom_notification_sound,
             // Maintenance (periodic cleanup tasks)
             run_maintenance,
+            relaunch_app,
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
             whisper::delete_whisper_model,
             #[cfg(all(not(target_os = "android"), feature = "whisper"))]
-            whisper::list_models
+            whisper::list_models,
+            // Runtime configuration / feature flags
+            app_config::get_app_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

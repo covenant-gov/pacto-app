@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ideation: Nostr npub identity &amp; mentions in Pacto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1115;
+      --surface: #16191f;
+      --surface-2: #1e222b;
+      --text: #e7eaef;
+      --text-muted: #9aa3b2;
+      --accent: #7dd3fc;
+      --accent-2: #a5b4fc;
+      --warn: #fca5a5;
+      --success: #86efac;
+      --border: #2c313d;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .container {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 48px 24px 96px;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 40px;
+    }
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 32px;
+      line-height: 1.15;
+      font-weight: 700;
+      margin: 0 0 12px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 24px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .meta span { color: var(--text); }
+    section { margin-bottom: 48px; }
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin: 0 0 12px;
+      color: var(--text);
+    }
+    p, ul, ol { max-width: 70ch; }
+    p { margin: 0 0 14px; color: var(--text-muted); }
+    p strong { color: var(--text); }
+    ul, ol { padding-left: 20px; margin: 0 0 16px; color: var(--text-muted); }
+    li { margin-bottom: 6px; }
+    code {
+      font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+      font-size: 0.92em;
+      background: var(--surface-2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .jump-list a {
+      display: inline-block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: var(--text);
+      transition: border-color 0.15s;
+    }
+    .jump-list a:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+
+    .idea-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+      scroll-margin-top: 20px;
+    }
+    .idea-card .idea-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .idea-card .rank {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      min-width: 28px;
+    }
+    .idea-card .axis {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-2);
+      background: rgba(165,180,252,0.08);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .idea-card .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 24px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+    .idea-card .meta-row span { color: var(--text); }
+    .idea-card .field {
+      margin-bottom: 14px;
+    }
+    .idea-card .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-bottom: 4px;
+      display: block;
+    }
+    .idea-card .field p {
+      margin: 0;
+      color: var(--text-muted);
+    }
+    .idea-card .field .basis { color: var(--accent); }
+    .idea-card .downsides { color: var(--warn); }
+    .idea-card .downsides strong { color: var(--warn); }
+    .idea-card .rationale { color: var(--text-muted); }
+
+    .diagram {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin: 16px 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .diagram svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+    .diagram-caption { text-align: center; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+
+    .rejection-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .rejection-table th, .rejection-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .rejection-table th {
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-2);
+    }
+    .rejection-table td { color: var(--text-muted); }
+    .rejection-table td:first-child { color: var(--text); font-weight: 500; }
+    .rejection-table tr:last-child td { border-bottom: none; }
+
+    footer.composition-signal {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="eyebrow">Ideation artifact</div>
+      <h1>Nostr npub identity &amp; mentions in Pacto</h1>
+      <div class="meta">
+        <div>Date: <span>2026-07-20</span></div>
+        <div>Topic: <span>npub-identity</span></div>
+        <div>Mode: <span>repo-grounded</span></div>
+      </div>
+      <p style="margin-top: 16px; color: var(--text-muted);">Focus: uniquely identify a Nostr npub in Pacto to a username / profile name so that mentioning people is easy and we are talking to the correct / intended identity. User clarified: this is about tying a npub to an identity so profiles become "unique."</p>
+    </header>
+
+    <section>
+      <h2>Grounding Context</h2>
+      <p><strong>Project shape.</strong> Pacto is a Tauri v2 desktop app (SvelteKit/Svelte 5 frontend, Rust backend). Nostr handles E2EE DMs (NIP-59 gift wraps) and MLS group messaging (kinds 443/444); EVM/Aztec handles treasury and governance. Per-account SQLite lives under each npub.</p>
+      <p><strong>Identity model.</strong> The npub is the identity root. The same BIP-39 seed derives the Nostr keypair and the EVM wallet. Chat ids are the npub for DMs and the MLS group id for squads. Profiles are keyed by npub in a writable Svelte store; <code>getProfileDisplayName</code> resolves <code>nickname → name → display_name → short npub</code>. <code>@</code> mentions already exist for squad channels: a JSON envelope <code>{body, mentions}</code> is encrypted inside MLS, the canonical target is the <code>npub</code>, the display alias is resolved from the live profile store at render time, and <code>assignMentionAliases</code> disambiguates duplicates by appending <code>·&lt;npub prefix&gt;</code>.</p>
+      <p><strong>Pain points.</strong> No global username uniqueness — Nostr display names and nicknames can collide, and the current fix is only per-squad alias disambiguation. The <code>nip05</code> field is present on profiles but not surfaced as a trust signal. Display names are not self-certifying, so spoofing a familiar name is possible. There is no contact-book or petname system beyond local nickname overrides. Commons discovery shows name claims without cryptographic verification beyond the underlying npub.</p>
+      <p><strong>Leverage points.</strong> 1) NIP-05 can bind an npub to a domain-verified handle. 2) Squad roster + MLS membership already defines a closed membership set. 3) The <code>profiles</code> store and <code>getProfileDisplayName</code> are central chokepoints for injecting verified identity badges. 4) Roster EVM binding maps <code>(parent_id, member_npub) → EVM address</code>, offering a second on-chain trust anchor. 5) <code>assignMentionAliases</code> can incorporate verified handles to reduce collisions.</p>
+      <p><strong>Strategy.</strong> Pacto targets DAO/collective organizers who need private coordination and enforceable collective action without KYC. The core bet is that one Nostr keypair powers both private messaging and scarce on-chain actions. Active tracks: embedded treasury &amp; governance; private group coordination via MLS squads; Discovery &amp; Commons; Trust &amp; safety.</p>
+      <p><strong>Research notes.</strong> Both external web research and <code>docs/solutions/</code> learnings failed in this run (credits / model selection), so all bases are repo-grounded only. Evidence dossiers are preserved in the run scratch directory.</p>
+    </section>
+
+    <section>
+      <h2>Topic Axes</h2>
+      <ol>
+        <li><strong>Identity binding mechanisms</strong> — cryptographic or domain-verified ways to tie an npub to a unique, self-certifying handle.</li>
+        <li><strong>Mention authoring and disambiguation</strong> — how <code>@</code>mentions are typed, resolved, rendered, and kept unambiguous.</li>
+        <li><strong>Trust signals and verification UI</strong> — how the UI communicates identity confidence, verification status, and spoofing risk.</li>
+        <li><strong>Roster-scoped identity</strong> — using squad/MLS membership and roster EVM binding as a bounded identity namespace.</li>
+        <li><strong>Contact book and petnames</strong> — local, user-controlled naming and identity management beyond Nostr metadata.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Ranked Ideas</h2>
+      <div class="jump-list">
+        <a href="#idea-1">1. Verified NIP-05</a>
+        <a href="#idea-2">2. Roster EVM binding</a>
+        <a href="#idea-3">3. Squad roster namespace</a>
+        <a href="#idea-4">4. Identity badges</a>
+        <a href="#idea-5">5. Captain-gated aliases</a>
+        <a href="#idea-6">6. Petname-first</a>
+      </div>
+
+      <article id="idea-1" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">1.</span>
+          <h3>Verified NIP-05 as canonical identity anchor</h3>
+          <span class="axis">Identity binding mechanisms</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>90%</span></div>
+          <div>Complexity: <span>Medium</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Make NIP-05 a real trust anchor by fetching and caching <code>.well-known/nostr.json</code> verification in the Rust backend, instead of copying the claimed value from Kind 0 metadata. Treat verified NIP-05 as the canonical username everywhere, falling back to unverified metadata only when NIP-05 is absent or fails verification.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src-tauri/src/profile.rs:143-148</code> copies <code>meta.nip05</code> into the local profile without any <code>.well-known/nostr.json</code> validation; <code>src/components/settings/ProfileSection.svelte:231-237</code> renders the claimed NIP-05 with a green checkmark, giving users false confidence that it is verified.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Nostr display names are not unique and can be spoofed; only verified NIP-05 binds an npub to a domain-controlled identifier. Today the checkmark is decorative and actively misleading, which is the single biggest hole in identity trust.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>Requires a network fetch to the claimed domain, which complicates offline use and leaks some metadata. NIP-05 adoption is not universal, so this is a strong signal when present but not a complete solution.</p>
+        </div>
+        <div class="diagram">
+          <svg viewBox="0 0 640 110" width="640" height="110" xmlns="http://www.w3.org/2000/svg">
+            <rect x="10" y="30" width="140" height="50" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="80" y="58" text-anchor="middle" fill="#9aa3b2" font-size="12">Kind 0 metadata</text>
+            <polygon points="160,55 180,55 170,45" fill="#7dd3fc"/>
+            <line x1="160" y1="55" x2="240" y2="55" stroke="#7dd3fc" stroke-width="2"/>
+            <rect x="240" y="30" width="160" height="50" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="320" y="52" text-anchor="middle" fill="#9aa3b2" font-size="12">Rust backend fetches</text>
+            <text x="320" y="70" text-anchor="middle" fill="#9aa3b2" font-size="12">.well-known/nostr.json</text>
+            <line x1="400" y1="55" x2="480" y2="55" stroke="#7dd3fc" stroke-width="2"/>
+            <polygon points="470,45 480,55 470,65" fill="#7dd3fc"/>
+            <rect x="480" y="30" width="140" height="50" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="550" y="58" text-anchor="middle" fill="#86efac" font-size="12">Verified badge</text>
+          </svg>
+          <div class="diagram-caption">Decorative NIP-05 claim becomes a verified, domain-backed handle.</div>
+        </div>
+      </article>
+
+      <article id="idea-2" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">2.</span>
+          <h3>Roster EVM binding as canonical self-certifying handle</h3>
+          <span class="axis">Identity binding mechanisms</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>85%</span></div>
+          <div>Complexity: <span>Medium</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Use the existing squad membership and roster EVM binding as the canonical unique handle within a squad. Because <code>(parent_id, member_npub) → EVM address</code> is already required and fail-closed by the ACL, it gives every member a scarce, self-certifying identifier.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src-tauri/src/migrations/V16__squad_member_evm.sql:1-8</code> stores <code>(parent_id, member_npub, evm_address)</code> as the primary key; <code>src-tauri/src/evm/access_control/identity.rs:47-51</code> returns <code>ACL_UNBOUND</code> when no roster EVM is linked, proving the binding is already treated as authoritative.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Display names and NIP-05 handles can be duplicated or lied about; an EVM address is unique and can be challenged with a signature. Anchoring identity to the roster EVM makes squad-scoped identity both unique and self-certifying.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>EVM addresses are long and hard to read. The signal is only meaningful inside a squad, so it does not solve DM or Commons identity on its own. It also ties messaging identity to on-chain actions.</p>
+        </div>
+      </article>
+
+      <article id="idea-3" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">3.</span>
+          <h3>Squad roster as authoritative mention namespace</h3>
+          <span class="axis">Mention authoring and disambiguation</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>80%</span></div>
+          <div>Complexity: <span>Medium</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Make <code>@</code>mentions inside a squad strictly roster-scoped: the autocomplete candidate list is already the squad's MLS member set, and the rendered alias is resolved only from that closed set. Use the roster's existing NIP-05 / EVM bindings as the primary disambiguation key so that collisions are resolved by verified identity rather than by appending a raw npub suffix.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src/lib/messaging/mentions.ts:42-64</code> currently deduplicates colliding aliases by appending an npub suffix; <code>src/components/channel/ChatView.svelte:695-702</code> wires <code>mentionCandidates={panelMembers}</code>, so the squad roster is already the candidate source.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Mention resolution becomes unambiguous by construction inside the squad, and it aligns perfectly with the ACL trust boundary. It also eliminates the risk of mentioning an external lookalike that impersonates a squad member.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>Limits mentions to roster members, which may be too restrictive for some workflows. Requires roster membership to be in sync before mentions work.</p>
+        </div>
+        <div class="diagram">
+          <svg viewBox="0 0 640 120" width="640" height="120" xmlns="http://www.w3.org/2000/svg">
+            <rect x="30" y="30" width="180" height="60" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="120" y="52" text-anchor="middle" fill="#9aa3b2" font-size="12">Squad MLS roster</text>
+            <text x="120" y="72" text-anchor="middle" fill="#9aa3b2" font-size="12">(closed member set)</text>
+            <line x1="220" y1="60" x2="320" y2="60" stroke="#a5b4fc" stroke-width="2"/>
+            <polygon points="310,50 320,60 310,70" fill="#a5b4fc"/>
+            <rect x="320" y="30" width="160" height="60" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="400" y="52" text-anchor="middle" fill="#9aa3b2" font-size="12">Mention composer</text>
+            <text x="400" y="72" text-anchor="middle" fill="#9aa3b2" font-size="12">autocomplete only</text>
+            <line x1="480" y1="60" x2="580" y2="60" stroke="#a5b4fc" stroke-width="2"/>
+            <polygon points="570,50 580,60 570,70" fill="#a5b4fc"/>
+            <rect x="580" y="30" width="40" height="60" rx="8" fill="#1e222b" stroke="#2c313d" stroke-width="1"/>
+            <text x="600" y="62" text-anchor="middle" fill="#86efac" font-size="14">✓</text>
+          </svg>
+          <div class="diagram-caption">Mentions are resolved only against the closed squad roster, not the global Nostr namespace.</div>
+        </div>
+      </article>
+
+      <article id="idea-4" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">4.</span>
+          <h3>Identity confidence badges on every name surface</h3>
+          <span class="axis">Trust signals and verification UI</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>85%</span></div>
+          <div>Complexity: <span>Low</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Add a consistent, tiny badge next to every display name across DMs, squad channels, Commons cards, and settings indicating the identity tier: verified NIP-05, roster-bound, local petname, or unverified metadata. Make the badge a single source of truth so users instantly know how much to trust a name.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src/components/settings/ProfileSection.svelte:231-237</code> shows NIP-05 only in settings; <code>src/components/dm/Message.svelte:1-40</code> renders messages with no secondary identity indicator; <code>src/components/commons/CommonsBroadcastCard.svelte:40-44</code> derives the card title from unverified <code>$profiles</code> metadata.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Spoofing is easy because the same display name renders identically regardless of verification status. A persistent, unified badge makes the trust boundary visible in every conversation and discovery surface. Once the badge vocabulary exists, every new identity signal automatically communicates without redesigning each screen.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>Risk of UI clutter if not carefully designed. The badge vocabulary must be legible and stable; a wrong iconography can train users to ignore it.</p>
+        </div>
+        <div class="diagram">
+          <svg viewBox="0 0 640 80" width="640" height="80" xmlns="http://www.w3.org/2000/svg">
+            <text x="30" y="35" fill="#e7eaef" font-size="16" font-weight="600">Alice</text>
+            <rect x="80" y="16" width="110" height="24" rx="12" fill="#86efac" fill-opacity="0.12" stroke="#86efac" stroke-width="1"/>
+            <text x="135" y="33" text-anchor="middle" fill="#86efac" font-size="11" font-weight="600">NIP-05 verified</text>
+            <text x="30" y="65" fill="#9aa3b2" font-size="14">Mallory</text>
+            <rect x="90" y="46" width="90" height="24" rx="12" fill="#fca5a5" fill-opacity="0.12" stroke="#fca5a5" stroke-width="1"/>
+            <text x="135" y="63" text-anchor="middle" fill="#fca5a5" font-size="11" font-weight="600">unverified</text>
+          </svg>
+          <div class="diagram-caption">The same display name carries different confidence depending on the badge.</div>
+        </div>
+      </article>
+
+      <article id="idea-5" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">5.</span>
+          <h3>Roster-scoped unique aliases / captain-gated squad petname registry</h3>
+          <span class="axis">Roster-scoped identity</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>75%</span></div>
+          <div>Complexity: <span>Medium</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Let captains assign unique, squad-shared petnames to members that are stored in a new <code>squad_member_handle</code> table and broadcast via MLS announcements. Unlike local nicknames, these petnames are shared across the squad so everyone sees the same name, and collisions are resolved at assignment time by the captain rather than by appending hex suffixes.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src-tauri/src/profile.rs:803-818</code> and <code>src/lib/api/nostr.ts:210-218</code> implement local-only nicknames; <code>src-tauri/src/migrations/V16__squad_member_evm.sql</code> uses <code>(parent_id, member_npub)</code> as the natural per-squad member key, so the schema pattern already exists.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Local nicknames are powerful for the individual but useless for a group trying to agree on who "Alice" is. A captain-gated registry turns the squad roster into a shared address book with authoritative, unique names without requiring a global namespace or KYC.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>Concentrates naming power with captains; members may dislike assigned names. Requires an MLS broadcast mechanism and a new schema migration.</p>
+        </div>
+      </article>
+
+      <article id="idea-6" class="idea-card">
+        <div class="idea-header">
+          <span class="rank">6.</span>
+          <h3>Petname-first identity resolution</h3>
+          <span class="axis">Contact book and petnames</span>
+        </div>
+        <div class="meta-row">
+          <div>Confidence: <span>90%</span></div>
+          <div>Complexity: <span>Low</span></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Description</span>
+          <p>Promote the local <code>nickname</code> field to the primary identity for each npub. In every rendering context—DM headers, squad messages, Commons cards, and mention autocomplete—the user's chosen petname wins over Nostr metadata. The contact book becomes the user's sovereign namespace; collisions are impossible because the user can only assign one petname per npub.</p>
+        </div>
+        <div class="field">
+          <span class="field-label">Basis</span>
+          <p class="basis">direct: <code>src/lib/utils/profile.ts:24-32</code> resolves display names nickname-first; <code>src-tauri/src/profile.rs:803-818</code> stores <code>nickname</code> independently and emits <code>profile_nick_changed</code>, preserving local overrides across Nostr metadata syncs.</p>
+        </div>
+        <div class="field rationale">
+          <span class="field-label">Rationale</span>
+          <p>Global name uniqueness is a losing battle in a permissionless network. Petnames are local, user-controlled, and impossible to spoof from the outside: your "Alice" belongs to you and cannot be hijacked by someone else's metadata. This also compounds every other trust signal by letting verified badges appear next to the user's chosen name.</p>
+        </div>
+        <div class="field downsides">
+          <span class="field-label">Downsides</span>
+          <p>Only works if users actually set petnames. A sparse contact book weakens the effect. Needs import/sync support (e.g., from Nostr follow lists) to be useful from day one.</p>
+        </div>
+      </article>
+    </section>
+
+    <section>
+      <h2>Rejection Summary</h2>
+      <table class="rejection-table">
+        <thead>
+          <tr><th>Candidate</th><th>Reason rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Aviation callsign + transponder binding</td><td>Kept A and B separately; the combined analogy is less actionable than the individual moves.</td></tr>
+          <tr><td>Pairwise EVM payout binding as identity handshake</td><td>Interesting but narrow; relies on the DM payment feature and is less central to squad identity.</td></tr>
+          <tr><td>Maritime IMO registry of profile names</td><td>Weak basis — no per-npub name-history registry exists.</td></tr>
+          <tr><td>No display names, only npub + verification badges</td><td>Weak basis; too radical an inversion for the current UX.</td></tr>
+          <tr><td>Verification-first mention autocomplete</td><td>Overlaps with squad roster as authoritative namespace (H).</td></tr>
+          <tr><td>NIP-05-first mention alias with domain disambiguation</td><td>Weak basis — NIP-05 is currently unverified and not used in mention generation.</td></tr>
+          <tr><td>Collision-resistant disambiguation by social proof</td><td>Strong, but overlaps with H and M.</td></tr>
+          <tr><td>Air-traffic control mention disambiguation</td><td>Overlaps with B and H.</td></tr>
+          <tr><td>Mention aliases as intent envelopes</td><td>Interesting but less central to the uniqueness problem.</td></tr>
+          <tr><td>Roster EVM identity chip for trust</td><td>Overlaps with B and M.</td></tr>
+          <tr><td>Always show a short npub suffix next to display names</td><td>Overlaps with M and U.</td></tr>
+          <tr><td>Continuous identity verification</td><td>Weak basis — profile_sync.rs is a generic queue, not continuous NIP-05 re-verification.</td></tr>
+          <tr><td>Heraldic coat-of-arms avatar</td><td>Weak basis — no visual-hash/avatar system exists.</td></tr>
+          <tr><td>Cross-squad identity graph via shared roster membership</td><td>Weak basis — no cross-squad trust propagation is implemented or cited.</td></tr>
+          <tr><td>Identity private-by-default</td><td>Weak basis — Commons discovery already renders public Nostr profile names, contradicting the proposal.</td></tr>
+          <tr><td>Portable encrypted petnames across devices</td><td>Supporting idea for U, not a standalone direction.</td></tr>
+          <tr><td>Import Nostr follow lists as seed petnames</td><td>Supporting idea for U, not a standalone direction.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-07-20 by ce-ideate from the prompt: "uniquely identify a nostr npub in pacto to a username / profile name." Evidence dossiers and checkpoints at <code>/tmp/compound-engineering/ce-ideate/1b7e6699</code>.
+    </footer>
+  </div>
+</body>
+</html>

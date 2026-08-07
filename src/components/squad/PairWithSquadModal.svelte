@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import SquadCommonsVisibilityFields from './SquadCommonsVisibilityFields.svelte';
   import type { Squad } from '../../stores/app';
   import type { SquadVisibility } from '../../stores/squads';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   export let anchorSquadName = '';
@@ -27,12 +29,14 @@
   let tagError = '';
   let commonsFields: SquadCommonsVisibilityFields;
 
+  $: maxCommonsTags = $appConfig.commonsMaxTags;
+
   $: canCreate =
     pairName.trim().length > 0 &&
     !!selectedPartnerSquadId &&
     candidates.length > 0 &&
     !creating &&
-    (visibility !== 'public' || tags.length === 3);
+    (visibility !== 'public' || tags.length === maxCommonsTags);
 
   $: if (open) {
     setTimeout(() => document.getElementById('squad-pair-name')?.focus(), 0);
@@ -63,32 +67,31 @@
 
 {#if open}
   <Modal titleId="pair-squad-title" descriptionId="pair-squad-description" onClose={onClose}>
-    <h2 id="pair-squad-title">Pair with squad</h2>
+    <h2 id="pair-squad-title">{$t('squad.pair.title')}</h2>
     <p id="pair-squad-description" class="pair-modal-subtitle">
-      Create a partner squad linking <strong>{anchorSquadName}</strong> with one other squad you belong to.
-      Members receive individual invites.
+      {$t('squad.pair.subtitle', { values: { anchorSquadName } })}
     </p>
     <form on:submit|preventDefault={handleSubmit}>
-      <label class="pair-label" for="squad-pair-name">Partner squad name</label>
+      <label class="pair-label" for="squad-pair-name">{$t('squad.pair.nameLabel')}</label>
       <input
         id="squad-pair-name"
         type="text"
         class="pair-input"
-        placeholder="e.g. A ↔ B Coordination"
+        placeholder={$t('squad.pair.namePlaceholder')}
         bind:value={pairName}
         required
         aria-required="true"
       />
-      <label class="pair-label" for="squad-pair-icon">Icon URL (optional)</label>
+      <label class="pair-label" for="squad-pair-icon">{$t('squad.pair.iconLabel')}</label>
       <input
         id="squad-pair-icon"
         type="url"
         class="pair-input"
-        placeholder="https://…"
+        placeholder={$t('squad.pair.iconPlaceholder')}
         bind:value={iconUrl}
       />
-      <span class="pair-label">Partner squad (select one)</span>
-      <div class="pair-candidates" role="radiogroup" aria-label="Partner squad">
+      <span class="pair-label">{$t('squad.pair.partnerLabel')}</span>
+      <div class="pair-candidates" role="radiogroup" aria-label={$t('squad.pair.partnerAriaLabel')}>
         {#each candidates as squad (squad.id)}
           <label class="pair-candidate-row">
             <input
@@ -103,7 +106,7 @@
         {/each}
       </div>
       {#if candidates.length === 0}
-        <p class="pair-empty">Join or create another squad first to pair with {anchorSquadName}.</p>
+        <p class="pair-empty">{$t('squad.pair.empty', { values: { anchorSquadName } })}</p>
       {/if}
       <SquadCommonsVisibilityFields
         bind:this={commonsFields}
@@ -116,9 +119,11 @@
         <p class="pair-error" role="alert">{error}</p>
       {/if}
       <div class="pair-actions">
-        <button type="button" class="pair-btn-cancel" on:click={onClose} aria-label="Cancel">Cancel</button>
-        <button type="submit" class="pair-btn-create" disabled={!canCreate} aria-label="Create partner squad">
-          {creating ? 'Creating…' : 'Create'}
+        <button type="button" class="pair-btn-cancel" on:click={onClose} aria-label={$t('squad.pair.cancel')}>
+          {$t('squad.pair.cancel')}
+        </button>
+        <button type="submit" class="pair-btn-create" disabled={!canCreate} aria-label={$t('squad.pair.createAria')}>
+          {creating ? $t('squad.pair.creating') : $t('squad.pair.create')}
         </button>
       </div>
     </form>

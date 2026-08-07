@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { deploySquadAdminForParent } from '../../../lib/governance/api';
@@ -22,6 +24,8 @@
   const titleId = 'deploy-squad-admin-title';
   const descId = 'deploy-squad-admin-desc';
 
+  const tFn = get(t);
+
   let deployNetwork: SupportedChainId | '' = squadNetwork ?? '';
   let deployError = '';
 
@@ -30,7 +34,7 @@
   async function confirmDeploy() {
     deployError = '';
     if (!deployNetwork) {
-      deployError = 'Select a network for this squad.';
+      deployError = tFn('governance.deploySquadAdmin.error.noNetwork');
       return;
     }
     const jobParams = {
@@ -41,8 +45,8 @@
     };
     onClose();
     runOnChainInBackground({
-      startedToast: 'Squad Admin deploy submitted. Confirmation continues in the background.',
-      subject: 'Squad Admin deploy',
+      startedToast: tFn('governance.deploySquadAdmin.toast.submitted'),
+      subject: tFn('governance.deploySquadAdmin.subject'),
       job: () => deploySquadAdminForParent(jobParams),
       onSuccess: async (result) => {
         await onComplete({
@@ -58,15 +62,14 @@
 </script>
 
 <Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-squad-admin-panel">
-  <h2 id={titleId}>Deploy Squad Admin</h2>
+  <h2 id={titleId}>{$t('governance.deploySquadAdmin.title')}</h2>
   <p id={descId} class="squad-admin-deploy-desc">
     {#if variant === 'captain_hat'}
-      Creates a hat-gated Squad Admin clone for captain hat <code>{captainHatId}</code>.
+      {$t('governance.deploySquadAdmin.description.captainHat', { values: { hatId: captainHatId } })}
     {:else}
-      Creates an address-gated Squad Admin clone owned by your embedded wallet. Use Settings → Manage squad roles to
-      register roles and assign executors.
+      {$t('governance.deploySquadAdmin.description.extStandalone')}
     {/if}
-    Gas is paid from your embedded wallet.
+    {$t('governance.deploySquadAdmin.gasNote')}
   </p>
 
   <div class="squad-admin-deploy-field">
@@ -84,9 +87,9 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+    <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.common.cancel')}</button>
     <button type="button" class="btn-primary" on:click={confirmDeploy}>
-      Deploy on-chain
+      {$t('governance.common.deployOnChain')}
     </button>
   </div>
 </Modal>
@@ -104,26 +107,4 @@
     margin-bottom: 14px;
   }
 
-  .squad-admin-deploy-label {
-    display: block;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
-
-  .squad-admin-deploy-input {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-panel);
-    color: var(--text-primary);
-    font-size: 0.9375rem;
-  }
-
-  .squad-admin-deploy-select {
-    max-width: 240px;
-  }
 </style>

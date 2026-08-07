@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import type { Address } from 'viem';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
@@ -31,6 +33,8 @@
     toastOnChainSubmitted,
     waitForOnChainConfirmationInBackground,
   } from '../../lib/evm/on-chain-background';
+
+  const tFn = get(t);
 
   export let enabledChainIds: SupportedChainId[] = [...WALLET_ASSETS_CHAIN_IDS];
   /** When true, show Settings cross-links (external wallet disclaimer). */
@@ -147,10 +151,10 @@
         dataHex: data,
       });
       simulateOk = result.ok;
-      simulateMessage = result.ok ? 'Simulation succeeded (eth_call).' : result.message;
+      simulateMessage = result.ok ? tFn('wallet.simulationSucceeded') : result.message;
     } catch (e) {
       simulateOk = false;
-      simulateMessage = e instanceof Error ? e.message : 'Simulation failed.';
+      simulateMessage = e instanceof Error ? e.message : tFn('wallet.simulationFailed');
     } finally {
       simulating = false;
     }
@@ -161,11 +165,11 @@
       normalizeToAddress(toAddress);
       if (calldataMode === 'raw') normalizeCalldataHex(dataHex);
       else if (builtCalldata === '0x' && functionName.trim()) {
-        showToast('Build calldata from ABI first.');
+        showToast(tFn('wallet.buildCalldataFirst'));
         return;
       }
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Check address and calldata.');
+      showToast(e instanceof Error ? e.message : tFn('wallet.checkAddressAndCalldata'));
       return;
     }
     confirmOpen = true;
@@ -188,9 +192,9 @@
         return;
       }
       confirmOpen = false;
-      toastOnChainSubmitted(network, outcome.result.txHash, 'Advanced transaction');
+      toastOnChainSubmitted(network, outcome.result.txHash, tFn('wallet.advancedTransaction'));
       waitForOnChainConfirmationInBackground(network, outcome.result.txHash, {
-        subject: 'Advanced transaction',
+        subject: tFn('wallet.advancedTransaction'),
         onConfirmed: () => {
           const url = getExplorerTxUrl(network, outcome.result.txHash);
           if (url) openExternalUrl(url);
@@ -198,7 +202,7 @@
         confirmedToast: true,
       });
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, 'Advanced send failed.'));
+      showToast(getInvokeErrorMessage(e, tFn('wallet.advancedSendFailed')));
     } finally {
       sending = false;
     }
@@ -207,37 +211,37 @@
 
 <section class="wallet-advanced" aria-labelledby="wallet-advanced-heading">
   <div class="wallet-advanced-banner" role="note">
-    <strong>Advanced — not linked to any squad.</strong>
-    Opaque contract calls use your advanced-purpose key only. No roster shares, governance announces, or dashboard entries.
+    <strong>{$t('wallet.advancedBannerTitle')}</strong>
+    {$t('wallet.advancedBannerBody')}
     {#if embeddedInSettings}
-      For importing keys into MetaMask or similar, see <strong>Using this address in an external wallet</strong> above.
+      {$t('wallet.advancedBannerExternalWallet', { values: { externalWallet: $t('wallet.advancedEvmAccountsTitle') } })}
     {/if}
   </div>
 
-  <h2 id="wallet-advanced-heading" class="wallet-advanced-h2">Advanced contract call</h2>
+  <h2 id="wallet-advanced-heading" class="wallet-advanced-h2">{$t('wallet.advancedContractCallTitle')}</h2>
 
   {#if !hasAdvancedSigner}
     <p class="wallet-advanced-hint">
-      Create or select an advanced account above before sending. Squad signers cannot use this panel.
+      {$t('wallet.advancedNoSignerHint')}
     </p>
   {:else}
     <p class="wallet-advanced-hint">
-      Signing as <code>{shortAddr(activeAdvancedAddress ?? '')}</code>. Simulate with <code>eth_call</code>, then confirm the full calldata before broadcast.
+      {$t('wallet.advancedSignerHint', { values: { address: shortAddr(activeAdvancedAddress ?? ''), ethCall: 'eth_call' } })}
     </p>
 
-    <label class="wallet-advanced-label" for="adv-network">Network</label>
+    <label class="wallet-advanced-label" for="adv-network">{$t('wallet.networkLabel')}</label>
     <select id="adv-network" class="wallet-advanced-input" bind:value={network}>
       {#each enabledChainIds as chain (chain)}
         <option value={chain}>{getWalletNetworkDisplayName(chain)}</option>
       {/each}
     </select>
 
-    <label class="wallet-advanced-label" for="adv-to">Contract address (to)</label>
+    <label class="wallet-advanced-label" for="adv-to">{$t('wallet.contractAddressToLabel')}</label>
     <input
       id="adv-to"
       type="text"
       class="wallet-advanced-input"
-      placeholder="0x…"
+      placeholder={$t('wallet.contractAddressPlaceholder')}
       bind:value={toAddress}
       spellcheck="false"
       autocapitalize="off"
@@ -245,77 +249,77 @@
 
     {#if infraTarget}
       <p class="wallet-advanced-warn">
-        This address matches local squad infrastructure. Advanced calls to squad deploy targets are discouraged.
+        {$t('wallet.advancedInfraWarning')}
       </p>
       <label class="wallet-advanced-check">
         <input type="checkbox" bind:checked={infraWarningAck} />
-        I understand — proceed anyway
+        {$t('wallet.advancedProceedAnyway')}
       </label>
     {/if}
 
-    <label class="wallet-advanced-label" for="adv-value">Value (ETH)</label>
+    <label class="wallet-advanced-label" for="adv-value">{$t('wallet.valueEthLabel')}</label>
     <input
       id="adv-value"
       type="text"
       class="wallet-advanced-input"
       inputmode="decimal"
-      placeholder="0"
+      placeholder={$t('wallet.valueEthPlaceholder')}
       bind:value={valueEth}
     />
 
     <fieldset class="wallet-advanced-fieldset">
-      <legend class="wallet-advanced-label">Calldata</legend>
+      <legend class="wallet-advanced-label">{$t('wallet.calldataLabel')}</legend>
       <label class="wallet-advanced-radio">
         <input type="radio" bind:group={calldataMode} value="raw" />
-        Raw hex
+        {$t('wallet.rawHex')}
       </label>
       <label class="wallet-advanced-radio">
         <input type="radio" bind:group={calldataMode} value="abi" />
-        ABI + function
+        {$t('wallet.abiPlusFunction')}
       </label>
     </fieldset>
 
     {#if calldataMode === 'raw'}
-      <label class="wallet-advanced-label" for="adv-data">Data hex</label>
+      <label class="wallet-advanced-label" for="adv-data">{$t('wallet.dataHexLabel')}</label>
       <textarea
         id="adv-data"
         class="wallet-advanced-textarea"
         rows="3"
-        placeholder="0x"
+        placeholder={$t('wallet.dataHexPlaceholder')}
         bind:value={dataHex}
         spellcheck="false"
       ></textarea>
     {:else}
-      <label class="wallet-advanced-label" for="adv-abi-ref">Shipped ABI</label>
+      <label class="wallet-advanced-label" for="adv-abi-ref">{$t('wallet.shippedAbiLabel')}</label>
       <select id="adv-abi-ref" class="wallet-advanced-input" bind:value={abiRef}>
         {#each shippedAbis as item (item.ref)}
           <option value={item.ref}>{item.label}</option>
         {/each}
-        <option value="">Custom JSON…</option>
+        <option value="">{$t('wallet.customJsonAbi')}</option>
       </select>
       {#if !abiRef}
-        <label class="wallet-advanced-label" for="adv-abi-json">ABI JSON</label>
+        <label class="wallet-advanced-label" for="adv-abi-json">{$t('wallet.abiJsonLabel')}</label>
         <textarea
           id="adv-abi-json"
           class="wallet-advanced-textarea"
           rows="4"
-          placeholder="Paste JSON ABI array"
+          placeholder={$t('wallet.abiJsonPlaceholder')}
           bind:value={abiJson}
           spellcheck="false"
         ></textarea>
       {/if}
-      <label class="wallet-advanced-label" for="adv-fn">Function name</label>
+      <label class="wallet-advanced-label" for="adv-fn">{$t('wallet.functionNameLabel')}</label>
       <input id="adv-fn" type="text" class="wallet-advanced-input" bind:value={functionName} />
-      <label class="wallet-advanced-label" for="adv-args">Args (JSON array)</label>
+      <label class="wallet-advanced-label" for="adv-args">{$t('wallet.argsJsonLabel')}</label>
       <textarea
         id="adv-args"
         class="wallet-advanced-textarea"
         rows="2"
-        placeholder='["0x…"]'
+        placeholder={$t('wallet.argsJsonPlaceholder')}
         bind:value={argsJson}
         spellcheck="false"
       ></textarea>
-      <p class="wallet-advanced-hint">Built calldata: <code class="wallet-advanced-code">{builtCalldata.slice(0, 66)}{builtCalldata.length > 66 ? '…' : ''}</code></p>
+      <p class="wallet-advanced-hint">{$t('wallet.builtCalldata', { values: { calldata: `${builtCalldata.slice(0, 66)}${builtCalldata.length > 66 ? '…' : ''}` } })}</p>
     {/if}
 
     {#if simulateOk != null || simulateMessage}
@@ -326,10 +330,10 @@
 
     <div class="wallet-advanced-actions">
       <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={simulating || !canSend} on:click={onSimulate}>
-        {simulating ? 'Simulating…' : 'Simulate (eth_call)'}
+        {simulating ? $t('wallet.simulating') : $t('wallet.simulate')}
       </button>
       <button type="button" class="wallet-advanced-btn" disabled={!canSend || sending} on:click={openConfirm}>
-        Review &amp; send
+        {$t('wallet.reviewAndSend')}
       </button>
     </div>
   {/if}
@@ -338,26 +342,26 @@
 {#if confirmOpen}
   <div class="wallet-advanced-modal-backdrop" role="presentation" on:click={() => !sending && (confirmOpen = false)}></div>
   <div class="wallet-advanced-modal" role="dialog" aria-labelledby="adv-confirm-title" aria-modal="true">
-    <h3 id="adv-confirm-title" class="wallet-advanced-h2">Confirm advanced call</h3>
-    <p class="wallet-advanced-hint">This transaction is not squad-linked. Verify every field.</p>
+    <h3 id="adv-confirm-title" class="wallet-advanced-h2">{$t('wallet.confirmAdvancedCall')}</h3>
+    <p class="wallet-advanced-hint">{$t('wallet.advancedVerifyEveryField')}</p>
     <dl class="wallet-advanced-summary">
-      <dt>Network</dt>
+      <dt>{$t('wallet.networkLabel')}</dt>
       <dd>{getWalletNetworkDisplayName(network)}</dd>
-      <dt>From</dt>
-      <dd><code>{activeAdvancedAddress}</code></dd>
-      <dt>To</dt>
-      <dd><code>{toAddress.trim()}</code></dd>
-      <dt>Value</dt>
-      <dd>{valueEth.trim() || '0'} ETH ({ethAmountToWeiString(valueEth)} wei)</dd>
-      <dt>Calldata</dt>
+      <dt>{$t('wallet.fromLabel')}</dt>
+      <dd><code class="wallet-advanced-code">{activeAdvancedAddress}</code></dd>
+      <dt>{$t('wallet.toLabel')}</dt>
+      <dd><code class="wallet-advanced-code">{toAddress.trim()}</code></dd>
+      <dt>{$t('wallet.valueLabel')}</dt>
+      <dd>{$t('wallet.ethAndWeiValue', { values: { eth: valueEth.trim() || '0', wei: ethAmountToWeiString(valueEth) } })}</dd>
+      <dt>{$t('wallet.calldataLabel')}</dt>
       <dd><code class="wallet-advanced-code-break">{calldataMode === 'raw' ? normalizeCalldataHex(dataHex) : builtCalldata}</code></dd>
     </dl>
     <div class="wallet-advanced-actions">
       <button type="button" class="wallet-advanced-btn wallet-advanced-btn-secondary" disabled={sending} on:click={() => (confirmOpen = false)}>
-        Cancel
+        {$t('wallet.cancel')}
       </button>
       <button type="button" class="wallet-advanced-btn" disabled={sending} on:click={onSendConfirmed}>
-        {sending ? 'Sending…' : 'Send transaction'}
+        {sending ? $t('wallet.sending') : $t('wallet.sendTransaction')}
       </button>
     </div>
   </div>

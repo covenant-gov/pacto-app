@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
@@ -8,6 +9,11 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import {
+    formatSquadRpcLabel,
+    squadRpcHasBackup,
+    type SquadRpcConfig,
+  } from '../../../lib/squad/squad-rpc';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
@@ -29,6 +35,10 @@
   export let squadNetwork: SupportedChainId | null = null;
   export let squadNetworkFromInfra = false;
   export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
+  export let squadRpcConfig: SquadRpcConfig | null = null;
+  export let onSetSquadRpcPrimary: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onSetSquadRpcBackup: (url: string) => string | void | Promise<string | void> = () => {};
+  export let onClearSquadRpcPrimary: () => void | Promise<void> = () => {};
   export let hasGovernance = false;
   export let hasSquadAdmin = false;
   export let captainWearers: string[] = [];
@@ -41,10 +51,19 @@
   let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
   $: if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
 
+  let editingRpc: 'primary' | 'backup' | null = null;
+  let rpcUrlDraft = '';
+  let rpcFormError = '';
+  let rpcPublishing = false;
+
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
-  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : 'Not set';
-  $: networkHint = squadNetworkFromInfra ? 'Locked to deployed infra' : '';
+  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
+  $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
+  $: rpcLabelRaw = formatSquadRpcLabel(squadRpcConfig);
+  $: rpcLabel = rpcLabelRaw.startsWith('squad.rpc.') ? $t(rpcLabelRaw) : rpcLabelRaw;
+  $: rpcHasBackup = squadRpcHasBackup(squadRpcConfig);
+  $: rpcPrimaryIsCustom = squadRpcConfig?.rpc1.kind === 'url';
   $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
   $: govState = binaryInfraState(hasGovernance);
   $: adminState = binaryInfraState(hasSquadAdmin);
@@ -73,17 +92,57 @@
     squadNetworkChoice = squadNetwork ?? '';
     editingNetwork = false;
   }
+
+  function openRpcEdit(mode: 'primary' | 'backup') {
+    editingRpc = mode;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  function cancelRpcEdit() {
+    editingRpc = null;
+    rpcUrlDraft = '';
+    rpcFormError = '';
+  }
+
+  async function applyRpcEdit() {
+    if (rpcPublishing || !editingRpc) return;
+    rpcPublishing = true;
+    rpcFormError = '';
+    try {
+      const err = await Promise.resolve(
+        editingRpc === 'backup' ? onSetSquadRpcBackup(rpcUrlDraft) : onSetSquadRpcPrimary(rpcUrlDraft),
+      );
+      if (typeof err === 'string' && err.trim()) {
+        rpcFormError = err;
+        return;
+      }
+      cancelRpcEdit();
+    } finally {
+      rpcPublishing = false;
+    }
+  }
+
+  async function clearRpcPrimary() {
+    if (rpcPublishing) return;
+    rpcPublishing = true;
+    try {
+      await Promise.resolve(onClearSquadRpcPrimary());
+    } finally {
+      rpcPublishing = false;
+    }
+  }
 </script>
 
-<section class="status-checklist" aria-label="Setup checklist">
-  <span class="meta-label">Checklist</span>
+<section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
+  <span class="meta-label">{$t('governance.status.checklistTitle')}</span>
   <ul class="checklist" role="list">
     <li class="checklist-item" class:done={!!squadNetwork}>
       <span class={glyphClass(squadNetwork ? 'done' : 'not_started')} aria-hidden="true"
         >{checklistGlyph(squadNetwork ? 'done' : 'not_started')}</span
       >
       {#if squadNetwork}
-        <span>{getWalletNetworkDisplayName(squadNetwork)} selected</span>
+        <span>{$t('governance.status.networkSelected', { values: { network: getWalletNetworkDisplayName(squadNetwork) } })}</span>
       {:else}
         <button
           type="button"
@@ -93,50 +152,50 @@
             document.getElementById('squad-status-network')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }}
         >
-          Select network
+          {$t('governance.status.selectNetwork')}
         </button>
       {/if}
     </li>
     <li class="checklist-item" class:done={shareEvmState === 'done'}>
       <span class={glyphClass(shareEvmState)} aria-hidden="true">{checklistGlyph(shareEvmState)}</span>
-      <span>All members share EVM address</span>
+      <span>{$t('governance.status.allMembersShareEvm')}</span>
     </li>
     <li class="checklist-item" class:done={govState === 'done'}>
       <span class={glyphClass(govState)} aria-hidden="true">{checklistGlyph(govState)}</span>
       {#if hasGovernance}
-        <span>Squad governance</span>
+        <span>{$t('governance.status.squadGovernance')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad governance</button>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={adminState === 'done'}>
       <span class={glyphClass(adminState)} aria-hidden="true">{checklistGlyph(adminState)}</span>
       {#if hasSquadAdmin}
-        <span>Squad admin</span>
+        <span>{$t('governance.status.squadAdmin')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>Deploy Squad admin</button>
+        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={crewMintState === 'done'}>
       <span class={glyphClass(crewMintState)} aria-hidden="true">{checklistGlyph(crewMintState)}</span>
       {#if crewMintState === 'done'}
-        <span>Mint all members a Crew hat</span>
+        <span>{$t('governance.status.mintCrewHats')}</span>
       {:else if hasGovernance}
         <button type="button" class="checklist-action" on:click={onOpenCrewBootstrap}
-          >Mint all members a Crew hat</button
+          >{$t('governance.status.mintCrewHats')}</button
         >
       {:else}
-        <span>Mint all members a Crew hat</span>
+        <span>{$t('governance.status.mintCrewHats')}</span>
       {/if}
     </li>
   </ul>
 </section>
 
 <div class="status-fact-row" id="squad-status-network">
-  <span class="meta-label">Network</span>
+  <span class="meta-label">{$t('governance.status.networkLabel')}</span>
   {#if editingNetwork}
-    <select class="network-select" bind:value={squadNetworkChoice} aria-label="Squad network">
-      <option value="" disabled>Select…</option>
+    <select class="network-select" bind:value={squadNetworkChoice} aria-label={$t('governance.status.squadNetworkLabel')}>
+      <option value="" disabled>{$t('governance.status.selectPlaceholder')}</option>
       {#each squadNetworkOptions as opt (opt.id)}
         <option value={opt.id}>{opt.label}</option>
       {/each}
@@ -147,21 +206,84 @@
       disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
       on:click={applySquadNetwork}
     >
-      Save
+      {$t('governance.common.save')}
     </button>
-    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>Cancel</button>
+    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>{$t('governance.common.cancel')}</button>
   {:else}
     <span class="network-value">{networkLabel}</span>
     {#if networkHint}
       <span class="muted network-hint">{networkHint}</span>
     {/if}
     <EditIconButton
-      ariaLabel="Edit squad network"
-      title="Edit network"
+      ariaLabel={$t('governance.status.editNetwork')}
+      title={$t('governance.status.editNetworkTitle')}
       on:click={() => (editingNetwork = true)}
     />
   {/if}
 </div>
+
+<div class="status-fact-row" id="squad-status-rpc">
+  <span class="meta-label">{$t('squad.rpc.label')}</span>
+  {#if editingRpc}
+    <input
+      class="rpc-input"
+      type="url"
+      bind:value={rpcUrlDraft}
+      placeholder={$t('squad.rpc.placeholder')}
+      aria-label={editingRpc === 'backup' ? $t('squad.rpc.backupAria') : $t('squad.rpc.primaryAria')}
+    />
+    <button
+      type="button"
+      class="btn-text"
+      disabled={!rpcUrlDraft.trim() || rpcPublishing}
+      on:click={applyRpcEdit}
+    >
+      {rpcPublishing ? $t('squad.rpc.saving') : $t('squad.rpc.save')}
+    </button>
+    <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={cancelRpcEdit}>
+      {$t('squad.rpc.cancel')}
+    </button>
+    {#if rpcFormError}
+      <span class="rpc-error" role="alert">{rpcFormError}</span>
+    {/if}
+  {:else}
+    <span class="network-value">{rpcLabel}</span>
+    {#if rpcHasBackup}
+      <span class="muted network-hint">{$t('squad.rpc.backupHint')}</span>
+    {/if}
+    <EditIconButton
+      ariaLabel={$t('squad.rpc.editAria')}
+      title={$t('squad.rpc.editTitle')}
+      on:click={() => openRpcEdit('primary')}
+    />
+  {/if}
+</div>
+{#if !editingRpc}
+  <div class="rpc-actions">
+    <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('primary')}>
+      {$t('squad.rpc.addCustom')}
+    </button>
+    {#if rpcPrimaryIsCustom}
+      <button type="button" class="btn-text" disabled={rpcPublishing} on:click={() => openRpcEdit('backup')}>
+        {$t('squad.rpc.addBackup')}
+      </button>
+      <button type="button" class="btn-text muted" disabled={rpcPublishing} on:click={clearRpcPrimary}>
+        {$t('squad.rpc.usePublic')}
+      </button>
+    {/if}
+    <a
+      class="rpc-provider-link"
+      href="https://www.alchemy.com/"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {$t('squad.rpc.needProvider')}
+    </a>
+  </div>
+  <p class="muted rpc-share-note">
+    {$t('squad.rpc.shareNote')}
+  </p>
+{/if}
 
 <SquadBroadcastSettingsSection {squad} />
 
@@ -271,6 +393,39 @@
 
   .network-hint {
     font-size: 0.75rem;
+  }
+  .rpc-input {
+    flex: 1 1 12rem;
+    min-width: 10rem;
+    font-size: 0.8125rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+  }
+  .rpc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 0 0 4px;
+    margin: -2px 0 0;
+    padding-left: calc(5.5rem + 12px);
+  }
+  .rpc-provider-link {
+    font-size: 0.8125rem;
+    color: var(--accent);
+  }
+  .rpc-share-note {
+    margin: 0 0 8px;
+    padding-left: calc(5.5rem + 12px);
+    font-size: 0.75rem;
+  }
+  .rpc-error {
+    flex: 1 1 100%;
+    font-size: 0.75rem;
+    color: var(--danger, #f87171);
   }
 
   .muted {

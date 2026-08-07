@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   /** Invite card for squad, squad-pair, or channel-in-squad DMs. */
   export let variant: 'squad' | 'squad-pair' | 'channel-in-squad';
   export let squadName = '';
@@ -11,7 +13,7 @@
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
-  /** Opens a DM with the inviter (Pacto App inbox). */
+  /** Opens a DM with the actual inviter, when they differ from the thread's peer. */
   export let onMessageInviter: (() => void) | undefined = undefined;
 
   $: title = (() => {
@@ -20,35 +22,36 @@
   })();
 
   $: memberSquadsLabel =
-    memberSquads?.length > 0 ? memberSquads.map((s) => s.name).join(', ') : '';
-  $: subtitle =
-    variant === 'squad-pair' && memberSquadsLabel ? `Partner squads: ${memberSquadsLabel}` : '';
+    memberSquads?.length > 0
+      ? $t('messaging.inviteCard.partnerSquadsLabel', { values: { squads: memberSquads.map((s) => s.name).join(', ') } })
+      : '';
+  $: subtitle = variant === 'squad-pair' && memberSquadsLabel ? memberSquadsLabel : '';
 
   $: bodyText = (() => {
     if (variant === 'squad') {
       return isMine
-        ? `You invited ${inviterName} to this squad.`
-        : `${inviterName} invited you to join this squad.`;
+        ? $t('messaging.inviteCard.squadInviteYou', { values: { inviterName } })
+        : $t('messaging.inviteCard.squadInviteThem', { values: { inviterName } });
     }
     if (variant === 'squad-pair') {
       return isMine
-        ? `You invited ${inviterName} to this partner squad.`
-        : `${inviterName} invited you to join this partner squad.`;
+        ? $t('messaging.inviteCard.partnerSquadInviteYou', { values: { inviterName } })
+        : $t('messaging.inviteCard.partnerSquadInviteThem', { values: { inviterName } });
     }
     return isMine
-      ? `You added ${inviterName} to #${channelName}.`
-      : `${inviterName} added you to #${channelName} in this squad.`;
+      ? $t('messaging.inviteCard.channelInviteYou', { values: { inviterName, channelName } })
+      : $t('messaging.inviteCard.channelInviteThem', { values: { inviterName, channelName } });
   })();
 
   $: iconPlaceholder =
     variant === 'squad' || variant === 'squad-pair'
       ? squadName
         ? squadName.charAt(0).toUpperCase()
-        : 'S'
-      : '#';
+        : $t('messaging.inviteCard.squadInitial')
+      : $t('messaging.inviteCard.channelInitial');
 
   $: showBadge = variant === 'squad-pair';
-  $: badgeLabel = 'Partner squad';
+  $: badgeLabel = $t('messaging.inviteCard.partnerSquad');
   $: collapsed = status === 'accepted' || status === 'declined';
 </script>
 
@@ -73,7 +76,13 @@
         <button type="button" class="invite-card-inviter-link" on:click={onMessageInviter}>
           {inviterName}
         </button>
-        {variant === 'squad-pair' ? ' invited you to join this partner squad.' : variant === 'squad' ? ' invited you to join this squad.' : ` invited you.`}
+        {#if variant === 'squad-pair'}
+          {$t('messaging.inviteCard.partnerSquadInviteThem', { values: { inviterName } })}
+        {:else if variant === 'squad'}
+          {$t('messaging.inviteCard.squadInviteThem', { values: { inviterName } })}
+        {:else}
+          {$t('messaging.inviteCard.channelInviteThem', { values: { inviterName, channelName } })}
+        {/if}
       {:else}
         {bodyText}
       {/if}
@@ -81,14 +90,14 @@
     {#if isMine}
       <!-- Sender: no actions -->
     {:else if status === 'accepted'}
-      <p class="invite-card-status invite-card-status-accepted" aria-live="polite">Accepted</p>
+      <p class="invite-card-status invite-card-status-accepted" aria-live="polite">{$t('messaging.inviteCard.accepted')}</p>
       {#if variant === 'squad' || variant === 'squad-pair'}
         <p class="invite-card-evm-caption muted">
-          Set your roster signer in <strong>#my-dashboard</strong> → Alerts when you open it.
+          {$t('messaging.inviteCard.setRosterSignerCaption')}
         </p>
       {/if}
     {:else if status === 'declined'}
-      <p class="invite-card-status invite-card-status-declined" aria-live="polite">Declined</p>
+      <p class="invite-card-status invite-card-status-declined" aria-live="polite">{$t('messaging.inviteCard.declined')}</p>
     {:else}
       <div class="invite-card-actions">
         <button
@@ -97,7 +106,7 @@
           disabled={accepting}
           on:click={onAccept}
         >
-          {accepting ? 'Accepting…' : 'Accept'}
+          {accepting ? $t('messaging.inviteCard.accepting') : $t('messaging.inviteCard.accept')}
         </button>
         <button
           type="button"
@@ -105,7 +114,7 @@
           disabled={accepting}
           on:click={onDecline}
         >
-          Decline
+          {$t('messaging.inviteCard.decline')}
         </button>
       </div>
     {/if}

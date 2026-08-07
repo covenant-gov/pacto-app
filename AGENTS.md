@@ -1,3 +1,14 @@
+<!-- intent-skills:start -->
+## Skill Loading
+
+Before editing files for a substantial task:
+- Run `pnpm dlx @tanstack/intent@latest list` from the workspace root to see available local skills.
+- If a listed skill matches the task, run `pnpm dlx @tanstack/intent@latest load <package>#<skill>` before changing files.
+- Use the loaded `SKILL.md` guidance while making the change.
+- Monorepos: when working across packages, run the skill check from the workspace root and prefer the local skill for the package being changed.
+- Multiple matches: prefer the most specific local skill for the package or concern you are changing; load additional skills only when the task spans multiple packages or concerns.
+<!-- intent-skills:end -->
+
 # Repository Guidelines
 
 ## Project Overview
@@ -71,6 +82,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `src-tauri/src/evm/contracts/` | `alloy::sol!` bindings for `pacto_gov`, `pacto_sponsor`, `safe`, `erc20`, `hats`. |
 | `static/` | Static assets, including twemoji SVGs. |
 | `docs/` | Authoritative tracked docs for architecture, wallet, MLS, storage, build, governance. |
+| `docs/solutions/` | Documented solutions to past bugs and workflow/process learnings, organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in a documented area. |
 | `.cursor/rules/` | Editor-enforced project policies: brief comments, no legacy shims, no issue IDs, no Cursor attribution, no unrequested deletions. |
 | `.github/workflows/` | `release.yaml` — Tauri cross-platform release builds on `v*` tags. |
 
@@ -113,11 +125,19 @@ cd src-tauri && cargo test
 ## Code Conventions & Common Patterns
 
 ### Frontend
-- **Svelte style:** Svelte 5 is installed, but the codebase uses **legacy Svelte 4 patterns** (`writable`/`derived`, `$` auto-subscriptions, `$:` reactive statements). Do **not** introduce `$state`/`$derived` runes unless migrating the whole project.
+- **Svelte style:** Svelte 5 is installed and the codebase is migrating to runes. **Author every new `.svelte` file in runes mode**, and convert a file to runes when you rewrite it substantially. Do not write new legacy-syntax components.
+  - **Reference:** `docs/svelte5-reference.md` is the quick lookup for runes, events, snippets, TypeScript patterns, and recent additions (5.56.x). Consult it when writing or reviewing Svelte code.
+  - **Runes mode is all-or-nothing per file.** `export let` beside `$props()` is a compile error (`legacy_export_invalid`), so a file converts whole or not at all. Never half-convert.
+  - **Use:** `$props()` for props, `$state` for local mutable state, `$derived` for computed values, `$effect` only for genuine side effects, `$bindable()` on props a parent two-way binds, event attributes (`onclick`), and snippets with `{@render children()}`.
+  - **Do not use in new files:** `export let`, `$:`, `on:` directives, `<slot>`, `createEventDispatcher`.
+  - **Stores stay on `svelte/store`.** The 44 modules in `src/stores/` are deliberately out of scope. `$store` auto-subscription works in runes-mode components and is not deprecated — read stores with `$store` and do not convert them to `$state` or `.svelte.ts`.
+  - **Do not opportunistically convert unrelated legacy files** while working a feature. Conversion runs in planned domain batches; see `docs/plans/2026-07-25-001-refactor-svelte-5-runes-migration-plan.md`.
+  - **Exception — the three god components.** `src/routes/+page.svelte`, `src/components/channel/ChatView.svelte`, and `src/components/parent/ParentDashboard.svelte` stay legacy shells. When a feature touches one, carve the new functionality into a runes child component rather than converting the shell. A legacy parent hosting a runes child is fully supported.
 - **Backend calls:** Use `import { invoke } from '@tauri-apps/api/core'` and type as `invoke<T>('command_name', { arg1, arg2 })`. Command names are `snake_case`; payload keys are `camelCase` and converted by Tauri v2.
 - **State:** One store file per domain. Re-export from `src/stores/app.ts` when cross-cutting. Reset stores in `beforeEach`/`afterEach` in tests.
 - **Persistence:** Any new `localStorage` key must be npub-scoped via `persistenceKey(prefix)` from `src/stores/persistence-context.ts`. Call `loadAccountState(npub)` after login and `clearAccountState(npub)` on logout.
 - **Error handling:** Use `getInvokeErrorMessage` / `friendlyMessage` from `src/lib/utils/tauri-errors.ts` to extract user-facing messages from Tauri rejections.
+- **Internationalization (i18n):** All user-facing strings must be translatable. Use `import { t } from 'svelte-i18n'` and render with `$t('namespace.key')` in Svelte templates or `get(t)('namespace.key')` in TypeScript logic. Add new keys to the appropriate catalog under `src/lib/i18n/locales/<locale>/`. The namespace prefix must match the locale file name (e.g., `messaging.messageInput.placeholder` lives in `src/lib/i18n/locales/en/messaging.json`). Currently only English (`en`) and Spanish (`es`) catalogs are maintained; additional locales will be added later. Do not hardcode user-facing English text in components; keep raw-text lint warnings at zero for any new work.
 - **Naming:** TypeScript camelCase; backend commands snake_case; DTO types often end in `Dto`.
 - **Async patterns:** Fire-and-forget async work is prefixed with `void`. Debug logging uses `dmLog`/`dmError` from `src/lib/utils/dm-debug.ts`.
 
@@ -140,7 +160,9 @@ cd src-tauri && cargo test
 
 | File | Purpose |
 |------|---------|
+| `docs/svelte5-reference.md` | Quick reference for Svelte 5 runes, patterns, and migration notes. |
 | `package.json` | Frontend scripts and dependencies (Tauri API/plugins, viem, SvelteKit, Vitest, Vite). |
+| `CONCEPTS.md` | Shared domain vocabulary (npub, MLS, Squad, governance terms) for humans and agents. |
 | `pnpm-workspace.yaml` | pnpm workspace definition (single-root, build allowances only). |
 | `vite.config.ts` | Vite + Vitest config; port 1420, HMR on 1421 with `TAURI_DEV_HOST`, `envPrefix: ['VITE_', 'ALCHEMY_']`. |
 | `svelte.config.js` | Static adapter with SPA fallback to `index.html`. |
@@ -164,13 +186,15 @@ cd src-tauri && cargo test
 | `src-tauri/src/evm/contracts/` | Alloy bindings for pacto_gov, pacto_sponsor, safe, erc20, hats. |
 | `src/lib/wallet/wallet-assets.json` | Compile-time wallet chain/asset config shared with frontend. |
 | `src/lib/evm/pacto-protocol-addresses.json` | Compile-time protocol address book shared with frontend. |
-| `src/lib/api/nostr.ts` | Typed wrappers for Nostr/MLS/DM commands. |
+| `src/lib/i18n/locales/<locale>/*.json` | Translation catalogs per locale. Namespace prefixes match file names (e.g., `messaging.json` → `messaging.xxx`). Currently maintained for `en` and `es`. |
 | `src/lib/app/tauri-subscriptions.ts` | Central backend → UI event listener wiring. |
 | `src/stores/auth.ts` | Auth state, login/create/import/unlock/logout. |
 | `src/stores/persistence.ts` | Loads npub-scoped account state from `localStorage`. |
 | `docs/README.md` | Docs index and navigation hub. |
 | `.cursor/rules/*.mdc` | Editor-enforced project policies. |
 | `.github/workflows/release.yaml` | Tag-driven cross-platform Tauri release CI. |
+| `.github/workflows/ci.yaml` | PR gate: typecheck, lint (incl. Tauri command wiring), unit tests, e2e, backend tests. |
+| `scripts/check-orphaned-tauri-commands.mjs` | Ratchet check: fails on NEW `generate_handler!` commands with no frontend `invoke()` call; pre-existing gaps are grandfathered in `scripts/orphaned-tauri-commands-baseline.txt`. |
 
 ## Runtime/Tooling Preferences
 
@@ -184,7 +208,7 @@ cd src-tauri && cargo test
 - **Platform-specific deps:** Linux needs WebKit2GTK 4.1, Vulkan, ALSA, appindicator; macOS needs Xcode CLT, cmake, llvm, openssl; Windows needs VS Build Tools, LLVM, WebView2, Vulkan. See `docs/build/{ubuntuGuide,macGuide,windowsGuide}.md`.
 - **Whisper feature:** Enabled by default. Metal on macOS, Vulkan on Windows/Linux, excluded on Android. Feature-gated in `Cargo.toml`.
 - **MCP bridge:** `tauri-plugin-mcp-bridge` is included in debug builds only; release builds exclude it.
-- **CI:** `.github/workflows/release.yaml` publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag. Requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
+- **CI:** `.github/workflows/ci.yaml` gates every PR: typecheck (`pnpm check`), lint (`pnpm lint`, `pnpm check:tauri-commands`), frontend unit tests with coverage, Playwright e2e, a Tauri debug e2e harness (`continue-on-error`), Rust `cargo test --lib`, and a release-binary symbol check. `.github/workflows/release.yaml` separately publishes macOS (arm64 + x86_64), Ubuntu (amd64 + arm64), and Windows bundles on every `v*` tag; requires `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for the updater.
 
 ## Testing & QA
 
@@ -196,14 +220,15 @@ cd src-tauri && cargo test
   - Reset Svelte stores in `beforeEach`/`afterEach`.
   - Rust DB tests create `rusqlite::Connection::open_in_memory()` and execute the minimal schema DDL inline.
 - **Coverage:** `@vitest/coverage-v8` is available via `pnpm test:coverage:serve`; no configured thresholds.
-- **Quality gates:** The `release.yaml` workflow only builds and publishes releases; it does **not** run `pnpm test` or `cargo test`. Local verification is the current safety net.
+- **Quality gates:** `ci.yaml` runs `pnpm test:coverage` and `cargo test --lib` on every PR (see CI above); `release.yaml` only builds and publishes tagged releases and does not run tests.
 - **Manual QA:** `docs/wallet/MANUAL_E2E_CHECKLIST.md` and `docs/wallet/OPERATOR_SMOKE.md`.
 - **Security posture:** `docs/audits/README.md` states there is no independent third-party audit; treat wallet/key-handling code as alpha-grade.
 
 ## AI Assistant Notes
 
 - **Start every investigation at `docs/README.md`** and the relevant domain index before opening source files. If docs and code disagree, trust the code and update the doc.
-- **Before adding a Tauri command:** implement it in the appropriate backend module, add `#[tauri::command]`, register it in `src-tauri/src/lib.rs`, and add a typed wrapper in `src/lib/api/<domain>.ts`.
+- **Before adding a Tauri command:** implement it in the appropriate backend module, add `#[tauri::command]`, register it in `src-tauri/src/lib.rs`, and add a typed wrapper in `src/lib/api/<domain>.ts` **that is actually called from a store, component, or startup hook** — a command registered in `generate_handler!` counts as "used" to `cargo build`/clippy even if the frontend never calls it, so a whole feature (e.g. a backend polling loop) can ship dead behind a clean build. Run `pnpm check:tauri-commands` to catch this before committing.
+- **Before treating an existing-but-idle backend command or loop as "already running":** verify it, don't assume it — `grep -rn "invoke(.*'<command_name>'" src/`. A plan or comment asserting "the backend already does X" is not evidence; an empty grep means wiring it up is in scope, not an out-of-scope assumption. See `docs/solutions/logic-errors/orphaned-relay-health-monitor-command.md`.
 - **Before adding an environment variable:** verify whether it is consumed by Vite (must start with `VITE_` or `ALCHEMY_`) or by Rust (read directly from `std::env`). Public protocol addresses never go in `.env`.
 - **Before changing SQLite schema:** add a new numbered refinery migration under `src-tauri/src/migrations/` (e.g., `V28__my_change.sql` for schema changes, or a `.rs` migration if the transformation requires generated SQL). Do not edit inline DDL in tests; tests should apply the same migration set via `crate::migrations::run_migrations`.
 - **Before modifying the build or CI:** the Tauri action is the release path; changes to `vite.config.ts` or `src-tauri/tauri.conf.json` can break the desktop bundle or the updater.
@@ -212,3 +237,149 @@ cd src-tauri && cargo test
 - **Do not delete or narrow `.cursor/rules/`** unless the user explicitly asked to remove or replace a policy.
 - **Run lint before committing or pushing:** always run `pnpm lint` and fix all reported violations before creating a commit or pushing a branch.
 - **`install.sh` at the repo root installs an external CLI (`pacto-bot-api`)**, not the Pacto desktop app; do not use it for local desktop setup.
+
+## UI Validation with Tauri MCP
+
+When the Tauri MCP bridge is configured (see `docs/TAURI_MCP_INTEGRATION.md`), **agents must use it to verify any UI change** before declaring the work complete. This includes component changes, layout changes, navigation changes, theme/styling changes, and any frontend work that affects what a user sees or clicks.
+
+### Why
+
+Unit and store tests cannot assert that a button renders, a modal opens, or a message sends through the real UI. The MCP bridge closes that gap by letting the agent drive the live app: take screenshots, capture DOM snapshots, click elements, type text, and observe backend → frontend events. This turns "trust me, it looks right" into observable evidence.
+
+### When to use it
+
+Use the MCP tools for verification if **all** of the following are true:
+
+- The change touches `src/components/`, `src/routes/`, `src/app.css`, or any frontend-visible code.
+- The Tauri MCP server is configured in your client (`xd://mcp__tauri_*` tools are available).
+- You can run the app in debug mode (`make dev-sandbox`).
+
+If the MCP tools are not available in your session, fall back to the existing test suite (`pnpm test`, `pnpm check`) and note the limitation in your handoff.
+
+### Verification workflow
+
+1. **Start the app** in an isolated sandbox: `make dev-sandbox`. Never verify against a plain `make dev` / `pnpm tauri dev` — that data directory tends to carry a real dev account whose PIN nobody remembers, which silently blocks every step after it.
+2. **Start a driver session**: `xd://mcp__tauri_driver_session` with `{ "action": "start" }`.
+3. **Authenticate** — no account exists in a fresh sandbox. Snapshot the DOM, click "Create Account", then snapshot again for the six PIN-digit input refs and send **one `xd://mcp__tauri_webview_keyboard` `type` call per digit** (each box has `maxlength="1"`; a single call with the whole string only fills the first digit). Use PIN `123456` (the project's throwaway dev PIN, also used by `e2e/login.spec.ts`). Snapshot again for the "Confirm your PIN" screen's fresh refs and repeat. Account creation runs a real Argon2id derivation plus a live MLS relay publish — poll with `webview_dom_snapshot` for 20–30 seconds before the navbar appears; don't assume failure early. (`test_login_fixture` exists for the automated `pnpm test:e2e:tauri` harness but only sets backend state — it never updates the visible UI, so it is not useful here. See `docs/TAURI_MCP_INTEGRATION.md` Step 6 for detail.)
+4. **Navigate to the affected screen(s)** using `xd://mcp__tauri_webview_interact` (click, scroll) or `xd://mcp__tauri_webview_execute_js` if text selectors are ambiguous.
+5. **Capture evidence**:
+   - `xd://mcp__tauri_webview_screenshot` — save the viewport image.
+   - `xd://mcp__tauri_webview_dom_snapshot` with `"type": "accessibility"` — capture the semantic UI tree.
+6. **Exercise the interaction** that changed: click the new button, open the modal, send a test message, etc.
+7. **Capture a final screenshot** showing the result.
+8. **Stop the driver session** when done: `xd://mcp__tauri_driver_session` with `{ "action": "stop" }`.
+
+### What to include in your handoff
+
+- Paths to any screenshots saved (e.g., `/tmp/...`).
+- A brief description of the navigation path you exercised.
+- Any DOM snapshot observations that confirm the expected elements appeared or disappeared.
+- If the change could not be verified via MCP, say why and what was verified instead.
+
+### Boundaries
+
+- The MCP bridge is **debug-only and desktop-only**; it does not run in production, mobile, or CI release builds. Do not rely on it for release validation.
+- Do not send disruptive messages in live production channels. Use low-traffic test channels (e.g., `#pacto-app` in the `t14` squad) for message typing tests.
+- The bridge is a verification aid, not a replacement for accessibility review, security review, or product sign-off.
+
+## Beads Dependency Direction
+
+`bd` offers two ways to wire a blocking dependency and **they point opposite ways**. Getting it backwards produces an inverted graph that `bd ready` then reports confidently and wrongly — it offers leaf tasks as startable while the real prerequisite sits blocked behind them. This has bitten this repo more than once.
+
+| Form | Meaning |
+|---|---|
+| `bd dep add A B` | A depends on B |
+| `bd create X --deps <id>` | X depends on `<id>` |
+| `bd create X --deps blocks:<id>` | X **blocks** `<id>` — the inverse |
+
+- Prefer a bare id (`--deps <blocker-id>`) or wire after creation with `bd dep add <blocked> <blocker>`. Both read "depends on".
+- Avoid `blocks:` inside `--deps`. The beads skill's own example uses that form, which is where the inversion usually originates.
+- When correcting edges in bulk, remove **every** wrong edge before adding any correct one. Interleaving remove/add per edge trips a spurious `would create a cycle` error, because the not-yet-removed inverted edges still close a loop.
+
+**Always verify after wiring — this is the part that actually catches it:**
+
+```bash
+bd ready
+```
+
+The task you intend to start first must be the only ready item in that group. If leaf or late-phase tasks show up instead, the graph is inverted. `bd dep tree <id>` and `bd dep cycles` confirm the shape.
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+
+## Agent Context Profiles
+
+The managed Beads block is task-tracking guidance, not permission to override repository, user, or orchestrator instructions.
+
+- **Conservative (default)**: Use `bd` for task tracking. Do not run git commits, git pushes, or Dolt remote sync unless explicitly asked. At handoff, report changed files, validation, and suggested next commands.
+- **Minimal**: Keep tool instruction files as pointers to `bd prime`; use the same conservative git policy unless active instructions say otherwise.
+- **Team-maintainer**: Only when the repository explicitly opts in, agents may close beads, run quality gates, commit, and push as part of session close. A current "do not commit" or "do not push" instruction still wins.
+
+## Session Completion
+
+This protocol applies when ending a Beads implementation workflow. It is subordinate to explicit user, repository, and orchestrator instructions.
+
+1. **File issues for remaining work** - Create beads for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **Handle git/sync by active profile**:
+   ```bash
+   # Conservative/minimal/default: report status and proposed commands; wait for approval.
+   git status
+
+   # Team-maintainer opt-in only, unless current instructions forbid it:
+   git pull --rebase
+   bd dolt push
+   git push
+   git status
+   ```
+5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
+
+**Critical rules:**
+- Explicit user or orchestrator instructions override this Beads block.
+- Do not commit or push without clear authority from the active profile or the current user request.
+- If a required sync or push is blocked, stop and report the exact command and error.
+<!-- END BEADS INTEGRATION -->
+
+<!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
+## Beads Issue Tracker
+
+Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.
+
+### Quick Reference
+
+```bash
+bd ready                # Find available work
+bd show <id>            # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>           # Complete work
+bd prime                # Refresh Beads context
+```
+
+### Rules
+
+- Use `bd` for all task tracking; do not create markdown TODO lists.
+- Run `bd prime` when Beads context is missing or stale. Codex 0.129.0+ can load Beads context automatically through native hooks; use `/hooks` to inspect or toggle them.
+- Keep persistent project memory in Beads via `bd remember`; do not create ad hoc memory files.
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+<!-- END BEADS CODEX SETUP -->

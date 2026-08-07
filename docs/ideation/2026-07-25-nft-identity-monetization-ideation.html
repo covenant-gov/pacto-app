@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: NFTs for identity, money and fun in Pacto</title>
+<style>
+:root {
+  --bg: #0f1115;
+  --surface: #16191f;
+  --surface-2: #1e222b;
+  --text: #e7eaef;
+  --text-muted: #9aa3b2;
+  --accent: #7dd3fc;
+  --accent-2: #a5b4fc;
+  --warn: #fca5a5;
+  --warn-soft: #2a1d1f;
+  --success: #86efac;
+  --info-soft: #17242c;
+  --border: #2c313d;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px rgba(0,0,0,0.35);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+  font-size: 15px;
+}
+.container { max-width: 920px; margin: 0 auto; padding: 48px 24px 96px; }
+header { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 40px; }
+.eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: 8px;
+}
+h1 { font-size: 30px; line-height: 1.18; font-weight: 700; margin: 0 0 12px; }
+.meta { display: flex; flex-wrap: wrap; gap: 10px 24px; font-size: 14px; color: var(--text-muted); }
+.meta span.v { color: var(--text); }
+.lede { max-width: 72ch; margin: 18px 0 0; color: var(--text-muted); }
+section { margin-bottom: 48px; }
+h2 {
+  font-size: 18px; font-weight: 600; margin: 0 0 16px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border); color: var(--text);
+}
+h3 { font-size: 16px; font-weight: 600; margin: 0 0 12px; color: var(--text); }
+h4 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; color: var(--text-muted);
+     text-transform: uppercase; letter-spacing: 0.06em; }
+p, ul, ol { max-width: 72ch; }
+p { margin: 0 0 14px; color: var(--text-muted); }
+p strong, li strong { color: var(--text); }
+ul, ol { padding-left: 20px; margin: 0 0 16px; color: var(--text-muted); }
+li { margin-bottom: 6px; }
+code {
+  font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+  font-size: 0.9em; background: var(--surface-2); padding: 1px 5px;
+  border-radius: 4px; color: var(--accent);
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 0; }
+.stat {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 14px; font-size: 13px; color: var(--text-muted);
+}
+.stat b { color: var(--text); font-weight: 600; }
+
+.jump-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+.jump-list a {
+  display: inline-block; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 12px; font-size: 13px; color: var(--text);
+  transition: border-color 0.15s;
+}
+.jump-list a:hover { border-color: var(--accent); text-decoration: none; }
+
+.idea-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow); scroll-margin-top: 20px;
+}
+.idea-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+.idea-num { font-size: 13px; font-weight: 700; color: var(--accent); }
+.idea-title { font-size: 18px; font-weight: 650; margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 16px; }
+.chip {
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; border-radius: 999px;
+  padding: 3px 10px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-muted);
+}
+.chip.axis { background: #1b2733; color: var(--accent); border-color: #294050; }
+.chip.conf { background: #1b2a20; color: var(--success); border-color: #2c4433; }
+.chip.cx   { background: #262233; color: var(--accent-2); border-color: #383152; }
+.field { margin: 0 0 12px; }
+.field-label {
+  font-size: 11.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-muted); display: block; margin-bottom: 3px;
+}
+.field p:last-child { margin-bottom: 0; }
+.basis { background: var(--info-soft); border: 1px solid #233846; border-radius: 8px; padding: 12px 14px; }
+.basis .field-label { color: var(--accent); }
+.downsides { background: var(--warn-soft); border: 1px solid #422a2e; border-radius: 8px; padding: 12px 14px; }
+.downsides .field-label { color: var(--warn); }
+.tag-direct, .tag-external, .tag-reasoned {
+  font-family: "SF Mono", Monaco, monospace; font-size: 0.88em; font-weight: 600;
+}
+.tag-direct { color: var(--success); }
+.tag-external { color: var(--accent-2); }
+.tag-reasoned { color: #fbbf24; }
+
+figure { margin: 18px 0 4px; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; max-width: 72ch; }
+
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin-bottom: 12px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+td { color: var(--text-muted); }
+td:first-child { color: var(--text); font-weight: 500; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: none; }
+
+.callout {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px; margin: 0 0 16px;
+}
+.callout .field-label { color: var(--warn); }
+.callout p:last-child { margin-bottom: 0; }
+
+.composition-signal {
+  margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--text-muted);
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="eyebrow">Ideation artifact</div>
+  <h1>NFTs for identity, money and fun in Pacto</h1>
+  <div class="meta">
+    <div>Date: <span class="v"><time datetime="2026-07-25">2026-07-25</time></span></div>
+    <div>Topic: <span class="v">nft-identity-monetization</span></div>
+    <div>Mode: <span class="v">repo-grounded</span></div>
+    <div>Source: <span class="v"><a href="https://github.com/covenant-gov/pacto-app/issues/124">issue #124 — NFT name claims w/ embedded images</a></span></div>
+  </div>
+  <p class="lede">Focus: how Pacto can use NFTs for identity, money-making, and other fun blockchain features — creative but practical, and simple enough that a non-crypto member can use it. Issue #124 proposes four things at once: an on-chain-rendered identity image, an NFT contract as the Pacto name-claim database, a mint fee as a &ldquo;Nitro&rdquo; income source and spam deterrent, and NFT token-gating for events and spaces. This set treats those four as separable decisions rather than one feature.</p>
+  <div class="stats">
+    <div class="stat"><b>48</b> raw candidates</div>
+    <div class="stat"><b>7</b> survivors</div>
+    <div class="stat"><b>28</b> cut</div>
+    <div class="stat"><b>5</b> axes covered</div>
+    <div class="stat"><b>1</b> basis refuted in verification</div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+
+<h4>Codebase context</h4>
+<p><strong>Identity.</strong> The npub is the identity root; the same BIP-39 seed derives the Nostr keypair and the EVM wallet. Display names resolve <code>nickname &rarr; name &rarr; display_name &rarr; short npub</code>. The <code>nip05</code> field is copied verbatim out of Kind-0 metadata and rendered with a green checkmark — a repo-wide search finds no <code>.well-known/nostr.json</code> fetch anywhere, so the checkmark verifies nothing. Mention collisions fall back to a shortened npub. There is no name registry, no uniqueness constraint, and no alias reservation in the codebase.</p>
+
+<p><strong>Roster binding.</strong> <code>V16__squad_member_evm.sql</code> stores <code>(parent_id, member_npub) &rarr; evm_address</code> as a composite primary key; <code>access_control/identity.rs</code> returns <code>ACL_UNBOUND</code> when no roster EVM is linked. This is the strongest existing npub&harr;address anchor, and it is already fail-closed.</p>
+
+<p><strong>Gating.</strong> <code>GovCapability</code> is a 14-variant enum evaluated by <code>require_capability()</code> against Hats Protocol wearer checks. Verification counted <strong>6</strong> call sites, each hardcoding a fixed variant, and <code>capability_allowed()</code>&rsquo;s match arms are grouped by shared logic. Squad membership is a three-signal OR-gate: <code>if in_mls || has_evm_binding || has_roster_address</code>. Channels carry <code>access?: 'open' | 'closed'</code>. Everything fails closed.</p>
+
+<p><strong>Money.</strong> Native and ERC-20 sends work (ETH, USDC, USDT). A per-squad sponsor pool funds gas; governance writes route via EOA when the roster key can pay, or via sponsored ERC-4337 UserOps when it cannot. <code>deposit_squad_sponsor</code> is member-callable, not admin-only. Safe factory bindings exist but no payout logic. There is no fee extraction, no premium tier, no &ldquo;Nitro&rdquo;, no subscription, and no tip or zap anywhere in the repo.</p>
+
+<p><strong>Visuals.</strong> <code>getProfileAvatarSrc</code> in <code>src/lib/utils/profile.ts</code> is the sole avatar entry point — verification confirmed all 13 importers character-for-character. Today it falls through to a first letter over a hashed HSL gradient. No SVG generation, no data-URI construction, no badge component exists. The attachment pipeline (AES-256-GCM, Blossom, SHA-256 dedupe, per-account image cache) is mature.</p>
+
+<p><strong>Chain UX.</strong> Account creation needs zero crypto knowledge. The first on-chain action does not: it requires picking a network, holding native gas, and understanding the signer split. Squad infra locks to one network at first deploy. <code>SQUAD_DEPLOYABLE_CHAIN_IDS</code> is currently <code>['sepolia', 'local']</code> — there is no mainnet or L2-mainnet deployment yet.</p>
+
+<h4>Prior ideation — the live tension</h4>
+<p><code>docs/ideation/2026-07-20-npub-identity-ideation.html</code> ideated on npub identity three weeks ago and <strong>explicitly rejected global username uniqueness</strong> as &ldquo;a losing battle in a permissionless network,&rdquo; settling on roster-scoped identity, petnames, and verified NIP-05. Issue #124 proposes exactly the global name registry that run rejected. The mechanisms differ — that run only weighed <em>free</em> off-chain naming, while #124 proposes a <em>scarce, paid, on-chain</em> one — so the question is genuinely reopened rather than already settled. Several ideas below exploit that tension directly.</p>
+
+<h4>External context (2026)</h4>
+<ul>
+<li><strong>On-chain rendering</strong> — <code>tokenURI()</code> returning a base64 data-URI SVG is standard (Nouns, Autoglyphs, Blitmap). Feasibility is not the trap; gas is. The viable shape is an L2 plus composable primitive layers from small on-chain tables, not raster-equivalent detail.</li>
+<li><strong>Name registries</strong> — ENS v2 2026: $8/yr for 5+ chars, $160/yr for 4, $640/yr for 3, at ~2.8M names across ~640K owners. Verification correction: ENS has charged recurring annual fees <em>since inception</em>, and its own 2026-04 proposal presents the &ldquo;82% registered longer than intended&rdquo; figure as evidence the multi-year discount <em>worked</em>. Basenames (Base L2, near-zero cost) is the closest comp. Farcaster fnames are free, off-chain, and policy-gated — proof a fee is not required when something else enforces usage.</li>
+<li><strong>Token-gating UX</strong> — the universal break point is wallet-connect plus signature. The 2026 fix is embedded wallet plus ERC-4337 sponsored transactions. Pacto already ships both.</li>
+<li><strong>Monetization comparators</strong> — Discord Nitro Basic $2.99/mo, full $9.99/mo ($99.99/yr); what people buy is cosmetics and status, not utility, and Server Boost is a pooled community tier (~$42-100/mo across members). Nostr&rsquo;s own working monetization is NIP-57 zaps — small, per-post, value-for-value. Paid NIP-05 providers sell a signed handle, not a token.</li>
+<li><strong>Failure post-mortems</strong> — POAP entered maintenance mode 2026-03-16 after 7.2M badges. Verification correction: POAP&rsquo;s <em>stated</em> cause was limited growth and classification friction from its 2023 commercial-pricing pivot; &ldquo;transferability destroyed credential value&rdquo; is a third-party analysis, not POAP&rsquo;s own account. Friend.tech&rsquo;s collapse (TVL $52M &rarr; ~zero) is unambiguous: speculation with no retained utility, a bonding-curve spread causing instant paper loss, a 5% platform fee. Tradeable social-access keys are a known collapse pattern.</li>
+<li><strong>Sybil reality</strong> — an NFT&rsquo;s &ldquo;unique wallet count&rdquo; proves unique addresses that minted, trivially gamed on sponsored-gas L2s. The honest framing is &ldquo;claims&rdquo;, never &ldquo;humans&rdquo;.</li>
+</ul>
+
+<h4>Institutional learnings</h4>
+<p><code>docs/wallet/PROTOCOL_ADDRESS_BOOK.md</code> (compile-time JSON address book, operator env override), <code>docs/wallet/PACTO_SQUAD_SPONSOR.md</code> (the existing route for paying someone else&rsquo;s gas), <code>docs/governance/ACCESS_CONTROL.md</code> (fail-closed capability matrix, two coexisting trust paths), <code>docs/wallet/CHAIN_CONFIG.md</code> (per-squad chain lock — a fragmentation-avoidance precedent any registry must reckon with).</p>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ul>
+<li><strong>A. Name claim &amp; uniqueness</strong> — what a Pacto name is scoped to, how it is claimed, renewed, disputed or lost; squatting and collisions; what &ldquo;unique users&rdquo; can honestly mean.</li>
+<li><strong>B. Visual identity &amp; collectibles</strong> — the on-chain-rendered image, how it reaches the render surfaces, badges, attendance proofs, cosmetics.</li>
+<li><strong>C. Mint economics &amp; revenue</strong> — pricing shape, fee routing, who receives the money, what &ldquo;Nitro&rdquo; actually sells, recurring vs one-time.</li>
+<li><strong>D. Token-gated access &amp; perks</strong> — gating events, spaces, channels, features or governance weight; how it plugs into the existing capability and membership checks.</li>
+<li><strong>E. Chain-invisible UX &amp; onboarding</strong> — making the mint and the gate feel like a normal app action; sponsored gas, chain choice, error vocabulary, what the user never has to see.</li>
+</ul>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+
+<div class="jump-list">
+  <a href="#idea-1">1. Invisible claim, visible everywhere</a>
+  <a href="#idea-2">2. The claim replaces the checkmark</a>
+  <a href="#idea-3">3. One balance check, many gates</a>
+  <a href="#idea-4">4. Two-sided Nitro</a>
+  <a href="#idea-5">5. Badges true by construction</a>
+  <a href="#idea-6">6. Anti-squatting without a paywall</a>
+  <a href="#idea-7">7. Nostr-first, chain as exception</a>
+</div>
+
+<!-- ── IDEA 1 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-1">
+  <div class="idea-header">
+    <span class="idea-num">1.</span>
+    <h3 class="idea-title">Invisible claim, visible everywhere</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis E · Chain-invisible UX</span>
+    <span class="chip conf">Confidence 85%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Delete &ldquo;mint&rdquo; as a user-facing verb entirely. During account setup the user types a name into one field — the same gesture as setting a nickname today. Behind that field, the claim mints through the existing sponsored ERC-4337 path, so no price, no balance, no network picker and no wallet screen ever appears. The resulting on-chain SVG is then resolved by <code>getProfileAvatarSrc</code>, which is the single avatar entry point in the codebase, so the new identity image lands on all thirteen render surfaces at once without touching any of them. The whole feature reduces, from the member&rsquo;s side, to <em>&ldquo;type your name, get a face.&rdquo;</em></p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 220" role="img" aria-label="Flow from a name field through a sponsored mint and on-chain SVG into one avatar function that feeds thirteen render surfaces.">
+      <rect x="128" y="18" width="536" height="118" rx="8" fill="none" stroke="#2c313d" stroke-dasharray="5 4"/>
+      <text x="396" y="152" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" fill="#9aa3b2">the member never sees any of this</text>
+
+      <rect x="6" y="44" width="118" height="62" rx="7" fill="#1b2733" stroke="#294050"/>
+      <text x="65" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Name field</text>
+      <text x="65" y="88" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">at onboarding</text>
+
+      <rect x="150" y="44" width="126" height="62" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="213" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Sponsored mint</text>
+      <text x="213" y="88" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">squad paymaster</text>
+
+      <rect x="302" y="44" width="126" height="62" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="365" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">tokenURI()</text>
+      <text x="365" y="88" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">on-chain SVG</text>
+
+      <rect x="454" y="44" width="188" height="62" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="548" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">getProfileAvatarSrc</text>
+      <text x="548" y="88" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">profile.ts — sole entry point</text>
+
+      <rect x="668" y="44" width="186" height="62" rx="7" fill="#1b2a20" stroke="#2c4433"/>
+      <text x="761" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">13 render surfaces</text>
+      <text x="761" y="88" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">DMs, channels, Commons, wallet</text>
+
+      <g stroke="#7dd3fc" stroke-width="1.6" fill="none">
+        <path d="M124 75 L146 75"/><path d="M276 75 L298 75"/>
+        <path d="M428 75 L450 75"/><path d="M642 75 L664 75"/>
+      </g>
+      <g fill="#7dd3fc">
+        <path d="M146 75 l-7 -3.5 v7 z"/><path d="M298 75 l-7 -3.5 v7 z"/>
+        <path d="M450 75 l-7 -3.5 v7 z"/><path d="M664 75 l-7 -3.5 v7 z"/>
+      </g>
+
+      <rect x="6" y="176" width="848" height="34" rx="7" fill="#2a1d1f" stroke="#422a2e"/>
+      <text x="20" y="197" font-family="Inter,sans-serif" font-size="12" fill="#fca5a5">Caveat: somebody still funds the squad&#8217;s sponsor pool first — the funding cliff moves to squad-zero, it does not disappear.</text>
+    </svg>
+    <figcaption>The leverage is the narrow waist in the middle: one avatar function already feeds every surface that shows a person, so the mint only has to reach that one function.</figcaption>
+  </figure>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-direct">direct:</span> <code>getProfileAvatarSrc</code> is defined once in <code>src/lib/utils/profile.ts</code> and imported at thirteen call sites — <code>ChatView.svelte</code>, <code>CommonsBroadcastCard.svelte</code>, <code>CommonsBroadcastDetailModal.svelte</code>, <code>CommonsPersonalPanel.svelte</code>, <code>DmThread.svelte</code>, <code>MessengerNavbar.svelte</code>, <code>DeploySafeModal.svelte</code>, <code>DashboardCrewTab.svelte</code>, <code>ParentDashboardMembersPanel.svelte</code>, <code>ProfileSection.svelte</code>, <code>WalletBar.svelte</code>, <code>resolve-dm-message-presentation.ts</code> and <code>mention-autocomplete.ts</code>. Independent verification confirmed this list character-for-character; it was the best-verified citation in the whole candidate set. Its current fallback is <code>commonsTagGradient(seed)</code> hashing into two HSL values plus a first letter.</p>
+    <p><span class="tag-direct">direct:</span> <code>gov_module_write.rs</code> already implements <code>WritePath::Sponsored</code> — roster key when it can afford the write, sponsored UserOp when it cannot. The mint reuses this rather than introducing a payment rail.</p>
+    <p><span class="tag-external">external:</span> 2026 token-gating research names embedded wallet plus sponsored transaction as the documented best practice for hiding chain complexity. Pacto is unusual in already shipping both halves for a different feature.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>Issue #124&rsquo;s mint fee is in direct tension with the &ldquo;somewhat simple to use&rdquo; bar, and the codebase already contains the resolution. The fan-out ratio is the real prize: one function edit converts a mint from &ldquo;one more screen a user has to find&rdquo; into &ldquo;the thing they see everywhere their name already appears.&rdquo; That changes how the feature should be priced and pitched — it is not a purchase, it is the default face.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p>&ldquo;The member never sees an error&rdquo; is not literally true today. <code>sponsor_userop.rs</code> ships a live <code>SPONSOR_POOL_LOW</code> error (&ldquo;sponsor pool below required headroom&rdquo;), and <code>BUNDLER_CONFIG</code> and <code>SPONSOR_PATH_UNAVAILABLE</code> tell the reader to set <code>BUNDLER_RPC_URL</code> and <code>PACTO_ERC4337_ACCOUNT_IMPL</code> — language that assumes the reader already understands bundlers and 4337 accounts. Those strings need rewriting before this claim holds.</p>
+    <p>The funding cliff relocates rather than vanishes: whoever bootstraps a squad still funds the pool and picks a network. A silent mint also means the member never consciously agrees to an on-chain action, which is a consent question worth deciding deliberately. And if the mint is free and sponsored, the resulting mint count is trivially sybil-gamed — report it as &ldquo;claims&rdquo;, never as &ldquo;unique humans&rdquo;.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 2 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-2">
+  <div class="idea-header">
+    <span class="idea-num">2.</span>
+    <h3 class="idea-title">The claim replaces the decorative checkmark</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis A · Name claim &amp; uniqueness</span>
+    <span class="chip conf">Confidence 90%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Pacto currently renders a green checkmark next to whatever NIP-05 string a user put in their own Nostr metadata. Nothing verifies it. Rather than adding a second, better badge next to a broken one, delete the existing checkmark and make &ldquo;holds an active on-chain name claim&rdquo; the single verification signal shown anywhere in the product. This is a subtraction, and the NFT registry is the first mechanism in the codebase capable of making that signal true.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 176" role="img" aria-label="Before and after comparison of the profile verification badge.">
+      <rect x="6" y="6" width="414" height="160" rx="8" fill="#2a1d1f" stroke="#422a2e"/>
+      <text x="24" y="32" font-family="Inter,sans-serif" font-size="11.5" font-weight="600" letter-spacing="0.07em" fill="#fca5a5">TODAY</text>
+      <rect x="24" y="46" width="378" height="42" rx="6" fill="#16191f" stroke="#2c313d"/>
+      <text x="42" y="72" font-family="Inter,sans-serif" font-size="14" fill="#86efac">&#10003;</text>
+      <text x="60" y="72" font-family="Inter,sans-serif" font-size="14" fill="#e7eaef">alice@example.com</text>
+      <text x="24" y="112" font-family="Inter,sans-serif" font-size="12" fill="#9aa3b2">Copied verbatim from the user&#8217;s own Kind-0 metadata.</text>
+      <text x="24" y="130" font-family="Inter,sans-serif" font-size="12" fill="#9aa3b2">No .well-known/nostr.json fetch exists anywhere in the repo.</text>
+      <text x="24" y="150" font-family="Inter,sans-serif" font-size="12" fill="#fca5a5">Anyone can type anything and get the checkmark.</text>
+
+      <rect x="440" y="6" width="414" height="160" rx="8" fill="#17242c" stroke="#233846"/>
+      <text x="458" y="32" font-family="Inter,sans-serif" font-size="11.5" font-weight="600" letter-spacing="0.07em" fill="#7dd3fc">PROPOSED</text>
+      <rect x="458" y="46" width="378" height="42" rx="6" fill="#16191f" stroke="#2c313d"/>
+      <text x="476" y="72" font-family="Inter,sans-serif" font-size="14" fill="#7dd3fc">&#9670;</text>
+      <text x="494" y="72" font-family="Inter,sans-serif" font-size="14" fill="#e7eaef">alice</text>
+      <text x="458" y="112" font-family="Inter,sans-serif" font-size="12" fill="#9aa3b2">Rendered only when the npub&#8217;s bound address holds the claim.</text>
+      <text x="458" y="130" font-family="Inter,sans-serif" font-size="12" fill="#9aa3b2">One signal, checkable on chain, true by construction.</text>
+      <text x="458" y="150" font-family="Inter,sans-serif" font-size="12" fill="#86efac">No claim, no badge — and no second badge to confuse it with.</text>
+    </svg>
+    <figcaption>The point is the deletion. Shipping an honest badge <em>next to</em> a dishonest one leaves users worse off than either alone.</figcaption>
+  </figure>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-direct">direct:</span> <code>src/components/settings/ProfileSection.svelte</code> renders <code>{#if profile.nip05}&lt;p class="nip05"&gt;&#10003; {profile.nip05}&lt;/p&gt;{/if}</code>, and <code>src-tauri/src/profile.rs</code> only ever copies the claimed value out of Kind-0 metadata. Verification searched the repository for <code>well-known</code> and <code>nostr.json</code> and found <strong>zero</strong> hits — there is no verification call to be found anywhere.</p>
+    <p><span class="tag-direct">direct:</span> the roster binding <code>(parent_id, member_npub) &rarr; evm_address</code> in <code>V16__squad_member_evm.sql</code> gives the claim a checkable owner without inventing new plumbing.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>Users make real trust decisions — who to DM, who to treat as an officer — off a checkmark that means nothing. In an app whose whole proposition is trustworthy identity without KYC, a decorative verification badge is not a cosmetic bug; it is a social-engineering surface the product ships on purpose. This is also the cleanest answer to &ldquo;what does the NFT actually buy us&rdquo;: it buys the first verification claim Pacto can make honestly. Note that the prior ideation run reached the same target from a different direction — verified NIP-05 — so these are competing mechanisms for one slot, not complements.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p>Removing the checkmark before the claim exists briefly makes the product look <em>less</em> trustworthy even though it becomes more honest. The claim is only meaningful where the reader can check it, so cross-squad and Commons surfaces need a resolution path or the badge silently degrades. And it competes head-on with the prior run&rsquo;s verified-NIP-05 idea: NIP-05 costs a DNS lookup and no chain, this costs a chain read and no DNS. Picking both is worse than picking either.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 3 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-3">
+  <div class="idea-header">
+    <span class="idea-num">3.</span>
+    <h3 class="idea-title">One balance check, many gates — plus time-boxed event passes</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis D · Token-gated access</span>
+    <span class="chip conf">Confidence 70%</span>
+    <span class="chip cx">Complexity High</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Issue #124 wants NFTs to gate &ldquo;special Pacto events, spaces, or features.&rdquo; Pacto has exactly three places where that decision is made, and they are independent by design: <code>require_capability()</code> for the fourteen governance actions, <code>Channel.access</code> for spaces, and MLS welcome processing for group admission. Add one NFT-balance read that all three can consult, then mint event passes whose validity window lives in the token&rsquo;s own metadata — so a pass is checked live at each door and simply stops mattering after the event, with no burn transaction and no revocation flow.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 258" role="img" aria-label="One balance read feeding three independent gating checkpoints, with a caveat box about per-squad configuration.">
+      <rect x="6" y="66" width="196" height="76" rx="7" fill="#1b2733" stroke="#294050"/>
+      <text x="104" y="94" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">balanceOf(claim)</text>
+      <text x="104" y="112" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">one eth_call &rarr; one bool</text>
+      <text x="104" y="130" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">+ validity window</text>
+
+      <rect x="360" y="10" width="494" height="56" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="378" y="34" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">require_capability()</text>
+      <text x="378" y="52" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">14 governance actions &#183; 6 call sites &#183; fails closed</text>
+
+      <rect x="360" y="76" width="494" height="56" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="378" y="100" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Channel.access</text>
+      <text x="378" y="118" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">&#8216;open&#8217; | &#8216;closed&#8217; &rarr; add an nft-gated case</text>
+
+      <rect x="360" y="142" width="494" height="56" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="378" y="166" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">MLS welcome filter</text>
+      <text x="378" y="184" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">invited_recipients resolution before group add</text>
+
+      <g stroke="#7dd3fc" stroke-width="1.6" fill="none">
+        <path d="M202 104 L262 104 L262 38 L354 38"/>
+        <path d="M262 104 L354 104"/>
+        <path d="M262 104 L262 170 L354 170"/>
+      </g>
+      <g fill="#7dd3fc">
+        <path d="M354 38 l-7 -3.5 v7 z"/><path d="M354 104 l-7 -3.5 v7 z"/><path d="M354 170 l-7 -3.5 v7 z"/>
+      </g>
+      <text x="252" y="228" text-anchor="end" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">three doors, checked independently</text>
+
+      <rect x="6" y="212" width="240" height="40" rx="7" fill="#2a1d1f" stroke="#422a2e"/>
+      <text x="20" y="237" font-family="Inter,sans-serif" font-size="11.5" fill="#fca5a5">not free: see caveat below</text>
+    </svg>
+    <figcaption>The three checkpoints cannot consult each other at decision time, which is exactly why a self-verifying token checked locally at each door is the right shape — the same reason a festival wristband is scanned separately at parking, the gate and the VIP tent.</figcaption>
+  </figure>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-direct">direct:</span> the three seams are real and separately confirmed — <code>require_capability&lt;R: Runtime&gt;(app, parent_id, capability, rpc_urls)</code> fails closed via <code>Err(wallet_err_json("ACL_DENIED", reason, None))</code>; <code>Channel.access?: 'open' | 'closed'</code> in <code>src/stores/squads.ts</code>; and the <code>invited_recipients</code> resolution inside MLS welcome processing.</p>
+    <p><span class="tag-direct">direct:</span> the gating layer is genuinely agnostic to what answers the read. Verification confirmed <code>require_capability</code> / <code>capability_allowed</code> only ever consume a boolean populated by a swappable <code>eth_call_decode</code> — the same seam already used for <code>isWearerOfHat</code>. Whether the claim is an ERC-721, an ERC-5192 soulbound token or a pure attestation with no <code>transferFrom</code> at all does not change the gating code.</p>
+    <p><span class="tag-reasoned">reasoned:</span> an event pass whose expiry is baked into its own metadata never needs a revocation transaction, because validity is evaluated at presentation rather than stored as a grant. That removes the entire post-event lifecycle — the part where a permanent membership token becomes a stale credential nobody remembers to withdraw.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>This is the only idea in the set that turns issue #124&rsquo;s vaguest line — &ldquo;token gate special Pacto events, spaces, or features&rdquo; — into something a team can actually scope, because it names the three functions that would change. It also cleanly separates &ldquo;buy into one privilege&rdquo; from &ldquo;join the squad&rdquo;: an event pass can open a channel without ever touching MLS, so it cannot be used to sneak into private messaging.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p><strong>The leverage is smaller than it first appears, and verification caught this.</strong> The tempting claim is &ldquo;add one enum variant and gate any subset of the fourteen actions with zero new call sites.&rdquo; That is wrong. There are six <code>require_capability</code> call sites, not four, and each one <em>hardcodes</em> its own fixed <code>GovCapability</code>; <code>capability_allowed()</code>&rsquo;s match arms are grouped by shared logic, so <code>ProposeTreasury</code> and <code>MutateTrackedTokens</code> share an arm. Making gating configurable per squad needs new per-squad state plus restructured arms — a real project, not a one-line change. Complexity is High for that reason.</p>
+    <p>Three independent checkpoints also means three places to get consistency wrong: a pass that opens the channel but not the MLS group is a confusing half-admission. And per-squad gate configuration reintroduces exactly the class of captain error (a stale gate after a role change) that deriving gates from the existing capability ladder would have avoided — that alternative was considered and cut, but it is the honest counter-argument to this idea.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 4 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-4">
+  <div class="idea-header">
+    <span class="idea-num">4.</span>
+    <h3 class="idea-title">Two-sided Nitro: cosmetics up, gas down</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis C · Mint economics &amp; revenue</span>
+    <span class="chip conf">Confidence 65%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Stop treating &ldquo;Nitro&rdquo; as a subscription that unlocks features, and copy what Discord&rsquo;s revenue actually is. Individuals buy small cosmetic layers for their own claim image — an alternate palette, an animated trait, a frame — with no functional value attached. Those payments land in the squad&rsquo;s own sponsor pool via the member-callable deposit path, which is the same pool that pays everyone&rsquo;s governance gas. When a squad&rsquo;s aggregate cosmetic spend crosses a threshold, the whole squad unlocks a shared perk, mirroring Server Boost rather than Nitro-the-subscription. The loop is self-reinforcing: more cosmetics bought, more free gas for votes, more governance activity, more reason to be visible.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 268" role="img" aria-label="A circular money loop from member purchases through the squad sponsor pool to free governance gas, with an undesigned branch to Pacto revenue.">
+      <rect x="6" y="96" width="182" height="66" rx="7" fill="#1b2733" stroke="#294050"/>
+      <text x="97" y="124" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Member buys</text>
+      <text x="97" y="142" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">a cosmetic layer</text>
+
+      <rect x="228" y="96" width="182" height="66" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="319" y="124" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Squad sponsor pool</text>
+      <text x="319" y="142" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">deposit is member-callable</text>
+
+      <rect x="450" y="96" width="182" height="66" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="541" y="124" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">Free governance gas</text>
+      <text x="541" y="142" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">sponsored UserOps</text>
+
+      <rect x="672" y="96" width="182" height="66" rx="7" fill="#1b2a20" stroke="#2c4433"/>
+      <text x="763" y="124" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#e7eaef">More votes cast</text>
+      <text x="763" y="142" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">more reason to be seen</text>
+
+      <g stroke="#7dd3fc" stroke-width="1.6" fill="none">
+        <path d="M188 129 L222 129"/><path d="M410 129 L444 129"/><path d="M632 129 L666 129"/>
+        <path d="M763 162 L763 200 L97 200 L97 162"/>
+      </g>
+      <g fill="#7dd3fc">
+        <path d="M222 129 l-7 -3.5 v7 z"/><path d="M444 129 l-7 -3.5 v7 z"/><path d="M666 129 l-7 -3.5 v7 z"/>
+        <path d="M97 162 l-3.5 7 h7 z"/>
+      </g>
+      <text x="430" y="218" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">the loop closes inside the squad</text>
+
+      <rect x="228" y="14" width="404" height="54" rx="7" fill="#2a1d1f" stroke="#422a2e" stroke-dasharray="5 4"/>
+      <text x="430" y="36" text-anchor="middle" font-family="Inter,sans-serif" font-size="12.5" fill="#fca5a5">Pacto revenue &#8212; no mechanism designed</text>
+      <text x="430" y="55" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">every candidate mechanism kept the money squad-internal</text>
+      <g stroke="#fca5a5" stroke-width="1.4" fill="none" stroke-dasharray="4 4">
+        <path d="M319 96 L319 74"/>
+      </g>
+      <path d="M319 74 l-3.5 7 h7 z" fill="#fca5a5"/>
+      <text x="332" y="86" font-family="Inter,sans-serif" font-size="11.5" fill="#fca5a5">?</text>
+    </svg>
+    <figcaption>The dashed box is the finding, not a decoration. Every revenue mechanism generated in this run routes money to the squad&#8217;s own pool, a member, or a cause — none of it reaches Pacto. Discord&#8217;s money reaches Discord.</figcaption>
+  </figure>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-external">external:</span> Discord Nitro Basic is $2.99/mo and full Nitro $9.99/mo ($99.99/yr) — figures confirmed in verification — and what people buy is cosmetics and status, not utility. Server Boost is a genuinely pooled community tier, with Level 3 reached at roughly $42-100/mo across multiple members. That is a structurally different product from &ldquo;pay to unlock a feature&rdquo;, which is what issue #124 currently implies by &ldquo;Nitro feature income source&rdquo;.</p>
+    <p><span class="tag-direct">direct:</span> <code>squad_sponsor_deposit.rs</code> exposes &ldquo;send ETH to a squad sponsor clone via <code>ISquadSponsorBase.deposit()</code>&rdquo;, and verification confirmed it is <em>member</em>-callable, gated by <code>require_parent_member</code> rather than captain-only. The pool exists today as a one-time, non-recoverable admin deposit; this makes it refillable by ordinary use.</p>
+    <p><span class="tag-external">external:</span> Friend.tech is the boundary condition. Its collapse — TVL $52M to effectively zero, a bonding-curve spread causing an instant paper loss, a 5% platform fee — is what happens when social access becomes a tradeable market. Cosmetics with no functional value and no resale market cannot enter that failure mode.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>Issue #124 conflates two goals in one transaction: the fee should deter spam <em>and</em> generate income. Those want opposite pricing. Cosmetics separate them cleanly — spam deterrence moves elsewhere (see idea 6), and revenue attaches to something people demonstrably pay for repeatedly. It also makes the money legible to a no-KYC organizing tool&rsquo;s members: they are topping up their own squad&rsquo;s gas, not paying a platform rent.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p><strong>This does not fund Pacto, and that is the open fork.</strong> Verification&rsquo;s sharpest finding was that <em>no</em> candidate mechanism in this run routes revenue to a Pacto-owned treasury — they all keep money squad-internal, redirect it to a member, or spend from the squad&rsquo;s own funds. If &ldquo;Nitro income source&rdquo; means income for Pacto, this idea needs an explicit protocol cut on cosmetic sales, and that decision should be made deliberately rather than discovered later. A cut on cosmetics is the least objectionable place to put one, since nothing functional is being taxed.</p>
+    <p>Cosmetic demand is also unproven at Pacto&rsquo;s scale — Discord&rsquo;s cosmetics economy runs on hundreds of millions of users, and a private organizing tool with small squads may simply not have enough audience for status goods to matter. The pooled-threshold perk needs a visible progress bar or it feels arbitrary. And a cosmetics layer meaningfully increases the on-chain rendering surface, which is the part with real gas cost.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 5 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-5">
+  <div class="idea-header">
+    <span class="idea-num">5.</span>
+    <h3 class="idea-title">Badges that are true by construction</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis B · Visual identity &amp; collectibles</span>
+    <span class="chip conf">Confidence 80%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Add a post-success hook inside <code>require_capability</code> that mints a non-transferable badge tagged to the capability actually exercised — cast a mutiny vote, executed a treasury proposal, resigned as captain. Because the hook fires only after a real fail-closed check passes, the badge cannot be self-minted, bought, or claimed by someone who did not do the thing. Render the badges as a strip through the same on-chain SVG pipeline as the identity claim, and add one permanent trait for provenance facts that cannot become wrong later — &ldquo;joined in the squad&rsquo;s first 30 days&rdquo; is the canonical case. This is the &ldquo;fun&rdquo; layer the user asked for, and it costs almost nothing once idea 3 exists.</p>
+  </div>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-direct">direct:</span> <code>require_capability</code> returns <code>Ok(())</code> only after the check passes for one of the fourteen <code>GovCapability</code> variants. That is a single, already-fail-closed success path covering every governance action Pacto has — a badge minted there is a credential by construction rather than by policy.</p>
+    <p><span class="tag-direct">direct:</span> there is no badge component to collide with. The visual-identity scan found only a <code>hasUnreadDot</code> boolean in <code>Tab.svelte</code> — no trait display, no achievement scaffold, no indicator vocabulary. Greenfield.</p>
+    <p><span class="tag-external">external:</span> ERC-5192 defines soulbound semantics precisely — <code>locked()</code> is true and transfers revert. Note the corrected history: POAP&rsquo;s <em>stated</em> reason for entering maintenance mode in March 2026 was limited growth and classification friction from its commercial-pricing pivot, not transferability. The transferability critique is a third-party reading. It is still the right design call here, but on its own merits: a credential that can be bought stops being evidence of anything, and Pacto has no legacy transferable badges to migrate.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>Attendance badges are the obvious version of this and the weak one, because &ldquo;showed up&rdquo; is hard to prove and easy to fake. Capability-gated badges are strictly stronger: the chain already had to agree you were allowed to do the thing before you did it. That makes the collectible layer meaningful and cheap at the same time, and it gives Pacto a reason to render visuals for people who never bother customizing anything.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p>Minting on every governance action multiplies transaction count and therefore sponsor-pool drain — this likely needs batching or a mint-on-first-occurrence rule rather than one token per vote. Badges tied to governance also only reward the governance-active minority; most members of most squads will have an empty strip, which is a worse look than no strip at all. And a badge that records &ldquo;started a mutiny&rdquo; is permanent political history inside a private organizing tool — some squads will consider that a feature and some a liability, so it should be opt-in per squad.</p>
+    <p>A related idea was cut for a reason worth carrying: deriving the identity <em>image</em> from governance state sounded compelling until verification found the field it relied on does not exist. <code>HatContext</code> has exactly <code>roster_address</code>, <code>wears_captain</code>, <code>wears_crew</code> and <code>captain_is_safe</code> — three usable booleans, no participation record. Most non-captains would render identically. Badges work where the derived-image idea does not, because a badge records an event rather than reading a state.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 6 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-6">
+  <div class="idea-header">
+    <span class="idea-num">6.</span>
+    <h3 class="idea-title">Anti-squatting without a paywall</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis A · Name claim &amp; uniqueness</span>
+    <span class="chip conf">Confidence 60%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>Two mechanisms that together remove the fee from the anti-spam job entirely. First, never block a claim: the first mint of a string wins it outright, and a later mint of the same string is automatically differenced by the contract — &ldquo;Atlas&rdquo;, then &ldquo;Atlas (2)&rdquo; — with the suffix rendered into the SVG and treated as part of the name. Second, claims lapse unless used: a claim goes dormant after a period of inactivity unless renewed by a free, gasless signed Nostr event that the app can emit silently on launch, with the registry settling batches of renewal proofs periodically. Squatting becomes pointless because a hoarded name decays, and nobody is ever locked out of a name they wanted or charged rent to keep one they use.</p>
+  </div>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-direct">direct:</span> Pacto already has the collision failure and it is silent. <code>src/lib/utils/message-formatting.test.ts</code> contains a test literally titled &ldquo;resolves multiple mentions with the same alias by occurrence order&rdquo; — when two roster members display as &ldquo;alice&rdquo;, the resolver picks whichever mention appears first in an array, invisibly to the sender.</p>
+    <p><span class="tag-external">external:</span> Farcaster fnames are free, off-chain, and policy-gated against squatting — direct evidence that a fee is not required when something else enforces usage. Membership registries have long used automatic differencing rather than refusal or auction; SAG-AFTRA requires a duplicate stage name to be distinguished before registration (the canonical case is Michael J. Fox). Two corrections from verification are worth stating plainly: SAG&rsquo;s mechanism is a member-<em>chosen</em> distinguishing element rather than an auto-appended numeral, and the common claim that Harberger-style forced-sale pricing &ldquo;never shipped&rdquo; is false — Wildcards has run it on mainnet since around 2021. Neither correction breaks the mechanism proposed here, but neither analogy should be cited as precedent for it.</p>
+    <p><span class="tag-reasoned">reasoned:</span> a one-time fee is a single deterrent event, priced against a squatter&rsquo;s expected resale value rather than against use. Decay prices against <em>attention</em>, which a squatter holding a thousand names cannot supply and a real user supplies for free by opening the app. That is why decay is a better fit than rent for a product whose bar is &ldquo;somewhat simple to use&rdquo;: the honest user never experiences a payment or a renewal decision at all.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>Issue #124 assumes the mint fee does double duty as revenue and spam control. The refuted candidate in this run was the one that argued ENS proves recurring rent is the anti-squatting lever — ENS has in fact charged annual fees since inception, so it demonstrates nothing about moving away from one-time fees. With that argument gone, the anti-squatting question is wide open and needs an answer that is not &ldquo;charge money&rdquo;. This is that answer, and it lets idea 4 own revenue cleanly without also having to be a deterrent.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p>Auto-suffixing means the name a user typed is not always the name they get, which is a real disappointment at the exact moment of first use — the confirmation screen has to show the actual result before minting, not after. Decay is the riskier half: a lapsed claim means an identity silently disappears, which is far worse than a name being taken, so the dormancy window has to be long and the warning loud. Batched off-chain renewal proofs also introduce a settlement mechanism that has to be designed, indexed, and trusted — this is the least specified idea in the set, which is why its confidence is lowest.</p>
+    <p>Worth pairing with a reporting constraint that was considered separately and folded in here: whatever this registry counts, it counts <em>claims</em>. Sponsored minting makes sybil claims free, so a raw mint count can never honestly be described as &ldquo;unique users&rdquo; in the way issue #124 proposes. Counting only claims countersigned by an existing captain would give a defensible number, at the cost of a step most users would never take.</p>
+  </div>
+</article>
+
+<!-- ── IDEA 7 ─────────────────────────────────────────────── -->
+<article class="idea-card" id="idea-7">
+  <div class="idea-header">
+    <span class="idea-num">7.</span>
+    <h3 class="idea-title">Nostr-first claim, chain as the exception path</h3>
+  </div>
+  <div class="chips">
+    <span class="chip axis">Axis E · Chain-invisible UX</span>
+    <span class="chip conf">Confidence 75%</span>
+    <span class="chip cx">Complexity Medium</span>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Description</span>
+    <p>The deliberate counter-proposal. Decompose what issue #124&rsquo;s NFT is actually doing and check whether each job needs a token. It is doing three: a name database, gating for events and spaces, and fee income. The name database is a signed replaceable Nostr event — same trust model as NIP-05, no wallet, no gas, no network picker. Gating already works through MLS membership and the three-signal check, with zero extra chain calls. That leaves income, and the chain artifact. Publish claims as Nostr events by default and escalate to an on-chain anchor only in three cases: a contested claim, a squad voting to federate its namespace, or a user who wants portable proof outside Pacto. Most claims never touch a chain at all.</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 232" role="img" aria-label="Comparison of how many claims touch the chain under the default approach versus the Nostr-first approach.">
+      <text x="6" y="28" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#e7eaef">Ideas 1&#8211;6: the chain is the default path</text>
+      <rect x="6" y="40" width="848" height="26" rx="5" fill="#1b2733" stroke="#294050"/>
+      <text x="430" y="58" text-anchor="middle" font-family="Inter,sans-serif" font-size="11.5" fill="#e7eaef">every claim is a transaction</text>
+
+      <text x="6" y="104" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#e7eaef">Idea 7: the chain is the exception path</text>
+      <rect x="6" y="116" width="848" height="26" rx="5" fill="#1e222b" stroke="#2c313d"/>
+      <rect x="6" y="116" width="72" height="26" rx="5" fill="#1b2733" stroke="#294050"/>
+      <text x="96" y="134" font-family="Inter,sans-serif" font-size="11.5" fill="#9aa3b2">disputes, federation votes, export &#8212; everything else stays a signed Nostr event</text>
+
+      <rect x="6" y="168" width="274" height="58" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="24" y="190" font-family="Inter,sans-serif" font-size="12" fill="#e7eaef">1. Name database</text>
+      <text x="24" y="209" font-family="Inter,sans-serif" font-size="11.5" fill="#86efac">signed Nostr event &#8212; no chain</text>
+
+      <rect x="292" y="168" width="274" height="58" rx="7" fill="#1e222b" stroke="#2c313d"/>
+      <text x="310" y="190" font-family="Inter,sans-serif" font-size="12" fill="#e7eaef">2. Event &amp; space gating</text>
+      <text x="310" y="209" font-family="Inter,sans-serif" font-size="11.5" fill="#86efac">MLS membership &#8212; no chain</text>
+
+      <rect x="578" y="168" width="276" height="58" rx="7" fill="#2a1d1f" stroke="#422a2e"/>
+      <text x="596" y="190" font-family="Inter,sans-serif" font-size="12" fill="#e7eaef">3. Fee income</text>
+      <text x="596" y="209" font-family="Inter,sans-serif" font-size="11.5" fill="#fca5a5">zaps need Lightning &#8212; a different chain</text>
+    </svg>
+    <figcaption>Two of the three jobs are genuinely chain-free. The third is not — swapping EVM for Lightning is a substitution, not a removal, and that is the honest weak point of this direction.</figcaption>
+  </figure>
+
+  <div class="field basis">
+    <span class="field-label">Basis</span>
+    <p><span class="tag-external">external:</span> Nostr&rsquo;s own paid-identity market chose signatures over tokens. Paid NIP-05 providers sell a vanity DNS-backed handle for a few dollars; no squatting economy formed around them because NIP-05 is a pointer, not ownership. That is the clearest available counter-model to issue #124&rsquo;s premise, and it comes from Pacto&rsquo;s own protocol ecosystem rather than an adjacent one.</p>
+    <p><span class="tag-direct">direct:</span> the gating job is already done. <code>squad_sponsor_common.rs</code> implements the three-signal membership check — <code>if in_mls || has_evm_binding || has_roster_address { Ok(()) } else { Err(NOT_PARENT_MEMBER) }</code> — with no personal-signer fallback. Nothing about gating an event requires a new token.</p>
+    <p><span class="tag-reasoned">reasoned:</span> an on-chain registry earns its cost by enforcing scarcity against strangers you have no other way to reason about. Inside a squad already closed by MLS membership and roster binding, there are no strangers, so the contract solves a problem that does not exist at that scale — the same reason a two-person project does not incorporate before it has a dispute to arbitrate. Chain value appears exactly when a claim must be legible <em>outside</em> the closed set.</p>
+  </div>
+
+  <div class="field">
+    <span class="field-label">Rationale</span>
+    <p>This is the idea that changes what gets built rather than how. If two of the three jobs need no chain, then &ldquo;should we ship an NFT contract&rdquo; becomes &ldquo;should we ship a dispute-and-export contract we almost never call&rdquo; — different scope, different risk, different sequencing. It deserves an explicit decision rather than being skipped past, and it is the cheapest way to get most of issue #124&rsquo;s user-visible value in the near term while the deployable chain set is still <code>['sepolia', 'local']</code>.</p>
+  </div>
+
+  <div class="field downsides">
+    <span class="field-label">Downsides</span>
+    <p>The income leg does not survive the headline. NIP-57 zaps require Lightning — channels, receipts, a wallet model Pacto has no infrastructure for — so &ldquo;no chain at all&rdquo; really means &ldquo;a different chain, with its own literacy burden.&rdquo; A Nostr-event claim is also only as authoritative as the relay set that carries it, and replaceable events give weaker dispute-resolution guarantees than an on-chain registry precisely where disputes matter most. Choosing this forecloses most of ideas 1 through 6, since they assume a token exists: it is a fork, not a complement.</p>
+  </div>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+
+<div class="callout">
+  <span class="field-label">Verification note</span>
+  <p>Every candidate was re-checked by a fresh-context verifier that never saw the generation, reading the cited repo lines directly and spot-checking the load-bearing external claims. Result: 26 sound, 21 weak, 1 refuted. Several rejections below are corrections of citations that looked convincing and were not. One verifier verdict was overruled — it flagged the &ldquo;prior ideation&rdquo; citations as unfalsifiable because they were absent from the material it was given; the doc exists at <code>docs/ideation/2026-07-20-npub-identity-ideation.html</code> and the &ldquo;losing battle in a permissionless network&rdquo; quote was confirmed verbatim.</p>
+</div>
+
+<table>
+<thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Name-tag mint replaces the raw-npub mention fallback</td><td>An automatic corollary of any name-claim decision, not a decision itself — below the ambition floor as a standalone.</td></tr>
+<tr><td>2</td><td>Soulbound roster claim as its own direction</td><td>Non-transferability is absorbed as a property of ideas 2, 3 and 5 rather than being a direction of its own.</td></tr>
+<tr><td>3</td><td>One global registry rather than one per squad</td><td>Its stated payoff — an honest cross-Pacto user count — is undercut by the sybil problem it does not address. The scope question survives inside idea 6.</td></tr>
+<tr><td>4</td><td>Seat number instead of a name claim</td><td>Clean and genuinely collision-free, but replaces the subject the user named (name claims) rather than operating on it.</td></tr>
+<tr><td>5</td><td>Retire &ldquo;unique users&rdquo;; count captain-vouched claims</td><td>Sound, but a constraint on how a number is reported rather than a direction to build — folded into the downsides of ideas 1 and 6.</td></tr>
+<tr><td>6</td><td>Make namespace scope a squad vote</td><td>Basis refuted: cites <code>SquadAdminCreateRole</code> as a vote precedent; verification found it is a unilateral captain gate. Real vote precedents exist but were not the ones cited.</td></tr>
+<tr><td>7</td><td>Pre-shard the namespace for 1M users</td><td>Solves a scale the infrastructure cannot reach — <code>SQUAD_DEPLOYABLE_CHAIN_IDS</code> is currently <code>['sepolia', 'local']</code>, with no mainnet or L2 deployment at all.</td></tr>
+<tr><td>8</td><td>Identity image derived from the governance record</td><td>Basis refuted: the <code>participation</code> field it depends on does not exist. <code>HatContext</code> has three usable booleans, so most non-captains would render identically. Reasoning carried into idea 5&rsquo;s downsides.</td></tr>
+<tr><td>9</td><td>Heraldic cadency marks differencing identical tag picks</td><td>Basis refuted: conflates the Commons political/topical tag taxonomy (anarchism, communism, crypto) with issue #124&rsquo;s identity-image tags. Generating identity art themed &ldquo;leninist&rdquo; is not the intent.</td></tr>
+<tr><td>10</td><td>Duplicate-only sticker swaps between badge holders</td><td>Internally contradictory: describes badges as soulbound while requiring a 1-for-1 transfer to swap them.</td></tr>
+<tr><td>11</td><td>Sponsor pool rebate for claim holders</td><td>Permit-list citation unverified, and the mechanism overlaps idea 4&rsquo;s value loop without adding a distinct decision.</td></tr>
+<tr><td>12</td><td>Recurring rent replaces the mint fee</td><td><strong>Refuted.</strong> ENS has charged recurring annual fees since inception, so it is not evidence that rent beats a one-time fee; and the &ldquo;82% registered longer than intended&rdquo; figure is presented by ENS as proof the discount worked, not that it backfired.</td></tr>
+<tr><td>13</td><td>Testimonial mint week: crew-voted fee redirection</td><td>An appealing governance shape, but a variant of idea 4&rsquo;s fee-routing question rather than a separate direction.</td></tr>
+<tr><td>14</td><td>Quarterage: recurring dues funding a gas-hardship pool</td><td>Overlaps idea 4&rsquo;s pool-funding loop; the mutual-aid framing is a positioning choice on the same mechanism.</td></tr>
+<tr><td>15</td><td>A single $500 founding seal per squad</td><td>The most crypto-heavy moment in the entire candidate set — funding an address and confirming a large send — which fails the stated simplicity bar.</td></tr>
+<tr><td>16</td><td>Add the registry to the protocol address book</td><td>Mechanical config hygiene (add a JSON key), not a decision. Below the ambition floor.</td></tr>
+<tr><td>17</td><td>&ldquo;Mint to unlock&rdquo; CTA on every fail-closed ACL error</td><td>A genuinely good UX fix, but it is a remediation pattern for existing ACL errors rather than an NFT direction — worth filing separately.</td></tr>
+<tr><td>18</td><td>NFT balance as a fourth branch of the membership OR-gate</td><td>Custody model conflicts with the squad-held variant; the mechanism itself is absorbed into idea 3.</td></tr>
+<tr><td>19</td><td>Derive gate tiers from the capability ladder</td><td>Directly contradicts idea 3&rsquo;s event passes, which are deliberately independent of the ladder. Recorded there as the counter-argument.</td></tr>
+<tr><td>20</td><td>Issue an attestation instead of a token</td><td>Sound and important, but it is a contract-shape question that applies to every survivor rather than competing with them — recorded as the open decision inside ideas 3 and 5.</td></tr>
+<tr><td>21</td><td>Only the squad Safe holds the gating NFT</td><td>Removes the individual identity the feature exists to establish; solves the departure problem by deleting the subject.</td></tr>
+<tr><td>22</td><td>One seed, no wallet screen</td><td>True only for the signing step — the network decision survives it. Absorbed into idea 1.</td></tr>
+<tr><td>23</td><td>Pin the registry to one canonical chain for everyone</td><td><code>CHAIN_CONFIG.md</code> documents a <em>per-squad</em> lock, which is not a precedent for one chain shared by every squad. The better precedent (singleton factory contracts in the address book) was not the one cited.</td></tr>
+<tr><td>24</td><td>Registry as one more <code>infra_type</code> row</td><td>Build-side leverage (a single match arm), not a product direction. Below the ambition floor.</td></tr>
+<tr><td>25</td><td>Recipient-declared network default for sends</td><td>A real chain-UX win, but it is about peer-to-peer transfers rather than NFTs — outside the asked scope.</td></tr>
+<tr><td>26</td><td>Synthesis: meaningful self-differencing image</td><td>Inherits both refuted bases above (the fabricated capability field and the tag-vocabulary conflation).</td></tr>
+<tr><td>27</td><td>Synthesis: &ldquo;matches Discord&rsquo;s revenue mix&rdquo;</td><td>Wrong on the recipient — every mechanism keeps money squad-internal while Discord&rsquo;s revenue reaches Discord. The corrected version survives as idea 4, with the gap stated explicitly.</td></tr>
+<tr><td>28</td><td>Synthesis: honest unique-user number</td><td>Same substance as the captain-vouched count above; folded into the downsides of ideas 1 and 6.</td></tr>
+<tr><td>&ndash;</td><td>Axis coverage</td><td>No gaps. All five axes (A, B, C, D, E) have at least one survivor; every frame reached every axis, so no recovery dispatch was needed.</td></tr>
+</tbody>
+</table>
+</section>
+
+<footer class="composition-signal">
+Composed 2026-07-25 by ce-ideate from <a href="https://github.com/covenant-gov/pacto-app/issues/124"><code>issue #124 — NFT name claims w/ embedded images</code></a> and the prompt &ldquo;figure out how we can use NFTs for identity, money making and other fun ways to use blockchain features easily.&rdquo; 48 raw candidates from five ideation frames, adversarially verified against the repository, cut to 7.
+</footer>
+
+</div>
+</body>
+</html>

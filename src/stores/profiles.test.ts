@@ -7,7 +7,7 @@ import {
   getProfile,
   isProfileLoading,
 } from './profiles';
-import { dmChatsByNpub, blockedDmNpubs, activeDmId } from './dm';
+import { dmChatsByNpub, blockedDmNpubs, activeDmId, lastCatchUpSuccess } from './dm';
 import { currentUser } from './auth';
 import { fetchNostrProfile, loadNostrProfile, type NostrProfile } from '../lib/api/nostr';
 import { setCurrentNpubForPersistence } from './persistence-context';
@@ -32,6 +32,10 @@ vi.mock('../lib/api/nostr', () => ({
   type: {},
 }));
 
+vi.mock('./unread', () => ({
+  hydrateUnreadCounts: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('profiles', () => {
   const npub = 'npub1alice';
   const baseProfile: NostrProfile = {
@@ -51,7 +55,6 @@ describe('profiles', () => {
     last_updated: 0,
     typing_until: 0,
     mine: false,
-    muted: false,
     bot: false,
     avatar_cached: '',
     banner_cached: '',
@@ -132,6 +135,10 @@ describe('profiles', () => {
       });
       expect(get(profiles)[npub]).toEqual(baseProfile);
       expect(get(dmChatsByNpub)[npub]).toBeDefined();
+      // init_finished is a fallback completion path (backend may never emit sync_finished
+      // for an init-only run); it must carry the same watermark update as the real handler
+      // so behind/stalled doesn't drift stale off a completion it never observed.
+      expect(get(lastCatchUpSuccess)).not.toBeNull();
     });
 
     it('profile_update updates the profile and blocked list', () => {

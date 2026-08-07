@@ -1,22 +1,11 @@
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived, get, type Readable } from 'svelte/store';
+import type { RelayStatus } from '../lib/api/relays';
 import { activeTopNavTab, activeView } from './navigation';
 import type { SupportedChainId } from '../lib/wallet/chains';
-import type { PactoAppInboxEntry } from '../lib/pacto-app-inbox';
-import {
-  isPactoAppRoutableInviteContent,
-  isPactoAppThreadId,
-  mergePactoAppInboxEntry,
-  PACTO_APP_DM_THREAD_ID,
-  resolveInviteInviterNpub,
-  toPactoAppInboxEntry,
-} from '../lib/pacto-app-inbox';
 import { persistenceKey } from './persistence-context';
 import {
   initInviteDecisionPersistence,
 } from './invite-decisions';
-
-export type { PactoAppInboxEntry };
-export { PACTO_APP_DM_THREAD_ID, PACTO_APP_DISPLAY_NAME, isPactoAppThreadId } from '../lib/pacto-app-inbox';
 
 export type DmTab = 'friends' | 'requests' | 'pending' | 'search' | 'pinned';
 export const activeDmTab = writable<DmTab>('friends');
@@ -161,7 +150,6 @@ export function dmSidebarCategoryForNpub(
   chats: Record<string, DmChatState>,
   pinned: Set<string>
 ): DmSidebarCategory {
-  if (npub === PACTO_APP_DM_THREAD_ID) return 'pinned';
   const c = chats[npub];
   if (!c) return 'friends';
   if (pinned.has(npub) && c.hasFromMe && c.hasFromThem) return 'pinned';
@@ -192,6 +180,52 @@ export function addPendingDm(npub: string): void {
   setDmChatState(npub, { hasFromMe: true, hasFromThem: false, lastAt: Math.floor(Date.now() / 1000) });
 }
 
+export interface AttachmentImageMeta {
+  blurhash: string;
+  width: number;
+  height: number;
+}
+
+export interface Attachment {
+  id: string;
+  key: string;
+  nonce: string;
+  extension: string;
+  url: string;
+  /** Local file path when downloaded; may be empty until cached. */
+  path: string;
+  /** File size in bytes. */
+  size: number;
+  img_meta?: AttachmentImageMeta | null;
+  /** True while the attachment is being downloaded. */
+  downloading?: boolean;
+  /** True once the attachment has been written locally. */
+  downloaded?: boolean;
+  /** Original file name from the sender, when supplied. Never the SHA-256 id. */
+  file_name?: string | null;
+}
+
+export interface Reaction {
+  id: string;
+  /** The message/event id this reaction references. */
+  reference_id: string;
+  /** Nostr npub of the reaction author. */
+  author_id: string;
+  emoji: string;
+}
+
+export interface PreviewMetadata {
+  domain: string;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  og_url?: string | null;
+  og_type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  favicon?: string | null;
+}
+
 export interface DmMessage {
   id: string;
   content: string;
@@ -206,6 +240,9 @@ export interface DmMessage {
   replied_to_content?: string | null;
   replied_to_npub?: string | null;
   replied_to_has_attachment?: boolean | null;
+  attachments?: Attachment[];
+  reactions?: Reaction[];
+  preview_metadata?: PreviewMetadata | null;
 }
 
 export interface DmChatSnapshot {
@@ -227,8 +264,7 @@ export const dmWalletSidebarVisible = derived(
     $topNav === 'dms' &&
     $view === 'hub' &&
     ($dmTab === 'friends' || $dmTab === 'pinned') &&
-    !$composing &&
-    !isPactoAppThreadId($dmId),
+    !$composing,
 );
 
 export function toggleWalletSidebar(): void {
@@ -263,73 +299,6 @@ export const dmSendError = writable<string | null>(null);
 export const backendDmMessages = writable<Record<string, DmMessage[]>>({});
 
 export const dmThreadAnnouncementsByNpub = writable<Record<string, DmMessage[]>>({});
-
-export const PACTO_APP_INBOX_PREFIX = 'pacto_app_inbox';
-
-export const pactoAppInboxMessages = writable<PactoAppInboxEntry[]>([]);
-
-pactoAppInboxMessages.subscribe((value) => {
-  if (typeof localStorage === 'undefined') return;
-  const key = persistenceKey(PACTO_APP_INBOX_PREFIX);
-  if (!key) return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore quota
-  }
-});
-
-export function appendPactoAppInboxMessage(message: DmMessage, inviterNpub: string): void {
-  const entry = toPactoAppInboxEntry(message, inviterNpub);
-  pactoAppInboxMessages.update((list) => mergePactoAppInboxEntry(list, entry));
-}
-
-export function reconcilePeerThreadInvites(): void {
-  let inboxSnapshot: PactoAppInboxEntry[] = [];
-  pactoAppInboxMessages.update((list) => {
-    inboxSnapshot = [...list];
-    return list;
-  });
-  const peersEmptied: string[] = [];
-  backendDmMessages.update((byNpub) => {
-    const nextByNpub: Record<string, DmMessage[]> = {};
-    for (const [peer, msgs] of Object.entries(byNpub)) {
-      const kept: DmMessage[] = [];
-      for (const m of msgs) {
-        const content = m.content ?? '';
-        if (isPactoAppRoutableInviteContent(content)) {
-          if (!m.mine) {
-            const entry = toPactoAppInboxEntry(
-              m,
-              resolveInviteInviterNpub(m, peer, content)
-            );
-            if (!inboxSnapshot.some((x) => x.id === entry.id)) {
-              inboxSnapshot = mergePactoAppInboxEntry(inboxSnapshot, entry);
-            }
-          }
-        } else {
-          kept.push(m);
-        }
-      }
-      if (kept.length > 0) {
-        nextByNpub[peer] = kept;
-      } else if (msgs.length > 0) {
-        peersEmptied.push(peer);
-      }
-    }
-    pactoAppInboxMessages.set(inboxSnapshot);
-    return nextByNpub;
-  });
-  if (peersEmptied.length > 0) {
-    dmChatsByNpub.update((map) => {
-      const next = { ...map };
-      for (const peer of peersEmptied) {
-        delete next[peer];
-      }
-      return next;
-    });
-  }
-}
 
 /** Optimistic outbound DM row (replaced on `message_new` when content matches). */
 export function appendPendingOutboundDmMessage(npub: string, content: string): string {
@@ -429,8 +398,129 @@ export const messageCountByChat = writable<Record<string, number>>({});
 
 export const loadedOffsetByChat = writable<Record<string, number>>({});
 
-export type SyncStatus = 'idle' | 'syncing' | 'finished';
+export type SyncStatus = 'idle' | 'syncing' | 'finished' | 'behind' | 'stalled';
 export const dmSyncStatus = writable<SyncStatus>('idle');
+
+/** Wall-clock time of the most recent successful catch-up (`sync_finished`). Null until one succeeds this session. */
+export const lastCatchUpSuccess = writable<number | null>(null);
+
+export interface RelayHealthEntry {
+  status: RelayStatus;
+  /** From the user's relay list; disabled relays never contribute to `stalled`. */
+  enabled: boolean;
+  /** Wall-clock time this relay was last seen outside disconnected/terminated. */
+  lastHealthyAt: number;
+}
+
+/** Per-relay connection status + last-healthy timestamp, keyed by relay URL. Seeded from listRelays(), kept live by relay_status_change. */
+export const relayStatusByUrl = writable<Record<string, RelayHealthEntry>>({});
+
+const DOWN_RELAY_STATUSES: Partial<Record<RelayStatus, true>> = {
+  disconnected: true,
+  terminated: true,
+};
+function isRelayDown(status: RelayStatus): boolean {
+  return DOWN_RELAY_STATUSES[status] === true;
+}
+
+/** Seed relayStatusByUrl with a startup snapshot; relay_status_change only fires on transitions, not for relays already connected. */
+export function seedRelayHealth(
+  relays: Array<{ url: string; status: RelayStatus; enabled: boolean }>
+): void {
+  const now = Date.now();
+  relayStatusByUrl.update((cur) => {
+    const next = { ...cur };
+    for (const r of relays) {
+      const existing = next[r.url];
+      next[r.url] = {
+        status: r.status,
+        enabled: r.enabled,
+        lastHealthyAt: isRelayDown(r.status) ? (existing?.lastHealthyAt ?? 0) : now,
+      };
+    }
+    return next;
+  });
+}
+
+/** Apply a relay_status_change transition to the tracked per-relay health map. */
+export function applyRelayStatusChange(url: string, status: RelayStatus): void {
+  const now = Date.now();
+  relayStatusByUrl.update((cur) => {
+    const existing = cur[url];
+    return {
+      ...cur,
+      [url]: {
+        status,
+        enabled: existing?.enabled ?? true,
+        lastHealthyAt: isRelayDown(status) ? (existing?.lastHealthyAt ?? now) : now,
+      },
+    };
+  });
+}
+
+/** Patch `enabled` on a tracked relay after a local Settings toggle, without waiting for a relogin/reseed. */
+export function setRelayEnabledLocally(url: string, enabled: boolean): void {
+  relayStatusByUrl.update((cur) => {
+    const existing = cur[url];
+    if (!existing) return cur;
+    return {
+      ...cur,
+      [url]: {
+        ...existing,
+        enabled,
+      },
+    };
+  });
+}
+
+const SYNC_BEHIND_THRESHOLD_MS = 5 * 60 * 1000;
+const SYNC_STALL_RELAY_THRESHOLD_MS = 5 * 60 * 1000;
+const SYNC_HEALTH_TICK_INTERVAL_MS = 30 * 1000;
+
+/** Ticks periodically so dmSyncStatusEffective re-evaluates the 5-minute thresholds even with no new events. */
+const syncHealthTick = writable(Date.now());
+/** Handle from setInterval; aliased for readability. */
+type SyncHealthTickerHandle = ReturnType<typeof setInterval>;
+let syncHealthTickInterval: SyncHealthTickerHandle | null = null;
+
+/** Start the periodic recompute tick for dmSyncStatusEffective. Idempotent; safe to call repeatedly (HMR, multiple mounts). */
+export function installSyncHealthTicker(): () => void {
+  if (syncHealthTickInterval === null) {
+    syncHealthTickInterval = globalThis.setInterval(() => {
+      syncHealthTick.set(Date.now());
+    }, SYNC_HEALTH_TICK_INTERVAL_MS);
+  }
+  return () => {
+    if (syncHealthTickInterval !== null) {
+      clearInterval(syncHealthTickInterval);
+      syncHealthTickInterval = null;
+    }
+  };
+}
+
+/**
+ * dmSyncStatus layered with time-relative `behind`/`stalled`, derived from catch-up recency and
+ * enabled-relay health. `behind`: no successful catch-up in the last 5 minutes (and not currently
+ * syncing). `stalled`: `behind`, plus at least one enabled tracked relay has been
+ * disconnected/terminated for more than 5 minutes. Auto-clears the moment `sync_finished` resets
+ * `lastCatchUpSuccess`.
+ */
+export const dmSyncStatusEffective: Readable<SyncStatus> = derived(
+  [dmSyncStatus, lastCatchUpSuccess, relayStatusByUrl, syncHealthTick],
+  ([$status, $lastCatchUpSuccess, $relayStatusByUrl, $tick]) => {
+    if ($status === 'syncing') return $status;
+    const behind =
+      $lastCatchUpSuccess === null || $tick - $lastCatchUpSuccess > SYNC_BEHIND_THRESHOLD_MS;
+    if (!behind) return $status;
+    const relayStalled = Object.values($relayStatusByUrl).some(
+      (r) =>
+        r.enabled &&
+        isRelayDown(r.status) &&
+        $tick - r.lastHealthyAt > SYNC_STALL_RELAY_THRESHOLD_MS
+    );
+    return relayStalled ? 'stalled' : 'behind';
+  }
+);
 
 export const typingByChat = writable<Record<string, string[]>>({});
 

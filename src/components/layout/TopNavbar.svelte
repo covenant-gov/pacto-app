@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import {
     activeTopNavTab,
     activeView,
@@ -13,17 +14,15 @@
     lastHubChannelNameBySquadId,
     MY_DASHBOARD_CHANNEL_ID,
     SQUAD_DASHBOARD_CHANNEL_ID,
+    catchUpCount,
     type TopNavTab,
   } from '../../stores/app';
   import { resolveHubChannelNameForGroupSelection } from '../../lib/mls/virtual-channel-bucket';
+  import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
 
   const VIRTUAL_HUB_IDS = new Set([SQUAD_DASHBOARD_CHANNEL_ID, MY_DASHBOARD_CHANNEL_ID]);
 
-  const tabs: { id: TopNavTab; label: string }[] = [
-    { id: 'commons', label: 'Commons' },
-    { id: 'dms', label: 'DMs' },
-    { id: 'squads', label: 'Squads' },
-  ];
+  const tabs: TopNavTab[] = ['commons', 'dms', 'squads', 'catchup'];
 
   const DEBUG = false;
   function selectTab(id: TopNavTab) {
@@ -58,20 +57,25 @@
   }
 </script>
 
-<div class="top-navbar" role="tablist" aria-label="Main view">
-  <span class="top-navbar-label" aria-hidden="true">View</span>
-  <div class="mode-switcher" role="group" aria-label="Main views">
-    {#each tabs as tab (tab.id)}
+<div class="top-navbar" role="tablist" aria-label={$t('nav.topNavbar.mainViewAria')}>
+  <span class="top-navbar-label" aria-hidden="true">{$t('nav.topNavbar.viewLabel')}</span>
+  <div class="mode-switcher" role="group" aria-label={$t('nav.topNavbar.mainViewsAria')}>
+    {#each tabs as tab (tab)}
       <button
         type="button"
         role="tab"
         class="mode-segment"
-        class:active={$activeTopNavTab === tab.id}
-        on:click={() => selectTab(tab.id)}
-        aria-selected={$activeTopNavTab === tab.id}
-        aria-label={tab.label}
+        class:active={$activeTopNavTab === tab}
+        on:click={() => selectTab(tab)}
+        aria-selected={$activeTopNavTab === tab}
+        aria-label={tab === 'catchup' && $catchUpCount > 0
+          ? `${$t(`nav.topNavbar.tabs.${tab}`)} (${$catchUpCount})`
+          : $t(`nav.topNavbar.tabs.${tab}`)}
       >
-        {tab.label}
+        {$t(`nav.topNavbar.tabs.${tab}`)}
+        {#if tab === 'catchup' && $catchUpCount > 0}
+          <span class="mode-segment-badge">{formatUnreadBadgeCount($catchUpCount)}</span>
+        {/if}
       </button>
     {/each}
   </div>
@@ -136,5 +140,21 @@
     color: var(--text-primary);
     background: var(--bg-elevated);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  .mode-segment-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-contrast, #fff);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    vertical-align: middle;
   }
 </style>

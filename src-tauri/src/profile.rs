@@ -1,14 +1,11 @@
 use nostr_sdk::prelude::*;
 use tauri::Emitter;
-use tauri_plugin_fs::FsExt;
 
-use crate::{get_nostr_client, STATE, TAURI_APP};
 use crate::db;
-use crate::message::AttachmentFile;
 use crate::image_cache::{self, CacheResult};
-
-#[cfg(target_os = "android")]
-use crate::android::filesystem;
+use crate::message::AttachmentFile;
+use crate::nostr_tags;
+use crate::{get_nostr_client, STATE, TAURI_APP};
 
 #[derive(serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(default)]
@@ -27,7 +24,6 @@ pub struct Profile {
     pub status: Status,
     pub last_updated: u64,
     pub mine: bool,
-    pub muted: bool,
     /// Local-only: discard incoming DMs from this npub after unwrap (relays still deliver wraps).
     #[serde(default)]
     pub blocked: bool,
@@ -61,7 +57,6 @@ impl Profile {
             status: Status::new(),
             last_updated: 0,
             mine: false,
-            muted: false,
             blocked: false,
             bot: false,
             avatar_cached: String::new(),
@@ -70,11 +65,11 @@ impl Profile {
     }
 
     /// Merge Nostr Metadata with this Vector Profile
-    /// 
+    ///
     /// Returns `true` if any fields were updated, `false`` otherwise
     pub fn from_metadata(&mut self, meta: Metadata) -> bool {
         let mut changed = false;
-        
+
         // Name
         if let Some(name) = meta.name {
             if self.name != name {
@@ -156,18 +151,19 @@ impl Profile {
                 Some(b) => b,
                 None => {
                     // Try parsing as string
-                    custom.as_str()
+                    custom
+                        .as_str()
                         .map(|s| s.to_lowercase() == "true")
                         .unwrap_or(false)
                 }
             };
-            
+
             if self.bot != bot_value {
                 self.bot = bot_value;
                 changed = true;
             }
         }
-        
+
         changed
     }
 }
@@ -267,7 +263,9 @@ pub async fn cache_all_profile_images() {
     // Get all profiles that need caching
     let profiles_to_cache: Vec<(String, String, String)> = {
         let state = STATE.lock().await;
-        state.profiles.iter()
+        state
+            .profiles
+            .iter()
             .filter(|p| {
                 // Cache if has avatar URL but no cached path
                 (!p.avatar.is_empty() && p.avatar_cached.is_empty()) ||
@@ -282,7 +280,10 @@ pub async fn cache_all_profile_images() {
         return;
     }
 
-    log::info!("[Profile] Caching images for {} profiles", profiles_to_cache.len());
+    log::info!(
+        "[Profile] Caching images for {} profiles",
+        profiles_to_cache.len()
+    );
 
     // Spawn caching tasks for each profile (they run concurrently with semaphore limiting)
     for (npub, avatar_url, banner_url) in profiles_to_cache {
@@ -407,7 +408,7 @@ pub async fn load_profile(npub: String) -> bool {
     let fetch_result = client
         .fetch_metadata(profile_pubkey, std::time::Duration::from_secs(15))
         .await;
-    
+
     match fetch_result {
         Ok(meta) => {
             if meta.is_some() {
@@ -435,7 +436,9 @@ pub async fn load_profile(npub: String) -> bool {
                     handle.emit("profile_update", &profile_mutable).unwrap();
 
                     // Cache this profile in our DB, too
-                    db::set_profile(handle.clone(), profile_mutable.clone()).await.unwrap();
+                    db::set_profile(handle.clone(), profile_mutable.clone())
+                        .await
+                        .unwrap();
 
                     // Cache avatar/banner images in the background for offline access
                     let npub_clone = npub.clone();
@@ -557,10 +560,7 @@ async fn publish_vector_profile_kind0(
     let client = get_nostr_client()?;
 
     let signer = client.signer().await.map_err(|e| e.to_string())?;
-    let my_public_key = signer
-        .get_public_key()
-        .await
-        .map_err(|e| e.to_string())?;
+    let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
     let npub = my_public_key.to_bech32().map_err(|e| e.to_string())?;
 
     let meta = {
@@ -573,12 +573,8 @@ async fn publish_vector_profile_kind0(
 
     let metadata_json = kind0_metadata_json_without_evm(&meta).map_err(|e| e.to_string())?;
 
-    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone()).tag(
-        Tag::custom(
-            TagKind::Custom(String::from("client").into()),
-            vec!["vector"],
-        ),
-    );
+    let metadata_event = EventBuilder::new(Kind::Metadata, metadata_json.clone())
+        .tag(nostr_tags::custom_tag("client", vec!["vector"]));
 
     client
         .send_event_builder(metadata_event)
@@ -641,7 +637,7 @@ pub async fn update_status(status: String) -> bool {
 
     // Build and broadcast the status
     let status_builder = EventBuilder::new(Kind::from_u16(30315), status.as_str())
-        .tag(Tag::custom(TagKind::d(), vec!["general"]));
+        .tag(nostr_tags::d_tag(vec!["general"]));
     match client.send_event_builder(status_builder).await {
         Ok(_) => {
             // Add the status to our profile
@@ -660,61 +656,94 @@ pub async fn update_status(status: String) -> bool {
         Err(_) => false,
     }
 }
-/// Uploads an avatar or banner image with progress reporting
-/// `upload_type` should be "avatar" or "banner" to specify which is being uploaded
+/// Validates decoded avatar bytes before upload: size cap, then dimensions via a
+/// bounded decoder (guards against decompression bombs — a small file whose header
+/// declares an oversized image can't force a huge pixel-buffer allocation before the
+/// declared dimensions are checked), then format, then an explicit dimension re-check.
+fn validate_avatar_bytes(bytes: &[u8]) -> Result<(), String> {
+    const MAX_AVATAR_BYTES: usize = 500_000;
+    const MAX_AVATAR_DIMENSION: u32 = 512;
+
+    if bytes.len() > MAX_AVATAR_BYTES {
+        return Err("Avatar image exceeds the 500KB size limit".to_string());
+    }
+
+    let mut limits = ::image::Limits::default();
+    limits.max_image_width = Some(MAX_AVATAR_DIMENSION);
+    limits.max_image_height = Some(MAX_AVATAR_DIMENSION);
+
+    let mut reader = ::image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Could not read avatar image data".to_string())?;
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
+        .map_err(|e| format!("Failed to decode avatar image: {}", e))?;
+
+    if !matches!(::image::guess_format(bytes), Ok(::image::ImageFormat::Jpeg)) {
+        return Err("Avatar image must be a JPEG".to_string());
+    }
+
+    let (width, height) = (img.width(), img.height());
+    if width > MAX_AVATAR_DIMENSION || height > MAX_AVATAR_DIMENSION {
+        return Err(format!(
+            "Avatar image dimensions {}x{} exceed the {}x{} limit",
+            width, height, MAX_AVATAR_DIMENSION, MAX_AVATAR_DIMENSION
+        ));
+    }
+
+    Ok(())
+}
+
+/// Uploads an avatar or banner image with progress reporting.
+/// `bytes` is base64-encoded image data (JPEG for avatars). `upload_type` should be
+/// "avatar" or "banner" to specify which is being uploaded.
 #[tauri::command]
-pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Result<String, String> {
+pub async fn upload_avatar(bytes: String, upload_type: Option<String>) -> Result<String, String> {
+    use base64::Engine;
+
     let handle = TAURI_APP.get().unwrap();
     let upload_type = upload_type.unwrap_or_else(|| "avatar".to_string());
 
-    // Grab the file as AttachmentFile
-    let attachment_file = {
-        #[cfg(not(target_os = "android"))]
-        {
-            // Read file bytes
-            let bytes = handle.fs().read(std::path::Path::new(&filepath))
-                .map_err(|_| "Image couldn't be loaded from disk")?;
+    let decoded_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&bytes)
+        .map_err(|_| "Invalid base64 image data".to_string())?;
 
-            // Extract extension from filepath
-            let extension = filepath
-                .rsplit('.')
-                .next()
-                .unwrap_or("bin")
-                .to_lowercase();
+    if upload_type == "avatar" {
+        validate_avatar_bytes(&decoded_bytes)?;
+    }
 
-            AttachmentFile {
-                bytes,
-                img_meta: None,
-                extension,
-            }
-        }
-        #[cfg(target_os = "android")]
-        {
-            filesystem::read_android_uri(filepath)?
-        }
+    let attachment_file = AttachmentFile {
+        bytes: decoded_bytes,
+        img_meta: None,
+        extension: "jpg".to_string(),
+        file_name: None,
     };
 
-    // Format a Mime Type from the file extension
+    // Format a Mime Type from the file extension (always "jpg" -> "image/jpeg" for avatars)
     let mime_type = crate::util::mime_from_extension_safe(&attachment_file.extension, true)
         .map_err(|_| "File type is not allowed for avatars (only images are permitted)")?;
 
     // Upload the file to the server using Blossom with automatic failover and progress
     let client = get_nostr_client().expect("Nostr client not initialized");
     let signer = client.signer().await.unwrap();
-    let servers = crate::get_blossom_servers();
+    let servers = crate::get_blossom_media_servers();
 
     // Create progress callback that emits events to frontend
     let handle_clone = handle.clone();
     let upload_type_clone = upload_type.clone();
-    let progress_callback: crate::blossom::ProgressCallback = std::sync::Arc::new(move |percentage, bytes_uploaded| {
-        let payload = serde_json::json!({
-            "type": upload_type_clone,
-            "progress": percentage.unwrap_or(0),
-            "bytes": bytes_uploaded.unwrap_or(0)
+    let progress_callback: crate::blossom::ProgressCallback =
+        std::sync::Arc::new(move |percentage, bytes_uploaded| {
+            let payload = serde_json::json!({
+                "type": upload_type_clone,
+                "progress": percentage.unwrap_or(0),
+                "bytes": bytes_uploaded.unwrap_or(0)
+            });
+            handle_clone
+                .emit("profile_upload_progress", payload)
+                .map_err(|_| "Failed to emit progress event".to_string())
         });
-        handle_clone.emit("profile_upload_progress", payload)
-            .map_err(|_| "Failed to emit progress event".to_string())
-    });
 
     // Keep a copy of bytes for pre-caching
     let bytes_for_cache = attachment_file.bytes.clone();
@@ -741,7 +770,6 @@ pub async fn upload_avatar(filepath: String, upload_type: Option<String>) -> Res
 
     Ok(upload_url)
 }
-
 
 /// Toggles blocked status (local DM block; incoming decrypted content is dropped).
 #[tauri::command]
@@ -771,34 +799,6 @@ pub async fn toggle_blocked(npub: String) -> bool {
     new_blocked
 }
 
-/// Toggles the muted status of a profile
-#[tauri::command]
-pub async fn toggle_muted(npub: String) -> bool {
-    let handle = TAURI_APP.get().unwrap();
-
-    let muted = match STATE.lock().await.get_profile_mut(&npub) {
-        Some(profile) => {
-            profile.muted = !profile.muted;
-
-            // Update the frontend
-            handle.emit("profile_muted", serde_json::json!({
-                "profile_id": &profile.id,
-                "value": &profile.muted
-            })).unwrap();
-
-            // Save to DB
-            db::set_profile(handle.clone(), profile.clone()).await.unwrap();
-
-            profile.muted
-        }
-        None => false
-    };
-
-    // Refresh unread badge count to reflect mute changes immediately
-    let _ = crate::update_unread_counter(handle.clone()).await;
-    muted
-}
-
 /// Sets a nickname for a profile
 #[tauri::command]
 pub async fn set_nickname(npub: String, nickname: String) -> bool {
@@ -810,17 +810,24 @@ pub async fn set_nickname(npub: String, nickname: String) -> bool {
             profile.nickname = nickname;
 
             // Update the frontend
-            handle.emit("profile_nick_changed", serde_json::json!({
-                "profile_id": &profile.id,
-                "value": &profile.nickname
-            })).unwrap();
+            handle
+                .emit(
+                    "profile_nick_changed",
+                    serde_json::json!({
+                        "profile_id": &profile.id,
+                        "value": &profile.nickname
+                    }),
+                )
+                .unwrap();
 
             // Save to DB
-            db::set_profile(handle.clone(), profile.clone()).await.unwrap();
+            db::set_profile(handle.clone(), profile.clone())
+                .await
+                .unwrap();
 
             true
         }
-        None => false
+        None => false,
     }
 }
 
@@ -828,10 +835,10 @@ pub async fn set_nickname(npub: String, nickname: String) -> bool {
 #[tauri::command]
 pub async fn get_profile(npub: String) -> Result<Profile, String> {
     let state = STATE.lock().await;
-    
+
     match state.get_profile(&npub) {
         Some(profile) => Ok(profile.clone()),
-        None => Err(format!("Profile not found: {}", npub))
+        None => Err(format!("Profile not found: {}", npub)),
     }
 }
 
@@ -847,14 +854,122 @@ mod kind0_evm_tests {
         if let serde_json::Value::Object(ref mut m) = v {
             m.insert(
                 "evm_address".to_string(),
-                serde_json::Value::String(
-                    "0x1111111111111111111111111111111111111111".to_string(),
-                ),
+                serde_json::Value::String("0x1111111111111111111111111111111111111111".to_string()),
             );
         }
         let contaminated: Metadata = serde_json::from_value(v).unwrap();
         let json = kind0_metadata_json_without_evm(&contaminated).unwrap();
         assert!(!json.contains("evm_address"));
         assert!(json.contains("alice"));
+    }
+}
+
+#[cfg(test)]
+mod avatar_validation_tests {
+    use super::validate_avatar_bytes;
+    use ::image::ImageEncoder;
+    use base64::Engine;
+
+    /// Encodes a solid-color square RGB image to JPEG bytes at the given dimension.
+    fn jpeg_bytes(dimension: u32) -> Vec<u8> {
+        let img = ::image::RgbImage::from_pixel(dimension, dimension, ::image::Rgb([128, 64, 200]));
+        let mut data = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut data);
+        let encoder = ::image::codecs::jpeg::JpegEncoder::new_with_quality(&mut cursor, 85);
+        encoder
+            .write_image(
+                img.as_raw(),
+                dimension,
+                dimension,
+                ::image::ExtendedColorType::Rgb8,
+            )
+            .unwrap();
+        data
+    }
+
+    /// Encodes a solid-color square RGB image to PNG bytes at the given dimension.
+    fn png_bytes(dimension: u32) -> Vec<u8> {
+        let img = ::image::RgbImage::from_pixel(dimension, dimension, ::image::Rgb([10, 200, 40]));
+        let mut data = Vec::new();
+        ::image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut data),
+                ::image::ImageFormat::Png,
+            )
+            .unwrap();
+        data
+    }
+
+    #[test]
+    fn accepts_valid_small_jpeg() {
+        let bytes = jpeg_bytes(512);
+        assert!(bytes.len() < 500_000);
+        assert!(validate_avatar_bytes(&bytes).is_ok());
+    }
+
+    #[test]
+    fn rejects_oversized_dimensions() {
+        let bytes = jpeg_bytes(600);
+        assert!(validate_avatar_bytes(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_byte_count_before_decode() {
+        // Valid dimensions, but padded past the 500KB cap; the size check runs
+        // before any decode attempt, so the padding need not stay valid JPEG.
+        let mut bytes = jpeg_bytes(512);
+        assert!(bytes.len() < 500_000);
+        let pad = 500_001 - bytes.len();
+        bytes.extend(std::iter::repeat(0u8).take(pad));
+        assert!(bytes.len() > 500_000);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(err.contains("500KB"));
+    }
+
+    #[test]
+    fn rejects_malformed_bytes_without_panicking() {
+        let bytes = b"this is not an image".to_vec();
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn rejects_non_jpeg_format() {
+        let bytes = png_bytes(256);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(err.contains("JPEG"));
+    }
+
+    #[test]
+    fn rejects_declared_oversized_dimensions_without_full_decode() {
+        // Patch a small real JPEG's SOF0 header to claim ~50000x50000 dimensions.
+        // Header/marker parsing is cheap and unaffected by the fake dimensions;
+        // the bounded decode must reject on the declared size before allocating a
+        // full-resolution pixel buffer, so this returns an error quickly instead
+        // of hanging or exhausting memory.
+        let mut bytes = jpeg_bytes(8);
+        let sof0 = bytes
+            .windows(2)
+            .position(|w| w == [0xFF, 0xC0])
+            .expect("encoded JPEG should contain a baseline SOF0 marker");
+        // After the marker: 2-byte segment length, 1-byte precision, then
+        // 2-byte height and 2-byte width fields.
+        let height_offset = sof0 + 5;
+        let width_offset = height_offset + 2;
+        let fake_dim: u16 = 50_000;
+        bytes[height_offset..height_offset + 2].copy_from_slice(&fake_dim.to_be_bytes());
+        bytes[width_offset..width_offset + 2].copy_from_slice(&fake_dim.to_be_bytes());
+
+        assert!(bytes.len() < 500_000);
+        let err = validate_avatar_bytes(&bytes).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn base64_decode_rejects_malformed_input() {
+        // Exercises the same decode step `upload_avatar` runs before validation;
+        // malformed base64 must error, not panic.
+        let result = base64::engine::general_purpose::STANDARD.decode("not-valid-base64!!!");
+        assert!(result.is_err());
     }
 }

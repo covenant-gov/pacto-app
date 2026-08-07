@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+  const tFn = get(t);
   import type { SquadDashboardChannelMode } from '../../../stores/app';
   import { showToast } from '../../../stores/toast';
   import { TREASURY_SAFE_UI_CAP } from '../../../lib/treasury/treasury-safes';
@@ -133,11 +136,11 @@
   export function openGovAndSponsorDeploy(): void {
     if (!requireBackupVerified()) return;
     if (hasSponsor) {
-      showToast('Squad sponsor is already deployed for this parent.');
+      showToast(tFn('governance.squadSponsor.alreadyDeployed'));
       return;
     }
     if (hasPactoGov && !pactoGovTopHatId.trim()) {
-      showToast('Missing Pacto Gov top hat id — cannot finish hats sponsor.');
+      showToast(tFn('governance.squadSponsor.missingTopHat'));
       return;
     }
     if (parentId?.trim()) {
@@ -149,7 +152,7 @@
   export function openExtSponsorDeploy(): void {
     if (!requireBackupVerified()) return;
     if (hasSponsor) {
-      showToast('Squad sponsor is already deployed for this parent.');
+      showToast(tFn('governance.squadSponsor.alreadyDeployed'));
       return;
     }
     if (parentId?.trim()) {
@@ -182,19 +185,19 @@
     if (!requireBackupVerified()) return;
     const addr = setSafeInput.trim();
     if (!addr) {
-      setSafeError = 'Enter a Safe address';
+      setSafeError = tFn('governance.importSafe.errorAddress');
       return;
     }
     if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
-      setSafeError = 'Invalid address (expected 0x + 40 hex chars)';
+      setSafeError = tFn('governance.importSafe.errorInvalidAddress');
       return;
     }
     if (!onConfirmImportSafe) {
-      setSafeError = 'Import Safe is not available';
+      setSafeError = tFn('governance.importSafe.errorUnavailable');
       return;
     }
     if (treasurySafeCount >= TREASURY_SAFE_UI_CAP) {
-      setSafeError = `At most ${TREASURY_SAFE_UI_CAP} Safes are shown per squad. Remove one from another client or use a fresh parent.`;
+      setSafeError = tFn('governance.importSafe.errorSafeCap', { values: { max: TREASURY_SAFE_UI_CAP } });
       return;
     }
     setSafeSaving = true;
@@ -212,9 +215,9 @@
       });
       closeSetSafeModal();
       onNavigate('treasury');
-      showToast('Safe imported and added to treasury.');
+      showToast(tFn('governance.importSafe.toastImported'));
     } catch (e) {
-      setSafeError = (e as Error)?.message ?? 'Failed to import Safe';
+      setSafeError = (e as Error)?.message ?? tFn('governance.importSafe.errorFailed');
     } finally {
       setSafeSaving = false;
     }
@@ -228,16 +231,16 @@
     txHash?: string;
   }): Promise<void> {
     if (!onConfirmImportSafe) {
-      throw new Error('Treasury save is not available in this context.');
+      throw new Error(tFn('governance.importSafe.errorTreasurySave'));
     }
     await onConfirmImportSafe({
       safeAddress: params.safeAddress,
       chain: params.chain,
-      label: params.label.trim() || 'Deployed multisig',
+      label: params.label.trim() || tFn('governance.importSafe.deployedLabel'),
       entryId: params.entryId,
       txHash: params.txHash,
     });
-    showToast('Safe deployed and added to treasury.');
+    showToast(tFn('governance.deploySafe.toastDeployed'));
     onNavigate('treasury');
   }
 
@@ -254,7 +257,7 @@
     });
     showPactoGovDeploy = false;
     onNavigate('governance');
-    showToast('Pacto Gov deployed — Governance and Roles tabs are live.');
+    showToast(tFn('governance.pactoGov.toastDeployed'));
   }
 
   async function handleGovAndSponsorComplete(
@@ -313,7 +316,7 @@
     });
     showExtSponsorDeploy = false;
     onNavigate('treasury');
-    showToast('Squad sponsor Ext deployed — manage allowlist from Treasury.');
+    showToast(tFn('governance.squadSponsor.toastDeployed'));
   }
 
   async function handleSquadAdminComplete(out: {
@@ -330,7 +333,7 @@
       providerPayload: out.providerPayload,
       infraRowId: out.infraRowId,
     });
-    showToast('Squad Admin deployed — open Crew to manage privileges.');
+    showToast(tFn('governance.squadAdmin.toastDeployed'));
     onNavigate('crew');
   }
 </script>
@@ -377,8 +380,6 @@
   onDeployPactoGov={openPactoGovDeploy}
   onDeployGovAndSponsor={openGovAndSponsorDeploy}
   onDeployExtSponsor={openExtSponsorDeploy}
-  onDeploySafe={openDeploySafe}
-  onImportSafe={openSetSafe}
   onDeploySafeSuccess={handleDeploySafeSuccess}
   onPactoGovComplete={handlePactoGovComplete}
   onGovAndSponsorComplete={handleGovAndSponsorComplete}

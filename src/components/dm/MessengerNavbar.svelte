@@ -10,10 +10,7 @@
     dmChatsByNpub,
     pinnedDmNpubs,
     dmSidebarCategoryForNpub,
-    PACTO_APP_DM_THREAD_ID,
-    PACTO_APP_DISPLAY_NAME,
-    pactoAppInboxUnreadCount,
-    dmUnreadByNpub,
+    unreadCountsByChat,
     type DmEntry,
     type DmTab,
     type DmSidebarCategory,
@@ -22,17 +19,10 @@
   import { profiles } from '../../stores/profiles';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
   import userPlaceholder from '../../icons/user-placeholder.svg';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
-  $: title =
-    $activeDmTab === 'friends'
-      ? 'Friends'
-      : $activeDmTab === 'requests'
-        ? 'Requests'
-        : $activeDmTab === 'pending'
-          ? 'Pending'
-          : $activeDmTab === 'search'
-            ? 'Search'
-            : 'Pinned';
+  $: title = $t(`messaging.dm.navbar.${$activeDmTab}`);
 
   function displayName(entry: DmEntry): string {
     const profile = $profiles[entry.npub];
@@ -68,16 +58,8 @@
   })();
 
   function categoryLabel(cat: DmSidebarCategory): string {
-    switch (cat) {
-      case 'pinned':
-        return 'Pinned';
-      case 'friends':
-        return 'Friends';
-      case 'requests':
-        return 'Requests';
-      case 'pending':
-        return 'Pending';
-    }
+    const tFn = get(t);
+    return tFn(`messaging.dm.navbar.${cat}`);
   }
 
   function truncateNpub(npub: string): string {
@@ -121,46 +103,21 @@
 
   {#if $activeDmTab === 'search'}
     <div class="messenger-search-wrap">
-      <label class="messenger-search-label" for="messenger-dm-search">Search</label>
+      <label class="messenger-search-label" for="messenger-dm-search">{$t('messaging.dm.navbar.searchLabel')}</label>
       <input
         id="messenger-dm-search"
         type="search"
         class="messenger-search-input"
-        placeholder="Name or npub (all lists)…"
+        placeholder={$t('messaging.dm.navbar.searchPlaceholder')}
         bind:value={dmSearchQuery}
         autocomplete="off"
         spellcheck="false"
-        aria-label="Search direct messages by name or npub"
+        aria-label={$t('messaging.dm.navbar.searchAria')}
       />
     </div>
   {/if}
 
   <div class="dm-list-container">
-    {#if $activeDmTab === 'pinned'}
-      <ul class="dm-list dm-list-pacto-app" role="list">
-        <li>
-          <button
-            type="button"
-            class="dm-row dm-row-pacto-app"
-            class:active={$activeDmId === PACTO_APP_DM_THREAD_ID}
-            on:click={() => selectDm(PACTO_APP_DM_THREAD_ID)}
-            on:keydown={(ev) => ev.key === 'Enter' && selectDm(PACTO_APP_DM_THREAD_ID)}
-          >
-            <span class="dm-avatar dm-avatar-pacto-app">
-              <span class="dm-avatar-pacto-app-letter" aria-hidden="true">I</span>
-            </span>
-            <span class="dm-name-block">
-              <span class="dm-name">{PACTO_APP_DISPLAY_NAME}</span>
-            </span>
-            {#if $pactoAppInboxUnreadCount > 0}
-              <span class="dm-unread-badge" aria-label="{$pactoAppInboxUnreadCount} unread">
-                {formatUnreadBadgeCount($pactoAppInboxUnreadCount)}
-              </span>
-            {/if}
-          </button>
-        </li>
-      </ul>
-    {/if}
     {#if filteredEntries.length > 0}
       <ul class="dm-list" role="list">
         {#each filteredEntries as raw ((raw as DmEntry).npub)}
@@ -170,7 +127,7 @@
             $activeDmTab === 'search'
               ? dmSidebarCategoryForNpub(row.npub, $dmChatsByNpub, $pinnedDmNpubs)
               : null}
-          {@const unread = $dmUnreadByNpub[row.npub] ?? 0}
+          {@const unread = $unreadCountsByChat[row.npub] ?? 0}
           <li>
             <button
               type="button"
@@ -193,7 +150,7 @@
                 {/if}
               </span>
               {#if unread > 0}
-                <span class="dm-unread-badge" aria-label="{unread} unread">
+                <span class="dm-unread-badge" aria-label={$t('messaging.dm.navbar.unreadAria', { values: { count: unread } })}>
                   {formatUnreadBadgeCount(unread)}
                 </span>
               {/if}
@@ -201,20 +158,20 @@
           </li>
         {/each}
       </ul>
-    {:else if $activeDmTab !== 'pinned'}
+    {:else}
       <div class="empty-state">
         <p>
           {$activeDmTab === 'search' && dmSearchQuery.trim() !== ''
-            ? 'No matches'
+            ? $t('messaging.dm.navbar.noMatches')
             : $activeDmTab === 'search'
-              ? 'No DMs yet'
+              ? $t('messaging.dm.navbar.noDmsYet')
               : $activeDmTab === 'friends'
-                ? 'No DMs yet'
+                ? $t('messaging.dm.navbar.noDmsYet')
                 : $activeDmTab === 'requests'
-                  ? 'No requests'
+                  ? $t('messaging.dm.navbar.noRequests')
                   : $activeDmTab === 'pending'
-                    ? 'No pending chats'
-                    : 'No pinned DMs'}
+                    ? $t('messaging.dm.navbar.noPendingChats')
+                    : $t('messaging.dm.navbar.noPinnedDms')}
         </p>
       </div>
     {/if}
@@ -223,7 +180,7 @@
   <button
     class="resize-handle"
     on:mousedown={startResize}
-    aria-label="Resize sidebar"
+    aria-label={$t('messaging.dm.navbar.resizeSidebar')}
     type="button"
   ></button>
 </div>
@@ -410,25 +367,6 @@
     color: var(--text-muted);
     font-size: 0.875rem;
     padding: 16px;
-  }
-
-  .dm-list-pacto-app {
-    margin-bottom: 4px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .dm-avatar-pacto-app {
-    background: var(--accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .dm-avatar-pacto-app-letter {
-    color: var(--accent-contrast, #fff);
-    font-weight: 700;
-    font-size: 0.875rem;
   }
 
   .resize-handle {

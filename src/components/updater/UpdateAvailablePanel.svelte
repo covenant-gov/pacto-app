@@ -6,6 +6,10 @@
     relaunchApp,
     type UpdateState,
   } from '../../lib/updater/update-check';
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
+
+  const tFn = get(t);
 
   $: state = $updateStatus;
 
@@ -16,22 +20,22 @@
   function primaryLabel(status: UpdateState['status']): string {
     switch (status) {
       case 'downloading':
-        return 'Downloading…';
+        return tFn('updater.primary.downloading');
       case 'installing':
-        return 'Installing…';
+        return tFn('updater.primary.installing');
       case 'error':
-        return 'Retry';
+        return tFn('updater.primary.retry');
       default:
-        return 'Download and install';
+        return tFn('updater.primary.downloadAndInstall');
     }
   }
 
   function progressLabel(status: UpdateState['status']): string {
     switch (status) {
       case 'downloading':
-        return 'Downloading…';
+        return tFn('updater.primary.downloading');
       case 'installing':
-        return 'Downloaded. Installing update…';
+        return tFn('updater.downloadedInstalling');
       default:
         return '';
     }
@@ -49,16 +53,20 @@
 <div class="update-panel">
   {#if state.status === 'available'}
     <p class="update-version">
-      Update {state.availableVersion ?? ''} is available.
+      {$t('updater.available', { values: { version: state.availableVersion ?? '' } })}
       {#if state.currentVersion}
-        You have {state.currentVersion}.
+        {$t('updater.youHave', { values: { version: state.currentVersion } })}
       {/if}
     </p>
   {:else if state.status === 'downloading' || state.status === 'installing'}
     <p class="update-version">
-      Update {state.availableVersion ?? ''} is {state.status}.
+      {#if state.status === 'downloading'}
+        {$t('updater.downloading', { values: { version: state.availableVersion ?? '' } })}
+      {:else}
+        {$t('updater.installing', { values: { version: state.availableVersion ?? '' } })}
+      {/if}
       {#if state.currentVersion}
-        You have {state.currentVersion}.
+        {$t('updater.youHave', { values: { version: state.currentVersion } })}
       {/if}
     </p>
     <div
@@ -79,24 +87,24 @@
     </p>
   {:else if state.status === 'installed'}
     <p class="update-version">
-      Update {state.availableVersion ?? ''} is installed.
+      {$t('updater.installed', { values: { version: state.availableVersion ?? '' } })}
       {#if state.currentVersion}
-        You have {state.currentVersion}.
+        {$t('updater.youHave', { values: { version: state.currentVersion } })}
       {/if}
     </p>
     <p class="update-relaunch-prompt">
-      Relaunch Pacto to start the new version.
+      {$t('updater.relaunchPrompt')}
     </p>
     <button type="button" class="btn-primary" on:click={() => void relaunchApp()}>
-      Relaunch now
+      {$t('updater.relaunchNow')}
     </button>
   {:else if state.status === 'error'}
     <p class="update-version">
       {#if state.currentVersion}
-        You have {state.currentVersion}.
+        {$t('updater.youHave', { values: { version: state.currentVersion } })}
       {/if}
     </p>
-    <p class="update-error" role="alert">{state.error ?? 'Update check failed.'}</p>
+    <p class="update-error" role="alert">{state.error ?? $t('updater.updateCheckFailed')}</p>
   {/if}
 
   {#if state.status === 'available'}

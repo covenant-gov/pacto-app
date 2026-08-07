@@ -28,6 +28,8 @@
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
   import { partnerSquadsForHubParent } from '../../lib/squad-pair';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
   import {
@@ -58,6 +60,9 @@
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
   import { refreshPersonalAlertForSquad } from '../../stores/squad-hub-alerts';
+  import { appConfig } from '../../stores/app-config';
+
+  const translate = get(t);
 
   $: activeParent = $squads.find((s) => s.id === $activeSquadId) as Squad | undefined;
 
@@ -164,7 +169,7 @@
     if (!anchor || pairCreating) return;
     const partner = $squads.find((s) => s.id === params.partnerSquadId);
     if (!partner) {
-      pairCreateError = 'Could not find the selected squads.';
+      pairCreateError = translate('nav.parentNavbar.pair.noPartner');
       return;
     }
     if (params.visibility === 'public') {
@@ -178,7 +183,7 @@
     try {
       commons = resolveSquadCommonsOnCreate(params.visibility, params.commonsTags ?? []);
     } catch (e) {
-      pairCreateError = e instanceof Error ? e.message : 'Invalid tags.';
+      pairCreateError = e instanceof Error ? e.message : translate('nav.parentNavbar.pair.invalidTags');
       return;
     }
     pairCreating = true;
@@ -190,7 +195,7 @@
         (gid) => getMlsGroupMembers(gid)
       );
       if (memberNpubs.length === 0) {
-        pairCreateError = 'No other members to invite in these squads.';
+        pairCreateError = translate('nav.parentNavbar.pair.noMembers');
         return;
       }
       showPairWithSquadModal = false;
@@ -202,10 +207,23 @@
     }
   }
 
-  $: emptyMessage = 'Select a squad';
+  $: emptyMessage = $t('nav.parentNavbar.emptySquad');
 
   $: canShowParentMenuActions =
     !!activeParent && !creating && activeParent.channels.length > 0;
+
+  $: maxChannelNameLength = $appConfig.channelNameMaxLength;
+
+  $: createChannelSubtitle = $t('nav.parentNavbar.createChannel.subtitle', {
+    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+  });
+  $: createChannelMembersLabel = $t('nav.parentNavbar.createChannel.membersLabel');
+  $: createChannelEmptyMessage = $t('nav.parentNavbar.createChannel.empty');
+  $: inviteModalTitle = $t('nav.parentNavbar.invite.title');
+  $: inviteModalSubtitle = $t('nav.parentNavbar.invite.subtitle', {
+    values: { squadName: activeParent?.name ?? $t('nav.parentNavbar.thisSquad') },
+  });
+  $: inviteModalEmptyMessage = $t('nav.parentNavbar.invite.empty');
 
   let retryingCreate = false;
   let inviteErrorBanner = '';
@@ -262,6 +280,8 @@
   let createChannelError = '';
   let createChannelMemberList: string[] = [];
   let loadingCreateChannelMembers = false;
+  let showClosedChannelPicker = false;
+  let creatingChannel = false;
 
   function openCreateChannelModal() {
     showCreateChannelModal = true;
@@ -269,7 +289,8 @@
     selectedNpubs = [];
     createChannelError = '';
     createChannelMemberList = [];
-    void loadCreateChannelMembers();
+    showClosedChannelPicker = false;
+    creatingChannel = false;
   }
 
   async function loadCreateChannelMembers() {
@@ -287,6 +308,7 @@
 
   function closeCreateChannelModal() {
     showCreateChannelModal = false;
+    showClosedChannelPicker = false;
   }
 
   function toggleMember(npub: string) {
@@ -295,28 +317,27 @@
       : [...selectedNpubs, npub];
   }
 
-  $: canCreateChannel = createChannelName.trim().length > 0 && selectedNpubs.length > 0;
+  $: canCreateClosedChannel =
+    createChannelName.trim().length > 0 && selectedNpubs.length > 0;
 
-  $: createChannelAllSelected =
-    createChannelMemberList.length > 0 &&
-    selectedNpubs.length === createChannelMemberList.length &&
-    createChannelMemberList.every((n) => selectedNpubs.includes(n));
-
-  function toggleCreateChannelSelectEveryone() {
-    selectedNpubs = createChannelAllSelected ? [] : [...createChannelMemberList];
-  }
-
-  function handleCreateChannel() {
+  function startCreateChannel(access: 'open' | 'closed', members: string[]) {
     const name = createChannelName.trim();
     if (!name) return;
-    if (selectedNpubs.length === 0) {
-      createChannelError = 'Select at least one member';
+    if (name.length > maxChannelNameLength) {
+      createChannelError = translate('nav.parentNavbar.createChannel.nameTooLong', {
+        values: { max: maxChannelNameLength },
+      });
       return;
     }
+
     const parent = activeParent;
     const squadId = $activeSquadId;
     if (!parent || !squadId) {
-      createChannelError = 'Squad not found';
+      createChannelError = translate('nav.parentNavbar.createChannel.squadNotFound');
+      return;
+    }
+    if (access === 'closed' && members.length === 0) {
+      createChannelError = 'Select at least one member';
       return;
     }
     createChannelError = '';
@@ -326,7 +347,8 @@
       parent,
       squadId,
       name,
-      selectedNpubs,
+      selectedNpubs: members,
+      access,
       onErrorBanner: (message) => {
         createChannelErrorBanner = message;
         setTimeout(() => {
@@ -334,6 +356,35 @@
         }, 8000);
       },
     });
+  }
+
+  async function handleOpenChannel() {
+    const parent = activeParent;
+    if (!parent) {
+      createChannelError = 'Squad not found';
+      return;
+    }
+    creatingChannel = true;
+    createChannelError = '';
+    try {
+      const members = await loadCreateChannelMemberList(parent, $currentUser?.npub);
+      startCreateChannel('open', members);
+    } catch {
+      createChannelError = 'Could not load squad members.';
+    } finally {
+      creatingChannel = false;
+    }
+  }
+
+  function handleChooseClosed() {
+    showClosedChannelPicker = true;
+    selectedNpubs = [];
+    createChannelError = '';
+    void loadCreateChannelMembers();
+  }
+
+  function handleCreateClosedChannel() {
+    startCreateChannel('closed', selectedNpubs);
   }
 
   function getMemberDisplayName(npub: string) {
@@ -389,14 +440,13 @@
       ...(extraNpub && extraNpub.startsWith('npub1') ? [extraNpub] : []),
     ];
     if (npubsToInvite.length === 0) {
-      inviteError =
-        extraNpub
-          ? 'Please enter a valid npub (starts with npub1) or pick from the list.'
-          : 'Select at least one person or enter an npub.';
+      inviteError = extraNpub
+        ? translate('nav.parentNavbar.invite.invalidNpub')
+        : translate('nav.parentNavbar.invite.noSelection');
       return;
     }
     if (extraNpub && !extraNpub.startsWith('npub1')) {
-      inviteError = 'Please enter a valid npub (starts with npub1) or pick from the list.';
+      inviteError = translate('nav.parentNavbar.invite.invalidNpub');
       return;
     }
     inviteError = '';
@@ -439,7 +489,7 @@
       squad,
       wasActive: $activeSquadId === squad.id,
       previousChannelId: $activeChannelId,
-      onFailure: (msg) => showToast(`Could not exit squad "${squad.name}": ${msg}`),
+      onFailure: (msg) => showToast(translate('nav.parentNavbar.exit.failure', { values: { squadName: squad.name, message: msg } })),
     });
   }
 </script>
@@ -447,7 +497,6 @@
 <ParentSidebar
   parentName={activeParent?.name ?? ''}
   subheading={subheading}
-  squadId={activeParent?.id ?? null}
   channels={channels}
   activeChannelId={$activeChannelId}
   activeHubChannelName={$activeHubChannelName}
@@ -475,34 +524,35 @@
 <CreateChannelModal
   open={showCreateChannelModal}
   parentName={activeParent?.name ?? ''}
-  subtitle={"Add a channel to " + (activeParent?.name ?? 'this squad') + ". Choose a name and at least one member."}
-  membersLabel="Members (squad announcements only, select at least one)"
+  subtitle={createChannelSubtitle}
+  membersLabel={createChannelMembersLabel}
   bind:channelName={createChannelName}
   memberList={createChannelMemberList}
   loading={loadingCreateChannelMembers}
   bind:selectedNpubs={selectedNpubs}
-  selectAllLabel="Add everyone in squad"
-  emptyMessage="Invite people to the squad (announcements) first to add them to new channels."
+  emptyMessage={createChannelEmptyMessage}
   error={createChannelError}
-  creating={false}
-  canCreate={canCreateChannel}
+  creating={creatingChannel}
+  showMemberPicker={showClosedChannelPicker}
+  canCreateClosed={canCreateClosedChannel}
   onClose={closeCreateChannelModal}
-  onCreate={handleCreateChannel}
+  onOpenChannel={handleOpenChannel}
+  onChooseClosed={handleChooseClosed}
+  onCreateClosed={handleCreateClosedChannel}
   onToggleMember={toggleMember}
-  onToggleSelectAll={toggleCreateChannelSelectEveryone}
   getMemberDisplayName={getMemberDisplayName}
 />
 
 <InviteToParentModal
   open={showInviteModal}
   parentName={activeParent?.name ?? ''}
-  title="Invite to Squad"
-  subtitle={"Invite friends to " + (activeParent?.name ?? 'this Squad') + "."}
+  title={inviteModalTitle}
+  subtitle={inviteModalSubtitle}
   candidates={inviteCandidates}
   bind:selectedNpubs={selectedInviteNpubs}
   bind:inviteByNpub={inviteByNpub}
   loading={loadingInvite}
-  emptyMessage="No one to invite right now. Start a DM with someone first, or they may already be in this Squad."
+  emptyMessage={inviteModalEmptyMessage}
   error={inviteError}
   inviting={inviting}
   onClose={closeInviteModal}

@@ -1,0 +1,7 @@
+{
+	"errors.fallback": "Something went wrong",
+	"errors.migrationGate": "Please unlock to update account security.",
+	"errors.dm.invalidNpub": "Please enter a valid npub (starts with npub1).",
+	"errors.dm.notInitialized": "Please log in first.",
+	"errors.dm.invalidRequest": "Invalid request. Please try again."
+}

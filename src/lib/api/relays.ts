@@ -1,4 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
+import { invoke } from './index';
 
 export type RelayMode = 'read' | 'write' | 'both';
 
@@ -31,17 +33,17 @@ export interface CustomRelay {
 /** Client-side check before invoking add_custom_relay. Returns an error message or null if OK. */
 export function validateRelayUrlInput(url: string): string | null {
   const trimmed = url.trim();
-  if (!trimmed) return 'Enter a relay URL.';
+  if (!trimmed) return get(t)('lib.relay.url.empty');
 
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
+    return get(t)('lib.relay.url.invalidProtocol');
   }
 
-  if (!parsed.host) return 'Relay URL must include a host.';
-  if (parsed.username || parsed.password) return 'Relay URL must not contain userinfo.';
+  if (!parsed.host) return get(t)('lib.relay.url.noHost');
+  if (parsed.username || parsed.password) return get(t)('lib.relay.url.userinfo');
 
   if (parsed.protocol === 'wss:') return null;
 
@@ -52,40 +54,40 @@ export function validateRelayUrlInput(url: string): string | null {
     if (isLocalhost || isLoopback) return null;
   }
 
-  return 'Relay URL must start with wss:// (ws:// is allowed only for localhost/127.0.0.1 development relays)';
+  return get(t)('lib.relay.url.invalidProtocol');
 }
 
 export function relayModeLabel(mode: string): string {
   switch (mode) {
     case 'read':
-      return 'Read only';
+      return get(t)('lib.relay.mode.read');
     case 'write':
-      return 'Write only';
+      return get(t)('lib.relay.mode.write');
     default:
-      return 'Read & write';
+      return get(t)('lib.relay.mode.both');
   }
 }
 
 export function relayStatusLabel(status: string): string {
   switch (status) {
     case 'connected':
-      return 'Connected';
+      return get(t)('lib.relay.status.connected');
     case 'connecting':
-      return 'Connecting';
+      return get(t)('lib.relay.status.connecting');
     case 'pending':
-      return 'Pending';
+      return get(t)('lib.relay.status.pending');
     case 'initialized':
-      return 'Initialized';
+      return get(t)('lib.relay.status.initialized');
     case 'disconnected':
-      return 'Disconnected';
+      return get(t)('lib.relay.status.disconnected');
     case 'terminated':
-      return 'Terminated';
+      return get(t)('lib.relay.status.terminated');
     case 'banned':
-      return 'Banned';
+      return get(t)('lib.relay.status.banned');
     case 'sleeping':
-      return 'Sleeping';
+      return get(t)('lib.relay.status.sleeping');
     case 'disabled':
-      return 'Disabled';
+      return get(t)('lib.relay.status.disabled');
     default:
       return status;
   }
@@ -115,4 +117,39 @@ export async function setRelayEnabled(relay: RelayInfo, enabled: boolean): Promi
   if (relay.is_custom) return toggleCustomRelay(relay.url, enabled);
   if (relay.is_default) return toggleDefaultRelay(relay.url, enabled);
   throw new Error('Unknown relay type');
+}
+
+export interface RelayMetrics {
+  ping_ms: number | null;
+  bytes_up: number;
+  bytes_down: number;
+  last_check: number | null;
+  events_received: number;
+  events_sent: number;
+}
+
+export type RelayLogLevel = 'info' | 'warn' | 'error';
+
+export interface RelayLog {
+  timestamp: number;
+  level: RelayLogLevel;
+  message: string;
+}
+
+export async function getRelayMetrics(url: string): Promise<RelayMetrics> {
+  return invoke<RelayMetrics>('get_relay_metrics', { url });
+}
+
+export async function getRelayLogs(url: string): Promise<RelayLog[]> {
+  return invoke<RelayLog[]>('get_relay_logs', { url });
+}
+
+/** Starts the backend's relay status/health-check monitor loop. Safe to call multiple times; the backend dedupes. */
+export async function monitorRelayConnections(): Promise<boolean> {
+  return invoke<boolean>('monitor_relay_connections');
+}
+
+/** True once the health-check loop has recorded a ping or last-check time for this relay. */
+export function hasRelayHealthData(metrics: RelayMetrics): boolean {
+  return metrics.ping_ms !== null || metrics.last_check !== null;
 }

@@ -1,6 +1,6 @@
 ---
 name: Pacto Concepts
-last_updated: 2026-07-15
+last_updated: 2026-07-27
 ---
 
 # Pacto Concepts
@@ -34,6 +34,14 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **MlsWelcome / kind 443** | MLS group invitation payload delivered inside a Gift Wrap. |
 | **MlsGroupMessage / kind 444** | MLS-encrypted group traffic on the wire; `h` tag = wire group id. |
 
+## Notifications
+
+| Term | Definition |
+|------|------------|
+| **Catch up** | Cross-squad surface listing items the member missed. Indexes items whose canonical home is elsewhere; never a second store of record. |
+| **Notification level** | Per-chat setting with three values: `All messages`, `Mentions only` (default), `Nothing`. Replaces a binary mute toggle. |
+| **Interrupt / Record / Passive** | Severity tiers. Interrupt fires an OS banner and sound; Record is silent but counted and reviewable; Passive renders inline and never counts. |
+
 ## Governance and finance
 
 | Term | Definition |
@@ -57,7 +65,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **Tauri v2** | Desktop app framework: Svelte frontend in a webview, Rust backend. |
 | **invoke** | Frontend -> backend typed RPC via `tauri-apps/api/core`. |
 | **emit** | Backend -> frontend event pushed through `AppHandle::emit`. |
-| **per-account SQLite** | Two databases per npub: `vector.db` (app data) and `vector-mls.db` (engine state). |
+| **per-account SQLite** | Two databases per npub: `vector.db` (messages, chats, squad metadata) and `vector-mls.db` (MLS crypto state only). Resetting the latter costs group access, not history. |
 | **read-plane** | Frontend viem read-only chain access: balances, contract observation, receipt polling. |
 | **Rust send** | WalletBar and governance writes are signed and broadcast from the Rust backend using Alloy. |
 | **require_capability** | Rust ACL gate on squad-scoped writes; denies unbound roster or missing hat/role before broadcast. |
@@ -74,6 +82,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 
 ## See also
 
+- `docs/svelte5-reference.md` — Svelte 5 runes and frontend patterns used in Pacto components
 - `docs/README.md` — authoritative docs index
 - `STRATEGY.md` — why these concepts matter and what the product is trying to achieve
 - `docs/ARCHITECTURE.md` — how the concepts connect in code

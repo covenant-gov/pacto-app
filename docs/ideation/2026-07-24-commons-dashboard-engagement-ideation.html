@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ideation: Commons Dashboard — UI-Friendly &amp; Addictive to Explore</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e1016;
+    --surface: #161923;
+    --surface-2: #1d2130;
+    --surface-3: #242939;
+    --border: #2b3145;
+    --text: #e7e9f2;
+    --text-muted: #9aa0ba;
+    --text-dim: #6b7290;
+    --accent: #4dd8e0;
+    --accent-text: #8ce9ee;
+    --accent-soft: rgba(77, 216, 224, 0.10);
+    --accent-border: rgba(77, 216, 224, 0.35);
+    --warn: #e0a64d;
+    --warn-text: #f0c98a;
+    --warn-soft: rgba(224, 166, 77, 0.10);
+    --good: #6fd68f;
+    --good-text: #9be6b3;
+    --good-soft: rgba(111, 214, 143, 0.10);
+    --red: #e0704d;
+    --red-text: #f0a68a;
+    --red-soft: rgba(224, 112, 77, 0.10);
+    --radius: 10px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--bg); }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 940px;
+    margin-inline: auto;
+    padding: 48px 24px 80px;
+  }
+
+  header.doc-header {
+    margin-bottom: 40px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 18px;
+    line-height: 1.25;
+  }
+
+  dl.meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px 24px;
+    margin: 0;
+    font-size: 14px;
+  }
+
+  dl.meta dt {
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  dl.meta dd {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin: 28px 0 0;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 16px 18px;
+  }
+
+  .stat .num {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--accent-text);
+    font-family: var(--font-mono);
+  }
+
+  .stat .label {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  section { margin: 48px 0; }
+
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    margin: 0 0 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+
+  p { color: var(--text-muted); max-width: 72ch; }
+
+  p.lead { color: var(--text); font-size: 16.5px; }
+
+  strong { color: inherit; font-weight: 650; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+    color: var(--accent-text);
+  }
+
+  .axis-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .axis-list li {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+
+  .axis-list .axis-name {
+    font-weight: 700;
+    color: var(--text);
+    display: block;
+    margin-bottom: 4px;
+    font-size: 14.5px;
+  }
+
+  .axis-list .axis-desc { font-size: 13.5px; color: var(--text-muted); }
+
+  .jump-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 24px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .jump-list a {
+    font-size: 13.5px;
+    color: var(--accent-text);
+    text-decoration: none;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    padding: 5px 11px;
+    border-radius: 999px;
+  }
+
+  .jump-list a:hover { text-decoration: underline; }
+
+  article.idea {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px 28px 28px;
+    margin-bottom: 22px;
+    scroll-margin-top: 20px;
+  }
+
+  .idea-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .idea-title-row { display: flex; align-items: baseline; gap: 10px; }
+
+  .idea-rank {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    color: var(--accent-text);
+    font-size: 15px;
+  }
+
+  .idea-title { font-size: 19px; font-weight: 750; color: var(--text); }
+
+  .idea-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .pill {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  .pill.axis { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+  .pill.conf-high { background: var(--good-soft); color: var(--good-text); border: 1px solid rgba(111,214,143,0.35); }
+  .pill.conf-med { background: var(--warn-soft); color: var(--warn-text); border: 1px solid rgba(224,166,77,0.35); }
+  .pill.cx-low { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+  .pill.cx-med { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+  .pill.cx-high { background: var(--surface-3); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .idea-desc { color: var(--text); font-size: 15px; margin: 4px 0 18px; max-width: none; }
+
+  dl.idea-fields { margin: 0; }
+  dl.idea-fields > div { margin-bottom: 14px; }
+  dl.idea-fields > div:last-child { margin-bottom: 0; }
+
+  dl.idea-fields dt {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  dl.idea-fields dd {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 14.5px;
+    max-width: 68ch;
+  }
+
+  .basis-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    padding: 1px 7px;
+    border-radius: 4px;
+    margin-right: 6px;
+  }
+
+  .downside-callout {
+    background: var(--warn-soft);
+    border: 1px solid rgba(224, 166, 77, 0.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .downside-callout dt { color: var(--warn-text) !important; }
+  .downside-callout dd { color: var(--text) !important; }
+
+  .idea-diagram {
+    margin: 18px 0 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .idea-diagram svg { display: block; width: 100%; height: auto; }
+  .diagram-caption {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  table.reject-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  table.reject-table th {
+    text-align: left;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--surface-2);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.reject-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    vertical-align: top;
+  }
+
+  table.reject-table tr:last-child td { border-bottom: none; }
+  table.reject-table td.idea-name { color: var(--text); font-weight: 600; white-space: nowrap; }
+  table.reject-table td.rownum { font-family: var(--font-mono); color: var(--text-dim); width: 28px; }
+
+  .reject-kind {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .reject-kind.correction { background: var(--warn-soft); color: var(--warn-text); }
+  .reject-kind.scope { background: var(--surface-3); color: var(--text-dim); }
+
+  footer.composition-signal {
+    margin-top: 56px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  footer.composition-signal code { font-size: 0.85em; }
+
+  @media (max-width: 640px) {
+    .page { padding: 32px 16px 60px; }
+    h1 { font-size: 26px; }
+    article.idea { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-header">
+    <span class="eyebrow">Ideation</span>
+    <h1>Commons Dashboard — UI-Friendly &amp; Addictive to Explore</h1>
+    <dl class="meta">
+      <div><dt>Date</dt><dd><time datetime="2026-07-24">2026-07-24</time></dd></div>
+      <div><dt>Topic</dt><dd>commons-dashboard-engagement</dd></div>
+      <div><dt>Focus</dt><dd>Making the Commons discovery view (category grid, filters, broadcast cards) more inviting to browse and return to</dd></div>
+      <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+    </dl>
+    <div class="stats-strip">
+      <div class="stat"><div class="num">45</div><div class="label">raw ideas generated</div></div>
+      <div class="stat"><div class="num">24</div><div class="label">merged candidates</div></div>
+      <div class="stat"><div class="num">20/24</div><div class="label">basis verified sound</div></div>
+      <div class="stat"><div class="num">7</div><div class="label">survivors, 5 axes</div></div>
+    </div>
+  </header>
+
+  <section id="grounding-context">
+    <h2>Codebase Context</h2>
+    <p class="lead">Commons is the leftmost top-nav mode (<strong>Commons | DMs | Squads</strong>) in Pacto, a private, censorship-resistant desktop app (Tauri v2 + Svelte). It shows time-bounded <strong>public</strong> broadcasts — Nostr Kind 30078 (NIP-33) — from users and Commons-on squads, filterable by curated hashtags. The squad itself stays private MLS; the broadcast is only a discovery mirror.</p>
+    <p><code>CommonsView.svelte</code> orchestrates three browse modes (Latest / Categories / Tags). <code>CommonsTagBrowser.svelte</code> renders ~22 curated 16:10 category tiles with a live-count badge and a hover reveal. <code>CommonsBroadcastCard.svelte</code> renders cover art, a <strong>static, render-time-only</strong> expiry countdown, a 140-char truncated message, and Join/Message CTAs. Feed refreshes every 60s while Commons is open.</p>
+    <p><strong>Binding product rules</strong> (<code>docs/communities/COMMONS.md</code>): broadcasts are strictly TTL-bound (24&ndash;720h, ≤72h relay lookback — nothing in Commons is permanent by design); category search is <em>any</em>-of-tags, tag search is <em>and</em>-of-up-to-3 (hard cap), the two modes are mutually exclusive; the "new" vs "active" badge is derived, never chosen; no free-text tags; and — explicitly — <strong>no favorites, streaks, notifications, or engagement-metric feedback exist anywhere today.</strong> Filter state is fully ephemeral, resetting on every tab switch, even though the app has a proven npub-scoped persistence pattern (<code>persistenceKey(prefix)</code>, 26+ prefixes) used elsewhere but not here.</p>
+    <p><strong>Product strategy</strong> (<code>STRATEGY.md</code>, track "Discovery &amp; Commons"): the named success metrics are <em>"Commons follows → squad joins"</em> and <em>"30-day retention of new squad members."</em> Current UX optimizes for browse (grid + filters) but not for serendipity, trending, or personalized return visits.</p>
+    <p><strong>External research</strong> (Discord server discovery, Reddit Discover, Are.na channels, Product Hunt categories) converges on visual-first cards, live-activity badges, and light personalization as effective discovery UX — but flags an explicit ethical tension: manufactured urgency and dark-pattern engagement mechanics are a real risk, and Commons' own audience (anarchism, cooperatives, DAO categories are literally on the tile grid) would notice and reject them. <strong>Are.na's "exploration without manipulation" posture</strong> is the closest philosophical analogue: every idea below was screened against genuine, honest signals (real TTLs, real live counts) rather than gamified ones.</p>
+  </section>
+
+  <section id="topic-axes">
+    <h2>Topic Axes</h2>
+    <ul class="axis-list">
+      <li><span class="axis-name">Category &amp; tag discovery</span><span class="axis-desc">The passive tile grid and focused tag-menu drill-down.</span></li>
+      <li><span class="axis-name">Card &amp; content presentation</span><span class="axis-desc">Broadcast card visuals, badges, expiry, message preview.</span></li>
+      <li><span class="axis-name">Personalization &amp; return engagement</span><span class="axis-desc">Favorites, recency, recommendations — bounded by the ephemeral, no-tracking design.</span></li>
+      <li><span class="axis-name">Filter &amp; search UX</span><span class="axis-desc">Show/Audience switches, tag chips, category-vs-tags mode toggle.</span></li>
+      <li><span class="axis-name">Self-broadcast &amp; publish loop</span><span class="axis-desc">Personal panel, squad broadcast — the supply side of discovery.</span></li>
+    </ul>
+  </section>
+
+  <section id="ranked-ideas">
+    <h2>Ranked Ideas</h2>
+    <nav class="jump-list">
+      <a href="#idea-1">1. Rising Tide</a>
+      <a href="#idea-2">2. Constellation/Orbit Browse Mode</a>
+      <a href="#idea-3">3. Live Freshness System</a>
+      <a href="#idea-4">4. Persistent, Nameable Filter Lenses</a>
+      <a href="#idea-5">5. Personal Field Journal</a>
+      <a href="#idea-6">6. Keep Commons Context Alive Across the Join Detour</a>
+      <a href="#idea-7">7. Iterative Broadcast Editing Within TTL</a>
+    </nav>
+
+    <article class="idea" id="idea-1">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">1.</span><span class="idea-title">Rising Tide — Velocity-Ranked Category Grid</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Category &amp; tag discovery</span>
+          <span class="pill conf-high">Confidence 90%</span>
+          <span class="pill cx-low">Complexity Low</span>
+        </div>
+      </div>
+      <p class="idea-desc">Add an opt-in, clearly-labeled "trending" sort that re-ranks the category tile grid by live broadcast count (and, where cheap, its poll-over-poll velocity) instead of the current fixed A&ndash;Z order. A category with zero active broadcasts falls back to alphabetical position; nothing is hidden or auto-applied — it's a transparent, user-triggered lens on data the grid already computes.</p>
+      <div class="idea-diagram">
+        <svg viewBox="0 0 640 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram comparing fixed alphabetical tile order to live-count-ranked order">
+          <text x="130" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#9aa0ba">TODAY — fixed A&#8211;Z order</text>
+          <g font-family="Inter, sans-serif" font-size="10" fill="#6b7290">
+            <rect x="30" y="40" width="60" height="90" rx="6" fill="#242939" stroke="#2b3145"/>
+            <text x="60" y="145" text-anchor="middle">AI</text>
+            <rect x="100" y="40" width="60" height="55" rx="6" fill="#242939" stroke="#2b3145"/>
+            <text x="130" y="145" text-anchor="middle">Anarchism</text>
+            <rect x="170" y="40" width="60" height="30" rx="6" fill="#242939" stroke="#2b3145"/>
+            <text x="200" y="145" text-anchor="middle">Build</text>
+          </g>
+          <text x="60" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7290">3 live</text>
+          <text x="130" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7290">0 live</text>
+          <text x="200" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7290">7 live</text>
+
+          <path d="M 250 90 L 300 90" stroke="#4dd8e0" stroke-width="2" marker-end="url(#arrow1)"/>
+          <text x="275" y="78" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#8ce9ee">re-sort</text>
+
+          <text x="480" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#8ce9ee">RISING TIDE — live-count order</text>
+          <g font-family="Inter, sans-serif" font-size="10" fill="#9aa0ba">
+            <rect x="380" y="40" width="60" height="90" rx="6" fill="#1d2130" stroke="#4dd8e0" stroke-width="1.5"/>
+            <text x="410" y="145" text-anchor="middle" fill="#e7e9f2">Build</text>
+            <rect x="450" y="40" width="60" height="55" rx="6" fill="#1d2130" stroke="#2b3145"/>
+            <text x="480" y="145" text-anchor="middle" fill="#e7e9f2">AI</text>
+            <rect x="520" y="40" width="60" height="30" rx="6" fill="#1d2130" stroke="#2b3145" opacity="0.55"/>
+            <text x="550" y="145" text-anchor="middle" fill="#9aa0ba">Anarchism</text>
+          </g>
+          <text x="410" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8ce9ee">7 live</text>
+          <text x="480" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#8ce9ee">3 live</text>
+          <text x="550" y="35" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#6b7290">0 live</text>
+          <defs>
+            <marker id="arrow1" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4dd8e0"/></marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Tile height/position already reflects a computed live count today (as a badge) — Rising Tide is the same number driving sort order instead of being discarded after rendering.</div>
+      </div>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span><code>tag-catalog.ts</code>'s <code>commonsCategoryLiveCount()</code> aggregates <code>countsByTag</code> per category every render but is verified to feed only the badge text in <code>CommonsTagBrowser.svelte</code> — never sort order. The dossier independently confirms: "categories follow declaration order; random/A-Z sorting not offered."</dd></div>
+        <div><dt>Rationale</dt><dd>The grid already computes the one real signal it has — live activity — and throws it away after rendering a number. Surfacing it as sort order directly serves <code>STRATEGY.md</code>'s named gap ("optimizes for browse... not serendipity/trending") for close to zero implementation cost, and stays inside the app's anti-manipulation posture because it's transparent and opt-in, not a silent algorithm.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Reordering tiles costs users their spatial "muscle memory" for where a category sits — needs a stable A-Z tiebreaker for zero-activity categories to avoid visual jitter between polls, and the toggle must stay clearly labeled/opt-in so it never reads as a hidden ranking algorithm.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">2.</span><span class="idea-title">Constellation/Orbit Browse Mode</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Category &amp; tag discovery</span>
+          <span class="pill conf-med">Confidence 65%</span>
+          <span class="pill cx-high">Complexity High</span>
+        </div>
+      </div>
+      <p class="idea-desc">Introduce a fourth, optional browse mode that renders categories as a force-directed spatial cluster — tile size mapped to live-count, proximity mapped to tag co-occurrence in active broadcasts — instead of a grid. It reuses exactly the same client-side data (<code>countsByTag</code>, tag adjacency) already computed for badges; no new backend. A bigger visual-identity bet than idea 1, kept as its own candidate rather than folded in.</p>
+      <div class="idea-diagram">
+        <svg viewBox="0 0 640 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram contrasting a fixed grid layout with a force-directed cluster layout sized by activity">
+          <text x="140" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#9aa0ba">TODAY — uniform grid</text>
+          <g fill="#242939" stroke="#2b3145">
+            <rect x="60" y="45" width="42" height="42" rx="5"/>
+            <rect x="112" y="45" width="42" height="42" rx="5"/>
+            <rect x="164" y="45" width="42" height="42" rx="5"/>
+            <rect x="60" y="97" width="42" height="42" rx="5"/>
+            <rect x="112" y="97" width="42" height="42" rx="5"/>
+            <rect x="164" y="97" width="42" height="42" rx="5"/>
+          </g>
+          <text x="140" y="160" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#6b7290">every tile the same size &amp; distance</text>
+
+          <path d="M 250 95 L 300 95" stroke="#4dd8e0" stroke-width="2" marker-end="url(#arrow2)"/>
+          <text x="275" y="83" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#8ce9ee">reframe</text>
+
+          <text x="480" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="#8ce9ee">CONSTELLATION — activity-shaped map</text>
+          <g fill="#1d2130" stroke="#4dd8e0" stroke-width="1.3">
+            <circle cx="470" cy="88" r="34"/>
+            <circle cx="530" cy="55" r="16" stroke="#2b3145"/>
+            <circle cx="555" cy="105" r="22"/>
+            <circle cx="415" cy="130" r="12" stroke="#2b3145" opacity="0.6"/>
+            <circle cx="590" cy="65" r="10" stroke="#2b3145" opacity="0.6"/>
+          </g>
+          <text x="480" y="160" text-anchor="middle" font-family="Inter, sans-serif" font-size="10" fill="#6b7290">size = activity, proximity = related tags</text>
+          <defs>
+            <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4dd8e0"/></marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Directional only — illustrates the intended spatial shift from uniform grid to activity-weighted cluster, not a rendering spec.</div>
+      </div>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> Verified: <code>CommonsView.svelte</code>'s <code>showTileGrid</code> gate confirms exactly 3 hardcoded browse modes, all variants of a list/grid metaphor. <code>commonsCategoryLiveCount()</code> already aggregates the exact per-category signal a spatial layout needs.</dd></div>
+        <div><dt>Rationale</dt><dd>"Grid of tiles" is treated as Commons' entire visual identity, but the underlying data already encodes structure (which categories are alive, which tags co-occur) that a flat A&ndash;Z grid discards. A spatial view turns that dead data into a legible "where is the app alive right now" signal — the boldest answer to <code>STRATEGY.md</code>'s named serendipity gap in this set.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Real design-system investment: a new layout algorithm, accessibility story for a non-grid arrangement (keyboard nav, screen readers), and risk that a cluster is harder to scan than a grid for users who just want to find "Cooperatives" quickly. Should ship as an additional opt-in mode alongside the grid, never a replacement — and needs a design review before scoping.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">3.</span><span class="idea-title">Live Freshness System</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Card &amp; content presentation</span>
+          <span class="pill conf-high">Confidence 88%</span>
+          <span class="pill cx-med">Complexity Medium</span>
+        </div>
+      </div>
+      <p class="idea-desc">Build one shared, reactive countdown primitive and use it everywhere something currently counts down — broadcast expiry on the card <em>and</em> the publish-cooldown timer, which today are two independently-drifting implementations. Use the live tick to drive an honest visual decay treatment (progressive desaturation as TTL approaches, auto-remove at expiry) instead of a static "3h left" string a user has to consciously re-read.</p>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> Verified: <code>CommonsBroadcastCard.svelte</code>'s <code>formatExpiry()</code> computes the countdown once at render with no interval — confirmed no timer exists. <code>UserCommonsBroadcastPanel.svelte</code> separately reimplements its own <code>cooldownTimer = setInterval(..., 30_000)</code> for the same "time remaining" concept.</dd></div>
+        <div><dt>Rationale</dt><dd>TTL-bounded ephemeral content is Commons' entire content model — the one piece of state that should always be trustworthy at a glance is currently the one piece of state that visibly lies the longer a session runs. This is simultaneously a correctness fix and the most on-brand urgency signal Commons could ship: real freshness, not manufactured FOMO, directly matching the external research's explicit dark-pattern caution and the Are.na "exploration without manipulation" analogue.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Live re-renders across dozens of simultaneously-visible cards need sensible interval granularity (tick per minute, not per second) to avoid unnecessary CPU/battery cost. An airport-style "split-flap" flip-digit treatment was raised as an alternative skin for the same underlying fix — worth a design pass, but ship as an option within this primitive, not a second roadmap item.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">4.</span><span class="idea-title">Persistent, Nameable Filter Lenses</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Filter &amp; search UX</span>
+          <span class="pill conf-high">Confidence 90%</span>
+          <span class="pill cx-med">Complexity Medium</span>
+        </div>
+      </div>
+      <p class="idea-desc">Stop resetting <code>browseMode</code>, tags, category, and the Show/Audience switches on every tab switch — persist them npub-scoped using the app's own proven <code>persistenceKey(prefix)</code> pattern, restoring on re-entry. As a stretch beyond the base fix, let users name and pin up to 3 filter combinations ("my go-to: Cooperatives + new") as a quick-switch row, turning a bug fix into a lightweight return-engagement feature.</p>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> <code>docs/shell/LAYOUT.md</code>: "After a Squad Dashboard mode is visited once, <code>ParentDashboard</code> keeps that tab mounted... so form and sub-mode state survive mode switches" — a keep-alive precedent already trusted for a more complex surface, sitting unused next to Commons. Verified: <code>CommonsView.svelte</code> has zero <code>persistenceKey()</code> calls anywhere.</dd></div>
+        <div><dt>Rationale</dt><dd>This is the single most-cited pain point across two independent evidence dossiers (filters and personalization) — every accidental tab click or DM detour currently costs the user their entire search setup for free, using an established, in-repo pattern rather than new infrastructure.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>The named/pinned lens feature adds a small new persisted-state surface and its own create/rename/delete UI — split scope so the near-zero-effort persistence fix can ship independently of the lens stretch goal.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">5.</span><span class="idea-title">Personal Field Journal</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Personalization &amp; return engagement</span>
+          <span class="pill conf-high">Confidence 85%</span>
+          <span class="pill cx-med">Complexity Medium</span>
+        </div>
+      </div>
+      <p class="idea-desc">Add one generic, local, npub-scoped interaction log (view / open-detail / join-request / dm-open) using the same proven persistence pattern as 26+ other app features. Surface its first, cheapest payoff as a "jump back in" strip above the grid — a private, browsable record of what passed through the user's feed, modeled on a birdwatcher's life list, not a favorites system or a leaderboard: no public score, no streak, no comparison, never synced.</p>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> <code>clear-account-state.ts</code>'s <code>SCOPED_KEY_PREFIXES</code> lists 28 npub-scoped prefixes app-wide (only 3 belong to Commons). <code>commons-card-actions.ts</code>'s <code>openCommonsUserDmRequest()</code>/<code>sendCommonsJoinRequest()</code> confirmed as no-ops beyond cooldown tracking today — the exact write-side hooks a log would attach to. The app already has a working precedent for a similar recency list (<code>src/stores/emojis.ts</code>'s <code>recentEmojisStore</code>).</dd></div>
+        <div><dt>Rationale</dt><dd>Highest-leverage personalization move available: build the log once as dumb infra and "jump back in," "warm-start filters," and future personalization work all become read-queries against data already being written. Directly serves <code>STRATEGY.md</code>'s named "30-day retention of new squad members" metric by giving a returning user an immediate re-entry point instead of re-browsing 22 categories from scratch — and it stays local-only, so it respects the stated no-cross-user-tracking privacy posture exactly.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Even though it's local-only, a "recently viewed" list is a lightweight history feature — copy should clearly state it's private/on-device, and it needs a visible "clear my history" control so it never reads as silent tracking to a privacy-conscious audience.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-6">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">6.</span><span class="idea-title">Keep Commons Context Alive Across the Join-Request Detour</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Self-broadcast &amp; publish loop</span>
+          <span class="pill conf-high">Confidence 92%</span>
+          <span class="pill cx-low">Complexity Low</span>
+        </div>
+      </div>
+      <p class="idea-desc">Requesting to join a squad today hard-navigates away from Commons entirely with no stored return state — a successful discovery outcome silently costs the user their whole browse session. Add a lightweight return path (a "Back to Commons" breadcrumb in the DM compose header, or a non-blocking inline confirmation for the simpler bot-DM path) so exploring and requesting to join doesn't end the exploring.</p>
+      <div class="idea-diagram">
+        <svg viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow diagram comparing today's dead-end join-request navigation to a fix that returns the user to Commons with filters intact">
+          <text x="20" y="20" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#9aa0ba">TODAY</text>
+          <rect x="20" y="34" width="120" height="44" rx="8" fill="#242939" stroke="#2b3145"/>
+          <text x="80" y="60" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#e7e9f2">Browsing Commons</text>
+          <path d="M 140 56 L 210 56" stroke="#e0704d" stroke-width="2" marker-end="url(#arrow3r)"/>
+          <text x="175" y="46" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#f0a68a">Request to join</text>
+          <rect x="210" y="34" width="120" height="44" rx="8" fill="#242939" stroke="#2b3145"/>
+          <text x="270" y="60" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#e7e9f2">DM compose</text>
+          <path d="M 330 56 L 400 56" stroke="#e0704d" stroke-width="2" stroke-dasharray="3 3" marker-end="url(#arrow3r)"/>
+          <rect x="400" y="34" width="150" height="44" rx="8" fill="#2b1a17" stroke="#e0704d" stroke-dasharray="3 3"/>
+          <text x="475" y="53" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" fill="#f0a68a">No return path —</text>
+          <text x="475" y="67" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" fill="#f0a68a">filters &amp; scroll lost</text>
+
+          <text x="20" y="112" font-family="Inter, sans-serif" font-size="11" font-weight="700" fill="#8ce9ee">FIX</text>
+          <rect x="20" y="126" width="120" height="44" rx="8" fill="#1d2130" stroke="#4dd8e0"/>
+          <text x="80" y="152" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#e7e9f2">Browsing Commons</text>
+          <path d="M 140 148 L 210 148" stroke="#4dd8e0" stroke-width="2" marker-end="url(#arrow3c)"/>
+          <text x="175" y="138" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#8ce9ee">Request to join</text>
+          <rect x="210" y="126" width="120" height="44" rx="8" fill="#1d2130" stroke="#4dd8e0"/>
+          <text x="270" y="152" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#e7e9f2">DM compose</text>
+          <path d="M 330 148 Q 365 100 400 148" stroke="#4dd8e0" stroke-width="2" fill="none" marker-end="url(#arrow3c)"/>
+          <text x="365" y="98" text-anchor="middle" font-family="Inter, sans-serif" font-size="9.5" fill="#8ce9ee">Back to Commons</text>
+          <rect x="400" y="126" width="150" height="44" rx="8" fill="#1d2130" stroke="#4dd8e0"/>
+          <text x="475" y="145" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" fill="#e7e9f2">Same filters,</text>
+          <text x="475" y="159" text-anchor="middle" font-family="Inter, sans-serif" font-size="10.5" fill="#e7e9f2">same scroll position</text>
+          <defs>
+            <marker id="arrow3r" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#e0704d"/></marker>
+            <marker id="arrow3c" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4dd8e0"/></marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">The exact moment STRATEGY.md's "Commons follows &rarr; squad joins" metric is measured is currently the moment the app discards the user's browse session.</div>
+      </div>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> Verified: <code>commons-card-actions.ts</code>'s <code>openCommonsUserDmRequest()</code> unconditionally calls <code>activeTopNavTab.set('dms')</code> / <code>activeView.set('hub')</code> with zero stored return state, combined with the already-confirmed filter-reset-on-remount behavior in <code>CommonsView.svelte</code>.</dd></div>
+        <div><dt>Rationale</dt><dd>This is a strategy-metric-adjacent friction point hiding in a cross-cutting flow (Commons &rarr; DMs) that no single component owns — the app currently punishes its own successful case (a user deciding to join) by discarding their exploration context, which actively discourages continued exploration right after the moment that matters most.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Touches cross-cutting navigation state (Commons tab, DM tab, and the join-request flow), so needs a small design decision on the exact return-path UX — breadcrumb vs. auto-return vs. inline non-blocking confirmation for the simpler bot-DM case — before implementation starts.</dd></div>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-7">
+      <div class="idea-head">
+        <div class="idea-title-row"><span class="idea-rank">7.</span><span class="idea-title">Iterative Broadcast Editing Within TTL</span></div>
+        <div class="idea-badges">
+          <span class="pill axis">Self-broadcast &amp; publish loop</span>
+          <span class="pill conf-high">Confidence 82%</span>
+          <span class="pill cx-med">Complexity Medium</span>
+        </div>
+      </div>
+      <p class="idea-desc">The publish loop today assumes a broadcast is set once and live until TTL, with the only edit path being cancel-and-recreate (eating the cooldown). Kind 30078 is a NIP-33 replaceable event kind — let a user republish their own live broadcast's message or tags in place, without resetting their cooldown or losing their remaining TTL, instead of forcing a full cancel-and-restart for a typo or a stale detail.</p>
+      <dl class="idea-fields">
+        <div><dt>Basis</dt><dd><span class="basis-tag">direct</span> <code>docs/communities/COMMONS.md</code>: broadcasts are Kind 30078, a NIP-33 replaceable kind, and "newest-event-wins" mechanics are already relied on for squad cancel. Verified: <code>user-broadcast.ts</code> exposes only publish and cancel today — no edit path exists.</dd></div>
+        <div><dt>Rationale</dt><dd>A user broadcast can stay live for up to 720 hours (30 days) with zero correction path today — this is a real, sometimes month-long friction point that the protocol already grants the capability to fix; Commons simply never exposed it to users. It's a "what's actually fixed vs. an unexploited capability" reframe, not a new mechanism.</dd></div>
+        <div class="downside-callout"><dt>Downsides</dt><dd>Verification found the precise mechanism needs correction: v1's <code>d</code> tag is flat (not per-subject), so <code>COMMONS.md</code> itself says relay-level NIP-33 replacement isn't relied on today — the real lever is an <strong>app-level</strong> "republish without resetting cooldown/TTL" exception, not literal relay-side event replacement. A product decision is also needed on whether an edit resets the expiry clock or preserves the original <code>expiresAt</code>.</dd></div>
+      </dl>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <h2>Rejection Summary</h2>
+    <p>17 of 24 merged candidates were cut. 5 were flagged by basis verification as needing correction before they're viable as stated (not rejected outright — each has a salvageable, narrower core, noted below); 12 were verified sound but cut for scope or axis-balance against the 7 survivors above. A further 21 raw ideas (of the original 45) were folded into survivors 1, 3, 4, and 5 as duplicates once merged; they are not re-listed as separate rejections.</p>
+    <table class="reject-table">
+      <thead><tr><th></th><th>Idea</th><th>Reason rejected</th></tr></thead>
+      <tbody>
+        <tr><td class="rownum">1</td><td class="idea-name">Emergent Trending Micro-Tags (beyond curated 22)</td><td><span class="reject-kind correction">needs correction</span>Contradicts <code>COMMONS.md</code>'s explicit curated-tree/no-free-text-tag anti-spam rule; narrow to curated-tree-only trending (converges with #1) or add a moderation gate.</td></tr>
+        <tr><td class="rownum">2</td><td class="idea-name">Threaded Squad Digest Cards</td><td><span class="reject-kind correction">needs correction</span>Named differentiators (join velocity, announcement history) live in private MLS data invisible to the client rendering the card — publishing them is a privacy regression, not a rendering-only change. Keep the distinct-shape insight, drop those two data points.</td></tr>
+        <tr><td class="rownum">3</td><td class="idea-name">Opt-In Ambient Category Pulse</td><td><span class="reject-kind correction">needs correction</span>Basis overstates feasibility — the 60s poll stops entirely when the Commons tab isn't active, so an "ambient" nav-icon needs new background-poll infra not accounted for in the idea as stated.</td></tr>
+        <tr><td class="rownum">4</td><td class="idea-name">QSL Reception Report ("N people opened this")</td><td><span class="reject-kind correction">needs correction</span>Not derivable without new relay-side infrastructure or a viewer-emitted tracking signal (itself a privacy regression). Only a squad join-request DM tally is genuinely already-visible and zero-new-infra.</td></tr>
+        <tr><td class="rownum">5</td><td class="idea-name">Rapid-Fire "Pulse" Micro-Broadcast Tier</td><td><span class="reject-kind correction">needs correction</span>Self-framed by its own author as a diagnostic thought experiment, not a shippable feature; also cites the wrong cooldown constant. Valuable only as an open design question.</td></tr>
+        <tr><td class="rownum">6</td><td class="idea-name">Unify instant search box (categories/tags/authors)</td><td><span class="reject-kind scope">scope</span>Sound, but overlaps with the filter-search-first ideas below it; lower priority than #1 for this round.</td></tr>
+        <tr><td class="rownum">7</td><td class="idea-name">Auto-Suggest Top Tags in category drill-down</td><td><span class="reject-kind scope">scope</span>Sound; compounds with #1's "most-alive-first" philosophy one level deeper — ship together with #1, not separately prioritized.</td></tr>
+        <tr><td class="rownum">8</td><td class="idea-name">User-Nominated Tag Requests</td><td><span class="reject-kind scope">scope</span>Sound with a minor gap (needs an explicit export/share mechanism — pure localStorage has no path off-device). Good follow-on, not in the top 7.</td></tr>
+        <tr><td class="rownum">9</td><td class="idea-name">Split-Flap Expiry Board</td><td><span class="reject-kind scope">scope</span>Near-duplicate of #3 (Live Freshness System) — ship as a visual-skin option within it, not a separate roadmap item.</td></tr>
+        <tr><td class="rownum">10</td><td class="idea-name">In-Place Message Expansion ("Read more")</td><td><span class="reject-kind scope">scope</span>Sound, cheap, real gap (truncation has no visible affordance) — a genuine quick win, cut only for slot count this round.</td></tr>
+        <tr><td class="rownum">11</td><td class="idea-name">"Right Now" Live Rail</td><td><span class="reject-kind scope">scope</span>Sound but redundant scope with #2 (Constellation) on the same axis — two big discovery-surface bets is more than this round needs.</td></tr>
+        <tr><td class="rownum">12</td><td class="idea-name">Kill the Category&harr;Tag XOR trap</td><td><span class="reject-kind scope">scope</span>Sound, concrete UX trap (tag selection silently clears active category with no signal) — pairs naturally with #4, cut for slot count.</td></tr>
+        <tr><td class="rownum">13</td><td class="idea-name">Give Search a Front Door</td><td><span class="reject-kind scope">scope</span>Sound; overlaps with #4's filter-legibility scope.</td></tr>
+        <tr><td class="rownum">14</td><td class="idea-name">1-Tag Cap Extreme (evaluation)</td><td><span class="reject-kind scope">scope</span>Sound as a stated design evaluation, not a shippable feature on its own.</td></tr>
+        <tr><td class="rownum">15</td><td class="idea-name">Zero Filters: Search-First Default</td><td><span class="reject-kind scope">scope</span>Sound, real IA decision, but overlaps with #4's scope; a bigger swing than this round's filter pick.</td></tr>
+        <tr><td class="rownum">16</td><td class="idea-name">Kaiten Belt Browse Mode</td><td><span class="reject-kind scope">scope</span>Sound, non-manipulative analogy, but adds a 4th+ browse mode — tension with the Inversion frame's own finding that Commons already has a "mode tax" problem.</td></tr>
+        <tr><td class="rownum">17</td><td class="idea-name">Auto-Renew Nudge (queued re-broadcast)</td><td><span class="reject-kind scope">scope</span>Sound and strong — cut only for self-broadcast axis balance against #6/#7. Recommended as the next round's first pick.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-07-24 by ce-ideate from a user-supplied screenshot of the Commons category grid and the prompt "make the commons dashboard more UI friendly and addictive to explore." Grounding: codebase scan, <code>docs/communities/COMMONS.md</code>, <code>STRATEGY.md</code>, 5 axis-scoped evidence dossiers, and external web research — no prior <code>docs/ideation/</code> document on this topic.
+  </footer>
+
+</div>
+</body>
+</html>

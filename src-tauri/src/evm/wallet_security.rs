@@ -29,9 +29,7 @@ fn redact_query_string(query: &str) -> String {
             let v = it.next();
             let kl = k.to_lowercase();
             let sensitive = SENSITIVE_QUERY_KEYS.iter().any(|sk| {
-                kl == *sk
-                    || kl.ends_with(&format!("_{}", sk))
-                    || kl == format!("x-{}", sk)
+                kl == *sk || kl.ends_with(&format!("_{}", sk)) || kl == format!("x-{}", sk)
             });
             if sensitive {
                 format!("{}={}", k, "[REDACTED]")
@@ -166,7 +164,17 @@ mod tests {
 
     #[test]
     fn redacts_various_sensitive_query_keys() {
-        for key in ["key", "token", "secret", "password", "auth", "api_key", "apikey", "access_token", "refresh_token"] {
+        for key in [
+            "key",
+            "token",
+            "secret",
+            "password",
+            "auth",
+            "api_key",
+            "apikey",
+            "access_token",
+            "refresh_token",
+        ] {
             let url = format!("https://example.com?{}=leaked", key);
             let r = redact_rpc_url_for_log(&url);
             assert!(!r.contains("leaked"), "key {} should be redacted", key);
@@ -224,6 +232,9 @@ mod tests {
 
     #[test]
     fn redact_unparsed_url_heuristic_without_scheme_returns_placeholder() {
-        assert_eq!(redact_unparsed_url_heuristic("just text"), "[rpc-url-unparsed]");
+        assert_eq!(
+            redact_unparsed_url_heuristic("just text"),
+            "[rpc-url-unparsed]"
+        );
     }
 }

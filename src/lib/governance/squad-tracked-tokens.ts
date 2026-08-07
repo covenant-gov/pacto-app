@@ -4,6 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
+import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 
 export const SQUAD_TRACKED_TOKENS_ANNOUNCE_TYPE = 'squad_tracked_tokens_updated';
 
@@ -70,13 +71,19 @@ export async function upsertSquadTrackedToken(params: {
     tokenAddress: params.tokenAddress.trim(),
     symbol: params.symbol.trim(),
     decimals: params.decimals,
+    rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.chain),
   });
 }
 
-export async function removeSquadTrackedToken(parentId: string, id: string): Promise<void> {
+export async function removeSquadTrackedToken(
+  parentId: string,
+  id: string,
+  chain?: string | null,
+): Promise<void> {
   await invoke('remove_squad_tracked_token', {
     parentId: parentId.trim(),
     id: id.trim(),
+    rpcUrls: squadRpcUrlsForInvoke(parentId, chain),
   });
 }
 

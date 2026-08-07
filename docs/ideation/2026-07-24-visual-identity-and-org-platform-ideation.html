@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Pacto visual identity, simplicity, and the organization platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #12161d;
+    --surface: #191e27;
+    --surface-2: #1f2632;
+    --surface-3: #27303e;
+    --border: #2d3644;
+    --border-strong: #3c4859;
+    --text: #eef1f6;
+    --text-muted: #98a2b6;
+    --text-dim: #6d7889;
+
+    --accent: #22d3ee;
+    --accent-text: #7fe7f5;
+    --accent-soft: rgba(34, 211, 238, 0.09);
+    --accent-border: rgba(34, 211, 238, 0.32);
+
+    --good: #5fd39a;
+    --good-text: #94e5bd;
+    --good-soft: rgba(95, 211, 154, 0.10);
+
+    --warn: #e0a44d;
+    --warn-text: #f2c98d;
+    --warn-soft: rgba(224, 164, 77, 0.10);
+
+    --red: #f472b6;
+    --red-text: #f9a8d4;
+    --red-soft: rgba(244, 114, 182, 0.10);
+
+    --radius-sm: 4px;
+    --radius: 8px;
+    --radius-lg: 14px;
+
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv05" 1, "ss01" 1;
+  }
+
+  .page { max-width: 980px; margin-inline: auto; padding: 56px 28px 88px; }
+  p, li { max-width: 72ch; }
+
+  /* ---------- header ---------- */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent-text);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--font-mono);
+    font-size: 2.1rem;
+    line-height: 1.22;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    margin: 0 0 18px;
+    max-width: 24ch;
+  }
+  .lede { font-size: 1.06rem; color: var(--text-muted); margin: 0 0 28px; }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 0 0 34px; padding: 0; list-style: none;
+  }
+  .meta li {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    padding: 5px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-muted);
+  }
+  .meta li b { color: var(--text); font-weight: 500; }
+
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin: 0 0 44px;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .stat .n {
+    font-family: var(--font-mono); font-size: 1.5rem; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--accent-text); display: block;
+  }
+  .stat .l {
+    font-size: 0.74rem; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--text-dim); margin-top: 2px; display: block;
+  }
+
+  /* ---------- sections ---------- */
+  section { margin: 0 0 56px; }
+  h2 {
+    font-family: var(--font-mono);
+    font-size: 1.28rem; font-weight: 600; letter-spacing: -0.01em;
+    margin: 0 0 6px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  h2 + .sub { color: var(--text-dim); font-size: 0.88rem; margin: 10px 0 22px; }
+  h3 { font-family: var(--font-mono); font-size: 1rem; font-weight: 600; margin: 26px 0 8px; color: var(--text); }
+  h4 { font-size: 0.78rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-dim); margin: 20px 0 8px; font-weight: 600; }
+
+  a { color: var(--accent-text); text-decoration: none; border-bottom: 1px solid var(--accent-border); }
+  a:hover { border-bottom-color: var(--accent-text); }
+  code {
+    font-family: var(--font-mono); font-size: 0.855em;
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: var(--radius-sm); color: var(--text);
+  }
+  strong { color: inherit; font-weight: 600; }
+
+  /* ---------- grounding ---------- */
+  .ground { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .ground .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .ground .card h4 { margin-top: 0; color: var(--accent-text); }
+  .ground .card ul { margin: 0; padding-left: 17px; }
+  .ground .card li { font-size: 0.9rem; margin-bottom: 6px; color: var(--text-muted); }
+  .ground .card li b { color: var(--text); font-weight: 500; }
+
+  .axes { list-style: none; padding: 0; margin: 0; counter-reset: ax; }
+  .axes li {
+    counter-increment: ax;
+    display: grid; grid-template-columns: 34px 1fr; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border); max-width: none;
+  }
+  .axes li:last-child { border-bottom: 0; }
+  .axes li::before {
+    content: counter(ax);
+    font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    text-align: center; line-height: 24px; height: 26px;
+  }
+  .axes .an { font-family: var(--font-mono); font-size: 0.9rem; color: var(--accent-text); }
+  .axes .ad { font-size: 0.9rem; color: var(--text-muted); }
+
+  /* ---------- jump list ---------- */
+  .jump { list-style: none; padding: 0; margin: 0 0 30px; display: grid; gap: 6px; }
+  .jump li { max-width: none; }
+  .jump a {
+    display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: baseline;
+    padding: 9px 13px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); border-bottom: 1px solid var(--border); color: var(--text);
+  }
+  .jump a:hover { border-color: var(--border-strong); background: var(--surface-2); }
+  .jump .rk { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-dim); }
+  .jump .tt { font-weight: 500; }
+  .jump .ax { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-dim); }
+
+  /* ---------- idea cards ---------- */
+  article.idea {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 26px 28px; margin: 0 0 22px;
+  }
+  .idea > h3 {
+    margin: 0 0 12px; font-size: 1.22rem; letter-spacing: -0.01em;
+    display: flex; gap: 11px; align-items: baseline; flex-wrap: wrap;
+  }
+  .idea > h3 .rank {
+    font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
+    color: var(--accent-text); background: var(--accent-soft);
+    border: 1px solid var(--accent-border); border-radius: 999px; padding: 2px 10px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 18px; padding: 0; list-style: none; }
+  .chips li {
+    font-family: var(--font-mono); font-size: 0.72rem; padding: 3px 10px;
+    border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface-2); color: var(--text-muted);
+  }
+  .chips li.axis { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-text); }
+  .chips li.conf-hi { background: var(--good-soft); border-color: rgba(95,211,154,0.3); color: var(--good-text); }
+  .chips li.conf-md { background: var(--warn-soft); border-color: rgba(224,164,77,0.3); color: var(--warn-text); }
+  .chips li b { font-weight: 600; }
+
+  .idea dl { margin: 18px 0 0; }
+  .idea dt {
+    font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-dim); font-weight: 600; margin: 18px 0 6px;
+  }
+  .idea dd { margin: 0; color: var(--text-muted); font-size: 0.95rem; }
+  .idea dd strong { color: var(--text); }
+  .idea dd.basis { font-size: 0.88rem; }
+  .idea dd.basis .tag {
+    font-family: var(--font-mono); font-size: 0.72rem; padding: 1px 7px;
+    border-radius: var(--radius-sm); margin-right: 6px; white-space: nowrap;
+  }
+  .tag.direct { background: var(--good-soft); color: var(--good-text); border: 1px solid rgba(95,211,154,0.3); }
+  .tag.external { background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent-border); }
+  .tag.reasoned { background: var(--warn-soft); color: var(--warn-text); border: 1px solid rgba(224,164,77,0.3); }
+  .idea dd.basis p { margin: 0 0 8px; max-width: none; }
+  .idea dd.down { color: var(--warn-text); }
+
+  figure { margin: 22px 0 4px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 0.79rem; color: var(--text-dim); margin-top: 9px; max-width: 72ch; }
+
+  .note {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 13px 16px; margin: 18px 0 0;
+  }
+  .note .lbl {
+    font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--warn-text); display: block; margin-bottom: 5px;
+  }
+  .note p { margin: 0; font-size: 0.88rem; color: var(--text-muted); }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 0; font-size: 0.88rem; }
+  th {
+    text-align: left; font-size: 0.71rem; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--text-dim); font-weight: 600; padding: 9px 12px;
+    border-bottom: 1px solid var(--border-strong);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-muted); vertical-align: top; }
+  td:first-child { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; }
+  td.name { color: var(--text); font-family: var(--font-ui); font-size: 0.88rem; white-space: normal; }
+  tr:last-child td { border-bottom: 0; }
+
+  footer.composition-signal {
+    margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim);
+  }
+
+  @media (max-width: 620px) {
+    .page { padding: 36px 18px 60px; }
+    h1 { font-size: 1.6rem; }
+    .jump a { grid-template-columns: 26px 1fr; }
+    .jump .ax { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<p class="eyebrow">Ideation artifact</p>
+<h1>Pacto visual identity, simplicity, and the organization platform</h1>
+<p class="lede">Seven directions for making Pacto arresting to look at, obvious to use, and genuinely good at the thing it is named after — organizations binding themselves to each other.</p>
+
+<ul class="meta">
+  <li><b>Date</b> <time datetime="2026-07-24">2026-07-24</time></li>
+  <li><b>Topic</b> visual-identity-and-org-platform</li>
+  <li><b>Mode</b> repo-grounded</li>
+  <li><b>Focus</b> visual redesign · simplicity · organizations coming together · branding</li>
+</ul>
+
+<div class="stats">
+  <div class="stat"><span class="n">48</span><span class="l">Raw candidates</span></div>
+  <div class="stat"><span class="n">36</span><span class="l">After dedupe</span></div>
+  <div class="stat"><span class="n">7</span><span class="l">Survivors</span></div>
+  <div class="stat"><span class="n">5</span><span class="l">Axes covered</span></div>
+  <div class="stat"><span class="n">29</span><span class="l">Citations verified</span></div>
+</div>
+
+<!-- ============================== GROUNDING ============================== -->
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<p class="sub">Codebase context, gathered from a shell/arrival/org-surface/visual/brand evidence sweep, product strategy, and external design research. Every idea below was qualified against this.</p>
+
+<div class="ground">
+  <div class="card">
+    <h4>The frame</h4>
+    <ul>
+      <li>Left navbar fixed at <b>64px</b>, top navbar at <b>48px</b>, sidebars resizable only within <b>180–400px</b>.</li>
+      <li><b>No collapse affordance exists anywhere</b> in the shell — width is the only lever.</li>
+      <li><b>8–10 modal types</b> across four z-index tiers: 1000, 1201, 10000, and a squad drag-ghost at <b>100000</b> that floats above every modal.</li>
+      <li><b>Zero</b> <code>metaKey</code>/<code>ctrlKey</code> bindings claimed app-wide; eight separate Enter handlers wired by hand in <code>Navbar.svelte</code> alone.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Arrival</h4>
+    <ul>
+      <li>Path is Welcome → PIN → backup prompt → <b>lands on empty DMs</b>: “Select a conversation or start a new chat.”</li>
+      <li>Empty states across DMs, squads, governance and join requests carry <b>no affordances</b> — no get-started action, no coaching.</li>
+      <li>Four decisions are asked with no context supplied: PIN length, backup now-or-later, EVM network, squad visibility.</li>
+      <li>No progress indicator anywhere in the flow.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>The organization surface</h4>
+    <ul>
+      <li>Dashboard is five tabs — Status, Governance, Treasury, Roles, Crew — in a <b>1,077-line</b> component.</li>
+      <li>The Status tab renders a <b>deployment checklist</b>, not an organization: select network → share EVM → deploy governance → deploy squad admin → mint crew hats.</li>
+      <li>Standing vocabulary a newcomer must learn: Captain hat, Crew hat, Top Hat, Squad Admin, Quartermaster, Roster EVM, Sponsor, Safe.</li>
+      <li>Inter-org structure is <b>all-or-nothing</b>: pair two whole squads, or discover each other through a Commons card.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Visual language</h4>
+    <ul>
+      <li>Five themes: dark-techno (cyan, default), aztec (lime), midnight (magenta), techno (teal), union (orange).</li>
+      <li><b>11 distinct font sizes</b> (0.6875rem–3rem) with <b>no formal scale</b>. <b>No spacing scale</b> — raw px from 6 to 32.</li>
+      <li>8 border-radius values, 8+ box-shadow variants, 6 one-off keyframes, ~14 hardcoded colors bypassing tokens.</li>
+      <li>Two components solved the same loading spinner at <b>0.9s</b> and <b>0.8s</b>.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Brand today</h4>
+    <ul>
+      <li>The logo is a <b>placeholder “P”</b> in a 96×96 accent-colored box.</li>
+      <li><b>No brand document exists anywhere in the repo.</b> No wordmark, no icon system. <code>package.json</code> description is an empty string.</li>
+      <li>Nine installer icon sizes are already required by <code>src-tauri/icons/</code> and all currently render the placeholder.</li>
+      <li>Voice is infrastructure-forward: “Built on Nostr, EVM, &amp; Aztec”, “Deploy Governance”, “Organize Squad”.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Strategy and external signal</h4>
+    <ul>
+      <li>Primary user is <b>DAO and collective organizers</b> running funded, membership-driven groups. Metrics include invite accept rate, Commons→squad joins, 30-day retention.</li>
+      <li>Latin <i>pactum</i> — a sealed agreement between groups. Mutual binding, not top-down mandate.</li>
+      <li>2026 premium direction: neo-brutalist contrast, typographic hierarchy as status signal, motion as differentiation, ~10-color palettes (Linear, Raycast, Zed).</li>
+      <li>Privacy brands that landed — Proton (“reclaim”), Mullvad (a police raid became the proof), Obsidian (the vault metaphor), Kagi (outcome-first).</li>
+    </ul>
+  </div>
+</div>
+</section>
+
+<!-- ============================== AXES ============================== -->
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<p class="sub">The topic surface these ideas were generated against and are scored for coverage across.</p>
+<ol class="axes">
+  <li><span><span class="an">shell-layout</span><br><span class="ad">The spatial frame: stacked navbars and sidebars, the wallet rail, tab routing, density, modality, collapse and focus states, keyboard navigation.</span></span></li>
+  <li><span><span class="an">arrival</span><br><span class="ad">First run through first real value: welcome, identity, PIN, seed backup, the path to a first squad and first message, and every empty state.</span></span></li>
+  <li><span><span class="an">org-surface</span><br><span class="ad">Squad-as-organization: dashboard, roster and roles, governance and treasury legibility, capability gating, and how organizations relate to each other.</span></span></li>
+  <li><span><span class="an">visual-language</span><br><span class="ad">The design system as artifact: tokens, the five themes, type scale, spacing, elevation, radii, motion, iconography, card and message presentation.</span></span></li>
+  <li><span><span class="an">brand-voice</span><br><span class="ad">Name and wordmark, logo and icon system, tagline and positioning, palette semantics, product vocabulary, copy tone, and how Pacto explains itself to a stranger.</span></span></li>
+</ol>
+</section>
+
+<!-- ============================== IDEAS ============================== -->
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<p class="sub">Seven survivors from 36 deduped candidates. Each was checked by a verifier that never saw the ideas being generated; three candidates were killed outright for basis failures, and two survivors below were rescoped as a direct result.</p>
+
+<ul class="jump">
+  <li><a href="#idea-1"><span class="rk">01</span><span class="tt">The Covenant System</span><span class="ax">brand-voice</span></a></li>
+  <li><a href="#idea-2"><span class="rk">02</span><span class="tt">Type Is the Brand</span><span class="ax">visual-language</span></a></li>
+  <li><a href="#idea-3"><span class="rk">03</span><span class="tt">The Quiet Frame</span><span class="ax">shell-layout</span></a></li>
+  <li><a href="#idea-4"><span class="rk">04</span><span class="tt">The Assembly</span><span class="ax">org-surface</span></a></li>
+  <li><a href="#idea-5"><span class="rk">05</span><span class="tt">Pacts and Public Pacts</span><span class="ax">org-surface</span></a></li>
+  <li><a href="#idea-6"><span class="rk">06</span><span class="tt">The Introduction</span><span class="ax">arrival</span></a></li>
+  <li><a href="#idea-7"><span class="rk">07</span><span class="tt">The Front Door Speaks to Organizers</span><span class="ax">brand-voice</span></a></li>
+</ul>
+
+<!-- ---------------- 1 ---------------- -->
+<article class="idea" id="idea-1">
+<h3><span class="rank">01</span> The Covenant System</h3>
+<ul class="chips">
+  <li class="axis">axis · brand-voice</li>
+  <li class="conf-hi">confidence · <b>80%</b></li>
+  <li>complexity · <b>High</b></li>
+</ul>
+
+<p><strong>One identity grammar spanning the product, every organization on it, and every surface an organization appears on.</strong> Pacto means a sealed agreement. Build the mark from that: a flat modern seal — a ring enclosing a small internal device — set beside a “Pacto” wordmark cut from a heavier weight of the IBM Plex Mono already in the stack. Then let the same geometry generate every squad's mark. A squad's emblem is composed, not uploaded: a <em>field</em> (its tincture, chosen from the five theme palettes that already exist), a <em>charge</em> (a device from a small curated set), and an <em>ordinary</em> (a geometric mark that appears only when the squad's treasury is live or it has gone public in Commons). That tincture then propagates automatically — Commons card, squad rail tab, chat header, message accent — and the one seal source file mechanically exports the nine installer icon sizes, the default Commons card icon, and the landing-site image.</p>
+
+<figure>
+<svg viewBox="0 0 900 300" role="img" aria-label="Diagram: one seal grammar generates the product mark, each squad's emblem, and the surfaces that emblem propagates to">
+  <defs>
+    <style>
+      .lb { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #98a2b6; }
+      .lt { font-family: 'IBM Plex Mono', monospace; font-size: 13px; fill: #eef1f6; font-weight: 600; }
+      .ls { font-family: 'Inter', sans-serif; font-size: 11px; fill: #6d7889; }
+      .bx { fill: #1f2632; stroke: #2d3644; }
+      .ac { fill: none; stroke: #22d3ee; stroke-width: 1.6; }
+      .arw { stroke: #3c4859; stroke-width: 1.4; fill: none; marker-end: url(#a1); }
+      .halo { paint-order: stroke fill; stroke: #12161d; stroke-width: 3px; }
+    </style>
+    <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3c4859"/>
+    </marker>
+  </defs>
+
+  <text x="20" y="26" class="lb">ONE GRAMMAR</text>
+
+  <!-- root seal -->
+  <rect x="20" y="46" width="180" height="150" rx="10" class="bx"/>
+  <circle cx="110" cy="105" r="30" class="ac"/>
+  <circle cx="110" cy="105" r="19" class="ac" stroke-dasharray="3 4"/>
+  <path d="M100 105 L110 115 L122 96" class="ac" stroke-width="2.2"/>
+  <text x="110" y="160" class="lt halo" text-anchor="middle">Pacto seal</text>
+  <text x="110" y="178" class="ls halo" text-anchor="middle">ring + device + wordmark</text>
+
+  <!-- three parts -->
+  <text x="270" y="26" class="lb">THREE PARTS PER SQUAD</text>
+  <rect x="270" y="46" width="118" height="86" rx="8" class="bx"/>
+  <rect x="288" y="64" width="52" height="52" rx="6" fill="#22d3ee" opacity="0.22" stroke="#22d3ee"/>
+  <text x="329" y="150" class="lt halo" text-anchor="middle">field</text>
+  <text x="329" y="167" class="ls halo" text-anchor="middle">the tincture</text>
+
+  <rect x="404" y="46" width="118" height="86" rx="8" class="bx"/>
+  <path d="M441 106 L463 68 L485 106 Z" class="ac" stroke-width="2"/>
+  <text x="463" y="150" class="lt halo" text-anchor="middle">charge</text>
+  <text x="463" y="167" class="ls halo" text-anchor="middle">the device</text>
+
+  <rect x="538" y="46" width="118" height="86" rx="8" class="bx"/>
+  <path d="M562 112 L597 74 L632 112" class="ac" stroke-width="2.4"/>
+  <text x="597" y="150" class="lt halo" text-anchor="middle">ordinary</text>
+  <text x="597" y="167" class="ls halo" text-anchor="middle">live state</text>
+
+  <line x1="204" y1="105" x2="262" y2="90" class="arw"/>
+
+  <!-- propagation -->
+  <text x="700" y="26" class="lb">PROPAGATES TO</text>
+  <rect x="700" y="46" width="180" height="196" rx="10" class="bx"/>
+  <rect x="716" y="64" width="148" height="26" rx="5" fill="#27303e"/>
+  <text x="726" y="81" class="ls" fill="#98a2b6">Commons card</text>
+  <rect x="716" y="98" width="148" height="26" rx="5" fill="#27303e"/>
+  <text x="726" y="115" class="ls" fill="#98a2b6">squad rail tab</text>
+  <rect x="716" y="132" width="148" height="26" rx="5" fill="#27303e"/>
+  <text x="726" y="149" class="ls" fill="#98a2b6">chat header</text>
+  <rect x="716" y="166" width="148" height="26" rx="5" fill="#27303e"/>
+  <text x="726" y="183" class="ls" fill="#98a2b6">message accent</text>
+  <rect x="716" y="200" width="148" height="26" rx="5" fill="#27303e"/>
+  <text x="726" y="217" class="ls" fill="#98a2b6">9 installer icons</text>
+
+  <line x1="660" y1="120" x2="694" y2="130" class="arw"/>
+
+  <text x="20" y="232" class="ls">Today: a placeholder “P” for the product, and for each squad either an uploaded URL or a bare initial letter.</text>
+  <text x="20" y="252" class="ls">One composition rule replaces both, and encodes real organizational state into the mark itself.</text>
+</svg>
+<figcaption>Directional only — illustrates the intended relationship between the product mark, the per-squad composition rule, and the surfaces a squad's identity reaches. Exact forms, colors, and device set are for design, not specified here.</figcaption>
+</figure>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> Every load-bearing factual claim verified exactly: the placeholder <code>logo-placeholder</code> “P” in <code>WelcomeScreen.svelte</code>; <code>"description": ""</code> at <code>package.json:4</code>; no brand or design document anywhere in <code>docs/</code>; exactly nine <code>Square{30,44,71,89,107,142,150,284,310}x*Logo.png</code> files in <code>src-tauri/icons/</code>. <code>src/lib/squad/squad-catalog.ts</code> carries only id, name, iconUrl, channels, kind, pairedSquads, visibility, commonsTags and timestamps — no visual identity field. <code>CommonsBroadcastCard.svelte:136</code> falls back to an initial letter. The five theme files already carry connotative identity in their own comments: <code>union.css</code> defines “Navy/black field, cream type, chrome steel”; <code>aztec.css</code> says “aligned with aztec.network mood”.</p>
+  <p><span class="tag external">external</span> Latin <i>pactum</i>: a sealed agreement between groups. Wax seals and notary stamps are the historical interface for “this is authenticated and binding without a central registry” — Pacto's exact proposition. Heraldry's tincture/charge/ordinary grammar let thousands of houses signal distinct identity <em>and status</em> to strangers with no central design review. Proton, Signal and Mullvad each claimed a name-native visual metaphor; Pacto's name contains an unclaimed one.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>This is the only idea in the set that answers three parts of the ask with one artifact. It is a branding direction, it is the visual differentiator, and it is infrastructure for organizations finding each other — a stranger scanning Commons can read an org's identity <em>and its state</em> off its mark before deciding to join. The leverage is real and countable: three consumers of “the logo” already exist (installer, Commons fallback, planned landing site), all silently blocked on the same undone work, each currently improvising a placeholder. And the theme system it extends is already built — five palettes exist and already drive <code>--commons-tile-scrim-*</code>; today they are attached only to individual users, never to the organizations those users belong to.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">The generated-emblem half needs data that does not exist yet. <code>squad-catalog.ts</code> has no category field to pick a charge from, and treasury-deployed state lives in a separate governance-infra table never joined to the catalog — so the “ordinary” requires a join the schema does not currently make. Scope it in two stages: the seal, wordmark and tincture propagation are buildable today; the charge and ordinary need a small taxonomy addition first. Heraldic composition also risks reading as costume rather than credibility if the geometry drifts toward pastiche — this is the one idea in the set that genuinely needs a designer, not just an engineer.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 2 ---------------- -->
+<article class="idea" id="idea-2">
+<h3><span class="rank">02</span> Type Is the Brand</h3>
+<ul class="chips">
+  <li class="axis">axis · visual-language</li>
+  <li class="conf-hi">confidence · <b>92%</b></li>
+  <li>complexity · <b>Medium</b></li>
+</ul>
+
+<p><strong>Stop treating the design system as a skin over the app and make it the brand expression itself.</strong> Four moves that compose into one: a single scale file defining one spacing ramp, one type scale of six or seven steps replacing today's eleven ad-hoc sizes, one elevation ramp and one radius set — with all five themes reduced to an accent-hue rotation over that shared substrate. A codified typographic rule: IBM Plex Mono for anything <em>binding</em> — amounts, addresses, hashes, proposal titles, headings — and Inter for anything <em>conversational</em>. A dedicated tabular-numeral treatment for money and votes: single weight, fixed baseline, right-ruled, no decorative variation, deliberately independent of the surrounding prose. And three named motion primitives — enter, emphasize, sustain — retiring six one-off keyframes.</p>
+
+<figure>
+<svg viewBox="0 0 900 262" role="img" aria-label="Before and after: eleven unscaled font sizes and mixed usage versus a seven-step scale with a mono-for-binding rule">
+  <defs>
+    <style>
+      .h { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #98a2b6; letter-spacing: 0.08em; }
+      .s { font-family: 'Inter', sans-serif; font-size: 11px; fill: #6d7889; }
+      .m { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #7fe7f5; }
+      .bar { fill: #3c4859; }
+      .barA { fill: #22d3ee; opacity: 0.75; }
+      .pan { fill: #191e27; stroke: #2d3644; }
+    </style>
+  </defs>
+
+  <rect x="14" y="30" width="420" height="212" rx="10" class="pan"/>
+  <text x="32" y="22" class="h">TODAY — 11 SIZES, NO SCALE</text>
+  <!-- irregular bars -->
+  <rect x="34" y="52" width="46" height="7" class="bar"/><text x="90" y="59" class="s">0.6875rem</text>
+  <rect x="34" y="68" width="52" height="8" class="bar"/><text x="90" y="76" class="s">0.75rem</text>
+  <rect x="34" y="85" width="56" height="8" class="bar"/><text x="90" y="93" class="s">0.8125rem</text>
+  <rect x="34" y="102" width="60" height="9" class="bar"/><text x="90" y="110" class="s">0.875rem</text>
+  <rect x="34" y="120" width="64" height="9" class="bar"/><text x="90" y="128" class="s">0.9375rem</text>
+  <rect x="34" y="138" width="68" height="10" class="bar"/><text x="112" y="146" class="s">1rem</text>
+  <rect x="34" y="157" width="74" height="10" class="bar"/><text x="118" y="165" class="s">1.0625rem</text>
+  <rect x="34" y="176" width="84" height="11" class="bar"/><text x="128" y="184" class="s">1.25rem · 1.5rem · 2rem · 3rem</text>
+  <text x="34" y="208" class="s">8 radii · 8+ shadows · 6 keyframes · ~14 hardcoded colors</text>
+  <text x="34" y="226" class="s">two spinners at 0.9s and 0.8s for the same job</text>
+
+  <rect x="466" y="30" width="420" height="212" rx="10" class="pan"/>
+  <text x="484" y="22" class="h">PROPOSED — 7 STEPS, ONE RULE</text>
+  <rect x="486" y="54" width="44" height="7" class="barA"/><text x="542" y="61" class="m">step 1 · label</text>
+  <rect x="486" y="76" width="58" height="9" class="barA"/><text x="556" y="84" class="m">step 2 · body</text>
+  <rect x="486" y="99" width="72" height="10" class="barA"/><text x="570" y="108" class="m">step 3 · lead</text>
+  <rect x="486" y="123" width="90" height="12" class="barA"/><text x="588" y="133" class="m">step 4 · title</text>
+  <rect x="486" y="149" width="112" height="15" class="barA"/><text x="610" y="161" class="m">step 5 · section</text>
+  <rect x="486" y="178" width="140" height="19" class="barA"/><text x="638" y="192" class="m">step 6–7 · display</text>
+  <text x="486" y="222" class="s">mono = binding (amounts, addresses, proposals, headings)</text>
+  <text x="486" y="238" class="s">sans = conversational · tabular numerals for money and votes</text>
+</svg>
+<figcaption>Directional only — illustrates the contrast between an accumulated size inventory and a deliberate scale plus a semantic type rule. Step count and exact values are for design.</figcaption>
+</figure>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> The inventory is measured, not estimated: 11 distinct font sizes from 0.6875rem to 3rem with no formal scale; no spacing scale at all (raw px from 6 to 32); 8 border-radius values; 8+ box-shadow variants; ~14 hardcoded rgba/hex literals bypassing tokens, verified exactly at <code>KeyImport.svelte:177</code> (<code>rgba(88,101,242,0.2)</code>) and <code>PinInput.svelte:208</code> (<code>rgba(34,211,238,0.2)</code>). Two components solved the same loading spinner differently — <code>chat-view-spin</code> at 0.9s (<code>ChatView.svelte:1506</code>) and <code>refresh-icon-spin</code> at 0.8s (<code>RefreshIconButton.svelte:89</code>), both verified. The mono/sans split already exists unintentionally: <code>app.css</code> sets <code>:is(h1..h6){font-family: var(--font-mono)}</code> while body runs Inter — nobody decided this, and no document governs it.</p>
+  <p><span class="tag external">external</span> Linear's type discipline is the cited reference for “reads as premium”: hierarchy carried by type rather than color, and <code>tabular-nums</code> for numeric display. Swiss railway timetables solved life-critical numeric density with rigid tabular alignment and zero flourish — the same stakes as a misread treasury balance or vote tally.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>This is the only bundle in the set with no weak member, and it is the substrate the other visual ideas stand on — the Covenant System's marks need a scale to sit in, and a sixth theme is only cheap once themes stop being five hand-authored token sets. The compounding is arithmetic rather than rhetorical: every spacing, type and shadow decision today is made once per component per theme, and fourteen have already leaked past the token layer entirely. The mono-for-binding rule is the sharpest part and costs nothing — it turns an accident into a voice, and it is exactly the kind of discipline that separates products that look designed from products that look assembled.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">Touching the scale means touching every component's styles, and the two densest surfaces (<code>ChatView.svelte</code> at 1,553 lines, <code>ParentDashboard.svelte</code> at 1,077) absorb most of that cost. There is no visual regression testing in the repo, so drift is caught by eye. The mono-for-binding rule also needs a real boundary decision — a proposal title is binding, but is a channel name? Get that wrong and the app reads as a terminal emulator rather than an organizing tool.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 3 ---------------- -->
+<article class="idea" id="idea-3">
+<h3><span class="rank">03</span> The Quiet Frame</h3>
+<ul class="chips">
+  <li class="axis">axis · shell-layout</li>
+  <li class="conf-hi">confidence · <b>85%</b></li>
+  <li>complexity · <b>Medium</b></li>
+</ul>
+
+<p><strong>Give the shell a way to get out of the content's way, then give the app one door instead of ten.</strong> Three moves. First, chrome becomes collapsible and summonable rather than permanently mounted: the 64px rail collapses to a hairline, the 48px header drops away in a focus mode, and navigation is reachable by a ⌘K command overlay instead of only by clicking a resident rail. Second, one overlay primitive in three variants — modal, sheet, command — replaces the eight-plus bespoke overlays, each currently re-solving focus trapping, Escape handling and z-index placement on its own. Third, a central keybinding registry claims the entirely unclaimed <code>⌘</code>/<code>ctrl</code> namespace and absorbs the Enter and Escape handlers currently wired by hand across components.</p>
+
+<figure>
+<svg viewBox="0 0 900 236" role="img" aria-label="Before and after: fixed chrome consuming the frame versus collapsible chrome with a command overlay">
+  <defs>
+    <style>
+      .cap { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #98a2b6; letter-spacing: 0.08em; }
+      .tiny { font-family: 'Inter', sans-serif; font-size: 10px; fill: #6d7889; }
+      .chrome { fill: #27303e; stroke: #3c4859; }
+      .content { fill: #191e27; stroke: #2d3644; }
+      .cmd { fill: #1f2632; stroke: #22d3ee; }
+      .hl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #7fe7f5; }
+    </style>
+  </defs>
+
+  <text x="14" y="20" class="cap">TODAY — NOTHING COLLAPSES</text>
+  <!-- window 1 -->
+  <rect x="14" y="32" width="410" height="176" rx="8" class="content"/>
+  <rect x="14" y="32" width="410" height="26" rx="8" class="chrome"/>
+  <text x="24" y="49" class="tiny">top navbar · 48px</text>
+  <rect x="14" y="58" width="34" height="150" class="chrome"/>
+  <text x="20" y="140" class="tiny" transform="rotate(-90 20 140)">rail · 64px</text>
+  <rect x="48" y="58" width="96" height="150" class="chrome"/>
+  <text x="56" y="76" class="tiny">sidebar</text>
+  <text x="56" y="90" class="tiny">180–400px</text>
+  <rect x="144" y="58" width="280" height="150" fill="#12161d" stroke="#2d3644"/>
+  <text x="158" y="80" class="tiny">content</text>
+  <text x="14" y="226" class="tiny">Fixed chrome is not hideable — only the sidebar resizes, within a band.</text>
+
+  <text x="476" y="20" class="cap">PROPOSED — SUMMON, DON'T RESIDE</text>
+  <rect x="476" y="32" width="410" height="176" rx="8" class="content"/>
+  <rect x="476" y="32" width="8" height="176" class="chrome"/>
+  <rect x="484" y="32" width="402" height="176" fill="#12161d" stroke="#2d3644"/>
+  <text x="500" y="56" class="tiny">content — full bleed</text>
+  <!-- command overlay -->
+  <rect x="576" y="86" width="230" height="72" rx="8" class="cmd"/>
+  <text x="592" y="108" class="hl">⌘K</text>
+  <line x1="614" y1="103" x2="792" y2="103" stroke="#3c4859"/>
+  <text x="592" y="128" class="tiny">go to squad · open treasury · new pact</text>
+  <text x="592" y="146" class="tiny">one overlay primitive, one focus trap</text>
+  <text x="476" y="226" class="tiny">Rail collapses to a hairline; the header drops in focus mode; navigation is summoned.</text>
+</svg>
+<figcaption>Directional only — illustrates the shift from permanently resident chrome to summoned navigation. Exact collapse behavior, hotkeys, and overlay styling are for design.</figcaption>
+</figure>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> <code>.navbar { width: 64px; height: 100% }</code> (<code>Navbar.svelte:759-760</code>) and <code>.top-navbar { height: 48px; min-height: 48px }</code> (<code>TopNavbar.svelte:78-81</code>), both verified exactly; <code>ResizableSidebar</code> clamps to 180–400px and offers width as the only lever — the evidence sweep found no hide or collapse toggle anywhere in the shell. The overlay scatter is reproducible in code: z-index 1000 (<code>Modal.svelte:110</code>), 1200/1201 (<code>WalletAdvancedPanel.svelte:512,520</code>), 10000 (wallet Send/Request/Import), and 100000 for the squad drag ghost (<code>Navbar.svelte:1011</code>) which floats above every modal in the app. <code>CreateChannelModal.svelte</code> wires its own <code>on:keydown={(e) =&gt; e.key === 'Escape' &amp;&amp; onClose()}</code> at lines 41 and 52 despite <code>Modal.svelte</code> existing. No <code>metaKey</code>/<code>ctrlKey</code> bindings are claimed app-wide.</p>
+  <p><span class="tag external">external</span> Raycast, Zed and Linear are the cited references for command-first dense layouts — the 2025-26 direction explicitly contrasted with permanently resident chrome.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>This is the largest available simplicity move, and unlike a visual refresh it changes what is on screen at rest rather than how it is decorated. Four z-index tiers for functionally identical “cover the screen and ask a question” UI is accretion, not design — and the 100000 drag ghost is that accretion producing an actual bug class. The keybinding registry is the cheap part with the longest tail: every future power-user feature currently has nothing to attach to, and would have to audit eight scattered handlers before claiming a single shortcut.</dd>
+
+<dt>Downsides</dt>
+<dd class="down"><em>Rescoped after verification.</em> The original framing proposed deleting resident chrome outright; the evidence supports only that nothing collapses, which justifies a collapse and summon affordance, not deletion. Worth being honest that the cockpit analogy originally cited argues <em>against</em> deletion — real glass cockpits keep primary instruments permanently mounted. Discoverability is the genuine risk: a command palette is invisible to a user who does not know it exists, so the collapsed state needs a visible affordance, and the default should probably remain expanded for new accounts.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 4 ---------------- -->
+<article class="idea" id="idea-4">
+<h3><span class="rank">04</span> The Assembly</h3>
+<ul class="chips">
+  <li class="axis">axis · org-surface</li>
+  <li class="conf-hi">confidence · <b>82%</b></li>
+  <li>complexity · <b>High</b></li>
+</ul>
+
+<p><strong>Replace five tabs and a setup checklist with one view that answers the only question an organizer actually asks: is my organization okay?</strong> A single Organization surface shows member count, treasury balance, the most urgent open proposal, last activity, and a compact relationship view of how the org's governance pieces connect — Pacto Gov, Sponsor, Squad Admin, Safe — rather than a linear list of deployment steps to clear once. Everything currently living in Status, Governance, Treasury, Roles and Crew becomes a drill-in drawer over that view. Critically, the whole surface renders declaratively from the capability snapshot the app already computes: each gated control emits its own disabled state <em>and</em> its own plain-language explanation as one unit — “you can approve spending because you hold this squad's senior role” — instead of a hand-wired check plus a separately maintained string per component.</p>
+
+<figure>
+<svg viewBox="0 0 900 250" role="img" aria-label="Before and after: five dashboard tabs with a setup checklist versus one organization view rendered from the capability snapshot">
+  <defs>
+    <style>
+      .cp { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #98a2b6; letter-spacing: 0.08em; }
+      .tn { font-family: 'Inter', sans-serif; font-size: 10.5px; fill: #6d7889; }
+      .tw { font-family: 'Inter', sans-serif; font-size: 10.5px; fill: #eef1f6; }
+      .pn { fill: #191e27; stroke: #2d3644; }
+      .tab { fill: #27303e; stroke: #3c4859; }
+      .node { fill: #1f2632; stroke: #22d3ee; }
+      .mono { font-family: 'IBM Plex Mono', monospace; font-size: 15px; fill: #7fe7f5; font-weight: 600; }
+      .link { stroke: #3c4859; stroke-width: 1.5; fill: none; }
+    </style>
+  </defs>
+
+  <text x="14" y="20" class="cp">TODAY — 5 TABS OVER A CHECKLIST</text>
+  <rect x="14" y="32" width="410" height="190" rx="8" class="pn"/>
+  <rect x="26" y="44" width="70" height="22" rx="5" class="tab"/><text x="38" y="59" class="tw">Status</text>
+  <rect x="102" y="44" width="82" height="22" rx="5" class="tab"/><text x="112" y="59" class="tn">Governance</text>
+  <rect x="190" y="44" width="70" height="22" rx="5" class="tab"/><text x="200" y="59" class="tn">Treasury</text>
+  <rect x="266" y="44" width="56" height="22" rx="5" class="tab"/><text x="276" y="59" class="tn">Roles</text>
+  <rect x="328" y="44" width="52" height="22" rx="5" class="tab"/><text x="340" y="59" class="tn">Crew</text>
+  <text x="26" y="92" class="tn">☐  select network</text>
+  <text x="26" y="112" class="tn">☐  all members share EVM</text>
+  <text x="26" y="132" class="tn">☐  deploy governance</text>
+  <text x="26" y="152" class="tn">☐  deploy squad admin</text>
+  <text x="26" y="172" class="tn">☐  mint crew hats</text>
+  <text x="26" y="202" class="tn">…then raw RPC config, editable inline</text>
+
+  <text x="476" y="20" class="cp">PROPOSED — ONE ORGANIZATION VIEW</text>
+  <rect x="476" y="32" width="410" height="190" rx="8" class="pn"/>
+  <text x="492" y="58" class="mono">14</text><text x="492" y="74" class="tn">members</text>
+  <text x="562" y="58" class="mono">2.4 ETH</text><text x="562" y="74" class="tn">treasury</text>
+  <text x="660" y="58" class="mono">1</text><text x="660" y="74" class="tn">needs your vote</text>
+  <line x1="492" y1="90" x2="870" y2="90" stroke="#2d3644"/>
+
+  <rect x="496" y="106" width="86" height="30" rx="6" class="node"/>
+  <text x="510" y="125" class="tw">Pacto Gov</text>
+  <rect x="622" y="106" width="86" height="30" rx="6" class="node"/>
+  <text x="640" y="125" class="tw">Sponsor</text>
+  <rect x="748" y="106" width="86" height="30" rx="6" class="node"/>
+  <text x="774" y="125" class="tw">Safe</text>
+  <line x1="584" y1="121" x2="618" y2="121" class="link"/>
+  <line x1="710" y1="121" x2="744" y2="121" class="link"/>
+  <rect x="622" y="152" width="86" height="30" rx="6" fill="#1f2632" stroke="#3c4859" stroke-dasharray="4 3"/>
+  <text x="634" y="171" class="tn">Squad Admin</text>
+  <line x1="665" y1="140" x2="665" y2="150" class="link"/>
+  <text x="496" y="205" class="tn">“You can approve spending — you hold this squad's senior role.”</text>
+</svg>
+<figcaption>Directional only — illustrates the shift from tab-partitioned setup state to one organization view with a compact relationship read. Metrics, node set, and layout are placeholders for review.</figcaption>
+</figure>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> <code>DashboardStatusTab.svelte:51-118</code> renders the checklist state machine — <code>govState</code>, <code>adminState</code>, <code>crewMintState</code>, <code>shareEvmState</code> — followed immediately by raw RPC config editable inline at lines 144-250. <code>ParentDashboard.svelte</code> is 1,077 lines carrying the five-tab array. The capability source of truth already exists: <code>governance-privilege.ts:34</code> carries the optional ACL snapshot from <code>get_squad_capabilities</code>, yet gate copy is wired independently per component across <code>governance.json</code>. Standing jargon verified in place: Captain hat, Crew hat, Top Hat, Squad Admin, Quartermaster, Roster EVM.</p>
+  <p><span class="tag reasoned">reasoned</span> A checklist is a queue you clear once; the object an organizer actually returns to weeks later is a persistent relationship between governance pieces. The current surface answers “have you finished setup” at exactly the moment the user is asking “is my org healthy” — and because it is the Status tab, it keeps answering the wrong question forever, long after setup is done.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>Pacto's stated primary user is someone running a funded, membership-driven group; this is the screen they live on, and today it is a setup wizard wearing a dashboard's name. Rendering from the capability snapshot is the part that compounds: four governance infra types already exist, and each new capability currently requires touching N components to add both the check and its matching string, kept in sync by hand. Do it once and a fifth type inherits correct gating everywhere without a UI change per surface.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">Rewriting a 1,077-line component with five tabs' worth of live on-chain state is the largest build in this set, and collapsing tabs costs per-tab deep linking. Two corrections worth carrying: the checklist title is actually <code>"Checklist"</code>, not “Squad deployment checklist” — an error that propagated through the evidence sweep. And the plain-language claim is weaker than it first appears: <code>tauri-errors.ts::getInvokeErrorMessage</code> already unwraps <code>{"code":"ACL_DENIED","message":"Requires Captain hat."}</code> to the friendly message, so raw ACL codes do <em>not</em> generally reach users. The real problem is that the friendly message is still jargon, not that the code leaks. A full topological transit-map rendering was considered and cut as overbuilt for roughly four infra types — the compact relationship view above is the surviving, proportionate version.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 5 ---------------- -->
+<article class="idea" id="idea-5">
+<h3><span class="rank">05</span> Pacts and Public Pacts</h3>
+<ul class="chips">
+  <li class="axis">axis · org-surface</li>
+  <li class="conf-md">confidence · <b>70%</b></li>
+  <li>complexity · <b>High</b></li>
+</ul>
+
+<p><strong>Make the thing the product is named after into an actual object.</strong> A Pact is a scoped, time-bound commitment that involves specific people across squad boundaries — smaller than a squad, independent of squad membership, and not requiring two organizations to institutionally merge before they can do one thing together. Today the only way for two orgs to collaborate is to pair the whole squads. Alongside it, a Public Pact tier inverts private-by-default for organizations whose legitimacy depends on being auditable by outsiders — mutual aid funds, civic assemblies, transparent co-ops — making history and treasury readable with no join gate.</p>
+
+<figure>
+<svg viewBox="0 0 900 226" role="img" aria-label="Before and after: squad-level all-or-nothing pairing versus pacts spanning members across squads">
+  <defs>
+    <style>
+      .cq { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #98a2b6; letter-spacing: 0.08em; }
+      .t2 { font-family: 'Inter', sans-serif; font-size: 10.5px; fill: #98a2b6; }
+      .sq { fill: #1f2632; stroke: #3c4859; }
+      .mem { fill: #27303e; stroke: #3c4859; }
+      .pact { fill: rgba(34,211,238,0.10); stroke: #22d3ee; }
+      .hlo { paint-order: stroke fill; stroke: #12161d; stroke-width: 3px; }
+    </style>
+  </defs>
+
+  <text x="14" y="20" class="cq">TODAY — PAIR WHOLE SQUADS</text>
+  <rect x="30" y="46" width="150" height="120" rx="10" class="sq"/>
+  <text x="105" y="68" class="t2 hlo" text-anchor="middle">Squad A</text>
+  <circle cx="66" cy="98" r="11" class="mem"/><circle cx="105" cy="98" r="11" class="mem"/><circle cx="144" cy="98" r="11" class="mem"/>
+  <circle cx="86" cy="132" r="11" class="mem"/><circle cx="124" cy="132" r="11" class="mem"/>
+
+  <rect x="252" y="46" width="150" height="120" rx="10" class="sq"/>
+  <text x="327" y="68" class="t2 hlo" text-anchor="middle">Squad B</text>
+  <circle cx="288" cy="98" r="11" class="mem"/><circle cx="327" cy="98" r="11" class="mem"/><circle cx="366" cy="98" r="11" class="mem"/>
+  <circle cx="308" cy="132" r="11" class="mem"/><circle cx="346" cy="132" r="11" class="mem"/>
+
+  <line x1="184" y1="106" x2="248" y2="106" stroke="#3c4859" stroke-width="3"/>
+  <text x="216" y="98" class="t2 hlo" text-anchor="middle">pair</text>
+  <text x="30" y="192" class="t2">All-or-nothing: two organizations merge their surfaces</text>
+  <text x="30" y="208" class="t2">before any two members can commit to anything.</text>
+
+  <text x="476" y="20" class="cq">PROPOSED — A PACT SPANS MEMBERS</text>
+  <rect x="492" y="46" width="150" height="120" rx="10" class="sq"/>
+  <text x="567" y="68" class="t2 hlo" text-anchor="middle">Squad A</text>
+  <circle cx="528" cy="98" r="11" class="mem"/><circle cx="567" cy="98" r="11" class="mem"/><circle cx="606" cy="98" r="11" class="mem"/>
+  <circle cx="548" cy="132" r="11" class="mem"/><circle cx="586" cy="132" r="11" class="mem"/>
+
+  <rect x="714" y="46" width="150" height="120" rx="10" class="sq"/>
+  <text x="789" y="68" class="t2 hlo" text-anchor="middle">Squad B</text>
+  <circle cx="750" cy="98" r="11" class="mem"/><circle cx="789" cy="98" r="11" class="mem"/><circle cx="828" cy="98" r="11" class="mem"/>
+  <circle cx="770" cy="132" r="11" class="mem"/><circle cx="808" cy="132" r="11" class="mem"/>
+
+  <rect x="588" y="82" width="212" height="68" rx="34" class="pact" stroke-dasharray="5 4"/>
+  <text x="694" y="172" class="t2 hlo" text-anchor="middle">one pact · scoped · time-bound</text>
+  <text x="476" y="208" class="t2">Squads stay whole. The commitment is its own object.</text>
+</svg>
+<figcaption>Directional only — illustrates a commitment object spanning members across organizational boundaries rather than merging the organizations. Membership rules, lifecycle, and enforcement are undecided.</figcaption>
+</figure>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> <code>squad.pair.subtitle</code> verified verbatim: pairing “creates a partner squad linking two orgs; members receive individual invites” — genuinely all-or-nothing at squad level. And <code>src/lib/squad/squad-commons-fields.ts</code> confirms the transparency gap exactly: <code>visibility: 'public'</code> toggles only Commons discovery, with an in-file comment stating the MLS squad stays private regardless. A public organization on Pacto today is public only in the sense that strangers can see its advertisement.</p>
+  <p><span class="tag reasoned">reasoned</span> Latin <i>pactum</i> is an agreement between parties, not a merger of institutions — the product's own name describes a binding lighter than the only binding it currently offers. <span class="tag external">external</span> The civic-assembly pattern (quorum thresholds, public deliberation on proposals, binding treasury decisions) and platform-cooperative models depend on outsider auditability for legitimacy; a strictly private tool cannot host them.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>This is the most direct answer to “a platform for organizations to come together.” The current model can only express two states — separate, or institutionally paired — which means the most common real-world collaboration (a handful of people from three orgs committing to one time-bound thing) has no representation at all. Commons follows into squad joins is a named strategy metric; a lighter commitment primitive is what makes a first interaction between two orgs possible without either committing to a merger. The Public Pact tier is one schema extension away from supporting a class of organization Pacto currently cannot host at all.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">This is the least bounded idea in the set and the only one that clearly implies protocol and data-model work rather than surface work — an MLS group scoped to a cross-squad membership is not a small question, and neither is what enforcement a Pact carries. Public Pacts additionally invert the product's core privacy default, which needs a hard look at whether an opt-in public tier weakens the private one by association or by implementation. Treat the confidence figure as reflecting direction, not readiness. A companion idea — designing Commons for a small handful of orgs rather than a searchable catalog — was cut for resting entirely on unevidenced assumptions about adoption.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 6 ---------------- -->
+<article class="idea" id="idea-6">
+<h3><span class="rank">06</span> The Introduction</h3>
+<ul class="chips">
+  <li class="axis">axis · arrival</li>
+  <li class="conf-hi">confidence · <b>88%</b></li>
+  <li>complexity · <b>Low</b></li>
+</ul>
+
+<p><strong>Make joining an organization an event rather than a state change.</strong> Two small moves at the same moment. When a join request is accepted, the squad bot delivers one generated briefing — what this squad is for, who holds Captain and Crew, what is live right now (open proposals, the most recent broadcast), and one suggested first action — composed fresh from current state, not a static welcome message. And the acceptance itself becomes attributed: the holder who admitted the member is recorded and shown on their roster card as “introduced by”, with a newly-vouched marker for a short window.</p>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> <code>squad.json:19-24</code> verified: the accept flow offers only accept, reject and mute plus “Requested {time} — from broadcast”. There is no attribution field and no handoff content — acceptance ends at roster addition and EVM binding, and the new member lands in silence. This sits directly on the evidence sweep's sharpest finding, that empty states carry no affordances and the first valuable action is never named.</p>
+  <p><span class="tag external">external</span> SBAR exists in clinical handoff because ad hoc shift handoffs caused measurable context loss; the fix was a forced compact structure carrying exactly what is needed to act now. Letters of introduction and PGP key-signing bootstrap decentralized trust by attaching the introducer's own standing to the introduction — Pacto's accept action already carries authority (a holder can admit) but leaves no trace of accountability.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>Squad invite accept rate and 30-day retention of new members are both named strategy metrics, and both are decided in the sixty seconds after acceptance — currently the emptiest moment in the product. This is also the cheapest survivor here: one generated bot DM and one recorded field, with no schema rewrite and no new surface. The vouch half is distinct from prior identity work in the repo, which scores <em>who someone is</em>; this scores <em>who stood behind admitting them</em>, a social signal the app currently computes and then discards.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">A generated brief is only as good as the state it summarizes — a squad with no proposals and no recent activity produces a brief that advertises emptiness, so it needs a graceful low-state form. Attribution also has a real trust-and-safety edge: making the introducer visible is accountability in a healthy org and a targeting signal in a hostile one, so it likely needs to respect the same visibility rules as the roster itself.</dd>
+</dl>
+</article>
+
+<!-- ---------------- 7 ---------------- -->
+<article class="idea" id="idea-7">
+<h3><span class="rank">07</span> The Front Door Speaks to Organizers</h3>
+<ul class="chips">
+  <li class="axis">axis · brand-voice</li>
+  <li class="conf-hi">confidence · <b>90%</b></li>
+  <li>complexity · <b>Low</b></li>
+</ul>
+
+<p><strong>Lead with what the user gets, not what the software is made of.</strong> The first screen currently states the tagline “Private | Censorship-Resistant | Governable” over a footer reading “Built on Nostr, EVM, &amp; Aztec • End-to-End Encrypted”. Replace the mechanism list with organizer-outcome language — the shape of “Your group. Your rules. No one else's permission.” — and move the protocol names into an expandable “How it works” disclosure for the audience that wants them. Same claims, ordered for a stranger rather than for an engineer.</p>
+
+<dl>
+<dt>Basis</dt>
+<dd class="basis">
+  <p><span class="tag direct">direct</span> Both strings verified in place — the tagline in <code>WelcomeScreen.svelte</code> and the footer at <code>auth.json:5</code>. The README leads with mechanism the same way. Across the i18n catalogs the voice is consistently infrastructure-forward: “Organize Squad”, “Deploy Governance”, “Announce Update”. There is no brand or voice document anywhere in the repo to govern this.</p>
+  <p><span class="tag external">external</span> Kagi (“Reclaim the Web &amp; Restore Your Privacy”) and Obsidian (“local-first”, the vault metaphor) both lead with outcome and keep mechanism one level down; Proton's “reclaim” framing does the same while stacking the technical proof below it. All three serve audiences at least as technical as Pacto's.</p>
+</dd>
+
+<dt>Rationale</dt>
+<dd>A first-time user has not heard of Nostr, MLS or Aztec, and the same study that found 43.4% of participants could not identify a seed phrase describes the population arriving at this screen. Three unfamiliar proper nouns in the first sentence work against “simple to use” regardless of how accurate they are. This is also the cheapest item in the set — two i18n strings and a disclosure — and it is the piece of brand work that has to be settled <em>before</em> the visual identity is commissioned, because it decides what the mark is expressing.</dd>
+
+<dt>Downsides</dt>
+<dd class="down">Pacto's earliest and most valuable users may be exactly the people for whom “Built on Nostr” is the reason to try it, so burying the protocol names has a real cost with the sovereignty-native audience — the disclosure has to be findable, not hidden. Outcome-first copy also ages into marketing slop quickly if it is not specific; “Your group. Your rules.” is a placeholder illustrating the register, not a proposed line. A related idea — publishing a self-generated report of what the device does not store — was cut for overrunning brand work into an ongoing security-documentation commitment, and because a self-authored claim is structurally weaker than the externally verified event that made Mullvad's reputation.</dd>
+</dl>
+</article>
+</section>
+
+<!-- ============================== REJECTIONS ============================== -->
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<p class="sub">Twenty-nine candidates considered and cut. Three were refuted outright by a verifier that checked citations against the repo; several strong ideas were absorbed into survivors rather than dropped.</p>
+
+<table>
+<thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+<tbody>
+<tr><td>1</td><td class="name">Wallet as Ambient Context, Not a Sidebar</td><td><strong>Basis refuted.</strong> The claim that WalletBar renders even in Commons is false — it is gated inside <code>{:else if $activeTopNavTab === 'dms'}</code> and further behind <code>$dmWalletSidebarVisible &amp;&amp; $activeDmId</code>. No persistent wallet chrome exists; the problem does not exist as described.</td></tr>
+<tr><td>2</td><td class="name">No Seed, Until You Ask</td><td><strong>Basis refuted.</strong> The BIP-39 seed derives both the Nostr identity and the EVM wallet and is non-rotatable, with no server and no passkey path. The Zelta/Daimo comparison is a forced analogy — those rely on ERC-4337 with rotatable keys and social recovery. The team's own requirements doc already settled a quiz-verified gate that this mechanism contradicts.</td></tr>
+<tr><td>3</td><td class="name">Governance Is Born, Not Deployed</td><td><strong>Basis refuted.</strong> <code>ACCESS_CONTROL.md</code> states that on-chain contracts remain final authority and UI gates are advisory. A pre-deployment governance object cannot enforce anything and becomes a second parallel authority with unclear standing.</td></tr>
+<tr><td>4</td><td class="name">Land Inside a Live Squad (sandbox onboarding)</td><td>The identical idea — “solo sandbox squad”, “one-click testnet treasury sandbox” — was already scoped under issue #85 and explicitly deferred by the team. A live, funded, serverless sandbox squad also has no supporting infrastructure in the repo.</td></tr>
+<tr><td>5</td><td class="name">Sign the Pact (bundled arrival redesign)</td><td>Compounds two refuted mechanisms (deferred seed, live sandbox squad); its one sound leg survives as <em>The Introduction</em>.</td></tr>
+<tr><td>6</td><td class="name">Hallmark Rank (assay-mark capability glyph)</td><td>Forced analogy. Hallmarking's load-bearing property is independent third-party assay; the proposed glyph is a client-rendered decoration of state the app already displays as text from the same snapshot.</td></tr>
+<tr><td>7</td><td class="name">Beck Line (transit-map governance view)</td><td>Overbuilt for roughly four infra types on one squad; folded into <em>The Assembly</em> as a compact relationship view instead.</td></tr>
+<tr><td>8</td><td class="name">Summoned Shell / Vanishing Chrome (as deletion)</td><td>Evidence shows no collapse toggle exists, which supports a collapse and summon affordance — not deleting resident chrome. Rescoped into <em>The Quiet Frame</em>.</td></tr>
+<tr><td>9</td><td class="name">One Timeline, Not Three Tabs</td><td>Argued on narrative alone. Merging a public Commons feed, private E2EE DMs and MLS squad channels into one filtered stream collapses three different privacy and trust models, and the risk is not addressed.</td></tr>
+<tr><td>10</td><td class="name">Pacto Mini (400px) and Command Center (ultrawide)</td><td>Justified only as a forcing function; no evidence anyone needs either mode. The insight it was meant to produce is already carried by <em>The Quiet Frame</em>.</td></tr>
+<tr><td>11</td><td class="name">The Roundtable — Commons at N=3</td><td>Premise is speculation about adoption; no organization-count or usage data exists anywhere in the repo or strategy docs.</td></tr>
+<tr><td>12</td><td class="name">Squad Blueprints</td><td>Reuses another candidate's citation with an unverified gloss; the “ten locals pay the tax ten times” justification has no supporting usage data.</td></tr>
+<tr><td>13</td><td class="name">Provable Privacy (non-retention report)</td><td>Overruns brand-voice into an ongoing security-documentation engineering commitment, and a self-authored report is structurally weaker than the externally verified event that made the cited precedent credible.</td></tr>
+<tr><td>14</td><td class="name">The Silent Ledger of Deferred Decisions</td><td>Sound and well-cited, but below the ambition floor beside the survivors — a settings surface rather than a direction.</td></tr>
+<tr><td>15</td><td class="name">Squad Skins (theme as org identity)</td><td>Duplicate — fully subsumed by <em>The Covenant System</em>, which carries the same basis inside a larger identity grammar.</td></tr>
+<tr><td>16</td><td class="name">Blazon Grammar (standalone)</td><td>Absorbed into <em>The Covenant System</em>. Standalone it lacks the data to work: <code>squad-catalog.ts</code> has no category or state field to generate a charge from.</td></tr>
+<tr><td>17</td><td class="name">The Pactum Seal (standalone)</td><td>Absorbed into <em>The Covenant System</em> as its root mark. Best-verified candidate in the set — cut only as a standalone entry.</td></tr>
+<tr><td>18</td><td class="name">The Placeholder Problem</td><td>Duplicates the seal idea from the urgency angle rather than proposing a distinct move.</td></tr>
+<tr><td>19</td><td class="name">One Identity, Four Downstream Assets</td><td>Duplicates the seal idea from the leverage angle; its argument is carried inside <em>The Covenant System</em>'s rationale.</td></tr>
+<tr><td>20</td><td class="name">The Scale File</td><td>Absorbed into <em>Type Is the Brand</em>.</td></tr>
+<tr><td>21</td><td class="name">A Motion Vocabulary, Not Six Keyframes</td><td>Absorbed into <em>Type Is the Brand</em>.</td></tr>
+<tr><td>22</td><td class="name">Tabular Timetable</td><td>Absorbed into <em>Type Is the Brand</em>.</td></tr>
+<tr><td>23</td><td class="name">Mono as the Voice of Commitment</td><td>Absorbed into <em>Type Is the Brand</em> as its sharpest component.</td></tr>
+<tr><td>24</td><td class="name">One Scale, Derived Skins</td><td>Duplicate of the scale file with a theme-derivation framing already carried by <em>Type Is the Brand</em>.</td></tr>
+<tr><td>25</td><td class="name">Non-Color State Language</td><td>Sound accessibility rationale, but narrower than the survivors and largely a consequence of adopting the scale and motion vocabulary; revisit as a follow-on.</td></tr>
+<tr><td>26</td><td class="name">Speak Human First / Zero-Jargon Mode</td><td>Merged into <em>The Assembly</em>, where capability-rendered controls emit their own plain-language explanation. Standalone the claim was overstated: <code>tauri-errors.ts</code> already unwraps raw ACL codes to friendly messages.</td></tr>
+<tr><td>27</td><td class="name">Status Isn't a Checklist / The Org Is One Card</td><td>Merged — both are components of <em>The Assembly</em>.</td></tr>
+<tr><td>28</td><td class="name">Commit, Don't Vanish / One Sheet, Not Ten / One Overlay to Rule Them</td><td>Three framings of one move; merged into <em>The Quiet Frame</em>.</td></tr>
+<tr><td>29</td><td class="name">Capabilities Render the UI</td><td>Merged into <em>The Assembly</em> as its rendering substrate.</td></tr>
+</tbody>
+</table>
+</section>
+
+<footer class="composition-signal">
+Composed 2026-07-24 by ce-ideate from a repo-grounded evidence sweep of <code>covenant-gov/pacto-app</code> — 48 raw candidates across six generation frames, verified against 29 repo citations by an independent basis check.
+</footer>
+
+</div>
+</body>
+</html>

@@ -37,7 +37,10 @@ mod tests {
     #[test]
     fn parse_data_hex_accepts_empty_and_prefixed() {
         assert!(parse_data_hex("").unwrap().is_empty());
-        assert_eq!(parse_data_hex("0xdeadbeef").unwrap(), vec![0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(
+            parse_data_hex("0xdeadbeef").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
     }
 
     #[test]
@@ -73,7 +76,10 @@ mod tests {
 
     #[test]
     fn parse_data_hex_uppercase_prefix_and_case() {
-        assert_eq!(parse_data_hex("0XDEADBEEF").unwrap(), vec![0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(
+            parse_data_hex("0XDEADBEEF").unwrap(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
     }
 
     #[test]

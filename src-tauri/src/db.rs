@@ -1,14 +1,18 @@
-use serde::{Deserialize, Serialize};
+use once_cell::sync::Lazy;
 use rusqlite::OptionalExtension;
-use tauri::{AppHandle, command, Runtime};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use once_cell::sync::Lazy;
+use tauri::{command, AppHandle, Runtime};
 
-use crate::{Profile, Status, Message, Chat, ChatType, Attachment, Reaction};
+use crate::crypto::{internal_decrypt, internal_encrypt};
 use crate::message::EditEntry;
-use crate::crypto::{internal_encrypt, internal_decrypt};
-use crate::stored_event::{StoredEvent, event_kind};
+use crate::net::SiteMetadata;
+use crate::stored_event::{event_kind, StoredEvent};
+use crate::{
+    chat::NotificationLevel, Attachment, Chat, ChatType, Message, Profile, Reaction, Status,
+};
+use nostr_sdk::ToBech32;
 
 /// In-memory cache for chat_identifier → integer ID mappings
 /// This avoids database lookups on every message operation
@@ -35,7 +39,6 @@ pub struct SlimProfile {
     website: String,
     nip05: String,
     status: Status,
-    muted: bool,
     #[serde(default)]
     blocked: bool,
     bot: bool,
@@ -59,7 +62,6 @@ impl Default for SlimProfile {
             website: String::new(),
             nip05: String::new(),
             status: Status::new(),
-            muted: false,
             blocked: false,
             bot: false,
             avatar_cached: String::new(),
@@ -83,7 +85,6 @@ impl From<&Profile> for SlimProfile {
             website: profile.website.clone(),
             nip05: profile.nip05.clone(),
             status: profile.status.clone(),
-            muted: profile.muted,
             blocked: profile.blocked,
             bot: profile.bot,
             avatar_cached: profile.avatar_cached.clone(),
@@ -108,9 +109,8 @@ impl SlimProfile {
             website: self.website.clone(),
             nip05: self.nip05.clone(),
             status: self.status.clone(),
-            last_updated: 0,      // Default value
-            mine: false,          // Default value
-            muted: self.muted,
+            last_updated: 0, // Default value
+            mine: false,     // Default value
             blocked: self.blocked,
             bot: self.bot,
             avatar_cached: self.avatar_cached.clone(),
@@ -120,62 +120,65 @@ impl SlimProfile {
 }
 
 // Function to get all profiles
-pub async fn get_all_profiles<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimProfile>, String> {
+pub async fn get_all_profiles<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Vec<SlimProfile>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached FROM profiles")
+    let mut stmt = conn.prepare("SELECT npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, blocked, bot, avatar_cached, banner_cached FROM profiles")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
-    let profiles = stmt.query_map([], |row| {
-        // Get cached paths and validate they exist on disk
-        let avatar_cached: String = row.get(16)?;
-        let banner_cached: String = row.get(17)?;
+    let profiles = stmt
+        .query_map([], |row| {
+            // Get cached paths and validate they exist on disk
+            let avatar_cached: String = row.get(15)?;
+            let banner_cached: String = row.get(16)?;
 
-        // Only use cached paths if the files actually exist
-        let validated_avatar_cached = if !avatar_cached.is_empty() && std::path::Path::new(&avatar_cached).exists() {
-            avatar_cached
-        } else {
-            String::new()
-        };
-        let validated_banner_cached = if !banner_cached.is_empty() && std::path::Path::new(&banner_cached).exists() {
-            banner_cached
-        } else {
-            String::new()
-        };
+            // Only use cached paths if the files actually exist
+            let validated_avatar_cached =
+                if !avatar_cached.is_empty() && std::path::Path::new(&avatar_cached).exists() {
+                    avatar_cached
+                } else {
+                    String::new()
+                };
+            let validated_banner_cached =
+                if !banner_cached.is_empty() && std::path::Path::new(&banner_cached).exists() {
+                    banner_cached
+                } else {
+                    String::new()
+                };
 
-        Ok(SlimProfile {
-            id: row.get(0)?,  // npub column
-            name: row.get(1)?,
-            display_name: row.get(2)?,
-            nickname: row.get(3)?,
-            lud06: row.get(4)?,
-            lud16: row.get(5)?,
-            banner: row.get(6)?,
-            avatar: row.get(7)?,
-            about: row.get(8)?,
-            website: row.get(9)?,
-            nip05: row.get(10)?,
-            status: crate::Status {
-                title: row.get(11)?,
-                purpose: String::new(), // Not stored separately
-                url: row.get(12)?,
-            },
-            muted: row.get::<_, i32>(13)? != 0,
-            blocked: row.get::<_, i32>(14)? != 0,
-            bot: row.get::<_, i32>(15)? != 0,
-            avatar_cached: validated_avatar_cached,
-            banner_cached: validated_banner_cached,
+            Ok(SlimProfile {
+                id: row.get(0)?, // npub column
+                name: row.get(1)?,
+                display_name: row.get(2)?,
+                nickname: row.get(3)?,
+                lud06: row.get(4)?,
+                lud16: row.get(5)?,
+                banner: row.get(6)?,
+                avatar: row.get(7)?,
+                about: row.get(8)?,
+                website: row.get(9)?,
+                nip05: row.get(10)?,
+                status: crate::Status {
+                    title: row.get(11)?,
+                    purpose: String::new(), // Not stored separately
+                    url: row.get(12)?,
+                },
+                blocked: row.get::<_, i32>(13)? != 0,
+                bot: row.get::<_, i32>(14)? != 0,
+                avatar_cached: validated_avatar_cached,
+                banner_cached: validated_banner_cached,
+            })
         })
-    })
-    .map_err(|e| format!("Failed to query profiles: {}", e))?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| format!("Failed to collect profiles: {}", e))?;
+        .map_err(|e| format!("Failed to query profiles: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to collect profiles: {}", e))?;
 
     drop(stmt); // Explicitly drop stmt before returning connection
     crate::account_manager::return_db_connection(conn);
     Ok(profiles)
 }
-
 
 // Public command to set a profile
 #[command]
@@ -183,8 +186,8 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     conn.execute(
-        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, muted, blocked, bot, avatar_cached, banner_cached)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+        "INSERT INTO profiles (npub, name, display_name, nickname, lud06, lud16, banner, avatar, about, website, nip05, status_content, status_url, blocked, bot, avatar_cached, banner_cached)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(npub) DO UPDATE SET
             name = excluded.name,
             display_name = excluded.display_name,
@@ -198,7 +201,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             nip05 = excluded.nip05,
             status_content = excluded.status_content,
             status_url = excluded.status_url,
-            muted = excluded.muted,
             blocked = excluded.blocked,
             bot = excluded.bot,
             avatar_cached = excluded.avatar_cached,
@@ -217,7 +219,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
             profile.nip05,
             profile.status.title,
             profile.status.url,
-            profile.muted as i32,
             profile.blocked as i32,
             profile.bot as i32,
             profile.avatar_cached,
@@ -228,9 +229,6 @@ pub async fn set_profile<R: Runtime>(handle: AppHandle<R>, profile: Profile) -> 
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
-
-
-
 
 #[command]
 pub fn get_theme<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
@@ -255,7 +253,8 @@ pub async fn set_pkey<R: Runtime>(handle: AppHandle<R>, pkey: String) -> Result<
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
             rusqlite::params!["pkey", pkey],
-        ).map_err(|e| format!("Failed to insert pkey: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to insert pkey: {}", e))?;
         crate::account_manager::return_db_connection(conn);
         return Ok(());
     }
@@ -265,7 +264,8 @@ pub async fn set_pkey<R: Runtime>(handle: AppHandle<R>, pkey: String) -> Result<
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params!["pkey", pkey],
-    ).map_err(|e| format!("Failed to insert pkey: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to insert pkey: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -275,18 +275,23 @@ pub async fn set_pkey<R: Runtime>(handle: AppHandle<R>, pkey: String) -> Result<
 pub fn get_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
-    let result: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["pkey"],
-        |row| row.get(0)
-    ).ok();
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["pkey"],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
     Ok(result)
 }
 
 #[command]
-pub async fn set_evm_pkey<R: Runtime>(handle: AppHandle<R>, evm_pkey: String) -> Result<(), String> {
+pub async fn set_evm_pkey<R: Runtime>(
+    handle: AppHandle<R>,
+    evm_pkey: String,
+) -> Result<(), String> {
     if let Ok(Some(npub)) = crate::account_manager::get_pending_account() {
         crate::account_manager::init_profile_database(&handle, &npub).await?;
         crate::account_manager::set_current_account(npub.clone())?;
@@ -296,7 +301,8 @@ pub async fn set_evm_pkey<R: Runtime>(handle: AppHandle<R>, evm_pkey: String) ->
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
             rusqlite::params!["evm_pkey", evm_pkey],
-        ).map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
         crate::account_manager::return_db_connection(conn);
         return Ok(());
     }
@@ -305,7 +311,8 @@ pub async fn set_evm_pkey<R: Runtime>(handle: AppHandle<R>, evm_pkey: String) ->
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params!["evm_pkey", evm_pkey],
-    ).map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to insert evm_pkey: {}", e))?;
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
@@ -314,18 +321,23 @@ pub async fn set_evm_pkey<R: Runtime>(handle: AppHandle<R>, evm_pkey: String) ->
 pub fn get_evm_pkey<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
-    let result: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["evm_pkey"],
-        |row| row.get(0)
-    ).ok();
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["evm_pkey"],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
     Ok(result)
 }
 
 /// Active signing address only (`settings.evm_address`). Does not touch `profiles`.
-pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+pub async fn set_wallet_signing_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    address: String,
+) -> Result<(), String> {
     let trimmed = address.trim().to_string();
     let conn = crate::account_manager::get_db_connection(&handle)?;
     conn.execute(
@@ -339,18 +351,25 @@ pub async fn set_wallet_signing_evm_address<R: Runtime>(handle: AppHandle<R>, ad
 
 /// Persists **`settings.evm_address`** (active signing address).
 #[command]
-pub async fn set_evm_address<R: Runtime>(handle: AppHandle<R>, address: String) -> Result<(), String> {
+pub async fn set_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+    address: String,
+) -> Result<(), String> {
     set_wallet_signing_evm_address(handle, address).await
 }
 
 /// Read `evm_address` from settings without repair (internal use).
-pub(crate) fn read_stored_evm_address<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
+pub(crate) fn read_stored_evm_address<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
-    let result: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["evm_address"],
-        |row| row.get(0)
-    ).ok();
+    let result: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["evm_address"],
+            |row| row.get(0),
+        )
+        .ok();
     crate::account_manager::return_db_connection(conn);
     Ok(result)
 }
@@ -367,7 +386,10 @@ pub async fn repair_evm_address_if_needed<R: Runtime>(handle: &AppHandle<R>) -> 
         Ok(d) => d,
         Err(_) => return Ok(()),
     };
-    let key_hex = decrypted.trim().strip_prefix("0x").unwrap_or(decrypted.trim());
+    let key_hex = decrypted
+        .trim()
+        .strip_prefix("0x")
+        .unwrap_or(decrypted.trim());
     let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid EVM key hex: {}", e))?;
     if key_bytes.len() != 32 {
         return Ok(());
@@ -474,7 +496,9 @@ fn normalize_infra_type(raw: &str) -> Result<String, String> {
         "sponsor" | "squad_sponsor" => Ok("sponsor".to_string()),
         "pacto_gov" | "pacto-gov" => Ok("pacto_gov".to_string()),
         "squad_admin" | "squad-admin" => Ok("squad_admin".to_string()),
-        "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => Ok("standalone_safe".to_string()),
+        "standalone_safe" | "gnosis_safe" | "gnosis-safe" | "safe" => {
+            Ok("standalone_safe".to_string())
+        }
         "bread_coop" | "bread-coop" | "bread" => Ok("bread_coop".to_string()),
         _ => Err(format!("unknown squad infra type: {}", raw.trim())),
     }
@@ -573,7 +597,10 @@ pub struct ParentTreasurySafeRow {
 
 /// Legacy: first stored Safe address for a parent (oldest `created_at_ms`). Prefer `list_parent_treasury_safes`.
 #[command]
-pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<Option<String>, String> {
+pub fn get_safe<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+) -> Result<Option<String>, String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Ok(None);
@@ -588,9 +615,11 @@ pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<O
         .optional()
         .map_err(|e| format!("Failed to read parent_treasury_safe: {}", e))?;
     let result = if result.is_none() {
-        conn.query_row("SELECT safe_address FROM squad_safe WHERE squad_id = ?1", rusqlite::params![pid], |row| {
-            row.get::<_, String>(0)
-        })
+        conn.query_row(
+            "SELECT safe_address FROM squad_safe WHERE squad_id = ?1",
+            rusqlite::params![pid],
+            |row| row.get::<_, String>(0),
+        )
         .optional()
         .map_err(|e| format!("Failed to read squad_safe: {}", e))?
     } else {
@@ -602,7 +631,11 @@ pub fn get_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String) -> Result<O
 
 /// Replace all treasury Safes for this parent with a single Sepolia entry (legacy Set Safe / migration).
 #[command]
-pub fn set_safe<R: Runtime>(handle: AppHandle<R>, parent_id: String, safe_address: String) -> Result<(), String> {
+pub fn set_safe<R: Runtime>(
+    handle: AppHandle<R>,
+    parent_id: String,
+    safe_address: String,
+) -> Result<(), String> {
     crate::migration::require_key_derivation_version_2_on_handle(&handle)?;
     let pid = parent_id.trim();
     if pid.is_empty() {
@@ -650,7 +683,14 @@ pub fn add_parent_treasury_safe<R: Runtime>(
     } else {
         lb_raw
     };
-    upsert_parent_treasury_row(&handle, &parent_id, &norm, ch.as_str(), lb, entry_id.as_deref())
+    upsert_parent_treasury_row(
+        &handle,
+        &parent_id,
+        &norm,
+        ch.as_str(),
+        lb,
+        entry_id.as_deref(),
+    )
 }
 
 #[command]
@@ -797,7 +837,9 @@ pub fn list_squad_infra<R: Runtime>(
 
 /// Distinct on-chain refs from local `squad_infra` rows (for Advanced panel soft-deny warnings).
 #[command]
-pub fn list_squad_infra_canonical_refs<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<String>, String> {
+pub fn list_squad_infra_canonical_refs<R: Runtime>(
+    handle: AppHandle<R>,
+) -> Result<Vec<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
     let mut stmt = conn
         .prepare(
@@ -881,7 +923,10 @@ pub fn parent_has_pacto_gov_infra_row<R: Runtime>(
 }
 
 /// Interim v1: mutations require deployed Pacto Gov. Target: on-chain captain / allowlist-admin role.
-fn require_allowlist_mutation_allowed(conn: &rusqlite::Connection, parent_id: &str) -> Result<(), String> {
+fn require_allowlist_mutation_allowed(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+) -> Result<(), String> {
     let pid = parent_id.trim();
     if pid.is_empty() {
         return Err("parent_id is required.".to_string());
@@ -896,7 +941,10 @@ fn require_allowlist_mutation_allowed(conn: &rusqlite::Connection, parent_id: &s
     Ok(())
 }
 
-fn collect_hex_addresses_from_json_value(v: &serde_json::Value, out: &mut std::collections::HashSet<String>) {
+fn collect_hex_addresses_from_json_value(
+    v: &serde_json::Value,
+    out: &mut std::collections::HashSet<String>,
+) {
     match v {
         serde_json::Value::String(s) => {
             if let Some(norm) = crate::evm::normalize_hex_address(s.trim()) {
@@ -954,7 +1002,9 @@ pub fn implicit_allowlist_addresses<R: Runtime>(
     if let Ok(mut stmt) = conn.prepare(
         "SELECT safe_address FROM parent_treasury_safe WHERE parent_id = ?1 AND lower(chain) = ?2",
     ) {
-        let rows = stmt.query_map(rusqlite::params![pid, &chain_norm], |row| row.get::<_, String>(0));
+        let rows = stmt.query_map(rusqlite::params![pid, &chain_norm], |row| {
+            row.get::<_, String>(0)
+        });
         if let Ok(rows) = rows {
             for addr in rows.flatten() {
                 if let Ok(norm) = normalize_allowlist_address(&addr) {
@@ -1447,6 +1497,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
     token_address: String,
     symbol: String,
     decimals: u8,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SquadTrackedTokenRow, String> {
     let pid = parent_id.trim().to_string();
     let chain_norm = normalize_allowlist_chain(&chain)?;
@@ -1462,6 +1513,7 @@ pub async fn upsert_squad_tracked_token<R: Runtime>(
         &handle,
         pid.as_str(),
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
+        rpc_urls,
     )
     .await?;
     let added_by = crate::account_manager::get_current_account()?;
@@ -1515,6 +1567,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
     handle: AppHandle<R>,
     parent_id: String,
     id: String,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<(), String> {
     let pid = parent_id.trim();
     let row_id = id.trim();
@@ -1525,6 +1578,7 @@ pub async fn remove_squad_tracked_token<R: Runtime>(
         &handle,
         pid,
         crate::evm::access_control::GovCapability::MutateTrackedTokens,
+        rpc_urls,
     )
     .await?;
     let conn = crate::account_manager::get_db_connection(&handle)?;
@@ -1762,7 +1816,10 @@ mod allowlist_tests {
 
     #[test]
     fn author_listed_in_participants_matches_trimmed() {
-        assert!(author_listed_in_participants(["npub1a", " npub1b "], "npub1b"));
+        assert!(author_listed_in_participants(
+            ["npub1a", " npub1b "],
+            "npub1b"
+        ));
         assert!(!author_listed_in_participants(["npub1a"], "npub1b"));
         assert!(!author_listed_in_participants(["npub1a"], ""));
         assert!(!author_listed_in_participants([], "npub1a"));
@@ -1790,15 +1847,27 @@ mod allowlist_tests {
         )
         .expect("mls");
         // Group exists but chat participants empty / missing → fail closed.
-        assert!(!chat_db_participants_contain_author(&conn, "grp-1", "npub1author"));
+        assert!(!chat_db_participants_contain_author(
+            &conn,
+            "grp-1",
+            "npub1author"
+        ));
 
         conn.execute(
             "INSERT INTO chats (chat_identifier, participants) VALUES ('grp-1', ?1)",
             rusqlite::params![r#"["npub1peer","npub1author"]"#],
         )
         .expect("chat");
-        assert!(chat_db_participants_contain_author(&conn, "grp-1", "npub1author"));
-        assert!(!chat_db_participants_contain_author(&conn, "grp-1", "npub1stranger"));
+        assert!(chat_db_participants_contain_author(
+            &conn,
+            "grp-1",
+            "npub1author"
+        ));
+        assert!(!chat_db_participants_contain_author(
+            &conn,
+            "grp-1",
+            "npub1stranger"
+        ));
         assert!(!chat_db_participants_contain_author(&conn, "grp-1", ""));
     }
 }
@@ -1859,7 +1928,8 @@ mod tracked_token_tests {
     fn normalize_chain_and_address() {
         assert_eq!(normalize_allowlist_chain(" Sepolia ").unwrap(), "sepolia");
         assert!(normalize_allowlist_chain("").is_err());
-        let addr = normalize_allowlist_address("0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD").unwrap();
+        let addr =
+            normalize_allowlist_address("0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD").unwrap();
         assert_eq!(addr.to_ascii_lowercase(), addr);
         assert!(normalize_allowlist_address("not-an-address").is_err());
     }
@@ -1989,13 +2059,15 @@ mod squad_infra_row_id_tests {
         squad_sponsor_infra_row_id, SQUAD_INFRA_ID_MAX,
     };
 
-    const LONG_PARENT: &str =
-        "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+    const LONG_PARENT: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
     #[test]
     fn short_parent_uses_direct_pacto_gov_id() {
         let parent = "smoke-squad-alpha";
-        assert_eq!(pacto_gov_infra_row_id(parent), format!("pacto-gov-{parent}"));
+        assert_eq!(
+            pacto_gov_infra_row_id(parent),
+            format!("pacto-gov-{parent}")
+        );
     }
 
     #[test]
@@ -2347,11 +2419,7 @@ pub fn apply_parent_safe_announce<R: Runtime>(
         return;
     };
     let chain = normalize_treasury_chain(p.get("chain").and_then(|v| v.as_str()));
-    let lb_raw = p
-        .get("label")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim();
+    let lb_raw = p.get("label").and_then(|v| v.as_str()).unwrap_or("").trim();
     let lb = if lb_raw.len() > 200 {
         &lb_raw[..200]
     } else {
@@ -2421,14 +2489,17 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
                 Some(t)
             }
         });
-    let provider_payload_str = p.get("provider_payload").and_then(|v| v.as_str()).and_then(|s| {
-        let t = s.trim();
-        if t.is_empty() {
-            None
-        } else {
-            Some(t)
-        }
-    });
+    let provider_payload_str = p
+        .get("provider_payload")
+        .and_then(|v| v.as_str())
+        .and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        });
     let entry_id = p.get("entry_id").and_then(|v| v.as_str());
     let row_id = new_squad_infra_id(entry_id);
     let _ = upsert_squad_infra_inner(
@@ -2824,7 +2895,9 @@ pub fn resolve_squad_roster_evm_address<R: Runtime>(
         None => crate::account_manager::get_current_account()?,
     };
 
-    if let Some(account_id) = get_squad_member_evm_account_id(&handle, parent, Some(member.as_str()))? {
+    if let Some(account_id) =
+        get_squad_member_evm_account_id(&handle, parent, Some(member.as_str()))?
+    {
         let conn = crate::account_manager::get_db_connection(&handle)?;
         let addr: Option<String> = conn
             .query_row(
@@ -2932,7 +3005,9 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
         try_apply_squad_tracked_tokens_announce(handle, content, chat_id, author_npub);
         return;
     }
-    if effective_bucket == Some("announcements") && is_announcements_governance_announce_content(content) {
+    if effective_bucket == Some("announcements")
+        && is_announcements_governance_announce_content(content)
+    {
         return;
     }
 }
@@ -3034,7 +3109,9 @@ pub fn try_apply_squad_member_evm_share<R: Runtime>(
     let Some(norm) = crate::evm::normalize_hex_address(raw_addr) else {
         return;
     };
-    if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(handle, norm.as_str()).is_err() {
+    if crate::evm::evm_accounts::ensure_address_allowed_on_squad_roster(handle, norm.as_str())
+        .is_err()
+    {
         return;
     }
 
@@ -3067,7 +3144,8 @@ pub async fn set_seed<R: Runtime>(handle: AppHandle<R>, seed: String) -> Result<
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params!["seed", encrypted_seed],
-    ).map_err(|e| format!("Failed to insert seed: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to insert seed: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -3077,11 +3155,13 @@ pub async fn set_seed<R: Runtime>(handle: AppHandle<R>, seed: String) -> Result<
 pub async fn get_seed<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
-    let encrypted_seed: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = ?1",
-        rusqlite::params!["seed"],
-        |row| row.get(0)
-    ).ok();
+    let encrypted_seed: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params!["seed"],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
 
@@ -3097,14 +3177,19 @@ pub async fn get_seed<R: Runtime>(handle: AppHandle<R>) -> Result<Option<String>
 
 /// Set a setting value in SQL database
 #[command]
-pub fn set_sql_setting<R: Runtime>(handle: AppHandle<R>, key: String, value: String) -> Result<(), String> {
+pub fn set_sql_setting<R: Runtime>(
+    handle: AppHandle<R>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
     if let Ok(_npub) = crate::account_manager::get_current_account() {
         let conn = crate::account_manager::get_db_connection(&handle)?;
 
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
             rusqlite::params![&key, &value],
-        ).map_err(|e| format!("Failed to set setting: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to set setting: {}", e))?;
 
         crate::account_manager::return_db_connection(conn);
         return Ok(());
@@ -3114,15 +3199,20 @@ pub fn set_sql_setting<R: Runtime>(handle: AppHandle<R>, key: String, value: Str
 
 /// Get a setting value from SQL database
 #[command]
-pub fn get_sql_setting<R: Runtime>(handle: AppHandle<R>, key: String) -> Result<Option<String>, String> {
+pub fn get_sql_setting<R: Runtime>(
+    handle: AppHandle<R>,
+    key: String,
+) -> Result<Option<String>, String> {
     if let Ok(_npub) = crate::account_manager::get_current_account() {
         let conn = crate::account_manager::get_db_connection(&handle)?;
 
-        let result: Option<String> = conn.query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            rusqlite::params![&key],
-            |row| row.get(0)
-        ).ok();
+        let result: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![&key],
+                |row| row.get(0),
+            )
+            .ok();
 
         crate::account_manager::return_db_connection(conn);
         return Ok(result);
@@ -3130,15 +3220,16 @@ pub fn get_sql_setting<R: Runtime>(handle: AppHandle<R>, key: String) -> Result<
     Ok(None)
 }
 
-
 #[command]
 pub fn remove_setting<R: Runtime>(handle: AppHandle<R>, key: String) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
-    let rows_affected = conn.execute(
-        "DELETE FROM settings WHERE key = ?1",
-        rusqlite::params![key],
-    ).map_err(|e| format!("Failed to delete setting: {}", e))?;
+    let rows_affected = conn
+        .execute(
+            "DELETE FROM settings WHERE key = ?1",
+            rusqlite::params![key],
+        )
+        .map_err(|e| format!("Failed to delete setting: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(rows_affected > 0)
@@ -3183,7 +3274,12 @@ pub(crate) fn log_sensitive_export_on_conn(
     success: bool,
     error_code: Option<&str>,
 ) -> Result<(), String> {
-    let id = format!("{}-{}-{:x}", export_type, export_epoch_seconds(), rand::random::<u64>());
+    let id = format!(
+        "{}-{}-{:x}",
+        export_type,
+        export_epoch_seconds(),
+        rand::random::<u64>()
+    );
     let attempted_at = export_epoch_seconds();
     conn.execute(
         "INSERT INTO sensitive_export_log (id, account_npub, export_type, attempted_at, success, error_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -3221,19 +3317,16 @@ pub(crate) fn list_recent_export_attempts_on_conn(
         )
         .map_err(|e| format!("Failed to prepare export log query: {}", e))?;
     let rows = stmt
-        .query_map(
-            rusqlite::params![account_npub, since],
-            |row| {
-                Ok(ExportLogRow {
-                    id: row.get(0)?,
-                    account_npub: row.get(1)?,
-                    export_type: row.get(2)?,
-                    attempted_at: row.get(3)?,
-                    success: row.get::<_, i64>(4)? != 0,
-                    error_code: row.get(5)?,
-                })
-            },
-        )
+        .query_map(rusqlite::params![account_npub, since], |row| {
+            Ok(ExportLogRow {
+                id: row.get(0)?,
+                account_npub: row.get(1)?,
+                export_type: row.get(2)?,
+                attempted_at: row.get(3)?,
+                success: row.get::<_, i64>(4)? != 0,
+                error_code: row.get(5)?,
+            })
+        })
         .map_err(|e| format!("Failed to query export log: {}", e))?;
     let mut result = Vec::new();
     for row in rows {
@@ -3272,13 +3365,13 @@ fn export_epoch_seconds() -> u64 {
 /// Slim version of Chat for database storage
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SlimChatDB {
-    pub id: String,  // The semantic ID (npub or group_id) - used in code
+    pub id: String, // The semantic ID (npub or group_id) - used in code
     pub chat_type: ChatType,
     pub participants: Vec<String>,
     pub last_read: String,
     pub created_at: u64,
     pub metadata: crate::ChatMetadata,
-    pub muted: bool,
+    pub notification_level: NotificationLevel,
 }
 
 /// Helper function to get or create integer chat ID from identifier
@@ -3299,11 +3392,13 @@ fn get_or_create_chat_id<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Try to get existing ID from database
-    let existing_id: Option<i64> = conn.query_row(
-        "SELECT id FROM chats WHERE chat_identifier = ?1",
-        rusqlite::params![chat_identifier],
-        |row| row.get(0)
-    ).ok();
+    let existing_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM chats WHERE chat_identifier = ?1",
+            rusqlite::params![chat_identifier],
+            |row| row.get(0),
+        )
+        .ok();
 
     let id = if let Some(id) = existing_id {
         id
@@ -3325,8 +3420,8 @@ fn get_or_create_chat_id<R: Runtime>(
         };
 
         conn.execute(
-            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
-             VALUES (?1, ?2, ?3, '', ?4, '{}', 0)",
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata)
+             VALUES (?1, ?2, ?3, '', ?4, '{}')",
             rusqlite::params![chat_identifier, chat_type, participants_json, now as i64],
         ).map_err(|e| format!("Failed to create chat: {}", e))?;
 
@@ -3381,11 +3476,13 @@ pub fn get_chat_id_by_identifier<R: Runtime>(
     // Cache miss - check database
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let id: i64 = conn.query_row(
-        "SELECT id FROM chats WHERE chat_identifier = ?1",
-        rusqlite::params![chat_identifier],
-        |row| row.get(0)
-    ).map_err(|_| format!("Chat not found: {}", chat_identifier))?;
+    let id: i64 = conn
+        .query_row(
+            "SELECT id FROM chats WHERE chat_identifier = ?1",
+            rusqlite::params![chat_identifier],
+            |row| row.get(0),
+        )
+        .map_err(|_| format!("Chat not found: {}", chat_identifier))?;
 
     crate::account_manager::return_db_connection(conn);
 
@@ -3421,11 +3518,13 @@ fn get_or_create_user_id<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Try to get existing ID from database
-    let existing_id: Option<i64> = conn.query_row(
-        "SELECT id FROM profiles WHERE npub = ?1",
-        rusqlite::params![npub],
-        |row| row.get(0)
-    ).ok();
+    let existing_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM profiles WHERE npub = ?1",
+            rusqlite::params![npub],
+            |row| row.get(0),
+        )
+        .ok();
 
     let id = if let Some(id) = existing_id {
         id
@@ -3434,7 +3533,8 @@ fn get_or_create_user_id<R: Runtime>(
         conn.execute(
             "INSERT INTO profiles (npub, name, display_name) VALUES (?1, '', '')",
             rusqlite::params![npub],
-        ).map_err(|e| format!("Failed to create profile stub: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to create profile stub: {}", e))?;
 
         // Get the auto-generated ID
         conn.last_insert_rowid()
@@ -3464,12 +3564,15 @@ pub async fn preload_id_caches<R: Runtime>(handle: &AppHandle<R>) -> Result<(), 
 
     // Load all chat ID mappings
     {
-        let mut stmt = conn.prepare("SELECT chat_identifier, id FROM chats")
+        let mut stmt = conn
+            .prepare("SELECT chat_identifier, id FROM chats")
             .map_err(|e| format!("Failed to prepare chat query: {}", e))?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        }).map_err(|e| format!("Failed to query chats: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| format!("Failed to query chats: {}", e))?;
 
         let mut cache = CHAT_ID_CACHE.write().unwrap();
         cache.clear();
@@ -3482,12 +3585,15 @@ pub async fn preload_id_caches<R: Runtime>(handle: &AppHandle<R>) -> Result<(), 
 
     // Load all user ID mappings
     {
-        let mut stmt = conn.prepare("SELECT npub, id FROM profiles")
+        let mut stmt = conn
+            .prepare("SELECT npub, id FROM profiles")
             .map_err(|e| format!("Failed to prepare profile query: {}", e))?;
 
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        }).map_err(|e| format!("Failed to query profiles: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| format!("Failed to query profiles: {}", e))?;
 
         let mut cache = USER_ID_CACHE.write().unwrap();
         cache.clear();
@@ -3519,7 +3625,7 @@ impl From<&Chat> for SlimChatDB {
             last_read: chat.last_read().clone(),
             created_at: chat.created_at(),
             metadata: chat.metadata().clone(),
-            muted: chat.muted(),
+            notification_level: chat.notification_level(),
         }
     }
 }
@@ -3527,11 +3633,15 @@ impl From<&Chat> for SlimChatDB {
 impl SlimChatDB {
     // Convert back to full Chat (messages will be loaded separately)
     pub fn to_chat(&self) -> Chat {
-        let mut chat = Chat::new(self.id.clone(), self.chat_type.clone(), self.participants.clone());
+        let mut chat = Chat::new(
+            self.id.clone(),
+            self.chat_type.clone(),
+            self.participants.clone(),
+        );
         chat.last_read = self.last_read.clone();
         chat.created_at = self.created_at;
         chat.metadata = self.metadata.clone();
-        chat.muted = self.muted;
+        chat.notification_level = self.notification_level;
         chat
     }
 }
@@ -3540,32 +3650,36 @@ impl SlimChatDB {
 pub async fn get_all_chats<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<SlimChatDB>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare("SELECT chat_identifier, chat_type, participants, last_read, created_at, metadata, muted FROM chats ORDER BY created_at DESC")
+    let mut stmt = conn.prepare("SELECT chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level FROM chats ORDER BY created_at DESC")
         .map_err(|e| format!("Failed to prepare statement: {}", e))?;
 
-    let rows = stmt.query_map([], |row| {
-        let participants_json: String = row.get(2)?;
-        let participants: Vec<String> = serde_json::from_str(&participants_json).unwrap_or_default();
+    let rows = stmt
+        .query_map([], |row| {
+            let participants_json: String = row.get(2)?;
+            let participants: Vec<String> =
+                serde_json::from_str(&participants_json).unwrap_or_default();
 
-        let metadata_json: String = row.get(5)?;
-        let metadata: crate::ChatMetadata = serde_json::from_str(&metadata_json).unwrap_or_default();
+            let metadata_json: String = row.get(5)?;
+            let metadata: crate::ChatMetadata =
+                serde_json::from_str(&metadata_json).unwrap_or_default();
 
-        let chat_type_int: i32 = row.get(1)?;
-        let chat_type = crate::ChatType::from_i32(chat_type_int);
+            let chat_type_int: i32 = row.get(1)?;
+            let chat_type = crate::ChatType::from_i32(chat_type_int);
 
-        Ok(SlimChatDB {
-            id: row.get(0)?,  // chat_identifier (the semantic ID)
-            chat_type,
-            participants,
-            last_read: row.get(3)?,
-            created_at: row.get::<_, i64>(4)? as u64,
-            metadata,
-            muted: row.get::<_, i32>(6)? != 0,
+            Ok(SlimChatDB {
+                id: row.get(0)?, // chat_identifier (the semantic ID)
+                chat_type,
+                participants,
+                last_read: row.get(3)?,
+                created_at: row.get::<_, i64>(4)? as u64,
+                metadata,
+                notification_level: NotificationLevel::from_db_str(&row.get::<_, String>(6)?),
+            })
         })
-    })
-    .map_err(|e| format!("Failed to query chats: {}", e))?;
+        .map_err(|e| format!("Failed to query chats: {}", e))?;
 
-    let chats: Vec<SlimChatDB> = rows.collect::<Result<Vec<_>, _>>()
+    let chats: Vec<SlimChatDB> = rows
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to collect chats: {}", e))?;
 
     drop(stmt); // Explicitly drop stmt before returning connection
@@ -3581,21 +3695,21 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
     let chat_identifier = &slim_chat.id;
 
     let chat_type_int = slim_chat.chat_type.to_i32();
-    let participants_json = serde_json::to_string(&slim_chat.participants)
-        .unwrap_or_else(|_| "[]".to_string());
-    let metadata_json = serde_json::to_string(&slim_chat.metadata)
-        .unwrap_or_else(|_| "{}".to_string());
+    let participants_json =
+        serde_json::to_string(&slim_chat.participants).unwrap_or_else(|_| "[]".to_string());
+    let metadata_json =
+        serde_json::to_string(&slim_chat.metadata).unwrap_or_else(|_| "{}".to_string());
 
     // Use INSERT ... ON CONFLICT DO UPDATE to avoid triggering CASCADE delete
     conn.execute(
-        "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, muted)
+        "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(chat_identifier) DO UPDATE SET
             chat_type = excluded.chat_type,
             participants = excluded.participants,
             last_read = excluded.last_read,
             metadata = excluded.metadata,
-            muted = excluded.muted",
+            notification_level = excluded.notification_level",
         rusqlite::params![
             chat_identifier,
             chat_type_int,
@@ -3603,7 +3717,7 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
             slim_chat.last_read,
             slim_chat.created_at as i64,
             metadata_json,
-            slim_chat.muted as i32,
+            slim_chat.notification_level.as_db_str(),
         ],
     ).map_err(|e| format!("Failed to upsert chat: {}", e))?;
 
@@ -3613,7 +3727,10 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
 
 /// Delete a chat and all its messages from the database.
 /// `chat_identifier` is the npub for DMs or group_id for MLS; events are CASCADE deleted.
-pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str) -> Result<(), String> {
+pub async fn delete_chat<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_identifier: &str,
+) -> Result<(), String> {
     let conn = crate::account_manager::get_db_connection(&handle)?;
 
     let chat_int_id = get_chat_id_by_identifier(&handle, chat_identifier)?;
@@ -3629,7 +3746,17 @@ pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str
         cache.remove(chat_identifier);
     }
 
-    println!("[DB] Deleted chat and messages: {} (id {})", chat_identifier, chat_int_id);
+    println!(
+        "[DB] Deleted chat and messages: {} (id {})",
+        chat_identifier, chat_int_id
+    );
+
+    if let Err(e) = crate::catch_up::delete_entries_for_chat(&conn, chat_identifier) {
+        eprintln!(
+            "[CatchUp] Failed to delete entries for chat {}: {}",
+            chat_identifier, e
+        );
+    }
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -3643,7 +3770,7 @@ pub async fn delete_chat<R: Runtime>(handle: AppHandle<R>, chat_identifier: &str
 pub async fn save_message<R: Runtime>(
     handle: AppHandle<R>,
     chat_id: &str,
-    message: &Message
+    message: &Message,
 ) -> Result<(), String> {
     // Get or create integer chat ID
     let chat_int_id = get_or_create_chat_id(&handle, chat_id)?;
@@ -3713,8 +3840,20 @@ fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>
         }
     }
 
+    // Add link preview metadata as JSON tag, if present (see also save_link_preview_metadata,
+    // which UPDATEs this tag after an async fetch since the event row already exists by then)
+    if let Some(preview) = &message.preview_metadata {
+        if let Ok(preview_json) = serde_json::to_string(preview) {
+            tags.push(vec!["link_preview".to_string(), preview_json]);
+        }
+    }
+
     let virtual_bucket = message.virtual_bucket.clone().or_else(|| {
-        crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(kind, &message.content, &tags)
+        crate::virtual_channel_bucket::normalize_virtual_bucket_for_message(
+            kind,
+            &message.content,
+            &tags,
+        )
     });
 
     StoredEvent {
@@ -3746,7 +3885,7 @@ fn message_to_stored_event(message: &Message, chat_id: i64, user_id: Option<i64>
 pub async fn save_chat_messages<R: Runtime>(
     handle: AppHandle<R>,
     chat_id: &str,
-    messages: &[Message]
+    messages: &[Message],
 ) -> Result<(), String> {
     // Skip if no messages to save
     if messages.is_empty() {
@@ -3756,7 +3895,11 @@ pub async fn save_chat_messages<R: Runtime>(
     // Save each message using the event-based save_message function
     for message in messages {
         if let Err(e) = save_message(handle.clone(), chat_id, message).await {
-            eprintln!("Failed to save message {}: {}", &message.id[..8.min(message.id.len())], e);
+            eprintln!(
+                "Failed to save message {}: {}",
+                &message.id[..8.min(message.id.len())],
+                e
+            );
         }
     }
 
@@ -3792,7 +3935,10 @@ pub async fn save_mls_groups<R: Runtime>(
         ).map_err(|e| format!("Failed to save MLS group {}: {}", group.group_id, e))?;
     }
 
-    println!("[SQL] Saved {} MLS groups to mls_groups table", groups.len());
+    println!(
+        "[SQL] Saved {} MLS groups to mls_groups table",
+        groups.len()
+    );
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
@@ -3826,7 +3972,10 @@ pub async fn save_mls_group<R: Runtime>(
 }
 
 /// True when a non-evicted MLS group row matches the parent id (`group_id` or `engine_group_id`).
-fn parent_exists_in_groups_conn(conn: &rusqlite::Connection, parent_id: &str) -> Result<bool, String> {
+fn parent_exists_in_groups_conn(
+    conn: &rusqlite::Connection,
+    parent_id: &str,
+) -> Result<bool, String> {
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM mls_groups WHERE evicted = 0 AND (group_id = ?1 OR engine_group_id = ?1))",
         rusqlite::params![parent_id],
@@ -3861,25 +4010,333 @@ pub async fn load_mls_groups<R: Runtime>(
         "SELECT group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted FROM mls_groups"
     ).map_err(|e| format!("Failed to prepare query: {}", e))?;
 
-    let rows = stmt.query_map([], |row| {
-        Ok(crate::mls::MlsGroupMetadata {
-            group_id: row.get(0)?,
-            engine_group_id: row.get(1)?,
-            creator_pubkey: row.get(2)?,
-            name: row.get(3)?,
-            avatar_ref: row.get(4)?,
-            created_at: row.get::<_, i64>(5)? as u64,
-            updated_at: row.get::<_, i64>(6)? as u64,
-            evicted: row.get::<_, i32>(7)? != 0,
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(crate::mls::MlsGroupMetadata {
+                group_id: row.get(0)?,
+                engine_group_id: row.get(1)?,
+                creator_pubkey: row.get(2)?,
+                name: row.get(3)?,
+                avatar_ref: row.get(4)?,
+                created_at: row.get::<_, i64>(5)? as u64,
+                updated_at: row.get::<_, i64>(6)? as u64,
+                evicted: row.get::<_, i32>(7)? != 0,
+            })
         })
-    }).map_err(|e| format!("Failed to query mls_groups: {}", e))?;
+        .map_err(|e| format!("Failed to query mls_groups: {}", e))?;
 
-    let groups: Vec<crate::mls::MlsGroupMetadata> = rows.collect::<Result<Vec<_>, _>>()
+    let groups: Vec<crate::mls::MlsGroupMetadata> = rows
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to collect groups: {}", e))?;
 
     drop(stmt);
     crate::account_manager::return_db_connection(conn);
     Ok(groups)
+}
+
+/// Persist a harvest, keeping groups that match an `mls_groups` row by
+/// `group_id` or `engine_group_id` (case-insensitive for hex ids).
+/// Unmatched harvest keys are logged and skipped. `INSERT OR IGNORE`
+/// against the migration's unique `(group_id, admin_npub)` index makes a
+/// re-run of the harvest produce no duplicate rows.
+pub(crate) fn persist_legacy_group_admins_conn(
+    conn: &rusqlite::Connection,
+    harvest: &crate::mls_store_reset::LegacyStoreHarvest,
+) -> Result<usize, String> {
+    let mut canonical_group_ids: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT group_id, engine_group_id FROM mls_groups")
+            .map_err(|e| format!("Failed to prepare mls_groups scan: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to scan mls_groups: {}", e))?;
+        for row in rows {
+            let (group_id, engine_group_id) =
+                row.map_err(|e| format!("Failed to read mls_groups row: {}", e))?;
+            canonical_group_ids.insert(group_id.clone(), group_id.clone());
+            canonical_group_ids.insert(group_id.to_lowercase(), group_id.clone());
+            if !engine_group_id.is_empty() {
+                canonical_group_ids.insert(engine_group_id.clone(), group_id.clone());
+                canonical_group_ids.insert(engine_group_id.to_lowercase(), group_id);
+            }
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let mut persisted = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+    for (harvested_group_id, admins) in &harvest.admins_by_group {
+        let Some(group_id) = canonical_group_ids
+            .get(harvested_group_id)
+            .or_else(|| canonical_group_ids.get(&harvested_group_id.to_lowercase()))
+            .cloned()
+        else {
+            unmatched.push(harvested_group_id.clone());
+            continue;
+        };
+        for admin_npub in admins {
+            persisted += conn
+                .execute(
+                    "INSERT OR IGNORE INTO mls_legacy_admins (group_id, admin_npub, harvested_at) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![group_id, admin_npub, now],
+                )
+                .map_err(|e| format!("Failed to persist legacy admin for {}: {}", group_id, e))?;
+        }
+    }
+
+    if !unmatched.is_empty() {
+        let preview: Vec<&str> = unmatched.iter().take(5).map(String::as_str).collect();
+        eprintln!(
+            "[MLS Reset] Harvested {} group id(s) with no mls_groups match (admins dropped for those): {}{}",
+            unmatched.len(),
+            preview.join(", "),
+            if unmatched.len() > 5 { ", …" } else { "" }
+        );
+    }
+
+    Ok(persisted)
+}
+
+pub(crate) fn clear_discarded_giftwraps_conn(
+    conn: &rusqlite::Connection,
+    wrapper_ids: &[String],
+) -> Result<usize, String> {
+    if wrapper_ids.is_empty() {
+        return Ok(0);
+    }
+    let placeholders = std::iter::repeat("?")
+        .take(wrapper_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "DELETE FROM discarded_giftwraps WHERE wrapper_id IN ({})",
+        placeholders
+    );
+    let params: Vec<&dyn rusqlite::ToSql> = wrapper_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::ToSql)
+        .collect();
+    conn.execute(&sql, params.as_slice())
+        .map_err(|e| format!("Failed to clear discarded giftwraps: {}", e))
+}
+
+#[cfg(test)]
+mod legacy_mls_store_harvest_tests {
+    use super::*;
+
+    fn in_memory_app_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn
+    }
+
+    fn insert_mls_group(conn: &rusqlite::Connection, group_id: &str, engine_group_id: &str) {
+        conn.execute(
+            "INSERT INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted)
+             VALUES (?1, ?2, 'creator', 'group', '', 1000, 1000, 0)",
+            rusqlite::params![group_id, engine_group_id],
+        )
+        .expect("insert mls_groups row");
+    }
+
+    #[test]
+    fn v30_migration_creates_mls_legacy_admins_table_on_fresh_db() {
+        let conn = in_memory_app_conn();
+        assert!(crate::mls_store_reset::legacy_store_table_exists(
+            &conn,
+            "mls_legacy_admins"
+        ));
+    }
+
+    #[test]
+    fn v30_migration_creates_mls_legacy_admins_table_on_baselined_db() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                npub TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                display_name TEXT NOT NULL DEFAULT '',
+                nickname TEXT NOT NULL DEFAULT '',
+                lud06 TEXT NOT NULL DEFAULT '',
+                lud16 TEXT NOT NULL DEFAULT '',
+                banner TEXT NOT NULL DEFAULT '',
+                avatar TEXT NOT NULL DEFAULT '',
+                about TEXT NOT NULL DEFAULT '',
+                website TEXT NOT NULL DEFAULT '',
+                nip05 TEXT NOT NULL DEFAULT '',
+                status_content TEXT NOT NULL DEFAULT '',
+                status_url TEXT NOT NULL DEFAULT '',
+                muted INTEGER NOT NULL DEFAULT 0,
+                bot INTEGER NOT NULL DEFAULT 0,
+                avatar_cached TEXT NOT NULL DEFAULT '',
+                banner_cached TEXT NOT NULL DEFAULT '',
+                evm_address TEXT NOT NULL DEFAULT '',
+                blocked INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE chats (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_identifier TEXT UNIQUE NOT NULL,
+                chat_type INTEGER NOT NULL,
+                participants TEXT NOT NULL,
+                last_read TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                muted INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
+
+        crate::migrations::run_migrations(&mut conn).expect("baseline should run");
+
+        assert!(crate::mls_store_reset::legacy_store_table_exists(
+            &conn,
+            "mls_legacy_admins"
+        ));
+    }
+
+    #[test]
+    fn persist_skips_groups_with_no_matching_mls_groups_row() {
+        let conn = in_memory_app_conn();
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "unknown-group".to_string(),
+            vec!["npub1fixture".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 0);
+        assert!(
+            crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn running_harvest_twice_produces_no_duplicate_rows() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "known-group", "");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "known-group".to_string(),
+            vec!["npub1fixtureadmin".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let first = persist_legacy_group_admins_conn(&conn, &harvest).expect("first persist");
+        let second = persist_legacy_group_admins_conn(&conn, &harvest).expect("second persist");
+        assert_eq!(first, 1);
+        assert_eq!(second, 0, "re-running the harvest must not duplicate rows");
+
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(
+            loaded.get("known-group"),
+            Some(&vec!["npub1fixtureadmin".to_string()])
+        );
+    }
+
+    #[test]
+    fn persist_matches_group_by_engine_group_id() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "wire-id", "engine-id");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "engine-id".to_string(),
+            vec!["npub1viaenginematch".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 1);
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(
+            loaded.get("wire-id"),
+            Some(&vec!["npub1viaenginematch".to_string()])
+        );
+        assert!(!loaded.contains_key("engine-id"));
+    }
+
+    #[test]
+    fn persist_matches_group_id_case_insensitively() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "abcdef0123456789", "");
+        let mut admins_by_group = std::collections::BTreeMap::new();
+        admins_by_group.insert(
+            "ABCDEF0123456789".to_string(),
+            vec!["npub1casefold".to_string()],
+        );
+        let harvest = crate::mls_store_reset::LegacyStoreHarvest {
+            admins_by_group,
+            pending_wrapper_ids: vec![],
+        };
+
+        let persisted = persist_legacy_group_admins_conn(&conn, &harvest).expect("persist");
+        assert_eq!(persisted, 1);
+        let loaded = crate::mls_store_reset::load_all_legacy_group_admins_conn(&conn).unwrap();
+        assert_eq!(
+            loaded.get("abcdef0123456789"),
+            Some(&vec!["npub1casefold".to_string()])
+        );
+    }
+
+    #[test]
+    fn clear_discarded_giftwraps_removes_exactly_supplied_ids() {
+        let conn = in_memory_app_conn();
+        for id in ["wrap-a", "wrap-b", "wrap-c"] {
+            conn.execute(
+                "INSERT INTO discarded_giftwraps (wrapper_id) VALUES (?1)",
+                rusqlite::params![id],
+            )
+            .unwrap();
+        }
+
+        let removed =
+            clear_discarded_giftwraps_conn(&conn, &["wrap-a".to_string(), "wrap-c".to_string()])
+                .unwrap();
+        assert_eq!(removed, 2);
+
+        let remaining: Vec<String> = conn
+            .prepare("SELECT wrapper_id FROM discarded_giftwraps ORDER BY wrapper_id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(remaining, vec!["wrap-b".to_string()]);
+    }
+
+    #[test]
+    fn clear_discarded_giftwraps_is_a_noop_for_empty_input() {
+        let conn = in_memory_app_conn();
+        conn.execute(
+            "INSERT INTO discarded_giftwraps (wrapper_id) VALUES ('wrap-a')",
+            [],
+        )
+        .unwrap();
+
+        let removed = clear_discarded_giftwraps_conn(&conn, &[]).unwrap();
+        assert_eq!(removed, 0);
+    }
 }
 
 /// Save MLS keypackage index to SQL database (plaintext)
@@ -3895,9 +4352,15 @@ pub async fn save_mls_keypackages<R: Runtime>(
 
     // Insert new keypackages
     for pkg in packages {
-        let owner_pubkey = pkg.get("owner_pubkey").and_then(|v| v.as_str()).unwrap_or("");
+        let owner_pubkey = pkg
+            .get("owner_pubkey")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let device_id = pkg.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-        let keypackage_ref = pkg.get("keypackage_ref").and_then(|v| v.as_str()).unwrap_or("");
+        let keypackage_ref = pkg
+            .get("keypackage_ref")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let fetched_at = pkg.get("fetched_at").and_then(|v| v.as_u64()).unwrap_or(0);
         let expires_at = pkg.get("expires_at").and_then(|v| v.as_u64()).unwrap_or(0);
 
@@ -3923,19 +4386,22 @@ pub async fn load_mls_keypackages<R: Runtime>(
         "SELECT owner_pubkey, device_id, keypackage_ref, fetched_at, expires_at FROM mls_keypackages"
     ).map_err(|e| format!("Failed to prepare MLS keypackages query: {}", e))?;
 
-    let rows = stmt.query_map([], |row| {
-        let fetched_at: i64 = row.get(3)?;
-        let expires_at: i64 = row.get(4)?;
-        Ok(serde_json::json!({
-            "owner_pubkey": row.get::<_, String>(0)?,
-            "device_id": row.get::<_, String>(1)?,
-            "keypackage_ref": row.get::<_, String>(2)?,
-            "fetched_at": fetched_at as u64,
-            "expires_at": expires_at as u64,
-        }))
-    }).map_err(|e| format!("Failed to query MLS keypackages: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let fetched_at: i64 = row.get(3)?;
+            let expires_at: i64 = row.get(4)?;
+            Ok(serde_json::json!({
+                "owner_pubkey": row.get::<_, String>(0)?,
+                "device_id": row.get::<_, String>(1)?,
+                "keypackage_ref": row.get::<_, String>(2)?,
+                "fetched_at": fetched_at as u64,
+                "expires_at": expires_at as u64,
+            }))
+        })
+        .map_err(|e| format!("Failed to query MLS keypackages: {}", e))?;
 
-    let packages: Vec<serde_json::Value> = rows.collect::<Result<Vec<_>, _>>()
+    let packages: Vec<serde_json::Value> = rows
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to collect MLS keypackages: {}", e))?;
 
     drop(stmt);
@@ -3954,8 +4420,13 @@ pub async fn save_mls_event_cursors<R: Runtime>(
         conn.execute(
             "INSERT OR REPLACE INTO mls_event_cursors (group_id, last_seen_event_id, last_seen_at)
              VALUES (?1, ?2, ?3)",
-            rusqlite::params![group_id, &cursor.last_seen_event_id, cursor.last_seen_at as i64],
-        ).map_err(|e| format!("Failed to save MLS event cursor: {}", e))?;
+            rusqlite::params![
+                group_id,
+                &cursor.last_seen_event_id,
+                cursor.last_seen_at as i64
+            ],
+        )
+        .map_err(|e| format!("Failed to save MLS event cursor: {}", e))?;
     }
 
     crate::account_manager::return_db_connection(conn);
@@ -3968,21 +4439,24 @@ pub async fn load_mls_event_cursors<R: Runtime>(
 ) -> Result<HashMap<String, crate::mls::EventCursor>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let mut stmt = conn.prepare(
-        "SELECT group_id, last_seen_event_id, last_seen_at FROM mls_event_cursors"
-    ).map_err(|e| format!("Failed to prepare MLS event cursors query: {}", e))?;
+    let mut stmt = conn
+        .prepare("SELECT group_id, last_seen_event_id, last_seen_at FROM mls_event_cursors")
+        .map_err(|e| format!("Failed to prepare MLS event cursors query: {}", e))?;
 
-    let rows = stmt.query_map([], |row| {
-        let group_id: String = row.get(0)?;
-        let last_seen_at: i64 = row.get(2)?;
-        let cursor = crate::mls::EventCursor {
-            last_seen_event_id: row.get(1)?,
-            last_seen_at: last_seen_at as u64,
-        };
-        Ok((group_id, cursor))
-    }).map_err(|e| format!("Failed to query MLS event cursors: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let group_id: String = row.get(0)?;
+            let last_seen_at: i64 = row.get(2)?;
+            let cursor = crate::mls::EventCursor {
+                last_seen_event_id: row.get(1)?,
+                last_seen_at: last_seen_at as u64,
+            };
+            Ok((group_id, cursor))
+        })
+        .map_err(|e| format!("Failed to query MLS event cursors: {}", e))?;
 
-    let cursors: HashMap<String, crate::mls::EventCursor> = rows.collect::<Result<HashMap<_, _>, _>>()
+    let cursors: HashMap<String, crate::mls::EventCursor> = rows
+        .collect::<Result<HashMap<_, _>, _>>()
         .map_err(|e| format!("Failed to collect MLS event cursors: {}", e))?;
 
     drop(stmt);
@@ -4000,7 +4474,8 @@ pub async fn save_mls_device_id<R: Runtime>(
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('mls_device_id', ?1)",
         rusqlite::params![device_id],
-    ).map_err(|e| format!("Failed to save MLS device ID to SQL: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to save MLS device ID to SQL: {}", e))?;
 
     println!("[SQL] Saved MLS device ID");
     crate::account_manager::return_db_connection(conn);
@@ -4013,11 +4488,13 @@ pub async fn load_mls_device_id<R: Runtime>(
 ) -> Result<Option<String>, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let device_id: Option<String> = conn.query_row(
-        "SELECT value FROM settings WHERE key = 'mls_device_id'",
-        [],
-        |row| row.get(0)
-    ).ok();
+    let device_id: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'mls_device_id'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
 
     crate::account_manager::return_db_connection(conn);
     Ok(device_id)
@@ -4060,20 +4537,24 @@ pub async fn build_file_hash_index<R: Runtime>(
     // Query file attachment events (kind=15) from the events table
     // Attachments are stored in the tags field as JSON
     let attachment_data: Vec<(String, String, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT e.id, c.chat_identifier, e.tags
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.id, c.chat_identifier, e.tags
              FROM events e
              JOIN chats c ON e.chat_id = c.id
-             WHERE e.kind = ?1"
-        ).map_err(|e| format!("Failed to prepare attachment query: {}", e))?;
+             WHERE e.kind = ?1",
+            )
+            .map_err(|e| format!("Failed to prepare attachment query: {}", e))?;
 
-        let rows = stmt.query_map(rusqlite::params![event_kind::FILE_ATTACHMENT], |row| {
-            Ok((
-                row.get::<_, String>(0)?, // event_id (message_id)
-                row.get::<_, String>(1)?, // chat_identifier
-                row.get::<_, String>(2)?, // tags JSON
-            ))
-        }).map_err(|e| format!("Failed to query attachments: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![event_kind::FILE_ATTACHMENT], |row| {
+                Ok((
+                    row.get::<_, String>(0)?, // event_id (message_id)
+                    row.get::<_, String>(1)?, // chat_identifier
+                    row.get::<_, String>(2)?, // tags JSON
+                ))
+            })
+            .map_err(|e| format!("Failed to query attachments: {}", e))?;
 
         // Collect immediately to consume the iterator while stmt is still alive
         let result: Result<Vec<_>, _> = rows.collect();
@@ -4084,21 +4565,23 @@ pub async fn build_file_hash_index<R: Runtime>(
     crate::account_manager::return_db_connection(conn);
 
     // Process the collected data
-    const EMPTY_FILE_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const EMPTY_FILE_HASH: &str =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     for (message_id, chat_id, tags_json) in attachment_data {
         // Parse tags to find the "attachments" tag
         let tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
 
         // Find the attachments tag: ["attachments", "<json>"]
-        let attachments_json = tags.iter()
+        let attachments_json = tags
+            .iter()
             .find(|tag| tag.first().map(|s| s.as_str()) == Some("attachments"))
             .and_then(|tag| tag.get(1))
             .map(|s| s.as_str())
             .unwrap_or("[]");
 
         // Parse the attachments JSON
-        let attachments: Vec<crate::Attachment> = serde_json::from_str(attachments_json)
-            .unwrap_or_default();
+        let attachments: Vec<crate::Attachment> =
+            serde_json::from_str(attachments_json).unwrap_or_default();
 
         // Add each attachment to the index (skip empty hashes and empty URLs)
         for attachment in attachments {
@@ -4106,16 +4589,19 @@ pub async fn build_file_hash_index<R: Runtime>(
                 && attachment.id != EMPTY_FILE_HASH
                 && !attachment.url.is_empty()
             {
-                index.insert(attachment.id.clone(), AttachmentRef {
-                    hash: attachment.id,
-                    message_id: message_id.clone(),
-                    chat_id: chat_id.clone(),
-                    url: attachment.url,
-                    key: attachment.key,
-                    nonce: attachment.nonce,
-                    extension: attachment.extension,
-                    size: attachment.size,
-                });
+                index.insert(
+                    attachment.id.clone(),
+                    AttachmentRef {
+                        hash: attachment.id,
+                        message_id: message_id.clone(),
+                        chat_id: chat_id.clone(),
+                        url: attachment.url,
+                        key: attachment.key,
+                        nonce: attachment.nonce,
+                        extension: attachment.extension,
+                        size: attachment.size,
+                    },
+                );
             }
         }
     }
@@ -4155,11 +4641,13 @@ pub async fn get_chat_message_count<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Count message events (kind 14 = DM, kind 15 = file) from events table
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15, 30078)",
-        rusqlite::params![chat_int_id],
-        |row| row.get(0)
-    ).map_err(|e| format!("Failed to count messages: {}", e))?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (14, 15, 30078)",
+            rusqlite::params![chat_int_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to count messages: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
 
@@ -4220,7 +4708,7 @@ pub async fn get_messages_around_id<R: Runtime>(
         let ts_result = conn.query_row(
             "SELECT created_at FROM events WHERE id = ?1 AND chat_id = ?2",
             rusqlite::params![target_message_id, chat_int_id],
-            |row| row.get(0)
+            |row| row.get(0),
         );
 
         let ts = match ts_result {
@@ -4230,8 +4718,9 @@ pub async fn get_messages_around_id<R: Runtime>(
                 conn.query_row(
                     "SELECT created_at FROM events WHERE id = ?1",
                     rusqlite::params![target_message_id],
-                    |row| row.get(0)
-                ).map_err(|e| format!("Target message not found in any chat: {}", e))?
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("Target message not found in any chat: {}", e))?
             }
         };
         crate::account_manager::return_db_connection(conn);
@@ -4279,11 +4768,13 @@ pub async fn message_exists_in_db<R: Runtime>(
     };
 
     // Check in events table (unified storage)
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = ?1)",
-        rusqlite::params![message_id],
-        |row| row.get(0)
-    ).map_err(|e| format!("Failed to check event existence: {}", e))?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE id = ?1)",
+            rusqlite::params![message_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to check event existence: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
 
@@ -4303,11 +4794,13 @@ pub async fn wrapper_event_exists<R: Runtime>(
     };
 
     // Check in events table (unified storage)
-    let in_events: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
-        rusqlite::params![wrapper_event_id],
-        |row| row.get(0)
-    ).map_err(|e| format!("Failed to check wrapper event existence: {}", e))?;
+    let in_events: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
+            rusqlite::params![wrapper_event_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to check wrapper event existence: {}", e))?;
 
     let in_discarded: bool = conn
         .query_row(
@@ -4388,20 +4881,24 @@ pub async fn load_recent_wrapper_ids<R: Runtime>(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs())
-        .saturating_sub(days * 24 * 60 * 60);
+    .saturating_sub(days * 24 * 60 * 60);
 
     // Query all wrapper_event_ids from recent events
     let result: Result<Vec<String>, _> = {
-        let mut stmt = conn.prepare(
-            "SELECT wrapper_event_id FROM events
+        let mut stmt = conn
+            .prepare(
+                "SELECT wrapper_event_id FROM events
              WHERE wrapper_event_id IS NOT NULL
              AND wrapper_event_id != ''
-             AND created_at >= ?1"
-        ).map_err(|e| format!("Failed to prepare wrapper_id query: {}", e))?;
+             AND created_at >= ?1",
+            )
+            .map_err(|e| format!("Failed to prepare wrapper_id query: {}", e))?;
 
-        let rows = stmt.query_map(rusqlite::params![cutoff_secs as i64], |row| {
-            row.get::<_, String>(0)
-        }).map_err(|e| format!("Failed to query wrapper_ids: {}", e))?;
+        let rows = stmt
+            .query_map(rusqlite::params![cutoff_secs as i64], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| format!("Failed to query wrapper_ids: {}", e))?;
 
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to collect wrapper_ids: {}", e))
@@ -4425,7 +4922,7 @@ pub async fn load_recent_wrapper_ids<R: Runtime>(
 /// Update the downloaded status of an attachment in the database
 pub fn update_attachment_downloaded_status<R: Runtime>(
     handle: &AppHandle<R>,
-    _chat_id: &str,  // No longer needed - we query by event ID directly
+    _chat_id: &str, // No longer needed - we query by event ID directly
     msg_id: &str,
     attachment_id: &str,
     downloaded: bool,
@@ -4434,19 +4931,21 @@ pub fn update_attachment_downloaded_status<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Get the current tags JSON from the events table
-    let tags_json: String = conn.query_row(
-        "SELECT tags FROM events WHERE id = ?1",
-        rusqlite::params![msg_id],
-        |row| row.get(0)
-    ).map_err(|e| format!("Event not found: {}", e))?;
+    let tags_json: String = conn
+        .query_row(
+            "SELECT tags FROM events WHERE id = ?1",
+            rusqlite::params![msg_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Event not found: {}", e))?;
 
     // Parse the tags
     let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
 
     // Find the "attachments" tag
-    let attachments_tag_idx = tags.iter().position(|tag| {
-        tag.first().map(|s| s.as_str()) == Some("attachments")
-    });
+    let attachments_tag_idx = tags
+        .iter()
+        .position(|tag| tag.first().map(|s| s.as_str()) == Some("attachments"));
 
     let attachments_json = attachments_tag_idx
         .and_then(|idx| tags.get(idx))
@@ -4455,7 +4954,8 @@ pub fn update_attachment_downloaded_status<R: Runtime>(
         .unwrap_or("[]");
 
     // Parse and update the attachment
-    let mut attachments: Vec<Attachment> = serde_json::from_str(attachments_json).unwrap_or_default();
+    let mut attachments: Vec<Attachment> =
+        serde_json::from_str(attachments_json).unwrap_or_default();
 
     if let Some(att) = attachments.iter_mut().find(|a| a.id == attachment_id) {
         att.downloaded = downloaded;
@@ -4478,18 +4978,137 @@ pub fn update_attachment_downloaded_status<R: Runtime>(
     }
 
     // Serialize the tags back to JSON
-    let updated_tags_json = serde_json::to_string(&tags)
-        .map_err(|e| format!("Failed to serialize tags: {}", e))?;
+    let updated_tags_json =
+        serde_json::to_string(&tags).map_err(|e| format!("Failed to serialize tags: {}", e))?;
 
     // Update the event in the database
     conn.execute(
         "UPDATE events SET tags = ?1 WHERE id = ?2",
         rusqlite::params![updated_tags_json, msg_id],
-    ).map_err(|e| format!("Failed to update event: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to update event: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
 
     Ok(())
+}
+
+/// Persist link-preview metadata fetched asynchronously after a message was already saved.
+///
+/// The initial `save_message` call happens before the OpenGraph fetch resolves, so the event
+/// row already exists and a second `save_message` is a silent no-op (`INSERT OR IGNORE`).
+/// This updates the existing row's `tags` in place so the preview survives app restarts.
+pub fn save_link_preview_metadata<R: Runtime>(
+    handle: &AppHandle<R>,
+    msg_id: &str,
+    metadata: &SiteMetadata,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+
+    let tags_json: String = conn
+        .query_row(
+            "SELECT tags FROM events WHERE id = ?1",
+            rusqlite::params![msg_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Event not found: {}", e))?;
+
+    let mut tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
+
+    let metadata_json = serde_json::to_string(metadata)
+        .map_err(|e| format!("Failed to serialize link preview: {}", e))?;
+
+    let link_preview_tag_idx = tags
+        .iter()
+        .position(|tag| tag.first().map(|s| s.as_str()) == Some("link_preview"));
+
+    if let Some(idx) = link_preview_tag_idx {
+        tags[idx] = vec!["link_preview".to_string(), metadata_json];
+    } else {
+        tags.push(vec!["link_preview".to_string(), metadata_json]);
+    }
+
+    let updated_tags_json =
+        serde_json::to_string(&tags).map_err(|e| format!("Failed to serialize tags: {}", e))?;
+
+    conn.execute(
+        "UPDATE events SET tags = ?1 WHERE id = ?2",
+        rusqlite::params![updated_tags_json, msg_id],
+    )
+    .map_err(|e| format!("Failed to update event: {}", e))?;
+
+    crate::account_manager::return_db_connection(conn);
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod link_preview_persistence_tests {
+    use super::*;
+    use crate::net::SiteMetadata;
+
+    /// Regression test: an OpenGraph preview fetched after the message was already saved
+    /// must still be there after a fresh load from the DB (simulating an app restart),
+    /// not just in the in-memory STATE.
+    #[tokio::test]
+    async fn link_preview_survives_reload_from_db() {
+        let test_npub = "npub1linkpreviewreloadtest";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([9u8; 32]);
+
+        let chat_id = "npub1linkpreviewreloadpeer";
+        let message = Message {
+            id: "link-preview-reload-test-msg".to_string(),
+            content: "check https://example.com out".to_string(),
+            mine: true,
+            at: 1_700_000_000_000,
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &message)
+            .await
+            .unwrap();
+
+        let metadata = SiteMetadata {
+            domain: "example.com".to_string(),
+            og_title: Some("Example title".to_string()),
+            og_description: Some("Example description".to_string()),
+            og_image: Some("https://example.com/img.png".to_string()),
+            og_url: None,
+            og_type: None,
+            title: None,
+            description: None,
+            favicon: None,
+        };
+        save_link_preview_metadata(app.handle(), &message.id, &metadata).unwrap();
+
+        // Simulate an app restart: reload purely from the DB, bypassing in-memory STATE.
+        let chat_int_id = get_or_create_chat_id(app.handle(), chat_id).unwrap();
+        let loaded = get_message_views(app.handle(), chat_int_id, 10, 0, None)
+            .await
+            .unwrap();
+        let loaded_msg = loaded
+            .iter()
+            .find(|m| m.id == message.id)
+            .expect("message should be loaded from DB");
+
+        assert_eq!(loaded_msg.preview_metadata.as_ref(), Some(&metadata));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
 }
 
 /// Vacuum the database to reclaim space and optimize performance
@@ -4510,11 +5129,14 @@ pub async fn check_and_vacuum_if_needed<R: Runtime>(handle: &AppHandle<R>) -> Re
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Check when last vacuum was performed
-    let last_vacuum: Option<i64> = conn.query_row(
-        "SELECT value FROM settings WHERE key = 'last_vacuum'",
-        [],
-        |row| row.get(0)
-    ).ok().and_then(|s: String| s.parse().ok());
+    let last_vacuum: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'last_vacuum'",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+        .and_then(|s: String| s.parse().ok());
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -4538,7 +5160,8 @@ pub async fn check_and_vacuum_if_needed<R: Runtime>(handle: &AppHandle<R>) -> Re
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_vacuum', ?1)",
             rusqlite::params![now.to_string()],
-        ).map_err(|e| format!("Failed to update last_vacuum: {}", e))?;
+        )
+        .map_err(|e| format!("Failed to update last_vacuum: {}", e))?;
         crate::account_manager::return_db_connection(conn);
     }
 
@@ -4560,8 +5183,7 @@ pub async fn save_event<R: Runtime>(
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     // Serialize tags to JSON
-    let tags_json = serde_json::to_string(&event.tags)
-        .unwrap_or_else(|_| "[]".to_string());
+    let tags_json = serde_json::to_string(&event.tags).unwrap_or_else(|_| "[]".to_string());
 
     // For message and edit events, encrypt the content
     let content = if event.kind == event_kind::PRIVATE_DIRECT_MESSAGE
@@ -4597,7 +5219,8 @@ pub async fn save_event<R: Runtime>(
             event.npub,
             event.virtual_bucket,
         ],
-    ).map_err(|e| format!("Failed to save event: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to save event: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
@@ -4620,9 +5243,7 @@ pub async fn save_reaction_event<R: Runtime>(
         chat_id,
         user_id,
         content: reaction.emoji.clone(),
-        tags: vec![
-            vec!["e".to_string(), reaction.reference_id.clone()],
-        ],
+        tags: vec![vec!["e".to_string(), reaction.reference_id.clone()]],
         reference_id: Some(reaction.reference_id.clone()),
         created_at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -4672,9 +5293,12 @@ pub async fn save_edit_event<R: Runtime>(
         chat_id,
         user_id,
         content: new_content.to_string(),
-        tags: vec![
-            vec!["e".to_string(), message_id.to_string(), "".to_string(), "edit".to_string()],
-        ],
+        tags: vec![vec![
+            "e".to_string(),
+            message_id.to_string(),
+            "".to_string(),
+            "edit".to_string(),
+        ]],
         reference_id: Some(message_id.to_string()),
         created_at: now_secs,
         received_at: now_ms,
@@ -4690,17 +5314,16 @@ pub async fn save_edit_event<R: Runtime>(
 }
 
 /// Check if an event exists in the events table
-pub fn event_exists<R: Runtime>(
-    handle: &AppHandle<R>,
-    event_id: &str,
-) -> Result<bool, String> {
+pub fn event_exists<R: Runtime>(handle: &AppHandle<R>, event_id: &str) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE id = ?1)",
-        rusqlite::params![event_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("Failed to check event existence: {}", e))?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE id = ?1)",
+            rusqlite::params![event_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to check event existence: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(exists)
@@ -4713,11 +5336,13 @@ pub fn event_exists_by_wrapper<R: Runtime>(
 ) -> Result<bool, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let exists: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
-        rusqlite::params![wrapper_event_id],
-        |row| row.get(0),
-    ).map_err(|e| format!("Failed to check event by wrapper: {}", e))?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE wrapper_event_id = ?1)",
+            rusqlite::params![wrapper_event_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to check event by wrapper: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(exists)
@@ -4819,13 +5444,7 @@ pub async fn get_events<R: Runtime>(
                 (1, Some(b)) => {
                     let rows = stmt
                         .query_map(
-                            rusqlite::params![
-                                chat_id,
-                                k[0] as i32,
-                                b,
-                                limit as i64,
-                                offset as i64
-                            ],
+                            rusqlite::params![chat_id, k[0] as i32, b, limit as i64, offset as i64],
                             parse_event_row,
                         )
                         .map_err(|e| format!("Failed to query events: {}", e))?;
@@ -4979,7 +5598,11 @@ pub async fn get_related_events<R: Runtime>(
 
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let placeholders: String = reference_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let placeholders: String = reference_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
     let sql = format!(
         r#"
         SELECT id, kind, chat_id, user_id, content, tags, reference_id,
@@ -4991,38 +5614,41 @@ pub async fn get_related_events<R: Runtime>(
         placeholders
     );
 
-    let mut stmt = conn.prepare(&sql)
+    let mut stmt = conn
+        .prepare(&sql)
         .map_err(|e| format!("Failed to prepare related events query: {}", e))?;
 
-    let params: Vec<&dyn rusqlite::ToSql> = reference_ids.iter()
+    let params: Vec<&dyn rusqlite::ToSql> = reference_ids
+        .iter()
         .map(|s| s as &dyn rusqlite::ToSql)
         .collect();
 
-    let events: Vec<StoredEvent> = stmt.query_map(params.as_slice(), |row| {
-        let tags_json: String = row.get(5)?;
-        let tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
+    let events: Vec<StoredEvent> = stmt
+        .query_map(params.as_slice(), |row| {
+            let tags_json: String = row.get(5)?;
+            let tags: Vec<Vec<String>> = serde_json::from_str(&tags_json).unwrap_or_default();
 
-        Ok(StoredEvent {
-            id: row.get(0)?,
-            kind: row.get::<_, i32>(1)? as u16,
-            chat_id: row.get(2)?,
-            user_id: row.get(3)?,
-            content: row.get(4)?,
-            tags,
-            reference_id: row.get(6)?,
-            created_at: row.get::<_, i64>(7)? as u64,
-            received_at: row.get::<_, i64>(8)? as u64,
-            mine: row.get::<_, i32>(9)? != 0,
-            pending: row.get::<_, i32>(10)? != 0,
-            failed: row.get::<_, i32>(11)? != 0,
-            wrapper_event_id: row.get(12)?,
-            npub: row.get(13)?,
-            virtual_bucket: row.get(14)?,
+            Ok(StoredEvent {
+                id: row.get(0)?,
+                kind: row.get::<_, i32>(1)? as u16,
+                chat_id: row.get(2)?,
+                user_id: row.get(3)?,
+                content: row.get(4)?,
+                tags,
+                reference_id: row.get(6)?,
+                created_at: row.get::<_, i64>(7)? as u64,
+                received_at: row.get::<_, i64>(8)? as u64,
+                mine: row.get::<_, i32>(9)? != 0,
+                pending: row.get::<_, i32>(10)? != 0,
+                failed: row.get::<_, i32>(11)? != 0,
+                wrapper_event_id: row.get(12)?,
+                npub: row.get(13)?,
+                virtual_bucket: row.get(14)?,
+            })
         })
-    })
-    .map_err(|e| format!("Failed to query related events: {}", e))?
-    .filter_map(|r| r.ok())
-    .collect();
+        .map_err(|e| format!("Failed to query related events: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
 
     // Drop statement to release borrow on conn
     drop(stmt);
@@ -5048,7 +5674,10 @@ async fn get_reply_contexts<R: Runtime>(
     }
 
     // Do all SQLite work synchronously in a block to avoid Send issues
-    let (events, edits): (Vec<(String, i32, String, Option<String>, i32)>, Vec<(String, String)>) = {
+    let (events, edits): (
+        Vec<(String, i32, String, Option<String>, i32)>,
+        Vec<(String, String)>,
+    ) = {
         let conn = crate::account_manager::get_db_connection(handle)?;
 
         // Build placeholders for IN clause
@@ -5067,24 +5696,29 @@ async fn get_reply_contexts<R: Runtime>(
             placeholders
         );
 
-        let mut stmt = conn.prepare(&sql)
+        let mut stmt = conn
+            .prepare(&sql)
             .map_err(|e| format!("Failed to prepare reply context query: {}", e))?;
 
         // Build params as String refs for the query
         let params: Vec<&str> = message_ids.iter().map(|s| s.as_str()).collect();
-        let params_dyn: Vec<&dyn rusqlite::ToSql> = params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let params_dyn: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
 
-        let rows = stmt.query_map(params_dyn.as_slice(), |row| {
-            Ok((
-                row.get::<_, String>(0)?, // id
-                row.get::<_, i32>(1)?,    // kind
-                row.get::<_, String>(2)?, // content
-                row.get::<_, Option<String>>(3)?, // npub
-                row.get::<_, i32>(4)?,    // mine
-            ))
-        }).map_err(|e| format!("Failed to query reply contexts: {}", e))?;
+        let rows = stmt
+            .query_map(params_dyn.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,         // id
+                    row.get::<_, i32>(1)?,            // kind
+                    row.get::<_, String>(2)?,         // content
+                    row.get::<_, Option<String>>(3)?, // npub
+                    row.get::<_, i32>(4)?,            // mine
+                ))
+            })
+            .map_err(|e| format!("Failed to query reply contexts: {}", e))?;
 
-        let events_result: Vec<(String, i32, String, Option<String>, i32)> = rows.filter_map(|r| r.ok()).collect();
+        let events_result: Vec<(String, i32, String, Option<String>, i32)> =
+            rows.filter_map(|r| r.ok()).collect();
         drop(stmt);
 
         // Query latest edits for these messages (most recent edit per message)
@@ -5099,15 +5733,18 @@ async fn get_reply_contexts<R: Runtime>(
             placeholders
         );
 
-        let mut edit_stmt = conn.prepare(&edit_sql)
+        let mut edit_stmt = conn
+            .prepare(&edit_sql)
             .map_err(|e| format!("Failed to prepare edit query: {}", e))?;
 
-        let edit_rows = edit_stmt.query_map(params_dyn.as_slice(), |row| {
-            Ok((
-                row.get::<_, String>(0)?, // reference_id (original message id)
-                row.get::<_, String>(1)?, // content (edited content)
-            ))
-        }).map_err(|e| format!("Failed to query edits: {}", e))?;
+        let edit_rows = edit_stmt
+            .query_map(params_dyn.as_slice(), |row| {
+                Ok((
+                    row.get::<_, String>(0)?, // reference_id (original message id)
+                    row.get::<_, String>(1)?, // content (edited content)
+                ))
+            })
+            .map_err(|e| format!("Failed to query edits: {}", e))?;
 
         let edits_result: Vec<(String, String)> = edit_rows.filter_map(|r| r.ok()).collect();
         drop(edit_stmt);
@@ -5142,18 +5779,22 @@ async fn get_reply_contexts<R: Runtime>(
 
         // Decrypt content for text messages
         let decrypted_content = if kind == event_kind::PRIVATE_DIRECT_MESSAGE as i32 {
-            internal_decrypt(content_to_decrypt).await
+            internal_decrypt(content_to_decrypt)
+                .await
                 .unwrap_or_else(|_| "[Decryption failed]".to_string())
         } else {
             // File attachments don't have displayable content
             String::new()
         };
 
-        contexts.insert(id, ReplyContext {
-            content: decrypted_content,
-            npub,
-            has_attachment,
-        });
+        contexts.insert(
+            id,
+            ReplyContext {
+                content: decrypted_content,
+                npub,
+                has_attachment,
+            },
+        );
     }
 
     Ok(contexts)
@@ -5178,6 +5819,385 @@ pub async fn populate_reply_context<R: Runtime>(
     }
 
     Ok(())
+}
+
+/// One-time repair for reaction rows persisted before the author_id hex/bech32 fix
+/// (pacto-app-rmq.2): `react_to_message`/`process_reaction` used to store the
+/// reactor's raw hex pubkey in the `npub` column instead of a bech32 npub, which
+/// breaks reactor identity resolution (profile lookup, "own reaction" detection,
+/// the reactor tooltip). Hex pubkeys are always 64 hex chars; bech32 npubs are 63
+/// chars (`npub1` + data + checksum), so the length alone reliably distinguishes
+/// them. Idempotent and cheap to call on every connection open: the scan matches
+/// nothing once a database has been repaired once.
+pub fn repair_legacy_hex_reaction_npubs(conn: &rusqlite::Connection) -> Result<(), String> {
+    let rows: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, npub FROM events WHERE kind = ?1 AND npub IS NOT NULL AND length(npub) = 64")
+            .map_err(|e| format!("Failed to prepare legacy reaction npub scan: {}", e))?;
+        let result: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![event_kind::REACTION], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to scan legacy reaction npubs: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        result
+    };
+
+    for (id, hex_npub) in rows {
+        let Ok(pubkey) = nostr_sdk::PublicKey::from_hex(&hex_npub) else {
+            continue;
+        };
+        let bech32 = pubkey
+            .to_bech32()
+            .expect("PublicKey::to_bech32 is infallible");
+        conn.execute(
+            "UPDATE events SET npub = ?1 WHERE id = ?2",
+            rusqlite::params![bech32, id],
+        )
+        .map_err(|e| format!("Failed to repair legacy reaction npub for {}: {}", id, e))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod legacy_reaction_npub_repair_tests {
+    use super::*;
+
+    fn insert_reaction_event(conn: &rusqlite::Connection, id: &str, npub: &str) {
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 'mentions')",
+            [],
+        )
+        .expect("chat");
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine, npub)
+             VALUES (?1, ?2, 1, '👍', '[]', 1000, 1000, 0, ?3)",
+            rusqlite::params![id, event_kind::REACTION, npub],
+        )
+        .expect("event");
+    }
+
+    #[test]
+    fn converts_hex_reaction_npub_to_bech32() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        let keys = nostr_sdk::Keys::generate();
+        let hex = keys.public_key().to_hex();
+        let bech32 = keys.public_key().to_bech32().unwrap();
+        insert_reaction_event(&conn, "reaction-1", &hex);
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row(
+                "SELECT npub FROM events WHERE id = 'reaction-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row");
+        assert_eq!(stored, bech32);
+    }
+
+    #[test]
+    fn leaves_already_bech32_reaction_npub_untouched() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        let keys = nostr_sdk::Keys::generate();
+        let bech32 = keys.public_key().to_bech32().unwrap();
+        insert_reaction_event(&conn, "reaction-2", &bech32);
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row(
+                "SELECT npub FROM events WHERE id = 'reaction-2'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row");
+        assert_eq!(stored, bech32);
+    }
+
+    #[test]
+    fn ignores_hex_npub_on_non_reaction_events() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}', 'mentions')",
+            [],
+        )
+        .expect("chat");
+        let keys = nostr_sdk::Keys::generate();
+        let hex = keys.public_key().to_hex();
+        conn.execute(
+            "INSERT INTO events (id, kind, chat_id, content, tags, created_at, received_at, mine, npub)
+             VALUES ('msg-1', ?1, 1, 'hi', '[]', 1000, 1000, 1, ?2)",
+            rusqlite::params![event_kind::PRIVATE_DIRECT_MESSAGE, hex],
+        )
+        .expect("event");
+
+        repair_legacy_hex_reaction_npubs(&conn).expect("repair");
+
+        let stored: String = conn
+            .query_row("SELECT npub FROM events WHERE id = 'msg-1'", [], |row| {
+                row.get(0)
+            })
+            .expect("row");
+        assert_eq!(
+            stored, hex,
+            "non-reaction rows must be left untouched even if npub happens to be hex-shaped"
+        );
+    }
+}
+
+#[cfg(test)]
+mod chat_notification_level_schema_tests {
+    use super::*;
+
+    fn column_exists(conn: &rusqlite::Connection, table: &str, column: &str) -> bool {
+        conn.query_row(
+            &format!(
+                "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name = ?1",
+                table
+            ),
+            rusqlite::params![column],
+            |row| row.get::<_, i32>(0),
+        )
+        .map(|c| c > 0)
+        .unwrap_or(false)
+    }
+
+    #[test]
+    fn migrated_schema_has_notification_level_and_no_muted() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        assert!(
+            column_exists(&conn, "chats", "notification_level"),
+            "chats.notification_level should exist"
+        );
+        assert!(
+            !column_exists(&conn, "chats", "muted"),
+            "chats.muted should be dropped"
+        );
+        assert!(
+            !column_exists(&conn, "profiles", "muted"),
+            "profiles.muted should be dropped"
+        );
+    }
+
+    #[test]
+    fn a_newly_created_chat_row_defaults_to_mentions() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata)
+             VALUES ('chat-1', 0, '[]', '', 1000, '{}')",
+            [],
+        )
+        .expect("insert chat without specifying a level");
+
+        let level: String = conn
+            .query_row(
+                "SELECT notification_level FROM chats WHERE chat_identifier = 'chat-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row");
+        assert_eq!(
+            level, "mentions",
+            "the column default alone must deliver Mentions (R10)"
+        );
+    }
+
+    #[test]
+    fn notification_level_round_trips_for_all_three_values() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+
+        for (i, level) in [
+            NotificationLevel::All,
+            NotificationLevel::Mentions,
+            NotificationLevel::Nothing,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let identifier = format!("chat-{}", i);
+            conn.execute(
+                "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata, notification_level)
+                 VALUES (?1, 0, '[]', '', 1000, '{}', ?2)",
+                rusqlite::params![identifier, level.as_db_str()],
+            )
+            .expect("insert chat");
+
+            let stored: String = conn
+                .query_row(
+                    "SELECT notification_level FROM chats WHERE chat_identifier = ?1",
+                    rusqlite::params![identifier],
+                    |row| row.get(0),
+                )
+                .expect("row");
+            assert_eq!(NotificationLevel::from_db_str(&stored), *level);
+        }
+    }
+
+    #[test]
+    fn slim_chat_payload_carries_no_muted_key() {
+        let slim_chat = SlimChatDB {
+            id: "chat-1".to_string(),
+            chat_type: ChatType::MlsGroup,
+            participants: vec![],
+            last_read: String::new(),
+            created_at: 0,
+            metadata: crate::ChatMetadata::default(),
+            notification_level: NotificationLevel::Mentions,
+        };
+        let json = serde_json::to_value(&slim_chat).expect("serialize");
+        let obj = json.as_object().expect("object");
+        assert!(
+            !obj.contains_key("muted"),
+            "serialized chat payload must not carry a muted key"
+        );
+        assert!(obj.contains_key("notification_level"));
+    }
+}
+
+#[cfg(test)]
+mod reply_context_fallback_tests {
+    use super::*;
+
+    /// Regression test for pacto-app-rmq.1: `message::message()`'s in-memory
+    /// optimistic reply-context lookup only searches `STATE.chats[].messages`
+    /// and can miss the original message entirely (e.g. it was loaded into the
+    /// frontend via pagination/history but was never pushed into that
+    /// in-memory vec). `message()` now falls back to `populate_reply_context`
+    /// (this function) in that case, so the sender's own optimistic echo still
+    /// gets a real reply preview instead of staying permanently empty. This
+    /// test exercises that fallback directly against a message that exists
+    /// ONLY in the DB, mirroring the actual gap.
+    #[tokio::test]
+    async fn populate_reply_context_fills_fields_for_text_reply_not_in_memory_state() {
+        let test_npub = "npub1replycontextfallbacktext";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        // Persist the original message directly to the DB, simulating a message
+        // that is not present in the backend's in-memory `STATE.chats` (the gap
+        // that made the sender's own reply preview stay empty).
+        let chat_id = "npub1replycontextfallbackpeer";
+        let original = Message {
+            id: "reply-context-fallback-original".to_string(),
+            content: "the original quoted message".to_string(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &original)
+            .await
+            .unwrap();
+
+        let mut reply = Message {
+            id: "reply-context-fallback-reply".to_string(),
+            content: "replying".to_string(),
+            replied_to: original.id.clone(),
+            mine: true,
+            ..Default::default()
+        };
+
+        populate_reply_context(app.handle(), &mut reply)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            reply.replied_to_content.as_deref(),
+            Some("the original quoted message")
+        );
+        assert_eq!(reply.replied_to_npub.as_deref(), Some(chat_id));
+        assert_eq!(reply.replied_to_has_attachment, Some(false));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
+
+    /// Same DB-only-original scenario, but the original message is a file
+    /// attachment: the reply preview must flag `replied_to_has_attachment`
+    /// instead of leaving content blank.
+    #[tokio::test]
+    async fn populate_reply_context_flags_attachment_for_file_reply_not_in_memory_state() {
+        let test_npub = "npub1replycontextfallbackfile";
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+
+        let app = tauri::test::mock_app();
+
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+
+        crate::set_encryption_key([7u8; 32]);
+
+        let chat_id = "npub1replycontextfallbackfilepeer";
+        let original = Message {
+            id: "reply-context-fallback-file-original".to_string(),
+            content: String::new(),
+            mine: false,
+            npub: Some(chat_id.to_string()),
+            at: 1_700_000_000_000,
+            attachments: vec![Attachment {
+                extension: "png".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        save_message(app.handle().clone(), chat_id, &original)
+            .await
+            .unwrap();
+
+        let mut reply = Message {
+            id: "reply-context-fallback-file-reply".to_string(),
+            content: "replying to the file".to_string(),
+            replied_to: original.id.clone(),
+            mine: true,
+            ..Default::default()
+        };
+
+        populate_reply_context(app.handle(), &mut reply)
+            .await
+            .unwrap();
+
+        assert_eq!(reply.replied_to_has_attachment, Some(true));
+        assert_eq!(reply.replied_to_npub.as_deref(), Some(chat_id));
+
+        crate::clear_encryption_key();
+        crate::account_manager::close_db_connection();
+    }
 }
 
 /// Get message events with their reactions composed (materialized view)
@@ -5239,14 +6259,21 @@ pub async fn get_message_views<R: Runtime>(
                         author_id: event.npub.clone().unwrap_or_default(),
                         emoji: event.content.clone(),
                     };
-                    reactions_by_msg.entry(ref_id.clone()).or_default().push(reaction);
+                    reactions_by_msg
+                        .entry(ref_id.clone())
+                        .or_default()
+                        .push(reaction);
                 }
                 k if k == event_kind::MESSAGE_EDIT => {
                     // Edit content is encrypted, decrypt it here
-                    let decrypted_content = internal_decrypt(event.content.clone()).await
+                    let decrypted_content = internal_decrypt(event.content.clone())
+                        .await
                         .unwrap_or_else(|_| event.content.clone());
                     let timestamp_ms = event.created_at * 1000; // Convert to ms
-                    edits_by_msg.entry(ref_id.clone()).or_default().push((timestamp_ms, decrypted_content));
+                    edits_by_msg
+                        .entry(ref_id.clone())
+                        .or_default()
+                        .push((timestamp_ms, decrypted_content));
                 }
                 _ => {}
             }
@@ -5286,11 +6313,14 @@ pub async fn get_message_views<R: Runtime>(
         let conn = crate::account_manager::get_db_connection(handle)?;
 
         // Check if messages table exists before querying it
-        let has_messages_table: bool = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
-            [],
-            |row| row.get::<_, i32>(0)
-        ).map(|count| count > 0).unwrap_or(false);
+        let has_messages_table: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .map(|count| count > 0)
+            .unwrap_or(false);
 
         if has_messages_table {
             for msg_id in &events_needing_legacy_lookup {
@@ -5299,7 +6329,9 @@ pub async fn get_message_views<R: Runtime>(
                     rusqlite::params![msg_id],
                     |row| row.get(0),
                 ) {
-                    if let Ok(attachments) = serde_json::from_str::<Vec<Attachment>>(&attachments_json) {
+                    if let Ok(attachments) =
+                        serde_json::from_str::<Vec<Attachment>>(&attachments_json)
+                    {
                         attachments_by_msg.insert(msg_id.to_string(), attachments);
                     }
                 }
@@ -5313,6 +6345,9 @@ pub async fn get_message_views<R: Runtime>(
     for event in message_events {
         // Calculate derived values before moving ownership
         let replied_to = event.get_reply_reference().unwrap_or("").to_string();
+        let preview_metadata = event
+            .get_tag("link_preview")
+            .and_then(|json| serde_json::from_str::<SiteMetadata>(json).ok());
         let at = event.timestamp_ms();
         let reactions = reactions_by_msg.remove(&event.id).unwrap_or_default();
 
@@ -5355,7 +6390,8 @@ pub async fn get_message_views<R: Runtime>(
             }
 
             // Use the latest edit's content
-            let latest_content = edits.last()
+            let latest_content = edits
+                .last()
                 .map(|(_, c)| c.clone())
                 .unwrap_or(original_content);
 
@@ -5368,10 +6404,10 @@ pub async fn get_message_views<R: Runtime>(
             id: event.id,
             content,
             replied_to,
-            replied_to_content: None, // Populated below
-            replied_to_npub: None,    // Populated below
+            replied_to_content: None,        // Populated below
+            replied_to_npub: None,           // Populated below
             replied_to_has_attachment: None, // Populated below
-            preview_metadata: None, // TODO: Parse from tags if needed
+            preview_metadata,
             attachments,
             reactions,
             at,
@@ -5430,60 +6466,58 @@ pub fn update_event_status<R: Runtime>(
     conn.execute(
         "UPDATE events SET pending = ?1, failed = ?2 WHERE id = ?3",
         rusqlite::params![pending as i32, failed as i32, event_id],
-    ).map_err(|e| format!("Failed to update event status: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to update event status: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
 
 /// Delete an event by ID
-pub fn delete_event<R: Runtime>(
-    handle: &AppHandle<R>,
-    event_id: &str,
-) -> Result<(), String> {
+pub fn delete_event<R: Runtime>(handle: &AppHandle<R>, event_id: &str) -> Result<(), String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
     conn.execute(
         "DELETE FROM events WHERE id = ?1",
         rusqlite::params![event_id],
-    ).map_err(|e| format!("Failed to delete event: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to delete event: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(())
 }
 
 /// Get the total count of message events in a chat
-pub fn get_message_count<R: Runtime>(
-    handle: &AppHandle<R>,
-    chat_id: i64,
-) -> Result<i64, String> {
+pub fn get_message_count<R: Runtime>(handle: &AppHandle<R>, chat_id: i64) -> Result<i64, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (?2, ?3)",
-        rusqlite::params![
-            chat_id,
-            event_kind::PRIVATE_DIRECT_MESSAGE as i32,
-            event_kind::FILE_ATTACHMENT as i32
-        ],
-        |row| row.get(0),
-    ).map_err(|e| format!("Failed to count messages: {}", e))?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM events WHERE chat_id = ?1 AND kind IN (?2, ?3)",
+            rusqlite::params![
+                chat_id,
+                event_kind::PRIVATE_DIRECT_MESSAGE as i32,
+                event_kind::FILE_ATTACHMENT as i32
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to count messages: {}", e))?;
 
     crate::account_manager::return_db_connection(conn);
     Ok(count)
 }
 
 /// Get the storage version from settings
-pub fn get_storage_version<R: Runtime>(
-    handle: &AppHandle<R>,
-) -> Result<i32, String> {
+pub fn get_storage_version<R: Runtime>(handle: &AppHandle<R>) -> Result<i32, String> {
     let conn = crate::account_manager::get_db_connection(handle)?;
 
-    let version: i32 = conn.query_row(
-        "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'storage_version'",
-        [],
-        |row| row.get(0),
-    ).unwrap_or(1); // Default to version 1 (old format)
+    let version: i32 = conn
+        .query_row(
+            "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'storage_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(1); // Default to version 1 (old format)
 
     crate::account_manager::return_db_connection(conn);
     Ok(version)
@@ -5503,7 +6537,12 @@ mod sponsor_preflight_tests {
         .expect("schema");
     }
 
-    fn insert_group(conn: &rusqlite::Connection, group_id: &str, engine_group_id: &str, evicted: bool) {
+    fn insert_group(
+        conn: &rusqlite::Connection,
+        group_id: &str,
+        engine_group_id: &str,
+        evicted: bool,
+    ) {
         conn.execute(
             "INSERT INTO mls_groups (group_id, engine_group_id, evicted) VALUES (?1, ?2, ?3)",
             rusqlite::params![group_id, engine_group_id, evicted as i32],

@@ -28,6 +28,8 @@
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
 
   export let network: string;
   export let parentId: string;
@@ -40,6 +42,8 @@
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
   export let fundingHint = '';
+
+  const tFn = get(t);
 
   let acting = false;
   let voteProposalId = '';
@@ -64,10 +68,10 @@
     acting = true;
     try {
       await fn();
-      showToast(`${label} submitted.`);
+      showToast(tFn('governance.toast.submitted', { values: { label } }));
       refresh();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, `${label} failed.`));
+      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label } })));
     } finally {
       acting = false;
     }
@@ -75,7 +79,7 @@
 
   function startMutiny() {
     if (startKind === 'pause') {
-      void run('Start pause-captain mutiny', () => mutinyStartToPauseCaptain({ network, parentId, mutinyModule }), onRefreshMutiny);
+      void run(tFn('governance.action.startPauseCaptainMutiny'), () => mutinyStartToPauseCaptain({ network, parentId, mutinyModule }), onRefreshMutiny);
       return;
     }
     const fn =
@@ -86,7 +90,7 @@
           : startKind === 'eoa'
             ? mutinyStartToArbitraryEoa
             : mutinyStartToArbitraryContract;
-    void run('Start mutiny', () => fn({ network, parentId, mutinyModule, proposed }), onRefreshMutiny);
+    void run(tFn('governance.action.startMutiny'), () => fn({ network, parentId, mutinyModule, proposed }), onRefreshMutiny);
   }
 </script>
 
@@ -96,7 +100,7 @@
   {/if}
   {#if treasuryAuthority}
     <section class="contract-box" aria-labelledby="crew-ta-heading">
-      <h5 id="crew-ta-heading" class="contract-title">Treasury Authority</h5>
+      <h5 id="crew-ta-heading" class="contract-title">{$t('governance.title.treasuryAuthority')}</h5>
 
       <GovProposeForm
         {network}
@@ -107,12 +111,12 @@
       />
 
       <div class="section">
-        <h6 class="section-label">Crew vote</h6>
+        <h6 class="section-label">{$t('governance.section.crewVote')}</h6>
         {#if votable.length === 0}
-          <p class="muted">No proposals in crew voting phase.</p>
+          <p class="muted">{$t('governance.empty.noProposalsInCrewVoting')}</p>
         {:else}
           <label class="field-label">
-            Proposal
+            {$t('governance.field.proposal')}
             <select bind:value={voteProposalId} disabled={acting}>
               {#each votable as p (p.proposalId)}
                 <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
@@ -121,13 +125,13 @@
           </label>
           <div class="row">
             <GovCtaButton
-              label="Vote yea"
+              label={tFn('governance.action.voteYea')}
               variant="primary"
               gate={crewGate}
               {acting}
               onClick={() => {
                 if (!requireBackupVerified()) return;
-                void run('Crew yea', () =>
+                void run(tFn('governance.action.crewYea'), () =>
                   treasuryAuthorityCrewVote({
                     network,
                     parentId,
@@ -139,12 +143,12 @@
               }}
             />
             <GovCtaButton
-              label="Vote nay"
+              label={tFn('governance.action.voteNay')}
               gate={crewGate}
               {acting}
               onClick={() => {
                 if (!requireBackupVerified()) return;
-                void run('Crew nay', () =>
+                void run(tFn('governance.action.crewNay'), () =>
                   treasuryAuthorityCrewVote({
                     network,
                     parentId,
@@ -160,12 +164,12 @@
       </div>
 
       <div class="section">
-        <h6 class="section-label">Execute proposal</h6>
+        <h6 class="section-label">{$t('governance.section.executeProposal')}</h6>
         {#if executable.length === 0}
-          <p class="muted">No proposals ready to execute.</p>
+          <p class="muted">{$t('governance.empty.noProposalsReady')}</p>
         {:else}
           <label class="field-label">
-            Proposal
+            {$t('governance.field.proposal')}
             <select bind:value={execProposalId} disabled={acting}>
               {#each executable as p (p.proposalId)}
                 <option value={p.proposalId}>{proposalSelectLabel(p)}</option>
@@ -173,13 +177,13 @@
             </select>
           </label>
             <GovCtaButton
-              label="Execute"
+              label={tFn('governance.action.execute')}
               variant="execute"
               gate={execGate}
               {acting}
               onClick={() => {
                 if (!requireBackupVerified()) return;
-                void run('Execute', () =>
+                void run(tFn('governance.action.execute'), () =>
                   treasuryAuthorityExecute({
                     network,
                     parentId,
@@ -196,23 +200,22 @@
 
   {#if mutinyModule}
     <section class="contract-box" aria-labelledby="crew-mutiny-heading">
-      <h5 id="crew-mutiny-heading" class="contract-title">Mutiny</h5>
+      <h5 id="crew-mutiny-heading" class="contract-title">{$t('governance.title.mutiny')}</h5>
 
       {#if mutinyActive && mutinyStatus}
         <div class="section">
-          <h6 class="section-label">Active mutiny</h6>
+          <h6 class="section-label">{$t('governance.section.activeMutiny')}</h6>
           <p class="muted">
-            Toward <code>{mutinyStatus.proposedNewCaptain}</code> · yeas {mutinyStatus.yeas} / snapshot
-            {mutinyStatus.snapshot}
+            {$t('governance.mutiny.activeToward', { values: { id: mutinyStatus.activeMutinyId, address: mutinyStatus.proposedNewCaptain, yeas: mutinyStatus.yeas, snapshot: mutinyStatus.snapshot } })}
           </p>
           <div class="row">
             <GovCtaButton
-              label={mutinyHasVotedFlag ? 'Already voted' : 'Cast mutiny vote'}
+              label={mutinyHasVotedFlag ? tFn('governance.action.alreadyVoted') : tFn('governance.action.castMutinyVote')}
               variant="primary"
-              gate={mutinyHasVotedFlag ? { enabled: false, reason: 'You already voted in this mutiny.' } : crewGate}
+              gate={mutinyHasVotedFlag ? { enabled: false, reason: tFn('governance.gate.alreadyVoted') } : crewGate}
               {acting}
               onClick={() =>
-                void run('Mutiny vote', () =>
+                void run(tFn('governance.action.mutinyVote'), () =>
                   mutinyCastVote({
                     network,
                     parentId,
@@ -222,12 +225,12 @@
                 onRefreshMutiny)}
             />
             <GovCtaButton
-              label="Execute mutiny"
+              label={tFn('governance.action.executeMutiny')}
               variant="execute"
               gate={execGate}
               {acting}
               onClick={() =>
-                void run('Execute mutiny', () =>
+                void run(tFn('governance.action.executeMutiny'), () =>
                   mutinyExecute({
                     network,
                     parentId,
@@ -240,22 +243,22 @@
         </div>
       {:else}
         <div class="section">
-          <h6 class="section-label">Start mutiny</h6>
+          <h6 class="section-label">{$t('governance.section.startMutiny')}</h6>
           <select bind:value={startKind} disabled={!crewGate.enabled || acting}>
-            <option value="crew">To crew member</option>
-            <option value="committee">To committee (Safe-style)</option>
-            <option value="eoa">To arbitrary EOA</option>
-            <option value="contract">To arbitrary contract</option>
-            <option value="pause">Pause captain (hat → Safe)</option>
+            <option value="crew">{$t('governance.mutiny.startOption.crew')}</option>
+            <option value="committee">{$t('governance.mutiny.startOption.committee')}</option>
+            <option value="eoa">{$t('governance.mutiny.startOption.eoa')}</option>
+            <option value="contract">{$t('governance.mutiny.startOption.contract')}</option>
+            <option value="pause">{$t('governance.mutiny.startOption.pause')}</option>
           </select>
           {#if startKind !== 'pause'}
             <input
               bind:value={proposed}
-              placeholder="Proposed address 0x…"
+              placeholder={$t('governance.field.proposedAddressPlaceholder')}
               disabled={!crewGate.enabled || acting}
             />
           {/if}
-          <GovCtaButton label="Start mutiny" variant="primary" gate={crewGate} {acting} onClick={startMutiny} />
+          <GovCtaButton label={tFn('governance.action.startMutiny')} variant="primary" gate={crewGate} {acting} onClick={startMutiny} />
         </div>
       {/if}
     </section>
@@ -324,10 +327,5 @@
     background: var(--bg-panel);
     color: var(--text-primary);
     font-size: 0.8125rem;
-  }
-  code {
-    font-family: ui-monospace, monospace;
-    font-size: 0.75rem;
-    word-break: break-all;
   }
 </style>

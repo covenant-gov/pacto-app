@@ -1,9 +1,9 @@
 <script lang="ts">
   import { formatUnreadBadgeCount } from '../../lib/dm/dm-unread';
+  import { t } from 'svelte-i18n';
 
   export let name: string = "";
   export let active: boolean = false;
-  export let type: 'text' | 'announcement' = 'text';
   /** Unread / action-needed count; hidden when 0 or channel is active. */
   export let alertCount = 0;
 
@@ -12,7 +12,7 @@
 
 <button
   class="channel {active ? 'active' : ''}"
-  aria-label={alertCount > 0 && !active ? `${name}, ${alertCount} notification${alertCount === 1 ? '' : 's'}` : name}
+  aria-label={alertCount > 0 && !active ? $t('messaging.channel.alertAria', { values: { name, count: alertCount } }) : name}
 >
   <span class="icon">#</span>
   <span class="name">{name}</span>

@@ -1,11 +1,20 @@
 <script lang="ts">
   import { afterUpdate } from 'svelte';
-  import { formatMessageContent } from '../../lib/utils/message-formatting';
+  import { formatMessageContent, formatMessageContentWithMentions } from '../../lib/utils/message-formatting';
   import { openExternalUrl } from '../../lib/utils/open-external';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+  import type { Mention } from '../../lib/messaging/mentions';
+  import type { NostrProfile } from '../../lib/api/nostr';
 
   export let content: string = '';
+  export let mentions: Mention[] | undefined = undefined;
+  export let profiles: Record<string, NostrProfile | undefined> | undefined = undefined;
+  export let rosterNpubs: string[] | Set<string> | undefined = undefined;
 
-  $: formatted = formatMessageContent(content);
+  $: formatted = mentions && profiles && rosterNpubs
+    ? formatMessageContentWithMentions(content, mentions, profiles, rosterNpubs)
+    : formatMessageContent(content);
 
   let bodyEl: HTMLDivElement | undefined;
 
@@ -52,11 +61,14 @@
       const raw = wrapper?.getAttribute?.('data-raw-code');
       if (raw != null) {
         navigator.clipboard.writeText(raw).then(() => {
+          const tFn = get(t);
+          const copied = tFn('messaging.message.copied');
           const label = copyBtn.getAttribute('aria-label');
-          copyBtn.textContent = 'Copied';
-          copyBtn.setAttribute('aria-label', 'Copied');
+          copyBtn.textContent = copied;
+          copyBtn.setAttribute('aria-label', copied);
           setTimeout(() => {
-            copyBtn.textContent = 'Copy';
+            const copy = tFn('messaging.message.copy');
+            copyBtn.textContent = copy;
             if (label) copyBtn.setAttribute('aria-label', label);
           }, 2000);
         });
@@ -88,7 +100,7 @@
   on:click={handleClick}
   on:keydown={handleKeydown}
   role="document"
-  aria-label="Message content"
+  aria-label={$t('messaging.message.messageContent')}
 >
   {#if content?.trim()}
     <!-- eslint-disable svelte/no-at-html-tags -->
@@ -237,6 +249,20 @@
 
   .formatted-message-body :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  .formatted-message-body :global(.mention) {
+    color: var(--accent);
+    font-weight: 500;
+    background: var(--bg-hover);
+    border-radius: 4px;
+    padding: 0.05em 0.25em;
+  }
+
+  .formatted-message-body :global(.mention-trust) {
+    color: var(--text-muted);
+    font-size: 0.75em;
+    margin-left: 0.25em;
   }
 
   .formatted-message-body.empty .formatted-message-body-empty {

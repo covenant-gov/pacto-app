@@ -38,15 +38,16 @@ export function advancedEvmAccounts(rows: EvmAccountRow[] | null | undefined): E
   return rows?.filter(isAdvancedPurposeAccount) ?? [];
 }
 
-/** Human-readable scheme for UI (no internal identifiers in user-facing copy beyond these labels). */
+/** Translation key for the account scheme shown in UI. */
 export function evmAccountSchemeLabel(scheme: string): string {
-  if (scheme === 'bip44_v1') return 'Derived';
-  if (scheme === 'imported_private_key') return 'Imported';
+  if (scheme === 'bip44_v1') return 'wallet.accountScheme.derived';
+  if (scheme === 'imported_private_key') return 'wallet.accountScheme.imported';
   return scheme;
 }
 
+/** Translation key for the account purpose shown in UI. */
 export function evmAccountPurposeLabel(purpose: EvmAccountPurpose): string {
-  return purpose === 'advanced' ? 'Advanced' : 'Squad';
+  return purpose === 'advanced' ? 'wallet.accountPurpose.advanced' : 'wallet.accountPurpose.squad';
 }
 
 export async function listEvmAccounts(): Promise<EvmAccountRow[] | null> {

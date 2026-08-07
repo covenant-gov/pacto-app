@@ -1,6 +1,8 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
+  const tFn = get(t);
+  import { onMount, tick } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import Modal from '../ui/Modal.svelte';
   import { getMlsGroupMembers } from '../../lib/api/nostr';
@@ -15,7 +17,8 @@
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
-  import { DEPLOY_SAFE_MAX_SIGNERS, TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
+  import { TREASURY_SAFE_UI_CAP } from '../../lib/treasury/treasury-safes';
+  import { appConfig } from '../../stores/app-config';
   import { listSquadMemberEvmInvokeArgs } from '../../lib/squad/squad-member-evm-share';
   import { runOnChainInBackground } from '../../lib/evm/on-chain-background';
 
@@ -106,7 +109,8 @@
   $: ownerCount = ownerAddresses.length;
   $: thresholdNum = Math.max(1, parseInt(thresholdInput, 10) || 1);
   $: thresholdValid = ownerCount > 0 && thresholdNum >= 1 && thresholdNum <= ownerCount;
-  $: ownerOverMax = ownerCount > DEPLOY_SAFE_MAX_SIGNERS;
+  $: maxSafeSigners = $appConfig.deploySafeMaxSigners;
+  $: ownerOverMax = ownerCount > maxSafeSigners;
 
   function toggleMember(npub: string): void {
     const evm = effectiveEvm(npub);
@@ -122,7 +126,7 @@
     }
     would.set(evm.toLowerCase(), evm);
     if (includeMeAsOwner && myEvm) would.set(myEvm.toLowerCase(), myEvm);
-    if (would.size > DEPLOY_SAFE_MAX_SIGNERS) return;
+    if (would.size > maxSafeSigners) return;
     selectedMemberNpubs = [...selectedMemberNpubs, npub];
   }
 
@@ -157,7 +161,7 @@
         }
       }
     } catch {
-      deployError = 'Could not load squad EVM roster. Co-owner checkboxes may stay empty.';
+      deployError = tFn('governance.deploySafe.errorRoster');
     }
 
     try {
@@ -169,7 +173,7 @@
       }
     } catch {
       channelMembers = [];
-      if (!deployError) deployError = 'Could not load #announcements members.';
+      if (!deployError) deployError = tFn('governance.deploySafe.errorMembers');
     }
 
     roster = r;
@@ -184,35 +188,33 @@
 
   async function confirmDeploy(): Promise<void> {
     if (treasurySafeCount >= TREASURY_SAFE_UI_CAP) {
-      deployError = `At most ${TREASURY_SAFE_UI_CAP} Safes are shown per squad.`;
+      deployError = tFn('governance.deploySafe.errorSafeCap', { values: { max: TREASURY_SAFE_UI_CAP } });
       return;
     }
     if (!announcementsGroupId) {
-      deployError = 'No announcements channel for this group.';
+      deployError = tFn('governance.deploySafe.errorNoChannel');
       return;
     }
     if (includeMeAsOwner && !myEvm) {
-      deployError =
-        'Add a wallet address to your account to include yourself as an owner, or turn off "Include me".';
+      deployError = tFn('governance.deploySafe.errorNoWalletInclude');
       return;
     }
     const owners = ownerAddresses;
     if (owners.length === 0) {
-      deployError =
-        'Select at least one other signer who shared a roster address, and/or include yourself with a wallet address.';
+      deployError = tFn('governance.deploySafe.errorNoSigners');
       return;
     }
-    if (owners.length > DEPLOY_SAFE_MAX_SIGNERS) {
-      deployError = `This flow supports at most ${DEPLOY_SAFE_MAX_SIGNERS} owners. Deselect signers or turn off "Include me".`;
+    if (owners.length > maxSafeSigners) {
+      deployError = tFn('governance.deploySafe.errorMaxOwners', { values: { max: maxSafeSigners } });
       return;
     }
     const th = Math.max(1, parseInt(thresholdInput, 10) || 1);
     if (th < 1 || th > owners.length) {
-      deployError = `Threshold must be between 1 and ${owners.length}.`;
+      deployError = tFn('governance.deploySafe.errorThreshold', { values: { max: owners.length } });
       return;
     }
     if (!deployNetwork) {
-      deployError = 'Select a network for this squad.';
+      deployError = tFn('governance.deploySafe.errorNoNetwork');
       return;
     }
 
@@ -225,8 +227,8 @@
     const network = deployNetwork;
     onClose();
     runOnChainInBackground({
-      startedToast: 'Safe deploy submitted. Confirmation continues in the background.',
-      subject: 'Safe deploy',
+      startedToast: tFn('governance.deploySafe.toastSubmitted'),
+      subject: tFn('governance.deploySafe.subject'),
       job: async () => {
         const out = await safeDeployProxy(network, owners, th, null, parentId);
         if (!out.ok) {
@@ -259,14 +261,11 @@
   dismissible
   contentClass="deploy-safe-modal-panel"
 >
-  <h2 id={titleId}>Deploy Safe</h2>
-  <p id={descId} class="deploy-safe-desc">
-    Create a new multisig on-chain. Only members who shared a squad signer address on #announcements appear below. Gas is
-    paid from your embedded wallet.
-  </p>
+  <h2 id={titleId}>{$t('governance.deploySafe.title')}</h2>
+  <p id={descId} class="deploy-safe-desc">{$t('governance.deploySafe.lead')}</p>
 
   {#if loading}
-    <p class="deploy-safe-loading">Loading members…</p>
+    <p class="deploy-safe-loading">{$t('governance.deploySafe.loadingMembers')}</p>
   {:else}
     <SquadDeployNetworkField
       id="deploy-safe-network"
@@ -276,11 +275,9 @@
       selectClass="input-select"
     />
 
-    <p class="deploy-safe-signers-caption">Other signers (#announcements)</p>
+    <p class="deploy-safe-signers-caption">{$t('governance.deploySafe.signersCaption')}</p>
     <p class="deploy-safe-signers-hint muted">
-      Addresses come from #announcements when members share a squad roster address (Inbox on join, or #dashboard → Settings). Members who have not
-      shared are not listed. You are not listed here; use &quot;Include me as an owner&quot; for your wallet. At most
-      {DEPLOY_SAFE_MAX_SIGNERS} owners total.
+      {$t('governance.deploySafe.signersHint', { values: { max: maxSafeSigners } })}
     </p>
     <ul class="deploy-safe-member-list" role="list">
       {#each signersListNpubs as npub (npub)}
@@ -291,7 +288,7 @@
             type="checkbox"
             checked={selectedMemberNpubs.includes(npub)}
             disabled={!addr}
-            aria-label={`Signer ${getProfileDisplayName($profiles[npub]) || npub.slice(0, 12)}`}
+            aria-label={$t('governance.deploySafe.signerAriaLabel', { values: { name: getProfileDisplayName($profiles[npub]) || npub.slice(0, 12) } })}
             on:change={() => toggleMember(npub)}
           />
           {#if getProfileAvatarSrc($profiles[npub])}
@@ -304,19 +301,16 @@
               >{getProfileDisplayName($profiles[npub]) ||
                 (npub.length > 20 ? npub.slice(0, 14) + '…' : npub)}</span
             >
-            <span class="deploy-safe-member-evm muted">{addr ? shortAddress(addr) : ''}</span>
+            <span class="deploy-safe-member-evm muted">{#if addr}{shortAddress(addr)}{/if}</span>
           </div>
         </li>
       {/each}
     </ul>
 
     {#if channelMembers.length === 0}
-      <p class="muted deploy-safe-empty">No members loaded. Open the dashboard again or check MLS sync.</p>
+      <p class="muted deploy-safe-empty">{$t('governance.deploySafe.emptyNoMembers')}</p>
     {:else if signersListNpubs.length === 0}
-      <p class="muted deploy-safe-empty">
-        No one else has shared a signer address yet. Use &quot;Include me as an owner&quot; for a 1-of-1 Safe, or ask
-        members to share from their squad invite or Roles.
-      </p>
+      <p class="muted deploy-safe-empty">{$t('governance.deploySafe.emptyNoSigners')}</p>
     {/if}
 
     <label class="deploy-safe-checkbox">
@@ -328,13 +322,13 @@
           if (includeMeAsOwner && !myEvm) void loadMyWalletAddress();
         }}
       />
-      <span>Include me as an owner</span>
+      <span>{$t('governance.deploySafe.includeMe')}</span>
     </label>
     {#if includeMeAsOwner && !myEvm}
-      <p class="deploy-safe-warn muted">Your account has no wallet address; turn this off or add a wallet.</p>
+      <p class="deploy-safe-warn muted">{$t('governance.deploySafe.noWalletWarning')}</p>
     {/if}
 
-    <label class="modal-field-label" for="deploy-safe-threshold">Threshold</label>
+    <label class="modal-field-label" for="deploy-safe-threshold">{$t('governance.deploySafe.thresholdLabel')}</label>
     <input
       id="deploy-safe-threshold"
       type="number"
@@ -345,19 +339,19 @@
       disabled={ownerCount === 0}
       aria-invalid={ownerCount > 0 && !thresholdValid ? 'true' : undefined}
     />
-    <p class="deploy-safe-owner-count muted">{ownerCount} owner(s) — threshold must be ≤ that.</p>
+    <p class="deploy-safe-owner-count muted">{$t('governance.deploySafe.ownerCount', { values: { count: ownerCount } })}</p>
     {#if ownerOverMax}
       <p class="input-error" role="alert">
-        At most {DEPLOY_SAFE_MAX_SIGNERS} owners. Deselect members or turn off "Include me".
+        {$t('governance.deploySafe.ownerOverMax', { values: { max: maxSafeSigners } })}
       </p>
     {/if}
 
-    <label class="modal-field-label" for="deploy-safe-label">Label (optional)</label>
+    <label class="modal-field-label" for="deploy-safe-label">{$t('governance.deploySafe.labelLabel')}</label>
     <input
       id="deploy-safe-label"
       type="text"
       class="input-address"
-      placeholder="e.g. Treasury"
+      placeholder={$t('governance.deploySafe.labelPlaceholder')}
       bind:value={deployLabel}
     />
 
@@ -366,13 +360,13 @@
     {/if}
 
     <div class="modal-actions">
-      <button type="button" class="btn-secondary" on:click={onClose}>Cancel</button>
+      <button type="button" class="btn-secondary" on:click={onClose}>{$t('governance.deploySafe.cancel')}</button>
       <button
         type="button"
         class="btn-primary"
         on:click={confirmDeploy}
         disabled={ownerCount === 0 || !thresholdValid || ownerOverMax || !deployNetwork}
-        >Deploy Safe</button
+        >{$t('governance.deploySafe.deploy')}</button
       >
     </div>
   {/if}
@@ -402,7 +396,6 @@
     margin: 12px 0 6px 0;
   }
 
-  .input-select,
   .input-address {
     width: 100%;
     box-sizing: border-box;

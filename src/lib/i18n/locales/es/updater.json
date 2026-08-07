@@ -1,0 +1,15 @@
+{
+	"updater.available": "La actualización {version} está disponible.",
+	"updater.youHave": "Tienes la versión {version}.",
+	"updater.downloading": "Se está descargando la actualización {version}.",
+	"updater.installing": "Se está instalando la actualización {version}.",
+	"updater.downloadedInstalling": "Descargada. Instalando actualización…",
+	"updater.installed": "La actualización {version} está instalada.",
+	"updater.relaunchPrompt": "Reinicia Pacto para comenzar la nueva versión.",
+	"updater.relaunchNow": "Reiniciar ahora",
+	"updater.updateCheckFailed": "Error al buscar actualizaciones.",
+	"updater.primary.downloading": "Descargando…",
+	"updater.primary.installing": "Instalando…",
+	"updater.primary.retry": "Reintentar",
+	"updater.primary.downloadAndInstall": "Descargar e instalar"
+}

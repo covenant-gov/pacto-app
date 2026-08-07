@@ -93,9 +93,9 @@ pub fn deny_reason(capability: GovCapability, ctx: &HatContext) -> &'static str 
         GovCapability::ProposeTreasury | GovCapability::MutateTrackedTokens => {
             "Requires Captain or Crew hat."
         }
-        GovCapability::CrewVote
-        | GovCapability::StartMutiny
-        | GovCapability::CastMutinyVote => "Requires Crew hat.",
+        GovCapability::CrewVote | GovCapability::StartMutiny | GovCapability::CastMutinyVote => {
+            "Requires Crew hat."
+        }
         GovCapability::CaptainVote => {
             if ctx.captain_is_safe && !ctx.wears_captain {
                 "Captain hat is on the Safe."
@@ -136,9 +136,9 @@ pub fn capability_allowed(capability: GovCapability, ctx: &HatContext) -> bool {
         GovCapability::ProposeTreasury | GovCapability::MutateTrackedTokens => {
             ctx.wears_captain || ctx.wears_crew
         }
-        GovCapability::CrewVote
-        | GovCapability::StartMutiny
-        | GovCapability::CastMutinyVote => ctx.wears_crew,
+        GovCapability::CrewVote | GovCapability::StartMutiny | GovCapability::CastMutinyVote => {
+            ctx.wears_crew
+        }
         GovCapability::CaptainVote
         | GovCapability::CaptainResign
         | GovCapability::QuartermasterMutateCrew

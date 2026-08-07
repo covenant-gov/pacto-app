@@ -248,13 +248,14 @@ describe('backend-wallet', () => {
       const result = await safeDeployProxy('sepolia', ['0xOwner'], 1);
       expect(result.ok).toBe(true);
       if (result.ok) expect(result.result).toEqual(deployed);
-      expect(mockedInvoke).toHaveBeenCalledWith('safe_deploy_proxy', {
+      expect(mockedInvoke).toHaveBeenCalledWith('safe_deploy_proxy', expect.objectContaining({
         network: 'sepolia',
         owners: ['0xOwner'],
         threshold: 1,
         saltNonce: null,
         parentId: null,
-      });
+        rpcUrls: null,
+      }));
     });
 
     it('trims parentId and preserves saltNonce when provided', async () => {
@@ -266,13 +267,14 @@ describe('backend-wallet', () => {
         chainId: 11155111,
       });
       await safeDeployProxy('sepolia', ['0xOwner'], 1, '  salt  ', '  parent  ');
-      expect(mockedInvoke).toHaveBeenCalledWith('safe_deploy_proxy', {
+      expect(mockedInvoke).toHaveBeenCalledWith('safe_deploy_proxy', expect.objectContaining({
         network: 'sepolia',
         owners: ['0xOwner'],
         threshold: 1,
         saltNonce: '  salt  ',
         parentId: 'parent',
-      });
+        rpcUrls: expect.any(Array),
+      }));
     });
 
     it('returns a parsed JSON error from a rejected invoke', async () => {

@@ -4,6 +4,129 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## Unreleased
+
+### Bug Fixes
+- Recover missed dm/giftwrap traffic on long-lived sessions
+- Harden session-recovery sync state machine against restart, panic, and clock races
+- Close wake-sync race and relay-toggle staleness in the DM sync UI
+
+## v0.5.1
+
+### Bug Fixes
+- Build linux amd64 release on ubuntu-22.04 to avoid appimage wayland egl crash
+- Add canonical, og:image:alt, and twitter creator metadata to landing page
+- Update create-pull-request action to v8
+- Grant release workflow contents:write permission
+- Sign commits created by create-pull-request action
+
+
+### Chores
+- Automate version-bump PR and homebrew tap update
+- Bump version to 0.5.1 (release)
+- Auto-tag releases after prepare-release PR merges
+
+
+### Other
+- Update signing public key
+
+## v0.5.0
+
+### Bug Fixes
+- Add messaging namespace to i18n translation keys
+- Consent-first squad admit, channel catch-up, and nav reorder
+- Point to current deployment for squad-sponsor
+- CR late-joiner findings for welcome fallback, i18n, nav persistence, and admit guard
+- Add rich link previews and fix social icons on landing page (#163)
+- Guard account cleanup scan against in-flight account creation
+- Send groupId (not group_id) to sync_mls_groups_now invoke
+- Guard evm ensure_ready against unset encryption key during restore
+- Stop boot-time account scan from deleting valid accounts on query error
+- Prevent relay input overflow from content-box width sizing
+- Dedupe mls welcome wrapper events on resync
+- Make relay refresh spinner visibly spin, drop flashing detail-loading text
+- Account list no longer excludes the auto-selected account
+- Retry transient mls welcome failures instead of discarding them
+- Start relay health-check monitor and catch future orphaned tauri commands in ci
+- Orphaned-tauri-commands scanner misses nested generic invoke<>()
+
+
+### Chores
+- Add i18n lint rule and locale parity tests
+- Chore: ignore AppImage build artifacts
+       - Fix issues with make lint
+- Bump version to 0.5.0 (release)
+
+
+### Documentation
+- Plan the svelte-5-runes migration and require runes in new files
+- Close out calm-notifications epic; dev tooling notes
+
+
+### Features
+- Scaffold svelte-i18n runtime, locale store, and persistence wiring
+- Extract auth, navigation, and messaging strings for i18n
+- Extract settings, profile, and wallet strings for i18n
+- Extract governance, commons, and announcement strings for i18n
+- Extract lib-module strings and backend error mapping for i18n
+- Complete spanish i18n coverage across app ui
+- Add missing spanish i18n locale catalogs
+- Explain mls history limits with a local channel welcome
+- Gov-event gossip for status view and custom squad-level rpc with backup to avoid rate limits (#140)
+- Add backend-owned app-config with frontend validation and enforcement
+- Messaging enhancements — reactions, attachments, image viewer, sync status (#157)
+- Crop and resize avatar images before upload
+- Cap squad and channel name length via app-config
+- Instrument events_received/bytes_down on event receipt (relays)
+- Instrument events_sent/bytes_up at send call sites (relays)
+- Add relay metrics/logs API wrappers and health-state helper (relays)
+- Add inline expandable relay health detail panel (relays)
+- Notification core — per-chat levels, severity tiers, coalesced emit
+- Notification settings, backend unread counts, catch-up store
+- Catch-up destination — counts, filters, navigation & UI
+
+
+### Other
+- Add visual identity
+- Simplify relay health instrumentation and detail panel (relays)
+- Correct receive-count undercount, relay-detail retry dead end, and log flooding (review)
+
+
+### Testing
+- Expand frontend coverage
+
+## v0.4.0
+
+### Bug Fixes
+- Update ai.json tauri mcp command to use direct node path
+- Repair tauri-e2e job after docker image update (ci)
+- Make updater relaunch restart the updated app on macOS
+
+
+### Chores
+- Record closures for pacto-app-ayq mention feature (beads)
+- Bump version to 0.4.0 (release)
+
+
+### Documentation
+- Docs(mentions) - Add initial plan and idea files
+- Add tauri mcp integration guide and ui validation policy
+
+
+### Features
+- Add @ mentions to squad channels (mentions)
+- Add self-correcting AI testing architecture
+
+
+### Other
+- Capitalize product name
+- Bd init: initialize beads issue tracking
+- Update beads ignore file and create bead
+- Add vulkan deps and rust/pnpm caches for faster linux builds
+- Add prebuilt CI base image
+- Switch backend-tests job to pacto-ci container image
+- Switch release-symbol-check to pacto-ci container and add tauri-e2e diagnostics
+
 ## v0.3.2
 
 ### Bug Fixes
@@ -11,25 +134,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sync squad MLS state across peers and stop raw JSON in UI (#111)
 
 
+### Chores
+- Bump version to 0.3.2 (#120) (release)
+
+
 ### Refactor
 - Adopt refinery for SQLite migrations (#119)
 
 ## v0.3.1
 
-### Highlights
-- Hardened account security with automatic idle lock and a verified seed-backup gate that blocks risky actions until the recovery phrase is backed up.
-- Shipped user-facing install instructions for macOS, Linux, and Windows, and included them in GitHub release notes.
+### Chores
+- Bump version to 0.3.1 (#115) (release)
+
+
+### Documentation
+- Add install instructions for macOS, Linux, and Windows (#107)
+
 
 ### Features
 - Add automatic idle lock and migration gate for sensitive operations (#96) (session)
 - Add verified seed-backup gate for risky actions (#114)
 
-### Documentation
-- Add install instructions for macOS, Linux, and Windows (#107)
 
 ### Other
 - Include install instructions in release notes (#108)
 - Docs/install instructions (#109)
+
+* docs: add install instructions for macOS, Linux, and Windows
+
+* ci: include install instructions in release notes
 
 ## v0.3.0
 

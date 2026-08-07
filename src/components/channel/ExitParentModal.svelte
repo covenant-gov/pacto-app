@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+
   export let open = false;
   export let parentName = '';
   export let error = '';
@@ -8,11 +10,11 @@
   export let onConfirm: () => void = () => {};
 
   const titleId = 'exit-parent-modal-title';
-  const title = 'Exit Squad';
-  const confirmLabel = 'Exit Squad';
+  $: title = $t('messaging.exitParent.title');
+  $: confirmLabel = $t('messaging.exitParent.confirm');
   $: message = parentName
-    ? `Are you sure you want to exit "${parentName}"? All local storage associated with this squad will be erased and you will no longer be able to decrypt messages for this squad.`
-    : `Are you sure you want to exit this squad? All local storage associated with this squad will be erased and you will no longer be able to decrypt messages for this squad.`;
+    ? $t('messaging.exitParent.messageNamed', { values: { parentName } })
+    : $t('messaging.exitParent.messageUnnamed');
 </script>
 
 {#if open}
@@ -28,7 +30,7 @@
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-label="{title}{parentName ? ' ' + parentName : ''}"
+      aria-label="{$t('messaging.exitParent.title')}{parentName ? ' ' + parentName : ''}"
       tabindex="0"
       on:click|stopPropagation
       on:keydown={(e) => e.key === 'Escape' && onClose()}
@@ -45,7 +47,7 @@
           on:click={onClose}
           disabled={exiting}
         >
-          Cancel
+          {$t('messaging.exitParent.cancel')}
         </button>
         <button
           type="button"
@@ -53,7 +55,7 @@
           on:click={onConfirm}
           disabled={exiting}
         >
-          {exiting ? 'Exiting…' : confirmLabel}
+          {exiting ? $t('messaging.exitParent.exiting') : confirmLabel}
         </button>
       </div>
     </div>

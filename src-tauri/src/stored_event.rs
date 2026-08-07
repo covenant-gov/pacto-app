@@ -371,7 +371,12 @@ mod tests {
             1234567890,
         );
         event.tags = vec![
-            vec!["e".to_string(), "ref123".to_string(), "".to_string(), "reply".to_string()],
+            vec![
+                "e".to_string(),
+                "ref123".to_string(),
+                "".to_string(),
+                "reply".to_string(),
+            ],
             vec!["ms".to_string(), "500".to_string()],
         ];
 
@@ -431,23 +436,77 @@ mod tests {
 
     #[test]
     fn known_kinds_match_expected() {
-        assert!(StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1).is_known_kind());
-        assert!(StoredEvent::new("x".to_string(), event_kind::FILE_ATTACHMENT, 1, "".to_string(), 1).is_known_kind());
-        assert!(StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1).is_known_kind());
-        assert!(StoredEvent::new("x".to_string(), event_kind::APPLICATION_SPECIFIC, 1, "".to_string(), 1).is_known_kind());
-        assert!(!StoredEvent::new("x".to_string(), event_kind::MLS_WELCOME, 1, "".to_string(), 1).is_known_kind());
+        assert!(StoredEvent::new(
+            "x".to_string(),
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_known_kind());
+        assert!(StoredEvent::new(
+            "x".to_string(),
+            event_kind::FILE_ATTACHMENT,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_known_kind());
+        assert!(
+            StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1)
+                .is_known_kind()
+        );
+        assert!(StoredEvent::new(
+            "x".to_string(),
+            event_kind::APPLICATION_SPECIFIC,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_known_kind());
+        assert!(!StoredEvent::new(
+            "x".to_string(),
+            event_kind::MLS_WELCOME,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_known_kind());
     }
 
     #[test]
     fn is_message_covers_dm_and_file() {
-        assert!(StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1).is_message());
-        assert!(StoredEvent::new("x".to_string(), event_kind::FILE_ATTACHMENT, 1, "".to_string(), 1).is_message());
-        assert!(!StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1).is_message());
+        assert!(StoredEvent::new(
+            "x".to_string(),
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_message());
+        assert!(StoredEvent::new(
+            "x".to_string(),
+            event_kind::FILE_ATTACHMENT,
+            1,
+            "".to_string(),
+            1
+        )
+        .is_message());
+        assert!(
+            !StoredEvent::new("x".to_string(), event_kind::REACTION, 1, "".to_string(), 1)
+                .is_message()
+        );
     }
 
     #[test]
     fn get_tags_returns_all_values_for_key() {
-        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1);
+        let mut event = StoredEvent::new(
+            "x".to_string(),
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            "".to_string(),
+            1,
+        );
         event.tags = vec![
             vec!["p".to_string(), "a".to_string()],
             vec!["e".to_string(), "ref1".to_string()],
@@ -459,16 +518,33 @@ mod tests {
 
     #[test]
     fn get_reply_reference_requires_marker() {
-        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1);
+        let mut event = StoredEvent::new(
+            "x".to_string(),
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            "".to_string(),
+            1,
+        );
         event.tags = vec![vec!["e".to_string(), "ref1".to_string()]];
         assert_eq!(event.get_reply_reference(), None);
-        event.tags = vec![vec!["e".to_string(), "ref1".to_string(), "".to_string(), "reply".to_string()]];
+        event.tags = vec![vec![
+            "e".to_string(),
+            "ref1".to_string(),
+            "".to_string(),
+            "reply".to_string(),
+        ]];
         assert_eq!(event.get_reply_reference(), Some("ref1"));
     }
 
     #[test]
     fn timestamp_ms_edge_cases() {
-        let mut event = StoredEvent::new("x".to_string(), event_kind::PRIVATE_DIRECT_MESSAGE, 1, "".to_string(), 1234567890);
+        let mut event = StoredEvent::new(
+            "x".to_string(),
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            1,
+            "".to_string(),
+            1234567890,
+        );
         // No ms tag
         assert_eq!(event.timestamp_ms(), 1234567890000);
         // Valid ms tag 0

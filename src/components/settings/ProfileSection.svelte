@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import { loadProfile, profiles, profileLoadingStates } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
-  import { updateProfile, uploadAvatar } from '../../lib/api/nostr';
+  import { updateProfile } from '../../lib/api/nostr';
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -12,15 +13,17 @@
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
+  import AvatarCropModal from './AvatarCropModal.svelte';
   import { requireBackupVerified } from '../../stores/backup-verification';
+
   $: userNpub = $currentUser?.npub || '';
   $: profile = userNpub ? $profiles[userNpub] : null;
   $: loading = userNpub ? ($profileLoadingStates[userNpub] || false) : false;
-  
+
   // Compute avatar and banner sources with caching priority
   $: avatarSrc = getProfileAvatarSrc(profile);
   $: bannerSrc = getProfileBannerSrc(profile);
-  
+
   let error: string | null = null;
 
   // Edit profile state
@@ -30,7 +33,8 @@
   let editAvatarUrl = '';
   let saveError: string | null = null;
   let savingProfile = false;
-  let uploadingAvatar = false;
+  let cropModalOpen = false;
+  let cropFilepath = '';
 
   let copiedNpub = false;
   let exportSeedModalOpen = false;
@@ -48,7 +52,7 @@
       error = null;
       await loadProfile(npub);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load profile';
+      error = e instanceof Error ? e.message : $t('profile.failedToLoadProfile');
       console.error('Profile load error:', e);
     }
   }
@@ -56,7 +60,7 @@
   onMount(() => {
     // Initial load will be triggered by reactive statement above
     if (!userNpub) {
-      error = 'No user logged in';
+      error = $t('profile.noUserLoggedIn');
     }
   });
 
@@ -75,24 +79,29 @@
   }
 
   async function handleChangeAvatar() {
-    if (!profile || uploadingAvatar) return;
+    if (!profile) return;
     try {
       const selected = await openFileDialog({
-        title: 'Choose avatar image',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+        title: $t('profile.chooseAvatarImage'),
+        filters: [{ name: $t('profile.imagesFilter'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
         multiple: false,
       });
       if (selected == null) return;
-      uploadingAvatar = true;
-      saveError = null;
-      const url = await uploadAvatar(selected, 'avatar');
-      editAvatarUrl = url;
+      cropFilepath = selected;
+      cropModalOpen = true;
     } catch (e) {
-      console.error('Upload avatar failed:', e);
-      saveError = e instanceof Error ? e.message : 'Failed to upload avatar';
-    } finally {
-      uploadingAvatar = false;
+      console.error('Choose avatar image failed:', e);
+      saveError = e instanceof Error ? e.message : $t('profile.failedUploadAvatar');
     }
+  }
+
+  function handleCropConfirm(url: string) {
+    editAvatarUrl = url;
+    cropModalOpen = false;
+  }
+
+  function handleCropCancel() {
+    cropModalOpen = false;
   }
 
   async function handleSaveProfile() {
@@ -107,10 +116,10 @@
         about: editAbout.trim(),
       });
       isEditing = false;
-      showToast('Profile published to the network.');
+      showToast($t('profile.profilePublished'));
     } catch (e: unknown) {
       console.error('Save profile failed:', e);
-      const msg = getInvokeErrorMessage(e, 'Could not publish profile.');
+      const msg = getInvokeErrorMessage(e, $t('profile.couldNotPublishProfile'));
       saveError = msg;
       showToast(msg);
     } finally {
@@ -120,25 +129,25 @@
 
 </script>
 
-<SettingsCollapsibleSection sectionId="settings-profile" title="Profile">
+<SettingsCollapsibleSection sectionId="settings-profile" title={$t('profile.title')}>
 
       {#if loading}
         <div class="loading-state">
           <div class="spinner"></div>
-          <p>Loading profile...</p>
+          <p>{$t('profile.loading')}</p>
         </div>
       {:else if error}
         <div class="error-state">
           <p>❌ {error}</p>
-          <p class="error-detail">Make sure you're logged in and the npub is correct.</p>
+          <p class="error-detail">{$t('profile.errorDetail')}</p>
         </div>
       {:else if profile}
         <div class="profile-content">
         {#if !isEditing}
           <div class="profile-top-bar">
             <EditIconButton
-              ariaLabel="Edit profile"
-              title="Edit profile"
+              ariaLabel={$t('profile.editProfile')}
+              title={$t('profile.editProfile')}
               className="profile-edit-btn"
               on:click={startEditing}
             />
@@ -167,9 +176,9 @@
         <!-- Avatar -->
         <div class="avatar-section">
           {#if avatarSrc}
-            <img 
-              src={avatarSrc} 
-              alt={profile.display_name || profile.name} 
+            <img
+              src={avatarSrc}
+              alt={profile.display_name || profile.name}
               class="avatar"
               on:error={(e) => {
                 // On error, hide img and show placeholder
@@ -182,11 +191,11 @@
               }}
             />
             <div class="avatar-placeholder" style="display: none;">
-              {(profile.display_name || profile.name || 'U').charAt(0).toUpperCase()}
+              {(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0).toUpperCase()}
             </div>
           {:else}
             <div class="avatar-placeholder">
-              {(profile.display_name || profile.name || 'U').charAt(0).toUpperCase()}
+              {(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0).toUpperCase()}
             </div>
           {/if}
         </div>
@@ -194,45 +203,46 @@
         <!-- Profile Info or Edit Form -->
         <div class="info-section">
           {#if isEditing}
-            <h2>Edit Profile</h2>
+            <h2>{$t('profile.editProfileTitle')}</h2>
             {#if saveError}
               <p class="edit-error" role="alert">{saveError}</p>
             {/if}
-            <label class="edit-label" for="edit-name">Name</label>
+            <label class="edit-label" for="edit-name">{$t('profile.nameLabel')}</label>
             <input
               id="edit-name"
               type="text"
               class="edit-input"
               bind:value={editName}
-              placeholder="Display name"
+              placeholder={$t('profile.displayNamePlaceholder')}
               disabled={savingProfile}
             />
-            <label class="edit-label" for="edit-about">About</label>
+            <label class="edit-label" for="edit-about">{$t('profile.aboutLabel')}</label>
             <textarea
               id="edit-about"
               class="edit-textarea"
               bind:value={editAbout}
-              placeholder="Bio"
+              placeholder={$t('profile.bioPlaceholder')}
               rows="3"
               disabled={savingProfile}
             ></textarea>
             <div class="edit-image-buttons">
-              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={uploadingAvatar || savingProfile}>
-                {uploadingAvatar ? 'Uploading…' : 'Change avatar'}
+              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={savingProfile}>
+                {$t('profile.changeAvatar')}
               </button>
+              <p class="avatar-guidance">{$t('profile.crop.guidance')}</p>
             </div>
             <div class="edit-actions">
-              <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>Cancel</button>
+              <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>{$t('profile.cancel')}</button>
               <button type="button" class="btn-save-edit" on:click={handleSaveProfile} disabled={savingProfile}>
-                {savingProfile ? 'Publishing…' : 'Save'}
+                {savingProfile ? $t('profile.publishing') : $t('profile.save')}
               </button>
             </div>
           {:else}
-            <h2>{profile.display_name || profile.name || 'Anonymous'}</h2>
+            <h2>{profile.display_name || profile.name || $t('profile.anonymous')}</h2>
             {#if profile.nickname}
-              <p class="nickname">aka "{profile.nickname}"</p>
+              <p class="nickname">{$t('profile.aka')} "{profile.nickname}"</p>
             {/if}
-            
+
             {#if profile.nip05}
               <p class="nip05">✓ {profile.nip05}</p>
             {/if}
@@ -259,14 +269,14 @@
             {/if}
 
             <div class="profile-account-id">
-              <span class="profile-account-id-label">Account ID (nPub):</span>
+              <span class="profile-account-id-label">{$t('profile.accountIdLabel')}</span>
               <div class="profile-account-id-row">
                 <code class="profile-account-id-value">{profile.id}</code>
                 <button
                   type="button"
                   class="btn-copy-account-id"
-                  aria-label={copiedNpub ? 'Copied' : 'Copy account ID'}
-                  title={copiedNpub ? 'Copied' : 'Copy'}
+                  aria-label={copiedNpub ? $t('profile.copied') : $t('profile.copyAccountId')}
+                  title={copiedNpub ? $t('profile.copied') : $t('profile.copy')}
                   on:click={async () => {
                     try {
                       await navigator.clipboard.writeText(profile?.id ?? '');
@@ -308,14 +318,14 @@
                     }
                   }}
                 >
-                  Export seed phrase
+                  {$t('profile.exportSeedPhrase')}
                 </button>
                 <button
                   type="button"
                   class="btn-export-all"
                   on:click={() => (exportAllModalOpen = true)}
                 >
-                  Export all
+                  {$t('profile.exportAll')}
                 </button>
               </div>
             </div>
@@ -324,7 +334,7 @@
       </div>
       {:else}
         <div class="empty-state">
-          <p>No profile loaded</p>
+          <p>{$t('profile.noProfileLoaded')}</p>
         </div>
       {/if}
 </SettingsCollapsibleSection>
@@ -340,6 +350,13 @@
   open={exportAllModalOpen}
   npub={userNpub}
   onClose={() => (exportAllModalOpen = false)}
+/>
+
+<AvatarCropModal
+  open={cropModalOpen}
+  filepath={cropFilepath}
+  onConfirm={handleCropConfirm}
+  onCancel={handleCropCancel}
 />
 
 <style>
@@ -603,8 +620,16 @@
 
   .edit-image-buttons {
     display: flex;
-    gap: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
     margin-top: 16px;
+  }
+
+  .avatar-guidance {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
   }
 
   .btn-edit-image {
@@ -701,4 +726,3 @@
     border-color: var(--accent);
   }
 </style>
-

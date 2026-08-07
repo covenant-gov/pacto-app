@@ -2,5 +2,10 @@ packages:
   - .
   - landing
 allowBuilds:
+  es5-ext: true
   esbuild: true
   fsevents: false
+overrides:
+  cookie: ">=0.7.0 <2.0.0"
+  esbuild: ">=0.25.0"
+  ws: ">=8.20.1"

@@ -2,7 +2,7 @@
 //! See pacto-squad-sponsor `docs/DESKTOP_CLIENT_INTEGRATION.md`.
 
 use alloy::network::TransactionBuilder;
-use alloy::primitives::{Address, B256, Bytes, U256, Uint};
+use alloy::primitives::{Address, Bytes, Uint, B256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::Signer;
@@ -186,10 +186,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let read_provider = connect_read_provider(&urls).await?;
 
     let (max_priority, max_fee) = match read_provider.estimate_eip1559_fees().await {
-        Ok(fees) => clamp_userop_eip1559_fees(
-            fees.max_priority_fee_per_gas,
-            fees.max_fee_per_gas,
-        ),
+        Ok(fees) => clamp_userop_eip1559_fees(fees.max_priority_fee_per_gas, fees.max_fee_per_gas),
         Err(_) => {
             log::warn!(target: "pacto_wallet", "eip-1559 fee estimation failed; using fallback");
             (FALLBACK_MAX_PRIORITY_FEE, FALLBACK_MAX_FEE)
@@ -274,9 +271,8 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
                     None,
                 )
             })?;
-        eip7702_auth = Some(
-            sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?,
-        );
+        eip7702_auth =
+            Some(sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?);
     }
 
     let dummy_sig = mav2_dummy_userop_signature();
@@ -296,8 +292,8 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         signature: &dummy_sig,
         eip7702_auth: eip7702_auth.clone(),
     })?;
-    let estimated = bundler_estimate_user_operation_gas(&bundler, &estimate_op, addrs.entry_point)
-        .await?;
+    let estimated =
+        bundler_estimate_user_operation_gas(&bundler, &estimate_op, addrs.entry_point).await?;
     let call_gas_limit = apply_userop_gas_margin(estimated.call_gas_limit);
     let verification_gas_limit = apply_userop_gas_margin(estimated.verification_gas_limit);
     let pre_verification_gas = apply_userop_gas_margin(estimated.pre_verification_gas);
@@ -357,9 +353,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let user_op_hash: B256 = eth_call_decode(
         &read_provider,
         addrs.entry_point,
-        &IEntryPointV07::getUserOpHashCall {
-            userOp: packed,
-        },
+        &IEntryPointV07::getUserOpHashCall { userOp: packed },
     )
     .await
     .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
@@ -458,9 +452,15 @@ fn user_op_json(p: UserOpParams) -> Result<Value, String> {
 
 /// `paymasterData` is `paymasterAndData` past its fixed header; short input is a bug, not a panic.
 fn paymaster_data(paymaster_and_data: &[u8]) -> Result<&[u8], String> {
-    paymaster_and_data.get(PAYMASTER_DATA_OFFSET..).ok_or_else(|| {
-        wallet_err_json("PAYMASTER_DATA", "paymasterAndData shorter than 52-byte header", None)
-    })
+    paymaster_and_data
+        .get(PAYMASTER_DATA_OFFSET..)
+        .ok_or_else(|| {
+            wallet_err_json(
+                "PAYMASTER_DATA",
+                "paymasterAndData shorter than 52-byte header",
+                None,
+            )
+        })
 }
 
 fn pack_u128s(hi: u128, lo: u128) -> B256 {
@@ -503,9 +503,7 @@ async fn paymaster_entry_point_deposit_preflight<P: Provider>(
     let deposit: U256 = eth_call_decode(
         provider,
         entry_point,
-        &IEntryPointV07::balanceOfCall {
-            account: paymaster,
-        },
+        &IEntryPointV07::balanceOfCall { account: paymaster },
     )
     .await
     .map_err(|e| wallet_err_json("PAYMASTER_DEPOSIT_READ", e, None))?;
@@ -533,11 +531,7 @@ pub(crate) async fn estimate_call_gas<P: Provider>(
         .with_from(member)
         .with_to(to)
         .with_input(Bytes::copy_from_slice(calldata));
-    provider
-        .estimate_gas(tx)
-        .await
-        .ok()
-        .map(|gas| gas as u128)
+    provider.estimate_gas(tx).await.ok().map(|gas| gas as u128)
 }
 
 /// EntryPoint v0.7 maxCost bound: maxFeePerGas × every gas limit charged for the UserOp
@@ -602,7 +596,11 @@ fn encode_eip7702_authorization(chain_id: u64, implementation: Address, nonce: u
     let addr = implementation.as_slice();
     let payload_length = chain_id.length() + addr.length() + nonce.length();
     let mut out = Vec::with_capacity(payload_length + 9);
-    Header { list: true, payload_length }.encode(&mut out);
+    Header {
+        list: true,
+        payload_length,
+    }
+    .encode(&mut out);
     chain_id.encode(&mut out);
     addr.encode(&mut out);
     nonce.encode(&mut out);
@@ -634,7 +632,10 @@ async fn bundler_send_user_operation(
     let res = res.map_err(|e| {
         wallet_err_json(
             "BUNDLER_RPC",
-            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            format!(
+                "bundler rpc failed after {attempt} attempt(s): {}",
+                e.message
+            ),
             None,
         )
     })?;
@@ -851,9 +852,7 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
             "ACCOUNT_VALIDATION",
             "Account validateUserOp reverted (AA23). For SemiModularAccount7702 this is usually a wrong nonce key or UserOp signature packing.".into(),
         )
-    } else if lower.contains("-32507")
-        || lower.contains("invalid account signature")
-    {
+    } else if lower.contains("-32507") || lower.contains("invalid account signature") {
         (
             "ACCOUNT_SIGNATURE",
             "Account signature invalid (-32507). SemiModularAccount7702 expects EIP-191 personal_sign of the userOpHash, then 0xFF||0x00||ECDSA packing.".into(),
@@ -891,7 +890,10 @@ async fn bundler_get_user_operation_receipt(
     let res = res.map_err(|e| {
         wallet_err_json(
             "BUNDLER_RPC",
-            format!("bundler rpc failed after {attempt} attempt(s): {}", e.message),
+            format!(
+                "bundler rpc failed after {attempt} attempt(s): {}",
+                e.message
+            ),
             None,
         )
     })?;
@@ -1001,7 +1003,10 @@ fn bundler_retry_delay(attempt: u32) -> Duration {
 /// Redacts transport errors; timeouts name the bound so callers can tell slow bundlers from failures.
 fn bundler_transport_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
-        format!("bundler request timed out after {}s", BUNDLER_RPC_TIMEOUT.as_secs())
+        format!(
+            "bundler request timed out after {}s",
+            BUNDLER_RPC_TIMEOUT.as_secs()
+        )
     } else {
         crate::evm::wallet_security::redact_urls_in_text(&e.to_string())
     }
@@ -1009,10 +1014,15 @@ fn bundler_transport_error(e: &reqwest::Error) -> String {
 
 async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> {
     let client = bundler_http_client()?;
-    let res = client.post(url).json(body).send().await.map_err(|e| BundlerRpcError {
-        retriable: e.is_timeout() || e.is_connect(),
-        message: bundler_transport_error(&e),
-    })?;
+    let res = client
+        .post(url)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| BundlerRpcError {
+            retriable: e.is_timeout() || e.is_connect(),
+            message: bundler_transport_error(&e),
+        })?;
     let status = res.status();
     let text = res.text().await.map_err(|e| BundlerRpcError {
         retriable: e.is_timeout() || e.is_connect(),
@@ -1034,16 +1044,16 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 mod tests {
     use super::{
         apply_userop_gas_margin, bundler_retry_delay, bundler_rpc_url, call_gas_with_margin,
-        classify_bundler_userop_reject, clamp_userop_eip1559_fees, eip7702_auth_json,
+        clamp_userop_eip1559_fees, classify_bundler_userop_reject, eip7702_auth_json,
         encode_eip7702_authorization, explicit_bundler_rpc_url, mav2_dummy_userop_signature,
         mav2_fallback_nonce_key, pack_mav2_eoa_userop_signature, pack_u128s,
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
         paymaster_data, receipt_transaction_hash, retriable_bundler_status, user_op_json,
-        userop_max_cost_wei, FALLBACK_MAX_PRIORITY_FEE, UserOpParams,
+        userop_max_cost_wei, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
-    use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
-    use alloy::primitives::{address, b256, B256, U256, Uint};
+    use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
+    use alloy::primitives::{address, b256, Uint, B256, U256};
     use reqwest::StatusCode;
     use serde_json::json;
     use std::time::Duration;
@@ -1059,14 +1069,7 @@ mod tests {
 
     #[test]
     fn userop_max_cost_covers_all_gas_limits() {
-        let cost = userop_max_cost_wei(
-            500_000,
-            100_000,
-            80_000,
-            30_000_000_000,
-            250_000,
-            50_000,
-        );
+        let cost = userop_max_cost_wei(500_000, 100_000, 80_000, 30_000_000_000, 250_000, 50_000);
         assert_eq!(
             cost,
             U256::from(30_000_000_000u128)
@@ -1085,17 +1088,10 @@ mod tests {
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
         let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
-        let squad_id =
-            b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
+        let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
-        let paymaster_and_data = encode_paymaster_and_data(
-            paymaster,
-            squad_id,
-            sponsor,
-            member,
-            136_070,
-            60_000,
-        );
+        let paymaster_and_data =
+            encode_paymaster_and_data(paymaster, squad_id, sponsor, member, 136_070, 60_000);
         let op = user_op_json(UserOpParams {
             sender: member,
             nonce: U256::from(7),
@@ -1151,7 +1147,10 @@ mod tests {
         assert_eq!(g.call_gas_limit, 210_000);
         assert_eq!(g.paymaster_verification_gas_limit, 113_408);
         assert_eq!(g.paymaster_post_op_gas_limit, 50_000);
-        assert_eq!(apply_userop_gas_margin(g.paymaster_verification_gas_limit), 136_089);
+        assert_eq!(
+            apply_userop_gas_margin(g.paymaster_verification_gas_limit),
+            136_089
+        );
     }
 
     #[test]
@@ -1373,7 +1372,10 @@ mod tests {
             "success": true,
             "receipt": {"transactionHash": "0xbbb", "blockNumber": "0x1"}
         });
-        assert_eq!(receipt_transaction_hash(&receipt), Some("0xbbb".to_string()));
+        assert_eq!(
+            receipt_transaction_hash(&receipt),
+            Some("0xbbb".to_string())
+        );
 
         let pending_shape = json!({"userOpHash": "0xaaa"});
         assert_eq!(receipt_transaction_hash(&pending_shape), None);
@@ -1453,8 +1455,7 @@ mod tests {
 
         // Rebuild signature as the bundler would from auth JSON fields.
         let rsy = sig.as_rsy();
-        let rebuilt =
-            Signature::from_bytes_and_parity(&rsy[..64], rsy[64] != 0);
+        let rebuilt = Signature::from_bytes_and_parity(&rsy[..64], rsy[64] != 0);
         let recovered = rebuilt
             .recover_address_from_prehash(&hash)
             .expect("recover");

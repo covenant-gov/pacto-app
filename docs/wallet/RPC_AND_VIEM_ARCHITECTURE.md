@@ -41,7 +41,27 @@ When no operator key is set, **personal RPC URLs** and the **default RPC picker*
 
 ### Frontend resolution entry point
 
-`getEffectiveRpcUrlsForChain(chainId)` in `chains.ts` is the single merge point for viem read clients.
+`getEffectiveRpcUrlsForChain(chainId)` in `chains.ts` is the single merge point for viem read clients (DM wallet / Settings).
+
+### Squad-level dual RPC (parent-scoped Tauri)
+
+Squad Status can set **two MLS-shared slots** (`src/lib/squad/squad-rpc.ts`, announce `squad_rpc_updated`):
+
+| Event | RPC-1 | RPC-2 |
+|-------|-------|-------|
+| Create squad | curated public (`default_public`) | unset |
+| Set primary custom | member URL | `default_public` |
+| Set backup | unchanged custom | member URL (no public sentinel left) |
+
+**Call failover** for parent-scoped governance/deploy Tauri commands (`buildSquadInvokeRpcUrls` → `rpcUrls` on invoke):
+
+1. Squad RPC-1 (expand `default_public` → operator Alchemy if set + curated)
+2. Squad RPC-2 if set
+3. This member’s Settings **default** RPC for the chain only — **local, never MLS** — appended only when set and not already in the list
+
+Rust uses the override list in order when non-empty (`gov_read::rpc_urls_or_default` / `connect_gov_read_provider`); otherwise curated/operator defaults. Applies to parent-scoped reads and writes (treasury, mutiny, quartermaster, hats, ACL, sponsor/deploy, allowlist, Safe deploy with `parentId`).
+
+Operator `ALCHEMY_RPC_KEY` does not override an explicit custom squad URL. Squad RPC URLs (including API keys) are visible to all members who receive the announce.
 
 ---
 
@@ -69,7 +89,8 @@ When no operator key is set, **personal RPC URLs** and the **default RPC picker*
 | Concern | Layer | Mechanism |
 |--------|--------|-----------|
 | RPC URL selection (UI reads) | Frontend | `ALCHEMY_RPC_KEY` + user prefs + `getEffectiveRpcUrlsForChain` |
-| RPC URL selection (backend sends) | Backend | Same `ALCHEMY_RPC_KEY` via `wallet_rpc_providers.rs` + curated fallbacks |
+| RPC URL selection (squad Tauri) | Frontend → Backend | Squad slots 1–2 (+ local Settings default) via `rpcUrls` override |
+| RPC URL selection (backend default) | Backend | `ALCHEMY_RPC_KEY` via `wallet_rpc_providers.rs` + curated fallbacks when no override |
 | Read-only JSON-RPC | Frontend | viem `createPublicClient` + `fallback` via **`src/lib/evm/read-plane.ts`** |
 | Generic contract reads (observation) | Frontend | `readContract` / `multicall` in **`read-plane.ts`** — not duplicated in Rust for ad-hoc ABIs |
 | WalletBar send / raw tx | Backend | Rust (Alloy): encode, sign, `eth_sendRawTransaction` |

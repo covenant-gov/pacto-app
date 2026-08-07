@@ -8,6 +8,8 @@ import { getAnnouncementsChannel, loadMembersForParent } from '../parent-navbar'
 import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-bucket';
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { persistSquadPatch } from '../squad/squad-catalog';
+import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
+import type { ChannelAccess } from './channel-access';
 import {
   squads,
   type Channel,
@@ -28,17 +30,23 @@ export async function loadCreateChannelMemberList(
   return loadMembersForParent(parent, currentUserNpub);
 }
 
-/** Optimistic channel row + background MLS create and channel-in-squad DMs. */
+/** Optimistic channel row + background MLS create; under-the-hood welcomes for members. */
 export function runCreateChannelInParent(opts: {
   parent: Squad;
   squadId: string;
   name: string;
   selectedNpubs: string[];
+  access: ChannelAccess;
   onErrorBanner: (message: string) => void;
 }): void {
-  const { parent, squadId, name, selectedNpubs, onErrorBanner } = opts;
+  const { parent, squadId, name, selectedNpubs, access, onErrorBanner } = opts;
   const placeholderId = `creating-${Date.now()}`;
-  const placeholderChannel: Channel = { name, groupId: placeholderId, order: parent.channels.length };
+  const placeholderChannel: Channel = {
+    name,
+    groupId: placeholderId,
+    order: parent.channels.length,
+    access,
+  };
 
   squads.update((list) =>
     list.map((s) => (s.id !== squadId ? s : { ...s, channels: [...s.channels, placeholderChannel] })),
@@ -55,13 +63,22 @@ export function runCreateChannelInParent(opts: {
       await persistSquadPatch(squadId, (s) => ({
         ...s,
         channels: s.channels.map((ch) =>
-          ch.groupId === placeholderId ? { name, groupId, order: ch.order } : ch,
+          ch.groupId === placeholderId
+            ? { name, groupId, order: ch.order, access }
+            : ch,
         ),
       }));
       if (get(activeChannelId) === placeholderId) {
         activeChannelId.set(groupId);
         activeHubChannelName.set(name);
       }
+
+      const live = get(squads).find((s) => s.id === squadId);
+      if (live && access === 'open') {
+        void publishSquadChannelsCatalog(live);
+      }
+
+      // Under-the-hood notify for auto-accept + catalog attach (backend suppresses invite card when in squad).
       const announcementsChannel = getAnnouncementsChannel(parent);
       const payload = formatChannelInSquadMessage({
         type: 'channel_in_squad',
@@ -74,7 +91,7 @@ export function runCreateChannelInParent(opts: {
         try {
           await sendDmMessage(npub, payload);
         } catch (e) {
-          console.warn('[create-channel] channel_in_squad DM failed for', npub.slice(0, 20) + '…', e);
+          console.warn('[create-channel] channel notify failed for', npub.slice(0, 20) + '…', e);
         }
       }
     } catch (e) {

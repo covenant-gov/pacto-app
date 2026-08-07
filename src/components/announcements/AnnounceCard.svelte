@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   import {
     ANNOUNCE_TYPE_SAFE_UPDATED,
     ANNOUNCE_TYPE_SAFE_PROPOSAL,
@@ -77,7 +78,7 @@
     {/if}
   {:else}
     <div class="announce-body">
-      <p class="announce-title">Announcement</p>
+      <p class="announce-title">{$t('announcements.fallback.title')}</p>
       <p class="announce-meta">
         {#if authorName}{authorName}{/if}
         {#if timestamp} — {formatMessageTimestamp(timestamp)}{/if}

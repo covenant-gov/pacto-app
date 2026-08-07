@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
+  import { get } from 'svelte/store';
   import { loadAndDecryptKey } from '../../lib/api/encryption';
   import { exportEvmAccountKeyPlaintext, exportRecoveryPhrase } from '../../lib/api/auth';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
@@ -6,6 +8,7 @@
   import { evmAccountSchemeLabel, type EvmAccountRow } from '../../lib/wallet/evm-accounts';
   import { portal } from '../../lib/utils/portal';
   import { showToast } from '../../stores/toast';
+  import { appConfig } from '../../stores/app-config';
 
   export let open = false;
   /** `evm` | `nostr` | `seed` (BIP-39 recovery phrase). */
@@ -15,10 +18,12 @@
   export let npub = '';
   export let onClose: () => void = () => {};
 
+  const tFn = get(t);
+
   type Phase = 'pin' | 'key';
 
   let phase: Phase = 'pin';
-  let pinDigits = ['', '', '', '', '', ''];
+  let pinDigits = Array(6).fill('');
   let pinError = '';
   let busy = false;
   let privateKey = '';
@@ -27,6 +32,9 @@
   let pinInputs: HTMLInputElement[] = [];
 
   let wasOpen = false;
+
+  $: pinDigitCount = $appConfig.pinDigitCount;
+  $: if (pinDigits.length !== pinDigitCount) pinDigits = Array(pinDigitCount).fill('');
 
   $: {
     if (open && !wasOpen && phase === 'pin') {
@@ -40,7 +48,7 @@
 
   function resetState() {
     phase = 'pin';
-    pinDigits = ['', '', '', '', '', ''];
+    pinDigits = Array(pinDigitCount).fill('');
     pinError = '';
     busy = false;
     privateKey = '';
@@ -57,8 +65,8 @@
     if (busy) return;
     if (variant === 'evm' && !account) return;
     const pinValue = pinDigits.join('');
-    if (pinValue.length !== 6) {
-      pinError = 'PIN must be 6 digits';
+    if (pinValue.length !== pinDigitCount) {
+      pinError = tFn('auth.pinMustBeSixDigits', { values: { count: pinDigitCount } });
       return;
     }
 
@@ -78,19 +86,19 @@
       copied = false;
       phase = 'key';
     } catch (e) {
-      pinError = 'Incorrect PIN or export failed';
+      pinError = tFn('auth.incorrectPinOrExportFailed');
       console.error('Key export failed:', e);
       showToast(
         getInvokeErrorMessage(
           e,
           variant === 'nostr'
-            ? 'Could not export nsec.'
+            ? tFn('export.error.couldNotExportNsec')
             : variant === 'seed'
-              ? 'Could not export seed phrase.'
-              : 'Could not export private key.'
+              ? tFn('export.error.couldNotExportSeedPhrase')
+              : tFn('export.error.couldNotExportPrivateKey')
         )
       );
-      pinDigits = ['', '', '', '', '', ''];
+      pinDigits = Array(pinDigitCount).fill('');
       setTimeout(() => pinInputs[0]?.focus(), 100);
     } finally {
       busy = false;
@@ -106,7 +114,7 @@
     }
     pinDigits[index] = value;
     pinError = '';
-    if (value && index < 5) pinInputs[index + 1]?.focus();
+    if (value && index < pinDigitCount - 1) pinInputs[index + 1]?.focus();
     if (pinDigits.every((d) => d !== '')) void handlePinSubmit();
   }
 
@@ -121,7 +129,7 @@
       event.preventDefault();
     } else if (event.key === 'ArrowLeft' && index > 0) {
       pinInputs[index - 1]?.focus();
-    } else if (event.key === 'ArrowRight' && index < 5) {
+    } else if (event.key === 'ArrowRight' && index < pinDigitCount - 1) {
       pinInputs[index + 1]?.focus();
     } else if (event.key === 'Enter') {
       void handlePinSubmit();
@@ -130,38 +138,32 @@
 
   function handlePinPaste(event: ClipboardEvent) {
     event.preventDefault();
-    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, 6);
+    const digits = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').split('').slice(0, pinDigitCount);
     digits.forEach((digit, i) => {
-      if (i < 6) pinDigits[i] = digit;
+      if (i < pinDigitCount) pinDigits[i] = digit;
     });
-    const lastIndex = Math.min(digits.length - 1, 5);
+    const lastIndex = Math.min(digits.length - 1, pinDigitCount - 1);
     pinInputs[lastIndex]?.focus();
-    if (digits.length === 6) void handlePinSubmit();
+    if (digits.length === pinDigitCount) void handlePinSubmit();
   }
 
   async function copyPrivateKey() {
     if (!privateKey) return;
+    const labelKey =
+      variant === 'nostr'
+        ? 'export.modal.label.nsec'
+        : variant === 'seed'
+          ? 'export.modal.label.seedPhrase'
+          : 'export.modal.label.privateKey';
     const ok = await copyTextToClipboard(privateKey);
     if (ok) {
       copied = true;
-      showToast(
-        variant === 'nostr'
-          ? 'nsec copied'
-          : variant === 'seed'
-            ? 'Seed phrase copied'
-            : 'Private key copied'
-      );
+      showToast(tFn('export.toast.copied', { values: { label: tFn(labelKey) } }));
       setTimeout(() => {
         copied = false;
       }, 2000);
     } else {
-      showToast(
-        variant === 'nostr'
-          ? 'Could not copy nsec'
-          : variant === 'seed'
-            ? 'Could not copy seed phrase'
-            : 'Could not copy private key'
-      );
+      showToast(tFn('export.toast.couldNotCopy', { values: { label: tFn(labelKey) } }));
     }
   }
 </script>
@@ -184,17 +186,14 @@
       tabindex="0"
     >
       {#if phase === 'pin'}
-        <h2 id="evm-export-modal-title">Enter PIN</h2>
+        <h2 id="evm-export-modal-title">{$t('auth.pinEnterTitle')}</h2>
         <p class="modal-subtitle">
           {#if variant === 'nostr'}
-            Enter your PIN to export the nsec private key for
-            <code class="modal-addr">{npub || 'this account'}</code>.
+            {$t('export.modal.pinSubtitle.nsec', { values: { account: npub || tFn('export.modal.fallback.thisAccount') } })}
           {:else if variant === 'seed'}
-            Enter your PIN to export the recovery seed phrase for this account.
+            {$t('export.modal.pinSubtitle.seed')}
           {:else}
-            Enter your PIN to export the private key for
-            <code class="modal-addr">{account?.address}</code>
-            ({evmAccountSchemeLabel(account!.scheme)}).
+            {$t('export.modal.pinSubtitle.evm', { values: { address: account?.address, scheme: $t(evmAccountSchemeLabel(account!.scheme)) } })}
           {/if}
         </p>
 
@@ -212,7 +211,7 @@
               class="pin-box"
               value={digit}
               disabled={busy}
-              aria-label="PIN digit {i + 1}"
+              aria-label={$t('auth.pinDigitAriaLabel', { values: { n: i + 1 } })}
               on:input={(e) => handlePinInput(i, e)}
               on:keydown={(e) => handlePinKeydown(i, e)}
               on:paste={handlePinPaste}
@@ -221,39 +220,39 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>Cancel</button>
+          <button type="button" class="btn-cancel" on:click={handleClose} disabled={busy}>{$t('settings.cancel')}</button>
           <button
             type="button"
             class="btn-confirm"
             on:click={handlePinSubmit}
             disabled={busy || pinDigits.some((d) => d === '')}
           >
-            {busy ? 'Verifying…' : 'Continue'}
+            {busy ? $t('commons.verifying') : $t('auth.continue')}
           </button>
         </div>
       {:else}
         <h2 id="evm-export-modal-title">
-          {variant === 'nostr' ? 'Export nsec' : variant === 'seed' ? 'Export seed phrase' : 'Export private key'}
+          {variant === 'nostr' ? $t('export.modal.title.nsec') : variant === 'seed' ? $t('export.modal.title.seed') : $t('export.modal.title.privateKey')}
         </h2>
         <p class="modal-subtitle">
           {#if variant === 'nostr'}
-            Nostr private key (nsec) for this account.
+            {$t('export.modal.subtitle.nsec')}
           {:else if variant === 'seed'}
-            BIP-39 recovery phrase — use on another device to restore this account.
+            {$t('export.modal.subtitle.seed')}
           {:else}
             {account?.label?.trim() || account?.address}
             {#if account?.hdIndex != null}
-              · Derived #{account.hdIndex}
+              {$t('export.modal.subtitle.derived', { values: { hdIndex: account.hdIndex } })}
             {/if}
           {/if}
         </p>
         <p class="modal-warning">
           {#if variant === 'nostr'}
-            Anyone with this nsec controls your Nostr identity and linked Pacto account. Store it offline and never share it.
+            {$t('export.modal.warning.nsec')}
           {:else if variant === 'seed'}
-            Anyone with this seed phrase can restore your full account on another device. Write it down offline and never share it.
+            {$t('export.modal.warning.seed')}
           {:else}
-            Anyone with this key controls the account. Store it offline and never share it.
+            {$t('export.modal.warning.privateKey')}
           {/if}
         </p>
 
@@ -272,16 +271,16 @@
               aria-pressed={revealed}
               aria-label={revealed
                 ? variant === 'nostr'
-                  ? 'Hide nsec'
+                  ? $t('export.modal.hide.nsec')
                   : variant === 'seed'
-                    ? 'Hide seed phrase'
-                    : 'Hide private key'
+                    ? $t('export.modal.hide.seedPhrase')
+                    : $t('export.modal.hide.privateKey')
                 : variant === 'nostr'
-                  ? 'Reveal nsec'
+                  ? $t('export.modal.reveal.nsec')
                   : variant === 'seed'
-                    ? 'Reveal seed phrase'
-                    : 'Reveal private key'}
-              title={revealed ? 'Hide' : 'Reveal'}
+                    ? $t('export.modal.reveal.seedPhrase')
+                    : $t('export.modal.reveal.privateKey')}
+              title={revealed ? $t('commons.hide') : $t('commons.reveal')}
               on:click={() => (revealed = !revealed)}
             >
               {#if revealed}
@@ -298,8 +297,8 @@
             <button
               type="button"
               class="btn-copy"
-              aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-              title={copied ? 'Copied' : 'Copy'}
+              aria-label={copied ? $t('settings.copied') : $t('export.modal.aria.copyToClipboard')}
+              title={copied ? $t('settings.copied') : $t('settings.copy')}
               on:click={copyPrivateKey}
             >
               <svg
@@ -322,7 +321,7 @@
         </div>
 
         <div class="modal-actions">
-          <button type="button" class="btn-close" on:click={handleClose}>Close</button>
+          <button type="button" class="btn-close" on:click={handleClose}>{$t('commons.close')}</button>
         </div>
       {/if}
     </div>
@@ -365,11 +364,6 @@
     color: var(--text-muted);
     font-size: 0.9375rem;
     line-height: 1.5;
-  }
-
-  .modal-addr {
-    font-size: 0.8125rem;
-    word-break: break-all;
   }
 
   .modal-warning {

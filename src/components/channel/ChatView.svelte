@@ -4,6 +4,8 @@
   import AnnounceCard from '../announcements/AnnounceCard.svelte';
   import SquadBotAnnounceCard from '../announcements/SquadBotAnnounceCard.svelte';
   import MessageInput from '../dm/MessageInput.svelte';
+  import MlsResetNotice from './MlsResetNotice.svelte';
+  import MlsMembersPanel from './MlsMembersPanel.svelte';
   import Modal from '../ui/Modal.svelte';
   import { parseAnnouncement } from '../../lib/announcements';
   import { parseSquadBotAnnounceMessage } from '../../lib/squad/squad-bot-announce';
@@ -12,6 +14,7 @@
     groupTimelineKey,
     defaultTrioSharesSingleMlsGroup,
     announceCardAllowedForTimelineBucket,
+    resolveVirtualBucketForTimelineMessage,
     type VirtualBucket,
   } from '../../lib/mls/virtual-channel-bucket';
   import { shouldStackChannelWithPrevious } from '../../lib/dm/message-stack';
@@ -19,8 +22,10 @@
   import {
     ensureMlsGroupMembers,
     membersByGroupId,
+    adminsByGroupId,
     membersLoadingByGroupId,
     refreshMlsGroupMembers,
+    isMlsGroupMembersHydrated,
   } from '../../stores/mls-group-members';
   import {
     activeChannelId,
@@ -45,19 +50,36 @@
     SQUAD_DASHBOARD_CHANNEL_ID,
     MY_DASHBOARD_CHANNEL_ID,
     membershipVersionByGroupId,
+    mlsHistoryWelcomeGroupIds,
     type DmMessage,
     type Squad,
   } from '../../stores/app';
-  import { sendDmMessage, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow } from '../../lib/api/nostr';
+  import { dmSyncStatusEffective } from '../../stores/dm';
+  import SyncStatusIndicator from '../dm/SyncStatusIndicator.svelte';
+  import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
+  import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { persistSquadPatch } from '../../lib/squad/squad-catalog';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
+  import { buildMentionEnvelope, parseMessageContent, filterMentionsByRoster } from '../../lib/messaging/mentions';
+  import { clearPendingReactions } from '../../lib/messaging/reactions';
+  import type { Mention } from '../../lib/messaging/mentions';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
+  import { mlsResetByGroupId } from '../../stores/mls-reset';
+  import {
+    incrementMentionAlert,
+    clearMentionAlert,
+  } from '../../stores/squad-hub-alerts';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import friendsIcon from '../../icons/friends.svg';
+  import { get } from 'svelte/store';
+  import { t } from 'svelte-i18n';
+
+  const tFn = get(t);
 
   const LOAD_OLDER_PAGE_SIZE = 50;
 
@@ -98,13 +120,23 @@
     return $activeChannelId;
   })();
 
-  $: channelName = activeChannel?.name || 'channel';
+  $: channelName = activeChannel?.name || $t('messaging.channel.createDefaultParent');
+  $: currentUserNpub = $currentUser?.npub;
   $: isAnnouncementsChannel =
     (activeParent && activeChannel?.name === ANNOUNCEMENTS_CHANNEL_NAME) ?? false;
   $: isPollsChannel = (activeParent && activeChannel?.name === POLLS_CHANNEL_NAME) ?? false;
   $: hideChannelOverflowMenu = isAnnouncementsChannel || isPollsChannel;
   $: channelParsesStructuredAnnounces = isAnnouncementsChannel;
   $: isChannelCreating = (activeChannel?.groupId?.startsWith('creating-') ?? false);
+  $: showMlsHistoryWelcome =
+    !isChannelCreating &&
+    !!activeChannel?.groupId &&
+    $mlsHistoryWelcomeGroupIds.includes(activeChannel.groupId.trim().toLowerCase());
+  $: activeMlsReset = effectiveMembersGroupId
+    ? ($mlsResetByGroupId[effectiveMembersGroupId] ??
+      $mlsResetByGroupId[effectiveMembersGroupId.toLowerCase()] ??
+      null)
+    : null;
   $: parentSettingUp = activeParent && activeParent.channels.length === 0 && $parentsCreatingAnnouncements.has(activeParent.id);
   $: parentSettingUpError = (parentSettingUp && activeParent && $parentCreateErrorById[activeParent.id]) ?? '';
 
@@ -221,18 +253,36 @@
   function toMessageProps(msg: DmMessage) {
     const currentUserNpub = $currentUser?.npub;
     const currentUserProfile = currentUserNpub ? $profiles[currentUserNpub] : null;
+    const parsed = parseMessageContent(msg.content);
+    const groupId = $activeChannelId;
+    const members = groupId ? ($membersByGroupId[groupId] ?? []) : [];
+    const rosterSet = new Set(members);
+    const filteredMentions = filterMentionsByRoster(parsed.mentions, rosterSet);
+    const isMentioned = currentUserNpub
+      ? filteredMentions.some((m) => m.npub === currentUserNpub)
+      : false;
     const base = {
       id: msg.id,
       authorName: '',
-      content: msg.content,
+      body: parsed.body,
+      content: parsed.body,
+      mentions: filteredMentions,
+      rosterNpubs: members,
+      profiles: $profiles,
+      currentUserNpub,
+      isMentioned,
       timestamp: new Date(msg.at).toISOString(),
       avatar: '',
       replyToId: msg.replied_to && msg.replied_to.length > 0 ? msg.replied_to : undefined,
       replyAuthorName: undefined as string | undefined,
       replyPreview: undefined as string | undefined,
+      reactions: msg.reactions,
+      attachments: msg.attachments,
+      previewMetadata: msg.preview_metadata,
+      pending: msg.pending,
     };
     if (msg.mine) {
-      base.authorName = 'You';
+      base.authorName = tFn('messaging.message.authorYou');
       base.avatar = getProfileAvatarSrc(currentUserProfile) ?? '';
     } else {
       const senderProfile = msg.npub ? $profiles[msg.npub] : null;
@@ -243,16 +293,20 @@
       const replyNpub = msg.replied_to_npub ?? undefined;
       base.replyAuthorName =
         replyNpub && currentUserNpub && replyNpub === currentUserNpub
-          ? 'You'
+          ? tFn('messaging.message.authorYou')
           : replyNpub
             ? getProfileDisplayName($profiles[replyNpub] ?? null)
-            : 'Unknown';
+            : tFn('messaging.message.replyUnknown');
       base.replyPreview =
         msg.replied_to_has_attachment === true
-          ? 'Attachment'
+          ? tFn('messaging.message.attachment')
           : msg.replied_to_content != null && msg.replied_to_content.length > 0
-            ? msg.replied_to_content.slice(0, 80).trim() + (msg.replied_to_content.length > 80 ? '…' : '')
-            : 'Message';
+            ? (() => {
+                const parsedReply = parseMessageContent(msg.replied_to_content as string);
+                const body = parsedReply.body;
+                return body.slice(0, 80).trim() + (body.length > 80 ? '…' : '');
+              })()
+            : tFn('messaging.message.messageFallback');
     }
     return base;
   }
@@ -278,12 +332,18 @@
   $: panelMembersGroupId = effectiveMembersGroupId;
   $: panelMembers =
     panelMembersGroupId != null ? ($membersByGroupId[panelMembersGroupId] ?? []) : [];
+  $: panelAdmins =
+    panelMembersGroupId != null ? ($adminsByGroupId[panelMembersGroupId] ?? []) : [];
   $: panelMembersLoading =
     panelMembersGroupId != null ? ($membersLoadingByGroupId[panelMembersGroupId] ?? false) : false;
   $: showPanelMembersLoading = panelMembersLoading && panelMembers.length === 0;
 
   $: if ($showMembersPanel && panelMembersGroupId && prevMembersGroupIdForPanel !== panelMembersGroupId) {
     prevMembersGroupIdForPanel = panelMembersGroupId;
+    void ensureMlsGroupMembers(panelMembersGroupId);
+  }
+  // Sole-admin recreate needs the preserved roster even when the members panel is closed.
+  $: if (activeMlsReset && panelMembersGroupId) {
     void ensureMlsGroupMembers(panelMembersGroupId);
   }
   $: if (!$showMembersPanel) {
@@ -306,16 +366,20 @@
     if (el && document.contains(el)) el.scrollTop = el.scrollHeight;
   }
 
-  async function handleSendMessage(content: string) {
+  async function handleSendMessage(body: string, mentions?: Mention[], repliedTo?: string) {
     const groupId = $activeChannelId;
     if (!groupId) return;
     groupSendError.set(null);
     const virtualBucket =
       virtualBucketSingleGroup && selectedVirtualBucket ? selectedVirtualBucket : 'announcements';
+    const content = mentions?.length
+      ? buildMentionEnvelope(body, mentions, virtualBucket)
+      : body;
     try {
-      await sendDmMessage(groupId, content, '', { virtualBucket });
+      const ok = await sendDmMessage(groupId, content, repliedTo ?? '', { virtualBucket });
       setTimeout(scrollMessagesToBottom, 0);
       setTimeout(scrollMessagesToBottom, 200);
+      if (ok) cancelReply();
     } catch (e: unknown) {
       const raw = getInvokeErrorMessage(e, 'Failed to send message');
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
@@ -435,7 +499,7 @@
       const inChannel = new Set(result.members ?? []);
       const myNpub = $currentUser?.npub;
       if (activeSquad && !hideChannelOverflowMenu) {
-        const ann = activeSquad.channels[0];
+        const ann = getAnnouncementsChannel(activeSquad);
         if (ann) {
           const annResult = await getMlsGroupMembers(ann.groupId);
           const squadNpubs = annResult.members ?? [];
@@ -486,8 +550,8 @@
       if (!inviteToChannelCandidates.includes(memberNpub)) {
         inviteToChannelCandidates = [...inviteToChannelCandidates, memberNpub];
       }
-      showToast(`Could not add ${displayName} to this channel: ${message}`, undefined, {
-        label: 'Retry',
+      showToast(tFn('messaging.channel.inviteToastError', { values: { displayName, message } }), undefined, {
+        label: tFn('messaging.channel.retry'),
         action: () =>
           runInviteMemberToChannel({
             groupId,
@@ -527,6 +591,164 @@
     }, 0);
   }
   $: if (messagesTimelineKey !== scrollPrevTimelineKey && !virtualTimelineMessages.length) scrollPrevTimelineKey = messagesTimelineKey;
+
+  function channelNameForMentionAlert(
+    groupId: string,
+    bucket: VirtualBucket,
+    channels: Array<{ name: string; groupId: string; order: number }>
+  ): string | null {
+    const matches = channels.filter((c) => c.groupId === groupId);
+    if (matches.length === 0) return null;
+    if (matches.length === 1) return matches[0].name;
+    if (bucket === 'polls') {
+      const polls = matches.find((c) => c.name === POLLS_CHANNEL_NAME);
+      if (polls) return polls.name;
+    }
+    const ann = matches.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME);
+    if (ann) return ann.name;
+    return [...matches].sort((a, b) => a.order - b.order)[0]?.name ?? null;
+  }
+
+  // Pre-load squad channel rosters so mention filtering and alerts can use membersByGroupId.
+  $: if (activeSquad) {
+    const seen = new Set<string>();
+    for (const ch of activeSquad.channels) {
+      const gid = ch.groupId.trim();
+      if (gid && !gid.startsWith('creating-') && !seen.has(gid) && !isMlsGroupMembersHydrated(gid)) {
+        seen.add(gid);
+        void ensureMlsGroupMembers(gid);
+      }
+    }
+  }
+
+  // Track which messages have already been evaluated for mention alerts.
+  let processedMentionIds: Set<string> = new Set();
+  let lastActiveSquadIdForMentions: string | null = null;
+  $: if (activeSquad?.id !== lastActiveSquadIdForMentions) {
+    lastActiveSquadIdForMentions = activeSquad?.id ?? null;
+    const snapshot = new Set<string>();
+    if (activeSquad) {
+      for (const ch of activeSquad.channels) {
+        for (const m of $backendGroupMessages[ch.groupId] ?? []) {
+          snapshot.add(m.id);
+        }
+      }
+    }
+    processedMentionIds = snapshot;
+  }
+
+  $: {
+    const currentUserNpub = $currentUser?.npub;
+    if (activeSquad && currentUserNpub) {
+      for (const ch of activeSquad.channels) {
+        const members = $membersByGroupId[ch.groupId];
+        if (members === undefined) continue;
+        const rosterSet = new Set(members);
+        for (const m of $backendGroupMessages[ch.groupId] ?? []) {
+          if (m.mine) continue;
+          if (processedMentionIds.has(m.id)) continue;
+          processedMentionIds.add(m.id);
+          const parsed = parseMessageContent(m.content);
+          const filtered = filterMentionsByRoster(parsed.mentions, rosterSet);
+          if (!filtered.some((mention) => mention.npub === currentUserNpub)) continue;
+          const bucket = parsed.pacto_virtual_bucket
+            ? (parsed.pacto_virtual_bucket as VirtualBucket)
+            : resolveVirtualBucketForTimelineMessage(m);
+          const channelName = channelNameForMentionAlert(ch.groupId, bucket, activeSquad.channels);
+          if (channelName) incrementMentionAlert(activeSquad.id, channelName);
+        }
+      }
+    }
+  }
+
+  // Clear the mention badge when the user opens or scrolls-to-bottom of a squad channel.
+  let lastClearedMentionKey: string | null = null;
+  $: if (activeSquad && activeChannel) {
+    const key = `${activeSquad.id}:${activeChannel.name}`;
+    if (lastClearedMentionKey !== key) {
+      lastClearedMentionKey = key;
+      clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
+    }
+  }
+
+  function handleMessagesScroll(event: Event) {
+    const el = event.currentTarget as HTMLDivElement;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (isNearBottom && activeSquad && activeChannel) {
+      clearMentionAlert(activeSquad.id, activeChannel.name);
+      if ($activeChannelId) markAsRead($activeChannelId, null).catch(() => {});
+    }
+  }
+
+  let replyToMessageId: string | null = null;
+  let replyPreview: string | undefined = undefined;
+
+  let prevChannelIdForReply: string | null = null;
+  $: if ($activeChannelId !== prevChannelIdForReply) {
+    prevChannelIdForReply = $activeChannelId;
+    cancelReply();
+  }
+
+  function onReact(messageId: string, emoji: string) {
+    const chatId = $activeChannelId;
+    if (!chatId) return;
+    reactToMessage(messageId, chatId, emoji).catch((e: unknown) => {
+      clearPendingReactions(messageId);
+      showToast(e instanceof Error ? e.message : tFn('messaging.channel.reactionFailed'));
+    });
+  }
+
+  function onCopy(_messageId: string, text: string) {
+    if (!navigator.clipboard) {
+      showToast(tFn('messaging.channel.copyUnavailable'));
+      return;
+    }
+    navigator.clipboard.writeText(text).catch(() => showToast(tFn('messaging.channel.copyFailed')));
+  }
+
+  function onReply(messageId: string) {
+    const msg = virtualTimelineMessages.find((m) => m.id === messageId);
+    if (!msg) return;
+    replyToMessageId = messageId;
+    replyPreview =
+      msg.attachments && msg.attachments.length > 0
+        ? tFn('messaging.message.attachment')
+        : msg.content && msg.content.length > 0
+          ? msg.content.slice(0, 80).trim() + (msg.content.length > 80 ? '…' : '')
+          : tFn('messaging.message.messageFallback');
+  }
+
+  function cancelReply() {
+    replyToMessageId = null;
+    replyPreview = undefined;
+  }
+
+  async function handleSendText(body: string, repliedTo?: string) {
+    return handleSendMessage(body, undefined, repliedTo);
+  }
+
+  async function handleSendMentions(body: string, mentions: Mention[], repliedTo?: string) {
+    return handleSendMessage(body, mentions, repliedTo);
+  }
+
+  async function handleSendFile(
+    bytes: ArrayBuffer,
+    fileName: string,
+    repliedTo: string,
+    useCompression: boolean
+  ): Promise<void> {
+    const groupId = $activeChannelId;
+    if (!groupId) return;
+    groupSendError.set(null);
+    try {
+      const ok = await sendFileBytes(groupId, repliedTo, new Uint8Array(bytes), fileName, useCompression);
+      if (ok) cancelReply();
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      groupSendError.set(friendlyMessage(raw, 'dm_send'));
+    }
+  }
 </script>
 
 <svelte:window
@@ -541,7 +763,7 @@
   {#if parentSettingUp}
     <div class="squad-setting-up-state" role="status" aria-live="polite">
       <div class="squad-setting-up-spinner"></div>
-      <p class="squad-setting-up-text">Setting up this space…</p>
+      <p class="squad-setting-up-text">{$t('messaging.channel.settingUp')}</p>
       {#if parentSettingUpError}
         <p class="squad-setting-up-error" role="alert">{parentSettingUpError}</p>
       {/if}
@@ -552,6 +774,10 @@
       <div class="channel-info">
         <span class="channel-icon">#</span>
         <h3 class="channel-name">{channelName}</h3>
+        <SyncStatusIndicator status={$dmSyncStatusEffective} />
+        {#if !hideChannelOverflowMenu}
+          <NotificationLevelIndicator chatId={$activeChannelId ?? ''} onOpen={() => (channelMenuOpen = true)} />
+        {/if}
       </div>
       <div class="channel-header-actions">
         <div class="channel-header-actions-inner">
@@ -559,7 +785,7 @@
             <button
               type="button"
               class="channel-menu-btn"
-              title="Channel options"
+              title={$t('messaging.channel.optionsTitle')}
               on:click={() => (channelMenuOpen = !channelMenuOpen)}
               aria-expanded={channelMenuOpen}
               aria-haspopup="menu"
@@ -573,17 +799,17 @@
               class="polls-chat-layout-btn"
               on:click={togglePollsChatCollapsed}
               aria-pressed={pollsChatCollapsed}
-              title={pollsChatCollapsed ? 'Show chat below polls' : 'Hide chat and show polls only'}
+              title={pollsChatCollapsed ? $t('messaging.channel.showChatBelowPolls') : $t('messaging.channel.hideChatShowPollsOnly')}
             >
-              {pollsChatCollapsed ? 'Show chat' : 'Polls only'}
+              {pollsChatCollapsed ? $t('messaging.channel.showChat') : $t('messaging.channel.pollsOnly')}
             </button>
           {/if}
           <button
             type="button"
             class="channel-members-btn"
-            title="Members"
+            title={$t('messaging.channel.membersTitle')}
             on:click={toggleMembersPanel}
-            aria-label={$showMembersPanel ? 'Close channel members' : 'View channel members'}
+            aria-label={$showMembersPanel ? $t('messaging.channel.closeMembersAria') : $t('messaging.channel.viewMembersAria')}
             aria-expanded={$showMembersPanel}
           >
             <img src={friendsIcon} alt="" class="channel-members-btn-icon" />
@@ -593,7 +819,7 @@
           <div class="channel-menu-dropdown" role="menu">
             {#if !hideChannelOverflowMenu}
               <button type="button" class="channel-menu-item" role="menuitem" on:click={openInviteToChannelModal}>
-                Invite to channel
+                {$t('messaging.channel.inviteToChannel')}
               </button>
               <button
                 type="button"
@@ -602,9 +828,10 @@
                 disabled={leavingChannel}
                 on:click={openLeaveChannelConfirm}
               >
-                Leave channel
+                {$t('messaging.channel.leaveChannel')}
               </button>
             {/if}
+            <NotificationLevelMenu chatId={$activeChannelId ?? ''} onSelect={() => (channelMenuOpen = false)} />
           </div>
         {/if}
       </div>
@@ -636,7 +863,7 @@
           <button
             type="button"
             class="polls-channel-split-handle"
-            aria-label="Resize polls and chat panes"
+            aria-label={$t('messaging.channel.resizePollsAria')}
             on:mousedown={startPollsSplitResize}
             on:dblclick={() => {
               pollsChatSplitPercent = POLLS_SPLIT_DEFAULT;
@@ -644,10 +871,10 @@
             }}
           ></button>
           <div class="polls-channel-chat-pane">
-            <div class="messages-container" bind:this={messagesContainer}>
+            <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
               <div class="messages-list">
                 {#if isChannelCreating}
-                  <p class="channel-creating-message">Private group channel is being created.</p>
+                  <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
                 {:else}
                   {#if canLoadOlder}
                     <div class="load-older-wrap">
@@ -657,14 +884,26 @@
                         on:click={loadOlder}
                         disabled={loadingOlder}
                       >
-                        {loadingOlder ? 'Loading…' : 'Load older messages'}
+                        {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
                       </button>
+                    </div>
+                  {/if}
+                  {#if showMlsHistoryWelcome}
+                    <div class="mls-history-welcome" role="note">
+                      <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
+                      <p class="mls-history-welcome-body">
+                        {$t('messaging.channel.mlsWelcomeBody')}
+                      </p>
                     </div>
                   {/if}
                   {#each virtualTimelineMessages as message, i (message.id)}
                     {@const props = toMessageProps(message)}
                     <Message
                       {...props}
+                      chatId={$activeChannelId ?? ''}
+                      {onReact}
+                      {onCopy}
+                      {onReply}
                       compact={shouldStackChannelWithPrevious(
                         virtualTimelineMessages[i - 1],
                         message,
@@ -678,20 +917,41 @@
             {#if $groupSendError}
               <p class="channel-send-error" role="alert">{$groupSendError}</p>
             {/if}
-            <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+            {#if activeMlsReset}
+              <MlsResetNotice
+                state={activeMlsReset}
+                squadName={activeParent?.name ?? channelName}
+                formerMemberNpubs={panelMembers}
+              />
+            {:else}
+              <MessageInput
+                channelName={channelName}
+                onSend={handleSendText}
+                onSendMentions={handleSendMentions}
+                onSendFile={handleSendFile}
+                squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+                squadRosterNpubs={panelMembers}
+                squadProfiles={$profiles}
+                {currentUserNpub}
+                disabled={isChannelCreating}
+                repliedTo={replyToMessageId ?? undefined}
+                repliedToPreview={replyPreview}
+                onCancelReply={cancelReply}
+              />
+            {/if}
           </div>
         {:else}
           <button type="button" class="polls-channel-chat-collapsed-bar" on:click={expandPollsChat}>
-            <span class="polls-channel-chat-collapsed-label">Chat hidden</span>
-            <span class="polls-channel-chat-collapsed-action">Show chat</span>
+            <span class="polls-channel-chat-collapsed-label">{$t('messaging.channel.chatHidden')}</span>
+            <span class="polls-channel-chat-collapsed-action">{$t('messaging.channel.showChatAction')}</span>
           </button>
         {/if}
       </div>
     {:else}
-      <div class="messages-container" bind:this={messagesContainer}>
+      <div class="messages-container" bind:this={messagesContainer} on:scroll={handleMessagesScroll}>
       <div class="messages-list">
         {#if isChannelCreating}
-          <p class="channel-creating-message">Private group channel is being created.</p>
+          <p class="channel-creating-message">{$t('messaging.channel.creatingMessage')}</p>
         {:else}
           {#if canLoadOlder}
             <div class="load-older-wrap">
@@ -701,8 +961,16 @@
                 on:click={loadOlder}
                 disabled={loadingOlder}
               >
-                {loadingOlder ? 'Loading…' : 'Load older messages'}
+                {loadingOlder ? $t('messaging.channel.loading') : $t('messaging.channel.loadOlder')}
               </button>
+            </div>
+          {/if}
+          {#if showMlsHistoryWelcome}
+            <div class="mls-history-welcome" role="note">
+              <p class="mls-history-welcome-title">{$t('messaging.channel.mlsWelcomeTitle')}</p>
+              <p class="mls-history-welcome-body">
+                {$t('messaging.channel.mlsWelcomeBody')}
+              </p>
             </div>
           {/if}
           {#each virtualTimelineMessages as message, i (message.id)}
@@ -731,6 +999,10 @@
             {:else}
               <Message
                 {...props}
+                chatId={$activeChannelId ?? ''}
+                {onReact}
+                {onCopy}
+                {onReply}
                 compact={shouldStackChannelWithPrevious(
                   virtualTimelineMessages[i - 1],
                   message,
@@ -745,23 +1017,44 @@
     {#if $groupSendError}
       <p class="channel-send-error" role="alert">{$groupSendError}</p>
     {/if}
-    <MessageInput channelName={channelName} onSend={handleSendMessage} disabled={isChannelCreating} />
+    {#if activeMlsReset}
+      <MlsResetNotice
+        state={activeMlsReset}
+        squadName={activeParent?.name ?? channelName}
+        formerMemberNpubs={panelMembers}
+      />
+    {:else}
+      <MessageInput
+        channelName={channelName}
+        onSend={handleSendText}
+        onSendMentions={handleSendMentions}
+        onSendFile={handleSendFile}
+        squadMlsGroupId={effectiveMembersGroupId ?? undefined}
+        squadRosterNpubs={panelMembers}
+        squadProfiles={$profiles}
+        {currentUserNpub}
+        disabled={isChannelCreating}
+        repliedTo={replyToMessageId ?? undefined}
+        repliedToPreview={replyPreview}
+        onCancelReply={cancelReply}
+      />
+    {/if}
     {/if}
 
     <!-- Leave channel confirm -->
     {#if showLeaveChannelConfirm}
       <Modal titleId="leave-channel-title" onClose={() => (showLeaveChannelConfirm = false)}>
-        <h2 id="leave-channel-title">Leave channel?</h2>
-        <p class="channel-leave-explainer">Channels are private groups and you will need to be re-invited to re-enter this channel.</p>
+        <h2 id="leave-channel-title">{$t('messaging.channel.leaveTitle')}</h2>
+        <p class="channel-leave-explainer">{$t('messaging.channel.leaveExplainer')}</p>
         <div class="channel-modal-actions">
-          <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>Cancel</button>
+          <button type="button" class="channel-modal-close" on:click={() => (showLeaveChannelConfirm = false)}>{$t('messaging.channel.cancel')}</button>
           <button
             type="button"
             class="channel-modal-primary channel-modal-danger"
             disabled={leavingChannel}
             on:click={handleLeaveChannel}
           >
-            {leavingChannel ? 'Leaving…' : 'Leave channel'}
+            {leavingChannel ? $t('messaging.channel.leaving') : $t('messaging.channel.leave')}
           </button>
         </div>
       </Modal>
@@ -770,11 +1063,11 @@
     <!-- Invite to channel modal -->
     {#if showInviteToChannelModal}
       <Modal titleId="invite-channel-modal-title" onClose={() => (showInviteToChannelModal = false)}>
-        <h2 id="invite-channel-modal-title">Invite to channel</h2>
+        <h2 id="invite-channel-modal-title">{$t('messaging.channel.inviteTitle')}</h2>
         {#if loadingInviteCandidates}
-          <p class="channel-modal-loading">Loading…</p>
+          <p class="channel-modal-loading">{$t('messaging.channel.inviteLoading')}</p>
         {:else if inviteToChannelCandidates.length === 0}
-          <p class="channel-modal-empty">No one to invite. For squad channels, add members to the squad first.</p>
+          <p class="channel-modal-empty">{$t('messaging.channel.inviteEmpty')}</p>
         {:else}
           <div class="channel-invite-list">
             {#each inviteToChannelCandidates as npub (npub)}
@@ -787,7 +1080,7 @@
         {/if}
         <div class="channel-modal-actions">
           <button type="button" class="channel-modal-close" on:click={() => (showInviteToChannelModal = false)}>
-            Cancel
+            {$t('messaging.channel.cancel')}
           </button>
           <button
             type="button"
@@ -795,40 +1088,26 @@
             disabled={!selectedInviteNpub}
             on:click={handleInviteToChannel}
           >
-            Invite
+            {$t('messaging.channel.invite')}
           </button>
         </div>
       </Modal>
     {/if}
     </div>
     <!-- Right-hand members panel (Discord-style) -->
-    {#if $showMembersPanel}
-      <aside class="members-panel" aria-label="Channel members">
-        <div class="members-panel-header">
-          <h3 class="members-panel-title">Members</h3>
-        </div>
-        <div class="members-panel-list">
-          {#if showPanelMembersLoading}
-            <p class="members-panel-loading">Loading…</p>
-          {:else}
-            {#each panelMembers as npub (npub)}
-              {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
-              <div class="members-panel-member">
-                {#if avatarSrc}
-                  <img src={avatarSrc} alt="" class="members-panel-avatar" />
-                {:else}
-                  <div class="members-panel-avatar members-panel-avatar-placeholder" aria-hidden="true"></div>
-                {/if}
-                <span class="members-panel-name">{getProfileDisplayName($profiles[npub]) || npub.slice(0, 16) + '…'}</span>
-              </div>
-            {/each}
-          {/if}
-        </div>
-      </aside>
+    {#if $showMembersPanel && panelMembersGroupId}
+      <MlsMembersPanel
+        groupId={panelMembersGroupId}
+        members={panelMembers}
+        admins={panelAdmins}
+        loading={showPanelMembersLoading}
+        currentUserNpub={currentUserNpub ?? ''}
+        profiles={$profiles}
+      />
     {/if}
   {:else}
     <div class="empty-state">
-      <p>Select a channel to start chatting</p>
+      <p>{$t('messaging.channel.selectChannelPrompt')}</p>
     </div>
   {/if}
 </div>
@@ -1099,12 +1378,6 @@
     color: var(--text-secondary);
   }
 
-  .channel-modal-error {
-    margin: 0 0 12px;
-    font-size: 0.875rem;
-    color: var(--danger);
-  }
-
   .channel-modal-actions {
     display: flex;
     gap: 8px;
@@ -1159,77 +1432,6 @@
   .channel-modal-danger:hover:not(:disabled) {
     background: var(--danger);
     filter: brightness(1.1);
-  }
-
-  /* Right-hand members panel (Discord-style) */
-  .members-panel {
-    width: 240px;
-    min-width: 240px;
-    background: var(--bg-elevated);
-    border-left: 1px solid var(--border-subtle);
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-  }
-
-  .members-panel-header {
-    height: 48px;
-    padding: 0 12px 0 16px;
-    border-bottom: 1px solid var(--border-subtle);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
-
-  .members-panel-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .members-panel-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-
-  .members-panel-loading {
-    margin: 0 16px;
-    font-size: 0.875rem;
-    color: var(--text-muted);
-  }
-
-  .members-panel-member {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 16px;
-    font-size: 0.9375rem;
-    color: var(--text-secondary);
-  }
-
-  .members-panel-member:hover {
-    background: var(--bg-hover);
-  }
-
-  .members-panel-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .members-panel-avatar-placeholder {
-    background: var(--border);
-  }
-
-  .members-panel-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .channel-info {
@@ -1292,6 +1494,28 @@
     padding: 24px 16px;
     color: var(--text-muted);
     font-size: 0.9375rem;
+  }
+
+  .mls-history-welcome {
+    margin: 16px 16px 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-elevated);
+  }
+
+  .mls-history-welcome-title {
+    margin: 0 0 6px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .mls-history-welcome-body {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    line-height: 1.45;
   }
 
   .channel-send-error {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from 'svelte-i18n';
   /** Optional id for the error element (for aria-describedby on retry button). */
   export let errorId: string | undefined = undefined;
   export let error: string | undefined = undefined;
@@ -18,12 +19,12 @@
         on:click={onRetry}
         aria-describedby={errorId || undefined}
       >
-        {retrying ? 'Retrying…' : 'Retry'}
+        {retrying ? $t('governance.common.retrying') : $t('governance.common.retry')}
       </button>
     {/if}
   {:else}
     <div class="setting-up-spinner" aria-hidden="true"></div>
-    <p class="setting-up-text">Setting up…</p>
+    <p class="setting-up-text">{$t('governance.settingUp')}</p>
   {/if}
 </div>
 

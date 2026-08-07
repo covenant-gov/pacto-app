@@ -1,16 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { t } from 'svelte-i18n';
   import backIcon from '../../icons/chevron-double-left.svg';
   import { setSettingsSectionCollapsed, settingsSectionCollapsed } from '../../lib/settings/settings-section-collapse';
 
   export let onBack: () => void;
 
   const SECTION_LINKS = [
-    { id: 'settings-profile', label: 'Profile' },
-    { id: 'settings-nostr', label: 'Nostr' },
-    { id: 'settings-evm', label: 'EVM' },
-    { id: 'settings-app', label: 'App' },
-    { id: 'settings-dangerzone', label: 'Dangerzone' },
+    { id: 'settings-profile', labelKey: 'nav.settings.sections.profile' },
+    { id: 'settings-nostr', labelKey: 'nav.settings.sections.nostr' },
+    { id: 'settings-evm', labelKey: 'nav.settings.sections.evm' },
+    { id: 'settings-app', labelKey: 'nav.settings.sections.app' },
+    { id: 'settings-notifications', labelKey: 'nav.settings.sections.notifications' },
+    { id: 'settings-dangerzone', labelKey: 'nav.settings.sections.dangerzone' },
   ] as const;
 
   const SCROLL_MARKER_OFFSET_PX = 48;
@@ -79,15 +81,15 @@
 
 <div class="settings-page">
   <header class="settings-page-header">
-    <button type="button" class="settings-back" on:click={onBack} aria-label="Back to DMs or Squads">
+    <button type="button" class="settings-back" on:click={onBack} aria-label={$t('nav.settings.backAria')}>
       <img src={backIcon} alt="" class="settings-back-icon" />
-      <span>Back</span>
+      <span>{$t('nav.settings.back')}</span>
     </button>
-    <h1 class="settings-page-title">Settings</h1>
+    <h1 class="settings-page-title">{$t('nav.settings.title')}</h1>
   </header>
 
   <div class="settings-body">
-    <nav class="settings-sidebar" aria-label="Settings sections">
+    <nav class="settings-sidebar" aria-label={$t('nav.settings.sectionsAria')}>
       <ul class="settings-sidebar-list">
         {#each SECTION_LINKS as link (link.id)}
           <li>
@@ -98,7 +100,7 @@
               aria-current={activeSectionId === link.id ? 'location' : undefined}
               on:click={() => openSection(link.id)}
             >
-              {link.label}
+              {$t(link.labelKey)}
             </a>
           </li>
         {/each}

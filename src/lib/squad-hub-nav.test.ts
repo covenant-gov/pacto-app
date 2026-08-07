@@ -44,6 +44,10 @@ describe('resolveHubParentSquad', () => {
   it('finds squad by id', () => {
     expect(resolveHubParentSquad([regular, pair], 'pair-ab')).toEqual(pair);
   });
+
+  it('returns undefined for null squad id', () => {
+    expect(resolveHubParentSquad([regular], null)).toBeUndefined();
+  });
 });
 
 describe('resolveOpenHubParent', () => {
@@ -53,6 +57,10 @@ describe('resolveOpenHubParent', () => {
 
   it('returns null when no matching parent', () => {
     expect(resolveOpenHubParent([regular], 'missing')).toBeNull();
+  });
+
+  it('returns null for null squad id', () => {
+    expect(resolveOpenHubParent([regular], null)).toBeNull();
   });
 });
 
@@ -76,6 +84,14 @@ describe('parentIdForChannelGroup', () => {
   it('returns null when group is unknown', () => {
     expect(parentIdForChannelGroup([squadWithChannels], 'missing')).toBeNull();
   });
+
+  it('returns parent when group id equals squad id', () => {
+    expect(parentIdForChannelGroup([squadWithChannels], 'squad-a')).toBe('squad-a');
+  });
+
+  it('returns null for blank group id', () => {
+    expect(parentIdForChannelGroup([squadWithChannels], '  ')).toBeNull();
+  });
 });
 
 describe('resolveHubChannelForSquad', () => {
@@ -86,6 +102,22 @@ describe('resolveHubChannelForSquad', () => {
     };
     const { channelId } = resolveHubChannelForSquad(squad, {}, {});
     expect(channelId).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+  });
+
+  it('restores last dashboard and MLS channel selections', () => {
+    const squad: Squad = {
+      ...regular,
+      channels: [
+        { name: 'announcements', groupId: 'g1', order: 0 },
+        { name: 'ops', groupId: 'g-ops', order: 1 },
+      ],
+    };
+    expect(
+      resolveHubChannelForSquad(squad, { 'squad-a': SQUAD_DASHBOARD_CHANNEL_ID }, {}).channelId,
+    ).toBe(SQUAD_DASHBOARD_CHANNEL_ID);
+    expect(
+      resolveHubChannelForSquad(squad, { 'squad-a': 'g-ops' }, {}).channelId,
+    ).toBe('g-ops');
   });
 });
 

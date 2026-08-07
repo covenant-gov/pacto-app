@@ -2,9 +2,9 @@ use alloy::network::EthereumWallet;
 use alloy::signers::local::PrivateKeySigner;
 use tauri::{AppHandle, Runtime};
 
+use super::errors::wallet_err_json;
 use crate::crypto;
 use crate::db;
-use super::errors::wallet_err_json;
 use crate::evm::evm_accounts::{self};
 
 pub async fn require_treasury_signing_allowed<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {

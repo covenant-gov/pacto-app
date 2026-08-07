@@ -2,6 +2,7 @@
   import type { HatTreeNodeDto } from '$lib/governance/api';
   import type { SupportedChainId } from '$lib/wallet/chains';
   import HatsTreeNode from './HatsTreeNode.svelte';
+  import { t } from 'svelte-i18n';
 
   export let root: HatTreeNodeDto;
   export let roleLabelByHatId: Record<string, string> = {};
@@ -12,7 +13,7 @@
   export let chainKey: SupportedChainId | null = null;
 </script>
 
-<div class="hats-tree-scroll" role="tree" aria-label="Hats tree">
+<div class="hats-tree-scroll" role="tree" aria-label={$t('governance.title.hatsTree')}>
   <HatsTreeNode
     node={root}
     {roleLabelByHatId}

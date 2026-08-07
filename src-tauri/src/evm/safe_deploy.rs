@@ -8,14 +8,15 @@ use super::contracts::safe::{
     encode_create_proxy_call, encode_setup_initializer, normalize_owners,
     proxy_address_from_factory_receipt,
 };
+use super::gov_read::rpc_urls_or_default;
 use super::pacto_chain_config;
+use super::rpc::signer::{
+    load_embedded_signer, load_squad_roster_embedded_signer,
+    require_roster_treasury_signing_allowed, require_treasury_signing_allowed,
+};
 use super::rpc::{
     connect_signing_provider, contract_call_request, parse_salt_nonce, send_and_confirm,
     wallet_err_json, wallet_err_json_with_tx_hash,
-};
-use super::rpc::signer::{
-    load_embedded_signer, load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
-    require_treasury_signing_allowed,
 };
 use super::squad_sponsor_common::require_sponsor_or_pacto_gov_infra_for_parent;
 use super::wallet_chain_config;
@@ -39,9 +40,14 @@ pub async fn safe_deploy_proxy<R: Runtime>(
     threshold: u32,
     salt_nonce: Option<String>,
     parent_id: Option<String>,
+    rpc_urls: Option<Vec<String>>,
 ) -> Result<SafeDeployProxyResult, String> {
     crate::migration::require_key_derivation_version_2_on_handle(&app)?;
-    if let Some(pid) = parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(pid) = parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         require_sponsor_or_pacto_gov_infra_for_parent(&app, pid)?;
     }
     let net_key = network.to_lowercase();
@@ -66,21 +72,20 @@ pub async fn safe_deploy_proxy<R: Runtime>(
     let initializer = encode_setup_initializer(&owners_norm, th, addrs.fallback_handler)
         .map_err(|e| wallet_err_json("INVALID_SAFE_SETUP", e, None))?;
 
-    let salt = parse_salt_nonce(salt_nonce)
-        .map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
+    let salt =
+        parse_salt_nonce(salt_nonce).map_err(|e| wallet_err_json("INVALID_SALT_NONCE", e, None))?;
 
     let calldata = encode_create_proxy_call(addrs.singleton, initializer, salt);
 
-    let urls = wallet_chain_config::rpc_urls_for(net);
+    let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
-        return Err(wallet_err_json(
-            "RPC_CONFIG",
-            "no RPC URL configured",
-            None,
-        ));
+        return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
     }
 
-    let roster_parent = parent_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let roster_parent = parent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let (_signer, wallet) = if let Some(pid) = roster_parent {
         super::squad_sponsor_common::require_parent_member(&app, pid).await?;
         require_roster_treasury_signing_allowed(app.clone(), pid).await?;

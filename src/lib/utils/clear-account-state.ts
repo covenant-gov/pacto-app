@@ -16,6 +16,7 @@ import {
   lastOpenedChannelId,
   lastChannelBySquadId,
   lastHubChannelNameBySquadId,
+  squadNavOrder,
   showMembersPanel,
   squadDashboardChannelMode,
   myDashboardChannelMode,
@@ -34,19 +35,19 @@ import {
   walletSendPrefillFromRequest,
   backendDmMessages,
   dmThreadAnnouncementsByNpub,
-  pactoAppInboxMessages,
   messageCountByChat,
   loadedOffsetByChat,
   dmSyncStatus,
+  lastCatchUpSuccess,
+  relayStatusByUrl,
   typingByChat,
   dmSendError,
 } from '../../stores/dm';
 import {
-  dmLastReadByNpub,
-  dmUnreadByNpub,
-  pactoAppInboxLastReadId,
   dmThreadScrolledToBottom,
-} from '../../stores/dm-unread';
+  resetUnreadStore,
+} from '../../stores/unread';
+import { resetCatchUpStore } from '../../stores/catch-up';
 import {
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
@@ -93,11 +94,20 @@ import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-stat
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
 import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
+import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
+import { resetMlsStoreResetState } from '../../stores/mls-reset';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { backupVerified } from '../../stores/backup-verification';
+import {
+  MLS_HISTORY_WELCOME_PREFIX,
+  mlsHistoryWelcomeGroupIds,
+} from '../../stores/mls-history-welcome';
+import { clearPendingReactions } from '../messaging/reactions';
+import { clearPendingAttachment } from '../messaging/attachment-composer';
+import { clearLinkPreviewRequests } from '../messaging/link-preview';
 
 /** Npub-scoped key prefixes (suffix is `_<npub>`). */
 const SCOPED_KEY_PREFIXES = [
@@ -106,9 +116,9 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_last_channel_id',
   'pacto_last_channel_by_squad',
   'pacto_last_hub_channel_name_by_squad',
+  'pacto_squad_nav_order',
   'pacto_parent_dashboard_mode',
   'pacto_pinned_dm_npubs',
-  'pacto_app_inbox',
   'pacto_wallet_summary_cache_v1',
   TREASURY_SAFES_CACHE_PREFIX,
   SQUAD_INFRA_CACHE_PREFIX,
@@ -118,6 +128,7 @@ const SCOPED_KEY_PREFIXES = [
   SAFE_STATE_DISK_CACHE_PREFIX,
   'pacto_wallet_ui_enabled_chains_v1',
   SQUAD_NETWORK_PREFIX,
+  SQUAD_RPC_PREFIX,
   'pacto_wallet_preferred_network_v1',
   'pacto_wallet_rpc_prefs_v1',
   'pacto_wallet_tx_request_accepted',
@@ -127,6 +138,8 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
   STARTUP_CHECK_PREFIX,
+  'pacto_locale_v1',
+  MLS_HISTORY_WELCOME_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -155,6 +168,10 @@ export function clearAccountState(npub?: string): void {
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetMlsGroupMembersStores();
+  resetMlsStoreResetState();
+  clearPendingReactions();
+  clearPendingAttachment();
+  clearLinkPreviewRequests();
   clearWalletSummaryCacheStore();
   clearDashboardFetchMetaStores();
   clearGovernanceSnapshotCacheStore();
@@ -182,6 +199,7 @@ export function clearAccountState(npub?: string): void {
   lastOpenedChannelId.set(null);
   lastChannelBySquadId.set({});
   lastHubChannelNameBySquadId.set({});
+  squadNavOrder.set([]);
   activeSquadId.set(null);
   activeChannelId.set(null);
   activeHubChannelName.set(null);
@@ -193,6 +211,7 @@ export function clearAccountState(npub?: string): void {
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
+  mlsHistoryWelcomeGroupIds.set([]);
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
   groupSendError.set(null);
@@ -214,14 +233,14 @@ export function clearAccountState(npub?: string): void {
 
   backendDmMessages.set({});
   dmThreadAnnouncementsByNpub.set({});
-  pactoAppInboxMessages.set([]);
-  dmLastReadByNpub.set({});
-  dmUnreadByNpub.set({});
-  pactoAppInboxLastReadId.set('');
+  resetUnreadStore();
+  resetCatchUpStore();
   dmThreadScrolledToBottom.set(false);
   messageCountByChat.set({});
   loadedOffsetByChat.set({});
   dmSyncStatus.set('idle');
+  lastCatchUpSuccess.set(null);
+  relayStatusByUrl.set({});
   typingByChat.set({});
   dmSendError.set(null);
 
