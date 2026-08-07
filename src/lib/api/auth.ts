@@ -49,6 +49,22 @@ export async function checkAnyAccountExists(): Promise<boolean> {
 }
 
 /**
+ * Report whether this build recognizes every local profile's storage
+ * format on disk. Called before authentication; the launch gate blocks on
+ * `allRecognized === false` rather than routing to onboarding or unlock.
+ */
+export interface StorageCompatibilityReport {
+  allRecognized: boolean;
+  unrecognizedCount: number;
+  highestOffendingVersion: number | null;
+  supportedSchemaVersion: number;
+}
+
+export async function getStorageCompatibility(): Promise<StorageCompatibilityReport> {
+  return await invoke('get_storage_compatibility');
+}
+
+/**
  * Get the current active account npub
  * @returns Current account npub or error
  */

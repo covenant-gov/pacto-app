@@ -106,8 +106,10 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                     if name.starts_with("npub1") {
                         let in_flight =
                             is_in_flight_account(name, current.as_deref(), pending.as_deref());
+                        let format =
+                            crate::storage_format::classify_database(&entry.path().join("vector.db"));
                         let has_pkey = account_has_valid_pkey(handle, name);
-                        match classify_account_scan(&has_pkey, in_flight) {
+                        match classify_account_scan(&has_pkey, in_flight, format) {
                             AccountScanVerdict::Include => {
                                 let last_used = get_database_path(handle, name)
                                     .ok()
@@ -193,8 +195,9 @@ fn classify_pkey_query_result(result: Result<String, rusqlite::Error>) -> Result
 }
 
 /// Three-way verdict for a single directory scanned by `list_accounts`,
-/// derived purely from `account_has_valid_pkey`'s result and whether the
-/// directory is the current or pending account.
+/// derived purely from `account_has_valid_pkey`'s result, whether the
+/// directory is the current or pending account, and the profile's
+/// `crate::storage_format::StorageFormatVerdict`.
 ///
 /// A valid pkey always means `Include`, even while in-flight: in-flight only
 /// protects a directory with *no* pkey yet (mid-creation) from cleanup, it
@@ -207,19 +210,46 @@ fn classify_pkey_query_result(result: Result<String, rusqlite::Error>) -> Result
 /// schema state) always means `Skip`: validity is unknown, so the caller
 /// leaves the directory alone rather than guessing and possibly deleting a
 /// live account.
+///
+/// An `Unrecognized` or `Divergent` format verdict is never `Delete`,
+/// regardless of what the pkey probe found: that schema shape means a
+/// *newer* build wrote (or is writing) this database, not that account
+/// setup was abandoned. Deleting it would be unrecoverable data loss for a
+/// profile this build simply doesn't understand yet -- unlike a genuinely
+/// orphaned `Recognized`-format profile, which this build can fully read
+/// and confidently judge as pkey-less.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum AccountScanVerdict {
     /// Valid pkey found; the account belongs in the returned list.
     Include,
     /// No pkey and not in-flight; safe to clean up the orphaned directory.
     Delete,
-    /// In-flight with no pkey yet, or pkey validity is unknown; leave alone.
+    /// In-flight with no pkey yet, pkey validity is unknown, or the format
+    /// is unrecognized/divergent; leave alone.
     Skip,
 }
 
-/// Combine `account_has_valid_pkey`'s result and in-flight status into a
-/// scan verdict. See `AccountScanVerdict` for the policy this encodes.
-fn classify_account_scan(has_pkey: &Result<bool, String>, in_flight: bool) -> AccountScanVerdict {
+/// Combine `account_has_valid_pkey`'s result, in-flight status, and the
+/// profile's storage-format verdict into a scan verdict. See
+/// `AccountScanVerdict` for the policy this encodes.
+fn classify_account_scan(
+    has_pkey: &Result<bool, String>,
+    in_flight: bool,
+    format: crate::storage_format::StorageFormatVerdict,
+) -> AccountScanVerdict {
+    if matches!(
+        format,
+        crate::storage_format::StorageFormatVerdict::Unrecognized(_)
+            | crate::storage_format::StorageFormatVerdict::Divergent(_)
+    ) {
+        // A newer build may have written this schema; only a confirmed
+        // valid pkey overrides the exemption, never Ok(false) or Err.
+        return match has_pkey {
+            Ok(true) => AccountScanVerdict::Include,
+            _ => AccountScanVerdict::Skip,
+        };
+    }
+
     match (has_pkey, in_flight) {
         (Ok(true), _) => AccountScanVerdict::Include,
         (Ok(false), false) => AccountScanVerdict::Delete,
@@ -536,6 +566,7 @@ mod classify_pkey_query_result_tests {
 #[cfg(test)]
 mod account_scan_verdict_tests {
     use super::*;
+    use crate::storage_format::StorageFormatVerdict;
 
     /// Regression guard for the bug that blanked the Create Account screen:
     /// an early `continue` on in-flight accounts skipped them even when they
@@ -546,11 +577,11 @@ mod account_scan_verdict_tests {
     #[test]
     fn valid_pkey_is_always_included_even_while_in_flight() {
         assert_eq!(
-            classify_account_scan(&Ok(true), true),
+            classify_account_scan(&Ok(true), true, StorageFormatVerdict::Recognized),
             AccountScanVerdict::Include
         );
         assert_eq!(
-            classify_account_scan(&Ok(true), false),
+            classify_account_scan(&Ok(true), false, StorageFormatVerdict::Recognized),
             AccountScanVerdict::Include
         );
     }
@@ -558,7 +589,7 @@ mod account_scan_verdict_tests {
     #[test]
     fn missing_pkey_and_not_in_flight_is_deleted() {
         assert_eq!(
-            classify_account_scan(&Ok(false), false),
+            classify_account_scan(&Ok(false), false, StorageFormatVerdict::Recognized),
             AccountScanVerdict::Delete
         );
     }
@@ -566,7 +597,7 @@ mod account_scan_verdict_tests {
     #[test]
     fn missing_pkey_while_in_flight_is_skipped() {
         assert_eq!(
-            classify_account_scan(&Ok(false), true),
+            classify_account_scan(&Ok(false), true, StorageFormatVerdict::Recognized),
             AccountScanVerdict::Skip
         );
     }
@@ -574,7 +605,120 @@ mod account_scan_verdict_tests {
     #[test]
     fn query_error_is_always_skipped() {
         let err = Err("locked database".to_string());
-        assert_eq!(classify_account_scan(&err, true), AccountScanVerdict::Skip);
-        assert_eq!(classify_account_scan(&err, false), AccountScanVerdict::Skip);
+        assert_eq!(
+            classify_account_scan(&err, true, StorageFormatVerdict::Recognized),
+            AccountScanVerdict::Skip
+        );
+        assert_eq!(
+            classify_account_scan(&err, false, StorageFormatVerdict::Recognized),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    // -- unrecognized/divergent format exemption --------------------------
+    //
+    // A newer build may have written an unrecognized or divergent schema;
+    // this build cannot tell an abandoned setup from live data it simply
+    // doesn't understand, so it must never delete on that basis alone.
+
+    #[test]
+    fn unrecognized_format_is_skipped_not_deleted() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), false, StorageFormatVerdict::Unrecognized(9)),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    #[test]
+    fn divergent_format_is_skipped_not_deleted() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), false, StorageFormatVerdict::Divergent(9)),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    #[test]
+    fn unrecognized_format_with_pkey_query_error_is_skipped() {
+        let err = Err("locked database".to_string());
+        assert_eq!(
+            classify_account_scan(&err, false, StorageFormatVerdict::Unrecognized(9)),
+            AccountScanVerdict::Skip
+        );
+    }
+
+    #[test]
+    fn unrecognized_format_with_valid_pkey_is_still_included() {
+        assert_eq!(
+            classify_account_scan(&Ok(true), false, StorageFormatVerdict::Unrecognized(9)),
+            AccountScanVerdict::Include
+        );
+    }
+
+    #[test]
+    fn recognized_format_not_in_flight_is_still_deleted() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), false, StorageFormatVerdict::Recognized),
+            AccountScanVerdict::Delete
+        );
+    }
+
+    #[test]
+    fn recognized_format_in_flight_is_still_skipped() {
+        assert_eq!(
+            classify_account_scan(&Ok(false), true, StorageFormatVerdict::Recognized),
+            AccountScanVerdict::Skip
+        );
+    }
+}
+
+#[cfg(test)]
+mod list_accounts_orphan_exemption_tests {
+    use super::*;
+    use crate::storage_format::StorageFormatVerdict;
+
+    /// Integration regression test for the data-loss bug this unit fixes:
+    /// `list_accounts`'s orphan-directory cleanup must never delete a
+    /// profile whose database a newer build wrote (unrecognized schema),
+    /// even though this build reads no pkey from it -- the same condition
+    /// that, before the fix, would have looked identical to a genuinely
+    /// abandoned account setup and been deleted.
+    #[test]
+    fn unrecognized_format_profile_survives_list_accounts_scan() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let npub = "npub1u3orphanexemptionintegration";
+
+        let profile_dir = get_profile_directory(handle, npub).unwrap();
+        let db_path = profile_dir.join("vector.db");
+
+        {
+            let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+            crate::migrations::run_migrations(&mut conn).unwrap();
+        }
+        // No pkey row is ever written to `settings`, matching an
+        // in-progress or future-format account this build cannot read.
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+                rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            crate::storage_format::classify_database(&db_path),
+            StorageFormatVerdict::Unrecognized(above_ceiling)
+        );
+
+        let _ = list_accounts(handle);
+
+        assert!(
+            profile_dir.exists(),
+            "an unrecognized-format profile must never be deleted by list_accounts"
+        );
+
+        let _ = std::fs::remove_dir_all(&profile_dir);
     }
 }

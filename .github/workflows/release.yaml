@@ -254,3 +254,23 @@ jobs:
           branch: "chore/bump-${{ github.ref_name }}"
           base: main
           delete-branch: true
+
+  stamp-updater-compatibility:
+    # Stamps the tracked minimum_compatible_version onto the release's
+    # latest.json so the in-app update gate can enforce it. See
+    # scripts/release-compatibility.json and release-compatibility.yaml for
+    # the correction path when the tracked value needs to change.
+    needs: publish-tauri
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: lts/*
+
+      - name: Stamp updater compatibility manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/stamp-updater-compatibility.mjs

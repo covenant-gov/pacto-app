@@ -2,7 +2,9 @@
   import { onMount } from 'svelte';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
+  import UpdateGate from '../components/updater/UpdateGate.svelte';
   import { isAuthenticated, currentUser, checkSession } from '../stores/auth';
+  import { resolveGateAtLaunch } from '../lib/updater/update-gate';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
   import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
   import { locale } from '../stores/locale';
@@ -19,6 +21,12 @@
   }
 
   onMount(() => {
+    // The storage-format probe must precede any account enumeration -
+    // checkAuthStatus() (which drives check_any_account_exists ->
+    // list_accounts) runs from Login.svelte's own mount, and UpdateGate's
+    // wrapper is what keeps Login unmounted until the gate settles; this
+    // call is what actually starts that settling.
+    void resolveGateAtLaunch();
     // Confirm the backend session on every layout mount; drop auth state if locked.
     void checkSession();
     void loadAppConfig();
@@ -28,13 +36,15 @@
   });
 </script>
 
-{#if $isAuthenticated && $currentUser}
-  <div class="layout-root">
-    <slot />
-  </div>
-{:else}
-  <Login />
-{/if}
+<UpdateGate>
+  {#if $isAuthenticated && $currentUser}
+    <div class="layout-root">
+      <slot />
+    </div>
+  {:else}
+    <Login />
+  {/if}
+</UpdateGate>
 
 <style>
   .layout-root {

@@ -30,6 +30,41 @@ export function setIsDevBuildForTest(value: boolean): void {
 
 export type UpdaterUpdate = Awaited<ReturnType<typeof check>>;
 
+let memoizedCheckPromise: Promise<UpdaterUpdate> | null = null;
+
+/**
+ * The launch-time manifest check, shared by the update gate and
+ * `checkForUpdates` so genuinely concurrent callers within one launch make
+ * one round trip rather than racing independent results into
+ * `updateStatus`. The memo clears itself the moment this call settles
+ * (resolved or rejected) - it only coalesces callers overlapping in time,
+ * never pins every later call (a manual "check for updates" click, a retry
+ * after a transient failure) to a stale result for the rest of the
+ * session. Dev builds resolve `null` without a network call, since
+ * `check()` has no manifest to read in dev.
+ */
+export function getMemoizedUpdateCheck(): Promise<UpdaterUpdate> {
+  if (!memoizedCheckPromise) {
+    const promise = isDevBuild() ? Promise.resolve(null) : check();
+    const clearIfCurrent = () => {
+      if (memoizedCheckPromise === promise) memoizedCheckPromise = null;
+    };
+    // `.then(f, f)` rather than `.finally(f)`: finally's derived promise
+    // re-rejects on a rejected source with nothing consuming it, which is
+    // an unhandled-rejection warning waiting to happen. Passing an
+    // onRejected handler here marks the rejection handled without
+    // affecting the original `promise` returned below.
+    promise.then(clearIfCurrent, clearIfCurrent);
+    memoizedCheckPromise = promise;
+  }
+  return memoizedCheckPromise;
+}
+
+/** Test-only: force the next call to make a fresh `check()` call. */
+export function resetMemoizedUpdateCheckForTest(): void {
+  memoizedCheckPromise = null;
+}
+
 export type UpdateStatus =
   | 'idle'
   | 'checking'
@@ -125,7 +160,7 @@ export async function checkForUpdates(): Promise<void> {
   updateStatus.setStatus('checking', { currentVersion, availableVersion: null, error: null });
 
   try {
-    const update = await check();
+    const update = await getMemoizedUpdateCheck();
     if (!update) {
       updateStatus.setStatus('no-update', { currentVersion });
       return;

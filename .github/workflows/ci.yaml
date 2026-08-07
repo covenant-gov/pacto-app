@@ -246,6 +246,6 @@ jobs:
         with:
           node-version: 24.18.0
 
-      - name: Run release manifest generator tests
-        run: node --test scripts/generate-release-manifest.test.mjs
+      - name: Run release script tests
+        run: node --test scripts/generate-release-manifest.test.mjs scripts/stamp-updater-compatibility.test.mjs
 
