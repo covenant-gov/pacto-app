@@ -274,3 +274,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/stamp-updater-compatibility.mjs
+
+  deploy-landing:
+    # Refreshes the public download page for the tag just published.
+    #
+    # Chained here rather than left to deploy-landing.yaml's own
+    # `release: published` listener: tauri-action publishes the release with
+    # GITHUB_TOKEN, and GITHUB_TOKEN-authenticated runs do not reliably trigger
+    # other workflows' release events. That gap left the site on v0.5.1 through
+    # two releases (#213). `needs: publish-tauri` also guarantees every platform
+    # in the matrix has uploaded its installers before the manifest is
+    # generated, so the download page never lists a partial asset set.
+    needs: publish-tauri
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy-landing.yaml
+    with:
+      release_tag: ${{ github.ref_name }}
