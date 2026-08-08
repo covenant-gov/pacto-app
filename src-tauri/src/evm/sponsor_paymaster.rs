@@ -8,7 +8,7 @@ pub const PAYMASTER_DATA_VERSION: u8 = 1;
 /// Header length of `paymasterAndData` (paymaster + verificationGasLimit + postOpGasLimit); `paymasterData` starts here.
 pub const PAYMASTER_DATA_OFFSET: usize = 52;
 pub const BALANCE_HEADROOM_BPS: u64 = 11_500;
-/// Account `verificationGasLimit` (SemiModularAccount7702 validateUserOp).
+/// Account `verificationGasLimit` (PactoSimple7702Account validateUserOp).
 pub const DEFAULT_VERIFICATION_GAS_LIMIT: u128 = 100_000;
 /// Estimate-request ceiling for paymaster verification (OOG-safe placeholder before bundler estimate).
 pub const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT: u128 = 500_000;
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn encode_paymaster_and_data_matches_golden_vector() {
-        let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
+        let paymaster = address!("0x1deDa9E84374ED7cf032b063F287823c449e98b5");
         let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
         let member = address!("0x3333333333333333333333333333333333333333");

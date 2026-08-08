@@ -38,37 +38,38 @@ Deploy and deposit themselves are **not** sponsored — only those gov writes. S
 
 | Variable | Role |
 |----------|------|
-| `ALCHEMY_RPC_KEY` | Chain RPC + default Sepolia bundler URL when `BUNDLER_RPC_URL` is unset |
-| `BUNDLER_RPC_URL` | Optional explicit JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 |
+| `ALCHEMY_RPC_KEY` | Chain RPC URLs (not the bundler) |
+| `BUNDLER_RPC_URL` | **Required** for sponsored writes — JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 (e.g. Pimlico) |
 | `PACTO_ERC4337_ACCOUNT_IMPL` | Optional override of the shared EIP-7702 set-code target (not pacto-gov; leave unset unless experimenting) |
 
 In **debug** `tauri:dev` builds, the Rust backend loads repo-root `.env` into the process at startup (existing process env wins). Release builds expect secrets via the real environment. Vite still loads `.env` separately for the frontend.
 
-**Bundler (Sepolia):** defaults to the same Alchemy app as `ALCHEMY_RPC_KEY`. Override only if needed:
+**Bundler:** set explicitly (not derived from Alchemy):
 
 ```bash
-BUNDLER_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_RPC_KEY>
+BUNDLER_RPC_URL=https://api.pimlico.io/v2/sepolia/rpc?apikey=<KEY>
+# or any EP v0.7 bundler URL
 ```
 
-Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not Alchemy Gas Manager); the bundler only submits UserOps. Sponsored UserOps clamp `maxPriorityFeePerGas` to at least **1 gwei** so Alchemy precheck does not reject low RPC tip estimates.
+Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not a vendor gas manager); the bundler only submits UserOps. Sponsored UserOps clamp `maxPriorityFeePerGas` to at least **1 gwei** so common bundler prechecks do not reject near-zero RPC tip estimates.
 
 ### Protocol paymaster float and stake (once per chain)
 
-Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)).
+Squad **sponsor pool** deposits (Treasury UI / clone `deposit`) are **not** the same as the shared paymaster’s EntryPoint **deposit** or **stake**. Addresses: [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) Sepolia `squadSponsor` (source: upstream [`deployments/11155111/full-system.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/full-system.json)). EIP-7702 account: upstream [`deployments/11155111/eip7702-account.json`](https://github.com/covenant-gov/pacto-squad-sponsor/blob/dev/deployments/11155111/eip7702-account.json).
 
 | Bucket | Who funds | Role |
 |--------|-----------|------|
 | Squad sponsor pool | squad (Treasury) | Reimburses paymaster after success (`spendGas`); validation uses `spendablePoolWei()` |
 | Paymaster EntryPoint deposit | protocol / any wallet | Bundler prepaid gas (`paymaster.deposit()`) |
-| Paymaster EntryPoint stake | protocol (FCFS `paymasterStaker` via factory) | Bundler reputation / ERC-7562; Alchemy Sepolia min **0.1 ETH**, delay ≥ **1 day** |
+| Paymaster EntryPoint stake | protocol (FCFS `paymasterStaker` via factory) | Bundler reputation / ERC-7562; typical Sepolia floor **≥ 0.1 ETH**, delay ≥ **1 day** |
 
-**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not).
+**Greenfield cutover:** a factory redeploy creates a new paymaster. Existing clones were initialized with the old paymaster — **recreate** the squad sponsor for the parent and replace stale `squad_infra` sponsor rows (no dual-read of old clones). Restart `pnpm tauri:dev` after address-book changes so Rust recompiles the embedded JSON. Sponsored writes preflight `clone.paymaster() ==` address book (`SPONSOR_PAYMASTER_MISMATCH` if not). Paymaster also requires EIP-7702 stubs to delegate to the allowlisted `PactoSimple7702Account` (`SS_Invalid7702Implementation` otherwise).
 
-Dev/protocol ops (no product UI) — example Sepolia addrs from the address book:
+Dev/protocol ops (no product UI) — Sepolia addrs from the current address book:
 
 ```bash
-FACTORY=0x05F0130889dC678304D11cCA71983edB220A4c74
-PAYMASTER=0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6
+FACTORY=0x41FC2b0d0720552Da9073FAc4a7e18075b40fF30
+PAYMASTER=0x1deDa9E84374ED7cf032b063F287823c449e98b5
 EP=0x0000000071727De22E5E9d8BAf0edAc6f37da032
 
 # EP deposit (anyone)
@@ -86,11 +87,11 @@ Unlock / withdraw stake or EP deposit: factory `unlockPaymasterStake` / `withdra
 
 | Address | Source | Notes |
 |---------|--------|--------|
-| `0x69007702764179f14F51cdce752f4f775d74E139` | Alchemy [SemiModularAccount7702](https://www.alchemy.com/docs/wallets/smart-contracts/deployed-addresses) (MAv2) | `entryPoint()` = EP v0.7; `execute(address,uint256,bytes)`; shared bytecode for roster EOA set-code (not a per-user deploy) |
+| `0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60` | Pacto `PactoSimple7702Account` ([pacto-squad-sponsor#12](https://github.com/covenant-gov/pacto-squad-sponsor/pull/12)) | `entryPoint()` = EP v0.7; bare ECDSA over `userOpHash`; `execute(address,uint256,bytes)`; paymaster `ALLOWED_7702_IMPLEMENTATION` |
 
-Sponsored UserOps against this impl must use **EntryPoint nonce key `1`** (fallback owner entity 0 + global validation), **EIP-191 `personal_sign` of the 32-byte `userOpHash`** (not raw `eth_sign` / `sign_hash`), then pack as **`0xFF || 0x00 ||` ECDSA** (aa-sdk `packUOSignature`). Key `0`, a raw hash signature, or a bare 65-byte signature yields AA23 / `-32507 Invalid account signature`. Gas limits (`callGasLimit`, `verificationGasLimit`, `preVerificationGas`, `paymasterVerificationGasLimit`, `paymasterPostOpGasLimit`) come from the bundler’s **`eth_estimateUserOperationGas`**, then a **1.2×** margin (stays under Alchemy’s ≥0.4 verification-gas efficiency floor).
+Sponsored UserOps against this impl must use **EntryPoint nonce key `0`**, **bare ECDSA `sign_hash(userOpHash)`** (65-byte signature — not EIP-191 `personal_sign`, not Alchemy MAv2 packing). Gas limits come from the bundler’s **`eth_estimateUserOperationGas`**, then a **1.2×** margin. Paymaster requires `sender == member` for 7702 senders and that the set-code target matches the allowlisted impl.
 
-Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack.
+Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack. Do **not** use Alchemy SemiModularAccount7702.
 
 ## Manual smoke (Sepolia)
 

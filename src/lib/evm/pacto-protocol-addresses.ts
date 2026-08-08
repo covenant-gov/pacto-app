@@ -29,12 +29,17 @@ export type SafeProtocolAddresses = {
   fallbackHandler: string;
 };
 
+export type Erc4337ProtocolAddresses = {
+  accountImplementation?: string;
+};
+
 export type PactoProtocolNetworkBook = {
   chainId: number;
   meta?: { deployer?: string };
   squadSponsor?: SquadSponsorProtocolAddresses;
   pactoGov?: PactoGovProtocolAddresses;
   safe?: SafeProtocolAddresses;
+  erc4337?: Erc4337ProtocolAddresses;
 };
 
 const NETWORKS = book.networks as Record<string, PactoProtocolNetworkBook>;

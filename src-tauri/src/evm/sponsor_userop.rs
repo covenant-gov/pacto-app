@@ -59,12 +59,9 @@ pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
     pacto_chain_config::erc4337_account_implementation(network_key)
 }
 
-/// Explicit `BUNDLER_RPC_URL`, else Alchemy URL for `network_key` from `ALCHEMY_RPC_KEY`.
-pub fn bundler_rpc_url(network_key: &str) -> Option<String> {
-    if let Some(url) = explicit_bundler_rpc_url() {
-        return Some(url);
-    }
-    crate::evm::wallet_rpc_providers::provider_primary_rpc_url(network_key)
+/// Explicit EntryPoint v0.7 bundler (`BUNDLER_RPC_URL`). Not derived from chain RPC keys.
+pub fn bundler_rpc_url(_network_key: &str) -> Option<String> {
+    explicit_bundler_rpc_url()
 }
 
 fn explicit_bundler_rpc_url() -> Option<String> {
@@ -147,7 +144,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let bundler = bundler_rpc_url(&net_key).ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_CONFIG",
-            "Set BUNDLER_RPC_URL or ALCHEMY_RPC_KEY for sponsored governance writes when the roster key has no ETH.",
+            "Set BUNDLER_RPC_URL to an EntryPoint v0.7 bundler for sponsored governance writes when the roster key has no ETH.",
             None,
         )
     })?;
@@ -245,7 +242,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         addrs.entry_point,
         &IEntryPointV07::getNonceCall {
             sender: member,
-            key: mav2_fallback_nonce_key(),
+            key: Uint::<192, 3>::from(0u64),
         },
     )
     .await
@@ -275,7 +272,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             Some(sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?);
     }
 
-    let dummy_sig = mav2_dummy_userop_signature();
+    let dummy_sig = dummy_userop_signature();
     let estimate_op = user_op_json(UserOpParams {
         sender: member,
         nonce,
@@ -358,12 +355,12 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
 
-    // SemiModularAccount7702 recovers against EIP-191 personal_sign(userOpHash), not raw eth_sign.
+    // PactoSimple7702Account: ECDSA.recover(userOpHash, sig) == address(this).
     let sig = signer
-        .sign_message(user_op_hash.as_slice())
+        .sign_hash(&user_op_hash)
         .await
         .map_err(|e| wallet_err_json("USEROP_SIGN", e.to_string(), None))?;
-    let packed_sig = pack_mav2_eoa_userop_signature(&sig.as_bytes());
+    let signature = sig.as_bytes().to_vec();
 
     let user_op = user_op_json(UserOpParams {
         sender: member,
@@ -378,36 +375,20 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         paymaster_verification_gas_limit,
         paymaster_post_op_gas_limit,
         paymaster_and_data: &paymaster_and_data,
-        signature: &packed_sig,
+        signature: &signature,
         eip7702_auth,
     })?;
 
     bundler_send_user_operation(&bundler, &user_op, addrs.entry_point).await
 }
 
-/// Alchemy SemiModularAccount7702 (MAv2): entityId 0 + isGlobalValidation → nonce key 1.
-/// Without the global bit, `execute` hits ValidationFunctionMissing (AA23).
-fn mav2_fallback_nonce_key() -> Uint<192, 3> {
-    Uint::<192, 3>::from(1u64)
-}
-
-/// aa-sdk `packUOSignature`: sparse final segment `0xFF`, EOA type `0x00`, then Electrum ECDSA.
-fn pack_mav2_eoa_userop_signature(ecdsa_65: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(2 + ecdsa_65.len());
-    out.push(0xff);
-    out.push(0x00);
-    out.extend_from_slice(ecdsa_65);
-    out
-}
-
-/// Semi-valid MAv2 signature length for `eth_estimateUserOperationGas` (sig content ignored).
-fn mav2_dummy_userop_signature() -> Vec<u8> {
-    let mut ecdsa = [0u8; 65];
-    // Classic bundler dummy ECDSA shape (non-zero s, Electrum v).
+/// Dummy 65-byte ECDSA for `eth_estimateUserOperationGas` (content ignored; length must match).
+fn dummy_userop_signature() -> Vec<u8> {
+    let mut ecdsa = vec![0u8; 65];
     ecdsa[31] = 0x01;
     ecdsa[63] = 0x01;
     ecdsa[64] = 0x1c;
-    pack_mav2_eoa_userop_signature(&ecdsa)
+    ecdsa
 }
 
 /// Fields of the ERC-4337 v0.7 UserOperation JSON sent to the bundler.
@@ -472,10 +453,10 @@ fn pack_u128s(hi: u128, lo: u128) -> B256 {
 
 /// Fallback gas values when RPC estimation is unavailable.
 pub(crate) const FALLBACK_CALL_GAS_LIMIT: u128 = 500_000;
-/// Alchemy (and similar) bundlers reject tips below ~1 gwei on Sepolia.
+/// Floor tip so common bundler prechecks do not reject near-zero RPC estimates.
 pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
 pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
-/// Headroom over bundler / `eth_estimateGas` estimates (1.2x; efficiency ≈ 0.83 ≥ Alchemy 0.4 floor).
+/// Headroom over bundler / `eth_estimateGas` estimates (1.2x).
 const CALL_GAS_MARGIN_BPS: u128 = 12_000;
 
 pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
@@ -828,7 +809,7 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
     {
         (
             "PAYMASTER_GAS_EFFICIENCY",
-            "Bundler rejected a verification gas limit as too high vs gas used (Alchemy efficiency floor). Limits should come from eth_estimateUserOperationGas with a small margin.".into(),
+            "Bundler rejected a verification gas limit as too high vs gas used (efficiency floor). Limits should come from eth_estimateUserOperationGas with a small margin.".into(),
         )
     } else if lower.contains("banned opcode")
         || (lower.contains("-32502") && !lower.contains("ran out of gas"))
@@ -850,12 +831,12 @@ fn classify_bundler_userop_reject(raw: &str) -> (&'static str, String) {
     {
         (
             "ACCOUNT_VALIDATION",
-            "Account validateUserOp reverted (AA23). For SemiModularAccount7702 this is usually a wrong nonce key or UserOp signature packing.".into(),
+            "Account validateUserOp reverted (AA23). For PactoSimple7702Account check nonce key 0 and bare ECDSA over userOpHash.".into(),
         )
     } else if lower.contains("-32507") || lower.contains("invalid account signature") {
         (
             "ACCOUNT_SIGNATURE",
-            "Account signature invalid (-32507). SemiModularAccount7702 expects EIP-191 personal_sign of the userOpHash, then 0xFF||0x00||ECDSA packing.".into(),
+            "Account signature invalid (-32507). PactoSimple7702Account expects bare ECDSA over the EntryPoint userOpHash (sign_hash), not personal_sign or MAv2 packing.".into(),
         )
     } else {
         ("PAYMASTER_REJECTED", raw.to_string())
@@ -1044,16 +1025,15 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 mod tests {
     use super::{
         apply_userop_gas_margin, bundler_retry_delay, bundler_rpc_url, call_gas_with_margin,
-        clamp_userop_eip1559_fees, classify_bundler_userop_reject, eip7702_auth_json,
-        encode_eip7702_authorization, explicit_bundler_rpc_url, mav2_dummy_userop_signature,
-        mav2_fallback_nonce_key, pack_mav2_eoa_userop_signature, pack_u128s,
+        clamp_userop_eip1559_fees, classify_bundler_userop_reject, dummy_userop_signature,
+        eip7702_auth_json, encode_eip7702_authorization, explicit_bundler_rpc_url, pack_u128s,
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
         paymaster_data, receipt_transaction_hash, retriable_bundler_status, user_op_json,
         userop_max_cost_wei, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
-    use alloy::primitives::{address, b256, Uint, B256, U256};
+    use alloy::primitives::{address, b256, B256, U256};
     use reqwest::StatusCode;
     use serde_json::json;
     use std::time::Duration;
@@ -1087,7 +1067,7 @@ mod tests {
     #[test]
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
-        let paymaster = address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6");
+        let paymaster = address!("0x1deDa9E84374ED7cf032b063F287823c449e98b5");
         let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
         let paymaster_and_data =
@@ -1219,10 +1199,10 @@ mod tests {
     }
 
     #[test]
-    fn mav2_dummy_signature_has_packed_length() {
-        let dummy = mav2_dummy_userop_signature();
-        assert_eq!(dummy.len(), 67);
-        assert_eq!(&dummy[0..2], &[0xff, 0x00]);
+    fn dummy_userop_signature_is_bare_ecdsa_length() {
+        let dummy = dummy_userop_signature();
+        assert_eq!(dummy.len(), 65);
+        assert_eq!(dummy[64], 0x1c);
     }
 
     #[test]
@@ -1281,10 +1261,10 @@ mod tests {
             r#"{"code":-32507,"message":"Invalid account signature"}"#,
         );
         assert_eq!(code, "ACCOUNT_SIGNATURE");
-        assert!(msg.contains("EIP-191"));
+        assert!(msg.contains("bare ECDSA") || msg.contains("userOpHash"));
 
         let (code, msg) = classify_bundler_userop_reject(
-            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6\""}"#,
+            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x1deDa9E84374ED7cf032b063F287823c449e98b5\""}"#,
         );
         assert_eq!(code, "PAYMASTER_VERIFICATION_GAS");
         assert!(msg.contains("paymasterVerificationGasLimit") || msg.contains("out of gas"));
@@ -1308,7 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn mav2_userop_sig_uses_eip191_not_raw_hash() {
+    fn pacto_simple_7702_userop_sig_is_bare_ecdsa_over_hash() {
         use alloy::primitives::keccak256;
         use alloy::signers::local::PrivateKeySigner;
         use alloy::signers::SignerSync;
@@ -1319,35 +1299,17 @@ mod tests {
                 .unwrap();
         let user_op_hash = keccak256(b"fake-userop-hash-for-test");
 
-        // Deployed MAv2: recover against toEthSignedMessageHash(userOpHash).
-        let eip191 = alloy::primitives::eip191_hash_message(user_op_hash.as_slice());
-        let sig = signer.sign_message_sync(user_op_hash.as_slice()).unwrap();
-        let recovered = sig.recover_address_from_prehash(&eip191).unwrap();
+        let sig = signer.sign_hash_sync(&user_op_hash).unwrap();
+        let recovered = sig.recover_address_from_prehash(&user_op_hash).unwrap();
         assert_eq!(recovered, signer.address());
+        assert_eq!(sig.as_bytes().len(), 65);
 
-        // Raw sign_hash would not recover against the EIP-191 digest.
-        let raw = signer.sign_hash_sync(&user_op_hash).unwrap();
-        let wrong = raw.recover_address_from_prehash(&eip191).unwrap();
-        assert_ne!(wrong, signer.address());
-
-        let packed = pack_mav2_eoa_userop_signature(&sig.as_bytes());
-        assert_eq!(packed.len(), 67);
-        assert_eq!(&packed[0..2], &[0xff, 0x00]);
-    }
-
-    #[test]
-    fn mav2_nonce_key_is_global_fallback() {
-        assert_eq!(mav2_fallback_nonce_key(), Uint::<192, 3>::from(1u64));
-    }
-
-    #[test]
-    fn pack_mav2_eoa_signature_prefixes_ff_00() {
-        let ecdsa = [0xabu8; 65];
-        let packed = pack_mav2_eoa_userop_signature(&ecdsa);
-        assert_eq!(packed.len(), 67);
-        assert_eq!(packed[0], 0xff);
-        assert_eq!(packed[1], 0x00);
-        assert_eq!(&packed[2..], &ecdsa);
+        // personal_sign digests would not recover against the raw userOpHash.
+        let eip191 = alloy::primitives::eip191_hash_message(user_op_hash.as_slice());
+        let personal = signer.sign_message_sync(user_op_hash.as_slice()).unwrap();
+        let wrong = personal.recover_address_from_prehash(&user_op_hash);
+        assert!(wrong.is_err() || wrong.unwrap() != signer.address());
+        let _ = eip191;
     }
 
     #[test]
@@ -1433,7 +1395,7 @@ mod tests {
             "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                 .parse()
                 .unwrap();
-        let implementation = address!("0x69007702764179f14F51cdce752f4f775d74E139");
+        let implementation = address!("0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60");
         let chain_id = 11_155_111u64;
         let nonce = 0u64;
 
@@ -1487,7 +1449,7 @@ mod tests {
     }
 
     #[test]
-    fn bundler_rpc_url_prefers_explicit_env() {
+    fn bundler_rpc_url_requires_explicit_env() {
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
@@ -1505,21 +1467,18 @@ mod tests {
     }
 
     #[test]
-    fn bundler_rpc_url_derives_from_alchemy_when_unset() {
+    fn bundler_rpc_url_ignores_alchemy_when_bundler_unset() {
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
         let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
         std::env::remove_var("BUNDLER_RPC_URL");
         std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
-        assert_eq!(
-            bundler_rpc_url("sepolia").as_deref(),
-            Some("https://eth-sepolia.g.alchemy.com/v2/alchemy-key")
-        );
+        assert!(bundler_rpc_url("sepolia").is_none());
     }
 
     #[test]
-    fn bundler_rpc_url_none_without_bundler_or_alchemy() {
+    fn bundler_rpc_url_none_without_bundler() {
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
