@@ -65,7 +65,7 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **Tauri v2** | Desktop app framework: Svelte frontend in a webview, Rust backend. |
 | **invoke** | Frontend -> backend typed RPC via `tauri-apps/api/core`. |
 | **emit** | Backend -> frontend event pushed through `AppHandle::emit`. |
-| **per-account SQLite** | Two databases per npub: `vector.db` (messages, chats, squad metadata) and `vector-mls.db` (MLS crypto state only). Resetting the latter costs group access, not history. |
+| **per-account SQLite** | Two databases per npub: `pacto.db` (messages, chats, squad metadata) and `vector-mls.db` (MLS crypto state only). Resetting the latter costs group access, not history. |
 | **read-plane** | Frontend viem read-only chain access: balances, contract observation, receipt polling. |
 | **Rust send** | WalletBar and governance writes are signed and broadcast from the Rust backend using Alloy. |
 | **require_capability** | Rust ACL gate on squad-scoped writes; denies unbound roster or missing hat/role before broadcast. |

@@ -107,7 +107,7 @@ Each account is isolated under its npub.
 ```mermaid
 flowchart TB
     subgraph Account["Tauri app_data_dir/<npub>/"]
-        A[vector.db]
+        A[pacto.db]
         B[mls/vector-mls.db]
         C[attachments / media]
     end
@@ -122,7 +122,7 @@ flowchart TB
 ```
 
 - `vector-mls.db` is owned by the MDK engine; do not edit it by hand.
-- `vector.db` holds chat metadata, Nostr-shaped events, profiles, and squad infrastructure pointers.
+- `pacto.db` holds chat metadata, Nostr-shaped events, profiles, and squad infrastructure pointers.
 - Frontend state is npub-scoped via `localStorage` keys built with `persistenceKey(prefix)`.
 
 ## Key directories

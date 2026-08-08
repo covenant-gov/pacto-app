@@ -1,6 +1,6 @@
 # Squad catalog (SQLite)
 
-Per-account squad and squad-pair rows live in **`squads`** (`vector.db`), not `localStorage`. Identity rules match [`DESIGN.md`](./DESIGN.md): **`id`** = announcements MLS `groupId`.
+Per-account squad and squad-pair rows live in **`squads`** (`pacto.db`), not `localStorage`. Identity rules match [`DESIGN.md`](./DESIGN.md): **`id`** = announcements MLS `groupId`.
 
 ## Table
 

@@ -72,7 +72,7 @@ symphonia = { version = "0.5.5", features = ["mp3", "wav", "flac", "pcm"] }
 # Cargo unifies this with mdk-sqlite-storage's `bundled-sqlcipher` to the SQLCipher
 # variant. The vendored-openssl superset drops the system-OpenSSL and Windows-Perl
 # requirements that plain `bundled-sqlcipher` carries. Unkeyed databases open as
-# stock SQLite, so existing `vector.db` files are unaffected.
+# stock SQLite, so existing `pacto.db` files are unaffected.
 rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
 refinery = { version = "0.9", features = ["rusqlite"] }
 log = "0.4"

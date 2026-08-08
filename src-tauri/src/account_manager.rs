@@ -16,6 +16,13 @@ lazy_static! {
         Arc::new(Mutex::new(None));
 }
 
+/// Current app database filename.
+const DB_FILENAME: &str = "pacto.db";
+/// Filename used before the rename from the upstream Vector project's
+/// `vector.db`; `migrate_legacy_database_file` moves it to `DB_FILENAME`
+/// in place the first time a profile directory is seen.
+const LEGACY_DB_FILENAME: &str = "vector.db";
+
 /// Get the profile directory for a given npub (full npub, no truncation)
 ///
 /// Returns: AppData/npub1qwertyuiop.../
@@ -49,10 +56,75 @@ pub fn get_profile_directory<R: Runtime>(
 
 /// Get the database path for a given npub
 ///
-/// Returns: AppData/npub1qwerty.../vector.db
+/// Returns: AppData/npub1qwerty.../pacto.db
 pub fn get_database_path<R: Runtime>(handle: &AppHandle<R>, npub: &str) -> Result<PathBuf, String> {
     let profile_dir = get_profile_directory(handle, npub)?;
-    Ok(profile_dir.join("vector.db"))
+    Ok(profile_dir.join(DB_FILENAME))
+}
+
+/// Best-effort, one-time migration of every profile's legacy `vector.db`
+/// (and any `-wal`/`-shm` companions) to the current `pacto.db` filename.
+/// Meant to run once at app startup, before any other database or profile
+/// access, so existing users transition automatically with no action and
+/// no data loss. A failure on one profile is logged and never blocks the
+/// others or app startup.
+pub fn migrate_legacy_databases<R: Runtime>(handle: &AppHandle<R>) {
+    let Ok(app_data) = crate::test_sandbox::test_data_dir(handle) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(&app_data) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_profile_dir = path.is_dir()
+            && entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("npub1"));
+        if !is_profile_dir {
+            continue;
+        }
+        if let Err(e) = migrate_legacy_database_file(&path) {
+            eprintln!(
+                "[Account Manager] Failed to migrate legacy database in {}: {}",
+                path.display(),
+                e
+            );
+        }
+    }
+}
+
+/// Idempotent migration of a single profile directory's database file (and
+/// any live `-wal`/`-shm` companions) from `LEGACY_DB_FILENAME` to
+/// `DB_FILENAME`. Renames the WAL/SHM companions before the main file, so
+/// an interruption between them leaves the legacy file as the source of
+/// truth and the next call simply retries; does nothing if `DB_FILENAME`
+/// already exists or no legacy file is present.
+fn migrate_legacy_database_file(profile_dir: &std::path::Path) -> Result<(), String> {
+    let new_path = profile_dir.join(DB_FILENAME);
+    let legacy_path = profile_dir.join(LEGACY_DB_FILENAME);
+    if new_path.exists() || !legacy_path.exists() {
+        return Ok(());
+    }
+
+    for suffix in ["-wal", "-shm"] {
+        let legacy_aux = profile_dir.join(format!("{LEGACY_DB_FILENAME}{suffix}"));
+        if legacy_aux.exists() {
+            let new_aux = profile_dir.join(format!("{DB_FILENAME}{suffix}"));
+            std::fs::rename(&legacy_aux, &new_aux)
+                .map_err(|e| format!("failed to migrate {}: {}", legacy_aux.display(), e))?;
+        }
+    }
+
+    std::fs::rename(&legacy_path, &new_path)
+        .map_err(|e| format!("failed to migrate {}: {}", legacy_path.display(), e))?;
+    println!(
+        "[Account Manager] Migrated legacy database {} -> {}",
+        legacy_path.display(),
+        new_path.display()
+    );
+    Ok(())
 }
 
 /// Get the MLS directory for a given npub
@@ -106,8 +178,9 @@ pub fn list_accounts<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<String>, S
                     if name.starts_with("npub1") {
                         let in_flight =
                             is_in_flight_account(name, current.as_deref(), pending.as_deref());
-                        let format =
-                            crate::storage_format::classify_database(&entry.path().join("vector.db"));
+                        let format = crate::storage_format::classify_database(
+                            &entry.path().join(DB_FILENAME),
+                        );
                         let has_pkey = account_has_valid_pkey(handle, name);
                         match classify_account_scan(&has_pkey, in_flight, format) {
                             AccountScanVerdict::Include => {
@@ -689,7 +762,7 @@ mod list_accounts_orphan_exemption_tests {
         let npub = "npub1u3orphanexemptionintegration";
 
         let profile_dir = get_profile_directory(handle, npub).unwrap();
-        let db_path = profile_dir.join("vector.db");
+        let db_path = profile_dir.join(DB_FILENAME);
 
         {
             let mut conn = rusqlite::Connection::open(&db_path).unwrap();
@@ -718,6 +791,118 @@ mod list_accounts_orphan_exemption_tests {
             profile_dir.exists(),
             "an unrecognized-format profile must never be deleted by list_accounts"
         );
+
+        let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+}
+
+#[cfg(test)]
+mod legacy_database_migration_tests {
+    use super::*;
+
+    #[test]
+    fn migrates_main_file_and_wal_shm_companions() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let npub = "npub1u4legacymigrationmainpath";
+
+        let profile_dir = get_profile_directory(handle, npub).unwrap();
+        std::fs::write(profile_dir.join(LEGACY_DB_FILENAME), b"main").unwrap();
+        std::fs::write(
+            profile_dir.join(format!("{LEGACY_DB_FILENAME}-wal")),
+            b"wal",
+        )
+        .unwrap();
+        std::fs::write(
+            profile_dir.join(format!("{LEGACY_DB_FILENAME}-shm")),
+            b"shm",
+        )
+        .unwrap();
+
+        migrate_legacy_database_file(&profile_dir).unwrap();
+
+        assert!(!profile_dir.join(LEGACY_DB_FILENAME).exists());
+        assert!(!profile_dir
+            .join(format!("{LEGACY_DB_FILENAME}-wal"))
+            .exists());
+        assert!(!profile_dir
+            .join(format!("{LEGACY_DB_FILENAME}-shm"))
+            .exists());
+        assert_eq!(
+            std::fs::read(profile_dir.join(DB_FILENAME)).unwrap(),
+            b"main"
+        );
+        assert_eq!(
+            std::fs::read(profile_dir.join(format!("{DB_FILENAME}-wal"))).unwrap(),
+            b"wal"
+        );
+        assert_eq!(
+            std::fs::read(profile_dir.join(format!("{DB_FILENAME}-shm"))).unwrap(),
+            b"shm"
+        );
+
+        let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+
+    #[test]
+    fn leaves_legacy_file_alone_when_current_file_already_exists() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let npub = "npub1u4legacymigrationnoclobber";
+
+        let profile_dir = get_profile_directory(handle, npub).unwrap();
+        std::fs::write(profile_dir.join(DB_FILENAME), b"current").unwrap();
+        std::fs::write(profile_dir.join(LEGACY_DB_FILENAME), b"stale-legacy").unwrap();
+
+        migrate_legacy_database_file(&profile_dir).unwrap();
+
+        assert_eq!(
+            std::fs::read(profile_dir.join(DB_FILENAME)).unwrap(),
+            b"current",
+            "an already-migrated profile's current database must never be overwritten"
+        );
+        assert!(
+            profile_dir.join(LEGACY_DB_FILENAME).exists(),
+            "a stray legacy file left over from a prior migration is not touched"
+        );
+
+        let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+
+    #[test]
+    fn is_a_noop_when_no_legacy_file_exists() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let npub = "npub1u4legacymigrationnooplegacy";
+
+        let profile_dir = get_profile_directory(handle, npub).unwrap();
+        migrate_legacy_database_file(&profile_dir).unwrap();
+
+        assert!(!profile_dir.join(DB_FILENAME).exists());
+        assert!(!profile_dir.join(LEGACY_DB_FILENAME).exists());
+
+        let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+
+    /// Integration path: `migrate_legacy_databases` walks every `npub1*`
+    /// profile directory under the app data root and migrates each one,
+    /// so a legacy account is queryable through `get_database_path`
+    /// immediately afterward with no manual step.
+    #[test]
+    fn migrate_legacy_databases_covers_every_profile_directory() {
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let npub = "npub1u4legacymigrationsweepall";
+
+        let profile_dir = get_profile_directory(handle, npub).unwrap();
+        std::fs::write(profile_dir.join(LEGACY_DB_FILENAME), b"sweep-me").unwrap();
+
+        migrate_legacy_databases(handle);
+
+        let db_path = get_database_path(handle, npub).unwrap();
+        assert!(db_path.exists());
+        assert_eq!(std::fs::read(&db_path).unwrap(), b"sweep-me");
+        assert!(!profile_dir.join(LEGACY_DB_FILENAME).exists());
 
         let _ = std::fs::remove_dir_all(&profile_dir);
     }

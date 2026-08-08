@@ -8,7 +8,7 @@ This doc explains the two cryptographic layers in Pacto: the **app-level PIN-der
 
 | Layer | Scope | Keys live in | Protects |
 |---|---|---|---|
-| **App-level (PIN)** | At-rest SQLite | Per-account `vector.db` settings + in-memory `ENCRYPTION_KEY` | Seed phrase, EVM imported keys, DM/MLS text message content, edits, bot secrets |
+| **App-level (PIN)** | At-rest SQLite | Per-account `pacto.db` settings + in-memory `ENCRYPTION_KEY` | Seed phrase, EVM imported keys, DM/MLS text message content, edits, bot secrets |
 | **MLS protocol** | Group messaging in transit | `mdk_core` engine inside `vector-mls.db` | Group messages on the wire (Kind 444) |
 
 The two layers are independent. A failure in the PIN layer cannot make the MLS engine reject a wire message, and a corrupted MLS engine state cannot decrypt the app-level SQLite rows.

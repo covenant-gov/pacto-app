@@ -12,7 +12,7 @@
 ## Two storage layers
 
 1. **MDK SQLite (`vector-mls.db`)** — cryptographic MLS state (groups, epochs, etc.) managed by the engine. Do not hand-edit.
-2. **App SQLite (`vector.db`)** — plaintext-ish metadata the UI and sync logic need:
+2. **App SQLite (`pacto.db`)** — plaintext-ish metadata the UI and sync logic need:
    - **`mls_groups`** — `group_id`, `engine_group_id`, name, eviction flag, timestamps, …
    - **`mls_keypackages`** — cached key packages for members/devices
    - **`mls_event_cursors`** — last seen Nostr event per group for backfill
@@ -29,7 +29,7 @@ Seven-day retention bounds disk exposure; it does **not** revoke credentials. Un
 
 Unknown MDK schema versions outside **1–5** (current) and **≥100** (legacy) fail closed: the app refuses to open or archive the store rather than guessing.
 
-The app keeps message history, chat names, and participant lists in `vector.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored. Multi-admin rollout must leave one admin on the pre-upgrade build until others are restored. Harvest records `mls_store_reset_at` as a KeyPackage creation-time floor when no prior keypackage reference exists for a member.
+The app keeps message history, chat names, and participant lists in `pacto.db`, so those remain visible. Cryptographic group state does not migrate: affected channels show the last admins recorded on the device until a new welcome restores the group. Pending legacy welcomes are re-fetched by exact wrapper event id, and the device publishes a fresh KeyPackage before it can be restored. Multi-admin rollout must leave one admin on the pre-upgrade build until others are restored. Harvest records `mls_store_reset_at` as a KeyPackage creation-time floor when no prior keypackage reference exists for a member.
 
 ### Optional real legacy fixture
 

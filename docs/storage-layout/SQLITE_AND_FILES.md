@@ -7,14 +7,16 @@ For a given **`npub`** (full `npub1…` string):
 | Path (under Tauri `app_data_dir`) | Role |
 |-----------------------------------|------|
 | `<npub>/` | Profile directory — `account_manager::get_profile_directory` |
-| `<npub>/vector.db` | Primary app database — `get_database_path` |
+| `<npub>/pacto.db` | Primary app database — `get_database_path` |
 | `<npub>/mls/` | MLS directory — `get_mls_directory` |
 | `<npub>/mls/vector-mls.db` | MDK engine database (see `docs/mls/ARCHITECTURE.md`) |
 | `<npub>/mls.archive.<unix-seconds>/` | A complete pre-upgrade MLS store set (`vector-mls.db`, `-wal`, and `-shm` together), retained for seven days |
 
 Account discovery scans **`npub1*`** subfolders and validates stored keys — see **`list_accounts`** in `account_manager.rs`.
 
-## `vector.db` schema (source of truth)
+**Legacy filename migration:** `pacto.db` was named `vector.db` before Pacto forked from the upstream Vector project. `account_manager::migrate_legacy_databases` runs once per app launch, before any other database or profile access, and renames each profile's `vector.db` (plus any live `-wal`/`-shm` companions) to `pacto.db` in place. It is idempotent and safe to interrupt: WAL/SHM companions move before the main file, so a crash mid-migration just leaves `vector.db` as the source of truth for the next launch to retry.
+
+## `pacto.db` schema (source of truth)
 
 The **authoritative schema and migration history** lives in **`src-tauri/src/migrations/`** as ordered refinery migration files (`V1__initial_schema.sql`, `V2__messages_wrapper_event_id.sql`, …). **`init_profile_database`** and **`get_db_connection`** run the refinery migration runner on every database open, so new accounts start at the latest version and existing accounts are migrated automatically.
 
@@ -48,7 +50,7 @@ The active MLS database is SQLCipher-encrypted with a key domain-separated from 
 
 ## MLS legacy reset
 
-`mls_store_reset.rs` runs before MDK opens `vector-mls.db`. It classifies the old V100–V104 migration series as legacy; MDK 0.8.0 V1–V5 stores are current. For a legacy store it harvests known group admins and pending welcome wrapper ids, commits those rows and reset settings to `vector.db`, atomically moves the whole `mls/` directory to a timestamped sibling, and only then writes the completion marker. Missing files and interrupted runs are safe to re-enter, and reset work is serialized per account.
+`mls_store_reset.rs` runs before MDK opens `vector-mls.db`. It classifies the old V100–V104 migration series as legacy; MDK 0.8.0 V1–V5 stores are current. For a legacy store it harvests known group admins and pending welcome wrapper ids, commits those rows and reset settings to `pacto.db`, atomically moves the whole `mls/` directory to a timestamped sibling, and only then writes the completion marker. Missing files and interrupted runs are safe to re-enter, and reset work is serialized per account.
 
 The pending wrapper ids are removed from `discarded_giftwraps` and retained in a durable exact-refetch queue, because the normal forward sync window may no longer include an old invitation. Lost group ids remain in a settings value until a welcome restores that group; while listed, participant synchronization does not replace the surviving chat roster with an empty fresh-engine roster.
 

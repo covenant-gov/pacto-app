@@ -144,7 +144,7 @@ cd src-tauri && cargo test
 ### Backend
 - **Commands:** Expose functions to the frontend with `#[tauri::command]` and add them to the `generate_handler!` list in `src-tauri/src/lib.rs`. Most return `Result<T, String>`.
 - **State:** Access globals via `crate::STATE`, `crate::TAURI_APP`, `crate::get_nostr_client()`. Avoid holding synchronous locks across await points.
-- **Database:** One SQLite database per account at `<app_data_dir>/<npub>/vector.db`. `src-tauri/src/migrations/` is the source of truth for the schema and migration history; `src-tauri/src/db.rs` contains most query logic. `account_manager` provides a pooled connection that must be returned with `return_db_connection`.
+- **Database:** One SQLite database per account at `<app_data_dir>/<npub>/pacto.db`. `src-tauri/src/migrations/` is the source of truth for the schema and migration history; `src-tauri/src/db.rs` contains most query logic. `account_manager` provides a pooled connection that must be returned with `return_db_connection`.
 - **Error handling:** String errors for most commands. EVM wallet code uses `wallet_err_json` / `wallet_err_json_with_tx_hash` to return structured `{ code, message, txHash? }`. Always call `wallet_security::redact_urls_in_text` before surfacing RPC errors/logs.
 - **Crypto:** `crypto::internal_encrypt`/`internal_decrypt` use ChaCha20-Poly1305 with an Argon2id-derived key cached in `ENCRYPTION_KEY`. Attachments use AES-256-GCM.
 - **EVM:** Respect signer purpose (`squad` vs `advanced`). Treasury/deploy paths require phrase-derived `bip44_v1` signers, not imported keys. Contract addresses belong in `src/lib/evm/pacto-protocol-addresses.json`, not `.env` or comments.
