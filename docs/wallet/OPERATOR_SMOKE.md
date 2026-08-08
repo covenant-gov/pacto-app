@@ -6,17 +6,19 @@ Single checklist for manual Sepolia verification on **desktop (Tauri)**.
 
 - [ ] Copy [`.env.example`](../../.env.example) → `.env` for **RPC** (debug Tauri loads root `.env` into Rust at startup; release builds need real process env / export).
 - [ ] Set **`ALCHEMY_RPC_KEY`** (builds Sepolia and other chain URLs automatically). Protocol factory / paymaster / EIP-7702 account addresses ship in [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md). After changing the address book, **fully restart** `pnpm tauri:dev` (Rust embeds the JSON at compile time; frontend HMR does not reload it).
-- [ ] For **sponsored** gov writes (roster 0 ETH): set **`BUNDLER_RPC_URL`** to an EntryPoint v0.7 bundler (required; not derived from Alchemy). EIP-7702 impl is pinned as `erc4337.accountImplementation` (`PactoSimple7702Account`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
+- [ ] For **sponsored** gov writes (roster 0 ETH): set **`PIMLICO_API_KEY`** (builds Sepolia bundler `https://api.pimlico.io/v2/11155111/rpc?apikey=…`). Optional **`BUNDLER_RPC_URL`** overrides that URL — do **not** point it at Alchemy’s AA endpoint. EIP-7702 impl is pinned as `erc4337.accountImplementation` (`PactoSimple7702Account`); override with `PACTO_ERC4337_ACCOUNT_IMPL` only for experiments. See [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md).
 - [ ] Smoke identities: **funded Default (DM)** for deploy/deposit gas; **new empty roster key** (0 ETH) as captain after gov+sponsor; enough Sepolia ETH to **seed the sponsor pool**; throwaway `parentId`.
 - [ ] **Once per chain (after factory cutover):** fund the **current** shared paymaster **EntryPoint deposit** (`paymaster.deposit()`) and **stake** (`factory.addPaymasterStake`, ≥0.1 ETH, delay ≥1 day) — see [PACTO_SQUAD_SPONSOR.md](./PACTO_SQUAD_SPONSOR.md). Separate from squad pool deposits. Current Sepolia cutover ([`1ef93bf`](https://github.com/covenant-gov/pacto-squad-sponsor/commit/1ef93bfe312d3462f79c91b741f803166b874f0f)) already funded deposit+stake on paymaster `0x065dA133…Da12`. After a factory redeploy, **recreate** squad sponsors (old clones point at the old paymaster). Confirm clone `paymaster()` / `factory()` match the address book before sponsored writes.
 - [ ] Logged-in profile; wallet unlocked.
 - [ ] Test squad/network with **`#announcements`** and **`#personal-alerts`**; use a **throwaway `parentId`** (one sponsor clone per parent on-chain).
 - [ ] Devtools helpers live in `src/lib/governance/api.ts`, `src/lib/wallet/backend-wallet.ts` — prefer in-app wizards when available.
 
-### Bundler quick check (once per bundler URL)
+### Bundler quick check (once per key / URL)
 
 ```bash
-curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
+# Default: Pimlico from PIMLICO_API_KEY
+curl -sS "https://api.pimlico.io/v2/11155111/rpc?apikey=$PIMLICO_API_KEY" \
+  -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}'
 # expect …71727De22E5E9d8BAf0edAc6f37da032… (EntryPoint v0.7)
 ```
@@ -40,12 +42,12 @@ curl -sS "$BUNDLER_RPC_URL" -H 'content-type: application/json' \
 | `SS_SquadAlreadyExists` / `ALREADY_DEPLOYED` | Same `parentId` already has sponsor or gov — new parent |
 | Sponsor step fails after gov | Finish with Launchpad → **Deploy squad sponsor** (same wizard, hats path) |
 | Roster key has 0 ETH | Fund via **Default signer** transfer in the deploy wizard, or pay deploy from squad after topping up; gov writes use sponsored UserOp when eligible |
-| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `BUNDLER_RPC_URL` so Rust sees an EP v0.7 bundler — restart after editing `.env`; or fund the roster key |
+| `SPONSOR_PATH_UNAVAILABLE` / `BUNDLER_CONFIG` | Set `PIMLICO_API_KEY` (or `BUNDLER_RPC_URL`) — restart after editing `.env`; or fund the roster key |
 | `PAYMASTER_DEPOSIT_LOW` | Fund shared paymaster via `paymaster.deposit()` / `EntryPoint.depositTo` — **not** the squad sponsor pool |
 | `PAYMASTER_STAKE_LOW` | Stake via `factory.addPaymasterStake` (FCFS `paymasterStaker`; ≥0.1 ETH, delay ≥1 day on Sepolia) |
 | `PAYMASTER_VERIFICATION_GAS` | Paymaster simulation OOG during estimate/send — usually a bundler/paymaster regression; limits are from `eth_estimateUserOperationGas` |
-| `PAYMASTER_GAS_EFFICIENCY` | Limit too high vs gas used (bundler efficiency floor) — should be rare after estimate+1.2×; check for stale binary or estimate/send mismatch |
-| `BUNDLER_ESTIMATE` | `eth_estimateUserOperationGas` transport/parse failure — check `BUNDLER_RPC_URL` |
+| `PAYMASTER_GAS_EFFICIENCY` | Alchemy AA bundler artifact (estimate ceiling echo) — use Pimlico via `PIMLICO_API_KEY`, not Alchemy as bundler |
+| `BUNDLER_ESTIMATE` | `eth_estimateUserOperationGas` transport/parse failure — check `PIMLICO_API_KEY` / `BUNDLER_RPC_URL` |
 | `PAYMASTER_VALIDATION` | Bundler `-32502` / banned opcode — often an **old clone** still on the pre-redeploy paymaster, or Tauri not restarted after address-book cutover. Recreate sponsor; check raw detail in the toast |
 | `SPONSOR_PAYMASTER_MISMATCH` | Clone `paymaster()` ≠ address book — recreate squad sponsor under the current factory |
 | `BUNDLER_FEE` | Client tip below bundler floor (should be rare after 1 gwei clamp) |

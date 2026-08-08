@@ -38,20 +38,26 @@ Deploy and deposit themselves are **not** sponsored — only those gov writes. S
 
 | Variable | Role |
 |----------|------|
-| `ALCHEMY_RPC_KEY` | Chain RPC URLs (not the bundler) |
-| `BUNDLER_RPC_URL` | **Required** for sponsored writes — JSON-RPC that accepts `eth_sendUserOperation` for EntryPoint v0.7 (e.g. Pimlico) |
+| `ALCHEMY_RPC_KEY` | Chain RPC URLs only (not the UserOp bundler) |
+| `PIMLICO_API_KEY` | **Default** sponsored bundler — builds `https://api.pimlico.io/v2/11155111/rpc?apikey=…` on Sepolia |
+| `BUNDLER_RPC_URL` | Optional override of the bundler JSON-RPC URL (any EP v0.7 bundler; do **not** use Alchemy as bundler) |
 | `PACTO_ERC4337_ACCOUNT_IMPL` | Optional override of the shared EIP-7702 set-code target (not pacto-gov; leave unset unless experimenting) |
 
 In **debug** `tauri:dev` builds, the Rust backend loads repo-root `.env` into the process at startup (existing process env wins). Release builds expect secrets via the real environment. Vite still loads `.env` separately for the frontend.
 
-**Bundler:** set explicitly (not derived from Alchemy):
+**Bundler (Pimlico-first):**
 
 ```bash
-BUNDLER_RPC_URL=https://api.pimlico.io/v2/sepolia/rpc?apikey=<KEY>
-# or any EP v0.7 bundler URL
+PIMLICO_API_KEY=<KEY>
+# → https://api.pimlico.io/v2/11155111/rpc?apikey=<KEY>
+
+# Optional escape hatch (non-Alchemy EP v0.7):
+# BUNDLER_RPC_URL=https://…
 ```
 
 Confirm `eth_supportedEntryPoints` includes `0x0000000071727De22E5E9d8BAf0edAc6f37da032`. Pacto sponsorship uses **`PactoSponsorPaymaster`** (not a vendor gas manager); the bundler only submits UserOps. Sponsored UserOps clamp `maxPriorityFeePerGas` to at least **1 gwei** so common bundler prechecks do not reject near-zero RPC tip estimates.
+
+Alchemy’s AA bundler echoes estimate ceilings and rejects with a verification-gas efficiency floor — use **Pimlico** (or another measuring bundler), not Alchemy, for `eth_sendUserOperation`.
 
 ### Protocol paymaster float and stake (once per chain)
 
@@ -89,7 +95,7 @@ Unlock / withdraw stake or EP deposit: factory `unlockPaymasterStake` / `withdra
 |---------|--------|--------|
 | `0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60` | Pacto `PactoSimple7702Account` ([pacto-squad-sponsor#12](https://github.com/covenant-gov/pacto-squad-sponsor/pull/12)) | `entryPoint()` = EP v0.7; bare ECDSA over `userOpHash`; `execute(address,uint256,bytes)`; paymaster `ALLOWED_7702_IMPLEMENTATION` |
 
-Sponsored UserOps against this impl must use **EntryPoint nonce key `0`**, **bare ECDSA `sign_hash(userOpHash)`** (65-byte signature — not EIP-191 `personal_sign`, not Alchemy MAv2 packing). Gas limits come from the bundler’s **`eth_estimateUserOperationGas`**, then a **1.2×** margin. Paymaster requires `sender == member` for 7702 senders and that the set-code target matches the allowlisted impl.
+Sponsored UserOps against this impl must use **EntryPoint nonce key `0`**, **bare ECDSA `sign_hash(userOpHash)`** (65-byte signature — not EIP-191 `personal_sign`, not Alchemy MAv2 packing). Gas limits come from a **two-pass** bundler **`eth_estimateUserOperationGas`** (placeholders, then re-estimate with measured limits), then a **1.2×** margin on call / preVerification / postOp; account and paymaster **verification** pads stay ≤ **2.0×**. Paymaster requires `sender == member` for 7702 senders and that the set-code target matches the allowlisted impl.
 
 Do **not** use eth-infinitism `Simple7702Account` at `0xe6Cae83BdE06E4c305530e199D7217f42808555B` — that impl’s `entryPoint()` is EP **v0.8**, incompatible with the Sepolia paymaster / EntryPoint v0.7 stack. Do **not** use Alchemy SemiModularAccount7702.
 

@@ -59,9 +59,12 @@ pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
     pacto_chain_config::erc4337_account_implementation(network_key)
 }
 
-/// Explicit EntryPoint v0.7 bundler (`BUNDLER_RPC_URL`). Not derived from chain RPC keys.
-pub fn bundler_rpc_url(_network_key: &str) -> Option<String> {
-    explicit_bundler_rpc_url()
+/// EntryPoint v0.7 bundler URL: optional `BUNDLER_RPC_URL` override, else Pimlico from `PIMLICO_API_KEY`.
+pub fn bundler_rpc_url(network_key: &str) -> Option<String> {
+    if let Some(url) = explicit_bundler_rpc_url() {
+        return Some(url);
+    }
+    pimlico_bundler_rpc_url(network_key)
 }
 
 fn explicit_bundler_rpc_url() -> Option<String> {
@@ -69,6 +72,63 @@ fn explicit_bundler_rpc_url() -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// Pimlico EP v0.7 bundler URL from `PIMLICO_API_KEY` (chain-id path). Sepolia/local → 11155111.
+fn pimlico_bundler_rpc_url(network_key: &str) -> Option<String> {
+    let key = std::env::var("PIMLICO_API_KEY")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
+    let chain_id = pimlico_chain_id_for_network(network_key)?;
+    Some(format!(
+        "https://api.pimlico.io/v2/{chain_id}/rpc?apikey={key}"
+    ))
+}
+
+fn pimlico_chain_id_for_network(network_key: &str) -> Option<u64> {
+    match network_key.trim().to_lowercase().as_str() {
+        "sepolia" | "local" | "anvil" | "hardhat" => Some(11155111),
+        _ => None,
+    }
+}
+
+/// Redact bundler API keys from URLs (query `apikey` / Alchemy-style `/v2/<secret>`).
+fn redact_bundler_url(url: &str) -> String {
+    let mut out = url.to_string();
+    if let Some(q_idx) = out.find('?') {
+        let (base, query) = out.split_at(q_idx);
+        let redacted_q: Vec<String> = query
+            .trim_start_matches('?')
+            .split('&')
+            .filter(|p| !p.is_empty())
+            .map(|pair| {
+                let mut parts = pair.splitn(2, '=');
+                let k = parts.next().unwrap_or("");
+                let kl = k.to_ascii_lowercase();
+                if matches!(kl.as_str(), "apikey" | "api_key" | "key") {
+                    format!("{k}=***")
+                } else {
+                    pair.to_string()
+                }
+            })
+            .collect();
+        out = if redacted_q.is_empty() {
+            base.to_string()
+        } else {
+            format!("{base}?{}", redacted_q.join("&"))
+        };
+    }
+    if let Some(idx) = out.find("/v2/") {
+        let after = &out[idx + 4..];
+        let end = after
+            .find(|c| c == '/' || c == '?' || c == '#')
+            .unwrap_or(after.len());
+        if end > 0 {
+            out = format!("{}***{}", &out[..idx + 4], &after[end..]);
+        }
+    }
+    out.chars().take(120).collect()
 }
 
 pub async fn roster_native_balance_wei<P: Provider>(
@@ -132,19 +192,26 @@ pub async fn sponsor_eligibility_preflight<P: Provider>(
     Ok((sponsor, squad_id))
 }
 
-/// Attempt a sponsored UserOp; returns EntryPoint userOp hash on success.
+/// Result of a successful sponsored UserOp submit (before receipt poll).
+pub struct SponsoredUserOpSend {
+    pub user_op_hash: String,
+    /// Bundler that accepted the UserOp — use this for `eth_getUserOperationReceipt`.
+    pub bundler_url: String,
+}
+
+/// Attempt a sponsored UserOp; returns EntryPoint userOp hash + accepting bundler on success.
 pub async fn send_sponsored_gov_userop<R: Runtime>(
     app: AppHandle<R>,
     network: &str,
     parent_id: &str,
     to: Address,
     calldata: Vec<u8>,
-) -> Result<String, String> {
+) -> Result<SponsoredUserOpSend, String> {
     let net_key = network.to_lowercase();
     let bundler = bundler_rpc_url(&net_key).ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_CONFIG",
-            "Set BUNDLER_RPC_URL to an EntryPoint v0.7 bundler for sponsored governance writes when the roster key has no ETH.",
+            "Set PIMLICO_API_KEY (or BUNDLER_RPC_URL) for an EntryPoint v0.7 bundler when the roster key has no ETH.",
             None,
         )
     })?;
@@ -190,19 +257,14 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         }
     };
 
-    // Placeholder ceilings so deposit/pool preflight and bundler estimate do not OOG.
-    let placeholder_call = FALLBACK_CALL_GAS_LIMIT;
-    let placeholder_verification = DEFAULT_VERIFICATION_GAS_LIMIT;
-    let placeholder_pre_verification: u128 = 80_000;
-    let placeholder_pm_verification = DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
-    let placeholder_pm_post = DEFAULT_POST_OP_GAS_LIMIT;
+    let placeholders = placeholder_gas_ceilings();
     let placeholder_max_cost = userop_max_cost_wei(
-        placeholder_call,
-        placeholder_verification,
-        placeholder_pre_verification,
+        placeholders.call,
+        placeholders.verification,
+        placeholders.pre_verification,
         max_fee,
-        placeholder_pm_verification,
-        placeholder_pm_post,
+        placeholders.pm_verification,
+        placeholders.pm_post,
     );
     paymaster_entry_point_deposit_preflight(
         &read_provider,
@@ -228,15 +290,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     }
     .abi_encode();
 
-    let mut paymaster_and_data = encode_paymaster_and_data(
-        addrs.pacto_sponsor_paymaster,
-        squad_id,
-        sponsor,
-        member,
-        placeholder_pm_verification,
-        placeholder_pm_post,
-    );
-
     let nonce: U256 = eth_call_decode(
         &read_provider,
         addrs.entry_point,
@@ -248,7 +301,6 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     .await
     .map_err(|e| wallet_err_json("ENTRY_POINT_NONCE", e, None))?;
 
-    // EIP-7702: authorization for empty-code EOAs (bundler/EntryPoint attach set-code).
     let code = read_provider.get_code_at(member).await.map_err(|e| {
         wallet_err_json(
             "RPC_CODE",
@@ -272,90 +324,212 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
             Some(sign_eip7702_authorization(&signer, net.chain_id, account_impl, eoa_nonce).await?);
     }
 
-    let dummy_sig = dummy_userop_signature();
-    let estimate_op = user_op_json(UserOpParams {
-        sender: member,
-        nonce,
-        call_data: &execute_calldata,
-        call_gas_limit: placeholder_call,
-        verification_gas_limit: placeholder_verification,
-        pre_verification_gas: placeholder_pre_verification,
-        max_fee_per_gas: max_fee,
-        max_priority_fee_per_gas: max_priority,
+    let ctx = SponsoredSendParts {
+        entry_point: addrs.entry_point,
         paymaster: addrs.pacto_sponsor_paymaster,
-        paymaster_verification_gas_limit: placeholder_pm_verification,
-        paymaster_post_op_gas_limit: placeholder_pm_post,
+        factory: addrs.squad_sponsor_factory,
+        sponsor,
+        squad_id,
+        parent_id: parent_id.to_string(),
+        member,
+        nonce,
+        execute_calldata,
+        max_fee,
+        max_priority,
+        eip7702_auth,
+    };
+
+    let EstimatePasses { second: estimated, .. } =
+        estimate_sponsored_gas(&bundler, &ctx, placeholder_gas_ceilings()).await?;
+    let limits = FinalGasLimits {
+        call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
+        verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
+        pre_verification_gas: apply_userop_gas_margin(estimated.pre_verification_gas),
+        paymaster_verification_gas_limit: apply_verification_gas_margin(
+            estimated.paymaster_verification_gas_limit,
+        ),
+        paymaster_post_op_gas_limit: apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit),
+    };
+    let user_op_hash =
+        sign_and_send_user_op(&read_provider, &signer, &bundler, &ctx, limits).await?;
+    Ok(SponsoredUserOpSend {
+        user_op_hash,
+        bundler_url: bundler,
+    })
+}
+
+struct SponsoredSendParts {
+    entry_point: Address,
+    paymaster: Address,
+    factory: Address,
+    sponsor: Address,
+    squad_id: B256,
+    parent_id: String,
+    member: Address,
+    nonce: U256,
+    execute_calldata: Vec<u8>,
+    max_fee: u128,
+    max_priority: u128,
+    eip7702_auth: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct GasCeilings {
+    call: u128,
+    verification: u128,
+    pre_verification: u128,
+    pm_verification: u128,
+    pm_post: u128,
+}
+
+fn placeholder_gas_ceilings() -> GasCeilings {
+    GasCeilings {
+        call: FALLBACK_CALL_GAS_LIMIT,
+        verification: DEFAULT_VERIFICATION_GAS_LIMIT,
+        pre_verification: 80_000,
+        pm_verification: DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT,
+        pm_post: DEFAULT_POST_OP_GAS_LIMIT,
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FinalGasLimits {
+    call_gas_limit: u128,
+    verification_gas_limit: u128,
+    pre_verification_gas: u128,
+    paymaster_verification_gas_limit: u128,
+    paymaster_post_op_gas_limit: u128,
+}
+
+#[derive(Clone, Debug)]
+struct EstimatePasses {
+    first: EstimatedUserOpGas,
+    second: EstimatedUserOpGas,
+}
+
+async fn estimate_sponsored_gas(
+    bundler_url: &str,
+    ctx: &SponsoredSendParts,
+    ceilings: GasCeilings,
+) -> Result<EstimatePasses, String> {
+    let dummy_sig = dummy_userop_signature();
+    let mut paymaster_and_data = encode_paymaster_and_data(
+        ctx.paymaster,
+        ctx.squad_id,
+        ctx.sponsor,
+        ctx.member,
+        ceilings.pm_verification,
+        ceilings.pm_post,
+    );
+    let estimate_op = user_op_json(UserOpParams {
+        sender: ctx.member,
+        nonce: ctx.nonce,
+        call_data: &ctx.execute_calldata,
+        call_gas_limit: ceilings.call,
+        verification_gas_limit: ceilings.verification,
+        pre_verification_gas: ceilings.pre_verification,
+        max_fee_per_gas: ctx.max_fee,
+        max_priority_fee_per_gas: ctx.max_priority,
+        paymaster: ctx.paymaster,
+        paymaster_verification_gas_limit: ceilings.pm_verification,
+        paymaster_post_op_gas_limit: ceilings.pm_post,
         paymaster_and_data: &paymaster_and_data,
         signature: &dummy_sig,
-        eip7702_auth: eip7702_auth.clone(),
+        eip7702_auth: ctx.eip7702_auth.clone(),
     })?;
-    let estimated =
-        bundler_estimate_user_operation_gas(&bundler, &estimate_op, addrs.entry_point).await?;
-    let call_gas_limit = apply_userop_gas_margin(estimated.call_gas_limit);
-    let verification_gas_limit = apply_userop_gas_margin(estimated.verification_gas_limit);
-    let pre_verification_gas = apply_userop_gas_margin(estimated.pre_verification_gas);
-    let paymaster_verification_gas_limit =
-        apply_userop_gas_margin(estimated.paymaster_verification_gas_limit);
-    let paymaster_post_op_gas_limit =
-        apply_userop_gas_margin(estimated.paymaster_post_op_gas_limit);
-
+    let first =
+        bundler_estimate_user_operation_gas(bundler_url, &estimate_op, ctx.entry_point).await?;
     paymaster_and_data = encode_paymaster_and_data(
-        addrs.pacto_sponsor_paymaster,
-        squad_id,
-        sponsor,
-        member,
-        paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit,
+        ctx.paymaster,
+        ctx.squad_id,
+        ctx.sponsor,
+        ctx.member,
+        first.paymaster_verification_gas_limit,
+        first.paymaster_post_op_gas_limit,
     );
+    let calibrate_op = user_op_json(UserOpParams {
+        sender: ctx.member,
+        nonce: ctx.nonce,
+        call_data: &ctx.execute_calldata,
+        call_gas_limit: first.call_gas_limit,
+        verification_gas_limit: first.verification_gas_limit,
+        pre_verification_gas: first.pre_verification_gas,
+        max_fee_per_gas: ctx.max_fee,
+        max_priority_fee_per_gas: ctx.max_priority,
+        paymaster: ctx.paymaster,
+        paymaster_verification_gas_limit: first.paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit: first.paymaster_post_op_gas_limit,
+        paymaster_and_data: &paymaster_and_data,
+        signature: &dummy_sig,
+        eip7702_auth: ctx.eip7702_auth.clone(),
+    })?;
+    let second =
+        bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await?;
+    Ok(EstimatePasses { first, second })
+}
 
+async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
+    provider: &P,
+    signer: &S,
+    bundler_url: &str,
+    ctx: &SponsoredSendParts,
+    limits: FinalGasLimits,
+) -> Result<String, String> {
+    let paymaster_and_data = encode_paymaster_and_data(
+        ctx.paymaster,
+        ctx.squad_id,
+        ctx.sponsor,
+        ctx.member,
+        limits.paymaster_verification_gas_limit,
+        limits.paymaster_post_op_gas_limit,
+    );
     let final_max_cost = userop_max_cost_wei(
-        call_gas_limit,
-        verification_gas_limit,
-        pre_verification_gas,
-        max_fee,
-        paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit,
+        limits.call_gas_limit,
+        limits.verification_gas_limit,
+        limits.pre_verification_gas,
+        ctx.max_fee,
+        limits.paymaster_verification_gas_limit,
+        limits.paymaster_post_op_gas_limit,
     );
     paymaster_entry_point_deposit_preflight(
-        &read_provider,
-        addrs.entry_point,
-        addrs.pacto_sponsor_paymaster,
+        provider,
+        ctx.entry_point,
+        ctx.paymaster,
         final_max_cost,
     )
     .await?;
     sponsor_eligibility_preflight(
-        &read_provider,
-        addrs.squad_sponsor_factory,
-        addrs.pacto_sponsor_paymaster,
-        parent_id,
-        member,
+        provider,
+        ctx.factory,
+        ctx.paymaster,
+        &ctx.parent_id,
+        ctx.member,
         final_max_cost,
     )
     .await?;
 
-    let account_gas_limits = pack_u128s(verification_gas_limit, call_gas_limit);
-    let gas_fees = pack_u128s(max_priority, max_fee);
+    let account_gas_limits = pack_u128s(limits.verification_gas_limit, limits.call_gas_limit);
+    let gas_fees = pack_u128s(ctx.max_priority, ctx.max_fee);
     let packed = PackedUserOperation {
-        sender: member,
-        nonce,
+        sender: ctx.member,
+        nonce: ctx.nonce,
         initCode: Bytes::new(),
-        callData: Bytes::from(execute_calldata.clone()),
+        callData: Bytes::from(ctx.execute_calldata.clone()),
         accountGasLimits: account_gas_limits,
-        preVerificationGas: U256::from(pre_verification_gas),
+        preVerificationGas: U256::from(limits.pre_verification_gas),
         gasFees: gas_fees,
         paymasterAndData: paymaster_and_data.clone(),
         signature: Bytes::new(),
     };
 
     let user_op_hash: B256 = eth_call_decode(
-        &read_provider,
-        addrs.entry_point,
+        provider,
+        ctx.entry_point,
         &IEntryPointV07::getUserOpHashCall { userOp: packed },
     )
     .await
     .map_err(|e| wallet_err_json("USEROP_HASH", e, None))?;
 
-    // PactoSimple7702Account: ECDSA.recover(userOpHash, sig) == address(this).
     let sig = signer
         .sign_hash(&user_op_hash)
         .await
@@ -363,23 +537,23 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     let signature = sig.as_bytes().to_vec();
 
     let user_op = user_op_json(UserOpParams {
-        sender: member,
-        nonce,
-        call_data: &execute_calldata,
-        call_gas_limit,
-        verification_gas_limit,
-        pre_verification_gas,
-        max_fee_per_gas: max_fee,
-        max_priority_fee_per_gas: max_priority,
-        paymaster: addrs.pacto_sponsor_paymaster,
-        paymaster_verification_gas_limit,
-        paymaster_post_op_gas_limit,
+        sender: ctx.member,
+        nonce: ctx.nonce,
+        call_data: &ctx.execute_calldata,
+        call_gas_limit: limits.call_gas_limit,
+        verification_gas_limit: limits.verification_gas_limit,
+        pre_verification_gas: limits.pre_verification_gas,
+        max_fee_per_gas: ctx.max_fee,
+        max_priority_fee_per_gas: ctx.max_priority,
+        paymaster: ctx.paymaster,
+        paymaster_verification_gas_limit: limits.paymaster_verification_gas_limit,
+        paymaster_post_op_gas_limit: limits.paymaster_post_op_gas_limit,
         paymaster_and_data: &paymaster_and_data,
         signature: &signature,
-        eip7702_auth,
+        eip7702_auth: ctx.eip7702_auth.clone(),
     })?;
 
-    bundler_send_user_operation(&bundler, &user_op, addrs.entry_point).await
+    bundler_send_user_operation(bundler_url, &user_op, ctx.entry_point).await
 }
 
 /// Dummy 65-byte ECDSA for `eth_estimateUserOperationGas` (content ignored; length must match).
@@ -458,6 +632,8 @@ pub(crate) const FALLBACK_MAX_PRIORITY_FEE: u128 = 1_000_000_000; // 1 gwei
 pub(crate) const FALLBACK_MAX_FEE: u128 = 30_000_000_000; // 30 gwei
 /// Headroom over bundler / `eth_estimateGas` estimates (1.2x).
 const CALL_GAS_MARGIN_BPS: u128 = 12_000;
+/// Cap on verification / paymaster-verification pad (Alchemy efficiency floor ≈ 0.4 ⇒ max ~2.5×).
+const VERIFICATION_GAS_MAX_PAD_BPS: u128 = 20_000;
 
 pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
     estimate * CALL_GAS_MARGIN_BPS / 10_000
@@ -465,6 +641,13 @@ pub(crate) fn call_gas_with_margin(estimate: u128) -> u128 {
 
 fn apply_userop_gas_margin(estimate: u128) -> u128 {
     call_gas_with_margin(estimate)
+}
+
+/// 1.2× headroom, never above 2.0× estimate (bundler verification efficiency floor).
+fn apply_verification_gas_margin(estimate: u128) -> u128 {
+    let padded = call_gas_with_margin(estimate);
+    let cap = estimate.saturating_mul(VERIFICATION_GAS_MAX_PAD_BPS) / 10_000;
+    padded.min(cap).max(estimate)
 }
 
 /// Raise RPC tip/max-fee to bundler floors; ensure maxFee ≥ maxPriorityFee.
@@ -1024,12 +1207,14 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_userop_gas_margin, bundler_retry_delay, bundler_rpc_url, call_gas_with_margin,
-        clamp_userop_eip1559_fees, classify_bundler_userop_reject, dummy_userop_signature,
-        eip7702_auth_json, encode_eip7702_authorization, explicit_bundler_rpc_url, pack_u128s,
-        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
-        paymaster_data, receipt_transaction_hash, retriable_bundler_status, user_op_json,
-        userop_max_cost_wei, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
+        apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay, bundler_rpc_url,
+        call_gas_with_margin, clamp_userop_eip1559_fees, classify_bundler_userop_reject,
+        dummy_userop_signature, eip7702_auth_json, encode_eip7702_authorization,
+        explicit_bundler_rpc_url, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
+        parse_send_user_op_response, paymaster_data, pimlico_bundler_rpc_url,
+        pimlico_chain_id_for_network, receipt_transaction_hash, redact_bundler_url,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, UserOpParams,
+        FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -1062,6 +1247,28 @@ mod tests {
         assert_eq!(call_gas_with_margin(100_000), 120_000);
         assert_eq!(call_gas_with_margin(0), 0);
         assert_eq!(apply_userop_gas_margin(113_392), 136_070);
+    }
+
+    #[test]
+    fn verification_gas_margin_uses_1_2x_under_efficiency_cap() {
+        // 1.2× is below 2.0×, so pad equals call-gas margin.
+        assert_eq!(apply_verification_gas_margin(100_000), 120_000);
+        assert_eq!(apply_verification_gas_margin(113_393), 136_071);
+        assert_eq!(apply_verification_gas_margin(0), 0);
+    }
+
+    #[test]
+    fn verification_gas_margin_never_exceeds_2x_estimate() {
+        // Efficiency floor 0.4 ⇒ used/limit ≥ 0.4 ⇒ limit ≤ used/0.4 ≈ 2.5×; we cap at 2.0×.
+        let estimate = 113_393u128;
+        assert!(apply_verification_gas_margin(estimate) <= estimate * 2);
+        assert!(apply_verification_gas_margin(estimate) >= estimate);
+        // If 1.2× somehow exceeded 2× (impossible with current BPS), still clamp — exercise cap path
+        // by checking max pad ratio for a large estimate equals 1.2× here, and that 2× is the hard ceiling.
+        assert_eq!(
+            apply_verification_gas_margin(estimate).min(estimate * 2),
+            apply_verification_gas_margin(estimate)
+        );
     }
 
     #[test]
@@ -1128,7 +1335,7 @@ mod tests {
         assert_eq!(g.paymaster_verification_gas_limit, 113_408);
         assert_eq!(g.paymaster_post_op_gas_limit, 50_000);
         assert_eq!(
-            apply_userop_gas_margin(g.paymaster_verification_gas_limit),
+            apply_verification_gas_margin(g.paymaster_verification_gas_limit),
             136_089
         );
     }
@@ -1449,13 +1656,13 @@ mod tests {
     }
 
     #[test]
-    fn bundler_rpc_url_requires_explicit_env() {
+    fn bundler_rpc_url_override_wins_over_pimlico() {
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
-        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
-        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
         std::env::set_var("BUNDLER_RPC_URL", "https://bundler.example/v2/explicit");
-        std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
         assert_eq!(
             bundler_rpc_url("sepolia").as_deref(),
             Some("https://bundler.example/v2/explicit")
@@ -1467,24 +1674,68 @@ mod tests {
     }
 
     #[test]
-    fn bundler_rpc_url_ignores_alchemy_when_bundler_unset() {
+    fn bundler_rpc_url_uses_pimlico_when_override_unset() {
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
         let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
         std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
+        std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
+        assert_eq!(
+            bundler_rpc_url("sepolia").as_deref(),
+            Some("https://api.pimlico.io/v2/11155111/rpc?apikey=test-pimlico-key")
+        );
+    }
+
+    #[test]
+    fn bundler_rpc_url_none_without_pimlico_or_override() {
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::remove_var("PIMLICO_API_KEY");
         std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
         assert!(bundler_rpc_url("sepolia").is_none());
     }
 
     #[test]
-    fn bundler_rpc_url_none_without_bundler() {
-        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
-        let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
-        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
-        let _ga = EnvVarGuard("ALCHEMY_RPC_KEY", prev_a);
-        std::env::remove_var("BUNDLER_RPC_URL");
-        std::env::remove_var("ALCHEMY_RPC_KEY");
-        assert!(bundler_rpc_url("sepolia").is_none());
+    fn pimlico_url_uses_sepolia_chain_id() {
+        let prev = std::env::var_os("PIMLICO_API_KEY");
+        let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
+        assert_eq!(pimlico_chain_id_for_network("sepolia"), Some(11155111));
+        assert_eq!(pimlico_chain_id_for_network("local"), Some(11155111));
+        assert_eq!(pimlico_chain_id_for_network("mainnet"), None);
+        assert_eq!(
+            pimlico_bundler_rpc_url("sepolia").as_deref(),
+            Some("https://api.pimlico.io/v2/11155111/rpc?apikey=test-pimlico-key")
+        );
+        assert!(pimlico_bundler_rpc_url("mainnet").is_none());
+    }
+
+    #[test]
+    fn pimlico_url_none_without_key() {
+        let prev = std::env::var_os("PIMLICO_API_KEY");
+        let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
+        std::env::remove_var("PIMLICO_API_KEY");
+        assert!(pimlico_bundler_rpc_url("sepolia").is_none());
+    }
+
+    #[test]
+    fn redact_bundler_url_strips_apikey_and_v2_path_secret() {
+        let pimlico = redact_bundler_url(
+            "https://api.pimlico.io/v2/11155111/rpc?apikey=super-secret-key",
+        );
+        assert!(pimlico.contains("apikey=***"));
+        assert!(!pimlico.contains("super-secret-key"));
+        let alchemy = redact_bundler_url("https://eth-sepolia.g.alchemy.com/v2/wHbUQqUWdULUtz-ocamtx");
+        assert!(alchemy.contains("/v2/***"));
+        assert!(!alchemy.contains("wHbUQqUWdULUtz-ocamtx"));
     }
 }
