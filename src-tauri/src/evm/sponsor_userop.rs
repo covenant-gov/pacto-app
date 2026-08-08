@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn user_op_json_serializes_erc4337_fields() {
         let member = address!("0x3333333333333333333333333333333333333333");
-        let paymaster = address!("0x1deDa9E84374ED7cf032b063F287823c449e98b5");
+        let paymaster = address!("0x065dA13369604291E628DD8022E0e504dc62Da12");
         let squad_id = b256!("0x1111111111111111111111111111111111111111111111111111111111111111");
         let sponsor = address!("0x2222222222222222222222222222222222222222");
         let paymaster_and_data =
@@ -1264,7 +1264,7 @@ mod tests {
         assert!(msg.contains("bare ECDSA") || msg.contains("userOpHash"));
 
         let (code, msg) = classify_bundler_userop_reject(
-            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x1deDa9E84374ED7cf032b063F287823c449e98b5\""}"#,
+            r#"{"code":-32502,"message":"Simulation ran out of gas for entity: paymaster:\"0x065dA13369604291E628DD8022E0e504dc62Da12\""}"#,
         );
         assert_eq!(code, "PAYMASTER_VERIFICATION_GAS");
         assert!(msg.contains("paymasterVerificationGasLimit") || msg.contains("out of gas"));
