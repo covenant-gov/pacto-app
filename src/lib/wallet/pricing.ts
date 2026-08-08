@@ -1,5 +1,6 @@
 /**
  * USD display prices from Chainlink Data Feeds (via Tauri `wallet_get_usd_spot_prices`).
+ * Feeds follow the wallet network (mainnet / arbitrum / sepolia; local → sepolia).
  * There are no static price fallbacks: if the oracle/RPC path fails, callers get an error result.
  */
 
@@ -16,7 +17,7 @@ export interface WalletUsdSpotPrices {
   usdtUsd: number;
   /** On success, `chainlink`. */
   source: string;
-  /** Network whose aggregator contracts were read (Ethereum mainnet proxies). */
+  /** Resolved feed network: `ethereum-mainnet` | `arbitrum` | `sepolia`. */
   feedNetwork: string;
   fetchedAtMsEpoch: number;
 }
@@ -30,13 +31,15 @@ function isTauri(): boolean {
 }
 
 const USER_FACING_ORACLE_FAILURE =
-  'Live USD prices are unavailable. Chainlink feeds could not be read. Check your internet connection, or set ALCHEMY_RPC_KEY for Ethereum mainnet JSON-RPC (see docs/wallet/USD_PRICING.md).';
+  'Live USD prices are unavailable. Chainlink feeds could not be read for this network. Check your internet connection, or set ALCHEMY_RPC_KEY (see docs/wallet/USD_PRICING.md).';
 
 /**
- * Fetches Chainlink-backed USD spot prices (90s server-side cache). Returns `ok: false` when
- * not in Tauri or when the oracle/RPC call fails — never fabricates rates.
+ * Fetches Chainlink-backed USD spot prices for `networkKey` (90s server-side cache per feed network).
+ * Returns `ok: false` when not in Tauri or when the oracle/RPC call fails — never fabricates rates.
  */
-export async function getWalletUsdSpotPrices(): Promise<WalletUsdSpotPricesResult> {
+export async function getWalletUsdSpotPrices(
+  networkKey: string
+): Promise<WalletUsdSpotPricesResult> {
   if (!isTauri()) {
     return {
       ok: false,
@@ -45,7 +48,9 @@ export async function getWalletUsdSpotPrices(): Promise<WalletUsdSpotPricesResul
     };
   }
   try {
-    const prices = await invoke<WalletUsdSpotPrices>('wallet_get_usd_spot_prices');
+    const prices = await invoke<WalletUsdSpotPrices>('wallet_get_usd_spot_prices', {
+      networkKey,
+    });
     return { ok: true, prices };
   } catch {
     return { ok: false, message: USER_FACING_ORACLE_FAILURE };

@@ -104,7 +104,7 @@ Operator `ALCHEMY_RPC_KEY` does not override an explicit custom squad URL. Squad
 
 ## 3. USD spot pricing
 
-Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on-chain feeds** on Ethereum mainnet (`eth_call` via JSON-RPC). Details, proxy addresses, and env (`ALCHEMY_RPC_KEY` for mainnet) are in [USD_PRICING.md](./USD_PRICING.md). There are no static price fallbacks; failures return an error for the UI. The frontend calls `wallet_get_usd_spot_prices`.
+Spot USD rates for ETH, USDC, and USDT (wallet UI only) come from **Chainlink on-chain feeds** for the wallet network in use (`mainnet` / `arbitrum` / `sepolia`; `local` → Sepolia). Details, proxy addresses, and RPC candidate order are in [USD_PRICING.md](./USD_PRICING.md). There are no static price fallbacks; the spot-price command returns an error for the UI, while `get_wallet_summary` soft-fails USD lines and still returns balances. The frontend calls `wallet_get_usd_spot_prices` with a `networkKey`.
 
 ---
 

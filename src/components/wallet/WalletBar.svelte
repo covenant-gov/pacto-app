@@ -346,7 +346,9 @@
       </div>
       <p class="wallet-bar-total">
         {$t('wallet.totalApprox')} <strong>${barTotalUsdApprox.toFixed(2)}</strong>
-        <span class="wallet-bar-total-meta">{$t('wallet.viaSource', { values: { source: summary.prices.source } })}</span>
+        {#if summary.prices}
+          <span class="wallet-bar-total-meta">{$t('wallet.viaSource', { values: { source: summary.prices.source } })}</span>
+        {/if}
       </p>
       {#if networksForBalance.length === 0}
         <p class="wallet-bar-placeholder">{$t('wallet.noNetworksMatchFilter')}</p>

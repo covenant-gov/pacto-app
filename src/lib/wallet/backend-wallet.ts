@@ -30,7 +30,8 @@ export interface WalletSummaryNetwork {
 export interface WalletSummary {
   networks: WalletSummaryNetwork[];
   totalUsdApprox: number;
-  prices: WalletUsdSpotPrices;
+  /** First successfully priced enabled network; omitted when all oracles fail. */
+  prices?: WalletUsdSpotPrices;
 }
 
 export type WalletSummaryResult =

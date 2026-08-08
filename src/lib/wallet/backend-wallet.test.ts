@@ -104,7 +104,7 @@ describe('backend-wallet', () => {
 
     it('invokes get_wallet_summary with watched tokens and enabled chains', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
-      const summary = { networks: [], totalUsdApprox: 0, prices: {} as never };
+      const summary = { networks: [], totalUsdApprox: 0 };
       mockedInvoke.mockResolvedValueOnce(summary);
       const watched = [{ network: 'sepolia', symbol: 'USDC', address: '0xabc', decimals: 6 }];
       const enabledChains: SupportedChainId[] = ['sepolia'];

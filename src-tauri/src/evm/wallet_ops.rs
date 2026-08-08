@@ -7,7 +7,7 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol_types::SolCall;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::erc20::IERC20;
@@ -44,7 +44,9 @@ pub struct WalletSummaryNetwork {
 pub struct WalletSummary {
     pub networks: Vec<WalletSummaryNetwork>,
     pub total_usd_approx: f64,
-    pub prices: wallet_prices::WalletUsdSpotPrices,
+    /// First successfully priced enabled network; omitted when all oracles fail.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prices: Option<wallet_prices::WalletUsdSpotPrices>,
 }
 
 #[derive(Serialize)]
@@ -227,16 +229,30 @@ pub async fn get_wallet_summary<R: Runtime>(
     })?;
     let owner = parse_address(&addr_str)?;
 
-    let prices = wallet_prices::wallet_get_usd_spot_prices()
-        .await
-        .map_err(|e| {
-            wallet_security::redact_urls_in_text(&format!("USD prices unavailable: {}", e))
-        })?;
-
     let enabled: HashSet<String> = enabled_chains.iter().map(|c| c.to_lowercase()).collect();
+
+    // Dedupe Chainlink fetches by feed network (local→sepolia shares Sepolia feeds).
+    let mut prices_by_feed: HashMap<String, Option<wallet_prices::WalletUsdSpotPrices>> =
+        HashMap::new();
+    for net in wallet_chain_config::wallet_networks() {
+        if !enabled.contains(net.key.as_str()) {
+            continue;
+        }
+        let Ok(feed_key) = wallet_prices::resolve_feed_network(&net.key) else {
+            continue;
+        };
+        if prices_by_feed.contains_key(feed_key) {
+            continue;
+        }
+        let fetched = wallet_prices::get_usd_spot_prices_for_network(&net.key)
+            .await
+            .ok();
+        prices_by_feed.insert(feed_key.to_string(), fetched);
+    }
 
     let mut networks_out = Vec::new();
     let mut total_usd = 0.0_f64;
+    let mut summary_prices: Option<wallet_prices::WalletUsdSpotPrices> = None;
 
     for net in wallet_chain_config::wallet_networks() {
         if !enabled.contains(net.key.as_str()) {
@@ -257,22 +273,40 @@ pub async fn get_wallet_summary<R: Runtime>(
                 }
             };
 
+        let prices = wallet_prices::resolve_feed_network(&net.key)
+            .ok()
+            .and_then(|fk| prices_by_feed.get(fk).and_then(|p| p.clone()));
+        if summary_prices.is_none() {
+            if let Some(ref p) = prices {
+                summary_prices = Some(p.clone());
+            }
+        }
+
         let eth_dec = format_decimal(eth_raw, net.native_decimals);
-        let eth_usd = (prices.eth_usd * eth_dec.parse::<f64>().unwrap_or(0.0)).max(0.0);
-        total_usd += eth_usd;
+        let eth_usd = prices.as_ref().map(|p| {
+            (p.eth_usd * eth_dec.parse::<f64>().unwrap_or(0.0)).max(0.0)
+        });
+        if let Some(u) = eth_usd {
+            total_usd += u;
+        }
 
         let mut assets: Vec<WalletSummaryAsset> = vec![WalletSummaryAsset {
             symbol: net.native_symbol.clone(),
             balance_raw: eth_raw.to_string(),
             balance_decimal: eth_dec,
-            usd_value: Some(eth_usd),
+            usd_value: eth_usd,
         }];
 
         for (sym, raw, dec) in erc20_balances {
             let dec_str = format_decimal(raw, dec);
-            let usd_val = match sym.as_str() {
-                "USDC" => Some((prices.usdc_usd * dec_str.parse::<f64>().unwrap_or(0.0)).max(0.0)),
-                "USDT" => Some((prices.usdt_usd * dec_str.parse::<f64>().unwrap_or(0.0)).max(0.0)),
+            let usd_val = match (sym.as_str(), prices.as_ref()) {
+                ("USDC", Some(p)) => {
+                    Some((p.usdc_usd * dec_str.parse::<f64>().unwrap_or(0.0)).max(0.0))
+                }
+                ("USDT", Some(p)) => {
+                    Some((p.usdt_usd * dec_str.parse::<f64>().unwrap_or(0.0)).max(0.0))
+                }
+                ("USDC" | "USDT", None) => None,
                 _ => None,
             };
             if let Some(u) = usd_val {
@@ -297,7 +331,7 @@ pub async fn get_wallet_summary<R: Runtime>(
     Ok(WalletSummary {
         networks: networks_out,
         total_usd_approx: total_usd,
-        prices,
+        prices: summary_prices,
     })
 }
 
