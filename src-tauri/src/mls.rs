@@ -1193,7 +1193,7 @@ impl MlsService {
 
             match engine.leave_group(&mls_group_id) {
                 Ok(leave_result) => Some(leave_result.evolution_event),
-                Err(e) if e.to_string().contains("group not found") => {
+                Err(mdk_core::Error::GroupNotFound) => {
                     eprintln!(
                         "[MLS] leave_group: engine has no record of group {} (state lost); \
                          proceeding with local-only cleanup",
@@ -3370,13 +3370,13 @@ mod mls_restore_tests {
 mod mls_leave_group_state_lost_tests {
     use super::*;
 
-    /// Reproduces issue #216: after an MLS store reset (legacy pre-0.8.0 MDK store
-    /// archived, fresh engine store has no record of a group Pacto's own metadata
-    /// still lists), `MDK::leave_group` on the fresh engine must fail with exactly
-    /// `Error::GroupNotFound` ("group not found") rather than some other error
-    /// shape. `MlsService::leave_group`'s `.contains("group not found")` match arm
-    /// depends on this precise string — this test pins it against the real MDK
-    /// dependency instead of assuming it.
+    /// Covers the store-reset scenario: after a legacy pre-0.8.0 MDK store was
+    /// archived, the fresh engine store has no record of a group Pacto's own
+    /// metadata still lists, so `MDK::leave_group` on the fresh engine must fail
+    /// with exactly `Error::GroupNotFound` rather than some other error shape.
+    /// `MlsService::leave_group` pattern-matches `Err(mdk_core::Error::GroupNotFound)`
+    /// directly — this test pins the real MDK dependency against that variant
+    /// instead of assuming it.
     #[test]
     fn engine_leave_group_on_unknown_group_id_errors_group_not_found() {
         let engine = MDK::new(
@@ -3393,10 +3393,9 @@ mod mls_leave_group_state_lost_tests {
             .leave_group(&unknown_group_id)
             .expect_err("leaving an unrecorded group must fail");
 
-        assert_eq!(
-            err.to_string(),
-            "group not found",
-            "MlsService::leave_group's local-only-cleanup fallback matches on this exact text"
+        assert!(
+            matches!(err, mdk_core::Error::GroupNotFound),
+            "MlsService::leave_group's local-only-cleanup fallback matches on this variant"
         );
     }
 }
