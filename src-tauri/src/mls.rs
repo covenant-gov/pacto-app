@@ -1182,23 +1182,41 @@ impl MlsService {
                 .map_err(|e| MlsError::CryptoError(format!("Invalid group ID hex: {}", e)))?,
         );
 
-        // Perform engine operation (leave group)
+        // Perform engine operation (leave group). If the engine has no record
+        // for this group at all — e.g. it was archived by an MLS store reset
+        // (legacy pre-0.8.0 store migration) and never carried into the fresh
+        // engine store, see `mls_store_reset_state::is_group_state_lost` — there
+        // is nothing to leave server-side. Treat that as already-left instead
+        // of surfacing a hard error for a group the user is effectively out of.
         let evolution_event = {
             let engine = self.engine()?;
 
-            // Leave the group - returns LeaveGroupResult with evolution_event
-            let leave_result = engine.leave_group(&mls_group_id).map_err(|e| {
-                eprintln!("[MLS] Failed to leave group: {}", e);
-                MlsError::NostrMlsError(format!("Failed to leave group: {}", e))
-            })?;
-
-            leave_result.evolution_event
+            match engine.leave_group(&mls_group_id) {
+                Ok(leave_result) => Some(leave_result.evolution_event),
+                Err(e) if e.to_string().contains("group not found") => {
+                    eprintln!(
+                        "[MLS] leave_group: engine has no record of group {} (state lost); \
+                         proceeding with local-only cleanup",
+                        group_id
+                    );
+                    None
+                }
+                Err(e) => {
+                    eprintln!("[MLS] Failed to leave group: {}", e);
+                    return Err(MlsError::NostrMlsError(format!(
+                        "Failed to leave group: {}",
+                        e
+                    )));
+                }
+            }
         };
 
-        // Publish the evolution event (leave proposal) to the relay
-        match client.send_event(&evolution_event).await {
-            Ok(output) => crate::record_send_outcome(&evolution_event, &output),
-            Err(e) => eprintln!("[MLS] Failed to publish leave proposal: {}", e),
+        // Publish the evolution event (leave proposal) to the relay, if any.
+        if let Some(evolution_event) = &evolution_event {
+            match client.send_event(evolution_event).await {
+                Ok(output) => crate::record_send_outcome(evolution_event, &output),
+                Err(e) => eprintln!("[MLS] Failed to publish leave proposal: {}", e),
+            }
         }
 
         // Remove the group from local metadata
@@ -1207,8 +1225,16 @@ impl MlsService {
             .retain(|g| g.group_id != group_id && g.engine_group_id != group_meta.engine_group_id);
         self.write_groups(&groups).await?;
 
-        // Emit event to refresh UI
+        // Emit event to refresh UI, and drop any stale "state lost" tracking —
+        // the group is gone from the leaver's list entirely now, not merely
+        // unsynced, so it should stop showing up in reset-state UI.
         if let Some(handle) = TAURI_APP.get() {
+            let _ = crate::mls_store_reset_state::mark_group_restored(handle, group_id);
+            let _ = crate::mls_store_reset_state::mark_group_restored(
+                handle,
+                &group_meta.engine_group_id,
+            );
+            let _ = crate::mls_store_reset_state::emit_reset_state(handle);
             handle
                 .emit(
                     "mls_group_left",
@@ -3337,5 +3363,40 @@ mod mls_restore_tests {
             .get_members(&group_id)
             .expect("get_members")
             .contains(&uma_keys.public_key()));
+    }
+}
+
+#[cfg(test)]
+mod mls_leave_group_state_lost_tests {
+    use super::*;
+
+    /// Reproduces issue #216: after an MLS store reset (legacy pre-0.8.0 MDK store
+    /// archived, fresh engine store has no record of a group Pacto's own metadata
+    /// still lists), `MDK::leave_group` on the fresh engine must fail with exactly
+    /// `Error::GroupNotFound` ("group not found") rather than some other error
+    /// shape. `MlsService::leave_group`'s `.contains("group not found")` match arm
+    /// depends on this precise string — this test pins it against the real MDK
+    /// dependency instead of assuming it.
+    #[test]
+    fn engine_leave_group_on_unknown_group_id_errors_group_not_found() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([42u8; 32]))
+                .unwrap(),
+        );
+
+        // A group id the fresh engine has never created, joined, or otherwise
+        // recorded -- exactly the shape of a group archived by a prior store
+        // reset and never carried into the new store.
+        let unknown_group_id = GroupId::from_slice(&[9u8; 32]);
+
+        let err = engine
+            .leave_group(&unknown_group_id)
+            .expect_err("leaving an unrecorded group must fail");
+
+        assert_eq!(
+            err.to_string(),
+            "group not found",
+            "MlsService::leave_group's local-only-cleanup fallback matches on this exact text"
+        );
     }
 }
