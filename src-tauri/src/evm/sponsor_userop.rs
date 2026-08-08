@@ -60,18 +60,30 @@ pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
 }
 
 /// EntryPoint v0.7 bundler URL: optional `BUNDLER_RPC_URL` override, else Pimlico from `PIMLICO_API_KEY`.
-pub fn bundler_rpc_url(network_key: &str) -> Option<String> {
-    if let Some(url) = explicit_bundler_rpc_url() {
-        return Some(url);
+/// Non-`https://` overrides error with `BUNDLER_CONFIG` (no URL echo).
+pub fn bundler_rpc_url(network_key: &str) -> Result<Option<String>, String> {
+    if let Some(url) = explicit_bundler_rpc_url()? {
+        return Ok(Some(url));
     }
-    pimlico_bundler_rpc_url(network_key)
+    Ok(pimlico_bundler_rpc_url(network_key))
 }
 
-fn explicit_bundler_rpc_url() -> Option<String> {
-    std::env::var("BUNDLER_RPC_URL")
+fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
+    let Some(url) = std::env::var("BUNDLER_RPC_URL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    if !url.starts_with("https://") {
+        return Err(wallet_err_json(
+            "BUNDLER_CONFIG",
+            "BUNDLER_RPC_URL must be an https:// EntryPoint v0.7 bundler URL.",
+            None,
+        ));
+    }
+    Ok(Some(url))
 }
 
 /// Pimlico EP v0.7 bundler URL from `PIMLICO_API_KEY` (chain-id path). Sepolia/local → 11155111.
@@ -91,44 +103,6 @@ fn pimlico_chain_id_for_network(network_key: &str) -> Option<u64> {
         "sepolia" | "local" | "anvil" | "hardhat" => Some(11155111),
         _ => None,
     }
-}
-
-/// Redact bundler API keys from URLs (query `apikey` / Alchemy-style `/v2/<secret>`).
-fn redact_bundler_url(url: &str) -> String {
-    let mut out = url.to_string();
-    if let Some(q_idx) = out.find('?') {
-        let (base, query) = out.split_at(q_idx);
-        let redacted_q: Vec<String> = query
-            .trim_start_matches('?')
-            .split('&')
-            .filter(|p| !p.is_empty())
-            .map(|pair| {
-                let mut parts = pair.splitn(2, '=');
-                let k = parts.next().unwrap_or("");
-                let kl = k.to_ascii_lowercase();
-                if matches!(kl.as_str(), "apikey" | "api_key" | "key") {
-                    format!("{k}=***")
-                } else {
-                    pair.to_string()
-                }
-            })
-            .collect();
-        out = if redacted_q.is_empty() {
-            base.to_string()
-        } else {
-            format!("{base}?{}", redacted_q.join("&"))
-        };
-    }
-    if let Some(idx) = out.find("/v2/") {
-        let after = &out[idx + 4..];
-        let end = after
-            .find(|c| c == '/' || c == '?' || c == '#')
-            .unwrap_or(after.len());
-        if end > 0 {
-            out = format!("{}***{}", &out[..idx + 4], &after[end..]);
-        }
-    }
-    out.chars().take(120).collect()
 }
 
 pub async fn roster_native_balance_wei<P: Provider>(
@@ -208,7 +182,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     calldata: Vec<u8>,
 ) -> Result<SponsoredUserOpSend, String> {
     let net_key = network.to_lowercase();
-    let bundler = bundler_rpc_url(&net_key).ok_or_else(|| {
+    let bundler = bundler_rpc_url(&net_key)?.ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_CONFIG",
             "Set PIMLICO_API_KEY (or BUNDLER_RPC_URL) for an EntryPoint v0.7 bundler when the roster key has no ETH.",
@@ -339,7 +313,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         eip7702_auth,
     };
 
-    let EstimatePasses { second: estimated, .. } =
+    let estimated =
         estimate_sponsored_gas(&bundler, &ctx, placeholder_gas_ceilings()).await?;
     let limits = FinalGasLimits {
         call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
@@ -401,17 +375,11 @@ struct FinalGasLimits {
     paymaster_post_op_gas_limit: u128,
 }
 
-#[derive(Clone, Debug)]
-struct EstimatePasses {
-    first: EstimatedUserOpGas,
-    second: EstimatedUserOpGas,
-}
-
 async fn estimate_sponsored_gas(
     bundler_url: &str,
     ctx: &SponsoredSendParts,
     ceilings: GasCeilings,
-) -> Result<EstimatePasses, String> {
+) -> Result<EstimatedUserOpGas, String> {
     let dummy_sig = dummy_userop_signature();
     let mut paymaster_and_data = encode_paymaster_and_data(
         ctx.paymaster,
@@ -463,9 +431,7 @@ async fn estimate_sponsored_gas(
         signature: &dummy_sig,
         eip7702_auth: ctx.eip7702_auth.clone(),
     })?;
-    let second =
-        bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await?;
-    Ok(EstimatePasses { first, second })
+    bundler_estimate_user_operation_gas(bundler_url, &calibrate_op, ctx.entry_point).await
 }
 
 async fn sign_and_send_user_op<P: Provider, S: Signer + Sync>(
@@ -1212,9 +1178,8 @@ mod tests {
         dummy_userop_signature, eip7702_auth_json, encode_eip7702_authorization,
         explicit_bundler_rpc_url, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
         parse_send_user_op_response, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, redact_bundler_url,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, UserOpParams,
-        FALLBACK_MAX_PRIORITY_FEE,
+        pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
+        user_op_json, userop_max_cost_wei, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -1664,13 +1629,27 @@ mod tests {
         std::env::set_var("BUNDLER_RPC_URL", "https://bundler.example/v2/explicit");
         std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
         assert_eq!(
-            bundler_rpc_url("sepolia").as_deref(),
+            bundler_rpc_url("sepolia").unwrap().as_deref(),
             Some("https://bundler.example/v2/explicit")
         );
         assert_eq!(
-            explicit_bundler_rpc_url().as_deref(),
+            explicit_bundler_rpc_url().unwrap().as_deref(),
             Some("https://bundler.example/v2/explicit")
         );
+    }
+
+    #[test]
+    fn bundler_rpc_url_rejects_non_https_override() {
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::set_var("BUNDLER_RPC_URL", "http://bundler.example/rpc");
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
+        let err = bundler_rpc_url("sepolia").unwrap_err();
+        assert!(err.contains("BUNDLER_CONFIG"));
+        assert!(!err.contains("http://bundler.example"));
+        assert!(explicit_bundler_rpc_url().is_err());
     }
 
     #[test]
@@ -1685,7 +1664,7 @@ mod tests {
         std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
         std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
         assert_eq!(
-            bundler_rpc_url("sepolia").as_deref(),
+            bundler_rpc_url("sepolia").unwrap().as_deref(),
             Some("https://api.pimlico.io/v2/11155111/rpc?apikey=test-pimlico-key")
         );
     }
@@ -1701,7 +1680,7 @@ mod tests {
         std::env::remove_var("BUNDLER_RPC_URL");
         std::env::remove_var("PIMLICO_API_KEY");
         std::env::set_var("ALCHEMY_RPC_KEY", "alchemy-key");
-        assert!(bundler_rpc_url("sepolia").is_none());
+        assert!(bundler_rpc_url("sepolia").unwrap().is_none());
     }
 
     #[test]
@@ -1725,17 +1704,5 @@ mod tests {
         let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
         std::env::remove_var("PIMLICO_API_KEY");
         assert!(pimlico_bundler_rpc_url("sepolia").is_none());
-    }
-
-    #[test]
-    fn redact_bundler_url_strips_apikey_and_v2_path_secret() {
-        let pimlico = redact_bundler_url(
-            "https://api.pimlico.io/v2/11155111/rpc?apikey=super-secret-key",
-        );
-        assert!(pimlico.contains("apikey=***"));
-        assert!(!pimlico.contains("super-secret-key"));
-        let alchemy = redact_bundler_url("https://eth-sepolia.g.alchemy.com/v2/wHbUQqUWdULUtz-ocamtx");
-        assert!(alchemy.contains("/v2/***"));
-        assert!(!alchemy.contains("wHbUQqUWdULUtz-ocamtx"));
     }
 }

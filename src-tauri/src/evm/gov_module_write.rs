@@ -88,7 +88,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                     // The write guard must stay held through inclusion: returning now would let
                     // the next write reuse the same EntryPoint nonce. Callers expect a real L1
                     // transaction hash, not the bundler userOp hash.
-                    // Poll the same bundler that accepted the UserOp (Alchemy vs Pimlico).
+                    // Receipt poll must hit the bundler that accepted the UserOp.
                     let tx_hash =
                         wait_for_user_operation_tx_hash(&send.bundler_url, &send.user_op_hash)
                             .await?;
