@@ -13,12 +13,10 @@ import { loadPendingSquadAdmissions } from './pending-squad-admission';
 import {
   loadPendingAdmitQueue,
   startPendingAdmitDrain,
-  stopPendingAdmitDrain,
 } from '../lib/parent/pending-admit';
 import { tryCompleteAllPendingSquadAdmissions } from '../lib/invites/accept-invite';
 import {
   startJoinInboxHolderSync,
-  stopJoinInboxHolderSync,
 } from '../lib/squad/join-inbox-holder-sync';
 import { loadBackupVerified } from './backup-verification';
 import {

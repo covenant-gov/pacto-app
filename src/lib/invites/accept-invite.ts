@@ -41,11 +41,11 @@ import {
   pendingSquadAdmissions,
   upsertPendingSquadAdmission,
 } from '../../stores/pending-squad-admission';
-import { get as getI18n, t } from 'svelte-i18n';
+import { t } from 'svelte-i18n';
 
 function msg(key: string, values?: Record<string, unknown>): string {
   try {
-    const translate = getI18n(t);
+    const translate = get(t);
     return values ? translate(key, { values }) : translate(key);
   } catch {
     return key;

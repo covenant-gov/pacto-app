@@ -13,7 +13,7 @@ import {
 import { parseBotJoinResponseDm } from './squad-join-mls';
 import { dmError } from '../utils/dm-debug';
 import { showToast } from '../../stores/toast';
-import { get as getI18n, t } from 'svelte-i18n';
+import { t } from 'svelte-i18n';
 
 const completingGroupIds = new Set<string>();
 
@@ -24,7 +24,7 @@ export const pendingApprovedJoins = writable<
 
 function msg(key: string, values?: Record<string, unknown>): string {
   try {
-    const translate = getI18n(t);
+    const translate = get(t);
     return values ? translate(key, { values }) : translate(key);
   } catch {
     return key;
