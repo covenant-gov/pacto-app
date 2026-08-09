@@ -30,7 +30,8 @@ When **this client** is removed, sync or live **444** handling detects eviction-
 
 ## 3. Voluntary leave (`leave_mls_group`)
 
-- Engine emits a **leave proposal**; Pacto publishes it, then **removes group from local metadata** for the leaver and emits **`mls_group_left`** — the group **disappears from the leaver’s list immediately**.
+- Engine emits a **leave proposal**; Pacto publishes it, then **removes the group row from `mls_groups`** (not merely marks it evicted) for the leaver and emits **`mls_group_left`** — the group **disappears from the leaver's list immediately** and stays gone even after a later sync.
+- Mirrors **`cleanup_evicted_group`**'s local cleanup: drops the chat from **`STATE`**, **deletes the chat/messages from DB**, and clears the **MLS event cursor** (keyed by both wire and engine group id).
 - **The group continues** for remaining members; MLS tree updates without the leaver.
 
 **Admin handoff:** Pacto does **not** currently expose “add admin” / “transfer MLS admin”. Only the creator is admin at creation. If the **creator leaves**, the MLS group may end up with **no admins** → **no further kicks** from MLS until MDK + app support admin updates. Squad-level roles (e.g. Hats) are a separate product layer.
