@@ -4,6 +4,11 @@ name: Tag Release
 # version out of package.json, cross-checks it against Cargo.toml /
 # tauri.conf.json, and pushes v<version> if that tag doesn't exist yet.
 # Pushing the tag is what triggers release.yaml.
+#
+# The bump PR may land via squash, merge-commit, or rebase merge; only squash
+# folds the bump commit message into github.event.head_commit. Match against
+# every commit in the push instead of just the head commit so a merge-commit
+# merge (two commits pushed: the bump commit + the merge commit) still tags.
 
 on:
   push:
@@ -16,7 +21,7 @@ permissions:
 
 jobs:
   tag:
-    if: "startsWith(github.event.head_commit.message, 'chore(release): bump version to ')"
+    if: "contains(join(github.event.commits.*.message, '\n'), 'chore(release): bump version to ')"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
