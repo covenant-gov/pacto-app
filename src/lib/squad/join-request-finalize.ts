@@ -22,7 +22,10 @@ export const pendingApprovedJoins = writable<
   Array<{ groupId: string; squadName: string; requestId: string; at: number }>
 >([]);
 
-function msg(key: string, values?: Record<string, unknown>): string {
+function tt(
+  key: string,
+  values?: Record<string, string | number | boolean | Date | null | undefined>
+): string {
   try {
     const translate = get(t);
     return values ? translate(key, { values }) : translate(key);
@@ -89,7 +92,7 @@ export async function completeApprovedJoin(
       welcome = all.find((w) => sameMlsGroupId(w.nostr_group_id, groupId));
     }
     if (!welcome) {
-      showToast(msg('messaging.inviteCard.joinApprovedPendingToast'));
+      showToast(tt('messaging.inviteCard.joinApprovedPendingToast'));
       return;
     }
 

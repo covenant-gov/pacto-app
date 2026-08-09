@@ -43,7 +43,10 @@ import {
 } from '../../stores/pending-squad-admission';
 import { t } from 'svelte-i18n';
 
-function msg(key: string, values?: Record<string, unknown>): string {
+function tt(
+  key: string,
+  values?: Record<string, string | number | boolean | Date | null | undefined>
+): string {
   try {
     const translate = get(t);
     return values ? translate(key, { values }) : translate(key);
@@ -312,7 +315,7 @@ export async function acceptAnnouncementsInvite(
     `legacy-${payload.groupId}-${messageId}`;
 
   if (admitters.length === 0) {
-    throw new Error(msg('messaging.inviteCard.noAdmitters'));
+    throw new Error(tt('messaging.inviteCard.noAdmitters'));
   }
 
   upsertPendingSquadAdmission({
@@ -323,7 +326,7 @@ export async function acceptAnnouncementsInvite(
     acceptedAt: Date.now(),
   });
 
-  showToast(msg('messaging.inviteCard.acceptanceSentToast'));
+  showToast(tt('messaging.inviteCard.acceptanceSentToast'));
   await publishInviteAcceptedClaims({
     parentId: payload.groupId,
     inviteId,
@@ -404,7 +407,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
   bumpMembershipVersion(payload.groupId);
   void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
   pendingReadyToast.set({
-    text: msg('messaging.inviteCard.squadReadyToast', { name: payload.name }),
+    text: tt('messaging.inviteCard.squadReadyToast', { name: payload.name }),
     goTo: {
       type: 'squad',
       name: payload.name,
@@ -452,7 +455,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
       return;
     }
     dmError('Accept squad invite failed', e);
-    showToast(getInvokeErrorMessage(e, msg('messaging.inviteCard.acceptFailed')));
+    showToast(getInvokeErrorMessage(e, tt('messaging.inviteCard.acceptFailed')));
   } finally {
     acceptingSquadInviteId.set(null);
   }
