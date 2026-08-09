@@ -96,7 +96,23 @@
   let composerDestroyed = false;
   const desktopPickerAvailable = isDesktopFilePickerAvailable();
 
+  const COMPOSER_MAX_HEIGHT_PX = 240;
+
+  function resizeTextarea() {
+    const ta = textareaEl;
+    if (!ta) return;
+    // Empty drafts use CSS min-height so the composer stays single-line inline.
+    if (!ta.value) {
+      ta.style.height = '';
+      return;
+    }
+    // Collapse first so scrollHeight reflects content, not a previous inline height.
+    ta.style.height = '0px';
+    ta.style.height = `${Math.min(ta.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
+  }
+
   onMount(() => {
+    resizeTextarea();
     void (async () => {
       const unregister = await registerAttachmentDrop((paths) => {
         const first = paths[0];
@@ -163,6 +179,7 @@
     mentions = [...mentions, { npub: candidate.npub, alias: candidate.alias }];
     closeMentionPicker();
     await tick();
+    resizeTextarea();
     if (textareaEl) {
       textareaEl.setSelectionRange(result.cursor, result.cursor);
       textareaEl.focus();
@@ -217,6 +234,8 @@
     messageText = "";
     mentions = [];
     closeMentionPicker();
+    await tick();
+    resizeTextarea();
   }
 
   async function sendPendingAttachment(pending: PendingFileAttachment) {
@@ -239,6 +258,8 @@
       messageText = "";
       mentions = [];
       closeMentionPicker();
+      await tick();
+      resizeTextarea();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to send attachment', undefined, undefined, {
         error: true,
@@ -416,6 +437,7 @@
   }
 
   function handleInput() {
+    resizeTextarea();
     openMentionPickerAtCursor();
     onTyping?.();
   }
@@ -582,6 +604,7 @@
     await closeEmojiPanel({ refocusComposer: true });
     onTyping?.();
     await tick();
+    resizeTextarea();
     if (textareaEl) {
       const pos = start + emoji.length;
       textareaEl.setSelectionRange(pos, pos);
@@ -1022,7 +1045,7 @@
 
   .input-wrapper {
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     gap: 8px;
     background: var(--bg-hover);
     border-radius: 8px;
@@ -1287,7 +1310,7 @@
     flex: 1;
     min-width: 0;
     min-height: 1.4em;
-    max-height: 120px;
+    max-height: 240px;
     background: transparent;
     border: none;
     outline: none;
