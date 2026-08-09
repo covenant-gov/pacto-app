@@ -72,7 +72,7 @@ flowchart LR
 
 - **DMs** use NIP-17 private DMs (gift wraps per NIP-59, kind 1059). The inner rumor uses kinds 14 (text), 15 (file), 7 (reaction), 30078 (typing), etc.
 - **MLS groups** use kind 444 on the wire; kind 443 welcomes arrive inside a Gift Wrap.
-- Both DM and MLS decrypted messages are materialized into the same in-memory `Chat` / `Message` model. The persisted storage is more layered: raw Nostr-shaped events live in the `events` table, chat metadata in `chats`, and MDK engine state in `vector-mls.db`. A legacy `messages` table is still present but no longer the primary store.
+- Both DM and MLS decrypted messages are materialized into the same in-memory `Chat` / `Message` model. The persisted storage is more layered: raw Nostr-shaped events live in the `events` table, chat metadata in `chats`, and MDK engine state in `pacto-mls.db`. A legacy `messages` table is still present but no longer the primary store.
 
 ### 2. EVM wallet
 
@@ -108,7 +108,7 @@ Each account is isolated under its npub.
 flowchart TB
     subgraph Account["Tauri app_data_dir/<npub>/"]
         A[pacto.db]
-        B[mls/vector-mls.db]
+        B[mls/pacto-mls.db]
         C[attachments / media]
     end
     subgraph Engine["MDK engine"]
@@ -121,7 +121,7 @@ flowchart TB
     A --> E
 ```
 
-- `vector-mls.db` is owned by the MDK engine; do not edit it by hand.
+- `pacto-mls.db` is owned by the MDK engine; do not edit it by hand.
 - `pacto.db` holds chat metadata, Nostr-shaped events, profiles, and squad infrastructure pointers.
 - Frontend state is npub-scoped via `localStorage` keys built with `persistenceKey(prefix)`.
 

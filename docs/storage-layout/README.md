@@ -1,6 +1,6 @@
 # Storage layout — contributor map
 
-Local persistence is **per Nostr account (`npub`)**: one profile directory under the Tauri **app data** path, containing **`pacto.db`** (app SQLite) and **`mls/vector-mls.db`** (MLS engine).
+Local persistence is **per Nostr account (`npub`)**: one profile directory under the Tauri **app data** path, containing **`pacto.db`** (app SQLite) and **`mls/pacto-mls.db`** (MLS engine).
 
 ## Read next
 

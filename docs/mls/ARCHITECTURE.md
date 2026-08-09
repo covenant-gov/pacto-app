@@ -5,13 +5,13 @@
 - **Crates:** `mdk-core`, `mdk-sqlite-storage`, and `mdk-storage-traits` **0.8.0** from crates.io, using the `nostr` **0.44.7** line. The old git revision is no longer part of the dependency graph.
 - **Facade:** **`MlsService`** in `src-tauri/src/mls.rs` — creates a persistent engine at:
 
-  `get_mls_directory(...)/vector-mls.db`
+  `get_mls_directory(...)/pacto-mls.db`
 
   (per **npub**, under the app data profile folder — see `account_manager.rs`).
 
 ## Two storage layers
 
-1. **MDK SQLite (`vector-mls.db`)** — cryptographic MLS state (groups, epochs, etc.) managed by the engine. Do not hand-edit.
+1. **MDK SQLite (`pacto-mls.db`)** — cryptographic MLS state (groups, epochs, etc.) managed by the engine. Do not hand-edit.
 2. **App SQLite (`pacto.db`)** — plaintext-ish metadata the UI and sync logic need:
    - **`mls_groups`** — `group_id`, `engine_group_id`, name, eviction flag, timestamps, …
    - **`mls_keypackages`** — cached key packages for members/devices
@@ -21,7 +21,7 @@ Decrypted **application messages** are integrated into the same **chat/message m
 
 ## Store encryption and upgrades
 
-`vector-mls.db` is SQLCipher-encrypted. `MlsService` derives a distinct 32-byte store key from the unlocked account session key with the `pacto/mls-store/v1` domain separator; MDK never receives the app database's plaintext key material.
+`pacto-mls.db` is SQLCipher-encrypted. `MlsService` derives a distinct 32-byte store key from the unlocked account session key with the `pacto/mls-store/v1` domain separator; MDK never receives the app database's plaintext key material.
 
 Before MDK 0.8.0 opens the store, `mls_store_reset.rs` reads the MDK refinery history directly. Stores from the old V100–V104 series are harvested and the entire `<npub>/mls/` directory—database, WAL, and SHM together—is moved to `<npub>/mls.archive.<timestamp>/`. A fresh encrypted store is then created. Archive directories are removed after seven days.
 
@@ -36,7 +36,7 @@ The app keeps message history, chat names, and participant lists in `pacto.db`, 
 CI covers reset with synthetic V100/V104 SQLite fixtures. To exercise a copied pre-upgrade `mls/` directory (including hot WAL):
 
 ```bash
-export MLS_LEGACY_FIXTURE=/path/to/copied/mls   # contains vector-mls.db (+ optional -wal/-shm)
+export MLS_LEGACY_FIXTURE=/path/to/copied/mls   # contains a pre-rename mls store copy named vector-mls.db (+ optional -wal/-shm)
 cd src-tauri && cargo test --lib mls_store_reset::tests::real_legacy_store_copy_archives_with_hot_wal_and_fresh_store_opens -- --ignored --exact
 ```
 

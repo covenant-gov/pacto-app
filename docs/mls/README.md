@@ -24,7 +24,7 @@ Group messaging uses **nostr-mls** / **MDK** with **SQLite-backed** engine state
 
 ## On-disk storage
 
-- **Engine state:** `<app_data>/<npub>/mls/vector-mls.db` (see `MlsService::new_persistent` in `mls.rs`).
+- **Engine state:** `<app_data>/<npub>/mls/pacto-mls.db` (see `MlsService::new_persistent` in `mls.rs`).
 - **App metadata / cursors:** tables inside **`pacto.db`** (same directory as profile DB). Details in **`docs/storage-layout/SQLITE_AND_FILES.md`**.
 
 ## Related docs

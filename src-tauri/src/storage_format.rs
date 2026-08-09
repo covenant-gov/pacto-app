@@ -120,8 +120,7 @@ fn classify_history(
         match embedded.iter().find(|m| m.version() == row.version) {
             None => return StorageFormatVerdict::Unrecognized(row.version),
             Some(migration) => {
-                if migration.name() != row.name
-                    || migration.checksum().to_string() != row.checksum
+                if migration.name() != row.name || migration.checksum().to_string() != row.checksum
                 {
                     return StorageFormatVerdict::Divergent(row.version);
                 }
@@ -686,7 +685,10 @@ mod tests {
         assert!(report.all_recognized);
         assert_eq!(report.unrecognized_count, 0);
         assert_eq!(report.highest_offending_version, None);
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -714,7 +716,10 @@ mod tests {
         assert!(!report.all_recognized);
         assert_eq!(report.unrecognized_count, 1);
         assert_eq!(report.highest_offending_version, Some(above_ceiling));
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -730,7 +735,10 @@ mod tests {
         // behavior is covered against isolated temp dirs above.
         let app = tauri::test::mock_app();
         let report = get_storage_compatibility(app.handle().clone()).unwrap();
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
     }
 
     #[test]

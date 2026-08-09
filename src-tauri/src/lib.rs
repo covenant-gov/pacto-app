@@ -8882,9 +8882,9 @@ pub fn run() {
                 }
             });
 
-            // Migrate any legacy `vector.db` profiles (pre-rename from the
-            // upstream Vector project) to `pacto.db` before anything else
-            // touches storage.
+            // Migrate any legacy `vector.db`/`vector-mls.db` profiles
+            // (pre-rename from the upstream Vector project) to
+            // `pacto.db`/`pacto-mls.db` before anything else touches storage.
             account_manager::migrate_legacy_databases(&handle);
 
             // Auto-select account on startup if one exists but isn't selected
