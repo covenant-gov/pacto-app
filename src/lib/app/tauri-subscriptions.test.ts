@@ -126,6 +126,19 @@ vi.mock('../invites/accept-invite', () => ({
     mocks.mockFunctions.notifyPendingInviteWelcome(...args),
 }));
 
+vi.mock('../squad/join-request-finalize', () => ({
+  handleBotJoinResponseDm: vi.fn(),
+  tryCompletePendingApprovedJoins: vi.fn(),
+}));
+
+vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../squad/squad-outbound-invite')>();
+  return {
+    ...actual,
+    handleInviteeConsentForAdmit: vi.fn(),
+  };
+});
+
 vi.mock('../squad/squad-catalog', () => ({
   updateChannelNameIfPlaceholder: (...args: unknown[]) =>
     mocks.mockFunctions.updateChannelNameIfPlaceholder(...args),

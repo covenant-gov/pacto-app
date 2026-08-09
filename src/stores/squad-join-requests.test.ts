@@ -61,4 +61,19 @@ describe('squad join requests store', () => {
     expect(get(joinRequestsErrorBySquadId)['squad2']).toMatch(/MLS offline/i);
     expect(getJoinRequestPendingCount('squad2')).toBe(0);
   });
+
+  it('still loads MLS pending when fan-out fails', async () => {
+    vi.spyOn(squadJoinMls, 'fanOutBotJoinDmsToMls').mockRejectedValue(new Error('Could not sync join inbox.'));
+    const fetchSpy = vi
+      .spyOn(squadJoinMls, 'loadPendingJoinRequestsFromMls')
+      .mockResolvedValue([sampleRequest('kept')]);
+    resetSquadJoinRequestStores();
+    const { ensureJoinRequestsHydrated, joinRequestsErrorBySquadId } = await import(
+      './squad-join-requests'
+    );
+    await ensureJoinRequestsHydrated('squad3');
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(getJoinRequestPendingCount('squad3')).toBe(1);
+    expect(get(joinRequestsErrorBySquadId)['squad3']).toBeUndefined();
+  });
 });

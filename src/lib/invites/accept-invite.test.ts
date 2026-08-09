@@ -35,6 +35,11 @@ vi.mock('../squad/squad-outbound-invite', () => ({
   publishInviteAcceptedClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../stores/auth', async () => {
+  const { writable } = await import('svelte/store');
+  return { currentUser: writable({ npub: 'npub1invitee' }) };
+});
+
 import {
   handleChannelAddedToSquad,
   handleMlsWelcomeAccepted,
@@ -44,10 +49,13 @@ import {
   notifyPendingInviteWelcome,
   resetInviteAcceptState,
   acceptAnnouncementsInvite,
+  ACCEPT_WELCOME_FAST_PATH_MS,
 } from './accept-invite';
 import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
+import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { squads, type Squad } from '../../stores/squads';
 import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
+import { pendingSquadAdmissions, resetPendingSquadAdmissions } from '../../stores/pending-squad-admission';
 import { backendDmMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
 import {
@@ -80,6 +88,7 @@ const pendingWelcome = {
 describe('accept-invite channel persistence', () => {
   beforeEach(() => {
     resetInviteAcceptState();
+    resetPendingSquadAdmissions();
     resetMlsHistoryWelcomeForTests();
     setCurrentNpubForPersistence('npub1test');
     persistSquadPatchMock.mockReset().mockResolvedValue(parent);
@@ -87,12 +96,14 @@ describe('accept-invite channel persistence', () => {
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([pendingWelcome]);
     vi.mocked(acceptMlsWelcome).mockReset().mockResolvedValue(true);
     vi.mocked(syncMlsGroupsNow).mockReset().mockResolvedValue({ synced: 0, total: 0 });
+    vi.mocked(publishInviteAcceptedClaims).mockReset().mockResolvedValue(undefined);
     squads.set([parent]);
     squadNavOrder.set(['parent-1']);
   });
 
   afterEach(() => {
     resetInviteAcceptState();
+    resetPendingSquadAdmissions();
     resetMlsHistoryWelcomeForTests();
     setCurrentNpubForPersistence(null);
   });
@@ -198,5 +209,21 @@ describe('accept-invite channel persistence', () => {
     notifyPendingInviteWelcome('new-squad');
     await expect(waited).resolves.toMatchObject({ id: 'welcome-1', nostr_group_id: 'new-squad' });
     expect(vi.mocked(syncMlsGroupsNow).mock.calls.some((c) => c[0] === null)).toBe(false);
+  });
+
+  it('consent-first Accept persists joining state without hard fail when no welcome', async () => {
+    vi.useFakeTimers();
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([]);
+    const done = acceptAnnouncementsInvite(
+      { groupId: 'pending-squad', name: 'Pending' },
+      'msg-pending',
+      { inviteId: 'inv-9', admitterNpubs: ['npub1admitter'], invitedByNpub: 'npub1admitter' }
+    );
+    await vi.advanceTimersByTimeAsync(ACCEPT_WELCOME_FAST_PATH_MS + 50);
+    await done;
+    expect(publishInviteAcceptedClaims).toHaveBeenCalled();
+    expect(get(pendingSquadAdmissions).some((p) => p.groupId === 'pending-squad')).toBe(true);
+    expect(get(squads).some((s) => s.id === 'pending-squad')).toBe(false);
+    vi.useRealTimers();
   });
 });
