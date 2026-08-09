@@ -1225,6 +1225,34 @@ impl MlsService {
             .retain(|g| g.group_id != group_id && g.engine_group_id != group_meta.engine_group_id);
         self.write_groups(&groups).await?;
 
+        // Mirror cleanup_evicted_group(): drop the chat/messages and any stale
+        // cursor so a voluntary leave doesn't orphan rows for a group the app
+        // otherwise treats as gone. Use the canonical wire group_id (the id
+        // chats/cursors are keyed by), not whichever id form the caller passed.
+        let canonical_group_id = group_meta.group_id.clone();
+
+        {
+            let mut state = STATE.lock().await;
+            state.chats.retain(|c| c.id() != &canonical_group_id);
+        }
+
+        if let Some(handle) = TAURI_APP.get() {
+            if let Err(e) = crate::db::delete_chat(handle.clone(), &canonical_group_id).await {
+                eprintln!("[MLS] Failed to delete chat from storage: {}", e);
+            }
+        }
+
+        {
+            let mut cursors = self.read_event_cursors().await.unwrap_or_default();
+            let removed_wire = cursors.remove(&canonical_group_id).is_some();
+            let removed_engine = cursors.remove(&group_meta.engine_group_id).is_some();
+            if removed_wire || removed_engine {
+                if let Err(e) = self.write_event_cursors(&cursors).await {
+                    eprintln!("[MLS] Failed to remove cursor after leaving group: {}", e);
+                }
+            }
+        }
+
         // Emit event to refresh UI, and drop any stale "state lost" tracking —
         // the group is gone from the leaver's list entirely now, not merely
         // unsynced, so it should stop showing up in reset-state UI.
