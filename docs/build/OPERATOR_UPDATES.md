@@ -22,6 +22,49 @@ That URL is configured in `src-tauri/tauri.conf.json` under `plugins.updater.end
    - Windows (`x86_64-pc-windows-msvc`)
 4. The workflow uploads installers and `latest.json` to the GitHub release.
    - `uploadUpdaterJson: true` tells the Tauri action to generate and attach `latest.json`.
+5. Once the **entire** platform matrix finishes, `release.yaml` fans out three
+   follow-up jobs, all gated on `needs: publish-tauri`:
+   - `update-homebrew-tap` — opens a Cask bump PR against `covenant-gov/homebrew-pacto`.
+   - `stamp-updater-compatibility` — stamps `minimum_compatible_version` onto `latest.json`.
+   - `deploy-landing` — refreshes the public download page (see below).
+
+## Download page (release → landing deploy)
+
+The public download page at <https://covenant-gov.github.io/pacto-app/> is a
+static Astro site in `landing/`. It renders `pacto-release.json`, which
+`scripts/generate-release-manifest.mjs` builds from the GitHub release's actual
+assets.
+
+`release.yaml`'s `deploy-landing` job calls `.github/workflows/deploy-landing.yaml`
+as a reusable workflow with `release_tag: ${{ github.ref_name }}`, so a tagged
+release refreshes the download page with **no manual step**. Because the job
+needs `publish-tauri`, the manifest is only generated after every platform has
+uploaded its installers — the page never advertises a partial asset set. After
+deploying, a `verify` job polls the live `pacto-release.json` and fails the run
+if the served `tag` does not match the tag that was built.
+
+`deploy-landing.yaml` intentionally has **no** `release: published` trigger.
+tauri-action publishes the release using `GITHUB_TOKEN`, and runs authenticated
+with `GITHUB_TOKEN` do not reliably fire other workflows' `release` listeners.
+Depending on that event is what left the site serving v0.5.1 across the v0.5.2
+and v0.5.4 releases (#213).
+
+### Emergency republish
+
+To rebuild the page outside a release — a Pages outage, a landing-site fix on
+`main`, or a manifest that needs regenerating:
+
+```bash
+# Publish whatever release is currently `latest`:
+gh workflow run deploy-landing.yaml
+
+# Or pin a specific tag:
+gh workflow run deploy-landing.yaml -f release_tag=v0.5.4
+```
+
+Leaving `release_tag` blank resolves to `releases/latest`. Deploys are
+serialized by the `deploy-landing` concurrency group, so a dispatch issued
+during a release deploy queues behind it rather than cancelling it.
 
 ## Signing key
 
@@ -67,6 +110,7 @@ Repeat on at least one additional desktop platform before promoting a release br
 - **No update found when one exists:** verify the tag, the release workflow completion, and that `latest.json` is attached to the release.
 - **Signature mismatch:** confirm the public key in `src-tauri/tauri.conf.json` matches the private key used to sign the release.
 - **Missing platform asset:** the workflow must produce an installer for the running platform. Check the release assets and platform matrix in `.github/workflows/release.yaml`.
+- **Download page shows an older version than the latest release:** check the `deploy-landing` job on the tag's `publish` run. If it never ran, the release predates the chained job; republish with `gh workflow run deploy-landing.yaml`. If it ran but the `verify` job failed, the Pages deployment did not serve the new manifest — re-run the workflow and confirm `curl -s https://covenant-gov.github.io/pacto-app/pacto-release.json | jq -r .tag`.
 - **macOS: app closes but does not relaunch after updating:** this can happen when the process exits before the updater's spawned replacement is fully launched (tauri-apps/tauri#11392). The in-app relaunch now routes through a backend command that runs `cleanup_before_exit()` followed by `tauri::process::restart()` directly, which avoids the race.
 - **macOS: update downloads but fails to install with "Failed to move the new app into place":** the app is likely sandboxed or installed with permissions that prevent replacing `/Applications/pacto.app`. Ensure the app is installed by dragging to `/Applications`, run `xattr -r -d com.apple.quarantine /Applications/pacto.app`, and approve any system prompt for administrator privileges.
 - **Unsigned builds and Gatekeeper:** Pacto is currently unsigned. On macOS, removing the quarantine attribute before first launch is required; otherwise Gatekeeper translocation can cause the updater to modify a temporary copy instead of the app in `/Applications`. On Windows, unsigned installers may trigger SmartScreen; users should choose "More info" → "Run anyway".
