@@ -10,7 +10,7 @@ How Pacto stores data **per Nostr identity (`npub`)**, what **logout** removes, 
 
 | Location | Contents | Removed on logout? |
 |----------|----------|-------------------|
-| **`AppData/<npub>/`** (see `account_manager::get_profile_directory`) | **`vector.db`**, **`mls/`** (engine DB), encrypted keys in `settings`, chats, events, profiles | **Yes** — only the **current** account’s directory |
+| **`AppData/<npub>/`** (see `account_manager::get_profile_directory`) | **`pacto.db`**, **`mls/`** (engine DB), encrypted keys in `settings`, chats, events, profiles | **Yes** — only the **current** account’s directory |
 | **Downloads / Documents** | `Download/vector/` (desktop) or `Document/vector/` (iOS) — attachments | **Yes** (whole folder) |
 
 ### Global (not npub-scoped)
@@ -59,7 +59,7 @@ Order (simplified):
 
 ## 5. Clear storage (separate from logout)
 
-**`clear_storage`** — clears attachment files / metadata and **cache**, profile cached image paths; **does not** delete `vector.db`, keys, or MLS engine DB.
+**`clear_storage`** — clears attachment files / metadata and **cache**, profile cached image paths; **does not** delete `pacto.db`, keys, or MLS engine DB.
 
 ---
 

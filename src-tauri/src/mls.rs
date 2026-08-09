@@ -75,7 +75,7 @@ pub(crate) fn mls_wrapper_failure_reason(event_id: &[u8; 32]) -> Option<String> 
     let handle = TAURI_APP.get()?;
     let npub = crate::account_manager::get_current_account().ok()?;
     let mls_dir = crate::account_manager::get_mls_directory(&handle, &npub).ok()?;
-    let db_path = mls_dir.join("vector-mls.db");
+    let db_path = mls_dir.join(crate::account_manager::MLS_DB_FILENAME);
     let conn = rusqlite::Connection::open(&db_path).ok()?;
     conn.query_row(
         "SELECT failure_reason FROM processed_messages WHERE wrapper_event_id = ?1",
@@ -326,7 +326,7 @@ impl MlsService {
     }
 
     /// Create a new MLS service with persistent SQLite-backed storage at:
-    ///   [AppData]/npub.../mls/vector-mls.db (account-specific)
+    ///   [AppData]/npub.../mls/pacto-mls.db (account-specific)
     pub fn new_persistent<R: Runtime>(handle: &AppHandle<R>) -> Result<Self, MlsError> {
         Self::new_persistent_inner(handle, false)
     }
@@ -346,7 +346,7 @@ impl MlsService {
 
         let mls_dir = crate::account_manager::get_mls_directory(handle, &npub)
             .map_err(|e| MlsError::StorageError(format!("Failed to get MLS directory: {}", e)))?;
-        let db_path = mls_dir.join("vector-mls.db");
+        let db_path = mls_dir.join(crate::account_manager::MLS_DB_FILENAME);
         let encryption_key = Self::mls_store_encryption_key()?;
 
         // Detection and archive happen before MDK 0.8.0 can open legacy bytes.
@@ -3380,8 +3380,7 @@ mod mls_leave_group_state_lost_tests {
     #[test]
     fn engine_leave_group_on_unknown_group_id_errors_group_not_found() {
         let engine = MDK::new(
-            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([42u8; 32]))
-                .unwrap(),
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([42u8; 32])).unwrap(),
         );
 
         // A group id the fresh engine has never created, joined, or otherwise

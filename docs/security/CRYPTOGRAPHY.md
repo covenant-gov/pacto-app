@@ -8,8 +8,8 @@ This doc explains the two cryptographic layers in Pacto: the **app-level PIN-der
 
 | Layer | Scope | Keys live in | Protects |
 |---|---|---|---|
-| **App-level (PIN)** | At-rest SQLite | Per-account `vector.db` settings + in-memory `ENCRYPTION_KEY` | Seed phrase, EVM imported keys, DM/MLS text message content, edits, bot secrets |
-| **MLS protocol** | Group messaging in transit | `mdk_core` engine inside `vector-mls.db` | Group messages on the wire (Kind 444) |
+| **App-level (PIN)** | At-rest SQLite | Per-account `pacto.db` settings + in-memory `ENCRYPTION_KEY` | Seed phrase, EVM imported keys, DM/MLS text message content, edits, bot secrets |
+| **MLS protocol** | Group messaging in transit | `mdk_core` engine inside `pacto-mls.db` | Group messages on the wire (Kind 444) |
 
 The two layers are independent. A failure in the PIN layer cannot make the MLS engine reject a wire message, and a corrupted MLS engine state cannot decrypt the app-level SQLite rows.
 
@@ -136,7 +136,7 @@ Only these rows are migrated; MLS engine state is **not** in this list:
 MLS is handled by the `mdk_core` / `mdk_sqlite_storage` engine behind `MlsService` in `src-tauri/src/mls.rs`. The engine keeps its own cryptographic state in a separate SQLite database:
 
 ```text
-<app_data_dir>/<npub>/mls/vector-mls.db
+<app_data_dir>/<npub>/mls/pacto-mls.db
 ```
 
 ### 4.1 What the engine manages

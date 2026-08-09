@@ -153,18 +153,18 @@ Use these in priority order.
 
 ## Recovering a machine the local storage-format check blocked
 
-This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `vector.db` on launch and finds a migration history that this build doesn't recognize — for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
+This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `pacto.db` on launch and finds a migration history that this build doesn't recognize — for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
 
 The block screen deliberately does not show which npub or file path is at fault, so recovery is manual:
 
 1. Note the schema version number the block screen reports.
-2. Profile directories live under `<app_data_dir>/npub1…/vector.db` — see [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) for the full on-disk layout. `<app_data_dir>` here is Tauri's per-OS app data directory *including* this app's identifier (`io.pacto`, from `src-tauri/tauri.conf.json`):
+2. Profile directories live under `<app_data_dir>/npub1…/pacto.db` — see [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) for the full on-disk layout. `<app_data_dir>` here is Tauri's per-OS app data directory *including* this app's identifier (`io.pacto`, from `src-tauri/tauri.conf.json`):
    - macOS: `~/Library/Application Support/io.pacto/`
    - Windows: `%APPDATA%\io.pacto\`
    - Linux: `$XDG_DATA_HOME/io.pacto/` (usually `~/.local/share/io.pacto/`)
-3. For each `npub1…` subdirectory, open its `vector.db` with a `sqlite3` client and check the highest applied version:
+3. For each `npub1…` subdirectory, open its `pacto.db` with a `sqlite3` client and check the highest applied version:
    ```bash
-   sqlite3 "<app_data_dir>/npub1exampleaddress/vector.db" \
+   sqlite3 "<app_data_dir>/npub1exampleaddress/pacto.db" \
      "SELECT version, name, applied_on FROM refinery_schema_history ORDER BY version DESC LIMIT 1;"
    ```
 4. The one profile whose `version` matches the number from the block screen is the offender. Move that single directory aside (e.g. rename `npub1…` to `npub1…-quarantined`) — do not delete it.

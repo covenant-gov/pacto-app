@@ -18,7 +18,7 @@ use crate::mls_store_reset_state::{
 
 const RESET_MARKER_KEY: &str = "mls_store_reset_v1";
 const ARCHIVE_RETENTION_SECS: u64 = 7 * 24 * 60 * 60;
-const ARCHIVE_PREFIX: &str = "mls.archive.";
+pub(crate) const ARCHIVE_PREFIX: &str = "mls.archive.";
 
 static ACCOUNT_RESET_LOCKS: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));

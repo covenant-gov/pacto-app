@@ -1,4 +1,4 @@
-//! Read-only storage-format recognition for the app database (`vector.db`).
+//! Read-only storage-format recognition for the app database (`pacto.db`).
 //!
 //! Reproduces refinery-core 0.9.2's `verify_migrations` abort semantics
 //! ahead of time, on a read-only connection, so the app can tell a user to
@@ -66,7 +66,7 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool, rusqlite::Error> 
     )
 }
 
-/// Whether this build recognizes a profile's on-disk `vector.db` schema.
+/// Whether this build recognizes a profile's on-disk `pacto.db` schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StorageFormatVerdict {
     /// No database file at all -- nothing to recognize or reject.
@@ -120,8 +120,7 @@ fn classify_history(
         match embedded.iter().find(|m| m.version() == row.version) {
             None => return StorageFormatVerdict::Unrecognized(row.version),
             Some(migration) => {
-                if migration.name() != row.name
-                    || migration.checksum().to_string() != row.checksum
+                if migration.name() != row.name || migration.checksum().to_string() != row.checksum
                 {
                     return StorageFormatVerdict::Divergent(row.version);
                 }
@@ -192,7 +191,7 @@ pub(crate) struct StorageFormatScanReport {
     pub(crate) highest_offending_version: Option<i32>,
 }
 
-/// Scan every `npub1*` profile directory's `vector.db` under `app_data_dir`.
+/// Scan every `npub1*` profile directory's `pacto.db` under `app_data_dir`.
 /// A profile with no database file classifies `Fresh` and is not counted.
 /// Bounded by `SCAN_DEADLINE`: a profile reached after the deadline is left
 /// unscanned rather than blocking launch on a slow disk.
@@ -216,7 +215,7 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
                 continue;
             }
 
-            let verdict = classify_database(&path.join("vector.db"));
+            let verdict = classify_database(&path.join("pacto.db"));
             if let StorageFormatVerdict::Unrecognized(version)
             | StorageFormatVerdict::Divergent(version) = verdict
             {
@@ -453,7 +452,7 @@ mod tests {
     fn pre_refinery_classification_ignores_settings_table_shape() {
         let dir = unique_temp_dir("pre-refinery-shape");
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("vector.db");
+        let path = dir.join("pacto.db");
         let conn = rusqlite::Connection::open(&path).unwrap();
         // A `settings` table shaped nothing like the real schema -- the
         // classifier must not care about structure, only that it exists.
@@ -473,7 +472,7 @@ mod tests {
 
     #[test]
     fn absent_file_is_fresh() {
-        let path = unique_temp_dir("absent").join("vector.db");
+        let path = unique_temp_dir("absent").join("pacto.db");
         assert_eq!(classify_database(&path), StorageFormatVerdict::Fresh);
     }
 
@@ -481,7 +480,7 @@ mod tests {
     fn unreadable_file_classifies_as_recognized() {
         let dir = unique_temp_dir("truncated");
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("vector.db");
+        let path = dir.join("pacto.db");
         std::fs::write(&path, b"not a sqlite file").unwrap();
 
         assert_eq!(classify_database(&path), StorageFormatVerdict::Recognized);
@@ -493,7 +492,7 @@ mod tests {
     fn busy_database_classifies_as_recognized() {
         let dir = unique_temp_dir("busy");
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("vector.db");
+        let path = dir.join("pacto.db");
 
         let holder = rusqlite::Connection::open(&path).unwrap();
         holder
@@ -513,7 +512,7 @@ mod tests {
     // -- scan_profiles ------------------------------------------------------
 
     #[test]
-    fn scan_ignores_profile_without_vector_db() {
+    fn scan_ignores_profile_without_database() {
         let root = unique_temp_dir("scan-no-db");
         std::fs::create_dir_all(root.join("npub1scannodbprofile")).unwrap();
 
@@ -530,7 +529,7 @@ mod tests {
         let root = unique_temp_dir("scan-unrecognized");
         let profile_dir = root.join("npub1scanunrecognizedprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
-        let db_path = profile_dir.join("vector.db");
+        let db_path = profile_dir.join("pacto.db");
         write_migrated_db(&db_path);
 
         let above_ceiling = crate::migrations::embedded_ceiling() + 1;
@@ -557,14 +556,14 @@ mod tests {
         let root = unique_temp_dir("scan-multi");
         let good_dir = root.join("npub1scanmultigood");
         std::fs::create_dir_all(&good_dir).unwrap();
-        write_migrated_db(&good_dir.join("vector.db"));
+        write_migrated_db(&good_dir.join("pacto.db"));
 
         let above_ceiling = crate::migrations::embedded_ceiling() + 1;
         let mut offending_versions = Vec::new();
         for (label, bump) in [("a", 0), ("b", 1)] {
             let dir = root.join(format!("npub1scanmulti{label}"));
             std::fs::create_dir_all(&dir).unwrap();
-            let db_path = dir.join("vector.db");
+            let db_path = dir.join("pacto.db");
             write_migrated_db(&db_path);
             let version = above_ceiling + bump;
             let conn = rusqlite::Connection::open(&db_path).unwrap();
@@ -686,7 +685,10 @@ mod tests {
         assert!(report.all_recognized);
         assert_eq!(report.unrecognized_count, 0);
         assert_eq!(report.highest_offending_version, None);
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -696,7 +698,7 @@ mod tests {
         let root = unique_temp_dir("compat-incompatible");
         let profile_dir = root.join("npub1compatincompatibleprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
-        let db_path = profile_dir.join("vector.db");
+        let db_path = profile_dir.join("pacto.db");
         write_migrated_db(&db_path);
 
         let above_ceiling = crate::migrations::embedded_ceiling() + 1;
@@ -714,7 +716,10 @@ mod tests {
         assert!(!report.all_recognized);
         assert_eq!(report.unrecognized_count, 1);
         assert_eq!(report.highest_offending_version, Some(above_ceiling));
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -730,7 +735,10 @@ mod tests {
         // behavior is covered against isolated temp dirs above.
         let app = tauri::test::mock_app();
         let report = get_storage_compatibility(app.handle().clone()).unwrap();
-        assert_eq!(report.supported_schema_version, crate::migrations::embedded_ceiling());
+        assert_eq!(
+            report.supported_schema_version,
+            crate::migrations::embedded_ceiling()
+        );
     }
 
     #[test]

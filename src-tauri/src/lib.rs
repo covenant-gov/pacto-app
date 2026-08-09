@@ -1375,7 +1375,7 @@ async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool, relay_url:
 
             let app_data = crate::test_sandbox::test_data_dir(&handle).ok();
             if let Some(data_dir) = app_data {
-                let profile_db = data_dir.join(&npub).join("vector.db");
+                let profile_db = data_dir.join(&npub).join("pacto.db");
                 if profile_db.exists() {
                     let _ = crate::account_manager::set_current_account(npub.clone());
                     println!("[Startup] Set current account for SQL mode: {}", npub);
@@ -6143,7 +6143,7 @@ async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     if let Some(handle) = TAURI_APP.get() {
         let app_data = crate::test_sandbox::test_local_data_dir(handle).ok();
         if let Some(data_dir) = app_data {
-            let profile_db = data_dir.join(&npub).join("vector.db");
+            let profile_db = data_dir.join(&npub).join("pacto.db");
             if profile_db.exists() {
                 let _ = crate::account_manager::set_current_account(npub.clone());
                 println!("[Login] Set current account for SQL mode: {}", npub);
@@ -8881,6 +8881,11 @@ pub fn run() {
                     _ => {}
                 }
             });
+
+            // Migrate any legacy `vector.db`/`vector-mls.db` profiles
+            // (pre-rename from the upstream Vector project) to
+            // `pacto.db`/`pacto-mls.db` before anything else touches storage.
+            account_manager::migrate_legacy_databases(&handle);
 
             // Auto-select account on startup if one exists but isn't selected
             {
