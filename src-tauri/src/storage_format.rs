@@ -618,6 +618,17 @@ mod tests {
 
     // -- embedded-set completeness -----------------------------------------
 
+    /// Last migration version created under the old sequential-integer
+    /// scheme (see AGENTS.md). Anything higher must be a UTC-timestamp
+    /// version (`V<YYYYMMDDHHMMSS>__name.sql`, `make new-migration`).
+    const LAST_SEQUENTIAL_VERSION: i64 = 30;
+    /// 14-digit UTC timestamp range covering 2026-01-01 through
+    /// 2099-12-31 -- wide enough that it never needs bumping for this
+    /// scheme's lifetime, narrow enough to reject a hand-typed small
+    /// integer landing above `LAST_SEQUENTIAL_VERSION` by mistake.
+    const MIN_TIMESTAMP_VERSION: i64 = 20_260_101_000_000;
+    const MAX_TIMESTAMP_VERSION: i64 = 21_000_101_000_000;
+
     #[test]
     fn embedded_set_matches_committed_migration_files() {
         let embedded = crate::migrations::embedded_migration_set();
@@ -655,6 +666,21 @@ mod tests {
             duplicates.is_empty(),
             "duplicate migration version(s), rename one before merging: {duplicates:?}"
         );
+
+        // Anything past the historical sequential range must look like a
+        // timestamp, not a hand-typed next integer -- the exact mistake
+        // that produced the V31/V31 collision this scheme exists to
+        // prevent. Catches a bypass of `make new-migration` in CI instead
+        // of relying on convention alone.
+        for version in &file_versions {
+            if *version > LAST_SEQUENTIAL_VERSION {
+                assert!(
+                    (MIN_TIMESTAMP_VERSION..MAX_TIMESTAMP_VERSION).contains(version),
+                    "migration version {version} looks like a sequential integer, not a UTC \
+                     timestamp (V<YYYYMMDDHHMMSS>__name.sql) -- use `make new-migration name=...`"
+                );
+            }
+        }
 
         let embedded_versions: std::collections::BTreeSet<i64> =
             embedded.iter().map(|m| m.version()).collect();
