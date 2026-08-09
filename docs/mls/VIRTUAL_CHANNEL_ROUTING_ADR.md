@@ -42,7 +42,7 @@ Only one canonical enum is used everywhere (tag value === JSON value).
 |-------|---------|
 | `announcements` | Human-facing chat and **squad-wide state** the whole group should see (member roster EVM shares, sponsor deploys, poll created, squad bot metadata / key-rotated notices). |
 | `inbox` | **Personal prompts and automation** for the viewing member: treasury/governance cards, Safe proposals, roster setup cards in `#personal-alerts`, bot key rotate prompts. Wire bucket name remains `inbox`. |
-| `polls` | Dashboard poll create/vote structured MLS payloads (and future poll-shaped traffic). |
+| `polls` | Dashboard poll **vote** transport (and future poll-shaped traffic that is not a create card). Poll **creates** use `announcements`. |
 | `join_requests` | Commons join request fan-out and accept/reject state for `#join-requests` (private MLS; see [`../communities/SQUAD_BOT_JOIN.md`](../communities/SQUAD_BOT_JOIN.md)). |
 
 Future buckets extend this enum in the same ADR (revision) before code assumes open strings.
@@ -105,7 +105,8 @@ Apply **first matching rule** (implementations walk top-to-bottom):
 |-------|-----------|-----------------|
 | 1 | Rumor tag `pacto_bucket` present and valid | Tag value |
 | 2 | JSON parse succeeds and `pacto_virtual_bucket` valid | Field value |
-| 3 | Payload classified as dashboard poll rumor (existing poll ingest path / `d` tag convention) | `polls` |
+| 3a | Payload `type` is `dashboard_poll_created` (create card) | `announcements` |
+| 3b | Payload classified as dashboard poll **vote** (`d` tag / `pacto.dashboard_poll.v1` vote action) | `polls` |
 | 4 | JSON `schema` is `pacto.squad.join_request.v1` or `pacto.squad.join_request_response.v1` | `join_requests` |
 | 5 | `parseAnnouncement`-style governance/treasury/Safe (and similar **structured announce**) payloads used for automation today | `inbox` |
 | 6 | JSON `type` identifies **`squad_member_evm_share`** (member published roster EVM address) | `announcements` |
