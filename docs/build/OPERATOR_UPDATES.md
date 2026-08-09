@@ -170,6 +170,8 @@ The block screen deliberately does not show which npub or file path is at fault,
 4. The one profile whose `version` matches the number from the block screen is the offender. Move that single directory aside (e.g. rename `npub1…` to `npub1…-quarantined`) — do not delete it.
 5. Relaunch the app. Every other account on the machine unblocks immediately; the moved-aside profile no longer participates in account discovery until it is restored (e.g. by a build that recognizes its schema).
 
+**Local dev cause and prevention:** the most common local trigger isn't a shipped release at all — it's checking out a branch with newer migrations, running it against your primary account, then switching back to a branch that doesn't have those migrations yet. `make dev` isolates its data directory per git branch automatically (except `main`, which keeps the OS-default account unchanged), so this can't happen from branch-hopping; see `Makefile`'s `dev` target.
+
 ## Limits of this gate
 
 - **The manifest is unsigned.** `latest.json`, including `minimum_compatible_version`, carries no signature — only the platform installers themselves are Ed25519-signed. Anyone who can write to the release's assets can alter the manifest.

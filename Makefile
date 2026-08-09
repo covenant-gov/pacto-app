@@ -5,7 +5,7 @@ help:
 	@echo "Pacto — available make targets"
 	@echo ""
 	@echo "  install      install Node/Rust dependencies"
-	@echo "  dev          run the desktop app in development mode"
+	@echo "  dev          run the desktop app in development mode (auto-isolated per branch, except main)"
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
 	@echo "  dev-account  run the desktop app against the persistent, reusable primary test account"
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
@@ -37,8 +37,22 @@ install:
 	pnpm install --frozen-lockfile
 	cd src-tauri && cargo fetch
 
+# Persistent per-branch data dir, so switching branches with different DB
+# migrations never trips the storage-format update gate (a newer branch's
+# schema blocking an older one, or vice versa). `main` keeps the real,
+# stable account at the OS-default location; every other branch gets its
+# own isolated, persistent test_fixtures/ dir keyed by branch name - not
+# swept by `make clean`; delete test_fixtures/ manually to reset.
 dev:
-	pnpm tauri dev
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	if [ "$$branch" = "main" ]; then \
+		pnpm tauri dev; \
+	else \
+		slug=$$(printf '%s' "$$branch" | tr -c 'A-Za-z0-9_.-' '-'); \
+		mkdir -p test_fixtures; \
+		echo "make dev: branch '$$branch' -> isolated data dir test_fixtures/dev-branch-$$slug"; \
+		PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-branch-$$slug" pnpm tauri dev; \
+	fi
 
 # Isolated sandbox account for agent-driven MCP verification (docs/TAURI_MCP_INTEGRATION.md).
 # Avoids colliding with a real dev account whose PIN nobody remembers.
