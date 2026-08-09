@@ -282,6 +282,34 @@ export async function getSquadSponsorSummary(params: {
   })) as SquadSponsorSummaryDto;
 }
 
+/** Mirrors `SquadSponsoredFeeUsageRow` from Tauri (`serde(rename_all = "camelCase")`). */
+export interface SquadSponsoredFeeUsageDto {
+  id: string;
+  parentId: string;
+  chain: string;
+  chainId: number;
+  actorNpub: string;
+  actorEvm: string;
+  amountWei: string;
+  selector: string;
+  action: string;
+  target: string;
+  userOpHash: string;
+  txHash: string;
+  createdAtMs: number;
+}
+
+/** Backend: `list_squad_sponsored_fee_usage` (newest first; default cap 50). */
+export async function listSquadSponsoredFeeUsage(params: {
+  parentId: string;
+  limit?: number;
+}): Promise<SquadSponsoredFeeUsageDto[]> {
+  return (await invoke('list_squad_sponsored_fee_usage', {
+    parentId: params.parentId.trim(),
+    limit: params.limit,
+  })) as SquadSponsoredFeeUsageDto[];
+}
+
 /** Mirrors `SquadSponsorExtStatus` from Tauri. */
 export interface SquadSponsorExtMemberPermitDto {
   address: string;

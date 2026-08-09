@@ -194,6 +194,7 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
     message: 'Allowlisted sends are only available in the desktop app.',
   }),
   list_squad_tracked_tokens: () => [],
+  list_squad_sponsored_fee_usage: () => [],
   upsert_squad_tracked_token: () => ({
     id: 'mock',
     chain: 'sepolia',
