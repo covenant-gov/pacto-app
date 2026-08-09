@@ -4192,6 +4192,23 @@ mod legacy_mls_store_harvest_tests {
                 created_at INTEGER NOT NULL,
                 metadata TEXT NOT NULL DEFAULT '{}',
                 muted INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE events (
+                id TEXT PRIMARY KEY,
+                kind INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER,
+                content TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]',
+                reference_id TEXT,
+                created_at INTEGER NOT NULL,
+                received_at INTEGER NOT NULL,
+                mine INTEGER NOT NULL DEFAULT 0,
+                pending INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                wrapper_event_id TEXT,
+                npub TEXT,
+                virtual_bucket TEXT
             );",
         )
         .expect("seed pre-V28 schema (mirrors migrations::tests::seed_pre_v28_schema)");
