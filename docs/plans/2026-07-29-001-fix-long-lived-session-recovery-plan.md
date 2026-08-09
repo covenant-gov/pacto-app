@@ -18,7 +18,7 @@ deepened: 2026-07-29
 - **Product authority:** `STRATEGY.md` "Private group coordination" track. Reliable long-session behavior is a prerequisite for squads/DAOs that leave the app running for days.
 - **Execution profile:** Code change across backend (Tauri Rust) and frontend (Svelte). No new external dependencies expected.
 - **Stop conditions / open blockers:** None. All blocking product decisions were settled in the originating conversation.
-- **Tail ownership:** The requirements here cover the catch-up mechanism, trigger policy, and status surface. The 181 MLS seed-restore credential limitation and the 139-C poll bucket bug are explicitly out of scope and tracked separately.
+- **Tail ownership:** The requirements here cover the catch-up mechanism, trigger policy, and status surface. The 181 MLS seed-restore credential limitation remains out of scope. #139 MLS wake + #139-C poll inbound bucket shipped after this plan (wake-sync `syncMlsGroupsNow`, rumor create → `announcements`).
 
 ---
 
@@ -48,7 +48,7 @@ Issue #181 overlaps on the symptom but not the root cause: after a seed restore 
 
 This plan owns **session-level recovery for GiftWrap/DM traffic and sync-status honesty**. The broader #139/#181 space is understood as:
 
-- **#139-C inbound poll bucket bug:** Can proceed independently. The fix changes `src-tauri/src/rumor.rs:701` from `virtual_bucket: "polls"` to the canonical `announcements` bucket. It is not part of this work unit because it is a permanent message-routing bug, not a session-recovery gap.
+- **#139-C inbound poll bucket bug:** Closed after this plan — inbound create uses `announcements`; see `rumor.rs` + `V32__poll_create_announcements_bucket.sql`.
 - **#181 MLS seed-restore credential limitation:** Outside this plan. Restoring from seed cannot recover a random `device_id` or local-only MLS ratchet state. This plan only addresses the shared symptom: the sync-status surface must not falsely imply recovery is complete.
 
 ### Requirements
@@ -118,7 +118,7 @@ This plan owns **session-level recovery for GiftWrap/DM traffic and sync-status 
   - Changing SDK `reconnect(false)` globally beyond enabling the existing monitor.
 - **Outside this product's identity / tracked separately:**
   - #181 root cause: MLS device identity (`device_id`) and ratchet state are not seed-derivable. This plan only addresses the misleading status signal.
-  - #139-C: inbound poll `virtual_bucket` routing bug (`src-tauri/src/rumor.rs:701` hardcodes `"polls"` instead of `"announcements"`).
+  - ~~#139-C: inbound poll `virtual_bucket` routing~~ (done after this plan).
 
 ### Dependencies / Assumptions
 

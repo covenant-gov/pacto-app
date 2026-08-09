@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { installWakeSyncHandlers, requestCatchUp } from './wake-sync';
-import { fetchMessages } from '../api/nostr';
+import { fetchMessages, syncMlsGroupsNow } from '../api/nostr';
 import { dmSyncStatus } from '../../stores/dm';
 
 vi.mock('../api/nostr', () => ({
   fetchMessages: vi.fn(),
+  syncMlsGroupsNow: vi.fn(),
 }));
 
 describe('wake-sync', () => {
@@ -31,6 +32,8 @@ describe('wake-sync', () => {
     vi.useFakeTimers();
     vi.mocked(fetchMessages).mockReset();
     vi.mocked(fetchMessages).mockResolvedValue(undefined);
+    vi.mocked(syncMlsGroupsNow).mockReset();
+    vi.mocked(syncMlsGroupsNow).mockResolvedValue({ synced: 0, total: 0 });
     dmSyncStatus.set('idle');
     vi.stubGlobal('window', {
       addEventListener: windowAddEventListener,
@@ -77,7 +80,7 @@ describe('wake-sync', () => {
       expect(documentAddEventListener).toHaveBeenCalledWith('resume', expect.any(Function));
     });
 
-    it('coalesces three rapid focus events within 100ms into one fetchMessages(false) invoke', async () => {
+    it('coalesces three rapid focus events within 100ms into one fetchMessages(false) and one MLS sync', async () => {
       cleanup = installWakeSyncHandlers();
       expect(focusHandler).toBeTruthy();
       focusHandler?.();
@@ -86,18 +89,48 @@ describe('wake-sync', () => {
       await vi.advanceTimersByTimeAsync(30);
       focusHandler?.();
       expect(fetchMessages).not.toHaveBeenCalled();
+      expect(syncMlsGroupsNow).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(50);
       expect(fetchMessages).toHaveBeenCalledTimes(1);
       expect(fetchMessages).toHaveBeenCalledWith(false);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
+      expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
     });
 
-    it('ignores a focus event while dmSyncStatus is syncing', async () => {
+    it('skips GiftWrap while syncing but still runs MLS catch-up', async () => {
       cleanup = installWakeSyncHandlers();
       dmSyncStatus.set('syncing');
       expect(focusHandler).toBeTruthy();
       focusHandler?.();
       await vi.advanceTimersByTimeAsync(50);
       expect(fetchMessages).not.toHaveBeenCalled();
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
+      expect(syncMlsGroupsNow).toHaveBeenCalledWith(null);
+    });
+
+    it('coalesces overlapping MLS wake invokes while one is in flight', async () => {
+      let resolveMls!: (value: { synced: number; total: number }) => void;
+      const mlsPromise = new Promise<{ synced: number; total: number }>((resolve) => {
+        resolveMls = resolve;
+      });
+      vi.mocked(syncMlsGroupsNow).mockReturnValue(mlsPromise);
+
+      cleanup = installWakeSyncHandlers();
+      focusHandler?.();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
+
+      focusHandler?.();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
+
+      resolveMls({ synced: 0, total: 0 });
+      await mlsPromise;
+      await Promise.resolve();
+
+      focusHandler?.();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(2);
     });
 
     it('invokes catch-up once when document becomes visible', async () => {
@@ -108,6 +141,7 @@ describe('wake-sync', () => {
       expect(fetchMessages).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(50);
       expect(fetchMessages).toHaveBeenCalledTimes(1);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
     });
 
     it('does not invoke catch-up when document stays hidden', async () => {
@@ -116,6 +150,7 @@ describe('wake-sync', () => {
       visibilityHandler?.();
       await vi.advanceTimersByTimeAsync(50);
       expect(fetchMessages).not.toHaveBeenCalled();
+      expect(syncMlsGroupsNow).not.toHaveBeenCalled();
     });
 
     it('invokes catch-up on resume', async () => {
@@ -124,6 +159,7 @@ describe('wake-sync', () => {
       resumeHandler?.();
       await vi.advanceTimersByTimeAsync(50);
       expect(fetchMessages).toHaveBeenCalledTimes(1);
+      expect(syncMlsGroupsNow).toHaveBeenCalledTimes(1);
     });
 
     it('removes listeners on cleanup (no leaked listeners)', () => {

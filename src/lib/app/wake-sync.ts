@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { fetchMessages } from '../api/nostr';
+import { fetchMessages, syncMlsGroupsNow } from '../api/nostr';
 import { dmError, dmLog } from '../utils/dm-debug';
 import { dmSyncStatus } from '../../stores/dm';
 
@@ -11,6 +11,7 @@ const FOCUS_CHECK_DEBOUNCE_MS = 50;
 let wakeSyncTimer: TimerHandle | null = null;
 let wakeSyncCleanup: (() => void) | null = null;
 let wakeSyncListenersInstalled = false;
+let mlsWakeInFlight: Promise<unknown> | null = null;
 
 /**
  * Ask the backend to fill any gap since the last sync. The backend (CatchUp
@@ -24,6 +25,19 @@ export function requestCatchUp(): void {
   });
 }
 
+/** MLS wake catch-up; coalesces overlapping invokes while one is in flight. */
+function requestMlsCatchUp(): void {
+  if (mlsWakeInFlight) return;
+  dmLog('wake-sync → syncMlsGroupsNow(null)');
+  mlsWakeInFlight = syncMlsGroupsNow(null)
+    .catch((e) => {
+      dmError('wake-sync: syncMlsGroupsNow failed', e);
+    })
+    .finally(() => {
+      mlsWakeInFlight = null;
+    });
+}
+
 function debouncedRequestCatchUp(): void {
   if (wakeSyncTimer !== null) {
     clearTimeout(wakeSyncTimer);
@@ -31,6 +45,8 @@ function debouncedRequestCatchUp(): void {
   }
   wakeSyncTimer = globalThis.setTimeout(() => {
     wakeSyncTimer = null;
+    // MLS is independent of GiftWrap dmSyncStatus (grace-period no-ops need it).
+    requestMlsCatchUp();
     if (get(dmSyncStatus) === 'syncing') return;
     requestCatchUp();
   }, FOCUS_CHECK_DEBOUNCE_MS);

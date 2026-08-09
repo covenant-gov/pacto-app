@@ -184,6 +184,30 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_poll_vote_d_tag_derives_polls_bucket() {
+        let content = r#"{"schema":"pacto.dashboard_poll.v1","action":"vote","parent_id":"p","poll_id":"poll","option_id":"a"}"#;
+        let tags = vec![vec![
+            "d".to_string(),
+            crate::dashboard_poll::DASHBOARD_POLL_D_TAG.to_string(),
+        ]];
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::APPLICATION_SPECIFIC, content, &tags);
+        assert_eq!(bucket.as_deref(), Some("polls"));
+    }
+
+    #[test]
+    fn dashboard_poll_created_with_d_tag_stays_announcements() {
+        let content = r#"{"type":"dashboard_poll_created","payload":{"parent_id":"p","poll_id":"poll","title":"T","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}}"#;
+        let tags = vec![vec![
+            "d".to_string(),
+            crate::dashboard_poll::DASHBOARD_POLL_D_TAG.to_string(),
+        ]];
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::APPLICATION_SPECIFIC, content, &tags);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
     fn join_request_schema_derives_join_requests_bucket() {
         let content = r#"{"schema":"pacto.squad.join_request.v1","requestId":"r1","squadId":"s","status":"pending"}"#;
         let bucket =

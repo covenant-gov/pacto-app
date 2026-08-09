@@ -686,7 +686,7 @@ async fn process_dashboard_poll_rumor(
             edited: false,
             edit_history: None,
             rumor_kind: Some(crate::stored_event::event_kind::APPLICATION_SPECIFIC),
-            virtual_bucket: Some("polls".to_string()),
+            virtual_bucket: Some("announcements".to_string()),
         };
         crate::dashboard_poll::emit_poll_replica_updated(
             &env.payload.parent_id,

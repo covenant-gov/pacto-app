@@ -134,7 +134,9 @@ Three independent places can kick off a `fetch_messages(false)` call that (via �
 
 - App mount / post-login (`+page.svelte`, `post-login-sync.ts`).
 - The `sync_slice_finished` continuation loop (mid-walk).
-- **New:** `src/lib/app/wake-sync.ts` — debounced (50ms) `focus` / `visibilitychange` / `resume` listeners, installed once from `subscribeAppEvents`. On any of those firing, it calls `fetchMessages(false)` (`requestCatchUp`) unless `dmSyncStatus` is already `syncing`. This is what recovers a session left open across sleep or a background tab without waiting for the next unrelated app event.
+- `src/lib/app/wake-sync.ts` — debounced (50ms) `focus` / `visibilitychange` / `resume` listeners, installed once from `subscribeAppEvents`. On any of those firing, it calls `fetchMessages(false)` (`requestCatchUp`) unless `dmSyncStatus` is already `syncing`. This recovers GiftWrap/DM traffic across sleep or a background tab without waiting for the next unrelated app event.
+
+The same wake path also runs `syncMlsGroupsNow(null)` after the same 50ms debounce, with an in-flight promise coalesce so rapid focus flickers do not stack MLS syncs. MLS wake is **independent** of GiftWrap `dmSyncStatus`: when GiftWrap is already `syncing` (or CatchUp is a grace-period no-op with no `sync_finished`), MLS still runs so squad channel traffic is not stuck until tab/channel entry or restart.
 
 ---
 

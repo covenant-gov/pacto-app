@@ -178,11 +178,10 @@ mod tests {
         .expect("stamp migration");
     }
 
-    /// Seed the `chats` and `profiles` tables as they existed immediately
-    /// before V28 (the first migration above `PRE_REFINERY_CEILING`), so a
-    /// baselined connection has real tables for V28's `ALTER TABLE`
-    /// statements to run against — matching a real existing account, which
-    /// has these tables from `run_migrations` on every prior unlock.
+    /// Seed the `chats`, `profiles`, and `events` tables as they existed
+    /// immediately before V28 (the first migration above `PRE_REFINERY_CEILING`),
+    /// so a baselined connection has real tables for post-ceiling migrations
+    /// to run against — matching a real existing account.
     fn seed_pre_v28_schema(conn: &rusqlite::Connection) {
         conn.execute_batch(
             "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -217,6 +216,23 @@ mod tests {
                 created_at INTEGER NOT NULL,
                 metadata TEXT NOT NULL DEFAULT '{}',
                 muted INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE events (
+                id TEXT PRIMARY KEY,
+                kind INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                user_id INTEGER,
+                content TEXT NOT NULL,
+                tags TEXT NOT NULL DEFAULT '[]',
+                reference_id TEXT,
+                created_at INTEGER NOT NULL,
+                received_at INTEGER NOT NULL,
+                mine INTEGER NOT NULL DEFAULT 0,
+                pending INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                wrapper_event_id TEXT,
+                npub TEXT,
+                virtual_bucket TEXT
             );",
         )
         .expect("seed pre-V28 schema");
@@ -234,7 +250,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 31);
+        assert_eq!(last_version, 32);
 
         let events_table: bool = conn
             .query_row(
@@ -280,8 +296,8 @@ mod tests {
             })
             .expect("history should exist");
         assert_eq!(
-            count, 31,
-            "27 pre-refinery migrations baselined plus V28–V31 actually run"
+            count, 32,
+            "27 pre-refinery migrations baselined plus V28–V32 actually run"
         );
 
         // Running migrations again should be idempotent.
@@ -366,7 +382,7 @@ mod tests {
             )
             .expect("history should exist");
         assert_eq!(
-            last_version, 31,
+            last_version, 32,
             "an existing history table means every migration actually runs, never gets stamped"
         );
     }
@@ -455,7 +471,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 31);
+        assert_eq!(last_version, 32);
 
         let has_virtual_bucket: bool = conn
             .query_row(
