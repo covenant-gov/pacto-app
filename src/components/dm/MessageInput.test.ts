@@ -201,7 +201,7 @@ describe('MessageInput', () => {
     expect(input.style.height).toBe('240px');
   });
 
-  it('shrinks the textarea after send clears the draft', async () => {
+  it('clears inline height after send so the empty composer stays single-line', async () => {
     const onSend = vi.fn();
     render(MessageInput, { props: { channelName: 'general', onSend } });
     const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
@@ -209,13 +209,20 @@ describe('MessageInput', () => {
     await fireEvent.input(input, { target: { value: 'hello\nworld' } });
     expect(input.style.height).toBe('120px');
 
-    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 40 });
     await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
     await waitFor(() => {
       expect(onSend).toHaveBeenCalled();
     });
     await waitFor(() => {
-      expect(input.style.height).toBe('40px');
+      expect(input.style.height).toBe('');
     });
+  });
+
+  it('leaves height unset when the draft is empty', async () => {
+    render(MessageInput, { props: { channelName: 'general' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 96 });
+    await fireEvent.input(input, { target: { value: '' } });
+    expect(input.style.height).toBe('');
   });
 });

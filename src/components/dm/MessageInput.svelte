@@ -1045,7 +1045,7 @@
 
   .input-wrapper {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 8px;
     background: var(--bg-hover);
     border-radius: 8px;
@@ -1309,6 +1309,7 @@
   .message-input {
     flex: 1;
     min-width: 0;
+    box-sizing: border-box;
     min-height: 1.4em;
     max-height: 240px;
     background: transparent;
