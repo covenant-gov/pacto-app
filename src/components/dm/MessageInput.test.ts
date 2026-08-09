@@ -4,6 +4,8 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/sv
 import { get } from 'svelte/store';
 import MessageInput from './MessageInput.svelte';
 import { pendingFilePreview, clearPendingAttachment, type PendingFileAttachment } from '../../lib/messaging/attachment-composer';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import { invoke } from '@tauri-apps/api/core';
 
 vi.mock('../../icons/smile-face.svg', () => ({ default: '/smile-face.svg' }));
 vi.mock('../../icons/attachment.svg', () => ({ default: '/attachment.svg' }));
@@ -34,6 +36,7 @@ beforeEach(() => {
   clearPendingAttachment();
   mockedOpen.mockReset();
   (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
+  setCurrentNpubForPersistence('npub1test');
   vi.stubGlobal('URL', {
     ...URL,
     createObjectURL: vi.fn(() => 'blob://mock-preview'),
@@ -43,6 +46,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  setCurrentNpubForPersistence(null);
+  localStorage.clear();
 });
 
 describe('MessageInput', () => {
@@ -95,12 +100,15 @@ describe('MessageInput', () => {
     expect(screen.getByRole('tab', { name: /GIFs/i }).getAttribute('aria-selected')).toBe('false');
   });
 
-  it('switches to GIFs placeholder tab', async () => {
+  it('gates the GIFs tab behind the disclosure until it is accepted', async () => {
     render(MessageInput, { props: { channelName: 'general' } });
     await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
     await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
-    expect(screen.queryByText(/GIFs coming soon/i)).not.toBeNull();
     expect(screen.getByRole('tab', { name: /GIFs/i }).getAttribute('aria-selected')).toBe('true');
+    // Nothing may reach Klipy until the user accepts; the tab shows the disclosure.
+    expect(screen.queryByRole('button', { name: /Enable GIF search/i })).not.toBeNull();
+    expect(invoke).not.toHaveBeenCalledWith('klipy_search_gifs', expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith('klipy_trending_gifs', expect.anything());
   });
 
   it('closes panels on Escape and refocuses the composer', async () => {
@@ -224,5 +232,87 @@ describe('MessageInput', () => {
     Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 96 });
     await fireEvent.input(input, { target: { value: '' } });
     expect(input.style.height).toBe('');
+  });
+
+  it('sends a selected GIF through onSendGif with the byte-identical url and slug, and fires the share-trigger', async () => {
+    const onSendGif = vi.fn().mockResolvedValue(undefined);
+    const fullUrl = 'https://static.klipy.com/hd.gif?ext=gif&itemid=abc123';
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'klipy_is_configured') return Promise.resolve(true);
+      if (cmd === 'klipy_trending_gifs') {
+        return Promise.resolve({
+          items: [
+            {
+              id: '1',
+              slug: 'gif-1',
+              title: 'Cat',
+              previewUrl: 'https://static.klipy.com/sm.gif',
+              fullUrl,
+              width: 100,
+              height: 100,
+            },
+          ],
+          page: 1,
+          perPage: 24,
+          total: 1,
+          hasMore: false,
+        });
+      }
+      if (cmd === 'klipy_report_share') return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general', onSendGif, repliedTo: 'msg-1' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cat')).not.toBeNull();
+    });
+    await fireEvent.click(screen.getByLabelText('Cat'));
+
+    await waitFor(() => {
+      expect(onSendGif).toHaveBeenCalledWith(fullUrl, 'gif-1', 'msg-1');
+    });
+    expect(invoke).toHaveBeenCalledWith('klipy_report_share', { slug: 'gif-1', query: null });
+  });
+
+  it('does nothing when a GIF is picked but no onSendGif handler is wired', async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'klipy_is_configured') return Promise.resolve(true);
+      if (cmd === 'klipy_trending_gifs') {
+        return Promise.resolve({
+          items: [
+            {
+              id: '1',
+              slug: 'gif-1',
+              title: 'Cat',
+              previewUrl: 'https://static.klipy.com/sm.gif',
+              fullUrl: 'https://static.klipy.com/hd.gif',
+              width: 100,
+              height: 100,
+            },
+          ],
+          page: 1,
+          perPage: 24,
+          total: 1,
+          hasMore: false,
+        });
+      }
+      if (cmd === 'klipy_report_share') return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cat')).not.toBeNull();
+    });
+    // Reporting the share still fires (analytics), but nothing throws without onSendGif.
+    await expect(fireEvent.click(screen.getByLabelText('Cat'))).resolves.not.toThrow();
   });
 });

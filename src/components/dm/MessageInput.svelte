@@ -33,7 +33,20 @@
   import type { Mention } from '../../lib/messaging/mentions';
   import { t } from 'svelte-i18n';
   import { get } from 'svelte/store';
-  import { invoke } from '@tauri-apps/api/core';
+  import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+  import { stickerPacks } from '../../stores/stickers';
+  import { fetchStickerImage, type StickerPack, type StickerEntry } from '../../lib/api/stickers';
+  import GifDisclosure from './GifDisclosure.svelte';
+  import {
+    searchGifs,
+    trendingGifs,
+    reportGifShare,
+    klipyIsConfigured,
+    isGifsDisclosureAccepted,
+    acceptGifsDisclosure,
+    createGifsSearchScheduler,
+    type KlipyGif,
+  } from '../../lib/api/klipy';
 
   export let channelName: string = "";
   /** When set, replaces the default `Message #{channelName}` placeholder (e.g. blocked peer). */
@@ -44,6 +57,11 @@
   /** Optional: called with the bytes of a pending file attachment when the user sends it. */
   export let onSendFile:
     | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
+    | undefined = undefined;
+  /** Optional: called with a picked GIF's URL + slug when the user sends it.
+   * Never uploads bytes — Klipy's terms forbid re-hosting its media. */
+  export let onSendGif:
+    | ((url: string, slug: string, repliedTo: string) => Promise<void>)
     | undefined = undefined;
   /** Optional squad context; when provided, typing `@` opens the member mention picker. */
   export let squadMlsGroupId: string | undefined = undefined;
@@ -71,7 +89,7 @@
 
   // Media panel (emoji + GIFs)
   let emojiPanelOpen = false;
-  let emojiPanelTab: 'emoji' | 'gifs' = 'emoji';
+  let emojiPanelTab: 'emoji' | 'gifs' | 'stickers' = 'emoji';
   let emojiSearchQuery = "";
 
   // Attachment type menu
@@ -130,6 +148,8 @@
     clearPendingAttachment();
     composerDestroyed = true;
     dropUnregister?.();
+    gifsSearchScheduler.cancel();
+    gifsRequestToken++;
   });
 
   $: excludedNpubs = (() => {
@@ -615,6 +635,8 @@
     emojiPanelOpen = false;
     emojiSearchQuery = '';
     emojiPanelTab = 'emoji';
+    gifsSearchScheduler.cancel();
+    gifsRequestToken++;
     if (opts?.refocusComposer) {
       await tick();
       textareaEl?.focus();
@@ -630,8 +652,172 @@
     attachmentMenuOpen = false;
   }
 
-  function switchEmojiPanelTab(tab: 'emoji' | 'gifs') {
+  function switchEmojiPanelTab(tab: 'emoji' | 'gifs' | 'stickers') {
+    if (emojiPanelTab === 'gifs' && tab !== 'gifs') {
+      gifsSearchScheduler.cancel();
+      gifsRequestToken++;
+    }
     emojiPanelTab = tab;
+    if (tab === 'gifs') {
+      gifsDisclosureAccepted = isGifsDisclosureAccepted();
+    }
+  }
+
+  type StickerGroup = { pack: StickerPack; entries: StickerEntry[] };
+
+  $: stickerGroups = ((): StickerGroup[] => {
+    const q = emojiSearchQuery.trim().toLowerCase();
+    const groups: StickerGroup[] = [];
+    for (const pack of $stickerPacks) {
+      const packNameMatches = q ? pack.name.toLowerCase().includes(q) : true;
+      const entries = q && !packNameMatches
+        ? pack.entries.filter((entry) => entry.shortcode.toLowerCase().includes(q))
+        : pack.entries;
+      if (entries.length > 0) groups.push({ pack, entries });
+    }
+    return groups;
+  })();
+
+  const STICKER_MIME_EXTENSIONS: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+  };
+
+  let stickerImageCache: Record<string, string> = {};
+
+  async function ensureStickerImageCached(entry: StickerEntry) {
+    if (stickerImageCache[entry.url]) return;
+    try {
+      const path = await fetchStickerImage(entry.url, entry.key, entry.nonce);
+      stickerImageCache = { ...stickerImageCache, [entry.url]: convertFileSrc(path) };
+    } catch {
+      // leave uncached; the item stays blank until a future render retries it
+    }
+  }
+
+  $: if (emojiPanelTab === 'stickers') {
+    for (const group of stickerGroups) {
+      for (const entry of group.entries) {
+        void ensureStickerImageCached(entry);
+      }
+    }
+  }
+
+  async function insertSticker(entry: StickerEntry) {
+    if (disabled || isSendingAttachment || !onSendFile) return;
+    isSendingAttachment = true;
+    try {
+      const path = await fetchStickerImage(entry.url, entry.key, entry.nonce);
+      const { readFile } = await import('@tauri-apps/plugin-fs');
+      const data = await readFile(path);
+      const bytes = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      const fileName = `${entry.shortcode}.${STICKER_MIME_EXTENSIONS[entry.mime] ?? 'bin'}`;
+      await onSendFile!(bytes, fileName, repliedTo ?? '', false);
+      await closeEmojiPanel({ refocusComposer: true });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : get(t)('messaging.messageInput.readFailed'), undefined, undefined, {
+        error: true,
+      });
+    } finally {
+      isSendingAttachment = false;
+    }
+  }
+
+  // GIFs tab (Klipy). Debounced search/trending, gated on the opt-in disclosure.
+  let gifsDisclosureAccepted = false;
+  let gifsResults: KlipyGif[] = [];
+  let gifsPage = 1;
+  let gifsHasMore = false;
+  let gifsLoading = false;
+  let gifsFetchFailed = false;
+  let gifsConfigured: boolean | null = null;
+  let gifsRequestToken = 0;
+  const gifsSearchScheduler = createGifsSearchScheduler((query, page) => {
+    void runGifsQuery(query, page);
+  });
+
+  async function runGifsQuery(query: string, page: number) {
+    const token = ++gifsRequestToken;
+    gifsLoading = true;
+    gifsFetchFailed = false;
+    try {
+      if (gifsConfigured === null) {
+        gifsConfigured = await klipyIsConfigured().catch(() => false);
+        if (token !== gifsRequestToken) return;
+      }
+      if (!gifsConfigured) {
+        gifsResults = [];
+        gifsHasMore = false;
+        return;
+      }
+      const trimmed = query.trim();
+      const result = trimmed ? await searchGifs(trimmed, page) : await trendingGifs(page);
+      if (token !== gifsRequestToken) return;
+      gifsResults = page === 1 ? result.items : [...gifsResults, ...result.items];
+      gifsPage = result.page;
+      gifsHasMore = result.hasMore;
+    } catch (err) {
+      if (token !== gifsRequestToken) return;
+      console.error('Klipy gifs fetch failed:', err);
+      if (page === 1) gifsResults = [];
+      gifsHasMore = false;
+      gifsFetchFailed = true;
+    } finally {
+      if (token === gifsRequestToken) gifsLoading = false;
+    }
+  }
+
+  function loadMoreGifs() {
+    if (gifsLoading || !gifsHasMore) return;
+    void runGifsQuery(emojiSearchQuery, gifsPage + 1);
+  }
+
+  function handleEmojiPanelBodyScroll(event: Event) {
+    if (emojiPanelTab !== 'gifs') return;
+    const el = event.currentTarget as HTMLDivElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+      loadMoreGifs();
+    }
+  }
+
+  $: if (emojiPanelOpen && emojiPanelTab === 'gifs' && gifsDisclosureAccepted) {
+    gifsSearchScheduler.scheduleSearch(emojiSearchQuery);
+  }
+
+  function handleGifsDisclosureAccept() {
+    acceptGifsDisclosure();
+    gifsDisclosureAccepted = true;
+  }
+
+  function handleGifsDisclosureDecline() {
+    switchEmojiPanelTab('emoji');
+  }
+
+  /** Sends a picked GIF as a lightweight, unencrypted attachment carrying the
+   * Klipy URL byte-identical (never uploads or re-hosts the media — KD8). */
+  async function sendGifUrl(gif: KlipyGif) {
+    if (disabled || isSendingAttachment || !onSendGif) return;
+    isSendingAttachment = true;
+    try {
+      await onSendGif(gif.fullUrl, gif.slug, repliedTo ?? '');
+      await closeEmojiPanel({ refocusComposer: true });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : get(t)('messaging.messageInput.gifsSendFailed'), undefined, undefined, {
+        error: true,
+      });
+    } finally {
+      isSendingAttachment = false;
+    }
+  }
+
+  function selectGif(gif: KlipyGif) {
+    if (disabled || isSendingAttachment) return;
+    reportGifShare(gif.slug, emojiSearchQuery.trim() || undefined).catch((err) => {
+      console.error('Klipy share report failed:', err);
+    });
+    void sendGifUrl(gif);
   }
 
   function handleEmojiSearchKeydown(event: KeyboardEvent) {
@@ -813,11 +999,11 @@
             <input
               type="text"
               class="emoji-search-input"
-              placeholder={emojiPanelTab === 'gifs' ? 'Search GIFs…' : $t('messaging.messageInput.searchEmojiPlaceholder')}
+              placeholder={emojiPanelTab === 'gifs' ? $t('messaging.messageInput.gifsSearchPlaceholder') : emojiPanelTab === 'stickers' ? $t('messaging.messageInput.searchStickersPlaceholder') : $t('messaging.messageInput.searchEmojiPlaceholder')}
               bind:value={emojiSearchQuery}
               on:click|stopPropagation
               on:keydown={handleEmojiSearchKeydown}
-              aria-label={emojiPanelTab === 'gifs' ? 'Search GIFs' : $t('messaging.messageInput.searchEmojiAria')}
+              aria-label={emojiPanelTab === 'gifs' ? $t('messaging.messageInput.gifsSearchAria') : emojiPanelTab === 'stickers' ? $t('messaging.messageInput.searchStickersAria') : $t('messaging.messageInput.searchEmojiAria')}
             />
             <button
               type="button"
@@ -836,7 +1022,7 @@
               </svg>
             </button>
           </div>
-          <div class="emoji-panel-body">
+          <div class="emoji-panel-body" on:scroll={handleEmojiPanelBodyScroll}>
             {#if emojiPanelTab === 'emoji'}
               {#if emojiSearchQuery.trim()}
                 <div class="emoji-picker-section">
@@ -898,10 +1084,73 @@
                   <p class="emoji-picker-hint">{$t('messaging.messageInput.searchForMore')}</p>
                 </div>
               {/if}
+            {:else if emojiPanelTab === 'stickers'}
+              {#if $stickerPacks.length === 0}
+                <div class="emoji-picker-section">
+                  <p class="emoji-picker-empty">{$t('messaging.messageInput.noStickerPacks')}</p>
+                  <p class="emoji-picker-hint">{$t('messaging.messageInput.noStickerPacksHint')}</p>
+                </div>
+              {:else if stickerGroups.length === 0}
+                <div class="emoji-picker-section">
+                  <p class="emoji-picker-empty">{$t('messaging.messageInput.noStickersFound', { values: { query: emojiSearchQuery.trim() } })}</p>
+                </div>
+              {:else}
+                {#each stickerGroups as group (group.pack.packId)}
+                  <div class="emoji-picker-section">
+                    <span class="emoji-picker-label">{group.pack.name}</span>
+                    <div class="emoji-picker-grid">
+                      {#each group.entries as entry (entry.shortcode)}
+                        <button
+                          type="button"
+                          class="emoji-picker-item"
+                          role="gridcell"
+                          disabled={disabled || isSendingAttachment}
+                          aria-label={$t('messaging.messageInput.insertStickerNamed', { values: { shortcode: entry.shortcode } })}
+                          on:click={() => insertSticker(entry)}
+                        >
+                          {#if stickerImageCache[entry.url]}
+                            <img src={stickerImageCache[entry.url]} alt={entry.shortcode} width="28" height="28" />
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+                {/each}
+              {/if}
             {:else}
-              <div class="emoji-panel-placeholder">
-                <p>{$t('messaging.messageInput.gifsComingSoon')}</p>
-              </div>
+              {#if !gifsDisclosureAccepted}
+                <GifDisclosure onAccept={handleGifsDisclosureAccept} onDecline={handleGifsDisclosureDecline} />
+              {:else if gifsConfigured === false || gifsFetchFailed}
+                <div class="emoji-panel-placeholder">
+                  <p>{$t('messaging.messageInput.gifsUnavailable')}</p>
+                </div>
+              {:else if gifsLoading && gifsResults.length === 0}
+                <div class="emoji-panel-placeholder">
+                  <p>{$t('messaging.messageInput.gifsLoading')}</p>
+                </div>
+              {:else if gifsResults.length === 0}
+                <div class="emoji-picker-section">
+                  <p class="emoji-picker-empty">{$t('messaging.messageInput.noGifsFound')}</p>
+                </div>
+              {:else}
+                <div class="emoji-picker-section">
+                  <div class="emoji-picker-grid">
+                    {#each gifsResults as gif (gif.id)}
+                      <button
+                        type="button"
+                        class="emoji-picker-item"
+                        role="gridcell"
+                        disabled={disabled || isSendingAttachment}
+                        aria-label={gif.title || gif.slug}
+                        title={gif.title}
+                        on:click={() => selectGif(gif)}
+                      >
+                        <img src={gif.previewUrl} alt={gif.title} width="28" height="28" />
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
             {/if}
           </div>
           <div class="emoji-panel-tabs" role="tablist" aria-label={$t('messaging.messageInput.mediaPanelTabsAria')}>
@@ -923,9 +1172,22 @@
               role="tab"
               aria-selected={emojiPanelTab === 'gifs'}
               aria-controls="emoji-panel-body"
+              disabled={disabled || isSendingAttachment}
               on:click={() => switchEmojiPanelTab('gifs')}
             >
               {$t('messaging.messageInput.gifsTab')}
+            </button>
+            <button
+              type="button"
+              class="emoji-panel-tab"
+              class:active={emojiPanelTab === 'stickers'}
+              role="tab"
+              aria-selected={emojiPanelTab === 'stickers'}
+              aria-controls="emoji-panel-body"
+              disabled={disabled || isSendingAttachment}
+              on:click={() => switchEmojiPanelTab('stickers')}
+            >
+              {$t('messaging.messageInput.stickersTab')}
             </button>
           </div>
         </div>

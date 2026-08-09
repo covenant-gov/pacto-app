@@ -12,6 +12,8 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[ARCHITECTURE.md](./ARCHITECTURE.md)** | High-level system architecture, data flows, and layer responsibilities |
 | **[messaging/OVERVIEW.md](./messaging/OVERVIEW.md)** | DM vs MLS: kinds, events, Tauri commands, frontend hooks |
 | **[messaging/ATTACHMENTS.md](./messaging/ATTACHMENTS.md)** | Encrypted attachment uploads: Blossom blob vs media servers, host-visible metadata, caveats |
+| **[messaging/STICKER_PACKS.md](./messaging/STICKER_PACKS.md)** | Squad sticker packs: MLS announce wire format, membership-based authorization, last-write-wins, encrypted Blossom storage |
+| **[messaging/GIF_PROVIDER.md](./messaging/GIF_PROVIDER.md)** | Klipy GIF search: privacy disclosure, opt-in gate, single Rust egress chokepoint, `KLIPY_API_KEY` operator setup |
 | **[messaging/SYNC_STATUS.md](./messaging/SYNC_STATUS.md)** | Gift-wrap backfill loop (modes, slices, events) and the header sync dot it drives |
 | **[nostr/](./nostr/)** | Relay-facing behavior, rumor pipeline, module index |
 | **[mls/](./mls/)** | MDK engine, storage split, invites, eviction & leave |

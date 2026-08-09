@@ -3,7 +3,7 @@
 How file attachments in DMs and MLS groups reach a media host, why they need a
 **blob-accepting** Blossom server, and what the host learns.
 
-**Related:** [`OVERVIEW.md`](./OVERVIEW.md), [`docs/security/CRYPTOGRAPHY.md`](../security/CRYPTOGRAPHY.md), [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md).
+**Related:** [`OVERVIEW.md`](./OVERVIEW.md), [`docs/security/CRYPTOGRAPHY.md`](../security/CRYPTOGRAPHY.md), [`docs/nostr/ARCHITECTURE.md`](../nostr/ARCHITECTURE.md), [`STICKER_PACKS.md`](./STICKER_PACKS.md) (squad sticker packs reuse this pipeline for image storage), [`GIF_PROVIDER.md`](./GIF_PROVIDER.md) (Klipy GIFs deliberately do **not** use this pipeline — provider-URL delivery instead, per Klipy's no-re-hosting terms).
 
 ---
 

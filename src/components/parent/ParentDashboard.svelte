@@ -57,6 +57,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     loadDashboardGovernanceTab,
     loadDashboardRolesTreeTab,
     loadDashboardStatusTab,
+    loadDashboardStickersTab,
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
   import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
@@ -96,6 +97,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     'treasury',
     'roles',
     'crew',
+    'stickers',
   ];
 
   $: dashboardView = $squadDashboardChannelMode;
@@ -848,6 +850,15 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.crew')}</p>
+          {/await}
+          </div>
+        {/if}
+        {#if visitedDashboardViews.has('stickers')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'stickers'} hidden={dashboardView !== 'stickers'}>
+          {#await loadDashboardStickersTab() then StickersTab}
+            <StickersTab squad={parent} {announcementsGroupId} />
+          {:catch}
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.stickers')}</p>
           {/await}
           </div>
         {/if}

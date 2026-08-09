@@ -59,6 +59,7 @@
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { sendDmMessage, sendFileBytes, getDmMessages, leaveMlsGroup, getMlsGroupMembers, syncMlsGroupsNow, reactToMessage, markAsRead } from '../../lib/api/nostr';
+  import { sendGifMessage } from '../../lib/api/klipy';
   import { runInviteMemberToChannel } from '../../lib/parent/invite-channel-flow';
   import { showToast } from '../../stores/toast';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
@@ -750,6 +751,19 @@
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
     }
   }
+
+  async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+    const groupId = $activeChannelId;
+    if (!groupId) return;
+    groupSendError.set(null);
+    try {
+      const ok = await sendGifMessage(groupId, url, slug, repliedTo);
+      if (ok) cancelReply();
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send GIF');
+      groupSendError.set(friendlyMessage(raw, 'dm_send'));
+    }
+  }
 </script>
 
 <svelte:window
@@ -930,6 +944,7 @@
                 onSend={handleSendText}
                 onSendMentions={handleSendMentions}
                 onSendFile={handleSendFile}
+                onSendGif={handleSendGif}
                 squadMlsGroupId={effectiveMembersGroupId ?? undefined}
                 squadRosterNpubs={panelMembers}
                 squadProfiles={$profiles}
@@ -1030,6 +1045,7 @@
         onSend={handleSendText}
         onSendMentions={handleSendMentions}
         onSendFile={handleSendFile}
+        onSendGif={handleSendGif}
         squadMlsGroupId={effectiveMembersGroupId ?? undefined}
         squadRosterNpubs={panelMembers}
         squadProfiles={$profiles}
