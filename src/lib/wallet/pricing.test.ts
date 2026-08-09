@@ -29,35 +29,37 @@ describe('pricing', () => {
   describe('getWalletUsdSpotPrices', () => {
     it('returns a browser-only error when not running in Tauri', async () => {
       vi.stubGlobal('window', undefined);
-      const result = await getWalletUsdSpotPrices();
+      const result = await getWalletUsdSpotPrices('sepolia');
       expect(result.ok).toBe(false);
       expect(failureMessage(result)).toContain('Pacto desktop app');
       expect(mockedInvoke).not.toHaveBeenCalled();
     });
 
-    it('invokes wallet_get_usd_spot_prices and returns prices in Tauri', async () => {
+    it('invokes wallet_get_usd_spot_prices with networkKey and returns prices in Tauri', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
       const prices = {
         ethUsd: 3500,
         usdcUsd: 1,
         usdtUsd: 0.99,
         source: 'chainlink',
-        feedNetwork: 'mainnet',
+        feedNetwork: 'sepolia',
         fetchedAtMsEpoch: 1710000000000,
       };
       mockedInvoke.mockResolvedValueOnce(prices);
-      const result = await getWalletUsdSpotPrices();
+      const result = await getWalletUsdSpotPrices('sepolia');
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.prices).toEqual(prices);
       }
-      expect(mockedInvoke).toHaveBeenCalledWith('wallet_get_usd_spot_prices');
+      expect(mockedInvoke).toHaveBeenCalledWith('wallet_get_usd_spot_prices', {
+        networkKey: 'sepolia',
+      });
     });
 
     it('returns a user-facing error when the invoke fails', async () => {
       vi.stubGlobal('window', { __TAURI__: {} });
       mockedInvoke.mockRejectedValueOnce(new Error('rpc down'));
-      const result = await getWalletUsdSpotPrices();
+      const result = await getWalletUsdSpotPrices('arbitrum');
       expect(result.ok).toBe(false);
       expect(failureMessage(result)).toContain('Live USD prices are unavailable');
     });
@@ -69,7 +71,7 @@ describe('pricing', () => {
       usdcUsd: 1,
       usdtUsd: 0.99,
       source: 'chainlink',
-      feedNetwork: 'mainnet',
+      feedNetwork: 'ethereum-mainnet',
       fetchedAtMsEpoch: 1710000000000,
     };
 

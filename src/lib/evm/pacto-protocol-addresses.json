@@ -1,5 +1,5 @@
 {
-  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia squadSponsor: upstream pacto-squad-sponsor factory (createSquadSponsorExt(squadId, addressOwner)).",
+  "$comment": "Pacto protocol deploy infra per network. Rust Alloy UX reads this at compile time; optional PACTO_* env vars override for local experiments. Sepolia squadSponsor: pacto-squad-sponsor deployments/11155111/full-system.json (1ef93bf).",
   "version": 1,
   "networks": {
     "sepolia": {
@@ -8,8 +8,8 @@
         "deployer": "0x897Aae53c0255b02EFF66bF2D623b19FA87e2d69"
       },
       "squadSponsor": {
-        "factory": "0x05F0130889dC678304D11cCA71983edB220A4c74",
-        "paymaster": "0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6",
+        "factory": "0x12883924e71Df814ff1E198E5C16CEFd251BC308",
+        "paymaster": "0x065dA13369604291E628DD8022E0e504dc62Da12",
         "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
         "navePirataRegistry": "0x45127C1c92741C0dA38e1A73fbb97a8a2C46770f"
       },
@@ -31,7 +31,7 @@
         "fallbackHandler": "0x017062a1dE2FE6b99BE3d9d37841FeD19F573804"
       },
       "erc4337": {
-        "accountImplementation": "0x69007702764179f14F51cdce752f4f775d74E139"
+        "accountImplementation": "0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60"
       }
     }
   }

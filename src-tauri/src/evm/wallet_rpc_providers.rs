@@ -27,11 +27,6 @@ pub fn provider_primary_rpc_url(network_key: &str) -> Option<String> {
     alchemy_url(network_key, &api_key)
 }
 
-/// Ethereum mainnet URL for Chainlink price feed reads.
-pub fn mainnet_provider_rpc_url() -> Option<String> {
-    provider_primary_rpc_url("mainnet")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -27,10 +27,16 @@ export interface WalletSummaryNetwork {
   error?: string;
 }
 
+/** Completeness of Chainlink pricing across enabled feed networks. */
+export type WalletUsdPricingStatus = 'complete' | 'partial' | 'unavailable';
+
 export interface WalletSummary {
   networks: WalletSummaryNetwork[];
-  totalUsdApprox: number;
-  prices: WalletUsdSpotPrices;
+  /** Sum of priced assets; null when no feed succeeded. */
+  totalUsdApprox: number | null;
+  usdPricingStatus: WalletUsdPricingStatus;
+  /** Sample metadata from first successful feed; omit when none. */
+  prices?: WalletUsdSpotPrices;
 }
 
 export type WalletSummaryResult =

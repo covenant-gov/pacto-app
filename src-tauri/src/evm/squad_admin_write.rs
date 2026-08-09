@@ -80,8 +80,9 @@ async fn squad_admin_write<R: Runtime>(
     require_capability(&app, parent.as_str(), capability, rpc_urls).await?;
     require_roster_treasury_signing_allowed(app.clone(), parent.as_str()).await?;
 
-    let _write_guard = with_gov_write_lock(parent.as_str()).await;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), parent.as_str()).await?;
+    let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), parent.as_str()).await?;
+    // Key by signer EOA: multiple parents can resolve to the same roster key.
+    let _write_guard = with_gov_write_lock(signer.address()).await;
     let provider = connect_signing_provider(&urls, wallet).await?;
     let tx = contract_call_request(admin, calldata).with_chain_id(net.chain_id);
     let receipt = send_and_confirm(

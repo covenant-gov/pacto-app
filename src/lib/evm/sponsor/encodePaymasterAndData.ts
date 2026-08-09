@@ -14,6 +14,9 @@
 export const PAYMASTER_DATA_VERSION = 1 as const;
 export const PAYMASTER_DATA_OFFSET = 52 as const;
 export const BALANCE_HEADROOM_BPS = 11_500 as const;
+/** Paymaster header verification gas (matches Rust DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT). */
+export const DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT = 500_000 as const;
+export const DEFAULT_POST_OP_GAS_LIMIT = 50_000 as const;
 
 export type Address = `0x${string}`;
 export type Hex = `0x${string}`;
@@ -89,8 +92,9 @@ export function encodePaymasterPayload(params: {
 export function encodePaymasterAndData(params: EncodePaymasterAndDataParams): Hex {
   assertHexLength('paymaster', params.paymaster, 20);
 
-  const verificationGasLimit = params.verificationGasLimit ?? 100_000;
-  const postOpGasLimit = params.postOpGasLimit ?? 50_000;
+  const verificationGasLimit =
+    params.verificationGasLimit ?? DEFAULT_PAYMASTER_VERIFICATION_GAS_LIMIT;
+  const postOpGasLimit = params.postOpGasLimit ?? DEFAULT_POST_OP_GAS_LIMIT;
 
   const header =
     strip0x(params.paymaster).toLowerCase() +

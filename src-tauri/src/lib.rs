@@ -96,6 +96,9 @@ mod migration;
 // Backend session manager and idle auto-lock (U4)
 mod session;
 
+// Repo-root `.env` → process env (debug builds)
+mod operator_env;
+
 // Application-wide configuration constants and IPC snapshot.
 mod app_config;
 
@@ -8773,6 +8776,8 @@ async fn sync_all_profiles() -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    operator_env::load_operator_env();
+
     #[cfg(target_os = "linux")]
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer

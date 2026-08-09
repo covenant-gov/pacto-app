@@ -16,9 +16,8 @@ use super::rpc::{
     wallet_err_json,
 };
 use super::sponsor_userop::{
-    bundler_rpc_url, call_gas_with_margin, estimate_call_gas, roster_native_balance_wei,
-    send_sponsored_gov_userop, wait_for_user_operation_tx_hash, FALLBACK_CALL_GAS_LIMIT,
-    FALLBACK_MAX_FEE,
+    call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
+    wait_for_user_operation_tx_hash, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -58,8 +57,9 @@ pub async fn send_gov_module_call<R: Runtime>(
     require_capability(&app, pid, capability, rpc_urls_override).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
-    let _write_guard = with_gov_write_lock(pid).await;
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    // Key by signer EOA: multiple parents can resolve to the same roster key.
+    let _write_guard = with_gov_write_lock(signer.address()).await;
 
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     let read_provider = connect_read_provider(&urls).await?;
@@ -85,18 +85,14 @@ pub async fn send_gov_module_call<R: Runtime>(
         WritePath::Sponsored => {
             match send_sponsored_gov_userop(app.clone(), &net.key, pid, to, calldata.clone()).await
             {
-                Ok(user_op_hash) => {
+                Ok(send) => {
                     // The write guard must stay held through inclusion: returning now would let
                     // the next write reuse the same EntryPoint nonce. Callers expect a real L1
                     // transaction hash, not the bundler userOp hash.
-                    let bundler = bundler_rpc_url().ok_or_else(|| {
-                        wallet_err_json(
-                            "BUNDLER_CONFIG",
-                            "Set BUNDLER_RPC_URL for sponsored governance writes when the roster key has no ETH.",
-                            None,
-                        )
-                    })?;
-                    let tx_hash = wait_for_user_operation_tx_hash(&bundler, &user_op_hash).await?;
+                    // Receipt poll must hit the bundler that accepted the UserOp.
+                    let tx_hash =
+                        wait_for_user_operation_tx_hash(&send.bundler_url, &send.user_op_hash)
+                            .await?;
                     return Ok((tx_hash, net.key.clone(), net.chain_id));
                 }
                 Err(e) => {
@@ -105,7 +101,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         return Err(wallet_err_json(
                             "SPONSOR_PATH_UNAVAILABLE",
                             format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key or set BUNDLER_RPC_URL and PACTO_ERC4337_ACCOUNT_IMPL."
+                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL) so the Rust backend can reach an EntryPoint v0.7 bundler (repo-root .env is loaded in debug builds)."
                             ),
                             None,
                         ));

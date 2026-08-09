@@ -1,26 +1,20 @@
 //! USD display prices via Chainlink Data Feeds (on-chain oracles).
 //!
-//! Reads AggregatorV3 `latestRoundData` over JSON-RPC. No static price fallbacks:
-//! if RPC fails or data is invalid, the command returns an error so the UI can
-//! explain that live oracle data is unavailable.
+//! Reads AggregatorV3 `latestRoundData` over JSON-RPC for the wallet network's
+//! feed set (mainnet / Arbitrum / Sepolia). Anvil `local` aliases to Sepolia.
+//! No static price fallbacks: if every RPC candidate fails, callers get an error.
 //!
 //! Reference: <https://docs.chain.link/data-feeds/using-data-feeds>
-//! Feed addresses (Ethereum mainnet, standard proxies): data.chain.link
+//! Feed addresses: <https://docs.chain.link/data-feeds/price-feeds/addresses>
 
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::evm::wallet_security;
-
-/// Ethereum mainnet — ETH / USD (8 decimals typical; always read `decimals()`).
-const FEED_ETH_USD: &str = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
-/// Ethereum mainnet — USDC / USD
-const FEED_USDC_USD: &str = "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6";
-/// Ethereum mainnet — USDT / USD
-const FEED_USDT_USD: &str = "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D";
 
 /// `latestRoundData()` selector
 const SEL_LATEST_ROUND: &str = "0xfeaf968c";
@@ -30,8 +24,45 @@ const SEL_DECIMALS: &str = "0x313ce567";
 const CACHE_TTL: Duration = Duration::from_secs(90);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Override with `ALCHEMY_RPC_KEY` (Ethereum mainnet host) when set.
-const DEFAULT_ETH_MAINNET_RPC: &str = "https://ethereum.publicnode.com";
+struct FeedSet {
+    eth: &'static str,
+    usdc: &'static str,
+    /// When equal to `usdc`, Sepolia reuses USDC/USD (no separate USDT feed).
+    usdt: &'static str,
+}
+
+const FEEDS_MAINNET: FeedSet = FeedSet {
+    eth: "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419",
+    usdc: "0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6",
+    usdt: "0x3E7d1eAB13ad0104d2750B8863b489D65364e32D",
+};
+
+const FEEDS_ARBITRUM: FeedSet = FeedSet {
+    eth: "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612",
+    usdc: "0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3",
+    usdt: "0x3f3f5dF88dC9F13eac63DF89EC16ef6e7E25DdE7",
+};
+
+/// Sepolia has no dedicated USDT/USD in the standard list; reuse USDC/USD.
+const FEEDS_SEPOLIA: FeedSet = FeedSet {
+    eth: "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    usdc: "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+    usdt: "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
+};
+
+const PUBLIC_RPC_MAINNET: &[&str] = &[
+    "https://ethereum.publicnode.com",
+    "https://1rpc.io/eth",
+];
+const PUBLIC_RPC_ARBITRUM: &[&str] = &[
+    "https://arb1.arbitrum.io/rpc",
+    "https://arbitrum.publicnode.com",
+];
+const PUBLIC_RPC_SEPOLIA: &[&str] = &[
+    "https://ethereum-sepolia-rpc.publicnode.com",
+    "https://1rpc.io/sepolia",
+    "https://rpc.sepolia.org",
+];
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,7 +72,7 @@ pub struct WalletUsdSpotPrices {
     pub usdt_usd: f64,
     /// Always `chainlink` on success.
     pub source: String,
-    /// Where feeds were read (Ethereum mainnet aggregator contracts).
+    /// Resolved feed network: `ethereum-mainnet` | `arbitrum` | `sepolia`.
     pub feed_network: String,
     pub fetched_at_ms_epoch: i64,
 }
@@ -51,7 +82,8 @@ struct CacheEntry {
     valid_at: Instant,
 }
 
-static PRICE_CACHE: Lazy<Mutex<Option<CacheEntry>>> = Lazy::new(|| Mutex::new(None));
+static PRICE_CACHE: Lazy<Mutex<HashMap<String, CacheEntry>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 fn now_ms_epoch() -> i64 {
     SystemTime::now()
@@ -60,11 +92,54 @@ fn now_ms_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-fn price_rpc_url() -> String {
-    if let Some(url) = crate::evm::wallet_rpc_providers::mainnet_provider_rpc_url() {
-        return url;
+/// Map wallet network key → Chainlink feed network key (RPC + proxies).
+pub fn resolve_feed_network(wallet_network_key: &str) -> Result<&'static str, String> {
+    match wallet_network_key.trim().to_lowercase().as_str() {
+        "mainnet" | "ethereum" | "eth" => Ok("mainnet"),
+        "arbitrum" | "arb" | "arb1" => Ok("arbitrum"),
+        "sepolia" => Ok("sepolia"),
+        "local" | "anvil" | "hardhat" => Ok("sepolia"),
+        other => Err(format!(
+            "unsupported network for USD prices: {other} (use mainnet, arbitrum, sepolia, or local)"
+        )),
     }
-    DEFAULT_ETH_MAINNET_RPC.to_string()
+}
+
+fn feed_network_label(feed_key: &str) -> &'static str {
+    match feed_key {
+        "mainnet" => "ethereum-mainnet",
+        "arbitrum" => "arbitrum",
+        "sepolia" => "sepolia",
+        _ => "unknown",
+    }
+}
+
+fn feed_set(feed_key: &str) -> Result<&'static FeedSet, String> {
+    match feed_key {
+        "mainnet" => Ok(&FEEDS_MAINNET),
+        "arbitrum" => Ok(&FEEDS_ARBITRUM),
+        "sepolia" => Ok(&FEEDS_SEPOLIA),
+        other => Err(format!("no Chainlink feed set for {other}")),
+    }
+}
+
+fn price_rpc_candidates(feed_key: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(url) = crate::evm::wallet_rpc_providers::provider_primary_rpc_url(feed_key) {
+        urls.push(url);
+    }
+    let public: &[&str] = match feed_key {
+        "mainnet" => PUBLIC_RPC_MAINNET,
+        "arbitrum" => PUBLIC_RPC_ARBITRUM,
+        "sepolia" => PUBLIC_RPC_SEPOLIA,
+        _ => &[],
+    };
+    for u in public {
+        if !urls.iter().any(|existing| existing == u) {
+            urls.push((*u).to_string());
+        }
+    }
+    urls
 }
 
 fn hex_nibble(c: u8) -> Option<u8> {
@@ -202,31 +277,62 @@ async fn read_feed_usd(rpc_url: &str, feed: &str) -> Result<f64, String> {
     answer_to_f64(ans, decimals)
 }
 
-/// Returns cached prices if fresh; otherwise reads Chainlink on Ethereum mainnet.
-#[tauri::command]
-pub async fn wallet_get_usd_spot_prices() -> Result<WalletUsdSpotPrices, String> {
+async fn read_all_feeds_usd(rpc_url: &str, feeds: &FeedSet) -> Result<(f64, f64, f64), String> {
+    let eth = read_feed_usd(rpc_url, feeds.eth).await?;
+    let usdc = read_feed_usd(rpc_url, feeds.usdc).await?;
+    let usdt = if feeds.usdt.eq_ignore_ascii_case(feeds.usdc) {
+        usdc
+    } else {
+        read_feed_usd(rpc_url, feeds.usdt).await?
+    };
+    Ok((eth, usdc, usdt))
+}
+
+/// Fetch (or return cached) Chainlink USD spots for a wallet network key.
+pub async fn get_usd_spot_prices_for_network(
+    wallet_network_key: &str,
+) -> Result<WalletUsdSpotPrices, String> {
+    let feed_key = resolve_feed_network(wallet_network_key)?;
+    let feeds = feed_set(feed_key)?;
+    let label = feed_network_label(feed_key).to_string();
+
     {
         let guard = PRICE_CACHE
             .lock()
             .map_err(|e| format!("price cache lock: {}", e))?;
-        if let Some(ref entry) = *guard {
+        if let Some(entry) = guard.get(feed_key) {
             if entry.valid_at.elapsed() < CACHE_TTL {
                 return Ok(entry.prices.clone());
             }
         }
     }
 
-    let rpc = price_rpc_url();
-    let eth = read_feed_usd(&rpc, FEED_ETH_USD).await?;
-    let usdc = read_feed_usd(&rpc, FEED_USDC_USD).await?;
-    let usdt = read_feed_usd(&rpc, FEED_USDT_USD).await?;
+    let candidates = price_rpc_candidates(feed_key);
+    if candidates.is_empty() {
+        return Err(format!("no RPC candidates for feed network {feed_key}"));
+    }
+
+    let mut last_err = None;
+    let mut triple = None;
+    for rpc in &candidates {
+        match read_all_feeds_usd(rpc, feeds).await {
+            Ok(prices) => {
+                triple = Some(prices);
+                break;
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    let (eth, usdc, usdt) = triple.ok_or_else(|| {
+        last_err.unwrap_or_else(|| format!("USD prices unavailable on {feed_key}"))
+    })?;
 
     let prices = WalletUsdSpotPrices {
         eth_usd: eth,
         usdc_usd: usdc,
         usdt_usd: usdt,
         source: "chainlink".to_string(),
-        feed_network: "ethereum-mainnet".to_string(),
+        feed_network: label,
         fetched_at_ms_epoch: now_ms_epoch(),
     };
 
@@ -234,11 +340,56 @@ pub async fn wallet_get_usd_spot_prices() -> Result<WalletUsdSpotPrices, String>
         let mut guard = PRICE_CACHE
             .lock()
             .map_err(|e| format!("price cache lock: {}", e))?;
-        *guard = Some(CacheEntry {
-            prices: prices.clone(),
-            valid_at: Instant::now(),
-        });
+        guard.insert(
+            feed_key.to_string(),
+            CacheEntry {
+                prices: prices.clone(),
+                valid_at: Instant::now(),
+            },
+        );
     }
 
     Ok(prices)
+}
+
+/// Returns cached prices if fresh; otherwise reads Chainlink for `network_key`.
+#[tauri::command]
+pub async fn wallet_get_usd_spot_prices(network_key: String) -> Result<WalletUsdSpotPrices, String> {
+    get_usd_spot_prices_for_network(&network_key).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_local_aliases_to_sepolia() {
+        assert_eq!(resolve_feed_network("local").unwrap(), "sepolia");
+        assert_eq!(resolve_feed_network("anvil").unwrap(), "sepolia");
+        assert_eq!(resolve_feed_network("LOCAL").unwrap(), "sepolia");
+    }
+
+    #[test]
+    fn resolve_known_networks() {
+        assert_eq!(resolve_feed_network("mainnet").unwrap(), "mainnet");
+        assert_eq!(resolve_feed_network("arbitrum").unwrap(), "arbitrum");
+        assert_eq!(resolve_feed_network("sepolia").unwrap(), "sepolia");
+    }
+
+    #[test]
+    fn resolve_unknown_errors() {
+        assert!(resolve_feed_network("polygon").is_err());
+    }
+
+    #[test]
+    fn sepolia_rpc_candidates_include_public_fallback() {
+        let urls = price_rpc_candidates("sepolia");
+        assert!(urls.iter().any(|u| u.contains("sepolia")));
+    }
+
+    #[test]
+    fn sepolia_reuses_usdc_feed_for_usdt() {
+        let set = feed_set("sepolia").unwrap();
+        assert!(set.usdt.eq_ignore_ascii_case(set.usdc));
+    }
 }

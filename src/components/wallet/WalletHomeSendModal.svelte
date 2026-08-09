@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
@@ -73,16 +72,25 @@
     | { ok: true; prices: WalletUsdSpotPrices }
     | { ok: false; message: string }
     | null = null;
+  let pricesFetchKey = '';
+  let pricesFetchGen = 0;
 
-  onMount(() => {
-    let cancelled = false;
-    getWalletUsdSpotPrices().then((r) => {
-      if (!cancelled) pricesResult = r;
-    });
-    return () => {
-      cancelled = true;
-    };
-  });
+  $: if (!open) {
+    pricesFetchKey = '';
+    pricesResult = null;
+  } else {
+    const key = chainId;
+    if (key !== pricesFetchKey) {
+      pricesFetchKey = key;
+      pricesFetchGen += 1;
+      const gen = pricesFetchGen;
+      pricesResult = null;
+      getWalletUsdSpotPrices(chainId).then((r) => {
+        if (gen !== pricesFetchGen) return;
+        pricesResult = r;
+      });
+    }
+  }
 
   $: assetOptions = listWalletAssetOptionsForChainWithWatched(
     chainId,

@@ -294,11 +294,11 @@ mod tests {
         let sp = squad_sponsor_deploy_addresses("sepolia").expect("sponsor book");
         assert_eq!(
             sp.squad_sponsor_factory,
-            address!("0x05F0130889dC678304D11cCA71983edB220A4c74")
+            address!("0x12883924e71Df814ff1E198E5C16CEFd251BC308")
         );
         assert_eq!(
             sp.pacto_sponsor_paymaster,
-            address!("0x19B48Cb37066d47E388F2e4705c4027e5FaC8Af6")
+            address!("0x065dA13369604291E628DD8022E0e504dc62Da12")
         );
 
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");

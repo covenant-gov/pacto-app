@@ -23,6 +23,8 @@
     type WatchedErc20Row,
     getMatchingCachedSummary,
     persistWalletSummaryCache,
+    sumPricedUsd,
+    pricingStatusForNetworks,
   } from '../../lib/wallet';
   import { loadWalletEnabledChains, walletUiEnabledChainsTick } from '../../lib/wallet/wallet-ui-prefs';
   import { showToast } from '../../stores/toast';
@@ -208,13 +210,22 @@
   $: networkDropdownChainIds = WALLET_ASSETS_CHAIN_IDS.filter((id) => enabledChainSet.has(id));
 
   /** Total USD for listed networks only (matches toggles in Wallet view). */
-  let barTotalUsdApprox: number = 0;
-  $: barTotalUsdApprox = networksForBalance.reduce(
-    (sum, net) =>
-      sum +
-      net.assets.reduce((s, a) => s + ((a as WalletSummaryAsset).usdValue ?? 0), 0),
-    0
-  );
+  let barTotalUsdApprox: number | null = null;
+  let barPricingStatus: 'complete' | 'partial' | 'unavailable' = 'unavailable';
+  $: {
+    if (networkFilter === 'all' && summary) {
+      barPricingStatus = summary.usdPricingStatus ?? 'unavailable';
+      barTotalUsdApprox =
+        barPricingStatus === 'unavailable' ? null : summary.totalUsdApprox;
+      if (barTotalUsdApprox == null && barPricingStatus !== 'unavailable') {
+        barTotalUsdApprox = sumPricedUsd(networksForBalance);
+      }
+    } else {
+      barPricingStatus = pricingStatusForNetworks(networksForBalance);
+      barTotalUsdApprox =
+        barPricingStatus === 'unavailable' ? null : sumPricedUsd(networksForBalance);
+    }
+  }
 
   async function refreshSummary() {
     const wire = watchedRowsToWire(watchedErc20Rows);
@@ -345,8 +356,23 @@
         </button>
       </div>
       <p class="wallet-bar-total">
-        {$t('wallet.totalApprox')} <strong>${barTotalUsdApprox.toFixed(2)}</strong>
-        <span class="wallet-bar-total-meta">{$t('wallet.viaSource', { values: { source: summary.prices.source } })}</span>
+        {#if barPricingStatus === 'unavailable'}
+          {$t('wallet.totalUsdUnavailable')}
+        {:else if barTotalUsdApprox != null}
+          {#if barPricingStatus === 'partial'}
+            {$t('wallet.totalUsdPartial')}
+          {:else}
+            {$t('wallet.totalApprox')}
+          {/if}
+          <strong>${barTotalUsdApprox.toFixed(2)}</strong>
+          {#if barPricingStatus === 'complete' && summary.prices}
+            <span class="wallet-bar-total-meta"
+              >{$t('wallet.viaSource', { values: { source: summary.prices.source } })}</span
+            >
+          {/if}
+        {:else}
+          {$t('wallet.totalUsdUnavailable')}
+        {/if}
       </p>
       {#if networksForBalance.length === 0}
         <p class="wallet-bar-placeholder">{$t('wallet.noNetworksMatchFilter')}</p>
