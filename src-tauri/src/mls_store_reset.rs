@@ -62,7 +62,7 @@ fn classify_version(version: Option<i64>, table_exists: bool) -> StoreClassifica
 fn inspect_connection(conn: &Connection) -> Result<StoreClassification, rusqlite::Error> {
     let (table_exists, rows) =
         crate::storage_format::read_history_table(conn, "_refinery_schema_history_nostr_mls")?;
-    let version = rows.iter().map(|row| i64::from(row.version)).max();
+    let version = rows.iter().map(|row| row.version).max();
     Ok(classify_version(version, table_exists))
 }
 

@@ -1,6 +1,16 @@
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
+/// Migrations before 2026-08-08 are numbered sequentially (`V1`, `V2`, ...).
+/// New migrations must instead use a UTC timestamp version
+/// (`V<YYYYMMDDHHMMSS>__snake_case_name.sql`, e.g.
+/// `date -u +V%Y%m%d%H%M%S`) so two branches authored in parallel can never
+/// pick the same next integer and collide on refinery's
+/// `refinery_schema_history.version` primary key when both merge. Requires
+/// `SchemaVersion = i64` (the `int8-versions` feature on the `refinery`
+/// dependency in `Cargo.toml`) -- a 14-digit timestamp overflows the
+/// default `i32`. Existing sequential versions are untouched; the two
+/// schemes coexist because ordering stays purely numeric either way.
 mod embedded {
     use refinery::embed_migrations;
     embed_migrations!("src/migrations");
@@ -12,7 +22,7 @@ mod embedded {
 /// Hard-coded, not derived from the embedded set — deriving it from
 /// `get_migrations()` would silently raise the ceiling every time a new
 /// migration is added, reintroducing the defect this constant exists to fix.
-pub(crate) const PRE_REFINERY_CEILING: i32 = 27;
+pub(crate) const PRE_REFINERY_CEILING: i64 = 27;
 
 /// Highest version in the embedded migration set. Derived at compile time
 /// from `embed_migrations!`, unlike `PRE_REFINERY_CEILING` which is pinned
@@ -20,7 +30,7 @@ pub(crate) const PRE_REFINERY_CEILING: i32 = 27;
 /// migration file is added, because it exists to recognize a database
 /// written by a *newer* build than the one running, not to gate the
 /// baseline-detection behavior `PRE_REFINERY_CEILING` protects.
-pub(crate) fn embedded_ceiling() -> i32 {
+pub(crate) fn embedded_ceiling() -> i64 {
     embedded::migrations::runner()
         .get_migrations()
         .iter()
@@ -78,7 +88,7 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
 /// database connection.
 fn migrations_to_baseline(
     migrations: &[refinery::Migration],
-    ceiling: i32,
+    ceiling: i64,
 ) -> Vec<&refinery::Migration> {
     migrations
         .iter()
@@ -217,7 +227,7 @@ mod tests {
         let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
         run_migrations(&mut conn).expect("migrations should run");
 
-        let last_version: i32 = conn
+        let last_version: i64 = conn
             .query_row(
                 "SELECT MAX(version) FROM refinery_schema_history",
                 [],
@@ -298,7 +308,7 @@ mod tests {
 
         run_migrations(&mut conn).expect("baseline should run");
 
-        let baselined_count: i32 = conn
+        let baselined_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM refinery_schema_history WHERE version <= ?1",
                 [PRE_REFINERY_CEILING],
@@ -338,7 +348,7 @@ mod tests {
 
         run_migrations(&mut conn).expect("migrations should run from scratch");
 
-        let last_version: i32 = conn
+        let last_version: i64 = conn
             .query_row(
                 "SELECT MAX(version) FROM refinery_schema_history",
                 [],
@@ -428,7 +438,7 @@ mod tests {
 
         run_migrations(&mut conn).expect("migrations should run");
 
-        let last_version: i32 = conn
+        let last_version: i64 = conn
             .query_row(
                 "SELECT MAX(version) FROM refinery_schema_history",
                 [],
