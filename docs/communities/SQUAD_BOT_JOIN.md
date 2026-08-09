@@ -1,6 +1,8 @@
-# Squad bot join inbox (wire sketch)
+# Squad Join inbox (wire sketch)
 
-Private Commons join: requesters **DM the squad bot**; holders fan out into MLS. No public Kind 30078 join request/response.
+Private Commons join: requesters **DM the squad Join inbox** (shared Nostr identity; wire schemas still say `squad_bot`); holders fan out into MLS. No public Kind 30078 join request/response.
+
+User-facing term: **Join inbox key** / **Join inbox holders**. Wire names (`pacto.squad_bot.*`, `botNpub`) stay stable. Do not confuse with EVM **squad key** (roster signer).
 
 ## Channel backing
 
@@ -135,9 +137,9 @@ After accept/reject, the operator sends a private DM to the requester (same gift
 }
 ```
 
-Accept still delivers the MLS welcome + squad invite DM separately.
+Accept publishes MLS `accepted` and notifies the requester via this DM. The approver durably retries MLS admit; the requester **auto-finalizes** the announcements Welcome (no second Accept card / no `squad_invite` DM on this path).
 
-## Bot key share (not MLS group plaintext)
+## Join inbox key share (not MLS group plaintext)
 
 NIP-17 DM from rotating holder → each current holder npub:
 
@@ -155,10 +157,10 @@ Store nsec only in account-encrypted local storage. Never put `nsec` in MLS cont
 
 ## Commons
 
-Squad discovery broadcasts are **signed by the bot**. Requesters DM the card author (bot npub), same pattern as user→user Commons DM.
+Squad discovery broadcasts are **signed by the Join inbox identity**. Requesters DM the card author (inbox npub), same pattern as user→user Commons DM.
 
-After **key rotation**, the next broadcast uses the new bot npub. Stale cards may still point at the previous bot until they expire or a holder cancels and rebroadcasts.
+After **key rotation**, the next broadcast uses the new inbox npub. Stale cards may still point at the previous npub until they expire or a holder cancels and rebroadcasts.
 
 ## Related
 
-Holder Settings UI and bot init are in-app. Public Kind 30078 join request/response is retired; join is bot DM + MLS only.
+Holder Settings UI and Join inbox init are in-app. Public Kind 30078 join request/response is retired; join is inbox DM + MLS only. Only Join inbox holders with a local secret Accept/Reject in Crew.

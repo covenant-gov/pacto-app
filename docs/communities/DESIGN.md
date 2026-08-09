@@ -92,8 +92,8 @@ Roster bindings (`squad_member_evm_account`, `squad_member_evm`) and on-chain in
 
 ## 6. Invites
 
-- **Squad / squad-pair invites (user-facing):** `squad_invite` in the Pacto App inbox. Outbound invites do **not** MLS-add until the invitee Accepts. The inviter also publishes `squad_outbound_invite` on `#announcements`; on Accept the invitee DMs `squad_invite_accepted` to admitter npubs so **any online member** can run admit.
-- **Join-request Approve:** consent is already given — approver runs the admit pipeline (announcements + all **open** channels) under the hood. No second inbox Accept card.
+- **Squad / squad-pair invites (user-facing):** `squad_invite` in the Pacto App inbox. Outbound invites do **not** MLS-add until the invitee Accepts. The inviter also publishes `squad_outbound_invite` on `#announcements`; on Accept the invitee DMs `squad_invite_accepted` to admitter npubs so **any online member** can run admit. Accept is durable: the invitee card moves to a **joining** state (no hard 90s failure) until a Welcome arrives and is auto-finalized.
+- **Join-request Approve:** consent is already given — **Join inbox holders** (shared Nostr identity holders with a local secret) Accept/Reject in Crew. Approve publishes MLS `accepted` immediately and durably retries MLS admit; the requester auto-finalizes the Welcome (no second Accept card).
 - **Channels:** never show invite cards. MLS welcomes + optional under-the-hood `channel_in_squad` notify (auto-accepted when already in the squad). Custom channels are **`open`** (everyone in announcements; late joiners auto-join) or **`closed`** (selected members only; invisible to others until manually added). `access` is persisted on each channel row; missing `access` on a custom channel is treated as **open** for catch-up (legacy rows).
 
 ---
