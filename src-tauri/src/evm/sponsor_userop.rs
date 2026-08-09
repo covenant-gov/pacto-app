@@ -1620,8 +1620,11 @@ mod tests {
         }
     }
 
+    static ENV_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn bundler_rpc_url_override_wins_over_pimlico() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
@@ -1640,6 +1643,7 @@ mod tests {
 
     #[test]
     fn bundler_rpc_url_rejects_non_https_override() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
@@ -1654,6 +1658,7 @@ mod tests {
 
     #[test]
     fn bundler_rpc_url_uses_pimlico_when_override_unset() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
@@ -1671,6 +1676,7 @@ mod tests {
 
     #[test]
     fn bundler_rpc_url_none_without_pimlico_or_override() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev_b = std::env::var_os("BUNDLER_RPC_URL");
         let prev_p = std::env::var_os("PIMLICO_API_KEY");
         let prev_a = std::env::var_os("ALCHEMY_RPC_KEY");
@@ -1685,6 +1691,7 @@ mod tests {
 
     #[test]
     fn pimlico_url_uses_sepolia_chain_id() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev = std::env::var_os("PIMLICO_API_KEY");
         let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
         std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
@@ -1700,6 +1707,7 @@ mod tests {
 
     #[test]
     fn pimlico_url_none_without_key() {
+        let _lock = ENV_TEST_MUTEX.lock();
         let prev = std::env::var_os("PIMLICO_API_KEY");
         let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
         std::env::remove_var("PIMLICO_API_KEY");

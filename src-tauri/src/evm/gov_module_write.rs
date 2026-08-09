@@ -57,8 +57,9 @@ pub async fn send_gov_module_call<R: Runtime>(
     require_capability(&app, pid, capability, rpc_urls_override).await?;
     require_roster_treasury_signing_allowed(app.clone(), pid).await?;
 
-    let _write_guard = with_gov_write_lock(pid).await;
     let (signer, wallet) = load_squad_roster_embedded_signer(app.clone(), pid).await?;
+    // Key by signer EOA: multiple parents can resolve to the same roster key.
+    let _write_guard = with_gov_write_lock(signer.address()).await;
 
     // Route the write: EOA when the roster key can afford the gas, sponsored when it can't.
     let read_provider = connect_read_provider(&urls).await?;

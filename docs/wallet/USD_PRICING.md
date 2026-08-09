@@ -56,7 +56,17 @@ A Sepolia-only Alchemy app no longer needs Ethereum Mainnet enabled just for USD
 
 ## Wallet summary
 
-`get_wallet_summary` loads prices **per enabled network** (deduped by feed key). Oracle failure on a network leaves balances intact with `usdValue: null` for priced assets and does **not** fail the whole summary. Top-level `prices` is the first successfully priced enabled network (optional); per-asset `usdValue` on each network row is authoritative for that chain.
+`get_wallet_summary` loads prices **per enabled network** (deduped by feed key; distinct feeds fetch concurrently). Oracle failure on a network leaves balances intact with `usdValue: null` for priced assets and does **not** fail the whole summary.
+
+Top-level fields:
+
+| Field | Meaning |
+|-------|---------|
+| `usdPricingStatus` | `complete` \| `partial` \| `unavailable` across distinct enabled feed keys |
+| `totalUsdApprox` | Sum of non-null asset USD lines; `null` when status is `unavailable` |
+| `prices` | Optional sample metadata from the first successful feed (not a completeness signal) |
+
+Per-asset `usdValue` on each network row remains authoritative for that chain.
 
 ## Caching
 

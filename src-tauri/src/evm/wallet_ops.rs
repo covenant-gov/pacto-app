@@ -39,14 +39,42 @@ pub struct WalletSummaryNetwork {
     pub error: Option<String>,
 }
 
+/// Completeness of Chainlink pricing across enabled feed networks.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WalletUsdPricingStatus {
+    Complete,
+    Partial,
+    Unavailable,
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WalletSummary {
     pub networks: Vec<WalletSummaryNetwork>,
-    pub total_usd_approx: f64,
-    /// First successfully priced enabled network; omitted when all oracles fail.
+    /// Sum of priced assets; `null` when no feed succeeded.
+    pub total_usd_approx: Option<f64>,
+    pub usd_pricing_status: WalletUsdPricingStatus,
+    /// Sample metadata from first successful feed; omitted when none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prices: Option<wallet_prices::WalletUsdSpotPrices>,
+}
+
+fn usd_pricing_status_from_feeds(
+    prices_by_feed: &HashMap<String, Option<wallet_prices::WalletUsdSpotPrices>>,
+) -> WalletUsdPricingStatus {
+    let required = prices_by_feed.len();
+    if required == 0 {
+        return WalletUsdPricingStatus::Unavailable;
+    }
+    let ok = prices_by_feed.values().filter(|p| p.is_some()).count();
+    if ok == 0 {
+        WalletUsdPricingStatus::Unavailable
+    } else if ok == required {
+        WalletUsdPricingStatus::Complete
+    } else {
+        WalletUsdPricingStatus::Partial
+    }
 }
 
 #[derive(Serialize)]
@@ -232,8 +260,9 @@ pub async fn get_wallet_summary<R: Runtime>(
     let enabled: HashSet<String> = enabled_chains.iter().map(|c| c.to_lowercase()).collect();
 
     // Dedupe Chainlink fetches by feed network (local→sepolia shares Sepolia feeds).
-    let mut prices_by_feed: HashMap<String, Option<wallet_prices::WalletUsdSpotPrices>> =
-        HashMap::new();
+    // Distinct feeds run concurrently; candidates within each feed stay sequential.
+    let mut feed_jobs: Vec<(String, String)> = Vec::new();
+    let mut seen_feeds: HashSet<String> = HashSet::new();
     for net in wallet_chain_config::wallet_networks() {
         if !enabled.contains(net.key.as_str()) {
             continue;
@@ -241,14 +270,27 @@ pub async fn get_wallet_summary<R: Runtime>(
         let Ok(feed_key) = wallet_prices::resolve_feed_network(&net.key) else {
             continue;
         };
-        if prices_by_feed.contains_key(feed_key) {
+        if !seen_feeds.insert(feed_key.to_string()) {
             continue;
         }
-        let fetched = wallet_prices::get_usd_spot_prices_for_network(&net.key)
-            .await
-            .ok();
-        prices_by_feed.insert(feed_key.to_string(), fetched);
+        feed_jobs.push((feed_key.to_string(), net.key.clone()));
     }
+
+    let price_results =
+        futures_util::future::join_all(feed_jobs.into_iter().map(|(feed_key, sample_net)| async move {
+            let fetched = wallet_prices::get_usd_spot_prices_for_network(&sample_net)
+                .await
+                .ok();
+            (feed_key, fetched)
+        }))
+        .await;
+
+    let mut prices_by_feed: HashMap<String, Option<wallet_prices::WalletUsdSpotPrices>> =
+        HashMap::new();
+    for (feed_key, fetched) in price_results {
+        prices_by_feed.insert(feed_key, fetched);
+    }
+    let usd_pricing_status = usd_pricing_status_from_feeds(&prices_by_feed);
 
     let mut networks_out = Vec::new();
     let mut total_usd = 0.0_f64;
@@ -328,9 +370,15 @@ pub async fn get_wallet_summary<R: Runtime>(
         });
     }
 
+    let total_usd_approx = match usd_pricing_status {
+        WalletUsdPricingStatus::Unavailable => None,
+        WalletUsdPricingStatus::Complete | WalletUsdPricingStatus::Partial => Some(total_usd),
+    };
+
     Ok(WalletSummary {
         networks: networks_out,
-        total_usd_approx: total_usd,
+        total_usd_approx,
+        usd_pricing_status,
         prices: summary_prices,
     })
 }
@@ -765,6 +813,64 @@ mod resolve_peer_send_address_tests {
         assert_eq!(
             addr,
             parse_address("0x1111111111111111111111111111111111111111").unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
+mod usd_pricing_status_tests {
+    use super::*;
+
+    fn sample_prices() -> wallet_prices::WalletUsdSpotPrices {
+        wallet_prices::WalletUsdSpotPrices {
+            eth_usd: 1.0,
+            usdc_usd: 1.0,
+            usdt_usd: 1.0,
+            source: "chainlink".into(),
+            feed_network: "sepolia".into(),
+            fetched_at_ms_epoch: 0,
+        }
+    }
+
+    #[test]
+    fn empty_feed_map_is_unavailable() {
+        let map = HashMap::new();
+        assert_eq!(
+            usd_pricing_status_from_feeds(&map),
+            WalletUsdPricingStatus::Unavailable
+        );
+    }
+
+    #[test]
+    fn all_none_is_unavailable() {
+        let mut map = HashMap::new();
+        map.insert("sepolia".into(), None);
+        map.insert("mainnet".into(), None);
+        assert_eq!(
+            usd_pricing_status_from_feeds(&map),
+            WalletUsdPricingStatus::Unavailable
+        );
+    }
+
+    #[test]
+    fn all_some_is_complete() {
+        let mut map = HashMap::new();
+        map.insert("sepolia".into(), Some(sample_prices()));
+        map.insert("mainnet".into(), Some(sample_prices()));
+        assert_eq!(
+            usd_pricing_status_from_feeds(&map),
+            WalletUsdPricingStatus::Complete
+        );
+    }
+
+    #[test]
+    fn mixed_is_partial() {
+        let mut map = HashMap::new();
+        map.insert("sepolia".into(), Some(sample_prices()));
+        map.insert("mainnet".into(), None);
+        assert_eq!(
+            usd_pricing_status_from_feeds(&map),
+            WalletUsdPricingStatus::Partial
         );
     }
 }

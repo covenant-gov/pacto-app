@@ -97,6 +97,8 @@
 	"wallet.allEnabledNetworks": "Todas las redes habilitadas",
 	"wallet.importTokens": "Importar tokens",
 	"wallet.totalApprox": "Total (aprox.)",
+	"wallet.totalUsdPartial": "Total parcial (aprox.)",
+	"wallet.totalUsdUnavailable": "Estimación en USD no disponible",
 	"wallet.viaSource": "vía {source}",
 	"wallet.noNetworksMatchFilter": "Ninguna red coincide con este filtro.",
 	"wallet.noBalanceData": "No hay datos de saldo.",

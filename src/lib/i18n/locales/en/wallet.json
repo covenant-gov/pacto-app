@@ -102,6 +102,8 @@
 	"wallet.allEnabledNetworks": "All enabled networks",
 	"wallet.importTokens": "Import tokens",
 	"wallet.totalApprox": "Total (approx.)",
+	"wallet.totalUsdPartial": "Partial total (approx.)",
+	"wallet.totalUsdUnavailable": "USD estimate unavailable",
 	"wallet.viaSource": "via {source}",
 	"wallet.noNetworksMatchFilter": "No networks match this filter.",
 	"wallet.noBalanceData": "No balance data.",

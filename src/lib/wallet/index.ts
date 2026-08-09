@@ -24,6 +24,7 @@ export {
   type WalletSummaryResult,
   type WalletSummaryNetwork,
   type WalletSummaryAsset,
+  type WalletUsdPricingStatus,
   type WalletSendResult,
   type WalletSendResultOutcome,
   type WalletOpParsedError,
@@ -31,6 +32,10 @@ export {
   type SafeDeployProxyResult,
   type SafeDeployProxyOutcome,
 } from './backend-wallet';
+export {
+  sumPricedUsd,
+  pricingStatusForNetworks,
+} from './wallet-summary-usd';
 export { getSafeState, type SafeState } from './safe';
 export {
   getWalletUsdSpotPrices,

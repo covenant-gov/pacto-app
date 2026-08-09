@@ -59,6 +59,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
     const summary = {
       networks: [],
       totalUsdApprox: 0,
+      usdPricingStatus: 'unavailable' as const,
     };
     vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary });
     vi.mocked(loadWatchedErc20Rows).mockReturnValueOnce([{ symbol: 'USDC' } as never]);
@@ -81,7 +82,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('does not persist for the stale account and instead fetches the current account', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
     currentUser.set({ npub: 'npub2' } as never);
 
     schedule('npub1');
@@ -101,7 +102,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('skips while the same account is already in-flight', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
 
     schedule('npub1');
     schedule('npub1');
@@ -111,7 +112,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('skips a different account while another is in-flight', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
 
     schedule('npub1');
     schedule('npub2');
@@ -121,7 +122,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('throttles repeat success for the same account', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
     currentUser.set({ npub: 'npub1' } as never);
 
     schedule('npub1');
@@ -134,7 +135,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('runs again after the throttle window has passed', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
     currentUser.set({ npub: 'npub1' } as never);
 
     schedule('npub1');
@@ -148,7 +149,7 @@ describe('scheduleWalletSummaryBackgroundPrefetch', () => {
   });
 
   it('schedules a fetch for the current account when the finished account is stale', async () => {
-    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0 } });
+    vi.mocked(getWalletSummary).mockResolvedValue({ ok: true, summary: { networks: [], totalUsdApprox: 0, usdPricingStatus: 'unavailable' as const } });
     vi.mocked(loadWatchedErc20Rows).mockReturnValueOnce([]);
     currentUser.set({ npub: 'npub2' } as never);
 
