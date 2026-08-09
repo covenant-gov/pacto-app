@@ -26,6 +26,9 @@ pinnedDmNpubs.subscribe((set) => {
 /** Local block list (npubs hidden from DM sidebar; backend drops new incoming wraps after decrypt). */
 export const blockedDmNpubs = writable<Set<string>>(new Set());
 
+/** Peers with an in-flight backend DM delete (non-blocking UI). */
+export const deletingDmNpubs = writable<Set<string>>(new Set());
+
 export const composingNewChat = writable<boolean>(false);
 
 export const NEW_CHAT_DRAFT_NPUB_PREFIX = 'pacto_new_chat_draft_npub';
@@ -550,6 +553,29 @@ export function deleteDmChat(npub: string): void {
     const next = new Set(s);
     next.delete(npub);
     return next;
+  });
+  typingByChat.update((by) => {
+    if (!(npub in by)) return by;
+    const next = { ...by };
+    delete next[npub];
+    return next;
+  });
+  dmThreadAnnouncementsByNpub.update((m) => {
+    if (!(npub in m)) return m;
+    const next = { ...m };
+    delete next[npub];
+    return next;
+  });
+  lastOpenedDmByTab.update((tabs) => {
+    let changed = false;
+    const next = { ...tabs };
+    for (const key of Object.keys(next) as DmTab[]) {
+      if (next[key] === npub) {
+        next[key] = null;
+        changed = true;
+      }
+    }
+    return changed ? next : tabs;
   });
   activeDmId.update((id) => (id === npub ? null : id));
 }

@@ -3725,15 +3725,36 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
     Ok(())
 }
 
-/// Delete a chat and all its messages from the database.
-/// `chat_identifier` is the npub for DMs or group_id for MLS; events are CASCADE deleted.
-pub async fn delete_chat<R: Runtime>(
-    handle: AppHandle<R>,
+/// Delete events (and legacy messages) then the chat row. FK CASCADE is not relied on
+/// because account connections do not enable `PRAGMA foreign_keys`.
+pub(crate) fn delete_chat_conn(
+    conn: &rusqlite::Connection,
     chat_identifier: &str,
 ) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let chat_int_id: i64 = conn
+        .query_row(
+            "SELECT id FROM chats WHERE chat_identifier = ?1",
+            rusqlite::params![chat_identifier],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                format!("Chat not found: {}", chat_identifier)
+            }
+            other => format!("Failed to look up chat {}: {}", chat_identifier, other),
+        })?;
 
-    let chat_int_id = get_chat_id_by_identifier(&handle, chat_identifier)?;
+    conn.execute(
+        "DELETE FROM events WHERE chat_id = ?1",
+        rusqlite::params![chat_int_id],
+    )
+    .map_err(|e| format!("Failed to delete events: {}", e))?;
+
+    // Legacy messages table may still exist on older accounts.
+    let _ = conn.execute(
+        "DELETE FROM messages WHERE chat_id = ?1",
+        rusqlite::params![chat_int_id],
+    );
 
     conn.execute(
         "DELETE FROM chats WHERE id = ?1",
@@ -3751,15 +3772,82 @@ pub async fn delete_chat<R: Runtime>(
         chat_identifier, chat_int_id
     );
 
-    if let Err(e) = crate::catch_up::delete_entries_for_chat(&conn, chat_identifier) {
+    if let Err(e) = crate::catch_up::delete_entries_for_chat(conn, chat_identifier) {
         eprintln!(
             "[CatchUp] Failed to delete entries for chat {}: {}",
             chat_identifier, e
         );
     }
 
-    crate::account_manager::return_db_connection(conn);
     Ok(())
+}
+
+/// Delete a chat and all its messages from the database.
+/// `chat_identifier` is the npub for DMs or group_id for MLS.
+pub async fn delete_chat<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_identifier: &str,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result = delete_chat_conn(&conn, chat_identifier);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+/// True when a DM rumor's `created_at` is at or before a deletion cutoff.
+pub fn dm_created_at_at_or_before_cutoff(created_at_secs: u64, deleted_at_secs: i64) -> bool {
+    created_at_secs <= deleted_at_secs as u64
+}
+
+pub(crate) fn upsert_dm_deletion_cutoff_conn(
+    conn: &rusqlite::Connection,
+    peer_npub: &str,
+    deleted_at: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO dm_deletion_cutoffs (peer_npub, deleted_at) VALUES (?1, ?2)
+         ON CONFLICT(peer_npub) DO UPDATE SET deleted_at = excluded.deleted_at",
+        rusqlite::params![peer_npub, deleted_at],
+    )
+    .map_err(|e| format!("Failed to upsert dm deletion cutoff: {}", e))?;
+    Ok(())
+}
+
+pub(crate) fn get_dm_deletion_cutoff_conn(
+    conn: &rusqlite::Connection,
+    peer_npub: &str,
+) -> Result<Option<i64>, String> {
+    let result = conn.query_row(
+        "SELECT deleted_at FROM dm_deletion_cutoffs WHERE peer_npub = ?1",
+        rusqlite::params![peer_npub],
+        |row| row.get::<_, i64>(0),
+    );
+    match result {
+        Ok(ts) => Ok(Some(ts)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to read dm deletion cutoff: {}", e)),
+    }
+}
+
+pub async fn upsert_dm_deletion_cutoff<R: Runtime>(
+    handle: &AppHandle<R>,
+    peer_npub: &str,
+    deleted_at: i64,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = upsert_dm_deletion_cutoff_conn(&conn, peer_npub, deleted_at);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+pub async fn get_dm_deletion_cutoff<R: Runtime>(
+    handle: &AppHandle<R>,
+    peer_npub: &str,
+) -> Result<Option<i64>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = get_dm_deletion_cutoff_conn(&conn, peer_npub);
+    crate::account_manager::return_db_connection(conn);
+    result
 }
 
 /// Save a single message to the database (efficient for incremental updates)
@@ -3910,14 +3998,31 @@ pub async fn save_chat_messages<R: Runtime>(
 // MLS Metadata SQL Functions
 // ============================================================================
 
-/// Save MLS groups to SQL database (plaintext columns)
-pub async fn save_mls_groups<R: Runtime>(
-    handle: AppHandle<R>,
+/// Replace the persisted `mls_groups` rows with exactly `groups`, deleting any
+/// existing row whose `group_id` is absent from it. `write_groups` callers
+/// always pass the complete current group list (see `MlsService::write_groups`),
+/// so a group missing here means it was removed (e.g. a voluntary leave) and
+/// must not survive as a stale, non-evicted row that sync would still pick up.
+fn replace_mls_groups_conn(
+    conn: &rusqlite::Connection,
     groups: &[crate::mls::MlsGroupMetadata],
 ) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let keep_ids: std::collections::HashSet<&str> =
+        groups.iter().map(|g| g.group_id.as_str()).collect();
+    let existing_ids: Vec<String> = conn
+        .prepare("SELECT group_id FROM mls_groups")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|e| format!("Failed to list existing MLS groups: {}", e))?;
+    for id in existing_ids {
+        if !keep_ids.contains(id.as_str()) {
+            conn.execute("DELETE FROM mls_groups WHERE group_id = ?1", rusqlite::params![id])
+                .map_err(|e| format!("Failed to remove stale MLS group {}: {}", id, e))?;
+        }
+    }
 
-    // Store each group in the mls_groups table (all fields as columns)
     for group in groups {
         conn.execute(
             "INSERT OR REPLACE INTO mls_groups (group_id, engine_group_id, creator_pubkey, name, avatar_ref, created_at, updated_at, evicted)
@@ -3934,6 +4039,24 @@ pub async fn save_mls_groups<R: Runtime>(
             ],
         ).map_err(|e| format!("Failed to save MLS group {}: {}", group.group_id, e))?;
     }
+
+    Ok(())
+}
+
+/// Save MLS groups to SQL database (plaintext columns). `groups` must be the
+/// complete current list; any existing row absent from it is deleted.
+pub async fn save_mls_groups<R: Runtime>(
+    handle: AppHandle<R>,
+    groups: &[crate::mls::MlsGroupMetadata],
+) -> Result<(), String> {
+    let mut conn = crate::account_manager::get_db_connection(&handle)?;
+
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("Failed to start mls_groups transaction: {}", e))?;
+    replace_mls_groups_conn(&tx, groups)?;
+    tx.commit()
+        .map_err(|e| format!("Failed to commit mls_groups transaction: {}", e))?;
 
     println!(
         "[SQL] Saved {} MLS groups to mls_groups table",
@@ -4353,6 +4476,154 @@ mod legacy_mls_store_harvest_tests {
 
         let removed = clear_discarded_giftwraps_conn(&conn, &[]).unwrap();
         assert_eq!(removed, 0);
+    }
+
+    #[test]
+    fn replace_mls_groups_conn_deletes_group_missing_from_new_list() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "group-a", "engine-a");
+        insert_mls_group(&conn, "group-b", "engine-b");
+
+        // Simulates `leave_group`: the caller re-passes its full list minus the left group.
+        let remaining = vec![crate::mls::MlsGroupMetadata {
+            group_id: "group-b".to_string(),
+            engine_group_id: "engine-b".to_string(),
+            creator_pubkey: "creator".to_string(),
+            name: "group".to_string(),
+            avatar_ref: None,
+            created_at: 1000,
+            updated_at: 2000,
+            evicted: false,
+        }];
+        replace_mls_groups_conn(&conn, &remaining).expect("replace");
+
+        let remaining_ids: Vec<String> = conn
+            .prepare("SELECT group_id FROM mls_groups ORDER BY group_id")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            remaining_ids,
+            vec!["group-b".to_string()],
+            "leaving a group must delete its mls_groups row, not just skip re-upserting it"
+        );
+    }
+
+    #[test]
+    fn replace_mls_groups_conn_upserts_kept_group_fields() {
+        let conn = in_memory_app_conn();
+        insert_mls_group(&conn, "group-a", "engine-a");
+
+        let updated = vec![crate::mls::MlsGroupMetadata {
+            group_id: "group-a".to_string(),
+            engine_group_id: "engine-a".to_string(),
+            creator_pubkey: "creator".to_string(),
+            name: "renamed".to_string(),
+            avatar_ref: Some("avatar-ref".to_string()),
+            created_at: 1000,
+            updated_at: 9999,
+            evicted: false,
+        }];
+        replace_mls_groups_conn(&conn, &updated).expect("replace");
+
+        let (name, updated_at): (String, i64) = conn
+            .query_row(
+                "SELECT name, updated_at FROM mls_groups WHERE group_id = 'group-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "renamed");
+        assert_eq!(updated_at, 9999);
+    }
+}
+
+#[cfg(test)]
+mod dm_deletion_cutoff_tests {
+    use super::*;
+
+    fn in_memory_app_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn
+    }
+
+    #[test]
+    fn upsert_and_get_dm_deletion_cutoff_round_trip() {
+        let conn = in_memory_app_conn();
+        let peer = "npub1peerdeletioncutoffxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        assert!(get_dm_deletion_cutoff_conn(&conn, peer).unwrap().is_none());
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 1_700_000_000).unwrap();
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(1_700_000_000)
+        );
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 1_700_000_100).unwrap();
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(1_700_000_100)
+        );
+    }
+
+    #[test]
+    fn dm_created_at_gate_compares_inclusive() {
+        assert!(dm_created_at_at_or_before_cutoff(100, 100));
+        assert!(dm_created_at_at_or_before_cutoff(99, 100));
+        assert!(!dm_created_at_at_or_before_cutoff(101, 100));
+    }
+
+    #[test]
+    fn delete_chat_conn_removes_events_and_chat_row() {
+        let conn = in_memory_app_conn();
+        let peer = "npub1deleterpurgepeerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at)
+             VALUES (?1, 0, '[]', 1000)",
+            rusqlite::params![peer],
+        )
+        .unwrap();
+        let chat_id: i64 = conn
+            .query_row(
+                "SELECT id FROM chats WHERE chat_identifier = ?1",
+                rusqlite::params![peer],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO events (id, chat_id, kind, content, tags, created_at, received_at, mine)
+             VALUES ('evt1', ?1, 14, 'hi', '[]', 1000, 1000, 1)",
+            rusqlite::params![chat_id],
+        )
+        .unwrap();
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 2000).unwrap();
+        delete_chat_conn(&conn, peer).unwrap();
+
+        let chats: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chats WHERE chat_identifier = ?1",
+                rusqlite::params![peer],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(chats, 0);
+        let events: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE chat_id = ?1",
+                rusqlite::params![chat_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 0);
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(2000),
+            "cutoff survives chat purge"
+        );
     }
 }
 

@@ -25,6 +25,7 @@
     activeDmTab,
     lastOpenedDmByTab,
     pinnedDmNpubs,
+    deletingDmNpubs,
     dmSendError,
     typingByChat,
     dmWalletPeerExchangeTick,
@@ -38,6 +39,7 @@
   import { dmSyncStatusEffective } from '../../stores/dm';
   import SyncStatusIndicator from './SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import Modal from '../ui/Modal.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
@@ -83,6 +85,7 @@
 
   let replyToMessageId: string | null = null;
   let replyPreview: string | undefined = undefined;
+  $: chatDeleting = $deletingDmNpubs.has(npub);
 
   function onReply(event: CustomEvent<{ messageId: string }>) {
     const messageId = event.detail.messageId;
@@ -308,6 +311,7 @@
       : $t('messaging.message.replyUnknown');
 
   let menuOpen = false;
+  let deleteConfirmOpen = false;
   let showNicknameEdit = false;
   let nicknameEditValue = '';
   let nicknameSaving = false;
@@ -470,9 +474,11 @@
                         type="button"
                         class="dm-thread-dropdown-item dm-thread-dropdown-item-danger"
                         role="menuitem"
+                        disabled={chatDeleting}
                         on:click={() => {
+                          if (chatDeleting) return;
                           menuOpen = false;
-                          onDeleteChat();
+                          deleteConfirmOpen = true;
                         }}
                       >
                         {$t('messaging.dm.thread.deleteChat')}
@@ -531,6 +537,12 @@
     </div>
   </div>
   <div class="dm-thread-messages" bind:this={dmMessagesContainer} on:scroll={handleMessagesScroll}>
+    {#if chatDeleting}
+      <div class="dm-thread-deleting" role="status" aria-live="polite" aria-busy="true">
+        <span class="dm-thread-deleting-spinner" aria-hidden="true"></span>
+        <span>{$t('messaging.dm.thread.deleting')}</span>
+      </div>
+    {/if}
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>
@@ -572,7 +584,7 @@
   <MessageInput
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
-    disabled={peerBlockedByMe}
+    disabled={peerBlockedByMe || chatDeleting}
     onSend={handleSend}
     onSendFile={handleSendFile}
     onTyping={onTyping}
@@ -581,6 +593,38 @@
     onCancelReply={cancelReply}
   />
 </div>
+
+{#if deleteConfirmOpen}
+  <Modal
+    titleId="dm-delete-chat-title"
+    descriptionId="dm-delete-chat-description"
+    onClose={() => (deleteConfirmOpen = false)}
+  >
+    <h2 id="dm-delete-chat-title">{$t('messaging.dm.thread.deleteConfirmTitle')}</h2>
+    <p id="dm-delete-chat-description" class="dm-delete-confirm-message">
+      {$t('messaging.dm.thread.deleteConfirmBody')}
+    </p>
+    <div class="dm-delete-confirm-actions">
+      <button
+        type="button"
+        class="dm-delete-confirm-cancel"
+        on:click={() => (deleteConfirmOpen = false)}
+      >
+        {$t('messaging.dm.thread.cancel')}
+      </button>
+      <button
+        type="button"
+        class="dm-delete-confirm-delete"
+        on:click={() => {
+          deleteConfirmOpen = false;
+          onDeleteChat?.();
+        }}
+      >
+        {$t('messaging.dm.thread.deleteConfirmAction')}
+      </button>
+    </div>
+  </Modal>
+{/if}
 
 <style>
   .dm-thread {
@@ -779,11 +823,16 @@
     background: var(--bg-hover);
   }
 
+  .dm-thread-dropdown-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .dm-thread-dropdown-item-danger {
     color: var(--danger);
   }
 
-  .dm-thread-dropdown-item-danger:hover {
+  .dm-thread-dropdown-item-danger:hover:not(:disabled) {
     background: rgba(237, 66, 69, 0.15);
     color: var(--danger);
   }
@@ -861,6 +910,35 @@
     margin-bottom: 16px;
   }
 
+  .dm-thread-deleting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .dm-thread-deleting-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: dm-thread-deleting-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes dm-thread-deleting-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   .load-older-btn {
     padding: 8px 16px;
     font-size: 0.875rem;
@@ -903,5 +981,48 @@
     padding: 8px 24px;
     background-color: rgba(237, 66, 69, 0.1);
     border-top: 1px solid var(--bg-elevated);
+  }
+
+  .dm-delete-confirm-message {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    margin: 0 0 20px 0;
+    line-height: 1.5;
+  }
+
+  .dm-delete-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .dm-delete-confirm-cancel {
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .dm-delete-confirm-cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .dm-delete-confirm-delete {
+    padding: 8px 16px;
+    background: var(--danger);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .dm-delete-confirm-delete:hover {
+    filter: brightness(0.9);
   }
 </style>

@@ -48,7 +48,7 @@ Issue #181 overlaps on the symptom but not the root cause: after a seed restore 
 
 This plan owns **session-level recovery for GiftWrap/DM traffic and sync-status honesty**. The broader #139/#181 space is understood as:
 
-- **#139-C inbound poll bucket bug:** Closed after this plan — inbound create uses `announcements`; see `rumor.rs` + `V31__poll_create_announcements_bucket.sql`.
+- **#139-C inbound poll bucket bug:** Closed after this plan — inbound create uses `announcements`; see `rumor.rs` + `V32__poll_create_announcements_bucket.sql`.
 - **#181 MLS seed-restore credential limitation:** Outside this plan. Restoring from seed cannot recover a random `device_id` or local-only MLS ratchet state. This plan only addresses the shared symptom: the sync-status surface must not falsely imply recovery is complete.
 
 ### Requirements

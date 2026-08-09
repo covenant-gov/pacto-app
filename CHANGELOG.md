@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## Unreleased
+
+### Bug Fixes
+- Local-only cleanup when leaving an mls-store-reset group
+- Deploy the download page from the release run (ci)
+- Avoid following symlinks when scanning profile directories (#230)
+- Match any commit in the push for release auto-tagging
+
+
+### Features
+- Sponsor zero-eth squad gov writes via eip-7702 userops (#121)
+- Expandable chat input (#231)
+
+
+### Other
+- Address PR review feedback (#218)
+
+- Match typed mdk_core::Error::GroupNotFound variant in leave_group instead of substring-matching the display text, avoiding misclassification of other engine/provider failures as already-left
+- Remove tracker ID from test doc comment, describe the store-reset scenario directly
+
+
+### Refactor
+- Rename app database from vector.db to pacto.db
+- Rename MLS engine store from vector-mls.db to pacto-mls.db (#230)
+
+## v0.5.4
+
+### Chores
+- Bump version to 0.5.4 (release)
+
 ## v0.5.3
 
 ### Bug Fixes
