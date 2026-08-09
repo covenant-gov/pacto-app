@@ -35,6 +35,22 @@ import { requireBackupVerified } from '../../stores/backup-verification';
 import { currentUser } from '../../stores/auth';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
 import { resolveCatchUpEntry } from '../api/catch-up';
+import {
+  clearPendingSquadAdmissionByGroupId,
+  getPendingSquadAdmissionByGroupId,
+  pendingSquadAdmissions,
+  upsertPendingSquadAdmission,
+} from '../../stores/pending-squad-admission';
+import { get as getI18n, t } from 'svelte-i18n';
+
+function msg(key: string, values?: Record<string, unknown>): string {
+  try {
+    const translate = getI18n(t);
+    return values ? translate(key, { values }) : translate(key);
+  } catch {
+    return key;
+  }
+}
 
 /** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
 const acceptedSquadInviteGroupIds = new Set<string>();
@@ -46,7 +62,10 @@ const channelInvitePendingAccept = new Map<string, { parentId: string; channelNa
 const pendingWelcomeWaiters = new Map<string, Set<() => void>>();
 
 export const ACCEPT_WELCOME_POLL_MS = 400;
-export const ACCEPT_WELCOME_DEADLINE_MS = 90_000;
+/** Short opportunistic wait after claims; never a hard failure gate. */
+export const ACCEPT_WELCOME_FAST_PATH_MS = 5_000;
+/** @deprecated Prefer ACCEPT_WELCOME_FAST_PATH_MS; kept for tests that still import the name. */
+export const ACCEPT_WELCOME_DEADLINE_MS = ACCEPT_WELCOME_FAST_PATH_MS;
 
 export const acceptingSquadInviteId = writable<string | null>(null);
 export const acceptingChannelInSquadId = writable<string | null>(null);
@@ -112,17 +131,53 @@ function registerWelcomeWaiter(groupId: string, wake: () => void): () => void {
   };
 }
 
-/** Called when MLS emits a new invite/welcome — nudge in-flight Accept polls. */
+/** Called when MLS emits a new invite/welcome — nudge in-flight Accept polls + pending admissions. */
 export function notifyPendingInviteWelcome(groupId?: string | null): void {
   if (groupId?.trim()) {
     const set = pendingWelcomeWaiters.get(groupId.trim().toLowerCase());
     if (set) {
       for (const wake of [...set]) wake();
     }
+    void tryCompletePendingSquadAdmission(groupId);
     return;
   }
   for (const set of pendingWelcomeWaiters.values()) {
     for (const wake of [...set]) wake();
+  }
+  void tryCompleteAllPendingSquadAdmissions();
+}
+
+/** Complete a durable pending admission when a Welcome is available. */
+export async function tryCompletePendingSquadAdmission(groupId: string): Promise<boolean> {
+  const pending = getPendingSquadAdmissionByGroupId(groupId);
+  if (!pending) return false;
+  if (squadInviteResolvedByMembership(groupId)) {
+    clearPendingSquadAdmissionByGroupId(groupId);
+    acceptedSquadInviteIds.update((ids: string[]) =>
+      ids.includes(pending.messageId) ? ids : [...ids, pending.messageId]
+    );
+    return true;
+  }
+  const welcome = await listPendingWelcomeForGroup(groupId);
+  if (!welcome) return false;
+  acceptedSquadInviteGroupIds.add(groupId);
+  await acceptMlsWelcome(welcome.id);
+  await finalizeSquadAfterAnnouncementsWelcome(
+    { groupId, name: pending.squadName },
+    pending.messageId
+  );
+  clearPendingSquadAdmissionByGroupId(groupId);
+  resolveCatchUpEntry(pending.messageId).catch(() => {});
+  return true;
+}
+
+export async function tryCompleteAllPendingSquadAdmissions(): Promise<void> {
+  for (const row of get(pendingSquadAdmissions)) {
+    try {
+      await tryCompletePendingSquadAdmission(row.groupId);
+    } catch (e) {
+      dmError('tryCompletePendingSquadAdmission', e);
+    }
   }
 }
 
@@ -240,7 +295,7 @@ export async function acceptAnnouncementsInvite(
     return;
   }
 
-  // Consent-first: no welcome yet — claim to admitters, then wait for welcome.
+  // Consent-first: no welcome yet — claim to admitters and durably pend admission.
   const me = get(currentUser)?.npub?.trim();
   if (!me) throw new Error('Not signed in');
 
@@ -257,12 +312,18 @@ export async function acceptAnnouncementsInvite(
     `legacy-${payload.groupId}-${messageId}`;
 
   if (admitters.length === 0) {
-    const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
-    err.noWelcome = true;
-    throw err;
+    throw new Error(msg('messaging.inviteCard.noAdmitters'));
   }
 
-  showToast('Joining squad… waiting for members to admit you.');
+  upsertPendingSquadAdmission({
+    messageId,
+    groupId: payload.groupId,
+    squadName: payload.name,
+    inviteId,
+    acceptedAt: Date.now(),
+  });
+
+  showToast(msg('messaging.inviteCard.acceptanceSentToast'));
   await publishInviteAcceptedClaims({
     parentId: payload.groupId,
     inviteId,
@@ -271,8 +332,9 @@ export async function acceptAnnouncementsInvite(
     admitterNpubs: admitters,
   });
 
-  const waited = await waitForAnnouncementsWelcome(payload.groupId, ACCEPT_WELCOME_DEADLINE_MS);
+  const waited = await waitForAnnouncementsWelcome(payload.groupId, ACCEPT_WELCOME_FAST_PATH_MS);
   if (waited === 'already_member') {
+    clearPendingSquadAdmissionByGroupId(payload.groupId);
     acceptedSquadInviteIds.update((ids: string[]) =>
       ids.includes(messageId) ? ids : [...ids, messageId]
     );
@@ -280,21 +342,19 @@ export async function acceptAnnouncementsInvite(
     return;
   }
   if (waited) {
+    clearPendingSquadAdmissionByGroupId(payload.groupId);
     acceptedSquadInviteGroupIds.add(payload.groupId);
     await acceptMlsWelcome(waited.id);
     await finalizeSquadAfterAnnouncementsWelcome(payload, messageId);
-    return;
   }
-
-  const err = new Error('No pending welcome') as Error & { noWelcome?: boolean };
-  err.noWelcome = true;
-  throw err;
+  // No welcome yet — card stays in joining state until an admitter completes MLS Add.
 }
 
-async function finalizeSquadAfterAnnouncementsWelcome(
+export async function finalizeSquadAfterAnnouncementsWelcome(
   payload: AnnouncementsInvitePayload,
   messageId: string
 ): Promise<void> {
+  clearPendingSquadAdmissionByGroupId(payload.groupId);
   const now = Date.now();
   const defaultChannels = defaultChannelRowsForGroupId(payload.groupId);
   const isSquadPair = (payload.memberSquads?.length ?? 0) > 0;
@@ -344,7 +404,7 @@ async function finalizeSquadAfterAnnouncementsWelcome(
   bumpMembershipVersion(payload.groupId);
   void maybeAutoRequestSquadStateSyncAfterJoin(payload.groupId);
   pendingReadyToast.set({
-    text: `${payload.name} is ready!`,
+    text: msg('messaging.inviteCard.squadReadyToast', { name: payload.name }),
     goTo: {
       type: 'squad',
       name: payload.name,
@@ -392,11 +452,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
       return;
     }
     dmError('Accept squad invite failed', e);
-    if ((e as Error & { noWelcome?: boolean }).noWelcome) {
-      showToast('Still waiting for the squad to admit you. Try Accept again in a moment.');
-      return;
-    }
-    showToast(getInvokeErrorMessage(e, 'Could not accept squad invite.'));
+    showToast(getInvokeErrorMessage(e, msg('messaging.inviteCard.acceptFailed')));
   } finally {
     acceptingSquadInviteId.set(null);
   }

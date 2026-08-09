@@ -80,22 +80,23 @@ function recordCatchUpEntriesForJoinRequests(squadId: string, requests: CommonsJ
 async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequestDto[]> {
   const id = squadId.trim();
   setErrorForSquad(id, null);
+  let fanOutError: string | null = null;
   try {
     await fanOutBotJoinDmsToMls(id);
   } catch (e) {
-    const message = getInvokeErrorMessage(e, 'Could not sync bot inbox.');
-    setErrorForSquad(id, message);
-    setPendingForSquad(id, []);
-    return [];
+    fanOutError = getInvokeErrorMessage(e, 'Could not sync join inbox.');
   }
   try {
     const requests = await loadPendingJoinRequestsFromMls(id);
     setPendingForSquad(id, requests);
     recordCatchUpEntriesForJoinRequests(id, requests);
+    if (fanOutError && requests.length === 0) {
+      setErrorForSquad(id, fanOutError);
+    }
     return requests;
   } catch (e) {
     const message = getInvokeErrorMessage(e, 'Could not load join requests.');
-    setErrorForSquad(id, message);
+    setErrorForSquad(id, fanOutError ?? message);
     setPendingForSquad(id, []);
     throw new Error(message, { cause: e });
   }

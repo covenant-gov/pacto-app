@@ -14,6 +14,10 @@ import {
   handleInviteeConsentForAdmit,
   parseSquadInviteAccepted,
 } from '../squad/squad-outbound-invite';
+import {
+  handleBotJoinResponseDm,
+  tryCompletePendingApprovedJoins,
+} from '../squad/join-request-finalize';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
@@ -133,6 +137,9 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     if (inviteAccepted && !message.mine) {
       void handleInviteeConsentForAdmit(inviteAccepted, { broadcastAdmitNeeded: true });
       return;
+    }
+    if (!message.mine) {
+      void handleBotJoinResponseDm(content);
     }
     const m = normalizeDmPayload(message);
     backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
@@ -305,6 +312,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         ? String((event.payload as { group_id?: string }).group_id ?? '')
         : '';
     notifyPendingInviteWelcome(groupId || null);
+    void tryCompletePendingApprovedJoins(groupId || null);
   });
 
   register(unsubs, 'mls_store_reset', (event) => {

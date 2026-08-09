@@ -215,6 +215,7 @@ export function isExpectedNonHolderBotSyncError(message: string): boolean {
   return (
     lower.includes('holder') ||
     lower.includes('bot secret') ||
+    lower.includes('join inbox') ||
     lower.includes('not initialized') ||
     lower.includes('stale')
   );

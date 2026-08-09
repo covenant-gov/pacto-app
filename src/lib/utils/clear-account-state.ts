@@ -86,6 +86,13 @@ import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapsh
 import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache';
 import { resetRelayedWalletTxKeys } from '../wallet/wallet-dm-transfer';
 import { resetInviteAcceptState } from '../invites/accept-invite';
+import { resetPendingAdmitState, PENDING_ADMIT_PREFIX, stopPendingAdmitDrain } from '../parent/pending-admit';
+import {
+  resetPendingSquadAdmissions,
+  PENDING_SQUAD_ADMISSION_PREFIX,
+} from '../../stores/pending-squad-admission';
+import { resetPendingApprovedJoins } from '../squad/join-request-finalize';
+import { stopJoinInboxHolderSync } from '../squad/join-inbox-holder-sync';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
@@ -137,6 +144,8 @@ const SCOPED_KEY_PREFIXES = [
   PACTO_SQUAD_JOIN_MUTED_PREFIX,
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
+  PENDING_SQUAD_ADMISSION_PREFIX,
+  PENDING_ADMIT_PREFIX,
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
@@ -161,6 +170,11 @@ function clearAccountLocalStorage(npub?: string): void {
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
   resetInviteAcceptState();
+  stopJoinInboxHolderSync();
+  stopPendingAdmitDrain();
+  resetPendingAdmitState();
+  resetPendingSquadAdmissions();
+  resetPendingApprovedJoins();
   resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();

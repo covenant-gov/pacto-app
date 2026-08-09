@@ -9,6 +9,17 @@ import { safeStateByTreasuryId } from './safe';
 import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-key-choice';
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import { setCurrentNpubForPersistence, persistenceKey } from './persistence-context';
+import { loadPendingSquadAdmissions } from './pending-squad-admission';
+import {
+  loadPendingAdmitQueue,
+  startPendingAdmitDrain,
+  stopPendingAdmitDrain,
+} from '../lib/parent/pending-admit';
+import { tryCompleteAllPendingSquadAdmissions } from '../lib/invites/accept-invite';
+import {
+  startJoinInboxHolderSync,
+  stopJoinInboxHolderSync,
+} from '../lib/squad/join-inbox-holder-sync';
 import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
@@ -56,6 +67,11 @@ export function loadAccountState(npub: string): void {
   setCurrentNpubForPersistence(npub);
   void loadBackupVerified();
   loadMlsHistoryWelcome(npub);
+  loadPendingSquadAdmissions(npub);
+  loadPendingAdmitQueue();
+  startPendingAdmitDrain();
+  startJoinInboxHolderSync();
+  void tryCompleteAllPendingSquadAdmissions();
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {
     try {
