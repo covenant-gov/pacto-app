@@ -107,6 +107,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     declinedWalletPeerInfoRequestMessageIds,
     dmWalletPeerExchangeTick,
   } from '../stores/app';
+  import { mergeUnreadCounts } from '../stores/unread';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import {
     closeCommonsBroadcastModal,
@@ -1051,6 +1052,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                     wasPinned: $pinnedDmNpubs.has(id),
                   };
                   deleteDmChat(id);
+                  mergeUnreadCounts({ [id]: 0 });
                   deleteDmChatBackend(id).catch(() => {
                     revertDmChat(id, snapshot);
                     showToast('Could not delete chat. Please try again.');

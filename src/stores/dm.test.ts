@@ -26,6 +26,7 @@ import {
   typingByChat,
   deleteDmChat,
   revertDmChat,
+  lastOpenedDmByTab,
   walletSidebarOpen,
   toggleWalletSidebar,
   closeWalletSidebar,
@@ -266,6 +267,17 @@ describe('dm', () => {
       loadedOffsetByChat.set({ alice: 10 });
       pinnedDmNpubs.set(new Set(['alice']));
       activeDmId.set('alice');
+      typingByChat.set({ alice: ['alice'] });
+      dmThreadAnnouncementsByNpub.set({
+        alice: [{ id: 'ann1', content: 'note', at: 1, mine: true, is_local_announcement: true } as DmMessage],
+      });
+      lastOpenedDmByTab.set({
+        friends: 'alice',
+        requests: null,
+        pending: null,
+        search: null,
+        pinned: 'alice',
+      });
 
       deleteDmChat('alice');
 
@@ -275,6 +287,10 @@ describe('dm', () => {
       expect(get(loadedOffsetByChat)['alice']).toBeUndefined();
       expect(get(pinnedDmNpubs).has('alice')).toBe(false);
       expect(get(activeDmId)).toBeNull();
+      expect(get(typingByChat)['alice']).toBeUndefined();
+      expect(get(dmThreadAnnouncementsByNpub)['alice']).toBeUndefined();
+      expect(get(lastOpenedDmByTab).friends).toBeNull();
+      expect(get(lastOpenedDmByTab).pinned).toBeNull();
     });
   });
 

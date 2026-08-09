@@ -551,6 +551,29 @@ export function deleteDmChat(npub: string): void {
     next.delete(npub);
     return next;
   });
+  typingByChat.update((by) => {
+    if (!(npub in by)) return by;
+    const next = { ...by };
+    delete next[npub];
+    return next;
+  });
+  dmThreadAnnouncementsByNpub.update((m) => {
+    if (!(npub in m)) return m;
+    const next = { ...m };
+    delete next[npub];
+    return next;
+  });
+  lastOpenedDmByTab.update((tabs) => {
+    let changed = false;
+    const next = { ...tabs };
+    for (const key of Object.keys(next) as DmTab[]) {
+      if (next[key] === npub) {
+        next[key] = null;
+        changed = true;
+      }
+    }
+    return changed ? next : tabs;
+  });
   activeDmId.update((id) => (id === npub ? null : id));
 }
 

@@ -3725,15 +3725,31 @@ pub async fn save_chat<R: Runtime>(handle: AppHandle<R>, chat: &Chat) -> Result<
     Ok(())
 }
 
-/// Delete a chat and all its messages from the database.
-/// `chat_identifier` is the npub for DMs or group_id for MLS; events are CASCADE deleted.
-pub async fn delete_chat<R: Runtime>(
-    handle: AppHandle<R>,
+/// Delete events (and legacy messages) then the chat row. FK CASCADE is not relied on
+/// because account connections do not enable `PRAGMA foreign_keys`.
+pub(crate) fn delete_chat_conn(
+    conn: &rusqlite::Connection,
     chat_identifier: &str,
 ) -> Result<(), String> {
-    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let chat_int_id: i64 = conn
+        .query_row(
+            "SELECT id FROM chats WHERE chat_identifier = ?1",
+            rusqlite::params![chat_identifier],
+            |row| row.get(0),
+        )
+        .map_err(|_| format!("Chat not found: {}", chat_identifier))?;
 
-    let chat_int_id = get_chat_id_by_identifier(&handle, chat_identifier)?;
+    conn.execute(
+        "DELETE FROM events WHERE chat_id = ?1",
+        rusqlite::params![chat_int_id],
+    )
+    .map_err(|e| format!("Failed to delete events: {}", e))?;
+
+    // Legacy messages table may still exist on older accounts.
+    let _ = conn.execute(
+        "DELETE FROM messages WHERE chat_id = ?1",
+        rusqlite::params![chat_int_id],
+    );
 
     conn.execute(
         "DELETE FROM chats WHERE id = ?1",
@@ -3751,15 +3767,82 @@ pub async fn delete_chat<R: Runtime>(
         chat_identifier, chat_int_id
     );
 
-    if let Err(e) = crate::catch_up::delete_entries_for_chat(&conn, chat_identifier) {
+    if let Err(e) = crate::catch_up::delete_entries_for_chat(conn, chat_identifier) {
         eprintln!(
             "[CatchUp] Failed to delete entries for chat {}: {}",
             chat_identifier, e
         );
     }
 
-    crate::account_manager::return_db_connection(conn);
     Ok(())
+}
+
+/// Delete a chat and all its messages from the database.
+/// `chat_identifier` is the npub for DMs or group_id for MLS.
+pub async fn delete_chat<R: Runtime>(
+    handle: AppHandle<R>,
+    chat_identifier: &str,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(&handle)?;
+    let result = delete_chat_conn(&conn, chat_identifier);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+/// True when a DM rumor's `created_at` is at or before a deletion cutoff.
+pub fn dm_created_at_at_or_before_cutoff(created_at_secs: u64, deleted_at_secs: i64) -> bool {
+    created_at_secs <= deleted_at_secs as u64
+}
+
+pub(crate) fn upsert_dm_deletion_cutoff_conn(
+    conn: &rusqlite::Connection,
+    peer_npub: &str,
+    deleted_at: i64,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO dm_deletion_cutoffs (peer_npub, deleted_at) VALUES (?1, ?2)
+         ON CONFLICT(peer_npub) DO UPDATE SET deleted_at = excluded.deleted_at",
+        rusqlite::params![peer_npub, deleted_at],
+    )
+    .map_err(|e| format!("Failed to upsert dm deletion cutoff: {}", e))?;
+    Ok(())
+}
+
+pub(crate) fn get_dm_deletion_cutoff_conn(
+    conn: &rusqlite::Connection,
+    peer_npub: &str,
+) -> Result<Option<i64>, String> {
+    let result = conn.query_row(
+        "SELECT deleted_at FROM dm_deletion_cutoffs WHERE peer_npub = ?1",
+        rusqlite::params![peer_npub],
+        |row| row.get::<_, i64>(0),
+    );
+    match result {
+        Ok(ts) => Ok(Some(ts)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to read dm deletion cutoff: {}", e)),
+    }
+}
+
+pub async fn upsert_dm_deletion_cutoff<R: Runtime>(
+    handle: &AppHandle<R>,
+    peer_npub: &str,
+    deleted_at: i64,
+) -> Result<(), String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = upsert_dm_deletion_cutoff_conn(&conn, peer_npub, deleted_at);
+    crate::account_manager::return_db_connection(conn);
+    result
+}
+
+pub async fn get_dm_deletion_cutoff<R: Runtime>(
+    handle: &AppHandle<R>,
+    peer_npub: &str,
+) -> Result<Option<i64>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let result = get_dm_deletion_cutoff_conn(&conn, peer_npub);
+    crate::account_manager::return_db_connection(conn);
+    result
 }
 
 /// Save a single message to the database (efficient for incremental updates)
@@ -4336,6 +4419,93 @@ mod legacy_mls_store_harvest_tests {
 
         let removed = clear_discarded_giftwraps_conn(&conn, &[]).unwrap();
         assert_eq!(removed, 0);
+    }
+}
+
+#[cfg(test)]
+mod dm_deletion_cutoff_tests {
+    use super::*;
+
+    fn in_memory_app_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn
+    }
+
+    #[test]
+    fn upsert_and_get_dm_deletion_cutoff_round_trip() {
+        let conn = in_memory_app_conn();
+        let peer = "npub1peerdeletioncutoffxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        assert!(get_dm_deletion_cutoff_conn(&conn, peer).unwrap().is_none());
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 1_700_000_000).unwrap();
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(1_700_000_000)
+        );
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 1_700_000_100).unwrap();
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(1_700_000_100)
+        );
+    }
+
+    #[test]
+    fn dm_created_at_gate_compares_inclusive() {
+        assert!(dm_created_at_at_or_before_cutoff(100, 100));
+        assert!(dm_created_at_at_or_before_cutoff(99, 100));
+        assert!(!dm_created_at_at_or_before_cutoff(101, 100));
+    }
+
+    #[test]
+    fn delete_chat_conn_removes_events_and_chat_row() {
+        let conn = in_memory_app_conn();
+        let peer = "npub1deleterpurgepeerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, created_at)
+             VALUES (?1, 0, '[]', 1000)",
+            rusqlite::params![peer],
+        )
+        .unwrap();
+        let chat_id: i64 = conn
+            .query_row(
+                "SELECT id FROM chats WHERE chat_identifier = ?1",
+                rusqlite::params![peer],
+                |row| row.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO events (id, chat_id, kind, content, tags, created_at, received_at, mine)
+             VALUES ('evt1', ?1, 14, 'hi', '[]', 1000, 1000, 1)",
+            rusqlite::params![chat_id],
+        )
+        .unwrap();
+
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 2000).unwrap();
+        delete_chat_conn(&conn, peer).unwrap();
+
+        let chats: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chats WHERE chat_identifier = ?1",
+                rusqlite::params![peer],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(chats, 0);
+        let events: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM events WHERE chat_id = ?1",
+                rusqlite::params![chat_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(events, 0);
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(2000),
+            "cutoff survives chat purge"
+        );
     }
 }
 

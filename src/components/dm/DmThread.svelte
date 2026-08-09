@@ -38,6 +38,7 @@
   import { dmSyncStatusEffective } from '../../stores/dm';
   import SyncStatusIndicator from './SyncStatusIndicator.svelte';
   import NotificationLevelMenu from '../ui/NotificationLevelMenu.svelte';
+  import Modal from '../ui/Modal.svelte';
   import NotificationLevelIndicator from '../ui/NotificationLevelIndicator.svelte';
   import { currentUser } from '../../stores/auth';
   import { showToast } from '../../stores/toast';
@@ -308,6 +309,7 @@
       : $t('messaging.message.replyUnknown');
 
   let menuOpen = false;
+  let deleteConfirmOpen = false;
   let showNicknameEdit = false;
   let nicknameEditValue = '';
   let nicknameSaving = false;
@@ -472,7 +474,7 @@
                         role="menuitem"
                         on:click={() => {
                           menuOpen = false;
-                          onDeleteChat();
+                          deleteConfirmOpen = true;
                         }}
                       >
                         {$t('messaging.dm.thread.deleteChat')}
@@ -581,6 +583,38 @@
     onCancelReply={cancelReply}
   />
 </div>
+
+{#if deleteConfirmOpen}
+  <Modal
+    titleId="dm-delete-chat-title"
+    descriptionId="dm-delete-chat-description"
+    onClose={() => (deleteConfirmOpen = false)}
+  >
+    <h2 id="dm-delete-chat-title">{$t('messaging.dm.thread.deleteConfirmTitle')}</h2>
+    <p id="dm-delete-chat-description" class="dm-delete-confirm-message">
+      {$t('messaging.dm.thread.deleteConfirmBody')}
+    </p>
+    <div class="dm-delete-confirm-actions">
+      <button
+        type="button"
+        class="dm-delete-confirm-cancel"
+        on:click={() => (deleteConfirmOpen = false)}
+      >
+        {$t('messaging.dm.thread.cancel')}
+      </button>
+      <button
+        type="button"
+        class="dm-delete-confirm-delete"
+        on:click={() => {
+          deleteConfirmOpen = false;
+          onDeleteChat?.();
+        }}
+      >
+        {$t('messaging.dm.thread.deleteConfirmAction')}
+      </button>
+    </div>
+  </Modal>
+{/if}
 
 <style>
   .dm-thread {
@@ -903,5 +937,48 @@
     padding: 8px 24px;
     background-color: rgba(237, 66, 69, 0.1);
     border-top: 1px solid var(--bg-elevated);
+  }
+
+  .dm-delete-confirm-message {
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    margin: 0 0 20px 0;
+    line-height: 1.5;
+  }
+
+  .dm-delete-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .dm-delete-confirm-cancel {
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .dm-delete-confirm-cancel:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .dm-delete-confirm-delete {
+    padding: 8px 16px;
+    background: var(--danger);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9375rem;
+    cursor: pointer;
+  }
+
+  .dm-delete-confirm-delete:hover {
+    filter: brightness(0.9);
   }
 </style>

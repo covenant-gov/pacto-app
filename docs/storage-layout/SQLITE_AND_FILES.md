@@ -35,6 +35,8 @@ Old accounts are detected by the absence of `refinery_schema_history` and the pr
 | **mls_legacy_admins** | Last-known admin npubs harvested before a legacy MLS reset; unique by `(group_id, admin_npub)` and intentionally independent of `mls_groups` foreign keys |
 | **mls_keypackages** | Key package cache |
 | **mls_event_cursors** | Sync cursors per group |
+| **catch_up_entries** | References-only index of admitted catch-up events (no message content) |
+| **dm_deletion_cutoffs** | Per-peer DM delete timestamp; gift wraps with `created_at <= deleted_at` are ignored on ingest |
 | **squad_safe** | Squad/network id → Safe address |
 | **squad_infra** | On-chain deploy pointers (`pacto_gov`, sponsor, Safe, …) + `provider_payload` |
 | **squad_member_evm** / **squad_member_evm_account** | Roster address / local signing-account binding per parent |
