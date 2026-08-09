@@ -26,6 +26,9 @@ pinnedDmNpubs.subscribe((set) => {
 /** Local block list (npubs hidden from DM sidebar; backend drops new incoming wraps after decrypt). */
 export const blockedDmNpubs = writable<Set<string>>(new Set());
 
+/** Peers with an in-flight backend DM delete (non-blocking UI). */
+export const deletingDmNpubs = writable<Set<string>>(new Set());
+
 export const composingNewChat = writable<boolean>(false);
 
 export const NEW_CHAT_DRAFT_NPUB_PREFIX = 'pacto_new_chat_draft_npub';

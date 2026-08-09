@@ -3737,7 +3737,12 @@ pub(crate) fn delete_chat_conn(
             rusqlite::params![chat_identifier],
             |row| row.get(0),
         )
-        .map_err(|_| format!("Chat not found: {}", chat_identifier))?;
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                format!("Chat not found: {}", chat_identifier)
+            }
+            other => format!("Failed to look up chat {}: {}", chat_identifier, other),
+        })?;
 
     conn.execute(
         "DELETE FROM events WHERE chat_id = ?1",

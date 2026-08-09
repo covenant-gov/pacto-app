@@ -25,6 +25,7 @@
     activeDmTab,
     lastOpenedDmByTab,
     pinnedDmNpubs,
+    deletingDmNpubs,
     dmSendError,
     typingByChat,
     dmWalletPeerExchangeTick,
@@ -84,6 +85,7 @@
 
   let replyToMessageId: string | null = null;
   let replyPreview: string | undefined = undefined;
+  $: chatDeleting = $deletingDmNpubs.has(npub);
 
   function onReply(event: CustomEvent<{ messageId: string }>) {
     const messageId = event.detail.messageId;
@@ -472,7 +474,9 @@
                         type="button"
                         class="dm-thread-dropdown-item dm-thread-dropdown-item-danger"
                         role="menuitem"
+                        disabled={chatDeleting}
                         on:click={() => {
+                          if (chatDeleting) return;
                           menuOpen = false;
                           deleteConfirmOpen = true;
                         }}
@@ -533,6 +537,12 @@
     </div>
   </div>
   <div class="dm-thread-messages" bind:this={dmMessagesContainer} on:scroll={handleMessagesScroll}>
+    {#if chatDeleting}
+      <div class="dm-thread-deleting" role="status" aria-live="polite" aria-busy="true">
+        <span class="dm-thread-deleting-spinner" aria-hidden="true"></span>
+        <span>{$t('messaging.dm.thread.deleting')}</span>
+      </div>
+    {/if}
     {#if canLoadOlder}
       <div class="dm-thread-load-older">
         <button type="button" class="load-older-btn" on:click={onLoadOlder} disabled={loadingOlder}>
@@ -574,7 +584,7 @@
   <MessageInput
     channelName={truncateNpub(npub)}
     placeholderOverride={peerBlockedByMe ? $t('messaging.dm.thread.blockedPlaceholder', { values: { npub: truncateNpub(npub) } }) : undefined}
-    disabled={peerBlockedByMe}
+    disabled={peerBlockedByMe || chatDeleting}
     onSend={handleSend}
     onSendFile={handleSendFile}
     onTyping={onTyping}
@@ -813,11 +823,16 @@
     background: var(--bg-hover);
   }
 
+  .dm-thread-dropdown-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .dm-thread-dropdown-item-danger {
     color: var(--danger);
   }
 
-  .dm-thread-dropdown-item-danger:hover {
+  .dm-thread-dropdown-item-danger:hover:not(:disabled) {
     background: rgba(237, 66, 69, 0.15);
     color: var(--danger);
   }
@@ -893,6 +908,35 @@
 
   .dm-thread-load-older {
     margin-bottom: 16px;
+  }
+
+  .dm-thread-deleting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .dm-thread-deleting-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: dm-thread-deleting-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes dm-thread-deleting-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .load-older-btn {

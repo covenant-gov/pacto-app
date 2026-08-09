@@ -128,6 +128,7 @@
 	"messaging.dm.thread.deleteConfirmAction": "Delete",
 	"messaging.dm.thread.deleteConfirmBody": "This removes the conversation from Friends and permanently deletes the local message history. Relays may still hold copies, but this device will not restore messages from before the delete.",
 	"messaging.dm.thread.deleteConfirmTitle": "Delete this chat?",
+	"messaging.dm.thread.deleting": "Deleting chat…",
 	"messaging.dm.thread.joinRequestAccepted": "Join request for {squadName} was accepted",
 	"messaging.dm.thread.joinRequestPending": "Join request for {squadName}",
 	"messaging.dm.thread.joinRequestRejected": "Join request for {squadName} was rejected",

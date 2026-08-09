@@ -4,6 +4,7 @@ import {
   activeDmTab,
   pinnedDmNpubs,
   blockedDmNpubs,
+  deletingDmNpubs,
   dmChatsByNpub,
   dmList,
   requestsList,
@@ -83,6 +84,7 @@ describe('dm', () => {
     activeView.set('hub');
     pinnedDmNpubs.set(new Set());
     blockedDmNpubs.set(new Set());
+    deletingDmNpubs.set(new Set());
     dmChatsByNpub.set({});
     activeDmId.set(null);
     backendDmMessages.set({});

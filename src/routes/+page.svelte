@@ -31,9 +31,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     startTyping,
     setNickname,
     syncMlsGroupsNow,
-    deleteDmChatBackend,
     addParentTreasurySafe,
   } from '../lib/api/nostr';
+  import { startDeleteDmChat } from '../lib/dm/delete-dm-chat';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
   import { resolveCatchUpEntry } from '../lib/api/catch-up';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
@@ -91,9 +91,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     pinnedDmNpubs,
     blockedDmNpubs,
     dmSendError,
-    deleteDmChat,
-    revertDmChat,
-    type DmChatSnapshot,
     SQUAD_DASHBOARD_CHANNEL_ID,
     MY_DASHBOARD_CHANNEL_ID,
     treasurySafesByParentId,
@@ -107,7 +104,6 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     declinedWalletPeerInfoRequestMessageIds,
     dmWalletPeerExchangeTick,
   } from '../stores/app';
-  import { mergeUnreadCounts } from '../stores/unread';
   import { pendingReadyToast, showToast } from '../stores/toast';
   import {
     closeCommonsBroadcastModal,
@@ -1044,19 +1040,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 onDeleteChat={() => {
                   const id = $activeDmId;
                   if (!id) return;
-                  const snapshot: DmChatSnapshot = {
-                    chatState: $dmChatsByNpub[id],
-                    messages: $backendDmMessages[id] ?? [],
-                    messageCount: $messageCountByChat[id],
-                    loadedOffset: $loadedOffsetByChat[id],
-                    wasPinned: $pinnedDmNpubs.has(id),
-                  };
-                  deleteDmChat(id);
-                  mergeUnreadCounts({ [id]: 0 });
-                  deleteDmChatBackend(id).catch(() => {
-                    revertDmChat(id, snapshot);
-                    showToast('Could not delete chat. Please try again.');
-                  });
+                  startDeleteDmChat(id);
                 }}
                 showWalletButton={$activeDmTab === 'friends' || $activeDmTab === 'pinned' /* wallet: Friends + Pinned only; not Pending/Requests/new chat */}
               />
