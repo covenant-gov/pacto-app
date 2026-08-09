@@ -618,10 +618,14 @@ mod tests {
 
     // -- embedded-set completeness -----------------------------------------
 
-    /// Last migration version created under the old sequential-integer
-    /// scheme (see AGENTS.md). Anything higher must be a UTC-timestamp
-    /// version (`V<YYYYMMDDHHMMSS>__name.sql`, `make new-migration`).
-    const LAST_SEQUENTIAL_VERSION: i64 = 30;
+    /// Last migration version reserved for the old sequential-integer
+    /// scheme (see AGENTS.md). V31/V32 are held for #233 and #235, which
+    /// were already in flight with hand-picked V31 filenames when the
+    /// timestamp convention landed -- rather than force a rebase, each
+    /// takes one of the two remaining sequential slots. Anything above
+    /// V32 must be a UTC-timestamp version (`V<YYYYMMDDHHMMSS>__name.sql`,
+    /// `make new-migration`).
+    const LAST_SEQUENTIAL_VERSION: i64 = 32;
     /// 14-digit UTC timestamp range covering 2026-01-01 through
     /// 2099-12-31 -- wide enough that it never needs bumping for this
     /// scheme's lifetime, narrow enough to reject a hand-typed small
