@@ -188,4 +188,41 @@ describe('MessageInput', () => {
     await fireEvent.click(screen.getByLabelText(/Attach file/i));
     expect(screen.queryByRole('menuitem', { name: /Take Photo/i })).not.toBeNull();
   });
+
+  it('grows the textarea with content and caps at 240px', async () => {
+    render(MessageInput, { props: { channelName: 'general' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 96 });
+    await fireEvent.input(input, { target: { value: 'line one\nline two\nline three' } });
+    expect(input.style.height).toBe('96px');
+
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 400 });
+    await fireEvent.input(input, { target: { value: 'a\n'.repeat(40) } });
+    expect(input.style.height).toBe('240px');
+  });
+
+  it('clears inline height after send so the empty composer stays single-line', async () => {
+    const onSend = vi.fn();
+    render(MessageInput, { props: { channelName: 'general', onSend } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 120 });
+    await fireEvent.input(input, { target: { value: 'hello\nworld' } });
+    expect(input.style.height).toBe('120px');
+
+    await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => {
+      expect(onSend).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(input.style.height).toBe('');
+    });
+  });
+
+  it('leaves height unset when the draft is empty', async () => {
+    render(MessageInput, { props: { channelName: 'general' } });
+    const input = screen.getByPlaceholderText('Message #general') as HTMLTextAreaElement;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 96 });
+    await fireEvent.input(input, { target: { value: '' } });
+    expect(input.style.height).toBe('');
+  });
 });
