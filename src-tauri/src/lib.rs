@@ -2118,9 +2118,15 @@ async fn evict_chat_messages(chat_id: String, keep_count: usize) -> Result<(), S
 }
 
 /// Delete a DM chat and all its messages from the database and in-memory state.
-/// chat_id is the other party's npub for DMs.
+/// chat_id is the other party's npub for DMs. Persists a deletion cutoff so relay
+/// replay cannot restore history at or before the delete time.
 #[tauri::command]
 async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
+    let deleted_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    db::upsert_dm_deletion_cutoff(&handle, &chat_id, deleted_at).await?;
     db::delete_chat(handle.clone(), &chat_id).await?;
     let mut state = STATE.lock().await;
     state.chats.retain(|c| c.id != chat_id);
@@ -2627,6 +2633,28 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                         cache.insert(wrapper_event_id.clone());
                     }
                     return true;
+                }
+            }
+
+            // DM delete cutoff: ignore wraps at or before the local deletion timestamp
+            // (inbound and outbound) so relay replay cannot restore purged history.
+            if contact.starts_with("npub1") {
+                if let Some(handle) = TAURI_APP.get() {
+                    if let Ok(Some(deleted_at)) =
+                        db::get_dm_deletion_cutoff(handle, &contact).await
+                    {
+                        if db::dm_created_at_at_or_before_cutoff(
+                            rumor.created_at.as_u64(),
+                            deleted_at,
+                        ) {
+                            let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;
+                            {
+                                let mut cache = WRAPPER_ID_CACHE.lock().await;
+                                cache.insert(wrapper_event_id.clone());
+                            }
+                            return true;
+                        }
+                    }
                 }
             }
 
