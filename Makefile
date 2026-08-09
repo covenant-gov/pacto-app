@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-sandbox dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy clean distclean tauri-info signer-key e2e e2e-install e2e-tauri release-symbol-check
+.PHONY: help install dev dev-sandbox dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  rust-check   cargo check the Rust backend"
 	@echo "  rust-fmt     format Rust sources with rustfmt"
 	@echo "  rust-clippy  lint Rust sources with clippy"
+	@echo "  new-migration  create a new UTC-timestamp-versioned refinery migration file (name=<snake_case_description>)"
 	@echo ""
 	@echo "  e2e          run Playwright smoke tests against the agent build"
 	@echo "  e2e-install  install Playwright browsers"
@@ -93,6 +94,34 @@ rust-fmt:
 
 rust-clippy:
 	cd src-tauri && cargo clippy --all-targets --all-features -- -D warnings
+
+# Creates a new refinery migration file with the UTC-timestamp version
+# convention (AGENTS.md), so nobody hand-types a filename and drifts back
+# to the sequential numbering that collides across parallel branches.
+# Touches mod.rs afterward because refinery's embed_migrations! macro reads
+# the directory at compile time with no cargo:rerun-if-changed tracking --
+# without it, `cargo test`/`cargo build` can silently reuse a cached build
+# that never saw the new file.
+# Usage: make new-migration name=dm_deletion_cutoffs
+new-migration:
+	@if [ -z "$(name)" ]; then \
+		echo "Usage: make new-migration name=<snake_case_description>"; \
+		exit 1; \
+	fi
+	@slug=$$(printf '%s' "$(name)" | tr '[:upper:] ' '[:lower:]_' | tr -c 'a-z0-9_' '_' | tr -s '_' | sed 's/^_//; s/_$$//'); \
+	if [ -z "$$slug" ]; then \
+		echo "name must contain at least one alphanumeric character"; \
+		exit 1; \
+	fi; \
+	version=$$(date -u +%Y%m%d%H%M%S); \
+	file="src-tauri/src/migrations/V$${version}__$${slug}.sql"; \
+	if [ -e "$$file" ]; then \
+		echo "$$file already exists (two migrations in the same second) -- rerun make new-migration"; \
+		exit 1; \
+	fi; \
+	: > "$$file"; \
+	touch src-tauri/src/migrations/mod.rs; \
+	echo "created $$file"
 
 e2e:
 	pnpm build:agent
