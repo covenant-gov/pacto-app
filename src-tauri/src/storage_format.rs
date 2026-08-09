@@ -25,7 +25,7 @@ const SCAN_DEADLINE: Duration = Duration::from_secs(5);
 /// One row read from a refinery schema-history table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HistoryRow {
-    pub(crate) version: i32,
+    pub(crate) version: i64,
     pub(crate) name: String,
     pub(crate) checksum: String,
 }
@@ -83,12 +83,12 @@ pub(crate) enum StorageFormatVerdict {
     Recognized,
     /// An applied row with no counterpart in the embedded migration set --
     /// refinery's `MissingVersion` abort.
-    Unrecognized(i32),
+    Unrecognized(i64),
     /// An applied row whose embedded counterpart differs on name or
     /// checksum, or an embedded migration at or below the applied maximum
     /// that was never applied -- refinery's `DivergentVersion` abort, or its
     /// other `MissingVersion` case.
-    Divergent(i32),
+    Divergent(i64),
 }
 
 /// Pure classification over the read-only probe's outputs. Reproduces
@@ -135,7 +135,7 @@ fn classify_history(
         .iter()
         .map(|row| row.version)
         .max()
-        .unwrap_or(i32::MIN);
+        .unwrap_or(i64::MIN);
     for migration in embedded {
         let never_applied = !applied.iter().any(|row| row.version == migration.version());
         if migration.version() <= current && never_applied {
@@ -188,7 +188,7 @@ pub(crate) fn classify_database(path: &Path) -> StorageFormatVerdict {
 pub(crate) struct StorageFormatScanReport {
     pub(crate) all_recognized: bool,
     pub(crate) unrecognized_count: usize,
-    pub(crate) highest_offending_version: Option<i32>,
+    pub(crate) highest_offending_version: Option<i64>,
 }
 
 /// Scan every `npub1*` profile directory's `pacto.db` under `app_data_dir`.
@@ -198,7 +198,7 @@ pub(crate) struct StorageFormatScanReport {
 pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
     let deadline = Instant::now() + SCAN_DEADLINE;
     let mut unrecognized_count = 0usize;
-    let mut highest_offending_version: Option<i32> = None;
+    let mut highest_offending_version: Option<i64> = None;
 
     if let Ok(entries) = std::fs::read_dir(app_data_dir) {
         for entry in entries.flatten() {
@@ -247,8 +247,8 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
 pub(crate) struct StorageCompatibilityReport {
     pub(crate) all_recognized: bool,
     pub(crate) unrecognized_count: usize,
-    pub(crate) highest_offending_version: Option<i32>,
-    pub(crate) supported_schema_version: i32,
+    pub(crate) highest_offending_version: Option<i64>,
+    pub(crate) supported_schema_version: i64,
 }
 
 impl From<StorageFormatScanReport> for StorageCompatibilityReport {
@@ -286,7 +286,7 @@ pub(crate) fn get_storage_compatibility<R: Runtime>(
 mod tests {
     use super::*;
 
-    fn fixture_migration(version: i32, name: &str, checksum: u64) -> refinery::Migration {
+    fn fixture_migration(version: i64, name: &str, checksum: u64) -> refinery::Migration {
         refinery::Migration::applied(
             version,
             name.to_string(),
@@ -295,13 +295,13 @@ mod tests {
         )
     }
 
-    fn fixture_embedded(count: i32) -> Vec<refinery::Migration> {
+    fn fixture_embedded(count: i64) -> Vec<refinery::Migration> {
         (1..=count)
             .map(|v| fixture_migration(v, &format!("m{v}"), v as u64))
             .collect()
     }
 
-    fn fixture_row(version: i32, name: &str, checksum: &str) -> HistoryRow {
+    fn fixture_row(version: i64, name: &str, checksum: &str) -> HistoryRow {
         HistoryRow {
             version,
             name: name.to_string(),
@@ -618,6 +618,21 @@ mod tests {
 
     // -- embedded-set completeness -----------------------------------------
 
+    /// Last migration version reserved for the old sequential-integer
+    /// scheme (see AGENTS.md). V31/V32 are held for #233 and #235, which
+    /// were already in flight with hand-picked V31 filenames when the
+    /// timestamp convention landed -- rather than force a rebase, each
+    /// takes one of the two remaining sequential slots. Anything above
+    /// V32 must be a UTC-timestamp version (`V<YYYYMMDDHHMMSS>__name.sql`,
+    /// `make new-migration`).
+    const LAST_SEQUENTIAL_VERSION: i64 = 32;
+    /// 14-digit UTC timestamp range covering 2026-01-01 through
+    /// 2099-12-31 -- wide enough that it never needs bumping for this
+    /// scheme's lifetime, narrow enough to reject a hand-typed small
+    /// integer landing above `LAST_SEQUENTIAL_VERSION` by mistake.
+    const MIN_TIMESTAMP_VERSION: i64 = 20_260_101_000_000;
+    const MAX_TIMESTAMP_VERSION: i64 = 21_000_101_000_000;
+
     #[test]
     fn embedded_set_matches_committed_migration_files() {
         let embedded = crate::migrations::embedded_migration_set();
@@ -627,19 +642,51 @@ mod tests {
         let migrations_dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/migrations");
         let mut file_versions = std::collections::BTreeSet::new();
+        let mut by_version: std::collections::BTreeMap<i64, Vec<String>> =
+            std::collections::BTreeMap::new();
         for entry in std::fs::read_dir(&migrations_dir).unwrap() {
             let entry = entry.unwrap();
             let file_name = entry.file_name().to_string_lossy().to_string();
             if let Some(rest) = file_name.strip_prefix('V') {
                 if let Some((version_str, _)) = rest.split_once("__") {
-                    if let Ok(version) = version_str.parse::<i32>() {
+                    if let Ok(version) = version_str.parse::<i64>() {
                         file_versions.insert(version);
+                        by_version.entry(version).or_default().push(file_name.clone());
                     }
                 }
             }
         }
 
-        let embedded_versions: std::collections::BTreeSet<i32> =
+        // Two migration files sharing a version number collide on
+        // refinery_schema_history's PRIMARY KEY the moment both are merged --
+        // this happens in parallel branch development, where the "next
+        // number" is computed independently on each branch. Catch it here,
+        // not at migration-apply time in production.
+        let duplicates: Vec<(i64, Vec<String>)> = by_version
+            .into_iter()
+            .filter(|(_, names)| names.len() > 1)
+            .collect();
+        assert!(
+            duplicates.is_empty(),
+            "duplicate migration version(s), rename one before merging: {duplicates:?}"
+        );
+
+        // Anything past the historical sequential range must look like a
+        // timestamp, not a hand-typed next integer -- the exact mistake
+        // that produced the V31/V31 collision this scheme exists to
+        // prevent. Catches a bypass of `make new-migration` in CI instead
+        // of relying on convention alone.
+        for version in &file_versions {
+            if *version > LAST_SEQUENTIAL_VERSION {
+                assert!(
+                    (MIN_TIMESTAMP_VERSION..MAX_TIMESTAMP_VERSION).contains(version),
+                    "migration version {version} looks like a sequential integer, not a UTC \
+                     timestamp (V<YYYYMMDDHHMMSS>__name.sql) -- use `make new-migration name=...`"
+                );
+            }
+        }
+
+        let embedded_versions: std::collections::BTreeSet<i64> =
             embedded.iter().map(|m| m.version()).collect();
         assert_eq!(embedded_versions, file_versions);
     }
