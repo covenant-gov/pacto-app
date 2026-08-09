@@ -1714,7 +1714,7 @@ fn list_squad_sponsored_fee_usage_conn(
                     selector, action, target, user_op_hash, tx_hash, created_at_ms
              FROM squad_sponsored_fee_usage
              WHERE parent_id = ?1
-             ORDER BY created_at_ms DESC
+             ORDER BY created_at_ms DESC, user_op_hash DESC
              LIMIT ?2",
         )
         .map_err(|e| format!("Failed to list squad_sponsored_fee_usage: {e}"))?;
@@ -1807,10 +1807,13 @@ mod sponsored_fee_usage_tests {
 
         let listed = list_squad_sponsored_fee_usage_conn(&conn, "parent-1", 50).expect("list");
         assert_eq!(listed.len(), 2);
-        assert_eq!(listed[0].user_op_hash, "0xop2");
-        assert_eq!(listed[1].user_op_hash, "0xop1");
+        let hashes: std::collections::HashSet<_> =
+            listed.iter().map(|r| r.user_op_hash.as_str()).collect();
+        assert_eq!(hashes, ["0xop1", "0xop2"].into_iter().collect());
         assert_eq!(listed[0].action, "castVote");
         assert_eq!(listed[0].amount_wei, "7000000000000000");
+        // Same-ms inserts still have a deterministic order (user_op_hash DESC).
+        assert!(listed[0].user_op_hash > listed[1].user_op_hash);
 
         let empty = list_squad_sponsored_fee_usage_conn(&conn, "other", 50).expect("empty");
         assert!(empty.is_empty());
