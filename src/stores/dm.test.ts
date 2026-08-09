@@ -43,7 +43,6 @@ import {
   relayStatusByUrl,
   dmSyncStatusEffective,
   lastCatchUpSuccess,
-  lastOpenedDmByTab,
   type DmChatSnapshot,
   type DmMessage,
 } from './dm';
