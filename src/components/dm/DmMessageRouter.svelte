@@ -22,6 +22,7 @@
     walletSendPrefillFromRequest,
     type DmMessage,
   } from '../../stores/app';
+  import { pendingSquadAdmissions } from '../../stores/pending-squad-admission';
   import {
     squadInviteResolvedByMembership,
     channelInSquadInviteResolvedByMembership,
@@ -135,7 +136,13 @@
       ? 'declined'
       : squadInviteResolvedByMembership(presentation.payload.groupId)
         ? 'accepted'
-        : 'pending'}
+        : $pendingSquadAdmissions.some(
+              (p) =>
+                p.messageId === msg.id ||
+                p.groupId.trim().toLowerCase() === presentation.payload.groupId.trim().toLowerCase()
+            )
+          ? 'joining'
+          : 'pending'}
   <InviteCard
     variant={presentation.kind === 'squad-pair-invite' ? 'squad-pair' : 'squad'}
     squadName={presentation.payload.squadName}

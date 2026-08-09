@@ -7,6 +7,7 @@
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
   import { respondToMlsJoinRequest } from '../../lib/squad/squad-join-mls';
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
+  import { getSquadBotState, type SquadBotState } from '../../lib/squad/squad-bot';
   import {
     ensureJoinRequestsHydrated,
     joinRequestsErrorBySquadId,
@@ -16,7 +17,13 @@
     removePendingJoinRequest,
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
-  import { runAdmitMembersToSquad } from '../../lib/parent/admit-member';
+  import { admitMemberToSquad } from '../../lib/parent/admit-member';
+  import {
+    enqueuePendingAdmit,
+    listPendingAdmitForParent,
+    pendingAdmitQueue,
+    clearPendingAdmitForMember,
+  } from '../../lib/parent/pending-admit';
   import type { Squad } from '../../stores/squads';
   import RefreshIconButton from '../ui/RefreshIconButton.svelte';
 
@@ -25,6 +32,8 @@
   let actingOn: string | null = null;
   let refreshError = '';
   let profileLoadToken = 0;
+  let botState: SquadBotState | null = null;
+  let botStateLoading = true;
 
   const tFn = get(t);
 
@@ -32,23 +41,44 @@
   $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
   $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
   $: loadError = $joinRequestsErrorBySquadId[squad.id] ?? refreshError;
-  $: loading = !hydrated && syncing;
+  $: loading = (!hydrated && syncing) || botStateLoading;
+  $: canAct = !!(botState?.iAmHolder && botState?.hasLocalSecret);
+  $: admitting = listPendingAdmitForParent(squad.id).filter((e) => e.kind === 'join');
+  $: void $pendingAdmitQueue;
 
   $: if (squad?.id) {
     void ensureJoinRequestsHydrated(squad.id);
+    void loadBotState(squad.id);
   }
 
-  $: if (requests.length > 0) {
+  $: if (requests.length > 0 || admitting.length > 0) {
     const token = ++profileLoadToken;
-    const npubs = [...new Set(requests.map((r) => r.requesterNpub))];
+    const npubs = [
+      ...new Set([
+        ...requests.map((r) => r.requesterNpub),
+        ...admitting.map((a) => a.memberNpub),
+      ]),
+    ];
     void Promise.all(npubs.map((npub) => loadProfile(npub))).then(() => {
       if (token !== profileLoadToken) return;
     });
   }
 
+  async function loadBotState(squadId: string) {
+    botStateLoading = true;
+    try {
+      botState = await getSquadBotState(squadId);
+    } catch {
+      botState = null;
+    } finally {
+      botStateLoading = false;
+    }
+  }
+
   async function refresh() {
     refreshError = '';
     try {
+      await loadBotState(squad.id);
       await syncJoinRequestsForSquad(squad.id);
     } catch (e) {
       refreshError = e instanceof Error ? e.message : tFn('squad.joinRequests.loadError');
@@ -56,13 +86,14 @@
   }
 
   async function handleMute(request: CommonsJoinRequestDto) {
+    if (!canAct) return;
     muteJoinRequester(squad.id, request.requesterNpub);
     removePendingJoinRequest(squad.id, request.eventId);
     showToast(tFn('squad.joinRequests.muteToast'));
   }
 
   async function handleReject(request: CommonsJoinRequestDto) {
-    if (actingOn) return;
+    if (!canAct || actingOn) return;
     actingOn = request.eventId;
     const result = await respondToMlsJoinRequest({
       requestId: request.eventId,
@@ -79,7 +110,7 @@
   }
 
   async function handleAccept(request: CommonsJoinRequestDto) {
-    if (actingOn) return;
+    if (!canAct || actingOn) return;
     actingOn = request.eventId;
     const respondResult = await respondToMlsJoinRequest({
       requestId: request.eventId,
@@ -92,18 +123,36 @@
       return;
     }
 
-    runAdmitMembersToSquad({
-      parent: squad,
-      npubs: [request.requesterNpub],
-      onErrorBanner: (message) => showToast(message),
-      onComplete: (admittedNpubs) => {
-        actingOn = null;
-        if (!admittedNpubs.includes(request.requesterNpub)) return;
-        removePendingJoinRequest(squad.id, request.eventId);
-        const name = getProfileDisplayName($profiles[request.requesterNpub]) || tFn('squad.joinRequests.memberFallback');
-        showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
-      },
+    removePendingJoinRequest(squad.id, request.eventId);
+    enqueuePendingAdmit({
+      kind: 'join',
+      parentId: squad.id,
+      memberNpub: request.requesterNpub,
+      requestId: request.eventId,
     });
+    showToast(tFn('squad.joinRequests.approvedPendingToast'));
+
+    const admitResult = await admitMemberToSquad({
+      parent: squad,
+      memberNpub: request.requesterNpub,
+    });
+    actingOn = null;
+    if (admitResult.ok) {
+      clearPendingAdmitForMember(squad.id, request.requesterNpub);
+      const name =
+        getProfileDisplayName($profiles[request.requesterNpub]) ||
+        tFn('squad.joinRequests.memberFallback');
+      showToast(tFn('squad.joinRequests.joinToast', { values: { name } }));
+    } else if (admitResult.error) {
+      enqueuePendingAdmit({
+        kind: 'join',
+        parentId: squad.id,
+        memberNpub: request.requesterNpub,
+        requestId: request.eventId,
+        lastError: admitResult.error,
+        lastAttemptAt: Date.now(),
+      });
+    }
   }
 
   function requesterLabel(npub: string): string {
@@ -127,16 +176,31 @@
     <p class="join-requests-lead">
       {$t('squad.joinRequests.lead', { values: { squadName: squad.name } })}
     </p>
+    {#if !loading && !canAct}
+      <p class="join-requests-muted" role="status">{$t('squad.joinRequests.holdersOnlyHint')}</p>
+    {/if}
   </header>
 
   {#if loading}
     <p class="join-requests-muted" role="status">{$t('squad.joinRequests.loading')}</p>
   {:else if loadError}
     <p class="join-requests-error" role="alert">{loadError}</p>
-  {:else if requests.length === 0}
+  {:else if requests.length === 0 && admitting.length === 0}
     <p class="join-requests-muted">{$t('squad.joinRequests.empty')}</p>
   {:else}
     <ul class="join-requests-list" role="list">
+      {#each admitting as entry (entry.memberNpub + (entry.requestId ?? ''))}
+        <li class="join-request-card">
+          <div class="join-request-main">
+            <p class="join-request-badge">{$t('squad.joinRequests.admittingBadge')}</p>
+            <p class="join-request-name">{requesterLabel(entry.memberNpub)}</p>
+            <p class="join-request-meta">{$t('squad.joinRequests.admittingDetail')}</p>
+            {#if entry.lastError}
+              <p class="join-request-meta">{$t('squad.joinRequests.admittingError', { values: { error: entry.lastError } })}</p>
+            {/if}
+          </div>
+        </li>
+      {/each}
       {#each requests as request (request.eventId)}
         <li class="join-request-card">
           <div class="join-request-main">
@@ -147,32 +211,34 @@
             </p>
             <p class="join-request-npub">{request.requesterNpub}</p>
           </div>
-          <div class="join-request-actions">
-            <button
-              type="button"
-              class="join-request-btn is-mute"
-              disabled={!!actingOn}
-              on:click={() => handleMute(request)}
-            >
-              {$t('squad.joinRequests.mute')}
-            </button>
-            <button
-              type="button"
-              class="join-request-btn is-reject"
-              disabled={!!actingOn}
-              on:click={() => handleReject(request)}
-            >
-              {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.reject')}
-            </button>
-            <button
-              type="button"
-              class="join-request-btn is-accept"
-              disabled={!!actingOn}
-              on:click={() => handleAccept(request)}
-            >
-              {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.accept')}
-            </button>
-          </div>
+          {#if canAct}
+            <div class="join-request-actions">
+              <button
+                type="button"
+                class="join-request-btn is-mute"
+                disabled={!!actingOn}
+                on:click={() => handleMute(request)}
+              >
+                {$t('squad.joinRequests.mute')}
+              </button>
+              <button
+                type="button"
+                class="join-request-btn is-reject"
+                disabled={!!actingOn}
+                on:click={() => handleReject(request)}
+              >
+                {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.reject')}
+              </button>
+              <button
+                type="button"
+                class="join-request-btn is-accept"
+                disabled={!!actingOn}
+                on:click={() => handleAccept(request)}
+              >
+                {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.accept')}
+              </button>
+            </div>
+          {/if}
         </li>
       {/each}
     </ul>

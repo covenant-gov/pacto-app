@@ -9,7 +9,7 @@
   export let isMine: boolean;
   export let inviterName: string;
   export let inviterAvatarSrc: string | null = null;
-  export let status: 'pending' | 'accepted' | 'declined';
+  export let status: 'pending' | 'joining' | 'accepted' | 'declined';
   export let accepting: boolean;
   export let onAccept: () => void;
   export let onDecline: () => void;
@@ -98,6 +98,13 @@
       {/if}
     {:else if status === 'declined'}
       <p class="invite-card-status invite-card-status-declined" aria-live="polite">{$t('messaging.inviteCard.declined')}</p>
+    {:else if status === 'joining'}
+      <p class="invite-card-status invite-card-status-joining" aria-live="polite">
+        {$t('messaging.inviteCard.joiningTitle')}
+      </p>
+      <p class="invite-card-joining-detail muted">
+        {$t('messaging.inviteCard.joiningDetail')}
+      </p>
     {:else}
       <div class="invite-card-actions">
         <button
@@ -236,6 +243,16 @@
 
   .invite-card-status-accepted {
     color: var(--success, #2d8a4e);
+  }
+
+  .invite-card-status-joining {
+    color: var(--text-muted);
+  }
+
+  .invite-card-joining-detail {
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
+    line-height: 1.35;
   }
 
   .invite-card-status-declined {
