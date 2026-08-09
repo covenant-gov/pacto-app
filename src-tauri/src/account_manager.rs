@@ -77,7 +77,9 @@ pub fn migrate_legacy_databases<R: Runtime>(handle: &AppHandle<R>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let is_profile_dir = path.is_dir()
+        let is_profile_dir = entry
+            .file_type()
+            .is_ok_and(|file_type| file_type.is_dir())
             && entry
                 .file_name()
                 .to_str()
