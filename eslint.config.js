@@ -75,7 +75,10 @@ export default [
 		}
 	},
 	{
-		files: ['src/components/parent/governance/PactoGovInfraList.svelte'],
+		files: [
+			'src/components/parent/governance/PactoGovInfraList.svelte',
+			'src/lib/components/ui/button/button.svelte'
+		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'
 		}
