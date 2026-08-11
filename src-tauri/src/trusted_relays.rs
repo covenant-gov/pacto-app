@@ -116,9 +116,15 @@ fn non_local(urls: &[RelayUrl]) -> Vec<&RelayUrl> {
 
 fn is_local_host(url: &RelayUrl) -> bool {
     match url.host() {
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        Some(url::Host::Ipv4(addr)) => addr == std::net::Ipv4Addr::LOCALHOST,
-        Some(url::Host::Ipv6(addr)) => addr == std::net::Ipv6Addr::LOCALHOST,
+        // `.localhost` is reserved for loopback by RFC 6761, and loopback is
+        // the whole 127.0.0.0/8 block -- not just 127.0.0.1. Matching the
+        // narrow forms would refuse a valid local relay as "non-local".
+        Some(url::Host::Domain(domain)) => {
+            let domain = domain.to_ascii_lowercase();
+            domain == "localhost" || domain.ends_with(".localhost")
+        }
+        Some(url::Host::Ipv4(addr)) => addr.is_loopback(),
+        Some(url::Host::Ipv6(addr)) => addr.is_loopback(),
         None => false,
     }
 }
@@ -263,6 +269,11 @@ mod tests {
             RelayUrl::parse("wss://localhost:7001").unwrap(),
             RelayUrl::parse("wss://127.0.0.1:7001").unwrap(),
             RelayUrl::parse("ws://[::1]:7001").unwrap(),
+            // Loopback is the whole 127.0.0.0/8 block, and RFC 6761 reserves
+            // `.localhost` aliases for it. Both must count as local or a
+            // sandbox-only identity is refused against a valid local relay.
+            RelayUrl::parse("ws://127.0.0.2:7002").unwrap(),
+            RelayUrl::parse("ws://relay.localhost:7002").unwrap(),
         ];
         assert!(all_local(&local));
 
@@ -271,6 +282,23 @@ mod tests {
             RelayUrl::parse("wss://relay.example.com").unwrap(),
         ];
         assert!(!all_local(&mixed));
+    }
+
+    #[test]
+    fn hosts_that_merely_look_local_are_not_local() {
+        // A LAN address and a domain that only ends in the *word* localhost
+        // are both routable off-box; treating either as local would let the
+        // sandbox-only refusal pass on a non-loopback relay.
+        let not_local: Vec<RelayUrl> = vec![
+            RelayUrl::parse("ws://192.168.1.10:7002").unwrap(),
+            RelayUrl::parse("wss://notlocalhost.example.com").unwrap(),
+        ];
+        for url in &not_local {
+            assert!(
+                !all_local(std::slice::from_ref(url)),
+                "{url} must not be local"
+            );
+        }
     }
 
     #[test]
