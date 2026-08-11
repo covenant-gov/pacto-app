@@ -10,6 +10,11 @@ edition = "2021"
 [features]
 default = ["whisper"]
 whisper = ["dep:whisper-rs"]
+# Adds the OS trust store to the relay websocket's root set so a debug build
+# can reach a locally-issued `wss://` relay. Never in `default`: cargo cannot
+# gate a dependency feature on `debug_assertions`, so enabling it here would
+# widen release relay trust to every CA the host trusts.
+local-relay-tls = ["dep:tokio-tungstenite"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -84,6 +89,13 @@ alloy = { version = "1.0.41", default-features = false, features = ["provider-ht
 alloy-rlp = "0.3"
 time = "0.3"
 rustls = "0.23"
+# Not called from our code. Present only so cargo's feature unification adds
+# `rustls-tls-native-roots` to the `tokio-tungstenite` that nostr-sdk pulls in
+# via async-wsocket, which pins `rustls-tls-webpki-roots` and exposes no
+# feature of its own to change it. The root store is built additively, so the
+# OS store is consulted alongside the compiled-in Mozilla roots rather than
+# replacing them. Version must track async-wsocket's to stay one instance.
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"], optional = true }
 bip32 = { version = "0.5", default-features = false, features = ["secp256k1", "std"] }
 
 # Android-only dependencies

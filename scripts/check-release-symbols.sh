@@ -28,6 +28,10 @@ FORBIDDEN=(
   "dev_login"
   "mcp_bridge"
   "PACTO_TRUSTED_RELAYS"
+  # The `local-relay-tls` feature pulls this in to widen the relay websocket's
+  # root store to the OS trust store. It must never reach a shipped build, or
+  # release relay TLS would trust every CA the host trusts.
+  "rustls_native_certs"
 )
 
 FAILED=0

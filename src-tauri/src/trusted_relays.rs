@@ -181,15 +181,35 @@ async fn probe_all(relays: &[RelayUrl]) {
 fn report_probe_failure(url: &RelayUrl, err: &str) {
     if url.as_str().starts_with("wss://") && is_local_host(url) {
         let message = format!(
-            "trusted relay probe: could not connect to local relay {url} ({err}). Most \
-             likely cause: this host does not trust Caddy's local development CA. Run \
-             `caddy trust`, then restart the app."
+            "trusted relay probe: could not connect to local relay {url} ({err}). {}",
+            local_tls_remediation()
         );
         log::error!(target: "pacto", "{message}");
         eprintln!("[trusted_relays] {message}");
     } else {
         log::warn!(target: "pacto", "trusted relay probe: could not connect to {url}: {err}");
     }
+}
+
+/// Local `wss://` trust has two halves -- the CA in the OS store, and a build
+/// that reads the OS store -- and a missing half looks identical either way.
+/// Only one of them can be missing in a given build, so name that one instead
+/// of listing both and letting the operator guess.
+#[cfg(all(debug_assertions, not(feature = "local-relay-tls")))]
+fn local_tls_remediation() -> &'static str {
+    "This build cannot validate any locally-issued certificate: the relay \
+     websocket's root store holds only the Mozilla roots compiled into the \
+     binary and never reads the OS trust store. Rebuild with \
+     `--features local-relay-tls`; the `make dev*` targets already pass it. \
+     Installing or re-installing the local CA cannot fix this on its own."
+}
+
+#[cfg(all(debug_assertions, feature = "local-relay-tls"))]
+fn local_tls_remediation() -> &'static str {
+    "This build does read the OS trust store, so the local CA is most likely \
+     missing from it. Run `mkcert -install` (or `caddy trust` when Caddy's \
+     internal CA is in use) and restart. Verify independently with: \
+     openssl s_client -connect localhost:7001 </dev/null | grep 'Verify return code'."
 }
 
 #[cfg(test)]

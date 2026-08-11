@@ -56,8 +56,15 @@ Debug builds resolve the trusted relay set at runtime (production default, or a
 in `src-tauri/src/trusted_relays.rs`; nothing outside that module can see the
 raw list. When changing relay behavior, grep for `trusted_relays::`, `add_relay`,
 and subscription filters. The local dev stack's relay is `wss://localhost:7001`
-(Caddy TLS) — the app must trust Caddy's local development CA (`caddy trust`)
-for that connection to succeed.
+(Caddy TLS). Reaching it takes two things, and a missing either looks the same:
+the local CA installed in the OS trust store (`mkcert -install`, or
+`caddy trust` when Caddy's internal CA is in use), **and** a build carrying the
+`local-relay-tls` feature. Without the feature the relay websocket validates
+only against the Mozilla roots compiled into the binary and never reads the OS
+trust store, so the connection fails with `UnknownIssuer` even when `openssl`
+and `curl` accept the same endpoint. The `make dev*` targets pass the feature;
+release builds never do, since it would widen relay trust to every CA the host
+trusts.
 
 ## Frontend
 
