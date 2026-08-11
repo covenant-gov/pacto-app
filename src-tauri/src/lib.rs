@@ -288,6 +288,15 @@ struct ChatState {
     // fetch_messages(false) call (e.g. a wake trigger racing the normal continuation loop)
     // advancing sync_window_end a second time before the first call's fetch finishes.
     slice_in_flight: bool,
+    // True when a slice attempt was deferred because the relay pool was empty (or the stream
+    // failed with "no relays specified") rather than a genuine per-relay error. Unlike
+    // `abandon_sync_slice`, `defer_sync_slice_for_empty_pool` leaves `sync_mode` and the claimed
+    // window untouched and only sets this so `next_sync_slice` retries the *same* window next
+    // time instead of advancing past it or ending the walk. See pacto-app-384.73.
+    sync_slice_relay_wait: bool,
+    // `is_last` slice flag captured at deferral time (see `sync_slice_relay_wait`), replayed
+    // unchanged to `record_slice_result` once the deferred slice is retried.
+    sync_slice_deferred_is_last: bool,
 }
 
 impl ChatState {
@@ -304,6 +313,8 @@ impl ChatState {
             last_catch_up_until: 0,
             last_catch_up_monotonic: None,
             slice_in_flight: false,
+            sync_slice_relay_wait: false,
+            sync_slice_deferred_is_last: false,
         }
     }
 
@@ -655,11 +666,27 @@ fn single_relay_fetch_since(last_catch_up_until: u64, now: u64) -> u64 {
 /// Returns `None` when there is nothing to do this call: a slice is already claimed by a
 /// concurrent invocation (`slice_in_flight`), or the account-wide sync is `Finished` and
 /// still within the catch-up grace window.
+///
+/// A slice deferred by `defer_sync_slice_for_empty_pool` (`sync_slice_relay_wait`) is retried
+/// first, before the `slice_in_flight` check: it re-claims the *exact* window that deferral
+/// captured rather than falling through to the normal branch selection, which would advance
+/// past it (ForwardSync/BackwardSync/DeepRescan) or require the catch-up grace window to
+/// re-elapse (CatchUp/Finished).
 fn next_sync_slice(
     state: &mut ChatState,
     now: u64,
     now_monotonic: u64,
 ) -> Option<(u64, u64, bool)> {
+    if state.sync_slice_relay_wait {
+        state.sync_slice_relay_wait = false;
+        state.slice_in_flight = true;
+        return Some((
+            state.sync_window_start,
+            state.sync_window_end,
+            state.sync_slice_deferred_is_last,
+        ));
+    }
+
     if state.slice_in_flight {
         return None;
     }
@@ -1125,6 +1152,7 @@ mod catch_up_tests {
 #[cfg(test)]
 mod fetch_messages_state_machine_tests {
     use super::{
+        abandon_sync_slice, defer_sync_slice_for_empty_pool, is_empty_relay_pool_error,
         next_sync_slice, record_slice_result, ChatState, SyncMode, CATCH_UP_GRACE_SECS,
         CATCH_UP_SLICE_SECS,
     };
@@ -1288,10 +1316,125 @@ mod fetch_messages_state_machine_tests {
         );
         assert_eq!(state.sync_mode, SyncMode::CatchUp);
     }
+
+    #[test]
+    fn deferred_slice_from_an_empty_pool_is_retried_immediately_not_abandoned() {
+        // Regression guard for pacto-app-384.73: on a first-boot login, the account-wide sync
+        // claims its initial ForwardSync window, but the relay pool is still empty when the
+        // stream tries to establish (relay setup hasn't completed yet). The old behavior
+        // (`abandon_sync_slice`) reset the walk to `Finished` permanently in practice — nothing
+        // else re-triggers `fetch_messages(false)` on a fresh session, and even a prompt retry
+        // within the 60s catch-up grace window would see `next_sync_slice` return `None` (see
+        // `abandon_sync_slice_leaves_a_prompt_retry_with_nothing_to_do` below).
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::ForwardSync;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000_000;
+        state.sync_window_end = 1_100_000;
+        state.slice_in_flight = true; // claimed by the slice that's about to fail
+
+        let now = 2_000_000_000u64;
+
+        // The stream establishment failed because the pool was empty — defer, don't abandon.
+        defer_sync_slice_for_empty_pool(&mut state, /* is_last */ false);
+
+        assert!(
+            !state.slice_in_flight,
+            "the claim is released so a retry isn't rejected as a concurrent duplicate"
+        );
+        assert_eq!(
+            state.sync_mode,
+            SyncMode::ForwardSync,
+            "deferral must not terminate the walk like abandon_sync_slice does"
+        );
+        assert!(state.is_syncing, "still syncing — just waiting on relays");
+
+        // A relay connects moments later (well within the 60s catch-up grace window) and the
+        // caller retries via fetch_messages(false) -> next_sync_slice.
+        let retry = next_sync_slice(&mut state, now, 0);
+
+        assert_eq!(
+            retry,
+            Some((1_000_000, 1_100_000, false)),
+            "the exact deferred window must be retried, not skipped or gated on the grace window"
+        );
+        assert!(
+            state.slice_in_flight,
+            "the retried slice re-claims the in-flight guard"
+        );
+        assert!(
+            !state.sync_slice_relay_wait,
+            "the deferred-retry flag is consumed once the slice is re-claimed"
+        );
+    }
+
+    #[test]
+    fn abandon_sync_slice_leaves_a_prompt_retry_with_nothing_to_do() {
+        // Contrast case: the OLD (pre-fix) permanent-abandon path. A retry that arrives
+        // promptly (well inside the 60s catch-up grace window) finds nothing to do, because
+        // `abandon_sync_slice` doesn't preserve the claimed window and `next_sync_slice`
+        // requires the grace window to elapse before promoting a `Finished` sync into anything.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::ForwardSync;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000_000;
+        state.sync_window_end = 1_100_000;
+        state.slice_in_flight = true;
+        state.last_catch_up_until = 1_999_999_970; // a very recent watermark from earlier in the session
+
+        let now = 2_000_000_000u64; // 30s later — inside the 60s grace window
+
+        abandon_sync_slice(&mut state);
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+
+        let retry = next_sync_slice(&mut state, now, 0);
+        assert_eq!(
+            retry, None,
+            "abandon_sync_slice leaves a prompt retry with nothing to do inside the grace window"
+        );
+    }
+
+    #[test]
+    fn empty_relay_pool_error_detection_matches_no_relays_variants_only() {
+        assert!(is_empty_relay_pool_error("no relays specified"));
+        assert!(is_empty_relay_pool_error("No Relays"));
+        assert!(!is_empty_relay_pool_error("relay banned"));
+        assert!(!is_empty_relay_pool_error("connection refused"));
+    }
 }
 
 lazy_static! {
     pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
+}
+
+/// Max poll attempts `wait_for_populated_relay_pool` makes after the initial check.
+const RELAY_POOL_WAIT_MAX_ATTEMPTS: u32 = 5;
+/// Starting backoff delay between poll attempts, doubling each time up to a 1.6s cap
+/// (200ms, 400ms, 800ms, 1.6s, 1.6s — worst case ~4.6s total).
+const RELAY_POOL_WAIT_INITIAL_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+const RELAY_POOL_WAIT_MAX_DELAY: std::time::Duration = std::time::Duration::from_millis(1600);
+
+/// Bounded, backed-off wait for the relay pool to gain at least one relay. Login/startup adds
+/// relays to the pool right after the client is built (see `connect`), and this can race a
+/// caller that is about to establish a stream or subscription — which would otherwise fail
+/// immediately with nostr-sdk's "no relays specified"/"no relays" (see pacto-app-384.73).
+/// Polls with exponential backoff instead of busy-looping, and gives up after
+/// `RELAY_POOL_WAIT_MAX_ATTEMPTS` so a genuinely relay-less session still fails fast rather than
+/// hanging. Returns `true` once a relay is present (whether immediately or after waiting).
+async fn wait_for_populated_relay_pool(client: &Client) -> bool {
+    if !client.relays().await.is_empty() {
+        return true;
+    }
+
+    let mut delay = RELAY_POOL_WAIT_INITIAL_DELAY;
+    for _ in 0..RELAY_POOL_WAIT_MAX_ATTEMPTS {
+        tokio::time::sleep(delay).await;
+        if !client.relays().await.is_empty() {
+            return true;
+        }
+        delay = std::cmp::min(delay * 2, RELAY_POOL_WAIT_MAX_DELAY);
+    }
+    false
 }
 
 #[tauri::command]
@@ -1629,16 +1772,35 @@ async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool, relay_url:
             }
         }
     } else {
-        // Fetch from all relays
+        // Fetch from all relays. A brand-new session's account-wide stream can race relay setup
+        // (login/startup adds relays to the pool right after this fires) — give the pool a
+        // bounded chance to gain a relay before establishing the stream, instead of racing
+        // ahead into a doomed "no relays specified" attempt (pacto-app-384.73: the stream must
+        // not be established before the pool is populated).
+        if client.relays().await.is_empty() {
+            wait_for_populated_relay_pool(&client).await;
+        }
         match client
             .stream_events(filter, std::time::Duration::from_secs(60))
             .await
         {
             Ok(stream) => stream,
             Err(e) => {
-                eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
                 let mut state = STATE.lock().await;
-                abandon_sync_slice(&mut state);
+                if is_empty_relay_pool_error(&e.to_string()) {
+                    // Retryable: the pool is (still) empty, even after the bounded wait above.
+                    // Defer instead of abandoning so the exact same window is retried once a
+                    // relay connects (see `connect`'s retry hook), rather than leaving the
+                    // account looking synced while it silently ingests nothing forever.
+                    println!(
+                        "[Sync] Account-wide relay event stream deferred: {} (will retry once a relay connects)",
+                        e
+                    );
+                    defer_sync_slice_for_empty_pool(&mut state, catch_up_is_last_slice);
+                } else {
+                    eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
+                    abandon_sync_slice(&mut state);
+                }
                 return;
             }
         }
@@ -2329,6 +2491,30 @@ fn abandon_sync_slice(state: &mut ChatState) {
     state.sync_mode = SyncMode::Finished;
     state.sync_empty_iterations = 0;
     state.sync_total_iterations = 0;
+}
+
+/// Defer the in-flight slice because the relay pool was empty (or the stream failed with "no
+/// relays specified"/"no relays") rather than abandoning it permanently like `abandon_sync_slice`
+/// does. Keeps `sync_mode`, `is_syncing`, and the claimed `sync_window_start`/`sync_window_end`
+/// untouched, and only releases `slice_in_flight` — so `next_sync_slice` retries the *exact*
+/// window on its next call instead of skipping ahead (ForwardSync/BackwardSync/DeepRescan) or
+/// requiring the catch-up grace window to elapse again (CatchUp/Finished). A concurrent
+/// `fetch_messages(false)` call arriving before the retry is still rejected as a duplicate,
+/// same as any other in-flight slice, because `slice_in_flight` is what that guard checks.
+/// See pacto-app-384.73: an empty pool at login/startup must be retryable, not terminal.
+fn defer_sync_slice_for_empty_pool(state: &mut ChatState, is_last: bool) {
+    state.slice_in_flight = false;
+    state.sync_slice_relay_wait = true;
+    state.sync_slice_deferred_is_last = is_last;
+}
+
+/// True for a relay-pool error whose only defect is having no relays configured yet (nostr-sdk's
+/// `NoRelaysSpecified`/"no relays specified" and `NoRelays`/"no relays") — the exact state a
+/// fresh login or a startup race leaves the pool in before relay setup completes. Distinct from
+/// a real per-relay failure (auth, network, protocol), which should still abandon the slice via
+/// `abandon_sync_slice` rather than retry indefinitely.
+fn is_empty_relay_pool_error(message: &str) -> bool {
+    message.to_lowercase().contains("no relays")
 }
 
 #[cfg(test)]
@@ -3413,6 +3599,14 @@ async fn notifs() -> Result<bool, String> {
     // Grab our pubkey
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
+
+    // A login/startup race can call this before relay setup completes (the same class of bug
+    // as the account-wide sync in `fetch_messages`; see pacto-app-384.73). Give the pool a
+    // bounded chance to gain a relay before subscribing, so these live subscriptions don't fail
+    // outright on "no relays specified" and never start listening.
+    if client.relays().await.is_empty() {
+        wait_for_populated_relay_pool(&client).await;
+    }
 
     // Live GiftWraps to us (DMs, files, MLS welcomes)
     let giftwrap_filter = Filter::new().pubkey(pubkey).kind(Kind::GiftWrap).limit(0);
@@ -6327,6 +6521,18 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
 
     // Connect to all relays in the pool
     client.connect().await;
+
+    // If the account-wide sync deferred a slice waiting on relays (see
+    // `defer_sync_slice_for_empty_pool`, pacto-app-384.73), this call just populated the pool
+    // it was waiting on — retry now instead of leaving it deferred until some unrelated trigger
+    // (wake/reconnect) happens to fire `fetch_messages(false)` again.
+    if STATE.lock().await.sync_slice_relay_wait {
+        let handle_retry = handle.clone();
+        tokio::spawn(async move {
+            fetch_messages(handle_retry, false, None).await;
+        });
+    }
+
     true
 }
 
