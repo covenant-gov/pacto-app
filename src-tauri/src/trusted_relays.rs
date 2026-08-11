@@ -17,22 +17,59 @@ const DEFAULT_TRUSTED_RELAYS: &[&str] = &[
     "wss://nostr.computingcache.com",
 ];
 
-static TRUSTED_RELAYS_CELL: OnceLock<Vec<RelayUrl>> = OnceLock::new();
+/// The resolved set and whether it came from the debug override, in one cell so
+/// the two can never disagree.
+struct Resolved {
+    relays: Vec<RelayUrl>,
+    overridden: bool,
+}
+
+static TRUSTED_RELAYS_CELL: OnceLock<Resolved> = OnceLock::new();
+
+fn compiled_default() -> Resolved {
+    Resolved {
+        relays: default_relays(),
+        overridden: false,
+    }
+}
 
 /// The resolved trusted relay set. Falls back to the compiled defaults if
 /// [`init_from_env`] was never called, so unit tests and non-`run()` entry
 /// points still get a usable list.
 pub(crate) fn trusted_relays() -> &'static [RelayUrl] {
-    TRUSTED_RELAYS_CELL.get_or_init(default_relays).as_slice()
+    TRUSTED_RELAYS_CELL
+        .get_or_init(compiled_default)
+        .relays
+        .as_slice()
+}
+
+/// True only when `PACTO_TRUSTED_RELAYS` redirected the set. Release builds
+/// never read the variable, so this is always false there.
+///
+/// Callers use it to keep the public default relay list out of a sandbox's
+/// connection set: an override means "route all traffic here", and seeding
+/// seven production relays beside it would defeat that.
+pub(crate) fn is_overridden() -> bool {
+    TRUSTED_RELAYS_CELL.get_or_init(compiled_default).overridden
+}
+
+/// Env-value-in, resolved-set-out. Pure, like [`resolve_from_env_value`], so the
+/// override flag is testable without touching the process environment or the cell.
+fn resolve_with_origin(raw: Option<String>) -> Result<Resolved, String> {
+    // An empty or whitespace-only value is rejected by `resolve_override`, so a
+    // successful resolve from a `Some` raw is always a real redirect.
+    let overridden = raw.is_some();
+    let relays = resolve_from_env_value(raw)?;
+    Ok(Resolved { relays, overridden })
 }
 
 /// Resolve the trusted relay set once at startup, reading `PACTO_TRUSTED_RELAYS`.
 /// Must run after the repo-root `.env` load and before the first relay use.
 #[cfg(debug_assertions)]
 pub(crate) fn init_from_env() -> Result<(), String> {
-    let relays = resolve_from_env_value(std::env::var("PACTO_TRUSTED_RELAYS").ok())?;
+    let resolved = resolve_with_origin(std::env::var("PACTO_TRUSTED_RELAYS").ok())?;
     TRUSTED_RELAYS_CELL
-        .set(relays)
+        .set(resolved)
         .map_err(|_| "trusted relay set was already resolved before init_from_env ran".to_string())
 }
 
@@ -41,7 +78,7 @@ pub(crate) fn init_from_env() -> Result<(), String> {
 #[cfg(not(debug_assertions))]
 pub(crate) fn init_from_env() -> Result<(), String> {
     TRUSTED_RELAYS_CELL
-        .set(default_relays())
+        .set(compiled_default())
         .map_err(|_| "trusted relay set was already resolved before init_from_env ran".to_string())
 }
 
@@ -339,6 +376,37 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unset_env_is_not_an_override() {
+        let resolved = resolve_with_origin(None).expect("default resolution never fails");
+        assert!(
+            !resolved.overridden,
+            "no env value must leave the public default relay list in place"
+        );
+    }
+
+    #[test]
+    fn a_set_override_is_flagged_even_when_it_names_a_public_relay() {
+        // The flag tracks provenance, not locality: an operator who redirects the
+        // trusted set anywhere is asking for that set only, so the seven public
+        // defaults stay out regardless of where the override points.
+        let resolved = resolve_with_origin(Some("wss://relay.example.com".to_string()))
+            .expect("a valid relay url resolves");
+        assert!(resolved.overridden);
+        assert_eq!(
+            resolved.relays,
+            vec![RelayUrl::parse("wss://relay.example.com").unwrap()]
+        );
+    }
+
+    #[test]
+    fn a_rejected_override_never_reports_as_overridden() {
+        // Failure must not leave a caller thinking the public defaults were
+        // suppressed - startup aborts instead.
+        assert!(resolve_with_origin(Some("   ".to_string())).is_err());
+        assert!(resolve_with_origin(Some("not a url".to_string())).is_err());
+    }
+
     /// Only compiles/runs under `cargo test --release`: the release accessor
     /// contains no environment read to disable, so this is U2d's proof that a
     /// set `PACTO_TRUSTED_RELAYS` cannot redirect a release build. Ignores
@@ -353,6 +421,9 @@ mod tests {
         let _ = init_from_env();
         let as_strings: Vec<String> = trusted_relays().iter().map(|u| u.to_string()).collect();
         assert_eq!(as_strings, vec![RELAY_A, RELAY_B, RELAY_C]);
+        // A release build must also keep its public default relay list: the
+        // override gate can never fire where the override itself cannot.
+        assert!(!is_overridden());
         std::env::remove_var("PACTO_TRUSTED_RELAYS");
     }
 }
