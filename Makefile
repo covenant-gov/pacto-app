@@ -46,10 +46,15 @@ install:
 # and its own branch-hashed port set (scripts/dev-ports.mjs) so parallel
 # worktrees never collide on ports either. Not swept by `make clean`;
 # delete test_fixtures/ manually to reset.
+#
+# Every dev target passes `-f local-relay-tls`. Without it the relay websocket
+# validates against the compiled-in Mozilla roots only and refuses a
+# locally-issued `wss://` relay with `UnknownIssuer`, whatever the OS trust
+# store says. Deliberately not a default feature: see src-tauri/Cargo.toml.
 dev:
 	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
 	if [ "$$branch" = "main" ]; then \
-		pnpm tauri dev; \
+		pnpm tauri dev -f local-relay-tls; \
 	else \
 		slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
 		eval "$$(node scripts/dev-ports.mjs --export --branch "$$branch")"; \
@@ -57,7 +62,7 @@ dev:
 		echo "make dev: branch '$$branch' -> port index $$PACTO_DEV_PORT_INDEX, isolated data dir test_fixtures/dev-branch-$$slug"; \
 		echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
 		PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-branch-$$slug" \
-		pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'; \
+		pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'; \
 	fi
 
 # Isolated sandbox account for agent-driven MCP verification (docs/TAURI_MCP_INTEGRATION.md).
@@ -69,7 +74,7 @@ dev-sandbox:
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-sandbox)"; \
 	echo "make dev-sandbox: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
 	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_sandbox/manual-$(shell date +%s)" PACTO_ALLOW_TEST_AUTH=1 \
-	pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
 # Persistent reusable test identities (docs/TAURI_MCP_INTEGRATION.md). Unlike
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
@@ -80,14 +85,14 @@ dev-account:
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-account)"; \
 	echo "make dev-account: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
 	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-account" \
-	pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
 dev-buddy:
 	@mkdir -p test_fixtures
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-buddy)"; \
 	echo "make dev-buddy: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
 	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-buddy" \
-	pnpm tauri dev --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
 build:
 	# Tauri CLI 2.9.x misinterprets CI=1 as --ci=1 (boolean flags only accept
