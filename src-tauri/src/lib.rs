@@ -106,17 +106,16 @@ mod app_config;
 mod nostr_sign;
 mod nostr_tags;
 
-/// # Trusted Relays
-///
-/// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
-///
-/// These relays may be used for events like Typing Indicators, Key Exchanges (forward-secrecy setup) and more.
-/// Multiple relays provide redundancy for critical operations.
-pub(crate) static TRUSTED_RELAYS: &[&str] = &[
-    "wss://jskitty.cat/nostr",
-    "wss://asia.vectorapp.io/nostr",
-    "wss://nostr.computingcache.com",
-];
+// Runtime-resolved trusted relay set: production default, debug-only
+// `PACTO_TRUSTED_RELAYS` override.
+mod trusted_relays;
+
+// Machine-readable record of where this sandbox landed (ports, root, endpoints).
+mod sandbox_handle;
+
+// Debug-only headless login used by agents and the e2e harness.
+#[cfg(debug_assertions)]
+mod dev_login;
 
 /// # Blossom Media Servers
 ///
@@ -1961,7 +1960,7 @@ async fn start_typing(receiver: String) -> bool {
             );
             match client
                 .gift_wrap_to(
-                    TRUSTED_RELAYS.iter().copied(),
+                    trusted_relays::trusted_relays().iter().cloned(),
                     &pubkey,
                     rumor,
                     [Tag::expiration(expiry_time)],
@@ -2640,8 +2639,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
             // (inbound and outbound) so relay replay cannot restore purged history.
             if contact.starts_with("npub1") {
                 if let Some(handle) = TAURI_APP.get() {
-                    if let Ok(Some(deleted_at)) =
-                        db::get_dm_deletion_cutoff(handle, &contact).await
+                    if let Ok(Some(deleted_at)) = db::get_dm_deletion_cutoff(handle, &contact).await
                     {
                         if db::dm_created_at_at_or_before_cutoff(
                             rumor.created_at.as_u64(),
@@ -4127,9 +4125,9 @@ async fn notifs() -> Result<bool, String> {
 
 /// Default relays that come pre-configured
 pub(crate) const DEFAULT_RELAYS: &[&str] = &[
-    "wss://jskitty.cat/nostr",        // TRUSTED_RELAY
-    "wss://asia.vectorapp.io/nostr",  // TRUSTED_RELAY
-    "wss://nostr.computingcache.com", // TRUSTED_RELAY
+    "wss://jskitty.cat/nostr",        // also in the trusted relay set
+    "wss://asia.vectorapp.io/nostr",  // also in the trusted relay set
+    "wss://nostr.computingcache.com", // also in the trusted relay set
     "wss://relay.damus.io",           // Damus (popular)
     "wss://relay.primal.net",         // Primal (popular)
     "wss://nos.lol",                  // nos.lol (popular)
@@ -6088,67 +6086,6 @@ async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     }))
 }
 
-/// Debug-only fixture authentication for automated end-to-end tests.
-/// Requires `PACTO_ALLOW_TEST_AUTH=1` and creates a fresh sandboxed account.
-#[cfg(debug_assertions)]
-#[tauri::command]
-async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_json::Value, String> {
-    if std::env::var("PACTO_ALLOW_TEST_AUTH").unwrap_or_default() != "1" {
-        return Err("Test auth disabled".to_string());
-    }
-
-    // Generate a fresh Nostr keypair.
-    let keys = Keys::generate();
-    let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
-
-    // Initialize the Nostr client.
-    let client = Client::builder()
-        .signer(keys.clone())
-        // Gossip is opt-in from nostr-sdk 0.44: absent a gossip database it stays off.
-        .opts(ClientOptions::new())
-        .monitor(Monitor::new(1024))
-        .build();
-    set_nostr_client(client);
-
-    // Build a minimal profile and reset state.
-    let mut profile = Profile::new();
-    profile.id = npub.clone();
-    profile.mine = true;
-    profile.name = "Fixture Account".to_string();
-    {
-        let mut st = STATE.lock().await;
-        st.clear_session();
-        st.profiles.push(profile);
-    }
-
-    // Mark the account pending before touching the filesystem so a concurrent
-    // `list_accounts` scan (e.g. the login screen's boot-time account check)
-    // can't treat the in-flight directory as an orphan and delete it before
-    // the pkey is written.
-    account_manager::set_pending_account(npub.clone())?;
-    account_manager::init_profile_database(&handle, &npub).await?;
-    account_manager::set_current_account(npub.clone())?;
-    account_manager::clear_pending_account()?;
-
-    // Set up key-derivation version 2 so test sessions can use commands that
-    // normally require a PIN-protected account (e.g. sending messages).
-    {
-        let conn = account_manager::get_db_connection(&handle)?;
-        crate::migration::create_new_account_salt(&handle, &conn)?;
-        account_manager::return_db_connection(conn);
-    }
-
-    let state = STATE.lock().await;
-    Ok(serde_json::json!({
-        "success": true,
-        "npub": npub,
-        "profiles": &state.profiles,
-        "chats": &state.chats,
-        "is_syncing": state.is_syncing,
-        "sync_mode": format!("{:?}", state.sync_mode)
-    }))
-}
-
 /// Build client and profile state after keys are resolved (mnemonic- or nsec-derived).
 async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
@@ -6420,7 +6357,7 @@ async fn encrypt<R: Runtime>(
                     Ok(event) => {
                         // Send only to trusted relays
                         match client
-                            .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+                            .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &event)
                             .await
                         {
                             Ok(output) => {
@@ -6617,11 +6554,10 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Delete the legacy MLS folder in AppData (for backwards compatibility)
-    if let Ok(mls_dir) = handle
-        .path()
-        .resolve("mls", tauri::path::BaseDirectory::AppData)
-    {
+    // Delete the legacy MLS folder in the app data dir (backwards compatibility).
+    // Resolved through the sandbox helper so a sandboxed run never reaches the
+    // real OS app-data directory.
+    if let Ok(mls_dir) = crate::test_sandbox::test_data_dir(&handle).map(|d| d.join("mls")) {
         if mls_dir.exists() {
             let _ = std::fs::remove_dir_all(&mls_dir);
         }
@@ -7135,7 +7071,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
 
     // Send only to trusted relays
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &event)
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&event, &send_output);
@@ -7168,7 +7104,7 @@ async fn accept_invite_code(invite_code: String) -> Result<String, String> {
     // Find the invite event
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7444,7 +7380,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
 
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7473,7 +7409,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
 
     let mut acceptance_events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             acceptance_filter,
             std::time::Duration::from_secs(10),
         )
@@ -7522,7 +7458,7 @@ async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
 
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7600,35 +7536,42 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     let force_refresh = mls_store_reset_state::keypackage_refresh_required(&handle)?;
     let cache = cache && !force_refresh;
 
-    // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
-    for relay in TRUSTED_RELAYS.iter() {
-        if let Ok(relay_url) = nostr_sdk::RelayUrl::parse(relay) {
-            // Check if relay is in the pool
-            if !client.relays().await.contains_key(&relay_url) {
-                println!("[MLS][KeyPackage] Adding TRUSTED_RELAY to pool: {}", relay);
-                client.add_relay(*relay).await.map_err(|e| e.to_string())?;
-            }
+    // Ensure we're connected to the trusted relay set (needed for both cache verification and publishing)
+    for relay_url in trusted_relays::trusted_relays().iter() {
+        // Check if relay is in the pool
+        if !client.relays().await.contains_key(relay_url) {
+            println!(
+                "[MLS][KeyPackage] Adding trusted relay to pool: {}",
+                relay_url
+            );
+            client
+                .add_relay(relay_url.clone())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
-            // Connect with timeout if not already connected
-            match client.relay(relay_url.clone()).await {
-                Ok(relay_instance) => {
-                    if !relay_instance.is_connected() {
-                        println!("[MLS][KeyPackage] Connecting to TRUSTED_RELAY: {}", relay);
-                        let _ = client.connect_relay(*relay).await;
-                        // Give it time to connect
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    }
-                }
-                Err(_) => {
-                    // Relay not in pool, add and connect
+        // Connect with timeout if not already connected
+        match client.relay(relay_url.clone()).await {
+            Ok(relay_instance) => {
+                if !relay_instance.is_connected() {
                     println!(
-                        "[MLS][KeyPackage] Adding and connecting to TRUSTED_RELAY: {}",
-                        relay
+                        "[MLS][KeyPackage] Connecting to trusted relay: {}",
+                        relay_url
                     );
-                    let _ = client.add_relay(*relay).await;
-                    let _ = client.connect_relay(*relay).await;
+                    let _ = client.connect_relay(relay_url.clone()).await;
+                    // Give it time to connect
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 }
+            }
+            Err(_) => {
+                // Relay not in pool, add and connect
+                println!(
+                    "[MLS][KeyPackage] Adding and connecting to trusted relay: {}",
+                    relay_url
+                );
+                let _ = client.add_relay(relay_url.clone()).await;
+                let _ = client.connect_relay(relay_url.clone()).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }
     }
@@ -7671,7 +7614,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 
                 match client
                     .stream_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(5),
                     )
@@ -7699,10 +7642,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let mls_service = MlsService::new_persistent_for_keypackage_refresh(&handle)
             .map_err(|e| e.to_string())?;
         let engine = mls_service.engine().map_err(|e| e.to_string())?;
-        let relay_urls: Vec<nostr_sdk::RelayUrl> = TRUSTED_RELAYS
-            .iter()
-            .filter_map(|r| nostr_sdk::RelayUrl::parse(r).ok())
-            .collect();
+        let relay_urls: Vec<nostr_sdk::RelayUrl> = trusted_relays::trusted_relays().to_vec();
         engine
             .create_key_package_for_event(&my_pubkey, relay_urls)
             .map_err(|e| e.to_string())?
@@ -7717,9 +7657,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         .await
         .map_err(|e| e.to_string())?;
 
-    // Publish to TRUSTED_RELAYS
+    // Publish to the trusted relay set
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &kp_event)
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event)
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event, &send_output);
@@ -7785,7 +7725,7 @@ async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Res
         let filter = Filter::new().id(event_id).kind(Kind::GiftWrap).limit(1);
         let event = match client
             .stream_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
@@ -8684,7 +8624,7 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-//// Refresh keypackages for a contact from TRUSTED_RELAY
+//// Refresh keypackages for a contact from the trusted relay set
 //// Fetches Kind::MlsKeyPackage from the contact, updates local index, and returns (device_id, keypackage_ref)
 #[tauri::command]
 async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
@@ -8701,10 +8641,10 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
         // Only need the newest KeyPackage
         .limit(1);
 
-    // Fetch from TRUSTED_RELAYS with short timeout
+    // Fetch from the trusted relay set with a short timeout
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -8806,6 +8746,18 @@ async fn sync_all_profiles() -> Result<(), String> {
 pub fn run() {
     operator_env::load_operator_env();
 
+    if let Err(e) = trusted_relays::init_from_env() {
+        eprintln!("[trusted_relays] {e}");
+        std::process::exit(1);
+    }
+
+    // Runs before any account or database work: a world boot may never resolve
+    // the real OS app-data directory. See docs/build/DEV_SANDBOX.md.
+    if let Err(e) = test_sandbox::enforce_dev_world_root() {
+        eprintln!("[dev-world] {e}");
+        std::process::exit(1);
+    }
+
     #[cfg(target_os = "linux")]
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer
@@ -8837,10 +8789,39 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init());
 
-    // MCP Bridge plugin for AI-assisted debugging (desktop debug builds only)
+    // MCP Bridge plugin for AI-assisted debugging (desktop debug builds only).
+    // Loopback-only, on the branch-derived base port so parallel sandboxes do
+    // not collide. The plugin scans forward from the base, so the bound port is
+    // resolved here and published in the sandbox handle.
+    #[cfg(all(debug_assertions, desktop))]
+    let bound_bridge_port: Option<u16>;
     #[cfg(all(debug_assertions, desktop))]
     {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        const BRIDGE_BIND_ADDRESS: &str = "127.0.0.1";
+        let base = std::env::var("PACTO_MCP_BRIDGE_PORT")
+            .ok()
+            .and_then(|p| p.trim().parse::<u16>().ok())
+            .unwrap_or(9223);
+        let port =
+            tauri_plugin_mcp_bridge::discovery::find_available_port(BRIDGE_BIND_ADDRESS, base);
+        bound_bridge_port = Some(port);
+        builder = builder.plugin(
+            tauri_plugin_mcp_bridge::Builder::new()
+                .bind_address(BRIDGE_BIND_ADDRESS)
+                .base_port(port)
+                .build(),
+        );
+    }
+    #[cfg(not(all(debug_assertions, desktop)))]
+    let bound_bridge_port: Option<u16> = None;
+
+    // Publish where this sandbox landed before the app is built, so an
+    // orchestrator finds the handle even if window creation stalls. No-op
+    // without a sandbox root.
+    match sandbox_handle::write_handle(bound_bridge_port) {
+        Ok(Some(path)) => println!("[sandbox] handle written: {}", path.display()),
+        Ok(None) => {}
+        Err(e) => eprintln!("[sandbox] failed to write handle: {e}"),
     }
 
     // Desktop-only plugins
@@ -8938,6 +8919,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async {
                 profile_sync::start_profile_sync_processor().await;
             });
+
+            // Debug-only background connectivity probe for the resolved relay set;
+            // no-op unless PACTO_TRUSTED_RELAYS was set.
+            trusted_relays::probe_endpoints_in_background();
 
             // Setup deep link listener for macOS/iOS/Android
             // On these platforms, deep links are received as events rather than CLI args
@@ -9065,7 +9050,7 @@ pub fn run() {
             #[cfg(debug_assertions)]
             debug_hot_reload_sync,
             #[cfg(debug_assertions)]
-            test_login_fixture,
+            dev_login::dev_login,
             notifs,
             get_relays,
             get_media_servers,

@@ -276,14 +276,15 @@ pub async fn get_wallet_summary<R: Runtime>(
         feed_jobs.push((feed_key.to_string(), net.key.clone()));
     }
 
-    let price_results =
-        futures_util::future::join_all(feed_jobs.into_iter().map(|(feed_key, sample_net)| async move {
+    let price_results = futures_util::future::join_all(feed_jobs.into_iter().map(
+        |(feed_key, sample_net)| async move {
             let fetched = wallet_prices::get_usd_spot_prices_for_network(&sample_net)
                 .await
                 .ok();
             (feed_key, fetched)
-        }))
-        .await;
+        },
+    ))
+    .await;
 
     let mut prices_by_feed: HashMap<String, Option<wallet_prices::WalletUsdSpotPrices>> =
         HashMap::new();
@@ -325,9 +326,9 @@ pub async fn get_wallet_summary<R: Runtime>(
         }
 
         let eth_dec = format_decimal(eth_raw, net.native_decimals);
-        let eth_usd = prices.as_ref().map(|p| {
-            (p.eth_usd * eth_dec.parse::<f64>().unwrap_or(0.0)).max(0.0)
-        });
+        let eth_usd = prices
+            .as_ref()
+            .map(|p| (p.eth_usd * eth_dec.parse::<f64>().unwrap_or(0.0)).max(0.0));
         if let Some(u) = eth_usd {
             total_usd += u;
         }

@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Seeded Dev-Sandbox Accounts</title>
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700|jetbrains-mono:400,500">
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --surface-2: #f4f2ee;
+    --ink: #1c1a17;
+    --ink-2: #4a453e;
+    --muted: #6f685e;
+    --line: #e2ddd4;
+    --line-2: #cfc8bc;
+    --accent: #1f6f5c;
+    --accent-soft: #e6f2ee;
+    --accent-text: #14523f;
+    --warn: #a1601a;
+    --warn-soft: #fbf0e2;
+    --warn-text: #7d4713;
+    --info: #2f5c94;
+    --info-soft: #e8f0f9;
+    --info-text: #23466f;
+    --danger: #9c3229;
+    --danger-soft: #fbeae7;
+    --danger-text: #7a2620;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16150f;
+      --surface: #1e1d17;
+      --surface-2: #26241d;
+      --ink: #f0ece3;
+      --ink-2: #cdc7bb;
+      --muted: #9b9384;
+      --line: #35322a;
+      --line-2: #474338;
+      --accent: #67c4a8;
+      --accent-soft: #1b3a32;
+      --accent-text: #8fd8bf;
+      --warn: #d99a4e;
+      --warn-soft: #3a2c18;
+      --warn-text: #e8b676;
+      --info: #7aa9df;
+      --info-soft: #1c2c3f;
+      --info-text: #9cc2ec;
+      --danger: #e08076;
+      --danger-soft: #3a201c;
+      --danger-text: #ec9f95;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 940px; margin-inline: auto; padding: 3rem 1.5rem 4rem; }
+  p, li { max-width: 72ch; }
+  h1 { font-size: 2.1rem; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 .4rem; font-weight: 700; }
+  h2 {
+    font-size: 1.32rem; letter-spacing: -0.01em; font-weight: 650;
+    margin: 3rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid var(--line-2);
+  }
+  h3 { font-size: 1.08rem; font-weight: 650; margin: 0 0 .1rem; letter-spacing: -0.005em; }
+  h4 { font-size: .95rem; font-weight: 600; margin: 1.4rem 0 .4rem; }
+  .eyebrow {
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .13em;
+    font-weight: 600; color: var(--muted); margin: 0 0 .3rem;
+  }
+  code, .mono { font-family: var(--mono); font-size: .855em; }
+  p code, li code, td code, dd code {
+    background: var(--surface-2); border: 1px solid var(--line);
+    padding: .08em .34em; border-radius: 4px; white-space: nowrap;
+  }
+  a { color: var(--accent-text); text-underline-offset: 2px; }
+  strong { color: inherit; font-weight: 650; }
+
+  header.doc { border-bottom: 1px solid var(--line); padding-bottom: 1.6rem; margin-bottom: .5rem; }
+  .meta { display: flex; flex-wrap: wrap; gap: .4rem .5rem; margin-top: .9rem; }
+  .chip {
+    display: inline-flex; align-items: center; gap: .35rem;
+    font-size: .74rem; font-weight: 550; padding: .2rem .6rem;
+    border-radius: 999px; border: 1px solid var(--line-2);
+    background: var(--surface-2); color: var(--ink-2);
+  }
+  .chip.k { background: var(--accent-soft); border-color: transparent; color: var(--accent-text); }
+  .chip .lbl { color: inherit; opacity: .68; font-weight: 500; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .7rem; margin: 1.8rem 0 0; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: .75rem .9rem; }
+  .stat .n { font-size: 1.45rem; font-weight: 680; letter-spacing: -0.02em; line-height: 1.1; }
+  .stat .l { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-top: .15rem; }
+
+  .callout { border-radius: 10px; padding: 1rem 1.15rem; margin: 1.2rem 0; border: 1px solid var(--line); }
+  .callout .eyebrow { margin-bottom: .35rem; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout p:first-of-type { margin-top: 0; }
+  .callout.reframe { background: var(--accent-soft); border-color: transparent; }
+  .callout.reframe .eyebrow { color: var(--accent-text); }
+  .callout.reframe, .callout.reframe p, .callout.reframe li { color: var(--accent-text); }
+  .callout.warn { background: var(--warn-soft); border-color: transparent; }
+  .callout.warn .eyebrow { color: var(--warn-text); }
+  .callout.warn, .callout.warn p, .callout.warn li { color: var(--warn-text); }
+  .callout.info { background: var(--info-soft); border-color: transparent; }
+  .callout.info .eyebrow { color: var(--info-text); }
+  .callout.info, .callout.info p, .callout.info li { color: var(--info-text); }
+
+  ul.axes { list-style: none; padding: 0; margin: 0; }
+  ul.axes li {
+    display: grid; grid-template-columns: 190px 1fr; gap: 1rem;
+    padding: .6rem 0; border-bottom: 1px solid var(--line); max-width: none;
+  }
+  ul.axes li:last-child { border-bottom: 0; }
+  ul.axes .an { font-family: var(--mono); font-size: .82rem; color: var(--accent-text); font-weight: 500; }
+
+  nav.jump { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1.1rem; margin-bottom: 1.8rem; }
+  nav.jump ol { margin: 0; padding-left: 1.3rem; columns: 2; column-gap: 2rem; }
+  nav.jump li { margin: .18rem 0; font-size: .87rem; max-width: none; }
+  @media (max-width: 680px) { nav.jump ol { columns: 1; } }
+
+  article.idea {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.3rem 1.4rem; margin-bottom: 1.5rem;
+  }
+  .ihead { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .7rem; }
+  .rank {
+    font-family: var(--mono); font-size: .78rem; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent-text);
+    border-radius: 999px; padding: .16rem .55rem; flex: none;
+  }
+  .ichips { display: flex; gap: .4rem; flex-wrap: wrap; margin: .8rem 0 0; }
+  dl.fields { margin: .9rem 0 0; }
+  dl.fields dt {
+    font-size: .69rem; text-transform: uppercase; letter-spacing: .1em;
+    font-weight: 600; color: var(--muted); margin-top: .85rem;
+  }
+  dl.fields dd { margin: .18rem 0 0; color: var(--ink-2); }
+  dl.fields dd.basis { font-size: .93rem; }
+  .btag {
+    font-family: var(--mono); font-size: .78rem; font-weight: 600;
+    color: var(--accent-text);
+  }
+  .btag.ext { color: var(--info-text); }
+  .btag.rsn { color: var(--warn-text); }
+
+  figure { margin: 1.2rem 0 .2rem; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: .78rem; color: var(--muted); margin-top: .45rem; }
+
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: 1rem 0; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; border-bottom: 2px solid var(--line-2); }
+  td:first-child { font-family: var(--mono); font-size: .82rem; color: var(--muted); white-space: nowrap; }
+  tr.axisgap td { background: var(--warn-soft); color: var(--warn-text); }
+
+  footer.composition-signal {
+    margin-top: 3.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+    font-size: .78rem; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <p class="eyebrow">Ideation</p>
+  <h1>Seeded Dev-Sandbox Accounts</h1>
+  <div class="meta">
+    <span class="chip"><span class="lbl">date</span> <time datetime="2026-08-08">2026-08-08</time></span>
+    <span class="chip"><span class="lbl">topic</span> dev-sandbox-seeded-accounts</span>
+    <span class="chip"><span class="lbl">mode</span> repo-grounded</span>
+    <span class="chip k"><span class="lbl">focus</span> predefined users with populated data for per-branch <code>make dev</code> sandboxes (PR #239 follow-up)</span>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="n">63</div><div class="l">Raw candidates</div></div>
+    <div class="stat"><div class="n">11</div><div class="l">Survivors</div></div>
+    <div class="stat"><div class="n">13</div><div class="l">Cut</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Repos in scope</div></div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+
+<p><a href="https://github.com/covenant-gov/pacto-app/pull/239">PR #239</a> made <code>make dev</code> derive <code>PACTO_TEST_SANDBOX_ROOT</code> from the current git branch, so each branch gets its own <code>test_fixtures/dev-branch-&lt;slug&gt;/</code>. That fixed storage-format update-gate collisions from branch-hopping across different migrations, and created the problem this ideation addresses: every fresh branch sandbox boots to an empty account-creation screen with no squads, DMs, messages, wallet history, or governance state. Tracked as an open gap in <a href="https://github.com/covenant-gov/pacto-app/issues/237">issue #237</a>.</p>
+
+<div class="callout reframe">
+  <p class="eyebrow">The reframe that shaped this set</p>
+  <p>The naive framing — "fabricate fake rows into <code>pacto.db</code>" — is wrong, because a complete developer-controlled dev stack already exists in the sibling repo <code>pacto-dev-env</code> and <strong>was running on this machine during grounding</strong> (relay healthy on <code>127.0.0.1:7000</code>, <code>pacto-bot-api</code> healthy, both up two days).</p>
+  <p>It already seeds a rich world: governance contracts, a full Nave Pirata squad, deterministic bot identities (captain, candidate, crew-1..3) with committed nsec values, and live relay state including DMs, KeyPackages, and MLS groups. It exposes <code>make seed</code>, <code>make seed-squad</code>, <code>make create-mls-group BOT_ID=… RECIPIENT_NPUB=…</code>, <code>make publish-key-package</code>, and <code>make reseed-all</code>.</p>
+  <p><strong>So the counterparty half is solved; the protagonist half is not.</strong> There is no user identity the app can log in as, the app cannot reach the local relay anyway, and nothing carries npubs, group ids, or deployment addresses across the two-repo seam. Ideas were generated against <em>that</em> problem; anything reinventing bot peers, a local relay, or on-chain squad seeding was cut as duplicating shipped work.</p>
+</div>
+
+<h4>Verified constraints the survivors are qualified against</h4>
+<ul>
+  <li><strong>The launch wall is network, not crypto.</strong> <code>crypto.rs:39-41</code> states Argon2id was tuned to keep unlock "fast (~100ms)". The documented 20–30s wait is relay round-trips — an MLS keypackage publish plus a tail of <code>fetch_events_from</code>/<code>stream_events_from</code> calls with 5–15s timeouts. <em>Why</em> those timeouts elapse is unproven (see the rejection of the boot-reordering idea).</li>
+  <li><strong><code>TRUSTED_RELAYS</code> is a compile-time constant.</strong> <code>lib.rs:115</code>, roughly 30 call sites across <code>lib.rs</code>, <code>mls.rs</code>, <code>commons.rs</code>, <code>squad_bot.rs</code>. No env override, no local fallback.</li>
+  <li><strong>Identity adoption already ships.</strong> <code>importAccount(recoveryPhrase, pin)</code> at <code>src/stores/auth.ts:250</code>, plus a raw-nsec backend primitive documented "nsec only" at <code>src/lib/api/auth.ts:13-15</code>. This is the single most important correction in the whole run — three independent frames nominated "make the app able to adopt an identity" as the big unlock, and it is already possible. Only its <em>automation</em> is missing.</li>
+  <li><strong><code>process_rumor</code> is public and relay-free</strong> (<code>rumor.rs:125-128</code>), so synthetic history can enter storage through the real ingest path with no network at all.</li>
+  <li><strong>Committed fixture DBs are a live hazard.</strong> <code>classify_database</code> returns <code>Unrecognized</code>/<code>Divergent</code> for a profile the running build doesn't recognize, and the update gate then blocks <em>every</em> account on the machine. Orphan cleanup deliberately refuses to delete such profiles (<code>account_manager.rs:352-382</code>), so a stale fixture lingers as a launch-blocking landmine rather than disappearing.</li>
+  <li><strong>Fixture DBs are cryptographically portable</strong> — plaintext salt plus deterministic Argon2id means a known dev PIN unlocks anywhere. Which also means a committed fixture leaks its own nsec and EVM key.</li>
+  <li><strong>CI provisions zero fixture data</strong> across all four jobs.</li>
+  <li><strong>Port 7000 is double-bound on macOS</strong> — Docker and ControlCenter (AirPlay Receiver) both hold it, verified live. Docs name <code>ws://localhost:7000</code> in seven places while the working endpoint is the Caddy-fronted <code>wss://localhost:7001</code>.</li>
+</ul>
+
+<h4>Round two: <code>pacto-bot-api</code> enters scope</h4>
+
+<p>A third repo came into scope after the first round: <code>~/Projects/pacto-bot-api</code>, a Rust daemon plus a <code>pacto-bot-admin</code> CLI that multiplexes bot identities over JSON-RPC, with a Python SDK for handlers. It is the substrate the dev stack's bot roster runs on, and it changes several answers.</p>
+
+<ul>
+  <li><strong>Identity minting is a first-class command.</strong> <code>pacto-bot-admin new &lt;BOT_ID&gt;</code> (<code>src/admin.rs:266-372</code>) mints an identity and writes a config snippet, with <code>--backend</code> (<code>nsec</code> dev-only, <code>bunker_local</code>, <code>bunker_remote</code>), <code>--capabilities</code>, <code>--relays</code>, and <code>--scaffold</code> to generate a Python handler project with slash-command stubs and pytest files.</li>
+  <li><strong>Capabilities are an explicit permission model</strong> (<code>src/admin.rs:284-286</code>): <code>ReadMessages</code>, <code>SendMessages</code>, <code>ManageProfile</code>, <code>SendGroupMessages</code>, <code>ReceiveGroupMessages</code>, <code>CreateMlsGroup</code>, <code>InviteToMlsGroup</code>, <code>ExitMlsGroup</code> — defaulting to read plus send.</li>
+  <li><strong>There are composable history primitives already:</strong> <code>send-test-dm &lt;BOT&gt; &lt;RECIPIENT&gt; &lt;CONTENT&gt;</code>, <code>mls-group create|invite|repair-admins</code>, <code>publish-profile</code> (kind:0, so a persona can have a display name and avatar), and <code>trace-events</code> for reading back what a bot actually did.</li>
+  <li><strong>MLS state has an export/import path.</strong> <code>export &lt;BOT&gt; --bundle-dir DIR</code> (<code>admin.rs:1752-1826</code>) copies the MLS store, its <code>-wal</code>/<code>-shm</code>/<code>-journal</code> sidecars, and its key into a 0o700 directory; <code>import</code> restores it and <code>try_open_mls_store_with_key</code> (<code>admin.rs:1846</code>) verifies the key opens the store before accepting it.</li>
+  <li><strong>Crate parity is exact.</strong> Both repos resolve to <code>mdk-core 0.8.0</code>, <code>mdk-sqlite-storage 0.8.0</code>, <code>nostr-sdk 0.44</code>, and both call the same <code>MdkSqliteStorage::new_with_key(path, EncryptionConfig::new(key))</code> (<code>admin.rs:1850</code> / <code>mls.rs:324-325</code>). The MLS store schema is therefore identical across the two projects.</li>
+  <li><strong>But key provenance differs.</strong> bot-api mints a raw random 32-byte key via <code>getrandom</code> into a <code>.key</code> sidecar (<code>mls_key.rs:129-137</code>); pacto-app derives its key from the user's PIN and per-device salt. Same <code>EncryptionConfig</code> type, structurally different secret.</li>
+</ul>
+
+<div class="callout warn">
+  <p class="eyebrow">The correction that matters</p>
+  <p>A first-pass review concluded "MLS group state cannot transfer to pacto-app via an nsec." That is true but answers the wrong question — it rules out transfer <em>by identity</em> while missing transfer <em>by bundle</em>, which bot-api explicitly supports and which crate parity makes viable.</p>
+  <p>The accurate verdict is narrower and more useful: MLS transfer is <strong>mechanically possible but protocol-hazardous</strong>. Two clients sharing one ratchet state fork and produce undecryptable messages — and bot-api knows it, stamping <code>split_brain_warning: true</code> on every single export (<code>admin.rs:1606</code>, field at <code>3860</code>). It warns about a hazard it does not prevent. That gap, not the format question, is where the round-two design space lives — and it is why the strongest new idea below avoids transfer altogether.</p>
+</div>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ul class="axes">
+  <li><span class="an">identity-bootstrap</span><span>Getting past the empty create-account screen: adopting a known identity, the PIN gate, the launch wall.</span></li>
+  <li><span class="an">local-state</span><span>Rows a fixture may legitimately write into <code>pacto.db</code>, and the PIN/salt encryption binding that gates them.</span></li>
+  <li><span class="an">network-state</span><span>Squads, MLS epochs, DMs — and the two-repo seam that stops the app joining the local world.</span></li>
+  <li><span class="an">fixture-lifecycle</span><span>Authoring, refreshing, sharing across branches and worktrees, staleness against migration ceilings, CI.</span></li>
+  <li><span class="an">on-chain</span><span>Treasury, Safe, proposals, tracked tokens; importing the Anvil deployment artifacts the stack already writes.</span></li>
+</ul>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+
+<nav class="jump">
+  <ol>
+    <li><a href="#i1">Make <code>TRUSTED_RELAYS</code> configurable</a></li>
+    <li><a href="#i2">One joint bootstrap command</a></li>
+    <li><a href="#i3">A persona cast, not one hero account</a></li>
+    <li><a href="#i4">Two-tier <code>db:seed</code> regenerated from code</a></li>
+    <li><a href="#i5">Auto-import the Anvil deployment artifacts</a></li>
+    <li><a href="#i6">Fixtures that exercise the safety rails</a></li>
+    <li><a href="#i7">Zero-click dev login</a></li>
+    <li><a href="#i8">Invite the developer, don't transfer the bot</a> <em>· new</em></li>
+    <li><a href="#i9">Scenario files that compile to bot verbs</a> <em>· new</em></li>
+    <li><a href="#i10">Bunker-minted personas — copy no secret</a> <em>· new</em></li>
+    <li><a href="#i11">Safe persona handoff, if you must transfer</a> <em>· new</em></li>
+  </ol>
+</nav>
+
+<article class="idea" id="i1">
+  <div class="ihead"><span class="rank">1</span><h3>Make <code>TRUSTED_RELAYS</code> configurable — and retire port 7000</h3></div>
+  <p><strong>Description:</strong> Replace the compile-time <code>static TRUSTED_RELAYS: &amp;[&amp;str]</code> with a list resolved at startup from an env var or dev config, defaulting to the same three public relays in release builds and overridable only in debug. Fold in the URL correction: retire <code>ws://localhost:7000</code> — which macOS ControlCenter squats — in favour of the Caddy-fronted <code>wss://localhost:7001</code>, matching the <code>wss://</code> scheme every existing entry already uses.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 250" role="img" aria-label="Today every relay path is compiled to three public relays; with a configurable list a debug build can route the same paths to the local relay.">
+      <defs>
+        <marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="Inter, sans-serif" font-size="12.5" fill="currentColor" color="#6f685e">
+        <text x="0" y="14" font-size="11" font-weight="600" letter-spacing="1.2" fill="#6f685e">TODAY</text>
+        <rect x="0" y="28" width="176" height="52" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="88" y="50" text-anchor="middle" fill="#1c1a17" font-weight="600">pacto-app</text>
+        <text x="88" y="67" text-anchor="middle" font-size="11" fill="#6f685e">MLS · keypackages · DMs</text>
+
+        <line x1="176" y1="54" x2="330" y2="54" stroke="#cfc8bc" stroke-width="1.6" marker-end="url(#ar1)" color="#cfc8bc"/>
+        <text x="253" y="45" text-anchor="middle" font-size="11" fill="#6f685e" paint-order="stroke" stroke="#fbfaf8" stroke-width="3">compiled-in</text>
+
+        <rect x="332" y="28" width="190" height="52" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="427" y="50" text-anchor="middle" fill="#1c1a17" font-weight="600">3 public relays</text>
+        <text x="427" y="67" text-anchor="middle" font-size="11" fill="#6f685e">lib.rs:115 · ~30 call sites</text>
+
+        <rect x="580" y="28" width="190" height="52" rx="8" fill="#fbf0e2" stroke="none"/>
+        <text x="675" y="50" text-anchor="middle" fill="#7d4713" font-weight="600">local relay</text>
+        <text x="675" y="67" text-anchor="middle" font-size="11" fill="#7d4713">unreachable</text>
+
+        <text x="0" y="150" font-size="11" font-weight="600" letter-spacing="1.2" fill="#14523f">WITH A RESOLVED LIST</text>
+        <rect x="0" y="164" width="176" height="52" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="88" y="186" text-anchor="middle" fill="#14523f" font-weight="600">pacto-app</text>
+        <text x="88" y="203" text-anchor="middle" font-size="11" fill="#14523f">same code paths</text>
+
+        <line x1="176" y1="190" x2="330" y2="190" stroke="#1f6f5c" stroke-width="1.6" marker-end="url(#ar1)" color="#1f6f5c"/>
+        <text x="253" y="181" text-anchor="middle" font-size="11" fill="#14523f" paint-order="stroke" stroke="#fbfaf8" stroke-width="3">resolved</text>
+
+        <rect x="332" y="164" width="190" height="52" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="427" y="186" text-anchor="middle" fill="#14523f" font-weight="600">relay list</text>
+        <text x="427" y="203" text-anchor="middle" font-size="11" fill="#14523f">env / config</text>
+
+        <line x1="522" y1="190" x2="576" y2="190" stroke="#1f6f5c" stroke-width="1.6" marker-end="url(#ar1)" color="#1f6f5c"/>
+
+        <rect x="580" y="164" width="190" height="52" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="675" y="186" text-anchor="middle" fill="#14523f" font-weight="600">wss://localhost:7001</text>
+        <text x="675" y="203" text-anchor="middle" font-size="11" fill="#14523f">seeded world</text>
+      </g>
+    </svg>
+    <figcaption>Directional. The change is one seam, not new seeding logic — every MLS, keypackage, welcome, and commons path already funnels through the same constant.</figcaption>
+  </figure>
+
+  <dl class="fields">
+    <dt>Axis</dt><dd>network-state</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>lib.rs:115</code> — <code>pub(crate) static TRUSTED_RELAYS: &amp;[&amp;str]</code>, with call sites confirmed across <code>lib.rs</code>, <code>mls.rs</code>, <code>commons.rs</code>, <code>squad_bot.rs</code>. <code>src/lib/dev/local-dev-setup.ts:12</code> hardcodes <code>const LOCAL_RELAY_URL = 'ws://localhost:7000'</code> and only adds it to the <em>user</em> relay list, which does not govern MLS. Port collision on <code>:7000</code> verified live against both Docker and macOS ControlCenter.</dd>
+    <dt>Rationale</dt><dd>Every MLS-dependent seeding approach is gated on this one constant — group creation, keypackage fetch, and welcome delivery all route through it. Until it is overridable, seeding is architecturally capped at whatever relay-free injection can fake. It also unlocks CI relay isolation, offline development, and per-run test isolation from the same change, because all four fail today for the identical reason.</dd>
+    <dt>Downsides</dt><dd>Touches ~30 call sites, and it moves a trust boundary — which relays the app believes. Needs a deliberate mechanism decision (env var vs config file vs build flag) and hard gating so a release build can never be pointed at an attacker-supplied relay. The bot roster already publishes to <code>wss://jskitty.cat/nostr</code>, which <em>is</em> in the default list, so a narrower interim path exists at the cost of pushing dev traffic onto a public relay.</dd>
+    <dt>Confidence</dt><dd>85%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">network-state</span><span class="chip">verifier: sound</span><span class="chip">enabling primitive</span></div>
+</article>
+
+<article class="idea" id="i2">
+  <div class="ihead"><span class="rank">2</span><h3>One joint bootstrap command with readiness gates</h3></div>
+  <p><strong>Description:</strong> A single <code>make dev-populated</code> in <code>pacto-app</code> that drives the sibling stack's existing targets in order — <code>up</code>, <code>seed</code>, <code>seed-squad</code>, <code>publish-key-package</code> — waits on real readiness gates between stages, reads the resulting identity back out of <code>pacto-bot-api.toml</code>, and only then launches Tauri already pointed at the seeded world. Not new seeding logic: orchestration and a handoff format for what the stack already produces.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 132" role="img" aria-label="Five staged steps with readiness gates between them, ending in a populated app launch.">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="Inter, sans-serif" font-size="11.5">
+        <rect x="0" y="30" width="140" height="46" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="70" y="49" text-anchor="middle" fill="#1c1a17" font-weight="600">stack up</text>
+        <text x="70" y="65" text-anchor="middle" fill="#6f685e">relay + anvil</text>
+
+        <rect x="182" y="30" width="140" height="46" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="252" y="49" text-anchor="middle" fill="#1c1a17" font-weight="600">seed chain</text>
+        <text x="252" y="65" text-anchor="middle" fill="#6f685e">gov + squad</text>
+
+        <rect x="364" y="30" width="140" height="46" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="434" y="49" text-anchor="middle" fill="#1c1a17" font-weight="600">publish KP</text>
+        <text x="434" y="65" text-anchor="middle" fill="#6f685e">bot roster</text>
+
+        <rect x="546" y="30" width="140" height="46" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="616" y="49" text-anchor="middle" fill="#14523f" font-weight="600">handoff</text>
+        <text x="616" y="65" text-anchor="middle" fill="#14523f">npub · addrs</text>
+
+        <rect x="728" y="30" width="140" height="46" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="798" y="49" text-anchor="middle" fill="#14523f" font-weight="600">launch app</text>
+        <text x="798" y="65" text-anchor="middle" fill="#14523f">populated</text>
+
+        <g stroke="#1f6f5c" stroke-width="1.5" color="#1f6f5c">
+          <line x1="140" y1="53" x2="178" y2="53" marker-end="url(#ar2)"/>
+          <line x1="322" y1="53" x2="360" y2="53" marker-end="url(#ar2)"/>
+          <line x1="504" y1="53" x2="542" y2="53" marker-end="url(#ar2)"/>
+          <line x1="686" y1="53" x2="724" y2="53" marker-end="url(#ar2)"/>
+        </g>
+        <g font-size="10" fill="#6f685e" text-anchor="middle">
+          <text x="159" y="22">gate</text>
+          <text x="341" y="22">gate</text>
+          <text x="523" y="22">gate</text>
+          <text x="705" y="22">gate</text>
+        </g>
+        <text x="434" y="106" text-anchor="middle" font-size="11" fill="#6f685e">today: two independent entry points, no gates, order kept in a human's head</text>
+      </g>
+    </svg>
+    <figcaption>Directional. Readiness gates are the substance — the failure mode today is launching the app before the world it expects exists.</figcaption>
+  </figure>
+
+  <dl class="fields">
+    <dt>Axis</dt><dd>fixture-lifecycle</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> Two repos with two <code>make dev</code>-shaped entry points and no documented joint workflow. The sibling stack already exposes the full command set (<code>up</code>, <code>seed</code>, <code>seed-squad</code>, <code>create-mls-group</code>, <code>publish-key-package</code>, <code>reseed-all</code>), and its <code>ensure-sibling-repos</code> target shows the authors anticipated cross-repo orchestration but only ever cloned <code>pacto-gov</code> — it never orchestrates <code>pacto-app</code>. <span class="btag ext">external:</span> staged bring-up with explicit readiness gates is standard practice in hardware-in-the-loop and test-executive frameworks, where independently-started subsystems otherwise race.</dd>
+    <dt>Rationale</dt><dd>The reframe names the seam as the actual open gap, and this is the idea that makes the seam disappear behind one invocation. Every other survivor is a component a developer would otherwise assemble by hand across two Makefiles and two READMEs.</dd>
+    <dt>Downsides</dt><dd>Creates a hard dependency from <code>pacto-app</code> onto a sibling repo's location, which needs an ownership decision (which repo hosts the orchestration, and what happens on a machine where the stack is absent). Must degrade gracefully to today's behaviour rather than breaking <code>make dev</code> for anyone without Docker.</dd>
+    <dt>Confidence</dt><dd>80%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">fixture-lifecycle</span><span class="chip">verifier: sound</span><span class="chip">closes the two-repo seam</span></div>
+</article>
+
+<article class="idea" id="i3">
+  <div class="ihead"><span class="rank">3</span><h3>A persona cast, not one hero account</h3></div>
+  <p><strong>Description:</strong> Treat the stack's existing bot roster as the canonical cast and expose named, swappable personas — <code>make dev PERSONA=captain-with-treasury</code>, <code>crew-with-dm-backlog</code>, <code>candidate-mid-vote</code> — where each persona atomically bundles an identity, its relay-published history, its EVM address, and its MLS memberships. Map <code>pacto-app</code>'s existing <code>dev-account</code> / <code>dev-buddy</code> targets onto specific crew members so two windows can hold a genuine two-party conversation.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 196" role="img" aria-label="The dev stack's five bot identities on the left map to named app-side personas on the right; today no mapping exists.">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="Inter, sans-serif" font-size="11.5">
+        <text x="0" y="14" font-size="10.5" font-weight="600" letter-spacing="1.1" fill="#6f685e">DEV-ENV ROSTER (SHIPPED)</text>
+        <text x="880" y="14" text-anchor="end" font-size="10.5" font-weight="600" letter-spacing="1.1" fill="#14523f">APP-SIDE PERSONAS (MISSING)</text>
+
+        <g>
+          <rect x="0" y="28" width="150" height="30" rx="6" fill="#f4f2ee" stroke="#cfc8bc"/>
+          <text x="12" y="47" fill="#1c1a17" font-weight="600">captain</text>
+          <rect x="0" y="66" width="150" height="30" rx="6" fill="#f4f2ee" stroke="#cfc8bc"/>
+          <text x="12" y="85" fill="#1c1a17" font-weight="600">candidate</text>
+          <rect x="0" y="104" width="150" height="30" rx="6" fill="#f4f2ee" stroke="#cfc8bc"/>
+          <text x="12" y="123" fill="#1c1a17" font-weight="600">crew-1</text>
+          <rect x="0" y="142" width="150" height="30" rx="6" fill="#f4f2ee" stroke="#cfc8bc"/>
+          <text x="12" y="161" fill="#1c1a17" font-weight="600">crew-2 · crew-3</text>
+        </g>
+
+        <rect x="330" y="60" width="212" height="80" rx="10" fill="#fbf0e2" stroke="none"/>
+        <text x="436" y="90" text-anchor="middle" fill="#7d4713" font-weight="600">no mapping today</text>
+        <text x="436" y="110" text-anchor="middle" font-size="10.5" fill="#7d4713">dev-account / dev-buddy</text>
+        <text x="436" y="125" text-anchor="middle" font-size="10.5" fill="#7d4713">are unwired names</text>
+
+        <g stroke="#cfc8bc" stroke-width="1.4" color="#cfc8bc">
+          <line x1="152" y1="43" x2="326" y2="80" marker-end="url(#ar3)"/>
+          <line x1="152" y1="81" x2="326" y2="94" marker-end="url(#ar3)"/>
+          <line x1="152" y1="119" x2="326" y2="108" marker-end="url(#ar3)"/>
+          <line x1="152" y1="157" x2="326" y2="122" marker-end="url(#ar3)"/>
+        </g>
+
+        <g stroke="#1f6f5c" stroke-width="1.5" color="#1f6f5c">
+          <line x1="544" y1="100" x2="600" y2="100" marker-end="url(#ar3)"/>
+        </g>
+
+        <g>
+          <rect x="606" y="28" width="274" height="30" rx="6" fill="#e6f2ee" stroke="none"/>
+          <text x="618" y="47" fill="#14523f" font-weight="600">captain-with-treasury</text>
+          <rect x="606" y="66" width="274" height="30" rx="6" fill="#e6f2ee" stroke="none"/>
+          <text x="618" y="85" fill="#14523f" font-weight="600">candidate-mid-vote</text>
+          <rect x="606" y="104" width="274" height="30" rx="6" fill="#e6f2ee" stroke="none"/>
+          <text x="618" y="123" fill="#14523f" font-weight="600">crew-with-dm-backlog</text>
+          <rect x="606" y="142" width="274" height="30" rx="6" fill="#e6f2ee" stroke="none"/>
+          <text x="618" y="161" fill="#14523f" font-weight="600">blank-slate</text>
+        </g>
+      </g>
+    </svg>
+    <figcaption>Directional. The capability exists on the left and the target names exist on the right; the gap is a mapping, not new machinery.</figcaption>
+  </figure>
+
+  <dl class="fields">
+    <dt>Axis</dt><dd>identity-bootstrap</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> the stack defines per-bot capability sets and a crew roster via <code>PACTO_SQUAD_CREW_BOT_IDS=crew-1,crew-2,candidate</code>, with deterministic committed nsec values per bot. <code>pacto-app</code>'s Makefile already carries <code>dev-account</code> and <code>dev-buddy</code> as persistent named identities — the names exist, the wiring to the roster does not. Verifier confirmed both halves are real.</dd>
+    <dt>Rationale</dt><dd>This answers the request literally: the ask was "a few predefined users", plural. It also converts UI states that are currently laborious to reach — a candidate mid-vote, a crew member with an unread DM backlog — into a flag, and makes genuine two-party DM and group testing possible instead of monologue-against-fixture-rows.</dd>
+    <dt>Downsides</dt><dd>Personas are a maintenance surface: each needs an owner and a script kept current, and the set will drift toward "whatever someone needed once". Worth capping at three or four deliberately chosen states. Depends on #1 or #2 to actually deliver the relay history a persona claims to have.</dd>
+    <dt>Confidence</dt><dd>78%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">identity-bootstrap</span><span class="chip">verifier: sound</span><span class="chip">answers the literal ask</span></div>
+</article>
+
+<article class="idea" id="i4">
+  <div class="ihead"><span class="rank">4</span><h3>Two-tier <code>db:seed</code>, regenerated from code and reused by CI</h3></div>
+  <p><strong>Description:</strong> Promote the seeding machinery the repo already has — <code>write_legacy_store_fixture</code>, <code>seed_pre_v28_schema</code>, <code>upsert_squad_inner</code>, <code>insert_entry</code> — from private test-vector code into a supported seeding entry point that regenerates a migration-current database on demand. Two tiers: a relay-backed tier for fidelity, and a relay-free tier that constructs <code>RumorEvent</code>s and calls <code>process_rumor</code> directly. Package the relay-free tier as a plain Rust library so Docker-less CI gets populated-state coverage for the first time.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>local-state</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> all four helpers verified to exist (<code>mls_store_reset.rs:970</code>, <code>migrations/mod.rs:186</code>, <code>squad_catalog.rs:267</code>, <code>catch_up.rs:92</code>), each private or test-only. <code>process_rumor</code> confirmed <code>pub</code> and relay-free at <code>rumor.rs:125-128</code>. CI confirmed to provision no fixture data in any job. <span class="btag ext">external:</span> Rails <code>db:seed</code> as a first-class, code-driven seeding command — the pattern external research found conspicuously absent from Nostr and E2E-messenger ecosystems.</dd>
+    <dt>Rationale</dt><dd>Regenerating from code is the one approach that structurally avoids the storage-format landmine: there is no stale artifact to become divergent because nothing is retained. The same investment then pays twice, since the generators double as backward-compatibility vectors for future migrations, and a third time when CI reuses the identical command.</dd>
+    <dt>Downsides</dt><dd>Promoting test-only code to a supported surface raises its maintenance obligation and blast radius. A new Tauri command needs a real frontend caller or it trips the documented orphaned-command failure — a standalone binary or library avoids that risk entirely and is probably the right shape. <strong>One correction to fold in:</strong> the MLS half of the relay-free tier is weaker than it first appeared — <code>mls_keypackage_index</code> is a doc-comment name, not a table (the real one is <code>mls_keypackages</code>, <code>V1__initial_schema.sql:82</code>), and the "prefer local index" text at <code>mls.rs:425-440</code> sits inside a block comment, not executing code. Priming MLS state offline needs verification against <code>mls.rs:507-527</code> before anyone commits to it.</dd>
+    <dt>Confidence</dt><dd>72%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">local-state</span><span class="chip">verifier: sound (citations corrected)</span><span class="chip">unlocks CI</span></div>
+</article>
+
+<article class="idea" id="i5">
+  <div class="ihead"><span class="rank">5</span><h3>Auto-import the Anvil deployment artifacts, with version pinning</h3></div>
+  <p><strong>Description:</strong> The stack already writes real local-chain addresses to <code>full-system.json</code> and <code>squad.json</code>; nothing reads them. Have the dev build import those artifacts at launch to populate the existing <code>local</code> (31337) chain entry and treasury addresses, deleting the manual Settings → EVM step. Stamp each deployment with an accession id that the app checks, so a mismatched or stale artifact refuses loudly instead of silently resolving wrong addresses.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>on-chain</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>wallet-assets.json</code> carries a <code>local</code> (31337 → <code>http://localhost:8545</code>) entry with zero-address placeholders, verified verbatim; <code>pacto-protocol-addresses.json</code> holds only Sepolia; <code>local-dev-setup.ts</code> explicitly opts out of wiring EVM, leaving it a manual step. <span class="btag ext">external:</span> versioned reference assemblies in genomics (GRCh37/GRCh38), where tooling refuses to mix coordinate systems rather than silently producing wrong results.</dd>
+    <dt>Rationale</dt><dd>This is a fully populated artifact sitting on disk beside a config file with matching empty fields — an existing bridge with nobody walking across it. The pinning half matters because without it a future import has no way to detect that a <code>squad.json</code> came from an Anvil instance whose contracts no longer match the running build's ABI, which is precisely the silent-mismatch class the storage-format gate already refuses to tolerate elsewhere.</dd>
+    <dt>Downsides</dt><dd>Takes on a cross-repo dependency on an artifact format the other repo owns and can change. Needs defined behaviour when the artifact is absent, stale, or from a wiped chain. The accession scheme is only worth it if it is enforced — an unchecked version stamp is worse than none.</dd>
+    <dt>Confidence</dt><dd>75%</dd>
+    <dt>Complexity</dt><dd>Low–Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">on-chain</span><span class="chip">verifier: sound</span></div>
+</article>
+
+<article class="idea" id="i6">
+  <div class="ihead"><span class="rank">6</span><h3>Fixtures that exercise the safety rails, not the happy path</h3></div>
+  <p><strong>Description:</strong> A second fixture target that deliberately seeds adversarial state rather than a plausible inbox: an <code>Unrecognized</code>-format profile sitting beside a valid one, orphaned rows with no matching event, and enough profiles to actually reach <code>SCAN_DEADLINE</code>. Pair it with a checksum over the resulting logical state so a regenerated fixture that silently diverges is caught as a desync rather than discovered later through an unrelated failure.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>fixture-lifecycle</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>AccountScanVerdict</code> never returns Delete for an <code>Unrecognized</code> or <code>Divergent</code> profile — verified with dedicated regression tests at <code>account_manager.rs:352-382,812-830</code> — and <code>SCAN_DEADLINE</code> is a real 5s bound at <code>storage_format.rs:23</code> that no realistic local profile count has ever approached. <span class="btag ext">external:</span> lockstep and rollback netcode compute periodic state checksums precisely because replay divergence is silent and catastrophic otherwise.</dd>
+    <dt>Rationale</dt><dd>PR #239 exists because of storage-format collisions, and the safety code written in response has never been exercised by a fixture that actually triggers it. A realistic-looking populated user never runs those paths; only a deliberately hostile one does. This is the only survivor that is different in kind rather than degree, and it is the one that would have caught the bug class that started all of this.</dd>
+    <dt>Downsides</dt><dd>Serves testing rather than the daily developer-experience complaint that prompted the ask, so it competes for the same effort without making anyone's <code>make dev</code> nicer. The checksum half only earns its keep once fixtures are regenerated often enough to drift.</dd>
+    <dt>Confidence</dt><dd>68%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">fixture-lifecycle</span><span class="chip">verifier: sound</span><span class="chip">different in kind</span></div>
+</article>
+
+<article class="idea" id="i7">
+  <div class="ihead"><span class="rank">7</span><h3>Zero-click dev login — automate the import flow that already ships</h3></div>
+  <p><strong>Description:</strong> Write the PIN-encrypted key, salt, and session marker into the sandbox's app-data directory before Tauri starts, so the auth state machine finds what it is looking for and lands authenticated with no create-account screen and no PIN entry. Where a new command is genuinely needed, the smaller change is letting <code>test_login_fixture</code> accept a supplied nsec instead of always generating a random one, and having it persist the key the way <code>createAccount</code> does.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 116" role="img" aria-label="The auth state machine has three states; the first gate fails today because no key file exists on disk.">
+      <defs>
+        <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g font-family="Inter, sans-serif" font-size="11.5">
+        <rect x="0" y="34" width="182" height="44" rx="8" fill="#fbeae7" stroke="none"/>
+        <text x="91" y="53" text-anchor="middle" fill="#7a2620" font-weight="600">needs-auth</text>
+        <text x="91" y="69" text-anchor="middle" font-size="10.5" fill="#7a2620">stuck here today</text>
+
+        <line x1="182" y1="56" x2="292" y2="56" stroke="#cfc8bc" stroke-width="1.5" marker-end="url(#ar4)" color="#cfc8bc"/>
+        <text x="237" y="46" text-anchor="middle" font-size="10.5" fill="#6f685e" paint-order="stroke" stroke="#fbfaf8" stroke-width="3">hasStoredKey()</text>
+
+        <rect x="294" y="34" width="182" height="44" rx="8" fill="#f4f2ee" stroke="#cfc8bc"/>
+        <text x="385" y="53" text-anchor="middle" fill="#1c1a17" font-weight="600">needs-pin</text>
+        <text x="385" y="69" text-anchor="middle" font-size="10.5" fill="#6f685e">6 digits, twice</text>
+
+        <line x1="476" y1="56" x2="586" y2="56" stroke="#cfc8bc" stroke-width="1.5" marker-end="url(#ar4)" color="#cfc8bc"/>
+        <text x="531" y="46" text-anchor="middle" font-size="10.5" fill="#6f685e" paint-order="stroke" stroke="#fbfaf8" stroke-width="3">Argon2id ~100ms</text>
+
+        <rect x="588" y="34" width="182" height="44" rx="8" fill="#e6f2ee" stroke="none"/>
+        <text x="679" y="53" text-anchor="middle" fill="#14523f" font-weight="600">authenticated</text>
+        <text x="679" y="69" text-anchor="middle" font-size="10.5" fill="#14523f">navbar renders</text>
+
+        <text x="0" y="106" font-size="10.5" fill="#6f685e">Planting the key file ahead of launch satisfies both gates, so neither screen is ever shown.</text>
+      </g>
+    </svg>
+    <figcaption>Directional. The gate is a file-existence check, not a crypto cost — which is why this is cheap.</figcaption>
+  </figure>
+
+  <dl class="fields">
+    <dt>Axis</dt><dd>identity-bootstrap</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>checkAuthStatus</code> (<code>auth.ts:165-190</code>) is a three-state machine gated on <code>hasStoredKey()</code> finding a PIN-encrypted key on disk; <code>test_login_fixture</code> (<code>lib.rs:6091-6150</code>) initialises backend state and an empty database but never persists that key, so the UI stays on the login screen. Argon2id is ~100ms per <code>crypto.rs:39-41</code>, so the PIN step is a UI gate, not a cost.</dd>
+    <dt>Rationale</dt><dd>Ranked last deliberately, and the reason is the most useful finding in this run. Three independent frames proposed this as <em>the</em> unlock, but <strong>identity adoption already ships</strong>: <code>importAccount(recoveryPhrase, pin)</code> at <code>auth.ts:250</code> and a raw-nsec primitive at <code>src/lib/api/auth.ts:13-15</code> both work today. So this is not new capability — it is automating a manual path that already exists. That still has real value, because it is the cheapest item here and the one every other survivor's inner loop sits on top of, but it should not be mistaken for the architectural gap.</dd>
+    <dt>Downsides</dt><dd>Bypassing the auth state machine on a build flag is a security-adjacent decision even when compile-gated out of release, and letting a debug command accept externally-supplied private keys widens that surface. Delivers little on its own: without #1 or #2 the developer lands authenticated into an account that is still empty.</dd>
+    <dt>Confidence</dt><dd>88%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">identity-bootstrap</span><span class="chip">verifier: weak — overlaps shipped import</span><span class="chip">cheapest win</span></div>
+</article>
+
+<h3 style="margin:2.6rem 0 .3rem;font-size:1.05rem;">Round two — after <code>pacto-bot-api</code></h3>
+<p style="color:var(--muted);font-size:.9rem;margin-top:.2rem;">Numbered 8–11 by arrival, not by merit. On merit <strong>#8 would slot in at position 2</strong>: it needs almost no new code, carries no protocol hazard, and plausibly works today.</p>
+
+<article class="idea" id="i8">
+  <div class="ihead"><span class="rank">8</span><h3>Invite the developer, don't transfer the bot</h3></div>
+  <p><strong>Description:</strong> For the case that actually matters — a developer wanting to be a member of a squad that personas have already populated — move nothing. Run the already-shipped <code>pacto-bot-admin mls-group invite --bot &lt;ID&gt; --group &lt;GROUP&gt; --recipient &lt;DEV_NPUB&gt;</code> and let the developer's own pacto-app identity join as a genuinely separate MLS member. The bot stays live, the app derives its own ratchet state from a real Welcome message, and there is no shared key, no bundle, and no split brain — because nothing was copied.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>network-state</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>mls-group invite --bot --group --recipient</code> exists today at <code>src/admin.rs:605-618</code>, alongside <code>create</code> with an explicit additive <code>--admin</code> set. The hazard it sidesteps is bot-api's own: every <code>export</code> payload is stamped <code>split_brain_warning: true</code> (<code>admin.rs:1606</code>). <span class="btag rsn">reasoned:</span> MLS binds group membership to a client's own key material and ratchet state, so a Welcome-derived member is the protocol's intended way to add a participant. Copying a store makes two clients share one ratchet; inviting makes two members with two ratchets. Only the second is what MLS is designed to do.</dd>
+    <dt>Rationale</dt><dd>This is the only path in the entire design space that is hazard-free <em>by construction</em> rather than hazard-managed — every transfer-based idea exists to make copying safe, and this asks whether copying was ever the right default. It may also work before anything else on this list lands: the bots already publish to <code>wss://jskitty.cat/nostr</code>, which is in the app's default <code>TRUSTED_RELAYS</code>, so the Welcome can reach a stock debug build without idea #1. That makes it the natural first experiment — and the cheapest way to find out whether the rest of this list is even needed.</dd>
+    <dt>Downsides</dt><dd>Gives membership, not history: MLS forward secrecy means a newly-invited member cannot read messages sent before it joined, so "populated backlog" still needs bots to post <em>after</em> the invite (which is what idea #9 automates). Requires the developer's npub to exist first, so it composes with #7 rather than replacing it. Relying on the public relay as the interim transport pushes dev traffic onto shared infrastructure — acceptable briefly, not as the steady state.</dd>
+    <dt>Confidence</dt><dd>84%</dd>
+    <dt>Complexity</dt><dd>Low</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">network-state</span><span class="chip">new in round two</span><span class="chip">hazard-free by construction</span></div>
+</article>
+
+<article class="idea" id="i9">
+  <div class="ihead"><span class="rank">9</span><h3>Scenario files that compile to bot verbs, verified by <code>trace-events</code></h3></div>
+  <p><strong>Description:</strong> Treat the bot fleet as a fixture-authoring language rather than a source of data to copy. A declarative scenario file names participants and a timeline — <em>t+0 captain DMs the dev; t+5m captain creates group "council" and invites crew-1; t+10m crew-1 posts three messages; t+15m a poll opens</em> — and a runner walks it, composing <code>publish-profile</code>, <code>send-test-dm</code>, and <code>mls-group create|invite</code>. Author it as one of the pytest files <code>new --scaffold</code> already generates, so the scenario is the SDK's own test and cannot drift from the SDK's API. Snapshot <code>trace-events</code> output as a golden file so CI catches the day a scenario silently stops producing what it claims.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>fixture-lifecycle</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> the primitives are stable and shell-composable today — <code>send-test-dm &lt;BOT&gt; &lt;RECIPIENT&gt; &lt;CONTENT&gt;</code> (<code>admin.rs:435-444</code>), <code>mls-group create|invite</code> (<code>admin.rs:584-618</code>), <code>publish-profile</code> (<code>admin.rs:374-378</code>), and <code>trace-events --since --limit</code> (<code>admin.rs:450-461</code>). <code>new --scaffold</code> generates a Python project with pytest by default, skippable via <code>--no-tests</code> (<code>admin.rs:294-308</code>). <span class="btag ext">external:</span> load-testing traffic generators and synthetic-monitoring canary users, where the generator is version-controlled alongside the system it exercises rather than maintained as a side script.</dd>
+    <dt>Rationale</dt><dd>This is what makes personas <em>have a history</em> rather than merely exist, and it closes the gap idea #8 leaves open — invitation grants membership, scenarios produce the backlog. Because it drives the real protocol path, the resulting state is genuinely cryptographic rather than forged, which is precisely what a hand-written row-inserting seed script can never achieve for MLS. Routing it through the scaffolded pytest deletes the usual seed-script-versus-test-suite split before it starts, and <code>trace-events</code> means the verification oracle costs nothing to build.</dd>
+    <dt>Downsides</dt><dd>A scenario format is a small language, and small languages grow: keep it declarative and resist making it Turing-complete. Scenarios encode assumptions about message and vote encoding, so they need an owner and will break when those change — the golden-file diff is what makes that break loud instead of silent. Wall-clock timelines need to be simulated rather than actually waited out.</dd>
+    <dt>Confidence</dt><dd>76%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">fixture-lifecycle</span><span class="chip">new in round two</span><span class="chip">produces real protocol state</span></div>
+</article>
+
+<article class="idea" id="i10">
+  <div class="ihead"><span class="rank">10</span><h3>Bunker-minted personas — copy no secret at all</h3></div>
+  <p><strong>Description:</strong> Mint dev personas with <code>pacto-bot-admin new --backend bunker_local</code> instead of <code>--backend nsec</code>, so the identity lives behind a local NIP-46 signer and no private key is ever written into a config file, an env var, or a shell script. The dev stack already runs a <code>nip46-bunker</code> container; today <code>seed-squad.sh</code> only ever uses the nsec backend and then extracts raw keys to pass around.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>identity-bootstrap</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> <code>--backend</code> accepts <code>nsec</code> (documented "dev-only"), <code>bunker_local</code>, and <code>bunker_remote</code> (<code>admin.rs:274-277</code>), with <code>test-bunker &lt;BOT_ID&gt;</code> (<code>admin.rs:379-384</code>) to verify a connection and pubkey match. The dev stack's compose file already runs a <code>nip46-bunker</code> service. <code>--emit-secrets</code> exists precisely because printing raw keys is otherwise deliberately avoided (<code>admin.rs:369-371</code>).</dd>
+    <dt>Rationale</dt><dd>Every other idea here — the persona cast, zero-click login, the handoff bundle — assumes a key gets copied from somewhere into the app's keystore, and then spends effort making that copy safe. This removes the copy. It is the difference between a faster way to move a secret and not needing to move one, and it retires the standing caveat that committed fixture identities leak their own nsec and EVM key to anyone with file access.</dd>
+    <dt>Downsides</dt><dd>Adds a live dependency: the bunker must be running for a persona to sign anything, so a developer offline or with a half-started stack gets a confusing failure rather than a clean one. It also exercises a NIP-46 path the desktop app may not fully support today — worth confirming before committing, since a persona that cannot sign is worse than one with an exposed throwaway key. Best treated as the eventual default rather than the first move.</dd>
+    <dt>Confidence</dt><dd>62%</dd>
+    <dt>Complexity</dt><dd>Medium</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">identity-bootstrap</span><span class="chip">new in round two</span><span class="chip">needs NIP-46 support check</span></div>
+</article>
+
+<article class="idea" id="i11">
+  <div class="ihead"><span class="rank">11</span><h3>Safe persona handoff — only if you must transfer</h3></div>
+  <p><strong>Description:</strong> If a developer genuinely needs to <em>become</em> a persona rather than join alongside it, the transfer must be one composed operation, never a sequence of individually-safe primitives a hurried developer can mis-order. A single <code>handoff</code> entry point that: retires the source atomically at export (revoking <code>SendGroupMessages</code>, <code>ReceiveGroupMessages</code>, <code>CreateMlsGroup</code>, <code>InviteToMlsGroup</code> in the same transaction that writes the bundle), re-keys on import (open the store with the bundle's raw key, copy group state, rewrite under a freshly PIN-derived key, then shred the imported key), and marks the bundle consumed so a second import fails loudly instead of forking the ratchet.</p>
+  <dl class="fields">
+    <dt>Axis</dt><dd>identity-bootstrap</dd>
+    <dt>Basis</dt><dd class="basis"><span class="btag">direct:</span> export is read-only today and mutates nothing about the source (<code>admin.rs:1752-1826</code>), while stamping <code>split_brain_warning: true</code> on every payload (<code>admin.rs:1606</code>) — a hazard the tool announces but leaves entirely to operator discipline. Import is idempotent with no memory of prior imports (<code>admin.rs:1868-1970</code>). The re-key requirement is forced by a verified asymmetry: bot-api mints a raw random 32-byte key via <code>getrandom</code> into a <code>.key</code> sidecar (<code>mls_key.rs:129-137</code>), whereas pacto-app derives its key from PIN and salt — both feeding the identical <code>EncryptionConfig::new(key)</code> (<code>admin.rs:1850</code>, <code>mls.rs:324-325</code>).</dd>
+    <dt>Rationale</dt><dd>Ranked last on purpose: this is the idea you only build if #8 turns out to be insufficient. But if transfer does happen, these are not optional refinements — they are what makes it shippable. Without re-keying, import either bolts a raw-key unlock path onto the app (a permanent bypass of PIN gating) or the store simply will not open under normal unlock. Without atomic retirement, a hazard the tooling already warns about is left to memory. A hazard that a tool announces and does not prevent is one that eventually fires.</dd>
+    <dt>Downsides</dt><dd>Substantially more work than #8 for a narrower case, and it spans two repos' security models, so it needs an owner on both sides. Re-keying means walking MDK's storage trait rather than copying a file, which couples the implementation to <code>mdk</code> internals and to the version parity that makes this possible at all — parity that is true today and nobody currently enforces.</dd>
+    <dt>Confidence</dt><dd>58%</dd>
+    <dt>Complexity</dt><dd>High</dd>
+  </dl>
+  <div class="ichips"><span class="chip k">identity-bootstrap</span><span class="chip">new in round two</span><span class="chip">build only if #8 falls short</span></div>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<table>
+  <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Relay impersonation via hosts-file remap + private CA for the three real relay hostnames</td><td>Basis refuted on responsibility. A machine-wide MITM against production relay hostnames, with a silent self-DoS when the hosts entry is forgotten. Idea #1 solves the same problem safely.</td></tr>
+    <tr><td>2</td><td>Prebuilt <code>pacto.db</code> snapshot, copied rather than generated, for sub-second seeding</td><td>Refuted by the storage-format gate. A copied artifact from a newer-migration branch is exactly the landmine that blocks every account and which orphan cleanup deliberately refuses to remove. Idea #4 gets the speed without the hazard.</td></tr>
+    <tr><td>3</td><td>Seed the relay before Tauri launches so the empty-relay timeout tail never fires</td><td>Causal premise unverified. NIP-01 EOSE is not normally data-dependent, so "the relay is empty" may not be why those timeouts elapse. Needs runtime instrumentation before it is actionable; parallelising the calls is the more plausible fix.</td></tr>
+    <tr><td>4</td><td>Anvil <code>evm_snapshot</code>/<code>evm_revert</code> for instant on-chain state</td><td>Sound but out of scope — optimises the dev stack's own reseed cycle rather than the app-side gap that prompted the ask. Worth filing against <code>pacto-dev-env</code> separately.</td></tr>
+    <tr><td>5</td><td>Branch-aware garbage collection for <code>test_fixtures/dev-branch-*</code></td><td>A chore, not a discussion — below the ambition floor. Its staleness-detection half is folded into idea #6.</td></tr>
+    <tr><td>6</td><td>Mother-culture clone-and-feed of the stack's relay and bot volumes</td><td>Duplicates the distribution concern in ideas #4 and #5 while adding cross-repo volume ownership complexity.</td></tr>
+    <tr><td>7</td><td>Golden relay cassette: record a real MLS session once, replay it forever</td><td>Too expensive relative to value. The stack already re-runs the real handshake cheaply via <code>create-mls-group</code>, so the cassette buys fidelity that is not currently scarce.</td></tr>
+    <tr><td>8</td><td>"Join Local World" as a third onboarding screen</td><td>Duplicates idea #2 with more shipping-app surface area; the reframe it carries is already captured there.</td></tr>
+    <tr><td>9</td><td>Zero-app-code seeding driven entirely through UI automation</td><td>Duplicates idea #7 with worse ergonomics — slower, UI-fragile, and it still pays the full launch wall.</td></tr>
+    <tr><td>10</td><td>MCP PIN paste-fill shim to replace twelve keyboard calls with one</td><td>Tactical chore below the ambition floor, and subsumed by idea #7, which removes the PIN screen from the dev loop entirely.</td></tr>
+    <tr><td>11</td><td>Check golden export bundles into the repo as the seed artifact, replacing docker volumes</td><td>Recreates the committed-artifact staleness problem in a worse domain. A stale <code>pacto.db</code> is a launch blocker; a stale MLS ratchet bundle is a split brain. Regenerate from scenarios (#9) instead.</td></tr>
+    <tr><td>12</td><td>A shared capability manifest consumed by both dev personas and production bot onboarding</td><td>Genuinely interesting, but folded into #3 rather than kept separate — it sharpens what a persona <em>is</em> (a capability set, not just a name) without being a distinct direction to choose.</td></tr>
+    <tr><td>13</td><td>Bundle staleness keyed on MLS epoch, and a formal cross-repo bundle schema</td><td>Both are real requirements <em>of</em> #11 rather than alternatives to it; folded in. Neither earns a decision of its own until transfer is chosen over invitation.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<footer class="composition-signal">
+  Composed 2026-08-08 by ce-ideate from the session prompt on <a href="https://github.com/covenant-gov/pacto-app/pull/239">PR #239</a> follow-up seeding. Round one grounded against <code>pacto-app</code> and <code>pacto-dev-env</code> (44 candidates, six frames, fresh-context basis verification); round two added <code>pacto-bot-api</code> after the user surfaced it (19 further candidates, three frames), with the MLS-portability verdict re-derived directly from both repos' lockfiles and key-handling code.
+</footer>
+
+</div>
+</body>
+</html>

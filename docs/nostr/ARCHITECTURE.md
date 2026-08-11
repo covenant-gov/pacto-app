@@ -51,7 +51,13 @@ Two live subscription paths (see also the long comment block near **`list_group_
 
 ## Relays and trust
 
-Relay lists and “trusted” relays for MLS are configured in Rust (e.g. **`TRUSTED_RELAYS`** and client setup in `lib.rs`). When changing relay behavior, grep for `TRUSTED_RELAYS`, `add_relay`, and subscription filters.
+Debug builds resolve the trusted relay set at runtime (production default, or a
+`PACTO_TRUSTED_RELAYS` override) through **`trusted_relays::trusted_relays()`**
+in `src-tauri/src/trusted_relays.rs`; nothing outside that module can see the
+raw list. When changing relay behavior, grep for `trusted_relays::`, `add_relay`,
+and subscription filters. The local dev stack's relay is `wss://localhost:7001`
+(Caddy TLS) — the app must trust Caddy's local development CA (`caddy trust`)
+for that connection to succeed.
 
 ## Frontend
 

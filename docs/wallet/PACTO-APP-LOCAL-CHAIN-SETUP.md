@@ -10,7 +10,7 @@ Both are first-class and do **not** conflict. They differ only in how the fronte
 |---|---|---|
 | Typically run with | `pnpm tauri:dev` | production build (`pnpm build` / `pnpm tauri:build`), or `pnpm tauri:dev` |
 | `import.meta.env.DEV` | `true` | `false` for a production build; `true` under `tauri:dev` |
-| Nostr transport | real/public relays you add | local relay `ws://localhost:7000` |
+| Nostr transport | real/public relays you add | local relay `wss://localhost:7001` (Caddy TLS) |
 | Chain under test | Sepolia (plus mainnet/Arbitrum as needed) | Local Anvil `http://localhost:8545` (chain `31337`) |
 | Fresh-account enabled chains | **dev:** Sepolia + Local Anvil auto-checked | **prod build:** Arbitrum only → enable Local Anvil manually |
 | Needs the `pacto-dev-env` Docker stack | no | yes |
@@ -21,7 +21,7 @@ Why they don't collide: **Local Anvil is opt-in in every build and never force-e
 
 ## The one dev-only convenience: local relay auto-add
 
-In **Vite dev builds** (`import.meta.env.DEV`), the app adds `ws://localhost:7000` as a custom Nostr relay to a newly unlocked account if it is missing — a convenience for workflow B. It does **not** auto-enable the `local` chain or set its RPC; those are manual, opt-in steps (see §3). Existing user changes are never overwritten; the applied marker lives in `sessionStorage` and resets on restart. Source: `src/lib/dev/local-dev-setup.ts`, wired from account create / import / unlock in `src/stores/auth.ts`. If the relay is not running at unlock, it logs a warning and continues.
+In **Vite dev builds** (`import.meta.env.DEV`), the app adds `wss://localhost:7001` as a custom Nostr relay to a newly unlocked account if it is missing — a convenience for workflow B. It does **not** auto-enable the `local` chain or set its RPC; those are manual, opt-in steps (see §3). Existing user changes are never overwritten; the applied marker lives in `sessionStorage` and resets on restart. Source: `src/lib/dev/local-dev-setup.ts`, wired from account create / import / unlock in `src/stores/auth.ts`. If the relay is not running at unlock, it logs a warning and continues.
 
 ## How `local` behaves across builds
 
@@ -40,15 +40,22 @@ docker compose up -d --build
 
 This starts:
 
-- Nostr relay on `ws://localhost:7000`
+- Nostr relay on `wss://localhost:7001` (Caddy TLS)
 - Anvil EVM testnet on `http://localhost:8545`
+
+The relay is TLS-only: trust Caddy's local development CA once per machine
+before the app will connect —
+
+```bash
+caddy trust
+```
 
 Verify both endpoints respond:
 
 ```bash
 curl -s http://localhost:8545 -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
-curl -s http://localhost:7000 | head -5
+curl -s https://localhost:7001 | head -5
 ```
 
 ## 2. Add the local relay
@@ -58,10 +65,10 @@ In the app:
 1. Open **Settings** from the navbar tab labeled **Settings**.
 2. In the left sidebar, click **Nostr**.
 3. Under **Add custom relay**:
-   - **Relay URL**: `ws://localhost:7000`
+   - **Relay URL**: `wss://localhost:7001`
    - **Mode**: `Read & write`
 4. Click **Add**.
-5. Confirm `ws://localhost:7000` appears under **Connected relays**.
+5. Confirm `wss://localhost:7001` appears under **Connected relays**.
 
 > If the relay is not running when the app starts, messages and profile sync will fail. Start the Docker stack first.
 
@@ -176,7 +183,7 @@ pnpm check
 
 Then run the app and test:
 
-- **Settings → Nostr**: `ws://localhost:7000` is connected.
+- **Settings → Nostr**: `wss://localhost:7001` is connected.
 - **Settings → EVM → RPC endpoints**: **Local Anvil** defaults to `http://localhost:8545`.
 - **Settings → EVM → EVM accounts**: the imported Anvil account shows a balance.
 - Create or open a squad and deploy a Nave Pirata treasury; the factory call should land on the local Anvil node.
@@ -184,7 +191,7 @@ Then run the app and test:
 ## Security warnings
 
 - The private key `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` is public. **Use it only on a local Anvil node.** Never import it into a mainnet wallet, commit it, or share it.
-- `ws://localhost:7000` and `http://localhost:8545` are unencrypted local endpoints. Do not expose them to a network.
+- `http://localhost:8545` is an unencrypted local endpoint; `wss://localhost:7001` is TLS via Caddy's local dev CA (trusted once with `caddy trust`). Do not expose either to a network.
 - Do not commit your local `pacto-protocol-addresses.json` changes unless the project explicitly asks for them; local contract addresses are not portable across Anvil restarts.
 - When Anvil restarts, all state resets. You must redeploy the contracts and update the addresses again.
 

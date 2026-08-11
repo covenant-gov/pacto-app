@@ -7,6 +7,11 @@ import { svelteTesting } from '@testing-library/svelte/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Branch-hashed dev port set (scripts/dev-ports.mjs); defaults reproduce
+// today's fixed ports when unset (plain `pnpm dev`, `main` via `make dev`).
+const devPort = Number(process.env.PACTO_DEV_PORT) || 1420;
+const hmrPort = Number(process.env.PACTO_DEV_HMR_PORT) || 1421;
+
 const plugins = await sveltekit();
 
 const tauriConf = JSON.parse(fs.readFileSync('./src-tauri/tauri.conf.json', 'utf8'));
@@ -53,14 +58,14 @@ export default defineConfig({
   clearScreen: false,
 
   server: {
-    port: 1420,
+    port: devPort,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: 'ws',
           host,
-          port: 1421,
+          port: hmrPort,
         }
       : undefined,
     watch: {

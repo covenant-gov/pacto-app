@@ -11,9 +11,10 @@ reviewed by agents, so they must not contain mnemonics, PINs, or private keys.
 
 ## Findings
 
-- `test_login_fixture` (gated by `#[cfg(debug_assertions)]` and `PACTO_ALLOW_TEST_AUTH=1`)
-  generates a fresh Nostr keypair. It does **not** log the secret key, mnemonic, or PIN.
-  The returned payload only exposes the public `npub`.
+- `dev_login` (gated by `#[cfg(debug_assertions)]` and `PACTO_ALLOW_TEST_AUTH=1`). Backend
+  depth generates a fresh Nostr keypair; full depth logs in from a configured mnemonic. Neither
+  depth logs or returns the secret key, mnemonic, or PIN — the returned payload only exposes
+  the public `npub`.
 - The existing `debug_hot_reload_sync` returns the full in-memory `ChatState`, which
   contains `Profile` objects but no private key material.
 - The wrapper script logs command success/failure and saves raw stdout/stderr from the
@@ -26,10 +27,10 @@ reviewed by agents, so they must not contain mnemonics, PINs, or private keys.
 - Rust `println!` / `eprintln!` elsewhere in the backend may still leak sensitive
   values under debug logging. Before enabling a combined merged-log mode, each
   `println!`-style log line that touches keys, seeds, or PINs should be reviewed.
-- Screenshots could inadvertently show a secret if the UI renders one. The current
-  test fixture avoids PIN entry, so this is not a concern for the Phase 2 spec.
+- Screenshots could inadvertently show a secret if the UI renders one. `dev_login` is a
+  headless IPC call — no PIN keystrokes ever reach the UI at either depth — so this is not
+  a concern for the Phase 2 spec (which uses backend depth).
 
 ## Verdict
 
-Phase 2 merged logging is safe for the current fixture-auth path, but a dedicated
-pass is required before any broad merged-logging feature is enabled.
+Phase 2 merged logging is safe for the current `dev_login` backend-depth path, but a dedicated

@@ -23,7 +23,7 @@ describe('applyLocalDevDefaults', () => {
     });
 
     vi.mocked(listRelays).mockReset();
-    vi.mocked(addCustomRelay).mockReset().mockResolvedValue({ url: 'ws://localhost:7000', enabled: true, mode: 'both' });
+    vi.mocked(addCustomRelay).mockReset().mockResolvedValue({ url: 'wss://localhost:7001', enabled: true, mode: 'both' });
   });
 
   afterEach(() => {
@@ -38,11 +38,11 @@ describe('applyLocalDevDefaults', () => {
   it('adds the local relay when absent', async () => {
     vi.mocked(listRelays).mockResolvedValue([{ url: 'wss://relay.example.com', status: 'connected', is_default: true, is_custom: false, enabled: true, mode: 'both' }]);
     await applyLocalDevDefaults(npub);
-    expect(addCustomRelay).toHaveBeenCalledWith('ws://localhost:7000', 'both');
+    expect(addCustomRelay).toHaveBeenCalledWith('wss://localhost:7001', 'both');
   });
 
   it('skips adding the local relay when already present', async () => {
-    vi.mocked(listRelays).mockResolvedValue([{ url: 'ws://localhost:7000', status: 'connected', is_default: false, is_custom: true, enabled: true, mode: 'both' }]);
+    vi.mocked(listRelays).mockResolvedValue([{ url: 'wss://localhost:7001', status: 'connected', is_default: false, is_custom: true, enabled: true, mode: 'both' }]);
     await applyLocalDevDefaults(npub);
     expect(addCustomRelay).not.toHaveBeenCalled();
   });

@@ -181,7 +181,7 @@ Cleared on logout via `clearAccountState`, except `pacto_commons_broadcasted_<np
 | Role gate (stub) | `src/lib/commons/permissions.ts` |
 | Squad create Commons UI | `SquadCommonsVisibilityFields.svelte` |
 
-Relays: **`TRUSTED_RELAYS`** only (same curated set as other app-specific public events). No Commons traffic on MLS or DM sync paths.
+Relays: the resolved **`trusted_relays::trusted_relays()`** set only (same curated set as other app-specific public events). No Commons traffic on MLS or DM sync paths.
 
 ---
 
