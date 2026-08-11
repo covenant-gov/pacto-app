@@ -1211,12 +1211,12 @@ impl MlsService {
             }
         };
 
-        // Publish the evolution event (leave proposal) to the relay, if any.
+        // Publish the leave proposal; peers cannot drop membership without it.
         if let Some(evolution_event) = &evolution_event {
-            match client.send_event(evolution_event).await {
-                Ok(output) => crate::record_send_outcome(evolution_event, &output),
-                Err(e) => eprintln!("[MLS] Failed to publish leave proposal: {}", e),
-            }
+            let send_output = client.send_event(evolution_event).await.map_err(|e| {
+                MlsError::NetworkError(format!("Failed to publish leave proposal: {}", e))
+            })?;
+            crate::record_send_outcome(evolution_event, &send_output);
         }
 
         // Remove the group from local metadata
@@ -1380,8 +1380,9 @@ impl MlsService {
         Ok(())
     }
 
-    /// When a member publishes a voluntary leave proposal, MDK rejects it as non-admin and
-    /// leaves the group tree unchanged. Group admins finalize the leave with remove + commit.
+    /// Legacy fallback: when MDK rejects a leave proposal as Unprocessable (non-admin),
+    /// an MLS admin finalizes with remove + commit. MDK 0.8 SelfRemove uses
+    /// `publish_and_merge_auto_commit` instead.
     pub async fn finalize_voluntary_leave_as_admin(
         &self,
         wire_group_id: &str,
@@ -1469,7 +1470,114 @@ impl MlsService {
             );
         }
 
+        self.announce_member_left(wire_group_id, leaver).await;
+
         Ok(true)
+    }
+
+    /// Publish an MDK auto-committed SelfRemove (or similar) commit, merge it, and refresh roster.
+    ///
+    /// MDK 0.8 returns `MessageProcessingResult::Proposal(UpdateGroupResult)` when it stages a
+    /// leave commit locally; the commit must be published and merged or remaining members keep
+    /// the leaver in the tree.
+    pub async fn publish_and_merge_auto_commit(
+        &self,
+        wire_group_id: &str,
+        mls_group_id: &GroupId,
+        evolution_event: &nostr_sdk::Event,
+        leaver: Option<nostr_sdk::PublicKey>,
+    ) -> Result<(), MlsError> {
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
+
+        let send_output = client.send_event(evolution_event).await.map_err(|e| {
+            MlsError::NetworkError(format!("Failed to publish auto-commit: {}", e))
+        })?;
+        crate::record_send_outcome(evolution_event, &send_output);
+
+        {
+            let engine = self.engine()?;
+            engine.merge_pending_commit(mls_group_id).map_err(|e| {
+                MlsError::NostrMlsError(format!("Failed to merge auto-commit: {}", e))
+            })?;
+        }
+
+        if let Some(handle) = TAURI_APP.get() {
+            handle
+                .emit(
+                    "mls_group_updated",
+                    serde_json::json!({ "group_id": wire_group_id }),
+                )
+                .ok();
+        }
+
+        if let Err(e) = crate::sync_mls_group_participants(wire_group_id.to_string()).await {
+            eprintln!(
+                "[MLS] Failed to sync participants after auto-commit ({}): {}",
+                wire_group_id, e
+            );
+        }
+
+        if let Some(leaver) = leaver {
+            self.announce_member_left(wire_group_id, leaver).await;
+        }
+
+        Ok(())
+    }
+
+    /// Best-effort #announcements notice after a leave commit lands.
+    async fn announce_member_left(&self, wire_group_id: &str, leaver: nostr_sdk::PublicKey) {
+        use nostr_sdk::prelude::*;
+
+        let member_npub = match leaver.to_bech32() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "[MLS] announce_member_left: bech32 encode failed for {}: {}",
+                    leaver.to_hex(),
+                    e
+                );
+                return;
+            }
+        };
+
+        let client = match get_nostr_client() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pk = match client.signer().await {
+            Ok(signer) => match signer.get_public_key().await {
+                Ok(pk) => pk,
+                Err(e) => {
+                    eprintln!("[MLS] announce_member_left: pubkey: {}", e);
+                    return;
+                }
+            },
+            Err(e) => {
+                eprintln!("[MLS] announce_member_left: signer: {}", e);
+                return;
+            }
+        };
+
+        let content = serde_json::json!({
+            "type": "squad_member_left",
+            "payload": {
+                "parent_id": wire_group_id,
+                "member_npub": member_npub,
+            },
+            "pacto_virtual_bucket": "announcements",
+        })
+        .to_string();
+
+        let rumor = EventBuilder::new(Kind::TextNote, &content)
+            .tag(nostr_tags::custom_tag("pacto_bucket", ["announcements"]))
+            .build(pk);
+
+        if let Err(e) = send_mls_message(wire_group_id, rumor, None).await {
+            eprintln!(
+                "[MLS] Failed to announce member left in {}: {}",
+                wire_group_id, e
+            );
+        }
     }
 
     /// Sync group messages since last cursor position
@@ -1631,8 +1739,14 @@ impl MlsService {
 
         // Track if we were evicted from this group
         let mut was_evicted = false;
-        // Member leave proposals MDK could not commit (non-admin sender).
+        // Member leave proposals MDK could not commit (non-admin sender) — legacy fallback.
         let mut leaves_to_finalize: Vec<nostr_sdk::PublicKey> = Vec::new();
+        // MDK 0.8 SelfRemove auto-commits: publish + merge after engine scope.
+        let mut auto_commits_to_publish: Vec<(
+            nostr_sdk::Event,
+            GroupId,
+            nostr_sdk::PublicKey,
+        )> = Vec::new();
 
         // Resolve my pubkey before entering engine scope (for mine flag)
         let my_pubkey_hex = if let Ok(signer) = client.signer().await {
@@ -1798,19 +1912,13 @@ impl MlsService {
 
                                 processed = processed.saturating_add(1);
                             }
-                            MessageProcessingResult::Proposal(_proposal) => {
-                                // Proposal received (e.g., leave proposal)
-                                // Emit event to notify UI that group state may have changed
-                                if let Some(handle) = TAURI_APP.get() {
-                                    handle
-                                        .emit(
-                                            "mls_group_updated",
-                                            serde_json::json!({
-                                                "group_id": gid_for_fetch
-                                            }),
-                                        )
-                                        .ok();
-                                }
+                            MessageProcessingResult::Proposal(update) => {
+                                // SelfRemove (and similar) auto-commit: stage publish+merge after engine drop.
+                                auto_commits_to_publish.push((
+                                    update.evolution_event,
+                                    update.mls_group_id,
+                                    ev.pubkey,
+                                ));
 
                                 processed = processed.saturating_add(1);
                             }
@@ -1914,6 +2022,36 @@ impl MlsService {
                     Err(e) => {
                         eprintln!(
                             "[MLS] Failed to finalize voluntary leave for {} in {}: {}",
+                            leaver.to_hex(),
+                            gid_for_fetch,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        if !was_evicted && !auto_commits_to_publish.is_empty() {
+            for (evolution_event, mls_group_id, leaver) in auto_commits_to_publish {
+                match self
+                    .publish_and_merge_auto_commit(
+                        &gid_for_fetch,
+                        &mls_group_id,
+                        &evolution_event,
+                        Some(leaver),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        eprintln!(
+                            "[MLS] Published and merged auto-commit leave for {} in {}",
+                            leaver.to_hex(),
+                            gid_for_fetch
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[MLS] Failed to publish/merge auto-commit leave for {} in {}: {}",
                             leaver.to_hex(),
                             gid_for_fetch,
                             e
@@ -3397,6 +3535,7 @@ mod mls_restore_tests {
 #[cfg(test)]
 mod mls_leave_group_state_lost_tests {
     use super::*;
+    use nostr_sdk::prelude::*;
 
     /// Covers the store-reset scenario: after a legacy pre-0.8.0 MDK store was
     /// archived, the fresh engine store has no record of a group Pacto's own
@@ -3423,6 +3562,84 @@ mod mls_leave_group_state_lost_tests {
         assert!(
             matches!(err, mdk_core::Error::GroupNotFound),
             "MlsService::leave_group's local-only-cleanup fallback matches on this variant"
+        );
+    }
+
+    /// Pins MDK 0.8 SelfRemove: admin process_message returns Proposal(UpdateGroupResult);
+    /// after merge_pending_commit the leaver is gone. Mirrors publish_and_merge_auto_commit.
+    #[tokio::test]
+    async fn self_remove_proposal_auto_commit_then_merge_drops_leaver() {
+        let alice_keys = Keys::generate();
+        let bob_keys = Keys::generate();
+
+        let alice_mdk = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([11u8; 32])).unwrap(),
+        );
+        let bob_mdk = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([12u8; 32])).unwrap(),
+        );
+
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let bob_kp = bob_mdk
+            .create_key_package_for_event(&bob_keys.public_key(), [relay_url.clone()])
+            .expect("bob keypackage");
+        let bob_kp_event = EventBuilder::new(Kind::MlsKeyPackage, bob_kp.content)
+            .tags(bob_kp.tags_443)
+            .build(bob_keys.public_key())
+            .sign(&bob_keys)
+            .await
+            .expect("sign bob keypackage");
+
+        let group_config = NostrGroupConfigData::new(
+            "leave-test".to_string(),
+            "leave-test group".to_string(),
+            None,
+            None,
+            None,
+            vec![relay_url],
+            vec![alice_keys.public_key()],
+        );
+        let create = alice_mdk
+            .create_group(
+                &alice_keys.public_key(),
+                vec![bob_kp_event],
+                group_config,
+            )
+            .expect("create group");
+        let group_id = create.group.mls_group_id;
+        alice_mdk
+            .merge_pending_commit(&group_id)
+            .expect("alice merge create");
+
+        let welcome = &create.welcome_rumors[0];
+        let preview = bob_mdk
+            .process_welcome(&EventId::all_zeros(), welcome)
+            .expect("bob process welcome");
+        bob_mdk
+            .accept_welcome(&preview)
+            .expect("bob accept welcome");
+
+        let leave = bob_mdk.leave_group(&group_id).expect("bob leave");
+        let processed = alice_mdk
+            .process_message(&leave.evolution_event)
+            .expect("alice process leave");
+
+        let MessageProcessingResult::Proposal(update) = processed else {
+            panic!("expected Proposal(UpdateGroupResult) auto-commit, got {:?}", processed);
+        };
+
+        alice_mdk
+            .merge_pending_commit(&update.mls_group_id)
+            .expect("alice merge leave commit");
+
+        let members = alice_mdk.get_members(&group_id).expect("get_members");
+        assert!(
+            !members.contains(&bob_keys.public_key()),
+            "leaver must be absent after merge"
+        );
+        assert!(
+            members.contains(&alice_keys.public_key()),
+            "admin must remain"
         );
     }
 }

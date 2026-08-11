@@ -30,9 +30,22 @@ When **this client** is removed, sync or live **444** handling detects eviction-
 
 ## 3. Voluntary leave (`leave_mls_group`)
 
-- Engine emits a **leave proposal**; Pacto publishes it, then **removes the group row from `mls_groups`** (not merely marks it evicted) for the leaver and emits **`mls_group_left`** — the group **disappears from the leaver's list immediately** and stays gone even after a later sync.
-- Mirrors **`cleanup_evicted_group`**'s local cleanup: drops the chat from **`STATE`**, **deletes the chat/messages from DB**, and clears the **MLS event cursor** (keyed by both wire and engine group id).
-- **The group continues** for remaining members; MLS tree updates without the leaver.
+### Leaver
+
+- Non-admin **`leave_group`** creates a **SelfRemove** proposal (MDK 0.8). Pacto **must** publish that evolution event (publish failure aborts leave so peers are not left with a ghost member), then removes the group row from **`mls_groups`**, drops chat/DB/cursors, and emits **`mls_group_left`**.
+- **Admins** cannot call **`leave_group`** until they self-demote (MIP-03). Sole-admin exit without transfer is still a product gap.
+
+### Remaining members (MDK 0.8 SelfRemove)
+
+1. Sync or live **`process_message`** on the leave proposal returns **`MessageProcessingResult::Proposal(UpdateGroupResult)`** — MDK has **auto-committed** locally and staged a commit in **`evolution_event`**.
+2. Pacto **`publish_and_merge_auto_commit`**: publish that commit → **`merge_pending_commit`** → **`sync_mls_group_participants`** → **`mls_group_updated`**.
+3. The peer that successfully publishes+merges posts a structured **`squad_member_left`** application message to the same wire group (`pacto_virtual_bucket: announcements`) so `#announcements` shows a leave notice.
+
+If publish/merge is skipped, **`get_mls_group_members`** still lists the leaver → Members, Crew, and Invite filters stay wrong.
+
+### Legacy fallback
+
+Older engines sometimes returned **`Unprocessable`** with failure reason **`not processing proposal from non-admin`**. Pacto still maps that to **`finalize_voluntary_leave_as_admin`** (admin **`remove_members`** + publish + merge + leave announce). SelfRemove auto-commit is the primary path on MDK 0.8.
 
 **Admin handoff:** Pacto does **not** currently expose “add admin” / “transfer MLS admin”. Only the creator is admin at creation. If the **creator leaves**, the MLS group may end up with **no admins** → **no further kicks** from MLS until MDK + app support admin updates. Squad-level roles (e.g. Hats) are a separate product layer.
 
@@ -47,10 +60,10 @@ When **this client** is removed, sync or live **444** handling detects eviction-
 **Common cases:**
 
 1. **You left:** Local metadata is gone but the **engine** may still hold the group with a pending leave proposal.  
-2. **Someone else’s proposal** not yet committed.  
-3. **`merge_pending_commit`** did not run after an add/remove path.
+2. **Someone else’s proposal** not yet committed / auto-commit not published+merged.  
+3. **`merge_pending_commit`** did not run after an add/remove / auto-commit path.
 
-**Mitigation:** Another member commits, or engine-specific merge/discard APIs if available; restart/re-sync. Pacto merges pending commit after some operations (**`remove_member_device`**, add member) — not necessarily after every **`leave_group`**.
+**Mitigation:** Remaining members run **`publish_and_merge_auto_commit`** on **`Proposal(UpdateGroupResult)`**; fallback admin finalize for legacy Unprocessable leaves. Restart/re-sync if wedged.
 
 ---
 
@@ -60,7 +73,9 @@ When **this client** is removed, sync or live **444** handling detects eviction-
 |--------|-----|
 | Kick | Tauri command → **`remove_member_device(group_id, member_pubkey, device_id)`** |
 | Leave | **`leave_mls_group(group_id)`** |
+| Auto-commit leave (internal) | **`publish_and_merge_auto_commit`** after **`Proposal(UpdateGroupResult)`** |
 | UI refresh | **`mls_group_left`**, **`mls_group_updated`**, **`list_mls_groups`** (excludes evicted) |
+| Leave notice | Structured MLS JSON **`type: squad_member_left`** on announcements hub |
 
 ---
 

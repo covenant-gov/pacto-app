@@ -310,6 +310,7 @@
 	"messaging.structuredNotice.squadJoinResponse": "Squad join response",
 	"messaging.structuredNotice.squadJoinUpdate": "Squad join update",
 	"messaging.structuredNotice.squadMemberAdmit": "Squad member admit",
+	"messaging.structuredNotice.squadMemberLeft": "A member left the squad",
 	"messaging.structuredNotice.squadNetworkUpdated": "Squad network updated",
 	"messaging.structuredNotice.squadNetworkUpdatedTo": "Squad network updated to {network}",
 	"messaging.structuredNotice.squadRpcUpdated": "Squad RPC updated",

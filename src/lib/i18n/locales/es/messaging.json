@@ -310,6 +310,7 @@
 	"messaging.structuredNotice.squadJoinResponse": "Respuesta de unión a escuadrón",
 	"messaging.structuredNotice.squadJoinUpdate": "Actualización de unión a escuadrón",
 	"messaging.structuredNotice.squadMemberAdmit": "Admisión de miembro del escuadrón",
+	"messaging.structuredNotice.squadMemberLeft": "Un miembro dejó el escuadrón",
 	"messaging.structuredNotice.squadNetworkUpdated": "Red del escuadrón actualizada",
 	"messaging.structuredNotice.squadNetworkUpdatedTo": "Red del escuadrón actualizada a {network}",
 	"messaging.structuredNotice.squadRpcUpdated": "RPC del escuadrón actualizado",

@@ -4036,14 +4036,37 @@ async fn notifs() -> Result<bool, String> {
                                             }
                                             None
                                         }
-                                        mdk_core::prelude::MessageProcessingResult::Proposal(_proposal) => {
-                                            // Proposal received (e.g., leave proposal)
-                                            // Emit event to notify UI that group state may have changed
-                                            if let Some(handle) = TAURI_APP.get() {
-                                                handle.emit("mls_group_updated", serde_json::json!({
-                                                    "group_id": group_id_for_persist
-                                                })).ok();
-                                            }
+                                        mdk_core::prelude::MessageProcessingResult::Proposal(update) => {
+                                            // MDK 0.8 SelfRemove auto-commit: publish + merge on the same
+                                            // service that staged the commit (do not open a fresh MDK).
+                                            let evolution = update.evolution_event;
+                                            let mls_gid = update.mls_group_id;
+                                            let leaver = ev.pubkey;
+                                            let gid = group_id_for_persist.clone();
+                                            drop(engine);
+                                            rt.block_on(async {
+                                                match svc
+                                                    .publish_and_merge_auto_commit(
+                                                        &gid,
+                                                        &mls_gid,
+                                                        &evolution,
+                                                        Some(leaver),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(()) => eprintln!(
+                                                        "[MLS] Live: published and merged auto-commit leave for {} in {}",
+                                                        leaver.to_hex(),
+                                                        gid
+                                                    ),
+                                                    Err(e) => eprintln!(
+                                                        "[MLS] Live: failed to publish/merge auto-commit leave for {} in {}: {}",
+                                                        leaver.to_hex(),
+                                                        gid,
+                                                        e
+                                                    ),
+                                                }
+                                            });
                                             None
                                         }
                                         mdk_core::prelude::MessageProcessingResult::Unprocessable { mls_group_id: _ } => {
@@ -8687,8 +8710,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Leave an MLS group
-/// TODO: Implement MLS leave operation
+/// Leave an MLS group (publishes SelfRemove proposal, then local cleanup).
 #[tauri::command]
 async fn leave_mls_group(group_id: String) -> Result<(), String> {
     require_key_derivation_version_2()?;
