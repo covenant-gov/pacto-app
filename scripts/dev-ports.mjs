@@ -129,13 +129,13 @@ function claimPath(claimDir, index) {
 
 /** @param {unknown} pid @returns {boolean} */
 function isPidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
     return true;
   } catch (err) {
     // EPERM means the pid exists but is owned by someone else -- still alive.
-    return err.code === 'EPERM';
+    return /** @type {NodeJS.ErrnoException} */ (err).code === 'EPERM';
   }
 }
 
@@ -224,7 +224,7 @@ function claimIndex(claimDir, index, branch, graceMs) {
     writeClaimExclusive(target, record);
     return true;
   } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'EEXIST') throw err;
   }
 
   const existing = readClaim(target);
@@ -246,7 +246,8 @@ function claimIndex(claimDir, index, branch, graceMs) {
     writeClaimExclusive(target, record);
     return true;
   } catch (err) {
-    if (err.code === 'EEXIST') return false; // someone else won the takeover race
+    // someone else won the takeover race
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === 'EEXIST') return false;
     throw err;
   }
 }
