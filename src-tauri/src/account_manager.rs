@@ -506,6 +506,7 @@ pub fn get_db_connection<R: Runtime>(
 
     // Open new connection
     let db_path = get_database_path(handle, &npub)?;
+    crate::storage_format::prepare_profile_db_for_open(&db_path)?;
     let mut conn = rusqlite::Connection::open(&db_path)
         .map_err(|e| format!("Failed to open database: {}", e))?;
 

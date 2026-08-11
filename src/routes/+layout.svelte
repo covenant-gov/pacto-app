@@ -21,11 +21,8 @@
   }
 
   onMount(() => {
-    // The storage-format probe must precede any account enumeration -
-    // checkAuthStatus() (which drives check_any_account_exists ->
-    // list_accounts) runs from Login.svelte's own mount, and UpdateGate's
-    // wrapper is what keeps Login unmounted until the gate settles; this
-    // call is what actually starts that settling.
+    // Storage-format probe (additive rewind + breaking gate) must settle
+    // before Login mounts and enumerates accounts.
     void resolveGateAtLaunch();
     // Confirm the backend session on every layout mount; drop auth state if locked.
     void checkSession();

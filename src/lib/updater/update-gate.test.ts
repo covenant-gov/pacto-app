@@ -77,7 +77,7 @@ describe('resolveGateAtLaunch - local storage-format trigger', () => {
     expect(currentState()).toEqual({ status: 'clear' });
   });
 
-  it('blocks with reason storage-format when the probe reports an unrecognized profile', async () => {
+  it('blocks with reason storage-format when the probe reports a breaking profile', async () => {
     mockedGetStorageCompatibility.mockResolvedValue(unrecognized(2));
     await resolveGateAtLaunch();
     expect(currentState()).toEqual({
@@ -87,6 +87,12 @@ describe('resolveGateAtLaunch - local storage-format trigger', () => {
       requiredVersion: null,
       unrecognizedCount: 2,
     });
+  });
+
+  it('stays clear when the probe reports recognized after additive rewind (allRecognized true)', async () => {
+    mockedGetStorageCompatibility.mockResolvedValue(recognized());
+    await resolveGateAtLaunch();
+    expect(currentState()).toEqual({ status: 'clear' });
   });
 
   it('never blocks on a failed storage probe - a read failure is not a version problem', async () => {

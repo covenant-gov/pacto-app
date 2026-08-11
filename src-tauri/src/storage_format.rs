@@ -1,14 +1,16 @@
-//! Read-only storage-format recognition for the app database (`pacto.db`).
+//! Storage-format recognition for the app database (`pacto.db`).
 //!
 //! Reproduces refinery-core 0.9.2's `verify_migrations` abort semantics
-//! ahead of time, on a read-only connection, so the app can tell a user to
-//! update instead of surfacing refinery's own opaque migration error. Never
-//! calls `run_migrations` or `get_db_connection` -- either would migrate the
-//! database as a side effect of merely checking it.
+//! ahead of time so the app can tell a user to update instead of surfacing
+//! refinery's opaque migration error. History-only `Unrecognized` stamps
+//! that are structurally additive (extra tables/indexes/columns only) are
+//! auto-rewound; shape-breaking skew still hard-blocks launch.
 
 use rusqlite::{Connection, OpenFlags};
-use std::path::Path;
-use std::time::{Duration, Instant};
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Runtime};
 
 /// Busy-timeout mirroring `account_manager::account_has_valid_pkey`'s
@@ -181,9 +183,206 @@ pub(crate) fn classify_database(path: &Path) -> StorageFormatVerdict {
     classify_connection(&conn).unwrap_or(StorageFormatVerdict::Recognized)
 }
 
+/// Tables and indexes this build expects after applying embedded migrations.
+#[derive(Debug, Clone, Default)]
+struct SchemaSnapshot {
+    tables: HashMap<String, HashSet<String>>,
+    indexes: HashSet<String>,
+}
+
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn table_columns(conn: &Connection, table: &str) -> Result<HashSet<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", quote_ident(table)))?;
+    let cols = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<HashSet<_>, _>>()?;
+    Ok(cols)
+}
+
+fn read_schema_snapshot(conn: &Connection) -> Result<SchemaSnapshot, rusqlite::Error> {
+    let mut snap = SchemaSnapshot::default();
+    let mut stmt = conn.prepare(
+        "SELECT type, name FROM sqlite_master \
+         WHERE name NOT LIKE 'sqlite_%' AND name IS NOT NULL",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (kind, name) in rows {
+        match kind.as_str() {
+            "table" => {
+                let cols = table_columns(conn, &name)?;
+                snap.tables.insert(name, cols);
+            }
+            "index" => {
+                snap.indexes.insert(name);
+            }
+            _ => {}
+        }
+    }
+    Ok(snap)
+}
+
+fn build_expected_schema() -> Result<SchemaSnapshot, String> {
+    let mut conn = Connection::open_in_memory()
+        .map_err(|e| format!("Failed to open in-memory schema probe: {e}"))?;
+    crate::migrations::run_migrations(&mut conn)?;
+    read_schema_snapshot(&conn).map_err(|e| format!("Failed to read expected schema: {e}"))
+}
+
+fn expected_schema() -> Result<SchemaSnapshot, String> {
+    static CACHE: OnceLock<SchemaSnapshot> = OnceLock::new();
+    if let Some(cached) = CACHE.get() {
+        return Ok(cached.clone());
+    }
+    let snap = build_expected_schema()?;
+    let _ = CACHE.set(snap.clone());
+    Ok(snap)
+}
+
+/// Disk has every expected table/index/column; extras (tables, indexes, columns) are allowed.
+fn is_structurally_additive(disk: &SchemaSnapshot, expected: &SchemaSnapshot) -> bool {
+    for (table, expected_cols) in &expected.tables {
+        let Some(disk_cols) = disk.tables.get(table) else {
+            return false;
+        };
+        if !expected_cols.is_subset(disk_cols) {
+            return false;
+        }
+    }
+    expected.indexes.is_subset(&disk.indexes)
+}
+
+/// Launch/open policy after refining history-only Unrecognized with a structural compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GateSchemaVerdict {
+    Compatible,
+    AdditiveAhead(i64),
+    BreakingAhead(i64),
+}
+
+fn read_schema_from_path(path: &Path) -> Result<SchemaSnapshot, rusqlite::Error> {
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let conn = Connection::open_with_flags(path, flags)?;
+    let _ = conn.busy_timeout(PROBE_BUSY_TIMEOUT);
+    read_schema_snapshot(&conn)
+}
+
+fn classify_for_gate(path: &Path, expected: &SchemaSnapshot) -> GateSchemaVerdict {
+    if !path.exists() {
+        return GateSchemaVerdict::Compatible;
+    }
+    match classify_database(path) {
+        StorageFormatVerdict::Fresh
+        | StorageFormatVerdict::PreRefinery
+        | StorageFormatVerdict::Recognized => GateSchemaVerdict::Compatible,
+        StorageFormatVerdict::Divergent(version) => GateSchemaVerdict::BreakingAhead(version),
+        StorageFormatVerdict::Unrecognized(version) => match read_schema_from_path(path) {
+            Ok(disk) if is_structurally_additive(&disk, expected) => {
+                GateSchemaVerdict::AdditiveAhead(version)
+            }
+            _ => GateSchemaVerdict::BreakingAhead(version),
+        },
+    }
+}
+
+fn backup_db_path(db_path: &Path) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let name = db_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("pacto.db");
+    db_path.with_file_name(format!("{name}.pre-rewind-{ts}"))
+}
+
+/// Drop objects not in `expected` and strip history rows this build does not embed.
+pub(crate) fn rewind_additive_profile(
+    db_path: &Path,
+    expected: &SchemaSnapshot,
+) -> Result<(), String> {
+    let backup = backup_db_path(db_path);
+    std::fs::copy(db_path, &backup)
+        .map_err(|e| format!("Failed to back up database before additive rewind: {e}"))?;
+
+    let conn = Connection::open(db_path)
+        .map_err(|e| format!("Failed to open database for additive rewind: {e}"))?;
+    let _ = conn.busy_timeout(PROBE_BUSY_TIMEOUT);
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+
+    let disk = read_schema_snapshot(&conn)
+        .map_err(|e| format!("Failed to read schema for additive rewind: {e}"))?;
+
+    for index in disk.indexes.difference(&expected.indexes) {
+        conn.execute(
+            &format!("DROP INDEX IF EXISTS {}", quote_ident(index)),
+            [],
+        )
+        .map_err(|e| format!("Failed to drop extra index during additive rewind: {e}"))?;
+    }
+
+    for table in disk.tables.keys() {
+        if expected.tables.contains_key(table) {
+            continue;
+        }
+        conn.execute(
+            &format!("DROP TABLE IF EXISTS {}", quote_ident(table)),
+            [],
+        )
+        .map_err(|e| format!("Failed to drop extra table during additive rewind: {e}"))?;
+    }
+
+    let embedded = crate::migrations::embedded_migration_set();
+    let (_, applied) = read_history_table(&conn, "refinery_schema_history")
+        .map_err(|e| format!("Failed to read history for additive rewind: {e}"))?;
+    for row in applied {
+        let recognized = embedded.iter().any(|m| {
+            m.version() == row.version
+                && m.name() == row.name
+                && m.checksum().to_string() == row.checksum
+        });
+        if !recognized {
+            conn.execute(
+                "DELETE FROM refinery_schema_history WHERE version = ?1",
+                [row.version],
+            )
+            .map_err(|e| format!("Failed to strip unrecognized history: {e}"))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Before `run_migrations`: rewind additive-ahead profiles; refuse breaking-ahead.
+pub(crate) fn prepare_profile_db_for_open(db_path: &Path) -> Result<(), String> {
+    if !db_path.exists() {
+        return Ok(());
+    }
+    let expected = expected_schema()?;
+    match classify_for_gate(db_path, &expected) {
+        GateSchemaVerdict::Compatible => Ok(()),
+        GateSchemaVerdict::AdditiveAhead(_) => rewind_additive_profile(db_path, &expected),
+        GateSchemaVerdict::BreakingAhead(_) => Err(
+            "This account's data was written with a schema this build cannot open. \
+             Use a newer build, or quarantine this profile directory."
+                .to_string(),
+        ),
+    }
+}
+
 /// Aggregate verdict across every profile directory under `app_data_dir`.
 /// Carries no npub and no filesystem path -- only counts and a bare version
 /// number -- so it is safe to surface in a block screen or a support report.
+/// `unrecognized_count` is the **breaking** profile count (additive-ahead is
+/// rewound by `compatibility_report` and does not block launch).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StorageFormatScanReport {
     pub(crate) all_recognized: bool,
@@ -191,14 +390,15 @@ pub(crate) struct StorageFormatScanReport {
     pub(crate) highest_offending_version: Option<i64>,
 }
 
-/// Scan every `npub1*` profile directory's `pacto.db` under `app_data_dir`.
-/// A profile with no database file classifies `Fresh` and is not counted.
-/// Bounded by `SCAN_DEADLINE`: a profile reached after the deadline is left
-/// unscanned rather than blocking launch on a slow disk.
-pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
+fn scan_profiles_inner(
+    app_data_dir: &Path,
+    expected: &SchemaSnapshot,
+    rewind_additive: bool,
+) -> StorageFormatScanReport {
     let deadline = Instant::now() + SCAN_DEADLINE;
     let mut unrecognized_count = 0usize;
     let mut highest_offending_version: Option<i64> = None;
+    let mut additive_paths: Vec<PathBuf> = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(app_data_dir) {
         for entry in entries.flatten() {
@@ -215,14 +415,38 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
                 continue;
             }
 
-            let verdict = classify_database(&path.join("pacto.db"));
-            if let StorageFormatVerdict::Unrecognized(version)
-            | StorageFormatVerdict::Divergent(version) = verdict
-            {
-                unrecognized_count += 1;
-                highest_offending_version =
-                    Some(highest_offending_version.map_or(version, |max| max.max(version)));
+            let db_path = path.join("pacto.db");
+            match classify_for_gate(&db_path, expected) {
+                GateSchemaVerdict::Compatible => {}
+                GateSchemaVerdict::AdditiveAhead(_) => {
+                    additive_paths.push(db_path);
+                }
+                GateSchemaVerdict::BreakingAhead(version) => {
+                    unrecognized_count += 1;
+                    highest_offending_version =
+                        Some(highest_offending_version.map_or(version, |max| max.max(version)));
+                }
             }
+        }
+    }
+
+    if rewind_additive {
+        for db_path in &additive_paths {
+            if let Err(err) = rewind_additive_profile(db_path, expected) {
+                eprintln!("[storage-format] additive rewind failed: {err}");
+                unrecognized_count += 1;
+                if let GateSchemaVerdict::AdditiveAhead(version)
+                | GateSchemaVerdict::BreakingAhead(version) =
+                    classify_for_gate(db_path, expected)
+                {
+                    highest_offending_version =
+                        Some(highest_offending_version.map_or(version, |max| max.max(version)));
+                }
+            }
+        }
+
+        if unrecognized_count == 0 && !additive_paths.is_empty() {
+            return scan_profiles_inner(app_data_dir, expected, false);
         }
     }
 
@@ -230,6 +454,51 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
         all_recognized: unrecognized_count == 0,
         unrecognized_count,
         highest_offending_version,
+    }
+}
+
+/// Scan every `npub1*` profile directory's `pacto.db` under `app_data_dir`.
+/// A profile with no database file classifies compatible and is not counted.
+/// Does not rewind; use `compatibility_report` for launch (rewinds additive).
+pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
+    match expected_schema() {
+        Ok(expected) => scan_profiles_inner(app_data_dir, &expected, false),
+        Err(err) => {
+            eprintln!("[storage-format] expected schema unavailable: {err}");
+            // Fall back to history-only: treat Unrecognized/Divergent as breaking.
+            let deadline = Instant::now() + SCAN_DEADLINE;
+            let mut unrecognized_count = 0usize;
+            let mut highest_offending_version: Option<i64> = None;
+            if let Ok(entries) = std::fs::read_dir(app_data_dir) {
+                for entry in entries.flatten() {
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                    let path = entry.path();
+                    let is_profile_dir = path.is_dir()
+                        && entry
+                            .file_name()
+                            .to_str()
+                            .is_some_and(|name| name.starts_with("npub1"));
+                    if !is_profile_dir {
+                        continue;
+                    }
+                    if let StorageFormatVerdict::Unrecognized(version)
+                    | StorageFormatVerdict::Divergent(version) =
+                        classify_database(&path.join("pacto.db"))
+                    {
+                        unrecognized_count += 1;
+                        highest_offending_version =
+                            Some(highest_offending_version.map_or(version, |max| max.max(version)));
+                    }
+                }
+            }
+            StorageFormatScanReport {
+                all_recognized: unrecognized_count == 0,
+                unrecognized_count,
+                highest_offending_version,
+            }
+        }
     }
 }
 
@@ -262,10 +531,17 @@ impl From<StorageFormatScanReport> for StorageCompatibilityReport {
     }
 }
 
-/// Pure report builder shared by the command and its tests: `scan_profiles`
-/// plus this build's own version, with no `AppHandle` involved.
+/// Launch report: auto-rewinds additive-ahead profiles, then reports only
+/// remaining **breaking** skew as `all_recognized == false`.
 pub(crate) fn compatibility_report(app_data_dir: &Path) -> StorageCompatibilityReport {
-    scan_profiles(app_data_dir).into()
+    let report = match expected_schema() {
+        Ok(expected) => scan_profiles_inner(app_data_dir, &expected, true),
+        Err(err) => {
+            eprintln!("[storage-format] expected schema unavailable: {err}");
+            scan_profiles(app_data_dir)
+        }
+    };
+    report.into()
 }
 
 /// Report whether this build recognizes every local profile's storage
@@ -525,9 +801,9 @@ mod tests {
     }
 
     #[test]
-    fn scan_reports_unrecognized_profile_and_offending_version() {
-        let root = unique_temp_dir("scan-unrecognized");
-        let profile_dir = root.join("npub1scanunrecognizedprofile");
+    fn scan_treats_unrecognized_history_with_intact_expected_shape_as_additive() {
+        let root = unique_temp_dir("scan-additive");
+        let profile_dir = root.join("npub1scanadditiveprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
         let db_path = profile_dir.join("pacto.db");
         write_migrated_db(&db_path);
@@ -541,6 +817,45 @@ mod tests {
                 rusqlite::params![above_ceiling],
             )
             .unwrap();
+            conn.execute_batch(
+                "CREATE TABLE future_additive_table (id TEXT PRIMARY KEY NOT NULL);",
+            )
+            .unwrap();
+        }
+
+        // scan_profiles does not rewind; additive-ahead must not count as breaking.
+        let report = scan_profiles(&root);
+        assert!(report.all_recognized);
+        assert_eq!(report.unrecognized_count, 0);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn scan_reports_breaking_when_expected_column_is_missing() {
+        let root = unique_temp_dir("scan-breaking");
+        let profile_dir = root.join("npub1scanbreakingprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+                rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+            // Strip an expected column from `settings` so structural compare is breaking.
+            conn.execute_batch(
+                "CREATE TABLE settings_new (key TEXT PRIMARY KEY);
+                 INSERT INTO settings_new (key) SELECT key FROM settings;
+                 DROP TABLE settings;
+                 ALTER TABLE settings_new RENAME TO settings;",
+            )
+            .unwrap();
         }
 
         let report = scan_profiles(&root);
@@ -552,37 +867,142 @@ mod tests {
     }
 
     #[test]
-    fn scan_counts_multiple_unrecognized_profiles() {
-        let root = unique_temp_dir("scan-multi");
-        let good_dir = root.join("npub1scanmultigood");
-        std::fs::create_dir_all(&good_dir).unwrap();
-        write_migrated_db(&good_dir.join("pacto.db"));
+    fn compatibility_report_rewinds_additive_ahead_and_clears() {
+        let root = unique_temp_dir("compat-rewind");
+        let profile_dir = root.join("npub1compatrewindprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
 
         let above_ceiling = crate::migrations::embedded_ceiling() + 1;
-        let mut offending_versions = Vec::new();
-        for (label, bump) in [("a", 0), ("b", 1)] {
-            let dir = root.join(format!("npub1scanmulti{label}"));
-            std::fs::create_dir_all(&dir).unwrap();
-            let db_path = dir.join("pacto.db");
-            write_migrated_db(&db_path);
-            let version = above_ceiling + bump;
+        {
             let conn = rusqlite::Connection::open(&db_path).unwrap();
             conn.execute(
                 "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
                  VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
-                rusqlite::params![version],
+                rusqlite::params![above_ceiling],
             )
             .unwrap();
-            offending_versions.push(version);
+            conn.execute_batch(
+                "CREATE TABLE future_additive_table (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE INDEX idx_future_additive ON future_additive_table(id);",
+            )
+            .unwrap();
+        }
+
+        let report = compatibility_report(&root);
+        assert!(report.all_recognized);
+        assert_eq!(report.unrecognized_count, 0);
+        assert_eq!(
+            classify_database(&db_path),
+            StorageFormatVerdict::Recognized
+        );
+
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='future_additive_table')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!table_exists);
+
+        let backups: Vec<_> = std::fs::read_dir(&profile_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains("pre-rewind")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prepare_profile_db_for_open_rewinds_additive() {
+        let dir = unique_temp_dir("prepare-additive");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("pacto.db");
+        write_migrated_db(&db_path);
+
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+                rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+            conn.execute_batch("CREATE TABLE future_only (id INTEGER PRIMARY KEY);")
+                .unwrap();
+        }
+
+        prepare_profile_db_for_open(&db_path).unwrap();
+        assert_eq!(
+            classify_database(&db_path),
+            StorageFormatVerdict::Recognized
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prepare_profile_db_for_open_refuses_breaking() {
+        let dir = unique_temp_dir("prepare-breaking");
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("pacto.db");
+        write_migrated_db(&db_path);
+
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+                 VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+                rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+            conn.execute_batch(
+                "CREATE TABLE settings_new (key TEXT PRIMARY KEY);
+                 INSERT INTO settings_new (key) SELECT key FROM settings;
+                 DROP TABLE settings;
+                 ALTER TABLE settings_new RENAME TO settings;",
+            )
+            .unwrap();
+        }
+
+        let err = prepare_profile_db_for_open(&db_path).unwrap_err();
+        assert!(err.contains("cannot open"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn divergent_checksum_is_breaking_for_gate() {
+        let root = unique_temp_dir("scan-divergent");
+        let profile_dir = root.join("npub1scandivergentprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "UPDATE refinery_schema_history SET checksum = 'not-the-real-checksum' \
+                 WHERE version = (SELECT MAX(version) FROM refinery_schema_history)",
+                [],
+            )
+            .unwrap();
         }
 
         let report = scan_profiles(&root);
         assert!(!report.all_recognized);
-        assert_eq!(report.unrecognized_count, 2);
-        assert_eq!(
-            report.highest_offending_version,
-            offending_versions.iter().max().copied()
-        );
+        assert_eq!(report.unrecognized_count, 1);
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -741,7 +1161,7 @@ mod tests {
     }
 
     #[test]
-    fn compatibility_report_is_incompatible_for_one_failing_profile() {
+    fn compatibility_report_is_incompatible_for_one_breaking_profile() {
         let root = unique_temp_dir("compat-incompatible");
         let profile_dir = root.join("npub1compatincompatibleprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
@@ -755,6 +1175,13 @@ mod tests {
                 "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
                  VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
                 rusqlite::params![above_ceiling],
+            )
+            .unwrap();
+            conn.execute_batch(
+                "CREATE TABLE settings_new (key TEXT PRIMARY KEY);
+                 INSERT INTO settings_new (key) SELECT key FROM settings;
+                 DROP TABLE settings;
+                 ALTER TABLE settings_new RENAME TO settings;",
             )
             .unwrap();
         }

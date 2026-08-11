@@ -133,10 +133,10 @@ async function resolveRemoteVerdict(installedVersion: string): Promise<void> {
 }
 
 /**
- * Resolves the gate at cold launch. The local storage-format probe is on
- * the critical path and settles `gate` by itself; the remote check starts
- * concurrently and is never awaited here, so launch routing never sits on
- * the network (KTD6).
+ * Resolves the gate at cold launch. The local storage-format probe (after
+ * additive auto-rewind) is on the critical path and settles `gate` by
+ * itself; only **breaking** schema skew blocks. The remote check starts
+ * concurrently and is never awaited here (KTD6).
  */
 export async function resolveGateAtLaunch(): Promise<void> {
   const installedVersion = await resolveInstalledVersion();
@@ -145,6 +145,7 @@ export async function resolveGateAtLaunch(): Promise<void> {
   let unrecognizedCount = 0;
   try {
     const report = await getStorageCompatibility();
+    // Backend rewinds additive-ahead profiles; allRecognized false = breaking.
     storageBlocked = !report.allRecognized;
     unrecognizedCount = report.unrecognizedCount;
   } catch (err) {

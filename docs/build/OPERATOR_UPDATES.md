@@ -151,13 +151,21 @@ Use these in priority order.
 
    **After using either path to correct a value, mirror the final value back into the tracked `scripts/release-compatibility.json` and commit it.** The workflow and the local script both operate on the *published* `latest.json` only; they never write the tracked file. If the tracked file is left at the old value, the next tagged release re-runs the automatic stamping job with that stale value and silently regresses the correction.
 
-## Recovering a machine the local storage-format check blocked
+## Local storage-format check (breaking schema only)
 
-This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `pacto.db` on launch and finds a migration history that this build doesn't recognize — for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
+This is a **different** trigger from the minimum-version check above: it never touches the network. At cold launch the app compares each profile’s on-disk schema to this build’s embedded migrations.
 
-The block screen deliberately does not show which npub or file path is at fault, so recovery is manual:
+**Branch / PR outcomes (shared `io.pacto` app data):**
 
-1. Note the schema version number the block screen reports.
+| Case | Result |
+|------|--------|
+| Neither branch changes SQLite | No gate |
+| Newer branch only **adds** tables/indexes/columns (existing shapes intact) | No gate — additive skew is auto-rewound (backup `pacto.db.pre-rewind-<ts>`, drop extras, strip unrecognized history) |
+| Newer branch **modifies** existing table shapes, or history diverges (checksum/name) | Storage-format hard gate |
+
+The block screen deliberately does not show which npub or file path is at fault. When the gate fires (breaking only), recovery is manual:
+
+1. Note the schema version number the block screen reports (when shown).
 2. Profile directories live under `<app_data_dir>/npub1…/pacto.db` — see [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) for the full on-disk layout. `<app_data_dir>` here is Tauri's per-OS app data directory *including* this app's identifier (`io.pacto`, from `src-tauri/tauri.conf.json`):
    - macOS: `~/Library/Application Support/io.pacto/`
    - Windows: `%APPDATA%\io.pacto\`
@@ -170,8 +178,10 @@ The block screen deliberately does not show which npub or file path is at fault,
 4. The one profile whose `version` matches the number from the block screen is the offender. Move that single directory aside (e.g. rename `npub1…` to `npub1…-quarantined`) — do not delete it.
 5. Relaunch the app. Every other account on the machine unblocks immediately; the moved-aside profile no longer participates in account discovery until it is restored (e.g. by a build that recognizes its schema).
 
+Additive auto-rewind keeps old-table data; new tables from the newer branch are dropped on the older checkout (a `.pre-rewind-*` sibling preserves the prior file). Returning to the newer branch re-runs its migration and recreates empty new tables.
+
 ## Limits of this gate
 
 - **The manifest is unsigned.** `latest.json`, including `minimum_compatible_version`, carries no signature — only the platform installers themselves are Ed25519-signed. Anyone who can write to the release's assets can alter the manifest.
 - **The gate is forward-only.** It cannot reach installs from before this feature shipped; those clients have no code path that reads `minimum_compatible_version`.
-- **The remote (minimum-version) trigger fails open by design**, so anyone able to interfere with the manifest fetch — blackholing it or corrupting the response — can suppress it entirely for a given client. The local storage-format trigger above is the one that survives this: it never depends on the network, so it cannot be defeated the same way.
+- **The remote (minimum-version) trigger fails open by design**, so anyone able to interfere with the manifest fetch — blackholing it or corrupting the response — can suppress it entirely for a given client. The local storage-format trigger above is the one that survives this for **breaking** schema skew: it never depends on the network. Additive-only skew is auto-rewound instead of blocking.
