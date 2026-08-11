@@ -1040,6 +1040,15 @@ async fn bundler_get_user_operation_receipt(
     }
 }
 
+/// Parsed fields from a bundler `eth_getUserOperationReceipt` result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SponsoredUserOpReceipt {
+    pub tx_hash: String,
+    pub success: bool,
+    /// Bundler `actualGasCost` as decimal wei when present.
+    pub actual_gas_cost_wei: Option<String>,
+}
+
 /// Real L1 transaction hash from an `eth_getUserOperationReceipt` result.
 fn receipt_transaction_hash(receipt: &Value) -> Option<String> {
     receipt
@@ -1049,23 +1058,99 @@ fn receipt_transaction_hash(receipt: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Polls `eth_getUserOperationReceipt` until the UserOp is included and returns the real L1
-/// transaction hash. Transient poll failures are logged and retried until the bound; on
-/// timeout the error carries the userOpHash so inclusion can be tracked manually.
-pub async fn wait_for_user_operation_tx_hash(
+/// Prefer top-level UserOp `success`; fall back to nested L1 `receipt.status`.
+fn receipt_success(receipt: &Value) -> Option<bool> {
+    if let Some(v) = receipt.get("success") {
+        return v.as_bool();
+    }
+    parse_l1_receipt_status(receipt.get("receipt")?.get("status")?)
+}
+
+fn parse_l1_receipt_status(raw: &Value) -> Option<bool> {
+    match raw {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => n.as_u64().map(|v| v != 0),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                return None;
+            }
+            let n = if t.starts_with("0x") || t.starts_with("0X") {
+                u64::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()?
+            } else {
+                u64::from_str_radix(t, 10).ok()?
+            };
+            Some(n != 0)
+        }
+        _ => None,
+    }
+}
+
+fn parse_actual_gas_cost_wei(raw: &Value) -> Option<String> {
+    match raw {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                return None;
+            }
+            let wei = if t.starts_with("0x") || t.starts_with("0X") {
+                U256::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()?
+            } else {
+                U256::from_str_radix(t, 10).ok()?
+            };
+            Some(wei.to_string())
+        }
+        Value::Number(n) => n.as_u64().map(|v| U256::from(v).to_string()),
+        _ => None,
+    }
+}
+
+fn receipt_actual_gas_cost_wei(receipt: &Value) -> Option<String> {
+    parse_actual_gas_cost_wei(receipt.get("actualGasCost")?)
+}
+
+/// Extract inclusion outcome from a bundler UserOp receipt object.
+pub fn parse_sponsored_user_op_receipt(receipt: &Value) -> Result<SponsoredUserOpReceipt, String> {
+    let tx_hash = receipt_transaction_hash(receipt).ok_or_else(|| {
+        wallet_err_json(
+            "USEROP_RECEIPT",
+            "bundler receipt has no L1 transaction hash",
+            None,
+        )
+    })?;
+    let success = receipt_success(receipt).ok_or_else(|| {
+        wallet_err_json(
+            "USEROP_RECEIPT",
+            "bundler receipt missing success / receipt.status",
+            None,
+        )
+    })?;
+    Ok(SponsoredUserOpReceipt {
+        tx_hash,
+        success,
+        actual_gas_cost_wei: receipt_actual_gas_cost_wei(receipt),
+    })
+}
+
+/// Polls until the UserOp is included; returns success, optional gas cost, and L1 tx hash.
+pub async fn wait_for_user_operation_receipt(
     bundler_url: &str,
     user_op_hash: &str,
-) -> Result<String, String> {
+) -> Result<SponsoredUserOpReceipt, String> {
     let deadline = std::time::Instant::now() + USEROP_RECEIPT_WAIT_BOUND;
     loop {
         match bundler_get_user_operation_receipt(bundler_url, user_op_hash).await {
             Ok(Some(receipt)) => {
-                return receipt_transaction_hash(&receipt).ok_or_else(|| {
-                    wallet_err_json(
-                        "USEROP_RECEIPT",
-                        format!("bundler receipt for {user_op_hash} has no L1 transaction hash"),
-                        None,
-                    )
+                return parse_sponsored_user_op_receipt(&receipt).map_err(|e| {
+                    if e.contains("no L1 transaction hash") {
+                        wallet_err_json(
+                            "USEROP_RECEIPT",
+                            format!("bundler receipt for {user_op_hash} has no L1 transaction hash"),
+                            None,
+                        )
+                    } else {
+                        e
+                    }
                 });
             }
             Ok(None) => {}
@@ -1085,6 +1170,17 @@ pub async fn wait_for_user_operation_tx_hash(
         }
         tokio::time::sleep(USEROP_RECEIPT_POLL_INTERVAL).await;
     }
+}
+
+/// Polls until included and returns the L1 transaction hash only.
+#[allow(dead_code)]
+pub async fn wait_for_user_operation_tx_hash(
+    bundler_url: &str,
+    user_op_hash: &str,
+) -> Result<String, String> {
+    Ok(wait_for_user_operation_receipt(bundler_url, user_op_hash)
+        .await?
+        .tx_hash)
 }
 
 /// Bundler JSON-RPC request timeout; a slow bundler must not hang the command.
@@ -1178,8 +1274,9 @@ mod tests {
         dummy_userop_signature, eip7702_auth_json, encode_eip7702_authorization,
         explicit_bundler_rpc_url, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
         parse_send_user_op_response, paymaster_data, pimlico_bundler_rpc_url,
-        pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
-        user_op_json, userop_max_cost_wei, UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
+        parse_sponsored_user_op_receipt, pimlico_chain_id_for_network, receipt_transaction_hash,
+        retriable_bundler_status, user_op_json, userop_max_cost_wei, SponsoredUserOpReceipt,
+        UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -1515,6 +1612,85 @@ mod tests {
         assert_eq!(receipt_transaction_hash(&pending_shape), None);
         let wrong_type = json!({"receipt": {"transactionHash": 7}});
         assert_eq!(receipt_transaction_hash(&wrong_type), None);
+    }
+
+    #[test]
+    fn parse_sponsored_receipt_reads_success_and_actual_gas_cost() {
+        let receipt = json!({
+            "userOpHash": "0xaaa",
+            "success": true,
+            "actualGasCost": "0x18cba6a00",
+            "receipt": {"transactionHash": "0xbbb"}
+        });
+        assert_eq!(
+            parse_sponsored_user_op_receipt(&receipt).unwrap(),
+            SponsoredUserOpReceipt {
+                tx_hash: "0xbbb".to_string(),
+                success: true,
+                actual_gas_cost_wei: Some(U256::from(0x18cba6a00u64).to_string()),
+            }
+        );
+
+        let decimal_cost = json!({
+            "success": true,
+            "actualGasCost": "7000000000000000",
+            "receipt": {"transactionHash": "0xccc"}
+        });
+        assert_eq!(
+            parse_sponsored_user_op_receipt(&decimal_cost)
+                .unwrap()
+                .actual_gas_cost_wei
+                .as_deref(),
+            Some("7000000000000000")
+        );
+
+        let failed = json!({
+            "success": false,
+            "actualGasCost": "0x1",
+            "receipt": {"transactionHash": "0xddd"}
+        });
+        let parsed = parse_sponsored_user_op_receipt(&failed).unwrap();
+        assert!(!parsed.success);
+
+        let missing_cost = json!({
+            "success": true,
+            "receipt": {"transactionHash": "0xeee"}
+        });
+        assert!(parse_sponsored_user_op_receipt(&missing_cost)
+            .unwrap()
+            .actual_gas_cost_wei
+            .is_none());
+    }
+
+    #[test]
+    fn parse_sponsored_receipt_falls_back_to_nested_status() {
+        let via_status = json!({
+            "actualGasCost": "0x1",
+            "receipt": {"transactionHash": "0xbbb", "status": "0x1"}
+        });
+        let parsed = parse_sponsored_user_op_receipt(&via_status).unwrap();
+        assert!(parsed.success);
+        assert_eq!(parsed.tx_hash, "0xbbb");
+
+        let failed_status = json!({
+            "receipt": {"transactionHash": "0xccc", "status": "0x0"}
+        });
+        assert!(!parse_sponsored_user_op_receipt(&failed_status)
+            .unwrap()
+            .success);
+
+        // Top-level UserOp success wins over nested L1 status.
+        let prefer_top = json!({
+            "success": true,
+            "receipt": {"transactionHash": "0xddd", "status": "0x0"}
+        });
+        assert!(parse_sponsored_user_op_receipt(&prefer_top).unwrap().success);
+
+        let missing_both = json!({
+            "receipt": {"transactionHash": "0xeee"}
+        });
+        let err = parse_sponsored_user_op_receipt(&missing_both).unwrap_err();
+        assert!(err.contains("success / receipt.status"));
     }
 
     #[test]
