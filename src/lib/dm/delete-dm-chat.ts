@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { deleteDmChatBackend } from '../api/nostr';
 import {
+  activeDmId,
   backendDmMessages,
   deleteDmChat,
   deletingDmNpubs,
@@ -31,6 +32,7 @@ function snapshotDmChat(npub: string): DmChatSnapshot {
     messageCount: get(messageCountByChat)[npub],
     loadedOffset: get(loadedOffsetByChat)[npub],
     wasPinned: get(pinnedDmNpubs).has(npub),
+    wasActive: get(activeDmId) === npub,
   };
 }
 

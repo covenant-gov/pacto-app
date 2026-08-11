@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { listen, type UnlistenFn } from '../api';
 import {
   listPendingMlsWelcomes,
@@ -26,6 +27,7 @@ import {
   backendDmMessages,
   backendGroupMessages,
   dmChatsByNpub,
+  deletingDmNpubs,
   dmSyncStatus,
   typingByChat,
   pendingMlsWelcomes,
@@ -132,6 +134,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       mine: message.mine,
     });
     if (!chat_id.startsWith('npub1')) return;
+    if (get(deletingDmNpubs).has(chat_id)) return;
     const content = message.content ?? '';
     const inviteAccepted = parseSquadInviteAccepted(content);
     if (inviteAccepted && !message.mine) {

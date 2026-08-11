@@ -34,6 +34,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     addParentTreasurySafe,
   } from '../lib/api/nostr';
   import { startDeleteDmChat } from '../lib/dm/delete-dm-chat';
+  import { shouldApplyDmOpenLoad } from '../lib/dm/should-apply-dm-open-load';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
   import { resolveCatchUpEntry } from '../lib/api/catch-up';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
@@ -88,6 +89,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     declinedSquadInviteIds,
     declinedChannelInviteMessageIds,
     dmChatsByNpub,
+    deletingDmNpubs,
     pinnedDmNpubs,
     blockedDmNpubs,
     dmSendError,
@@ -590,17 +592,22 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   // Load backend messages when active DM changes; queue profile sync, get total count.
   $: if ($activeDmId && $activeTopNavTab === 'dms') {
     const npub = $activeDmId;
+    const stillOpen = () =>
+      shouldApplyDmOpenLoad(npub, get(activeDmId), get(dmChatsByNpub), get(deletingDmNpubs));
     dmLog('open conversation', { npub: npub.slice(0, 20) + '…', tab: 'dms' });
     queueProfileSync(npub).catch(() => {});
     getChatMessageCount(npub)
       .then((count) => {
+        if (!stillOpen()) return;
         messageCountByChat.update((byChat: Record<string, number>) => ({ ...byChat, [npub]: count }));
       })
       .catch((err) => {
+        if (!stillOpen()) return;
         dmError('open conversation: getChatMessageCount failed', err);
       });
     getDmMessages(npub, PAGE_SIZE, 0)
       .then((msgs) => {
+        if (!stillOpen()) return;
         dmLog('open conversation: messages loaded', { npub: npub.slice(0, 20) + '…', count: msgs.length });
         const loaded = dedupeWalletTxAnnouncements(msgs as DmMessage[]);
         backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
@@ -614,6 +621,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         loadedOffsetByChat.update((by: Record<string, number>) => ({ ...by, [npub]: PAGE_SIZE }));
       })
       .catch((err) => {
+        if (!stillOpen()) return;
         dmError('open conversation: getDmMessages failed', err);
       });
   }

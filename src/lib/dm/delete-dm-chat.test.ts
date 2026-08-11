@@ -12,6 +12,7 @@ vi.mock('../../stores/toast', () => ({
 import { deleteDmChatBackend } from '../api/nostr';
 import { showToast } from '../../stores/toast';
 import {
+  activeDmId,
   backendDmMessages,
   deletingDmNpubs,
   dmChatsByNpub,
@@ -28,6 +29,7 @@ const mockedShowToast = vi.mocked(showToast);
 describe('startDeleteDmChat', () => {
   beforeEach(() => {
     deletingDmNpubs.set(new Set());
+    activeDmId.set('alice');
     dmChatsByNpub.set({
       alice: {
         npub: 'alice',
@@ -62,6 +64,7 @@ describe('startDeleteDmChat', () => {
     expect(get(backendDmMessages)['alice']).toBeUndefined();
     expect(get(typingByChat)['alice']).toBeUndefined();
     expect(get(unreadCountsByChat)['alice']).toBe(0);
+    expect(get(activeDmId)).toBeNull();
     expect(mockedDeleteBackend).toHaveBeenCalledWith('alice');
 
     resolveDelete();
@@ -70,10 +73,11 @@ describe('startDeleteDmChat', () => {
     });
 
     expect(get(dmChatsByNpub)['alice']).toBeUndefined();
+    expect(get(activeDmId)).toBeNull();
     expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
-  it('reverts chat state and toasts on unexpected backend failure', async () => {
+  it('reverts chat state, reselects peer, and toasts on unexpected backend failure', async () => {
     mockedDeleteBackend.mockRejectedValueOnce(new Error('boom'));
 
     startDeleteDmChat('alice');
@@ -85,10 +89,11 @@ describe('startDeleteDmChat', () => {
     expect(get(dmChatsByNpub)['alice']).toBeDefined();
     expect(get(backendDmMessages)['alice']).toHaveLength(1);
     expect(get(unreadCountsByChat)['alice']).toBe(3);
+    expect(get(activeDmId)).toBe('alice');
     expect(mockedShowToast).toHaveBeenCalledWith('Could not delete chat. Please try again.');
   });
 
-  it('treats Chat not found as success without reverting', async () => {
+  it('treats Chat not found as success without reverting or reselecting', async () => {
     mockedDeleteBackend.mockRejectedValueOnce(
       new Error('Chat not found: npub1alicexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
     );
@@ -102,6 +107,7 @@ describe('startDeleteDmChat', () => {
     expect(get(dmChatsByNpub)['alice']).toBeUndefined();
     expect(get(backendDmMessages)['alice']).toBeUndefined();
     expect(get(unreadCountsByChat)['alice']).toBe(0);
+    expect(get(activeDmId)).toBeNull();
     expect(mockedShowToast).not.toHaveBeenCalled();
   });
 

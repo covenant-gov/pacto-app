@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
     backendDmMessages: createMockStore<Record<string, DmMessage[]>>({}),
     backendGroupMessages: createMockStore<Record<string, DmMessage[]>>({}),
     dmChatsByNpub: createMockStore<Record<string, unknown>>({}),
+    deletingDmNpubs: createMockStore<Set<string>>(new Set()),
     dmSyncStatus: createMockStore<string>('idle'),
     typingByChat: createMockStore<Record<string, string[]>>({}),
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
@@ -160,6 +161,7 @@ vi.mock('../../stores/app', () => ({
   backendDmMessages: mocks.mockStores.backendDmMessages,
   backendGroupMessages: mocks.mockStores.backendGroupMessages,
   dmChatsByNpub: mocks.mockStores.dmChatsByNpub,
+  deletingDmNpubs: mocks.mockStores.deletingDmNpubs,
   dmSyncStatus: mocks.mockStores.dmSyncStatus,
   typingByChat: mocks.mockStores.typingByChat,
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
@@ -232,6 +234,7 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.backendDmMessages.set({});
     mocks.mockStores.backendGroupMessages.set({});
     mocks.mockStores.dmChatsByNpub.set({});
+    mocks.mockStores.deletingDmNpubs.set(new Set());
     mocks.mockStores.dmSyncStatus.set('idle');
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
@@ -371,6 +374,14 @@ describe('subscribeAppEvents', () => {
       expect(chat).toBeDefined();
       expect(chat.hasFromThem).toBe(true);
       expect(chat.lastAt).toBe(5000);
+    });
+
+    it('skips DM store upserts while the peer is being deleted', () => {
+      mocks.mockStores.deletingDmNpubs.set(new Set(['npub1chat']));
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ id: 'm-skip' }) });
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      expect(mocks.mockStores.dmChatsByNpub.get()).toEqual({});
     });
 
     it('clears typing indicator for the chat', () => {
