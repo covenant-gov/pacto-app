@@ -4452,8 +4452,15 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
 
     let mut relay_infos: Vec<RelayInfo> = Vec::new();
 
-    // First, add all default relays (even if disabled)
-    for default_url in DEFAULT_RELAYS {
+    // First, add all default relays (even if disabled). Under a debug relay
+    // override they are never connected, so listing them would misreport a
+    // sandbox's real exposure.
+    let listed_defaults: &[&str] = if crate::trusted_relays::is_overridden() {
+        &[]
+    } else {
+        DEFAULT_RELAYS
+    };
+    for default_url in listed_defaults {
         let url_str = default_url.to_string();
         let is_disabled = disabled_defaults
             .iter()
@@ -6244,8 +6251,15 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
         .await
         .unwrap_or_default();
 
-    // Add default relays (unless disabled or already present)
-    for default_url in DEFAULT_RELAYS {
+    // Add default relays (unless disabled or already present). A debug relay
+    // override means "route all traffic here", so seeding the public defaults
+    // beside it would put sandbox traffic on production relays.
+    let seeded_defaults: &[&str] = if crate::trusted_relays::is_overridden() {
+        &[]
+    } else {
+        DEFAULT_RELAYS
+    };
+    for default_url in seeded_defaults {
         let is_disabled = disabled_defaults
             .iter()
             .any(|d| d.to_lowercase() == default_url.to_lowercase());
