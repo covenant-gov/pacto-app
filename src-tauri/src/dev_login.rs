@@ -126,6 +126,23 @@ async fn login_backend_depth<R: Runtime>(
     }))
 }
 
+/// A dev identity's recovery phrase comes from a committed recipe or the
+/// launcher's own environment, so it is public by construction and there is
+/// nothing to back up. Leaving the flag unset would still gate every action
+/// behind `requireBackupVerified()` - accepting a squad invite among them -
+/// which silently no-ops and costs the sandbox its zero-keystroke boot.
+///
+/// Key and value must match the reader in `src/lib/api/settings.ts`.
+fn mark_backup_verified<R: Runtime>(handle: &AppHandle<R>) {
+    if let Err(e) = crate::db::set_sql_setting(
+        handle.clone(),
+        "backup_verified".to_string(),
+        "true".to_string(),
+    ) {
+        eprintln!("[dev_login] could not mark backup verified: {e}");
+    }
+}
+
 /// Full depth: a real recovery-phrase login through the existing login
 /// path, with real PIN-encrypted credentials persisted the same way
 /// `createAccount`/`importAccount` do, and the connection opened.
@@ -173,6 +190,7 @@ async fn login_full_depth<R: Runtime>(
         == Some(npub.as_str())
         && crate::get_nostr_client().is_ok()
     {
+        mark_backup_verified(&handle);
         let _ = crate::sandbox_handle::record_npub(&npub);
         return Ok(serde_json::json!({ "success": true, "npub": npub }));
     }
@@ -209,6 +227,7 @@ async fn login_full_depth<R: Runtime>(
         crate::db::set_evm_address(handle.clone(), evm_address).await?;
     }
 
+    mark_backup_verified(&handle);
     let _ = crate::sandbox_handle::record_npub(&keypair.public);
     Ok(serde_json::json!({ "success": true, "npub": keypair.public }))
 }
