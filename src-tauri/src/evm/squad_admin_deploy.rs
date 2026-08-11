@@ -156,6 +156,10 @@ pub async fn deploy_squad_admin_for_parent<R: Runtime>(
         .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
     let factory = addrs.nave_pirata_factory;
 
+    pacto_chain_config::guard_local_chain_live(&net.key)
+        .await
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+
     let urls = rpc_urls_or_default(net, rpc_urls.clone());
     if urls.is_empty() {
         return Err(wallet_err_json("RPC_CONFIG", "no RPC URL configured", None));
