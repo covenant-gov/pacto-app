@@ -3,6 +3,8 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   slugForBranch,
   deriveIndex,
@@ -10,6 +12,8 @@ import {
   resolvePortSet,
   readSandboxHandle,
 } from '../../../scripts/dev-ports.mjs';
+
+const SCRIPT_PATH = fileURLToPath(new URL('../../../scripts/dev-ports.mjs', import.meta.url));
 
 function listen(port: number): Promise<net.Server> {
   const { promise, resolve, reject } = Promise.withResolvers<net.Server>();
@@ -25,6 +29,38 @@ function close(server: net.Server): Promise<void> {
   return promise;
 }
 
+type PortSetResult = {
+  index: number;
+  derivedIndex: number;
+  advanced: boolean;
+  ports: { devServer: number; hmr: number; mcpBridge: number };
+};
+
+/** Runs the real CLI as its own OS process -- genuine cross-process concurrency. */
+function runDevPortsCli(branch: string, claimDir: string): Promise<PortSetResult> {
+  const { promise, resolve, reject } = Promise.withResolvers<PortSetResult>();
+  const child = spawn(process.execPath, [SCRIPT_PATH, '--branch', branch, '--claim-dir', claimDir], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', chunk => (stdout += chunk));
+  child.stderr.on('data', chunk => (stderr += chunk));
+  child.on('error', reject);
+  child.on('close', code => {
+    if (code !== 0) {
+      reject(new Error(`dev-ports.mjs --branch ${branch} exited ${code}: ${stderr}`));
+      return;
+    }
+    try {
+      resolve(JSON.parse(stdout.trim()));
+    } catch {
+      reject(new Error(`dev-ports.mjs --branch ${branch} produced unparseable output: ${stdout}`));
+    }
+  });
+  return promise;
+}
+
 describe('dev-ports', () => {
   const tempDirs: string[] = [];
 
@@ -33,6 +69,12 @@ describe('dev-ports', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  function makeTempDir(prefix = 'pacto-dev-ports-test-'): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tempDirs.push(dir);
+    return dir;
+  }
 
   describe('deriveIndex', () => {
     it('is stable across repeated derivations of the same branch', () => {
@@ -78,19 +120,24 @@ describe('dev-ports', () => {
   });
 
   describe('resolvePortSet', () => {
-    it('main resolves to index 0 with today\'s exact ports, unprobed', async () => {
-      const result = await resolvePortSet({ branch: 'main', probe: false });
+    it('main resolves to index 0 with today\'s exact ports, unprobed, and claims nothing', async () => {
+      const claimDir = makeTempDir();
+      const result = await resolvePortSet({ branch: 'main', probe: false, claimDir });
       expect(result).toEqual({
         index: 0,
         derivedIndex: 0,
         advanced: false,
         ports: { devServer: 1420, hmr: 1421, mcpBridge: 9223 },
       });
+      // main never probes and never claims -- no claim directory is even
+      // created for it.
+      expect(fs.existsSync(claimDir) && fs.readdirSync(claimDir).length > 0).toBe(false);
     });
 
     it('claims the derived index untouched when its ports are free', async () => {
+      const claimDir = makeTempDir();
       const branch = 'feat/parallel-agent-sandboxes-wave-1';
-      const result = await resolvePortSet({ branch, probe: true });
+      const result = await resolvePortSet({ branch, probe: true, claimDir });
       expect(result.derivedIndex).toBe(12);
       expect(result.index).toBe(12);
       expect(result.advanced).toBe(false);
@@ -98,13 +145,14 @@ describe('dev-ports', () => {
     });
 
     it('advances past an occupied derived index and reports advanced: true', async () => {
+      const claimDir = makeTempDir();
       const branch = 'fix/issue-237';
       const derivedIndex = deriveIndex(branch);
       const derivedPorts = portsForIndex(derivedIndex);
 
       const blocker = await listen(derivedPorts.devServer);
       try {
-        const result = await resolvePortSet({ branch, probe: true });
+        const result = await resolvePortSet({ branch, probe: true, claimDir });
         expect(result.derivedIndex).toBe(derivedIndex);
         expect(result.index).not.toBe(derivedIndex);
         expect(result.advanced).toBe(true);
@@ -115,26 +163,107 @@ describe('dev-ports', () => {
     });
 
     it('throws naming the exhausted range when every candidate index is occupied', async () => {
+      const claimDir = makeTempDir();
       const branch = 'agent-worktree-b'; // derives to index 10
       const maxIndex = 2; // shrink the range so occupying 1 and 2 exhausts it
       const blockers = await Promise.all(
         [1, 2].map(index => listen(portsForIndex(index).devServer))
       );
       try {
-        await expect(resolvePortSet({ branch, probe: true, maxIndex })).rejects.toThrow(/1\.\.=2/);
+        await expect(resolvePortSet({ branch, probe: true, maxIndex, claimDir })).rejects.toThrow(
+          /1\.\.=2/
+        );
       } finally {
         await Promise.all(blockers.map(close));
       }
     });
+
+    it('does not steal a live claim held by a different branch, and advances past it', async () => {
+      const claimDir = makeTempDir();
+      const branch = 'agent-worktree-a'; // derives to index 26
+      const index = deriveIndex(branch);
+      fs.mkdirSync(claimDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(claimDir, `index-${index}.claim.json`),
+        JSON.stringify({ pid: process.pid, branch: 'someone-elses-branch', resolvedAt: Date.now() })
+      );
+
+      const result = await resolvePortSet({ branch, probe: true, claimDir });
+      expect(result.index).not.toBe(index);
+      expect(result.advanced).toBe(true);
+    });
+
+    it('reclaims a stale claim left by a dead process instead of poisoning the index forever', async () => {
+      const claimDir = makeTempDir();
+      const branch = 'agent-worktree-a'; // derives to index 26
+      const index = deriveIndex(branch);
+      fs.mkdirSync(claimDir, { recursive: true });
+      // A pid that cannot possibly be alive, recorded by a different branch,
+      // with a grace window so short that "just resolved" cannot save it --
+      // this is what a sandbox left behind by a SIGKILL (or a dev-world-
+      // reclaim run, which only ever kills the app pid and never touches
+      // this claim file) looks like well after the fact.
+      fs.writeFileSync(
+        path.join(claimDir, `index-${index}.claim.json`),
+        JSON.stringify({
+          pid: 999999999,
+          branch: 'a-completely-different-branch',
+          resolvedAt: Date.now() - 60_000,
+        })
+      );
+
+      const result = await resolvePortSet({ branch, probe: true, claimDir, claimGraceMs: 1 });
+      expect(result.index).toBe(index);
+      expect(result.advanced).toBe(false);
+      expect(result.ports).toEqual(portsForIndex(index));
+
+      // The index is takeable again by yet another later run too -- the
+      // claim was replaced, not permanently wedged.
+      const claimAfter = JSON.parse(
+        fs.readFileSync(path.join(claimDir, `index-${index}.claim.json`), 'utf8')
+      );
+      expect(claimAfter.pid).toBe(process.pid);
+    });
+
+    it(
+      'never hands the same index to two concurrently-resolving sandboxes',
+      async () => {
+        const claimDir = makeTempDir();
+        // Eight distinct branch names that really do hash-collide onto the
+        // same starting index -- the exact "two launches racing the same
+        // branch index" scenario from the bug report, just with eight
+        // racers instead of two. If this ever stops being a real collision
+        // (e.g. the hash changes), the assertion below catches it instead
+        // of silently testing nothing.
+        const branches = [
+          'agent-worktree-collide-21',
+          'agent-worktree-collide-59',
+          'agent-worktree-collide-81',
+          'agent-worktree-collide-95',
+          'agent-worktree-collide-134',
+          'agent-worktree-collide-142',
+          'agent-worktree-collide-154',
+          'agent-worktree-collide-178',
+        ];
+        const derived = new Set(branches.map(deriveIndex));
+        expect(derived.size).toBe(1);
+
+        // Real OS-process concurrency, not same-process Promise.all: each
+        // branch resolves in its own `node dev-ports.mjs` invocation, just
+        // like the Makefile spawns one per `make dev-sandbox` call.
+        const results = await Promise.all(branches.map(branch => runDevPortsCli(branch, claimDir)));
+
+        const indices = results.map(r => r.index);
+        expect(new Set(indices).size).toBe(branches.length);
+        for (const result of results) {
+          expect(result.ports).toEqual(portsForIndex(result.index));
+        }
+      },
+      30_000
+    );
   });
 
   describe('readSandboxHandle', () => {
-    function makeTempDir(): string {
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacto-dev-ports-test-'));
-      tempDirs.push(dir);
-      return dir;
-    }
-
     it('returns null when no handle file exists', () => {
       const dir = makeTempDir();
       expect(readSandboxHandle(dir)).toBeNull();
