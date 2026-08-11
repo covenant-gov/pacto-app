@@ -1058,8 +1058,32 @@ fn receipt_transaction_hash(receipt: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Prefer top-level UserOp `success`; fall back to nested L1 `receipt.status`.
 fn receipt_success(receipt: &Value) -> Option<bool> {
-    receipt.get("success")?.as_bool()
+    if let Some(v) = receipt.get("success") {
+        return v.as_bool();
+    }
+    parse_l1_receipt_status(receipt.get("receipt")?.get("status")?)
+}
+
+fn parse_l1_receipt_status(raw: &Value) -> Option<bool> {
+    match raw {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => n.as_u64().map(|v| v != 0),
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                return None;
+            }
+            let n = if t.starts_with("0x") || t.starts_with("0X") {
+                u64::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()?
+            } else {
+                u64::from_str_radix(t, 10).ok()?
+            };
+            Some(n != 0)
+        }
+        _ => None,
+    }
 }
 
 fn parse_actual_gas_cost_wei(raw: &Value) -> Option<String> {
@@ -1097,7 +1121,7 @@ pub fn parse_sponsored_user_op_receipt(receipt: &Value) -> Result<SponsoredUserO
     let success = receipt_success(receipt).ok_or_else(|| {
         wallet_err_json(
             "USEROP_RECEIPT",
-            "bundler receipt missing success field",
+            "bundler receipt missing success / receipt.status",
             None,
         )
     })?;
@@ -1636,6 +1660,37 @@ mod tests {
             .unwrap()
             .actual_gas_cost_wei
             .is_none());
+    }
+
+    #[test]
+    fn parse_sponsored_receipt_falls_back_to_nested_status() {
+        let via_status = json!({
+            "actualGasCost": "0x1",
+            "receipt": {"transactionHash": "0xbbb", "status": "0x1"}
+        });
+        let parsed = parse_sponsored_user_op_receipt(&via_status).unwrap();
+        assert!(parsed.success);
+        assert_eq!(parsed.tx_hash, "0xbbb");
+
+        let failed_status = json!({
+            "receipt": {"transactionHash": "0xccc", "status": "0x0"}
+        });
+        assert!(!parse_sponsored_user_op_receipt(&failed_status)
+            .unwrap()
+            .success);
+
+        // Top-level UserOp success wins over nested L1 status.
+        let prefer_top = json!({
+            "success": true,
+            "receipt": {"transactionHash": "0xddd", "status": "0x0"}
+        });
+        assert!(parse_sponsored_user_op_receipt(&prefer_top).unwrap().success);
+
+        let missing_both = json!({
+            "receipt": {"transactionHash": "0xeee"}
+        });
+        let err = parse_sponsored_user_op_receipt(&missing_both).unwrap_err();
+        assert!(err.contains("success / receipt.status"));
     }
 
     #[test]
