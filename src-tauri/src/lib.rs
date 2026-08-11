@@ -2120,6 +2120,9 @@ async fn evict_chat_messages(chat_id: String, keep_count: usize) -> Result<(), S
 /// Delete a DM chat and all its messages from the database and in-memory state.
 /// chat_id is the other party's npub for DMs. Persists a deletion cutoff so relay
 /// replay cannot restore history at or before the delete time.
+///
+/// Returns as soon as SQLite work finishes. In-memory `STATE` cleanup is best-effort
+/// and must not block the invoke when sync holds the lock.
 #[tauri::command]
 async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
     let deleted_at = std::time::SystemTime::now()
@@ -2127,10 +2130,28 @@ async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Re
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     db::upsert_dm_deletion_cutoff(&handle, &chat_id, deleted_at).await?;
-    db::delete_chat(handle.clone(), &chat_id).await?;
-    let mut state = STATE.lock().await;
-    state.chats.retain(|c| c.id != chat_id);
+    match db::delete_chat(handle.clone(), &chat_id).await {
+        Ok(()) => {}
+        Err(e) if e.starts_with("Chat not found:") => {}
+        Err(e) => return Err(e),
+    }
+    drop_dm_chat_from_state(chat_id);
     Ok(())
+}
+
+/// Remove a DM from in-memory chats without awaiting a contended `STATE` lock.
+fn drop_dm_chat_from_state(chat_id: String) {
+    match STATE.try_lock() {
+        Ok(mut state) => {
+            state.chats.retain(|c| c.id != chat_id);
+        }
+        Err(_) => {
+            tokio::spawn(async move {
+                let mut state = STATE.lock().await;
+                state.chats.retain(|c| c.id != chat_id);
+            });
+        }
+    }
 }
 
 /// Build and return the file hash index for deduplication

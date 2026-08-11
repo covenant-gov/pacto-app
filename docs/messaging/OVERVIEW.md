@@ -55,7 +55,7 @@ Entry points include **`message`** (text), **`file_message`**, **`voice_message`
 ### Sync
 
 - **DM:** `fetch_messages` loads Gift Wraps; **`handle_event`** fills state + DB. The windowed backfill loop and its `sync_progress` / `sync_slice_finished` / `sync_finished` events are documented in [`SYNC_STATUS.md`](./SYNC_STATUS.md).
-- **DM delete:** `delete_dm_chat` purges local chat/events, records a permanent per-peer row in **`dm_deletion_cutoffs`**, and gift-wrap ingest discards wraps with rumored `created_at <= deleted_at` (both inbound and outbound). Later messages land as **Requests** until the user sends again. Blocked peers still take precedence over the cutoff.
+- **DM delete:** UI removes the peer from Friends immediately; `delete_dm_chat` still records **`dm_deletion_cutoffs`**, purges local chat/events (already-missing chat is success), and gift-wrap ingest discards wraps with rumored `created_at <= deleted_at` (both inbound and outbound). Unexpected backend failures restore the row. Later messages land as **Requests** until the user sends again. Blocked peers still take precedence over the cutoff.
 - **MLS:** after DM sync / init, **`sync_mls_groups_now`** (per-group cursors, Kind 444 history).
 
 ### In-memory state

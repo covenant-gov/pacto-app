@@ -4849,6 +4849,24 @@ mod dm_deletion_cutoff_tests {
             "cutoff survives chat purge"
         );
     }
+
+    #[test]
+    fn delete_chat_conn_missing_chat_is_not_found() {
+        let conn = in_memory_app_conn();
+        let peer = "npub1missingchatpeerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+        upsert_dm_deletion_cutoff_conn(&conn, peer, 2000).unwrap();
+        let err = delete_chat_conn(&conn, peer).unwrap_err();
+        assert!(
+            err.starts_with("Chat not found:"),
+            "expected Chat not found, got: {}",
+            err
+        );
+        assert_eq!(
+            get_dm_deletion_cutoff_conn(&conn, peer).unwrap(),
+            Some(2000),
+            "cutoff remains when chat row was already absent"
+        );
+    }
 }
 
 /// Save MLS keypackage index to SQL database (plaintext)
