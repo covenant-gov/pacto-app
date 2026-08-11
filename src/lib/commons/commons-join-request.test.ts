@@ -2,9 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
 import {
+  clearJoinRequestInFlight,
   commonsJoinRequestBlockReason,
+  commonsJoinRequestInFlight,
   commonsJoinRequestRevision,
+  isJoinRequestInFlight,
   isJoinRequestRateLimited,
+  markJoinRequestInFlight,
   recordJoinRequestSent,
   resetCommonsJoinRequestRevision,
 } from './commons-join-request';
@@ -31,6 +35,34 @@ describe('commonsJoinRequestBlockReason', () => {
 
   it('blocks own broadcast', () => {
     expect(commonsJoinRequestBlockReason(squadBroadcast, 'npub1author', [])).toMatch(/your broadcast/i);
+  });
+});
+
+describe('join request in-flight', () => {
+  beforeEach(() => {
+    resetCommonsJoinRequestRevision();
+  });
+
+  it('marks, checks, and clears in-flight squad ids', () => {
+    const before = get(commonsJoinRequestRevision);
+    expect(isJoinRequestInFlight('group-1')).toBe(false);
+
+    markJoinRequestInFlight('group-1');
+    expect(isJoinRequestInFlight('group-1')).toBe(true);
+    expect(get(commonsJoinRequestInFlight).has('group-1')).toBe(true);
+    expect(get(commonsJoinRequestRevision)).toBe(before + 1);
+
+    clearJoinRequestInFlight('group-1');
+    expect(isJoinRequestInFlight('group-1')).toBe(false);
+    expect(get(commonsJoinRequestRevision)).toBe(before + 2);
+  });
+
+  it('reset clears in-flight set', () => {
+    markJoinRequestInFlight('group-1');
+    resetCommonsJoinRequestRevision();
+    expect(isJoinRequestInFlight('group-1')).toBe(false);
+    expect(get(commonsJoinRequestInFlight).size).toBe(0);
+    expect(get(commonsJoinRequestRevision)).toBe(0);
   });
 });
 

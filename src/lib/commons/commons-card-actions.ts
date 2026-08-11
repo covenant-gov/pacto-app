@@ -2,7 +2,10 @@ import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDto } from './types';
 import {
+  clearJoinRequestInFlight,
   commonsJoinRequestBlockReason,
+  isJoinRequestInFlight,
+  markJoinRequestInFlight,
   recordJoinRequestSent,
   squadIdFromBroadcast,
 } from './commons-join-request';
@@ -49,16 +52,26 @@ export async function sendCommonsJoinRequest(
   }
 
   const squadId = squadIdFromBroadcast(broadcast);
+  if (!squadId) {
+    return { ok: false, error: 'Missing squad id.' };
+  }
+  if (isJoinRequestInFlight(squadId)) {
+    return { ok: true };
+  }
+
   const content = formatBotJoinDm({
     squadId,
     squadName: broadcast.squadName ?? 'Squad',
     broadcastEventId: broadcast.eventId,
   });
+  markJoinRequestInFlight(squadId);
   try {
     await sendDmMessage(botNpub, content);
     recordJoinRequestSent(squadId);
     return { ok: true };
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not send join request.') };
+  } finally {
+    clearJoinRequestInFlight(squadId);
   }
 }
