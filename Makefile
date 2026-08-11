@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-sandbox dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -66,15 +66,42 @@ dev:
 	fi
 
 # Isolated sandbox account for agent-driven MCP verification (docs/TAURI_MCP_INTEGRATION.md).
-# Avoids colliding with a real dev account whose PIN nobody remembers. Port
-# set is resolved the same way as `dev` so a concurrent dev-sandbox run
-# never collides with it or with another worktree's `dev`.
+# Avoids colliding with a real dev account whose PIN nobody remembers.
+#
+# The root is branch-scoped and stable, never timestamped. A fresh root each
+# launch orphans the MLS key store holding the keypackage private key, so a
+# welcome issued against the previous run's keypackage fails with "No matching
+# key package was found in the key store" -- a delivery bug that isn't one.
+# Branch-scoping also keeps a newer branch's migrations from tripping the
+# storage-format gate on an older one, same reasoning as `dev` above.
+#
+# PERSONA names a second, third, ... identity on the same branch:
+#   PERSONA=alice make dev-sandbox
+# Each persona gets its own account, data dir, and derived port set, so two
+# can run side by side and invite each other. Personas are stable by design:
+# relaunching returns to the same identity. Wipe one with `dev-sandbox-fresh`,
+# all of them with `make clean`.
+PERSONA ?= solo
 dev-sandbox:
-	@mkdir -p test_sandbox
-	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-sandbox)"; \
-	echo "make dev-sandbox: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
-	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_sandbox/manual-$(shell date +%s)" PACTO_ALLOW_TEST_AUTH=1 \
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	root="$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"; \
+	mkdir -p "$$root"; \
+	eval "$$(node scripts/dev-ports.mjs --export --branch "dev-sandbox-$$slug-$(PERSONA)")"; \
+	echo "make dev-sandbox: branch '$$branch' persona '$(PERSONA)' -> port index $$PACTO_DEV_PORT_INDEX"; \
+	echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+	echo "  data dir test_sandbox/$$slug/$(PERSONA)"; \
+	PACTO_TEST_SANDBOX_ROOT="$$root" PACTO_ALLOW_TEST_AUTH=1 \
 	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+
+# Same persona, wiped first -- for when the fresh-account UI is itself what
+# you are testing and an already-authenticated account would skip the flow.
+dev-sandbox-fresh:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	echo "removing test_sandbox/$$slug/$(PERSONA)"; \
+	rm -rf "$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"
+	@$(MAKE) dev-sandbox
 
 # Persistent reusable test identities (docs/TAURI_MCP_INTEGRATION.md). Unlike
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
