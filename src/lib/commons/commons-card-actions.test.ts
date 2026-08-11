@@ -1,5 +1,4 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { get } from 'svelte/store';
 import { sendCommonsJoinRequest } from './commons-card-actions';
 import type { CommonsBroadcastDto } from './types';
 import {
