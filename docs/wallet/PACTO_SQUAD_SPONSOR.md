@@ -14,7 +14,7 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 | Sponsored gov writes | `sponsor_paymaster.rs`, `sponsor_userop.rs`, hooked from `gov_module_write.rs` |
 | `paymasterAndData` encoder + vectors | `src/lib/evm/sponsor/` (vendored from upstream client fixtures) |
 | Deployed factory / paymaster | [`pacto-protocol-addresses.json`](../../src/lib/evm/pacto-protocol-addresses.json) — see [`PROTOCOL_ADDRESS_BOOK.md`](./PROTOCOL_ADDRESS_BOOK.md) |
-| Persistence | `squad_infra` SQLite rows (`infra_type: sponsor`) via `list_squad_infra` / `upsert_squad_infra` |
+| Persistence | `squad_infra` SQLite rows (`infra_type: sponsor`) via `list_squad_infra` / `upsert_squad_infra`; **sponsored fee ledger** `squad_sponsored_fee_usage` (per successful UserOp) via `list_squad_sponsored_fee_usage` |
 
 **On-chain squad key:** `squadId = keccak256(utf8(parent_id))` where `parent_id` is the squad or network root id in the app.
 
@@ -33,6 +33,10 @@ Squad-scoped **ERC-4337** gas sponsorship (paymaster + per-squad clone factory).
 Deploy and deposit themselves are **not** sponsored — only those gov writes. See also [ACCESS_CONTROL.md](../governance/ACCESS_CONTROL.md) (Sponsored gov writes).
 
 **Wallet model:** Pacto signs with the embedded **roster EOA** only. There is no “pick EOA vs smart-contract wallet” switch and no support for an external SCW (e.g. Safe) as the roster signer. On the sponsored path, if that EOA still has empty code, the client attaches an **EIP-7702** authorization so the bundler can temporarily set-code it to a shared account implementation (AA-compatible `execute`). That is not a different wallet product — same key, temporary bytecode for the UserOp. If the address already has code, 7702 auth is skipped.
+
+### Sponsored fee ledger
+
+On successful sponsored inclusion (`success: true` + bundler `actualGasCost`), `gov_module_write` inserts a row into `squad_sponsored_fee_usage` (actor npub/EVM, amount wei, selector/action, target, userOp/tx hash, parent, chain). Failed or reverted UserOps are not recorded as spent. Persist failures are logged and do not fail the write. Treasury UI lists via `list_squad_sponsored_fee_usage` (newest first, capped).
 
 ### Operator env
 
