@@ -4,6 +4,7 @@ const {
   sendDmMessage,
   syncMlsGroupsNow,
   publishSquadMemberEvmShare,
+  getBoundSquadEvmAddressForParent,
   publishSquadNetworkUpdated,
   publishSquadRpcUpdated,
   listSquadInfra,
@@ -37,6 +38,7 @@ const {
     sendDmMessage: vi.fn(),
     syncMlsGroupsNow: vi.fn(),
     publishSquadMemberEvmShare: vi.fn(),
+    getBoundSquadEvmAddressForParent: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
     publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
@@ -88,6 +90,7 @@ vi.mock('./squad-member-evm-share', async (importOriginal) => {
   return {
     ...actual,
     publishSquadMemberEvmShare: (...args: unknown[]) => publishSquadMemberEvmShare(...args),
+    getBoundSquadEvmAddressForParent: (...args: unknown[]) => getBoundSquadEvmAddressForParent(...args),
   };
 });
 
@@ -133,6 +136,7 @@ describe('squad-state-sync', () => {
     syncMlsGroupsNow.mockResolvedValue({ synced: 0, total: 0 });
     sendDmMessage.mockResolvedValue(undefined);
     publishSquadMemberEvmShare.mockResolvedValue(true);
+    getBoundSquadEvmAddressForParent.mockResolvedValue('0xbound');
     publishSquadNetworkUpdated.mockResolvedValue(true);
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
@@ -320,7 +324,9 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid');
+    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid', {
+      evmAddress: '0xbound',
+    });
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
     const govCalls = sendDmMessage.mock.calls.filter((c) =>
       String(c[1]).includes('governance_updated'),
@@ -328,6 +334,18 @@ describe('squad-state-sync', () => {
     expect(govCalls).toHaveLength(1);
     expect(String(govCalls[0][1])).toContain('pacto_gov');
     expect(String(govCalls[0][1])).not.toContain('gnosis_safe');
+  });
+
+  it('skips EVM republish when unbound but still syncs network', async () => {
+    getBoundSquadEvmAddressForParent.mockResolvedValueOnce(null);
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-unbound',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
   });
 
   it('debounces duplicate respond for the same request_id', async () => {

@@ -21,7 +21,9 @@
   let rosterKeyNeeded: boolean | null = null;
 
   $: myNpub = $currentUser?.npub ?? '';
-  $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  $: myRosterEvmRaw = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  /** Hide orphan auto-share until personal-alerts bind. */
+  $: myRosterEvm = rosterKeyNeeded === true ? '' : myRosterEvmRaw;
   $: void $squadStateSyncRequestInFlightRevision;
   $: syncRequesting = announcementsGroupId
     ? isSquadStateSyncInFlight(announcementsGroupId)

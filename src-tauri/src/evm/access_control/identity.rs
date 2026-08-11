@@ -1,4 +1,4 @@
-//! Fail-closed roster EVM for ACL (no active-signer fallback).
+//! Fail-closed roster EVM for ACL (binding only; no share-row or active-signer fallback).
 
 use alloy::primitives::Address;
 use rusqlite::OptionalExtension;
@@ -39,10 +39,6 @@ pub fn resolve_acl_roster_address<R: Runtime>(
         if let Some(a) = addr.and_then(|x| crate::evm::normalize_hex_address(x.trim())) {
             return parse_address(a.as_str()).map_err(|e| wallet_err_json("ACL_ROSTER", e, None));
         }
-    }
-
-    if let Some(addr) = db::roster_evm_address_for_member(app, pid, member.as_str())? {
-        return parse_address(addr.as_str()).map_err(|e| wallet_err_json("ACL_ROSTER", e, None));
     }
 
     Err(wallet_err_json(

@@ -21,7 +21,7 @@ import {
   squadInfraLegacyProvider,
 } from '../governance/api';
 import { currentUser } from '../../stores/auth';
-import { publishSquadMemberEvmShare } from './squad-member-evm-share';
+import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
@@ -264,8 +264,12 @@ export async function respondToSquadStateSyncRequest(
 
   if (wantEvm) {
     try {
-      const ok = await publishSquadMemberEvmShare(parentId);
-      if (ok) anyOk = true;
+      const bound = await getBoundSquadEvmAddressForParent(parentId);
+      if (bound) {
+        const ok = await publishSquadMemberEvmShare(parentId, { evmAddress: bound });
+        if (ok) anyOk = true;
+      }
+      /* unbound: omit EVM; still help with infra/network/channels */
     } catch (e) {
       console.warn('[squad-state-sync] EVM republish failed', e);
     }

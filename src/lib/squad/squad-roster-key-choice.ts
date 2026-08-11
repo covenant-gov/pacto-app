@@ -63,6 +63,23 @@ export function clearDeferredSquadRosterKeyChoice(parentId: string): void {
   });
 }
 
+/**
+ * Crew/Status display map: omit self while personal-alerts still requires a bind,
+ * so an orphan auto-share does not look like an intentional assignment.
+ */
+export function squadMemberEvmForDisplay(
+  map: Record<string, string>,
+  myNpub: string | null | undefined,
+  needsKeyChoice: boolean,
+): Record<string, string> {
+  const me = myNpub?.trim();
+  if (!needsKeyChoice || !me) return map;
+  if (!map[me]?.trim()) return map;
+  const next = { ...map };
+  delete next[me];
+  return next;
+}
+
 /** True when the current user still needs to pick a roster key for this parent. */
 export async function needsSquadRosterKeyChoice(
   parentId: string,

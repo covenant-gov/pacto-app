@@ -17,12 +17,17 @@
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
   import {
+    needsSquadRosterKeyChoice,
+    squadMemberEvmForDisplay,
+  } from '../../../lib/squad/squad-roster-key-choice';
+  import {
     allMembersShareEvmState,
     binaryInfraState,
     checklistGlyph,
     mintCrewHatsState,
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
+  import { onMount } from 'svelte';
 
   export let squad: Squad;
   export let permissionsCtx: DashboardPermissionsContext;
@@ -55,24 +60,33 @@
   let rpcUrlDraft = '';
   let rpcFormError = '';
   let rpcPublishing = false;
+  let rosterKeyNeeded = false;
 
   $: myNpub = $currentUser?.npub ?? '';
-  $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  $: displayEvmByNpub = squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded);
+  $: myRosterEvm = myNpub ? displayEvmByNpub[myNpub]?.trim() : '';
   $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
   $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
   $: rpcLabelRaw = formatSquadRpcLabel(squadRpcConfig);
   $: rpcLabel = rpcLabelRaw.startsWith('squad.rpc.') ? $t(rpcLabelRaw) : rpcLabelRaw;
   $: rpcHasBackup = squadRpcHasBackup(squadRpcConfig);
   $: rpcPrimaryIsCustom = squadRpcConfig?.rpc1.kind === 'url';
-  $: shareEvmState = allMembersShareEvmState(channelMembers, squadMemberEvmByNpub);
+  $: shareEvmState = allMembersShareEvmState(channelMembers, displayEvmByNpub);
   $: govState = binaryInfraState(hasGovernance);
   $: adminState = binaryInfraState(hasSquadAdmin);
   $: crewMintState = mintCrewHatsState({
     hasGovernance,
     channelMembers,
-    squadMemberEvmByNpub,
+    squadMemberEvmByNpub: displayEvmByNpub,
     captainWearers,
     crewWearers,
+  });
+
+  onMount(() => {
+    if (!parentId) return;
+    void needsSquadRosterKeyChoice(parentId, announcementsGroupId).then((needed) => {
+      rosterKeyNeeded = needed;
+    });
   });
 
   function glyphClass(state: ChecklistItemState): string {

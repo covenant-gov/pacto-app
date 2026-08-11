@@ -3099,7 +3099,7 @@ pub(crate) fn roster_evm_address_for_member<R: Runtime>(
         .filter(|s| !s.is_empty()))
 }
 
-/// Resolve roster-bound `0x` address: per-squad account binding → roster row → active squad signer.
+/// Resolve roster-bound `0x` address: per-squad account binding only.
 #[command]
 pub fn resolve_squad_roster_evm_address<R: Runtime>(
     handle: AppHandle<R>,
@@ -3137,32 +3137,7 @@ pub fn resolve_squad_roster_evm_address<R: Runtime>(
         }
     }
 
-    if let Some(addr) = roster_evm_address_for_member(&handle, parent, member.as_str())? {
-        return Ok(Some(addr));
-    }
-
-    let conn = crate::account_manager::get_db_connection(&handle)?;
-    let active_id: Option<String> = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'active_evm_account_id'",
-            [],
-            |r| r.get(0),
-        )
-        .optional()
-        .map_err(|e| format!("settings read: {}", e))?;
-    let addr = if let Some(id) = active_id.filter(|s| !s.trim().is_empty()) {
-        conn.query_row(
-            "SELECT address FROM evm_accounts WHERE id = ?1 AND lower(purpose) = 'squad'",
-            rusqlite::params![id.as_str()],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|e| format!("Failed to read active squad account: {}", e))?
-    } else {
-        None
-    };
-    crate::account_manager::return_db_connection(conn);
-    Ok(addr.and_then(|a| crate::evm::normalize_hex_address(a.trim())))
+    Ok(None)
 }
 
 /// Re-apply automation side effects for persisted MLS rows (governance, treasury, roster EVM).

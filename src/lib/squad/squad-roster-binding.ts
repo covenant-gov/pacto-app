@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   addEvmAccountRow,
-  getActiveSquadEvmSignerAddress,
   isSquadPurposeAccount,
   listEvmAccounts,
 } from '../wallet/evm-accounts';
@@ -57,7 +56,7 @@ export async function bindNewSquadKey(announcementsGroupId: string, label = 'Squ
   return publishSquadMemberEvmShare(rosterId, { evmAddress: addr });
 }
 
-/** Resolve roster-bound address for deploy/co-owner flows (binding → roster row → active squad signer). */
+/** Resolve roster-bound address for deploy/co-owner flows (binding only). */
 export async function resolveSquadRosterEvmAddress(
   parentId: string,
   memberNpub?: string | null
@@ -71,6 +70,6 @@ export async function resolveSquadRosterEvmAddress(
     });
     return addr?.trim() || null;
   } catch {
-    return (await getActiveSquadEvmSignerAddress())?.trim() || null;
+    return null;
   }
 }
