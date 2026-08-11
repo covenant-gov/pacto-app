@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -9,6 +9,9 @@ help:
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
 	@echo "  dev-account  run the desktop app against the persistent, reusable primary test account"
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
+	@echo "  dev-world          populate this worktree's sandbox with a joined squad via the sibling pacto-dev-env orchestrator"
+	@echo "  dev-world-reclaim  remove this worktree's sandbox via the sibling pacto-dev-env orchestrator"
+	@echo ""
 	@echo "  build        build production frontend + Tauri app"
 	@echo "  preview      serve the built static frontend (no Tauri shell)"
 	@echo ""
@@ -120,6 +123,28 @@ dev-buddy:
 	echo "make dev-buddy: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
 	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-buddy" \
 	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+
+# Delegates world orchestration to the sibling pacto-dev-env checkout so this
+# worktree's branch drives its own populated squad. No gate logic lives here
+# -- see pacto-dev-env's dev-world / dev-world-reclaim targets for that; the
+# moment this target grows a gate, it belongs upstream instead.
+PACTO_DEV_ENV_DIR ?= $(CURDIR)/../pacto-dev-env
+
+dev-world:
+	@if [ ! -d "$(PACTO_DEV_ENV_DIR)" ] || [ ! -f "$(PACTO_DEV_ENV_DIR)/Makefile" ]; then \
+		echo "dev-world: sibling pacto-dev-env checkout not found at $(PACTO_DEV_ENV_DIR)" >&2; \
+		echo "  Set PACTO_DEV_ENV_DIR to its location, or clone pacto-dev-env alongside this repo." >&2; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(PACTO_DEV_ENV_DIR)" dev-world PACTO_APP_DIR="$(CURDIR)"
+
+dev-world-reclaim:
+	@if [ ! -d "$(PACTO_DEV_ENV_DIR)" ] || [ ! -f "$(PACTO_DEV_ENV_DIR)/Makefile" ]; then \
+		echo "dev-world-reclaim: sibling pacto-dev-env checkout not found at $(PACTO_DEV_ENV_DIR)" >&2; \
+		echo "  Set PACTO_DEV_ENV_DIR to its location, or clone pacto-dev-env alongside this repo." >&2; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(PACTO_DEV_ENV_DIR)" dev-world-reclaim PACTO_APP_DIR="$(CURDIR)"
 
 build:
 	# Tauri CLI 2.9.x misinterprets CI=1 as --ci=1 (boolean flags only accept
