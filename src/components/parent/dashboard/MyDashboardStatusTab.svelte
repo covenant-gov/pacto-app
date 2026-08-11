@@ -7,7 +7,7 @@
   import { showToast } from '../../../stores/toast';
   import { currentUser } from '../../../stores/auth';
   import { needsSquadRosterKeyChoice } from '../../../lib/squad/squad-roster-key-choice';
-  import { requestSquadStateSync } from '../../../lib/squad/squad-state-sync';
+  import { requestSquadStateSync, isSquadStateSyncInFlight, squadStateSyncRequestInFlightRevision } from '../../../lib/squad/squad-state-sync';
   import { onMount } from 'svelte';
 
   /** Enable when squad key rotation backend is wired. */
@@ -19,10 +19,13 @@
 
   let rotateModalOpen = false;
   let rosterKeyNeeded: boolean | null = null;
-  let syncRequesting = false;
 
   $: myNpub = $currentUser?.npub ?? '';
   $: myRosterEvm = myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '';
+  $: void $squadStateSyncRequestInFlightRevision;
+  $: syncRequesting = announcementsGroupId
+    ? isSquadStateSyncInFlight(announcementsGroupId)
+    : false;
 
   let copiedRosterEvm = false;
 
@@ -41,18 +44,13 @@
 
   async function onRequestSync() {
     const gid = announcementsGroupId?.trim();
-    if (!gid || syncRequesting) return;
-    syncRequesting = true;
-    try {
-      const ok = await requestSquadStateSync(gid);
-      showToast(
-        ok
-          ? tFn('governance.myStatus.toastSyncRequested')
-          : tFn('governance.myStatus.toastSyncFailed'),
-      );
-    } finally {
-      syncRequesting = false;
-    }
+    if (!gid || isSquadStateSyncInFlight(gid)) return;
+    const ok = await requestSquadStateSync(gid);
+    showToast(
+      ok
+        ? tFn('governance.myStatus.toastSyncRequested')
+        : tFn('governance.myStatus.toastSyncFailed'),
+    );
   }
 
   onMount(() => {

@@ -5,7 +5,12 @@
   import { showToast } from '../../stores/toast';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import type { CommonsJoinRequestDto } from '../../lib/commons/types';
-  import { respondToMlsJoinRequest } from '../../lib/squad/squad-join-mls';
+  import {
+    isJoinRequestRespondInFlight,
+    joinRequestRespondInFlight,
+    joinRequestRespondInFlightRevision,
+    respondToMlsJoinRequest,
+  } from '../../lib/squad/squad-join-mls';
   import { muteJoinRequester } from '../../lib/squad/squad-join-spam';
   import { getSquadBotState, type SquadBotState } from '../../lib/squad/squad-bot';
   import {
@@ -29,7 +34,6 @@
 
   export let squad: Squad;
 
-  let actingOn: string | null = null;
   let refreshError = '';
   let profileLoadToken = 0;
   let botState: SquadBotState | null = null;
@@ -37,6 +41,8 @@
 
   const tFn = get(t);
 
+  $: void $joinRequestRespondInFlightRevision;
+  $: anyRespondInFlight = $joinRequestRespondInFlight.size > 0;
   $: requests = $pendingJoinRequestsBySquadId[squad.id] ?? [];
   $: hydrated = $joinRequestsHydratedBySquadId[squad.id] ?? false;
   $: syncing = $joinRequestsSyncingBySquadId[squad.id] ?? false;
@@ -86,23 +92,21 @@
   }
 
   async function handleMute(request: CommonsJoinRequestDto) {
-    if (!canAct) return;
+    if (!canAct || anyRespondInFlight) return;
     muteJoinRequester(squad.id, request.requesterNpub);
     removePendingJoinRequest(squad.id, request.eventId);
     showToast(tFn('squad.joinRequests.muteToast'));
   }
 
   async function handleReject(request: CommonsJoinRequestDto) {
-    if (!canAct || actingOn) return;
-    actingOn = request.eventId;
+    if (!canAct || anyRespondInFlight || isJoinRequestRespondInFlight(request.eventId)) return;
     const result = await respondToMlsJoinRequest({
       requestId: request.eventId,
       squadId: request.squadId,
       status: 'rejected',
     });
-    actingOn = null;
     if (!result.ok) {
-      showToast(result.error);
+      if (result.error) showToast(result.error);
       return;
     }
     removePendingJoinRequest(squad.id, request.eventId);
@@ -110,16 +114,14 @@
   }
 
   async function handleAccept(request: CommonsJoinRequestDto) {
-    if (!canAct || actingOn) return;
-    actingOn = request.eventId;
+    if (!canAct || anyRespondInFlight || isJoinRequestRespondInFlight(request.eventId)) return;
     const respondResult = await respondToMlsJoinRequest({
       requestId: request.eventId,
       squadId: request.squadId,
       status: 'accepted',
     });
     if (!respondResult.ok) {
-      actingOn = null;
-      showToast(respondResult.error);
+      if (respondResult.error) showToast(respondResult.error);
       return;
     }
 
@@ -136,7 +138,6 @@
       parent: squad,
       memberNpub: request.requesterNpub,
     });
-    actingOn = null;
     if (admitResult.ok) {
       clearPendingAdmitForMember(squad.id, request.requesterNpub);
       const name =
@@ -216,7 +217,7 @@
               <button
                 type="button"
                 class="join-request-btn is-mute"
-                disabled={!!actingOn}
+                disabled={anyRespondInFlight}
                 on:click={() => handleMute(request)}
               >
                 {$t('squad.joinRequests.mute')}
@@ -224,18 +225,22 @@
               <button
                 type="button"
                 class="join-request-btn is-reject"
-                disabled={!!actingOn}
+                disabled={anyRespondInFlight}
                 on:click={() => handleReject(request)}
               >
-                {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.reject')}
+                {isJoinRequestRespondInFlight(request.eventId)
+                  ? $t('squad.joinRequests.working')
+                  : $t('squad.joinRequests.reject')}
               </button>
               <button
                 type="button"
                 class="join-request-btn is-accept"
-                disabled={!!actingOn}
+                disabled={anyRespondInFlight}
                 on:click={() => handleAccept(request)}
               >
-                {actingOn === request.eventId ? $t('squad.joinRequests.working') : $t('squad.joinRequests.accept')}
+                {isJoinRequestRespondInFlight(request.eventId)
+                  ? $t('squad.joinRequests.working')
+                  : $t('squad.joinRequests.accept')}
               </button>
             </div>
           {/if}

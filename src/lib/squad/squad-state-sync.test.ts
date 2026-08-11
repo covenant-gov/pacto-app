@@ -114,9 +114,11 @@ vi.mock('../../stores/auth', () => ({
 
 import {
   formatSquadStateSyncRequest,
+  isSquadStateSyncInFlight,
   maybeAutoRequestSquadStateSyncAfterJoin,
   parseSquadStateSyncRequest,
   requestSquadStateSync,
+  resetSquadStateSyncRequestInFlight,
   resetSquadStateSyncRespondStateForTests,
   respondToSquadStateSyncRequest,
   SQUAD_STATE_SYNC_REQUEST_TYPE,
@@ -126,6 +128,7 @@ describe('squad-state-sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetSquadStateSyncRespondStateForTests();
+    resetSquadStateSyncRequestInFlight();
     currentUser.set({ npub: 'npub1responder' });
     syncMlsGroupsNow.mockResolvedValue({ synced: 0, total: 0 });
     sendDmMessage.mockResolvedValue(undefined);
@@ -154,6 +157,7 @@ describe('squad-state-sync', () => {
   });
 
   afterEach(() => {
+    resetSquadStateSyncRequestInFlight();
     vi.unstubAllGlobals();
   });
 
@@ -236,6 +240,26 @@ describe('squad-state-sync', () => {
       '',
       { virtualBucket: 'announcements' },
     );
+  });
+
+  it('marks sync request in-flight during publish and no-ops concurrent calls', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    sendDmMessage.mockImplementation(async () => {
+      expect(isSquadStateSyncInFlight('ann-gid')).toBe(true);
+      await gate;
+    });
+
+    const pending = requestSquadStateSync('ann-gid');
+    await vi.waitFor(() => expect(isSquadStateSyncInFlight('ann-gid')).toBe(true));
+    await expect(requestSquadStateSync('ann-gid')).resolves.toBe(false);
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+
+    release();
+    await expect(pending).resolves.toBe(true);
+    expect(isSquadStateSyncInFlight('ann-gid')).toBe(false);
   });
 
   it('requestSquadStateSync handles empty gid, missing user, and publish failures', async () => {

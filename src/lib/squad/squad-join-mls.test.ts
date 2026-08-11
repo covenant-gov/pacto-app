@@ -1,13 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { get } from 'svelte/store';
 import {
+  clearJoinRequestRespondInFlight,
   formatBotJoinDm,
   formatJoinResponseDm,
   formatMlsJoinRequest,
   formatMlsJoinRequestResponse,
   isExpectedNonHolderBotSyncError,
+  isJoinRequestRespondInFlight,
+  joinRequestRespondInFlight,
+  joinRequestRespondInFlightRevision,
+  markJoinRequestRespondInFlight,
   mergeJoinRequestsFromMlsMessages,
   parseBotJoinDm,
   parseBotJoinResponseDm,
+  resetJoinRequestRespondInFlight,
   SQUAD_BOT_JOIN_DM_SCHEMA,
   SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA,
   SQUAD_JOIN_REQUEST_SCHEMA,
@@ -281,5 +288,37 @@ describe('isExpectedNonHolderBotSyncError', () => {
     expect(isExpectedNonHolderBotSyncError('Bot not initialized')).toBe(true);
     expect(isExpectedNonHolderBotSyncError('stale keypackage')).toBe(true);
     expect(isExpectedNonHolderBotSyncError('MLS offline')).toBe(false);
+  });
+});
+
+describe('join request respond in-flight', () => {
+  beforeEach(() => {
+    resetJoinRequestRespondInFlight();
+  });
+
+  afterEach(() => {
+    resetJoinRequestRespondInFlight();
+  });
+
+  it('marks, checks, and clears request event ids', () => {
+    const before = get(joinRequestRespondInFlightRevision);
+    expect(isJoinRequestRespondInFlight('evt-1')).toBe(false);
+
+    markJoinRequestRespondInFlight('evt-1');
+    expect(isJoinRequestRespondInFlight('evt-1')).toBe(true);
+    expect(get(joinRequestRespondInFlight).has('evt-1')).toBe(true);
+    expect(get(joinRequestRespondInFlightRevision)).toBe(before + 1);
+
+    clearJoinRequestRespondInFlight('evt-1');
+    expect(isJoinRequestRespondInFlight('evt-1')).toBe(false);
+    expect(get(joinRequestRespondInFlightRevision)).toBe(before + 2);
+  });
+
+  it('reset clears in-flight set', () => {
+    markJoinRequestRespondInFlight('evt-1');
+    resetJoinRequestRespondInFlight();
+    expect(isJoinRequestRespondInFlight('evt-1')).toBe(false);
+    expect(get(joinRequestRespondInFlight).size).toBe(0);
+    expect(get(joinRequestRespondInFlightRevision)).toBe(0);
   });
 });
