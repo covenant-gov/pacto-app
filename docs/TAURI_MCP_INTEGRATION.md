@@ -132,7 +132,7 @@ Use an absolute path here because many editors run the MCP server from a differe
 
 The MCP bridge only exists in debug builds, so run the desktop app in dev mode — but **never** point it at the default dev data directory with a plain `make dev` / `pnpm tauri dev`. That directory tends to carry a real account from prior manual testing, and if nobody remembers its PIN the app just sits on the login screen forever, blocking every step after it.
 
-Use the sandbox target instead, which redirects `app_data_dir`/`app_local_data_dir` to a throwaway `test_sandbox/manual-<timestamp>/` directory and sets `PACTO_ALLOW_TEST_AUTH=1`:
+Use the sandbox target instead, which redirects `app_data_dir`/`app_local_data_dir` to `test_sandbox/<branch-slug>/<persona>/` and sets `PACTO_ALLOW_TEST_AUTH=1`:
 
 ```bash
 make dev-sandbox
@@ -144,7 +144,26 @@ To land already authenticated (see Step 6), also export a recovery phrase before
 PACTO_DEV_LOGIN_MNEMONIC="word1 word2 ... word12" make dev-sandbox
 ```
 
-Wait for the app window to appear and the frontend to load. Delete the leftover directory afterward with `make clean` (or just leave it — every run gets a fresh timestamped dir).
+Wait for the app window to appear and the frontend to load.
+
+The sandbox is **stable, not throwaway**: relaunching returns to the same
+account, so MLS group membership and the key store holding your keypackage
+private key survive a restart. That matters — a root that changed each launch
+would orphan the key store, and a welcome issued against the previous run's
+keypackage then fails with `No matching key package was found in the key
+store`, which looks like a delivery bug and is not one.
+
+Set `PERSONA` to run a second identity on the same branch, with its own
+account, data directory, and derived ports, so two sandboxes can run side by
+side and invite each other:
+
+```bash
+PERSONA=alice make dev-sandbox
+```
+
+To start that persona over from an empty account — when the account-creation
+flow is itself what you are testing — use `make dev-sandbox-fresh`, which
+wipes just that persona's directory first. `make clean` removes all of them.
 
 ## Step 5: Connect from the agent
 
@@ -205,8 +224,9 @@ If the DOM updates, the screenshot reflects the change, and the typed text appea
 |---|---|---|
 | `Transport closed` on startup | `pnpm exec` is too slow, or `type` is not `stdio` | Use `node ./node_modules/@hypothesi/tauri-mcp-server/dist/index.js` directly and set `type` to `stdio` |
 | `no Tauri app found at localhost:9223` | App is not running, not built in debug mode, or bound to a different derived bridge port | Run `make dev-sandbox` and wait for the window; check `<sandbox root>/sandbox-handle.json` for the actual bound port |
-| App stuck on the login screen; PIN unknown | Connected to the default dev data directory, which carries a real account from prior manual testing | Stop it and restart with `make dev-sandbox`, which always starts from an empty account |
+| App stuck on the login screen; PIN unknown | Connected to the default dev data directory, which carries a real account from prior manual testing | Stop it and restart with `make dev-sandbox`; add `PACTO_DEV_LOGIN_MNEMONIC` to land authenticated, or `make dev-sandbox-fresh` for an empty account |
 | Sandbox lands on the welcome screen despite `PACTO_ALLOW_TEST_AUTH=1` | `PACTO_DEV_LOGIN_MNEMONIC` is unset — `dev_login` full depth is a clean no-op without a configured identity | Export `PACTO_DEV_LOGIN_MNEMONIC` before launching (Step 4), or use the Fallback UI flow in Step 6 |
+| `No matching key package was found in the key store` after an invite | The MLS key store was orphaned — a sandbox root that changes between runs leaves the keypackage private key behind | Keep one root per persona (the default since `dev-sandbox` became branch-scoped); do not override `PACTO_TEST_SANDBOX_ROOT` with a per-run path |
 | `Element not found` when clicking | Text selector matches multiple elements or ref is stale | Use a more specific CSS selector or `webview_execute_js` |
 | Tools do not appear in agent | MCP server config is in the wrong file for your client | Check `.mcp.json` for OMP, `~/.claude/mcp.json` for Claude Code, `~/.cursor/mcp.json` for Cursor |
 | Plugin not found in production | The bridge is intentionally `debug_assertions` only | Only use MCP against dev/debug builds |
