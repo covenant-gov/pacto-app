@@ -72,7 +72,16 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ['**/src-tauri/**', '**/build-agent/**'],
+      // A dev sandbox writes its app log, SQLite database and MLS store under
+      // test_sandbox/ while the dev server is up, and a git worktree nests a
+      // whole second checkout under .worktrees/. Watching either feeds the
+      // running app's own disk churn back in as source changes.
+      ignored: [
+        '**/src-tauri/**',
+        '**/build-agent/**',
+        '**/test_sandbox/**',
+        '**/.worktrees/**',
+      ],
     },
   },
 
