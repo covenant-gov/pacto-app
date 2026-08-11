@@ -39,7 +39,7 @@ flowchart TB
 | **Frontend** | UI, state, user flows | `src/routes/+page.svelte`, `src/stores/`, `src/components/`, `src/lib/` |
 | **Tauri bridge** | Typed frontend ⇄ backend RPC and events | `src-tauri/src/lib.rs` (`invoke_handler` + `AppHandle::emit`) |
 | **Rust backend** | Crypto, Nostr/MLS relay logic, EVM signing, SQLite, media | `src-tauri/src/lib.rs`, `src-tauri/src/{nostr,mls,chat,message,rumor,db,account_manager,evm}/` |
-| **Network** | Nostr relays for messaging; RPCs for chain reads and sends | `TRUSTED_RELAYS`, `ALCHEMY_RPC_KEY`, user RPC prefs |
+| **Network** | Nostr relays for messaging; RPCs for chain reads and sends | `trusted_relays::trusted_relays()`, `ALCHEMY_RPC_KEY`, user RPC prefs |
 
 ## Data flows
 

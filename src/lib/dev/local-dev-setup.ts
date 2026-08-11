@@ -9,7 +9,7 @@
 
 import { addCustomRelay, listRelays } from '../api/relays';
 
-const LOCAL_RELAY_URL = 'ws://localhost:7000';
+const LOCAL_RELAY_URL = 'wss://localhost:7001';
 const RELAY_TIMEOUT_MS = 5_000;
 const APPLIED_FLAG_PREFIX = 'pacto_local_dev_defaults_applied_v1';
 

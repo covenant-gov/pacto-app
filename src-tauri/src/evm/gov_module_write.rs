@@ -388,10 +388,10 @@ mod tests {
         explicit_parent_id, gov_call_action_label, is_soft_sponsor_config_error, select_write_path,
         wallet_error_code, WritePath,
     };
-    use alloy::primitives::U256;
-    use alloy::sol_types::SolCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
+    use alloy::primitives::U256;
+    use alloy::sol_types::SolCall;
 
     #[test]
     fn explicit_parent_id_trims_and_rejects_empty() {

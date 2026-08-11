@@ -6,15 +6,22 @@
  * Hypothesi MCP server, and executes the e2e spec via MCP tools. Artifacts
  * (screenshots, Rust logs, webview console logs) are saved under
  * test-results/tauri-e2e/<run-id>/.
+ *
+ * A `cargo build` debug binary always has tauri's `dev` cfg set, so its webview
+ * loads the compiled-in `build.devUrl` and ignores `frontendDist`. The harness
+ * therefore serves the static build on that URL's port itself; that port is
+ * baked into the binary and cannot be derived per run.
  */
 
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { resolvePortSet, readSandboxHandle } from './dev-ports.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,8 +30,6 @@ const repoRoot = path.resolve(__dirname, '..');
 const runId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const sandboxRoot = path.join(repoRoot, 'test_sandbox', runId);
 const resultsDir = path.join(repoRoot, 'test-results', 'tauri-e2e', runId);
-
-const MCP_BRIDGE_PORT = 9223;
 
 function log(...args) {
   console.log(`[run-e2e-tauri]`, ...args);
@@ -66,6 +71,79 @@ async function waitForPort(port, timeoutMs = 30000) {
   throw new Error(`MCP bridge port ${port} did not become ready within ${timeoutMs}ms`);
 }
 
+async function waitForSandboxHandle(root, timeoutMs = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const handle = readSandboxHandle(root);
+    if (handle) return handle;
+    await sleep(250);
+  }
+  log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+  log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+  throw new Error(`sandbox handle at ${root} did not appear within ${timeoutMs}ms`);
+}
+
+/** Port of the `build.devUrl` compiled into the debug binary. */
+function devUrlPort() {
+  const conf = JSON.parse(readFileSync(path.join(repoRoot, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+  return Number(new URL(conf.build.devUrl).port || 80);
+}
+
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.woff2': 'font/woff2',
+};
+
+/** SPA-fallback static server over `distDir`. Resolves `null` if the port is already served. */
+async function startFrontendServer(distDir, port) {
+  const alreadyServed = await new Promise(resolve => {
+    const socket = net.connect(port, '127.0.0.1', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on('error', () => resolve(false));
+    setTimeout(() => {
+      socket.destroy();
+      resolve(false);
+    }, 500);
+  });
+  if (alreadyServed) {
+    log(`frontend port ${port} already served; reusing it`);
+    return null;
+  }
+
+  const server = http.createServer((req, res) => {
+    const requested = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    let filePath = path.join(distDir, requested);
+    if (!filePath.startsWith(distDir) || !existsSync(filePath) || requested.endsWith('/')) {
+      filePath = path.join(distDir, 'index.html');
+    }
+    try {
+      const body = readFileSync(filePath);
+      res.writeHead(200, {
+        'Content-Type': CONTENT_TYPES[path.extname(filePath)] ?? 'application/octet-stream',
+      });
+      res.end(body);
+    } catch {
+      res.writeHead(404).end('not found');
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+  log(`serving ${distDir} on http://localhost:${port}`);
+  return server;
+}
+
 function saveArtifact(name, data) {
   const filePath = path.join(resultsDir, name);
   writeFileSync(filePath, data);
@@ -99,16 +177,25 @@ async function main() {
     throw new Error(`Debug binary not found at ${binaryPath}. Run 'cargo build' in src-tauri or set PACTO_TAURI_BINARY.`);
   }
 
+  const portSet = await resolvePortSet({ branch: runId, probe: true });
+  log('resolved port set', portSet);
+
   const env = {
     ...process.env,
     PACTO_TEST_SANDBOX_ROOT: sandboxRoot,
     PACTO_ALLOW_TEST_AUTH: '1',
+    PACTO_DEV_PORT_INDEX: String(portSet.index),
+    PACTO_DEV_PORT: String(portSet.ports.devServer),
+    PACTO_DEV_HMR_PORT: String(portSet.ports.hmr),
+    PACTO_MCP_BRIDGE_PORT: String(portSet.ports.mcpBridge),
   };
 
   const frontendDist = path.join(repoRoot, 'build');
   if (!existsSync(frontendDist)) {
     throw new Error(`Frontend build not found at ${frontendDist}. Run 'pnpm build' first.`);
   }
+
+  const frontendServer = await startFrontendServer(frontendDist, devUrlPort());
 
   log('launching Tauri binary', binaryPath);
   const tauri = spawn(binaryPath, [], {
@@ -132,6 +219,7 @@ async function main() {
     tauri.kill('SIGTERM');
     await sleep(1000);
     if (!tauri.killed) tauri.kill('SIGKILL');
+    if (frontendServer) frontendServer.close();
 
     try {
       saveArtifact('tauri-stdout.log', tauriLogs.out.join(''));
@@ -155,8 +243,11 @@ async function main() {
 
   let client;
   try {
-    log('waiting for MCP bridge on port', MCP_BRIDGE_PORT);
-    await waitForPort(MCP_BRIDGE_PORT);
+    log('waiting for sandbox handle at', sandboxRoot);
+    const handle = await waitForSandboxHandle(sandboxRoot);
+    const bridgePort = handle.ports.mcpBridge;
+    log('sandbox handle ready; MCP bridge bound at', bridgePort);
+    await waitForPort(bridgePort);
 
     log('starting Hypothesi MCP server');
     // Use the lockfile-pinned local install. `npx -y` can resolve a different
@@ -183,7 +274,7 @@ async function main() {
     await client.connect(transport);
 
     log('starting driver session');
-    const sessionResult = await callTool(client, 'driver_session', { action: 'start', port: MCP_BRIDGE_PORT });
+    const sessionResult = await callTool(client, 'driver_session', { action: 'start', port: bridgePort });
     log('driver_session result:', sessionResult);
 
     const statusResult = await callTool(client, 'driver_session', { action: 'status' });

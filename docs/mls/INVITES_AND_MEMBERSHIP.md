@@ -10,10 +10,10 @@ How **Welcomes** (Kind **443**) move over **Gift Wraps (1059)** and how the app 
 
 | Path | Command / flow |
 |------|----------------|
-| **New group with members** | `create_group_chat` / `create_mls_group` — engine returns one **Welcome** per initial member; each sent with **`gift_wrap_to(TRUSTED_RELAYS, target_pubkey, welcome, …)`** |
+| **New group with members** | `create_group_chat` / `create_mls_group` — engine returns one **Welcome** per initial member; each sent with **`gift_wrap_to(trusted_relays::trusted_relays(), target_pubkey, welcome, …)`** |
 | **Invite to existing group** | `invite_member_to_group` → refresh **KeyPackages** → `add_member_device` → engine **`add_members`** → publish **commit**; send Welcomes via Gift Wrap; **merge pending commit** locally |
 
-Relays: Welcomes use **`TRUSTED_RELAYS`** (not arbitrary relay lists).
+Relays: Welcomes use the resolved **`trusted_relays::trusted_relays()`** set (not arbitrary relay lists).
 
 ---
 

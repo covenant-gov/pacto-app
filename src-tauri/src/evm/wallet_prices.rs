@@ -50,10 +50,7 @@ const FEEDS_SEPOLIA: FeedSet = FeedSet {
     usdt: "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E",
 };
 
-const PUBLIC_RPC_MAINNET: &[&str] = &[
-    "https://ethereum.publicnode.com",
-    "https://1rpc.io/eth",
-];
+const PUBLIC_RPC_MAINNET: &[&str] = &["https://ethereum.publicnode.com", "https://1rpc.io/eth"];
 const PUBLIC_RPC_ARBITRUM: &[&str] = &[
     "https://arb1.arbitrum.io/rpc",
     "https://arbitrum.publicnode.com",
@@ -354,7 +351,9 @@ pub async fn get_usd_spot_prices_for_network(
 
 /// Returns cached prices if fresh; otherwise reads Chainlink for `network_key`.
 #[tauri::command]
-pub async fn wallet_get_usd_spot_prices(network_key: String) -> Result<WalletUsdSpotPrices, String> {
+pub async fn wallet_get_usd_spot_prices(
+    network_key: String,
+) -> Result<WalletUsdSpotPrices, String> {
     get_usd_spot_prices_for_network(&network_key).await
 }
 
