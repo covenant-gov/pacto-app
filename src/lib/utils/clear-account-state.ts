@@ -42,6 +42,7 @@ import {
   relayStatusByUrl,
   typingByChat,
   dmSendError,
+  deletingDmNpubs,
 } from '../../stores/dm';
 import {
   dmThreadScrolledToBottom,
@@ -91,7 +92,10 @@ import {
   resetPendingSquadAdmissions,
   PENDING_SQUAD_ADMISSION_PREFIX,
 } from '../../stores/pending-squad-admission';
-import { resetPendingApprovedJoins } from '../squad/join-request-finalize';
+import {
+  PENDING_APPROVED_JOINS_PREFIX,
+  resetPendingApprovedJoins,
+} from '../squad/join-request-finalize';
 import { stopJoinInboxHolderSync } from '../squad/join-inbox-holder-sync';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
@@ -103,6 +107,7 @@ import { resetJoinRequestRespondInFlight } from '../squad/squad-join-mls';
 import { resetWalletPeerInfoRequestInFlight } from '../wallet/wallet-peer-exchange';
 import { resetSquadBotHolderActionInFlight } from '../squad/squad-bot';
 import { resetSquadStateSyncRequestInFlight } from '../squad/squad-state-sync';
+import { resetDeferredSquadRosterKeyParentIds } from '../squad/squad-roster-key-choice';
 import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
@@ -150,6 +155,7 @@ const SCOPED_KEY_PREFIXES = [
   ...INVITE_DECISION_SCOPED_PREFIXES,
   PENDING_SQUAD_ADMISSION_PREFIX,
   PENDING_ADMIT_PREFIX,
+  PENDING_APPROVED_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
@@ -187,6 +193,7 @@ export function clearAccountState(npub?: string): void {
   resetWalletPeerInfoRequestInFlight();
   resetSquadBotHolderActionInFlight();
   resetSquadStateSyncRequestInFlight();
+  resetDeferredSquadRosterKeyParentIds();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetMlsGroupMembersStores();
@@ -209,6 +216,7 @@ export function clearAccountState(npub?: string): void {
   pinnedDmNpubs.set(new Set());
   blockedDmNpubs.set(new Set());
   dmChatsByNpub.set({});
+  deletingDmNpubs.set(new Set());
   activeDmId.set(null);
   lastOpenedDmByTab.set({
     friends: null,

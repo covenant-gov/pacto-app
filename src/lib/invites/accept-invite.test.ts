@@ -237,6 +237,18 @@ describe('accept-invite channel persistence', () => {
     vi.useRealTimers();
   });
 
+  it('rejects a consent-first invite without a verifiable invite id', async () => {
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([]);
+    await expect(
+      acceptAnnouncementsInvite(
+        { groupId: 'pending-squad', name: 'Pending' },
+        'msg-pending',
+        { admitterNpubs: ['npub1admitter'] },
+      ),
+    ).rejects.toThrow();
+    expect(publishInviteAcceptedClaims).not.toHaveBeenCalled();
+  });
+
   it('acceptChannelInSquadInvite resolves catch-up when already a member', async () => {
     squads.set([
       {

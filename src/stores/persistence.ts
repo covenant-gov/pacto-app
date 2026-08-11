@@ -18,6 +18,10 @@ import { tryCompleteAllPendingSquadAdmissions } from '../lib/invites/accept-invi
 import {
   startJoinInboxHolderSync,
 } from '../lib/squad/join-inbox-holder-sync';
+import {
+  loadPendingApprovedJoins,
+  tryCompletePendingApprovedJoins,
+} from '../lib/squad/join-request-finalize';
 import { loadBackupVerified } from './backup-verification';
 import {
   SQUAD_DASHBOARD_MODE_PREFIX,
@@ -67,9 +71,11 @@ export function loadAccountState(npub: string): void {
   loadMlsHistoryWelcome(npub);
   loadPendingSquadAdmissions(npub);
   loadPendingAdmitQueue();
+  loadPendingApprovedJoins();
   startPendingAdmitDrain();
   startJoinInboxHolderSync();
   void tryCompleteAllPendingSquadAdmissions();
+  void tryCompletePendingApprovedJoins();
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {
     try {

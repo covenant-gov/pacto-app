@@ -47,7 +47,16 @@ export function clearJoinRequestInFlight(squadId: string): void {
   if (removed) commonsJoinRequestRevision.update((n) => n + 1);
 }
 
-type JoinRequestSentMap = Record<string, number>;
+export type CommonsJoinRequestRecord = {
+  requestId: string;
+  squadId: string;
+  squadName: string;
+  botNpub: string;
+  broadcastEventId: string;
+  sentAt: number;
+};
+
+type JoinRequestSentMap = Record<string, CommonsJoinRequestRecord>;
 
 function readJoinRequestMap(): JoinRequestSentMap {
   if (typeof localStorage === 'undefined') return {};
@@ -80,16 +89,29 @@ export function isJoinRequestRateLimited(
   squadId: string,
   nowSecs = Math.floor(Date.now() / 1000)
 ): boolean {
-  const sentAt = readJoinRequestMap()[squadId.trim()];
-  if (!sentAt) return false;
-  return nowSecs - sentAt < COMMONS_JOIN_REQUEST_COOLDOWN_SECS;
+  const record = readJoinRequestMap()[squadId.trim()];
+  if (!record) return false;
+  return nowSecs - record.sentAt < COMMONS_JOIN_REQUEST_COOLDOWN_SECS;
 }
 
-export function recordJoinRequestSent(squadId: string, nowSecs = Math.floor(Date.now() / 1000)): void {
-  const id = squadId.trim();
-  if (!id) return;
+export function getJoinRequestRecord(squadId: string): CommonsJoinRequestRecord | null {
+  return readJoinRequestMap()[squadId.trim()] ?? null;
+}
+
+export function recordJoinRequestSent(record: CommonsJoinRequestRecord): void {
+  const id = record.squadId.trim();
+  if (!id || !record.requestId.trim() || !record.botNpub.startsWith('npub1')) return;
   const map = readJoinRequestMap();
-  map[id] = nowSecs;
+  map[id] = { ...record, squadId: id };
+  writeJoinRequestMap(map);
+  commonsJoinRequestRevision.update((n) => n + 1);
+}
+
+export function clearJoinRequestRecord(squadId: string, requestId: string): void {
+  const id = squadId.trim();
+  const map = readJoinRequestMap();
+  if (map[id]?.requestId !== requestId.trim()) return;
+  delete map[id];
   writeJoinRequestMap(map);
   commonsJoinRequestRevision.update((n) => n + 1);
 }

@@ -15,6 +15,7 @@ import {
 import { mergeUnreadCounts, unreadCountsByChat } from '../../stores/unread';
 import { showToast } from '../../stores/toast';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
+import { t } from 'svelte-i18n';
 
 function setDeleting(npub: string, deleting: boolean): void {
   deletingDmNpubs.update((s) => {
@@ -56,7 +57,7 @@ export function startDeleteDmChat(npub: string): void {
       if (isAlreadyGoneError(err)) return;
       revertDmChat(npub, snapshot);
       if (previousUnread > 0) mergeUnreadCounts({ [npub]: previousUnread });
-      showToast('Could not delete chat. Please try again.');
+      showToast(get(t)('messaging.dm.thread.deleteFailed'));
     })
     .finally(() => {
       setDeleting(npub, false);

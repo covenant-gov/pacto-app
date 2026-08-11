@@ -43,7 +43,7 @@ vi.mock('../../stores/squads', async () => {
   };
 });
 
-import { sendDmMessage } from '../api/nostr';
+import { getDmMessages, sendDmMessage } from '../api/nostr';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { admitMemberToSquad } from '../parent/admit-member';
 import { enqueuePendingAdmit } from '../parent/pending-admit';
@@ -217,6 +217,7 @@ describe('squad-outbound-invite flows', () => {
   beforeEach(() => {
     resetOutboundInviteStateForTests();
     vi.mocked(sendDmMessage).mockReset().mockResolvedValue(true);
+    vi.mocked(getDmMessages).mockReset().mockResolvedValue([]);
     vi.mocked(admitMemberToSquad).mockReset().mockResolvedValue({
       ok: true,
       announcementsOk: true,
@@ -338,9 +339,49 @@ describe('squad-outbound-invite flows', () => {
     expect(admitMemberToSquad).toHaveBeenCalledTimes(1);
   });
 
+  it('enqueues a durable retry when admit throws', async () => {
+    rememberOutboundInvite(validOutbound);
+    vi.mocked(admitMemberToSquad).mockRejectedValueOnce(new Error('relay unavailable'));
+
+    await expect(handleInviteeConsentForAdmit(validOutbound)).resolves.toBeUndefined();
+
+    expect(enqueuePendingAdmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inviteId: 'inv-1',
+        lastError: 'relay unavailable',
+      }),
+    );
+  });
+
   it('handleInviteeConsentForAdmit rejects unvalidated DM claims', async () => {
     await handleInviteeConsentForAdmit(validOutbound);
     expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('rejects a tampered invitee for a known invite id', async () => {
+    rememberOutboundInvite(validOutbound);
+    await handleInviteeConsentForAdmit({ ...validOutbound, invitee_npub: 'npub-mallory' });
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
+  });
+
+  it('finds a cold outbound invite beyond the first history page', async () => {
+    const firstPage = Array.from({ length: 200 }, (_, index) => ({
+      content: `message-${index}`,
+    }));
+    vi.mocked(getDmMessages)
+      .mockResolvedValueOnce(firstPage as never)
+      .mockResolvedValueOnce([{ content: formatSquadOutboundInvite(validOutbound) }] as never);
+
+    await handleInviteeConsentForAdmit(validOutbound);
+
+    expect(getDmMessages).toHaveBeenNthCalledWith(
+      2,
+      'g-ann',
+      200,
+      200,
+      { virtualBucketFilter: 'announcements' },
+    );
+    expect(admitMemberToSquad).toHaveBeenCalledOnce();
   });
 
   it('handleInviteeConsentForAdmit admits once and can broadcast admit_needed', async () => {
@@ -378,5 +419,11 @@ describe('squad-outbound-invite flows', () => {
       expect(admitMemberToSquad).toHaveBeenCalled();
     });
     onMlsAdmitNeeded(formatSquadAdmitNeeded(validOutbound), 'other-group');
+  });
+
+  it('rejects an MLS admit_needed without a matching outbound invite', async () => {
+    onMlsAdmitNeeded(formatSquadAdmitNeeded(validOutbound), 'g-ann');
+    await vi.waitFor(() => expect(getDmMessages).toHaveBeenCalled());
+    expect(admitMemberToSquad).not.toHaveBeenCalled();
   });
 });

@@ -128,6 +128,7 @@ describe('resolveDmMessagePresentation', () => {
   it('classifies bot join DM', () => {
     const content = JSON.stringify({
       schema: 'pacto.squad.bot_join_dm.v1',
+      requestId: 'r1',
       squadId: 's1',
       squadName: 'Pirates',
       broadcastEventId: 'e1',

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { sendCommonsJoinRequest } from './commons-card-actions';
 import type { CommonsBroadcastDto } from './types';
 import {
+  getJoinRequestRecord,
   isJoinRequestInFlight,
   resetCommonsJoinRequestRevision,
 } from './commons-join-request';
@@ -114,5 +115,6 @@ describe('sendCommonsJoinRequest', () => {
     const result = await sendCommonsJoinRequest(broadcast, 'npub1me', []);
     expect(result.ok).toBe(false);
     expect(isJoinRequestInFlight('squad-mls-id')).toBe(false);
+    expect(getJoinRequestRecord('squad-mls-id')).toBeNull();
   });
 });

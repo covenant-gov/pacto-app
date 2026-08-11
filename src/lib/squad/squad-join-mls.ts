@@ -61,12 +61,14 @@ export interface SquadBotJoinDmDto {
 }
 
 export function formatBotJoinDm(input: {
+  requestId: string;
   squadId: string;
   squadName: string;
   broadcastEventId: string;
 }): string {
   return JSON.stringify({
     schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+    requestId: input.requestId.trim(),
     squadId: input.squadId.trim(),
     squadName: input.squadName.trim(),
     broadcastEventId: input.broadcastEventId.trim(),
@@ -116,7 +118,7 @@ export function parseBotJoinDm(content: string | null | undefined): SquadBotJoin
   const requestId = wire.requestId?.trim() ?? '';
   const requesterNpub = wire.requesterNpub?.trim() ?? '';
   const createdAt = typeof wire.createdAt === 'number' ? wire.createdAt : 0;
-  if (!squadId || !broadcastEventId) return null;
+  if (!requestId || !squadId || !broadcastEventId) return null;
   return {
     requestId,
     squadId,
@@ -403,5 +405,9 @@ async function notifyJoinRequesterViaDm(input: {
     requestId: input.requestId,
     status: input.status,
   });
-  await sendDmMessage(npub, content);
+  await invoke('squad_bot_send_join_response', {
+    squadId: input.squadId.trim(),
+    requesterNpub: npub,
+    content,
+  });
 }

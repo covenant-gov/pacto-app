@@ -6,6 +6,7 @@ import {
   commonsJoinRequestBlockReason,
   commonsJoinRequestInFlight,
   commonsJoinRequestRevision,
+  getJoinRequestRecord,
   isJoinRequestInFlight,
   isJoinRequestRateLimited,
   markJoinRequestInFlight,
@@ -96,8 +97,16 @@ describe('join request rate limit', () => {
   it('records and checks cooldown', () => {
     const now = 1_000_000;
     const before = get(commonsJoinRequestRevision);
-    recordJoinRequestSent('group-1', now);
+    recordJoinRequestSent({
+      requestId: 'request-1',
+      squadId: 'group-1',
+      squadName: 'Neo Builders',
+      botNpub: 'npub1author',
+      broadcastEventId: 'evt1',
+      sentAt: now,
+    });
     expect(get(commonsJoinRequestRevision)).toBe(before + 1);
+    expect(getJoinRequestRecord('group-1')?.requestId).toBe('request-1');
     expect(isJoinRequestRateLimited('group-1', now + 100)).toBe(true);
     expect(isJoinRequestRateLimited('group-1', now + 86401)).toBe(false);
   });

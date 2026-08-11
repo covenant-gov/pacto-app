@@ -35,7 +35,7 @@ export type SquadAdmitNeededPayload = {
   invitee_npub: string;
 };
 
-const pendingOutboundByInviteId = new Map<string, SquadOutboundInvitePayload>();
+const pendingOutboundInvites = new Map<string, SquadOutboundInvitePayload>();
 /** Successful admits only. */
 const admittedSuccessKeys = new Set<string>();
 /** In-flight or already attempted this process — retries go through pending-admit drain. */
@@ -56,7 +56,7 @@ function pruneHandled(): void {
 }
 
 export function resetOutboundInviteStateForTests(): void {
-  pendingOutboundByInviteId.clear();
+  pendingOutboundInvites.clear();
   admittedSuccessKeys.clear();
   attemptedAdmitKeys.clear();
 }
@@ -135,11 +135,17 @@ export function parseSquadAdmitNeeded(content: string | null | undefined): Squad
 }
 
 export function rememberOutboundInvite(payload: SquadOutboundInvitePayload): void {
-  pendingOutboundByInviteId.set(payload.invite_id, payload);
+  pendingOutboundInvites.set(
+    `${payload.parent_id.trim().toLowerCase()}:${payload.invite_id}`,
+    payload
+  );
 }
 
-export function getRememberedOutboundInvite(inviteId: string): SquadOutboundInvitePayload | undefined {
-  return pendingOutboundByInviteId.get(inviteId);
+export function getRememberedOutboundInvite(
+  parentId: string,
+  inviteId: string
+): SquadOutboundInvitePayload | undefined {
+  return pendingOutboundInvites.get(`${parentId.trim().toLowerCase()}:${inviteId}`);
 }
 
 /** Match claim to a remembered outbound invite (invite id + invitee + parent). */
@@ -148,7 +154,7 @@ export function matchesKnownOutboundInvite(payload: {
   invite_id: string;
   invitee_npub: string;
 }): boolean {
-  const known = pendingOutboundByInviteId.get(payload.invite_id);
+  const known = getRememberedOutboundInvite(payload.parent_id, payload.invite_id);
   if (!known) return false;
   return (
     known.invitee_npub.trim().toLowerCase() === payload.invitee_npub.trim().toLowerCase() &&
@@ -166,18 +172,24 @@ export async function ensureOutboundInviteKnown(payload: {
   const gid = payload.parent_id.trim();
   if (!gid) return false;
   try {
-    const msgs = await getDmMessages(gid, 100, 0, { virtualBucketFilter: 'announcements' });
-    for (const m of msgs) {
-      const parsed = parseSquadOutboundInvite(m.content);
-      if (!parsed) continue;
-      rememberOutboundInvite(parsed);
-      if (
-        parsed.invite_id === payload.invite_id &&
-        parsed.invitee_npub.trim().toLowerCase() === payload.invitee_npub.trim().toLowerCase() &&
-        parsed.parent_id.trim().toLowerCase() === payload.parent_id.trim().toLowerCase()
-      ) {
-        return true;
+    const pageSize = 200;
+    for (let offset = 0; ; offset += pageSize) {
+      const msgs = await getDmMessages(gid, pageSize, offset, {
+        virtualBucketFilter: 'announcements',
+      });
+      for (const m of msgs) {
+        const parsed = parseSquadOutboundInvite(m.content);
+        if (!parsed) continue;
+        rememberOutboundInvite(parsed);
+        if (
+          parsed.invite_id === payload.invite_id &&
+          parsed.invitee_npub.trim().toLowerCase() === payload.invitee_npub.trim().toLowerCase() &&
+          parsed.parent_id.trim().toLowerCase() === payload.parent_id.trim().toLowerCase()
+        ) {
+          return true;
+        }
       }
+      if (msgs.length < pageSize) break;
     }
   } catch (e) {
     console.warn('[outbound-invite] history lookup failed', e);
@@ -233,11 +245,11 @@ function acceptHandleKey(inviteId: string, inviteeNpub: string): string {
 
 /**
  * Peer received invitee accept claim (DM) or admit_needed (MLS): run admit.
- * DM claims require a known outbound invite; MLS admit_needed is already group-authenticated.
+ * Claims require a matching outbound invite announcement.
  */
 export async function handleInviteeConsentForAdmit(
   payload: { parent_id: string; invite_id: string; invitee_npub: string },
-  opts?: { broadcastAdmitNeeded?: boolean; trustMlsSource?: boolean },
+  opts?: { broadcastAdmitNeeded?: boolean },
 ): Promise<void> {
   const me = get(currentUser)?.npub?.trim();
   if (!me) return;
@@ -251,20 +263,10 @@ export async function handleInviteeConsentForAdmit(
     get(squads).find((s) => getAnnouncementsChannel(s).groupId === payload.parent_id);
   if (!parent) return;
 
-  if (!opts?.trustMlsSource) {
-    const known = await ensureOutboundInviteKnown(payload);
-    if (!known) {
-      console.warn('[outbound-invite] ignoring unvalidated accept claim', payload.invite_id);
-      return;
-    }
-  } else if (!matchesKnownOutboundInvite(payload)) {
-    // Best-effort remember from claim context for later DM retries.
-    rememberOutboundInvite({
-      parent_id: payload.parent_id,
-      invite_id: payload.invite_id,
-      invitee_npub: payload.invitee_npub,
-      squad_name: parent.name,
-    });
+  const known = await ensureOutboundInviteKnown(payload);
+  if (!known) {
+    console.warn('[outbound-invite] ignoring unvalidated accept claim', payload.invite_id);
+    return;
   }
 
   attemptedAdmitKeys.add(key);
@@ -307,8 +309,14 @@ export async function handleInviteeConsentForAdmit(
       }
     }
   } catch (e) {
-    attemptedAdmitKeys.delete(key);
-    throw e;
+    enqueuePendingAdmit({
+      kind: 'invite',
+      parentId: payload.parent_id,
+      memberNpub: payload.invitee_npub,
+      inviteId: payload.invite_id,
+      lastError: e instanceof Error ? e.message : String(e),
+      lastAttemptAt: Date.now(),
+    });
   }
 }
 
@@ -321,5 +329,7 @@ export function onMlsAdmitNeeded(content: string, groupId: string): void {
   const parsed = parseSquadAdmitNeeded(content);
   if (!parsed) return;
   if (parsed.parent_id !== groupId.trim()) return;
-  void handleInviteeConsentForAdmit(parsed, { broadcastAdmitNeeded: false, trustMlsSource: true });
+  void handleInviteeConsentForAdmit(parsed, { broadcastAdmitNeeded: false }).catch((e) =>
+    console.warn('[outbound-invite] admit_needed failed', e)
+  );
 }

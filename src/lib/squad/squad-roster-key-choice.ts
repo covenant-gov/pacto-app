@@ -43,6 +43,10 @@ export function loadDeferredSquadRosterKeyParentIds(): void {
   deferredSquadRosterKeyParentIds.set(readDeferredParentIds());
 }
 
+export function resetDeferredSquadRosterKeyParentIds(): void {
+  deferredSquadRosterKeyParentIds.set([]);
+}
+
 export function deferSquadRosterKeyChoice(parentId: string): void {
   const pid = parentId.trim();
   if (!pid) return;

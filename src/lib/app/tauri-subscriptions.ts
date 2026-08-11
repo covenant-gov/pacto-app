@@ -142,7 +142,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       return;
     }
     if (!message.mine) {
-      void handleBotJoinResponseDm(content);
+      void handleBotJoinResponseDm(content, chat_id);
     }
     const m = normalizeDmPayload(message);
     backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
@@ -202,6 +202,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     const m = normalizeDmPayload(message);
     if (chat_id.startsWith('npub1')) {
+      if (get(deletingDmNpubs).has(chat_id)) return;
       backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[chat_id] ?? [];
         const out = list.filter((x) => x.id !== old_id && x.id !== m.id);

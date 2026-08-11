@@ -78,13 +78,14 @@ Requester → bot (gift wrap). Holders unwrap with bot keys and fan out to MLS:
 ```json
 {
   "schema": "pacto.squad.bot_join_dm.v1",
+  "requestId": "<requester-generated UUID>",
   "squadId": "<id>",
   "squadName": "…",
   "broadcastEventId": "<commons event id>"
 }
 ```
 
-`requestId` for MLS fan-out is the inner rumor event id (stable across holders).
+The requester persists `requestId` with the broadcast's Join inbox npub. Holders preserve it during MLS fan-out.
 
 ### `pacto.squad.join_request.v1` → `join_requests`
 
@@ -125,7 +126,7 @@ First write wins while status is still pending:
 
 ### `pacto.squad.bot_join_response.v1` → NIP-17 to requester
 
-After accept/reject, the operator sends a private DM to the requester (same gift-wrap path as other DMs):
+After accept/reject, the holder sends a private DM signed by the shared Join inbox identity:
 
 ```json
 {
@@ -137,7 +138,7 @@ After accept/reject, the operator sends a private DM to the requester (same gift
 }
 ```
 
-Accept publishes MLS `accepted` and notifies the requester via this DM. The approver durably retries MLS admit; the requester **auto-finalizes** the announcements Welcome (no second Accept card / no `squad_invite` DM on this path).
+The requester accepts the response only when its `requestId` matches the persisted request and the sender matches the broadcast's Join inbox npub. Accept publishes MLS `accepted` and notifies the requester via this DM. The approver durably retries MLS admit; the requester persists the approved state and **auto-finalizes** the announcements Welcome (no second Accept card / no `squad_invite` DM on this path).
 
 ## Join inbox key share (not MLS group plaintext)
 

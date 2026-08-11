@@ -1475,7 +1475,7 @@ impl MlsService {
         Ok(true)
     }
 
-    /// Publish an MDK auto-committed SelfRemove (or similar) commit, merge it, and refresh roster.
+    /// Publish an MDK auto-committed SelfRemove, merge it, and refresh roster.
     ///
     /// MDK 0.8 returns `MessageProcessingResult::Proposal(UpdateGroupResult)` when it stages a
     /// leave commit locally; the commit must be published and merged or remaining members keep
@@ -1489,16 +1489,49 @@ impl MlsService {
     ) -> Result<(), MlsError> {
         let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
 
-        let send_output = client.send_event(evolution_event).await.map_err(|e| {
-            MlsError::NetworkError(format!("Failed to publish auto-commit: {}", e))
+        let mut publish_error = String::new();
+        let mut send_output = None;
+        for attempt in 0..3 {
+            match client.send_event(evolution_event).await {
+                Ok(output) if !output.success.is_empty() => {
+                    send_output = Some(output);
+                    break;
+                }
+                Ok(_) => publish_error = "no relay acknowledged the event".into(),
+                Err(e) => publish_error = e.to_string(),
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
+            }
+        }
+        let send_output = send_output.ok_or_else(|| {
+            MlsError::NetworkError(format!("Failed to publish auto-commit: {}", publish_error))
         })?;
         crate::record_send_outcome(evolution_event, &send_output);
 
-        {
-            let engine = self.engine()?;
-            engine.merge_pending_commit(mls_group_id).map_err(|e| {
-                MlsError::NostrMlsError(format!("Failed to merge auto-commit: {}", e))
-            })?;
+        let mut merge_error = String::new();
+        let mut merged = false;
+        for attempt in 0..3 {
+            let result = {
+                let engine = self.engine()?;
+                engine.merge_pending_commit(mls_group_id)
+            };
+            match result {
+                Ok(()) => {
+                    merged = true;
+                    break;
+                }
+                Err(e) => merge_error = e.to_string(),
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+        }
+        if !merged {
+            return Err(MlsError::NostrMlsError(format!(
+                "Failed to merge auto-commit: {}",
+                merge_error
+            )));
         }
 
         if let Some(handle) = TAURI_APP.get() {

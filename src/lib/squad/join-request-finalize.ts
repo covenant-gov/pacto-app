@@ -14,13 +14,21 @@ import { parseBotJoinResponseDm } from './squad-join-mls';
 import { dmError } from '../utils/dm-debug';
 import { showToast } from '../../stores/toast';
 import { t } from 'svelte-i18n';
+import { getJoinRequestRecord } from '../commons/commons-join-request';
+import { persistenceKey } from '../../stores/persistence-context';
 
 const completingGroupIds = new Set<string>();
+export const PENDING_APPROVED_JOINS_PREFIX = 'pacto_pending_approved_joins';
+
+type PendingApprovedJoin = {
+  groupId: string;
+  squadName: string;
+  requestId: string;
+  at: number;
+};
 
 /** Approved joins waiting for MLS Welcome. */
-export const pendingApprovedJoins = writable<
-  Array<{ groupId: string; squadName: string; requestId: string; at: number }>
->([]);
+export const pendingApprovedJoins = writable<PendingApprovedJoin[]>([]);
 
 function tt(
   key: string,
@@ -34,23 +42,79 @@ function tt(
   }
 }
 
+function writeDisk(rows: PendingApprovedJoin[]): void {
+  if (typeof localStorage === 'undefined') return;
+  const key = persistenceKey(PENDING_APPROVED_JOINS_PREFIX);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(rows.slice(0, 50)));
+  } catch {
+    // ignore quota
+  }
+}
+
+function setRows(rows: PendingApprovedJoin[]): void {
+  pendingApprovedJoins.set(rows);
+  writeDisk(rows);
+}
+
+export function loadPendingApprovedJoins(): void {
+  if (typeof localStorage === 'undefined') {
+    pendingApprovedJoins.set([]);
+    return;
+  }
+  const key = persistenceKey(PENDING_APPROVED_JOINS_PREFIX);
+  if (!key) {
+    pendingApprovedJoins.set([]);
+    return;
+  }
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown;
+    const rows = Array.isArray(parsed)
+      ? parsed.filter((row): row is PendingApprovedJoin => {
+          if (!row || typeof row !== 'object') return false;
+          const candidate = row as PendingApprovedJoin;
+          return (
+            typeof candidate.groupId === 'string' &&
+            typeof candidate.squadName === 'string' &&
+            typeof candidate.requestId === 'string' &&
+            typeof candidate.at === 'number'
+          );
+        })
+      : [];
+    pendingApprovedJoins.set(rows.slice(0, 50));
+  } catch {
+    pendingApprovedJoins.set([]);
+  }
+}
+
 function rememberApprovedJoin(groupId: string, squadName: string, requestId: string): void {
   const id = groupId.trim().toLowerCase();
-  pendingApprovedJoins.update((rows) => {
-    if (rows.some((r) => r.groupId.trim().toLowerCase() === id)) return rows;
-    return [{ groupId, squadName, requestId, at: Date.now() }, ...rows].slice(0, 50);
-  });
+  const rows = get(pendingApprovedJoins);
+  if (rows.some((r) => r.groupId.trim().toLowerCase() === id)) return;
+  setRows([{ groupId, squadName, requestId, at: Date.now() }, ...rows].slice(0, 50));
 }
 
 function forgetApprovedJoin(groupId: string): void {
   const id = groupId.trim().toLowerCase();
-  pendingApprovedJoins.update((rows) => rows.filter((r) => r.groupId.trim().toLowerCase() !== id));
+  setRows(get(pendingApprovedJoins).filter((r) => r.groupId.trim().toLowerCase() !== id));
 }
 
 /** Handle inbound bot_join_response DM for the requester. */
-export async function handleBotJoinResponseDm(content: string | null | undefined): Promise<void> {
+export async function handleBotJoinResponseDm(
+  content: string | null | undefined,
+  senderNpub: string
+): Promise<void> {
   const parsed = parseBotJoinResponseDm(content);
   if (!parsed || parsed.status !== 'accepted') return;
+  const request = getJoinRequestRecord(parsed.squadId);
+  if (
+    !request ||
+    request.requestId !== parsed.requestId ||
+    request.botNpub.trim() !== senderNpub.trim()
+  ) {
+    return;
+  }
   rememberApprovedJoin(parsed.squadId, parsed.squadName, parsed.requestId);
   await completeApprovedJoin(parsed.squadId, parsed.squadName, parsed.requestId);
 }

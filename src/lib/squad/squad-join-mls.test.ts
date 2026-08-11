@@ -23,12 +23,14 @@ import {
 describe('squad-join-mls wire', () => {
   it('formats bot join dm', () => {
     const raw = formatBotJoinDm({
+      requestId: 'r1',
       squadId: 's1',
       squadName: 'Pirates',
       broadcastEventId: 'e1',
     });
     const parsed = JSON.parse(raw);
     expect(parsed.schema).toBe(SQUAD_BOT_JOIN_DM_SCHEMA);
+    expect(parsed.requestId).toBe('r1');
     expect(parsed.squadId).toBe('s1');
   });
 
@@ -107,12 +109,13 @@ describe('squad-join-mls wire', () => {
       parseBotJoinDm(
         JSON.stringify({
           schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          requestId: 'r1',
           squadId: 's1',
           broadcastEventId: 'e1',
         }),
       ),
     ).toEqual({
-      requestId: '',
+      requestId: 'r1',
       squadId: 's1',
       squadName: 's1',
       broadcastEventId: 'e1',
@@ -121,6 +124,15 @@ describe('squad-join-mls wire', () => {
     });
     expect(parseBotJoinDm(undefined)).toBeNull();
     expect(parseBotJoinDm('{bad')).toBeNull();
+    expect(
+      parseBotJoinDm(
+        JSON.stringify({
+          schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+          squadId: 's1',
+          broadcastEventId: 'e1',
+        }),
+      ),
+    ).toBeNull();
     expect(
       parseBotJoinDm(
         JSON.stringify({

@@ -66,6 +66,7 @@ const mocks = vi.hoisted(() => {
     installSyncHealthTicker: vi.fn(() => vi.fn()),
     applyMlsStoreResetState: vi.fn(),
     refreshMlsStoreResetState: vi.fn(),
+    handleBotJoinResponseDm: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -128,7 +129,8 @@ vi.mock('../invites/accept-invite', () => ({
 }));
 
 vi.mock('../squad/join-request-finalize', () => ({
-  handleBotJoinResponseDm: vi.fn(),
+  handleBotJoinResponseDm: (...args: unknown[]) =>
+    mocks.mockFunctions.handleBotJoinResponseDm(...args),
   tryCompletePendingApprovedJoins: vi.fn(),
 }));
 
@@ -367,6 +369,18 @@ describe('subscribeAppEvents', () => {
       expect(chatMessages![0].id).toBe('m1');
     });
 
+    it('passes the authenticated DM sender to join response handling', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1joininbox',
+        message: dmMessage({ content: 'response' }),
+      });
+      expect(mocks.mockFunctions.handleBotJoinResponseDm).toHaveBeenCalledWith(
+        'response',
+        'npub1joininbox',
+      );
+    });
+
     it('updates dmChatsByNpub metadata', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ at: 5000, mine: false }) });
@@ -419,6 +433,17 @@ describe('subscribeAppEvents', () => {
       const list = mocks.mockStores.backendDmMessages.get()['npub1chat']!;
       expect(list).toHaveLength(1);
       expect(list[0].id).toBe('new1');
+    });
+
+    it('skips DM updates while the peer is being deleted', () => {
+      mocks.mockStores.deletingDmNpubs.set(new Set(['npub1chat']));
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_update', {
+        chat_id: 'npub1chat',
+        old_id: 'old1',
+        message: dmMessage({ id: 'new1', at: 2000 }),
+      });
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
     });
 
     it('syncs MLS groups eagerly for an incoming squad invite DM update', () => {

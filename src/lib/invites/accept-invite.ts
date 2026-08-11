@@ -141,7 +141,9 @@ export function notifyPendingInviteWelcome(groupId?: string | null): void {
     if (set) {
       for (const wake of [...set]) wake();
     }
-    void tryCompletePendingSquadAdmission(groupId);
+    void tryCompletePendingSquadAdmission(groupId).catch((e) =>
+      dmError('tryCompletePendingSquadAdmission', e)
+    );
     return;
   }
   for (const set of pendingWelcomeWaiters.values()) {
@@ -310,9 +312,10 @@ export async function acceptAnnouncementsInvite(
       ].filter((n): n is string => typeof n === 'string' && n.startsWith('npub1'))
     ),
   ];
-  const inviteId =
-    inviteMeta?.inviteId?.trim() ||
-    `legacy-${payload.groupId}-${messageId}`;
+  const inviteId = inviteMeta?.inviteId?.trim();
+  if (!inviteId) {
+    throw new Error(tt('messaging.inviteCard.invalidInvite'));
+  }
 
   if (admitters.length === 0) {
     throw new Error(tt('messaging.inviteCard.noAdmitters'));
