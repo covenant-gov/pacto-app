@@ -226,7 +226,7 @@ describe('dev-ports', () => {
     });
 
     it(
-      'never hands the same index to two concurrently-resolving sandboxes (pacto-app-384.76)',
+      'never hands the same index to two concurrently-resolving sandboxes',
       async () => {
         const claimDir = makeTempDir();
         // Eight distinct branch names that really do hash-collide onto the
