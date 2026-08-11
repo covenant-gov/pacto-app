@@ -40,6 +40,13 @@ vi.mock('../../stores/auth', async () => {
   return { currentUser: writable({ npub: 'npub1invitee' }) };
 });
 
+const resolveOneCatchUpEntryMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
+vi.mock('../../stores/catch-up', () => ({
+  resolveOneCatchUpEntry: (...args: unknown[]) => resolveOneCatchUpEntryMock(...args),
+  hydrateCatchUpCount: vi.fn(),
+}));
+
 import {
   handleChannelAddedToSquad,
   handleMlsWelcomeAccepted,
@@ -49,12 +56,13 @@ import {
   notifyPendingInviteWelcome,
   resetInviteAcceptState,
   acceptAnnouncementsInvite,
+  acceptChannelInSquadInvite,
   ACCEPT_WELCOME_FAST_PATH_MS,
 } from './accept-invite';
 import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
 import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { squads, type Squad } from '../../stores/squads';
-import { acceptedSquadInviteIds } from '../../stores/invite-decisions';
+import { acceptedSquadInviteIds, acceptedChannelInviteMessageIds } from '../../stores/invite-decisions';
 import { pendingSquadAdmissions, resetPendingSquadAdmissions } from '../../stores/pending-squad-admission';
 import { backendDmMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
@@ -63,6 +71,7 @@ import {
   shouldShowMlsHistoryWelcome,
 } from '../../stores/mls-history-welcome';
 import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import type { DmMessage } from '../../stores/dm';
 
 const parent: Squad = {
   id: 'parent-1',
@@ -91,6 +100,7 @@ describe('accept-invite channel persistence', () => {
     resetPendingSquadAdmissions();
     resetMlsHistoryWelcomeForTests();
     setCurrentNpubForPersistence('npub1test');
+    resolveOneCatchUpEntryMock.mockClear();
     persistSquadPatchMock.mockReset().mockResolvedValue(parent);
     persistSquadMock.mockReset().mockImplementation(async (squad: Squad) => squad);
     vi.mocked(listPendingMlsWelcomes).mockReset().mockResolvedValue([pendingWelcome]);
@@ -225,5 +235,25 @@ describe('accept-invite channel persistence', () => {
     expect(get(pendingSquadAdmissions).some((p) => p.groupId === 'pending-squad')).toBe(true);
     expect(get(squads).some((s) => s.id === 'pending-squad')).toBe(false);
     vi.useRealTimers();
+  });
+
+  it('acceptChannelInSquadInvite resolves catch-up when already a member', async () => {
+    squads.set([
+      {
+        ...parent,
+        channels: [
+          ...parent.channels,
+          { name: 'general', groupId: 'chan-1', order: 1 },
+        ],
+      },
+    ]);
+    const msg = { id: 'chan-invite-1', content: '', at: 1, mine: false } as DmMessage;
+    await acceptChannelInSquadInvite(msg, {
+      channelGroupId: 'chan-1',
+      announcementsGroupId: 'parent-1',
+      channelName: 'general',
+    });
+    expect(resolveOneCatchUpEntryMock).toHaveBeenCalledWith('chan-invite-1');
+    expect(get(acceptedChannelInviteMessageIds)).toContain('chan-invite-1');
   });
 });

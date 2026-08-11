@@ -34,7 +34,7 @@ import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { requireBackupVerified } from '../../stores/backup-verification';
 import { currentUser } from '../../stores/auth';
 import { markMlsHistoryWelcome } from '../../stores/mls-history-welcome';
-import { resolveCatchUpEntry } from '../api/catch-up';
+import { resolveOneCatchUpEntry } from '../../stores/catch-up';
 import {
   clearPendingSquadAdmissionByGroupId,
   getPendingSquadAdmissionByGroupId,
@@ -170,7 +170,7 @@ export async function tryCompletePendingSquadAdmission(groupId: string): Promise
     pending.messageId
   );
   clearPendingSquadAdmissionByGroupId(groupId);
-  resolveCatchUpEntry(pending.messageId).catch(() => {});
+  resolveOneCatchUpEntry(pending.messageId).catch(() => {});
   return true;
 }
 
@@ -440,7 +440,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
         invitedByNpub: payload.invitedByNpub,
       }
     );
-    resolveCatchUpEntry(msg.id).catch(() => {});
+    resolveOneCatchUpEntry(msg.id).catch(() => {});
   } catch (e) {
     const payload = parseSquadInviteMessage(msg.content);
     if (
@@ -451,7 +451,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
       acceptedSquadInviteIds.update((ids: string[]) =>
         ids.includes(msg.id) ? ids : [...ids, msg.id]
       );
-      resolveCatchUpEntry(msg.id).catch(() => {});
+      resolveOneCatchUpEntry(msg.id).catch(() => {});
       return;
     }
     dmError('Accept squad invite failed', e);
@@ -481,7 +481,7 @@ export async function acceptChannelInSquadInvite(
     acceptedChannelInviteMessageIds.update((ids: string[]) =>
       ids.includes(msg.id) ? ids : [...ids, msg.id]
     );
-    resolveCatchUpEntry(msg.id).catch(() => {});
+    resolveOneCatchUpEntry(msg.id).catch(() => {});
     return;
   }
   if (!requireBackupVerified()) return;
@@ -503,7 +503,7 @@ export async function acceptChannelInSquadInvite(
     acceptedChannelInviteMessageIds.update((ids: string[]) =>
       ids.includes(msg.id) ? ids : [...ids, msg.id]
     );
-    resolveCatchUpEntry(msg.id).catch(() => {});
+    resolveOneCatchUpEntry(msg.id).catch(() => {});
   } catch (e) {
     dmError('Accept channel invite failed', e);
     channelInvitePendingAccept.delete(payload.channelGroupId);

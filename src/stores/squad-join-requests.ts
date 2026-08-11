@@ -5,7 +5,8 @@ import {
   fanOutBotJoinDmsToMls,
   loadPendingJoinRequestsFromMls,
 } from '../lib/squad/squad-join-mls';
-import { recordActionNeededEntry, resolveCatchUpEntry } from '../lib/api/catch-up';
+import { recordActionNeededEntry } from '../lib/api/catch-up';
+import { hydrateCatchUpCount, resolveOneCatchUpEntry } from './catch-up';
 import { announcementsGroupIdForSquad } from './squad-hub-alerts';
 import { squads } from './squads';
 
@@ -72,9 +73,12 @@ function recordCatchUpEntriesForJoinRequests(squadId: string, requests: CommonsJ
   const squad = get(squads).find((s) => s.id === squadId);
   const groupId = squad ? announcementsGroupIdForSquad(squad) : null;
   if (!groupId) return;
-  for (const request of requests) {
-    recordActionNeededEntry(groupId, `join-request:${request.eventId}`).catch(() => {});
-  }
+  void (async () => {
+    await Promise.allSettled(
+      requests.map((request) => recordActionNeededEntry(groupId, `join-request:${request.eventId}`))
+    );
+    await hydrateCatchUpCount();
+  })();
 }
 
 async function fetchPendingForSquad(squadId: string): Promise<CommonsJoinRequestDto[]> {
@@ -147,7 +151,7 @@ export function removePendingJoinRequest(squadId: string, eventId: string): void
     if (next.length === list.length) return m;
     return { ...m, [id]: next };
   });
-  resolveCatchUpEntry(`join-request:${eid}`).catch(() => {});
+  resolveOneCatchUpEntry(`join-request:${eid}`).catch(() => {});
 }
 
 export function resetSquadJoinRequestStores(): void {

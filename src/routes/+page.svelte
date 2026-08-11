@@ -36,7 +36,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
   import { startDeleteDmChat } from '../lib/dm/delete-dm-chat';
   import { shouldApplyDmOpenLoad } from '../lib/dm/should-apply-dm-open-load';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
-  import { resolveCatchUpEntry } from '../lib/api/catch-up';
+  import { resolveOneCatchUpEntry } from '../stores/catch-up';
   import { getExplorerTxUrl } from '../lib/wallet/assets';
   import { parseSupportedChainId } from '../lib/wallet/chains';
   import { resumePendingWalletTxConfirmations } from '../lib/wallet/wallet-dm-transfer';
@@ -1019,13 +1019,13 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
                 onDeclineSquad={(msg: DmMessage) => {
                   declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
-                  resolveCatchUpEntry(msg.id).catch(() => {});
+                  resolveOneCatchUpEntry(msg.id).catch(() => {});
                 }}
                 onDeclineChannelInSquad={(msg: DmMessage) => {
                   declinedChannelInviteMessageIds.update((ids: string[]) =>
                     ids.includes(msg.id) ? ids : [...ids, msg.id]
                   );
-                  resolveCatchUpEntry(msg.id).catch(() => {});
+                  resolveOneCatchUpEntry(msg.id).catch(() => {});
                 }}
                 onOpenInviterChat={openInviterDm}
                 onMarkReadUpTo={handleMarkReadUpTo}
