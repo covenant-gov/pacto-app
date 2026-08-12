@@ -80,6 +80,16 @@ export default [
 			'svelte/no-navigation-without-resolve': 'off'
 		}
 	},
+	// Vendored shadcn-svelte primitives use plain href links without SvelteKit resolve().
+	{
+		files: [
+			'src/lib/components/ui/button/button.svelte',
+			'src/lib/components/ui/badge/badge.svelte'
+		],
+		rules: {
+			'svelte/no-navigation-without-resolve': 'off'
+		}
+	},
 	{
 		files: ['src/lib/utils/message-formatting.ts'],
 		rules: {

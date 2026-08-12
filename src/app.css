@@ -1,9 +1,35 @@
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tw-animate-css';
 @import './styles/themes/dark-techno.css';
 @import './styles/themes/aztec.css';
 @import './styles/themes/midnight.css';
 @import './styles/themes/techno.css';
 @import './styles/themes/union.css';
 @import './styles/modal-buttons.css';
+
+@custom-variant dark (&:is([data-theme="dark-techno"] *, [data-theme="dark-techno"], [data-theme="aztec"] *, [data-theme="aztec"], [data-theme="midnight"] *, [data-theme="midnight"], [data-theme="union"] *, [data-theme="union"]));
+
+@theme inline {
+  --color-background: var(--bg-page);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-panel);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-elevated);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--bg-panel);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--danger);
+  --color-border: var(--border);
+  --color-input: var(--border-subtle);
+  --color-ring: var(--accent);
+}
 
 /* Typography shared by every theme (sans body, monospace headings). Colors stay per-[data-theme]. */
 :root {
@@ -46,7 +72,14 @@ body {
   flex-direction: column;
 }
 
-.container {
+[data-slot],
+[data-slot] *,
+[data-slot] *::before,
+[data-slot] *::after {
+  box-sizing: border-box;
+}
+
+.app-shell {
   margin: 0;
   display: flex;
   flex-direction: row;

@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import packageJson from './package.json' with { type: 'json' };
 import { svelteTesting } from '@testing-library/svelte/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -45,7 +46,9 @@ function getAppVersion(): string {
 
 // https://vite.dev/config/ — Vitest uses the same file (see `test` below).
 export default defineConfig({
-  plugins: Array.isArray(plugins) ? [...plugins, svelteTesting()] : [plugins, svelteTesting()],
+  plugins: Array.isArray(plugins)
+    ? [...plugins, tailwindcss(), svelteTesting()]
+    : [plugins, tailwindcss(), svelteTesting()],
 
   /** Expose `ALCHEMY_RPC_KEY` to the client (same var the Tauri backend reads). */
   envPrefix: ['VITE_', 'ALCHEMY_'],
