@@ -20,6 +20,7 @@
     govProcessCardKey,
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
+  import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
@@ -81,7 +82,11 @@
   }
 
   async function runCrewExecute(card: Extract<GovProcessCard, { kind: 'crew_add' | 'crew_remove' }>) {
-    if (acting || !qmExecGate.enabled || !quartermaster.trim()) return;
+    const ui = govExecuteUiState({
+      card,
+      privilegeReasonKey: qmExecGate.enabled ? '' : qmExecGate.reason,
+    });
+    if (acting || !ui.executeEnabled || !quartermaster.trim()) return;
     acting = true;
     try {
       if (card.kind === 'crew_add') {
@@ -129,11 +134,11 @@
     }
   }
 
-  function executeDisabledFor(card: GovProcessCard): string {
+  function privilegeReasonKeyFor(card: GovProcessCard): string {
     if (card.kind === 'crew_add' || card.kind === 'crew_remove') {
-      return qmExecGate.enabled ? '' : $t(qmExecGate.reason);
+      return qmExecGate.enabled ? '' : qmExecGate.reason;
     }
-    return execGate.enabled ? '' : $t(execGate.reason);
+    return execGate.enabled ? '' : execGate.reason;
   }
 </script>
 
@@ -169,7 +174,7 @@
           {card}
           showExecute
           executePending={acting}
-          executeDisabledReason={executeDisabledFor(card)}
+          privilegeReasonKey={privilegeReasonKeyFor(card)}
           onExecute={() => executeForCard(card)}
         />
       {/each}

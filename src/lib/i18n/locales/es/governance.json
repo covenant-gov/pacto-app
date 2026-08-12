@@ -176,6 +176,7 @@
 	"governance.proposal.candidate": "Candidato",
 	"governance.proposal.member": "Miembro",
 	"governance.proposal.executableAt": "Ejecutable {when}",
+	"governance.proposal.executeLockedUntil": "Ejecutable {when}",
 	"governance.proposal.meta": "A favor {yeas} / en contra {nays} · snapshot {snapshot} · límite {deadline}",
 	"governance.proposal.captainApproved": "Capitán aprobó",
 	"governance.proposal.captainVetoed": "Capitán vetó",

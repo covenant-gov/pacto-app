@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import type { GovProcessCard } from '../../../lib/governance/gov-process';
   import { govProcessToolLabel } from '../../../lib/governance/gov-process';
+  import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import { treasuryProposalStatusLabel } from '../../../lib/governance/pacto-gov-payload';
   import {
     isTreasuryProposalActive,
@@ -14,13 +15,15 @@
   export let card: GovProcessCard;
   export let showExecute = false;
   export let executePending = false;
-  export let executeDisabledReason = '';
+  /** Privilege gate i18n key (empty when allowed). Delay lock is derived from the card. */
+  export let privilegeReasonKey = '';
   export let onExecute: (() => void) | undefined = undefined;
 
   $: tool = $t(govProcessToolLabel(card));
   $: isActive =
     card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
   $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
+  $: execUi = govExecuteUiState({ card, privilegeReasonKey });
   $: isExecutable =
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0
@@ -47,11 +50,22 @@
           : $t('governance.proposal.timelock');
   $: outcome =
     card.kind === 'treasury' ? treasuryProposalOutcomeLabel(card.proposal.status) : '';
-  $: executeTitle = executeDisabledReason
-    ? executeDisabledReason.startsWith('governance.')
-      ? $t(executeDisabledReason)
-      : executeDisabledReason
-    : $t('governance.common.execute');
+  $: executeTitle = (() => {
+    if (execUi.executeEnabled || !execUi.disabledReasonKey) {
+      return $t('governance.common.execute');
+    }
+    if (
+      execUi.disabledReasonKey === 'governance.proposal.executeLockedUntil' &&
+      execUi.unlockAtSec
+    ) {
+      return $t(execUi.disabledReasonKey, {
+        values: { when: new Date(execUi.unlockAtSec * 1000).toLocaleString() },
+      });
+    }
+    return execUi.disabledReasonKey.startsWith('governance.')
+      ? $t(execUi.disabledReasonKey)
+      : execUi.disabledReasonKey;
+  })();
 </script>
 
 <li
@@ -119,11 +133,11 @@
     </p>
   {/if}
 
-  {#if showExecute && isExecutable && onExecute}
+  {#if showExecute && execUi.showExecute && onExecute}
     <button
       type="button"
       class="execute-btn"
-      disabled={executePending || !!executeDisabledReason}
+      disabled={executePending || !execUi.executeEnabled}
       title={executeTitle}
       on:click={() => onExecute()}
     >

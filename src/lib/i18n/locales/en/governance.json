@@ -177,6 +177,7 @@
 	"governance.proposal.candidate": "Candidate",
 	"governance.proposal.member": "Member",
 	"governance.proposal.executableAt": "Executable {when}",
+	"governance.proposal.executeLockedUntil": "Executable {when}",
 	"governance.proposal.captainApproved": "Captain approved",
 	"governance.proposal.captainVetoed": "Captain vetoed",
 	"governance.proposal.target": "Target",
