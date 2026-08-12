@@ -1,14 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { theme, setTheme, getStoredTheme, THEME_OPTIONS, DEFAULT_THEME } from './theme';
+import {
+  theme,
+  setTheme,
+  getStoredTheme,
+  THEME_OPTIONS,
+  DEFAULT_THEME,
+  DARK_THEME_IDS,
+  isDarkTheme,
+} from './theme';
 
 describe('theme', () => {
   let storage: Map<string, string>;
   let documentAttribute: string | null;
+  let darkClassOn: boolean;
 
   beforeEach(() => {
     storage = new Map();
     documentAttribute = null;
+    darkClassOn = false;
     theme.set(DEFAULT_THEME);
 
     vi.stubGlobal('localStorage', {
@@ -28,6 +38,13 @@ describe('theme', () => {
           documentAttribute = value;
         },
         getAttribute: (_name: string) => documentAttribute,
+        classList: {
+          toggle: (token: string, force?: boolean) => {
+            if (token !== 'dark') return;
+            darkClassOn = force === true;
+          },
+          contains: (token: string) => token === 'dark' && darkClassOn,
+        },
       },
     });
   });
@@ -42,11 +59,33 @@ describe('theme', () => {
     expect(THEME_OPTIONS.length).toBeGreaterThan(0);
   });
 
+  it('lists the five known theme ids', () => {
+    expect(THEME_OPTIONS.map((o) => o.value).sort()).toEqual(
+      ['aztec', 'dark-techno', 'midnight', 'techno', 'union'].sort(),
+    );
+  });
+
   it('stores and applies a valid theme', () => {
     setTheme('union');
     expect(get(theme)).toBe('union');
     expect(storage.get('pacto_theme')).toBe('union');
     expect(documentAttribute).toBe('union');
+    expect(darkClassOn).toBe(true);
+  });
+
+  it('toggles the dark class for light and dark themes', () => {
+    setTheme('techno');
+    expect(darkClassOn).toBe(false);
+    setTheme('midnight');
+    expect(darkClassOn).toBe(true);
+  });
+
+  it('marks the expected themes as dark', () => {
+    expect([...DARK_THEME_IDS].sort()).toEqual(
+      ['aztec', 'dark-techno', 'midnight', 'union'].sort(),
+    );
+    expect(isDarkTheme('techno')).toBe(false);
+    expect(isDarkTheme('dark-techno')).toBe(true);
   });
 
   it('ignores invalid theme values', () => {
