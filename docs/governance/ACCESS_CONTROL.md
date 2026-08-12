@@ -33,7 +33,7 @@ flowchart TD
   acl --> rustPreflight[require_capability]
 ```
 
-**ACL** = access control (classically *access control list*). In Pacto it names this layer: roster EVM + Hats / Squad Admin capability checks before signing (`require_capability`, UI snapshot). Error codes `ACL_DENIED` / `ACL_UNBOUND` use the same shorthand. It is not a separate on-chain contract.
+**ACL** = access control (classically *access control list*). In Pacto it names this layer: squad EVM binding + Hats / Squad Admin capability checks before signing (`require_capability`, UI snapshot). Error codes `ACL_DENIED` / `ACL_UNBOUND` use the same shorthand. It is not a separate on-chain contract. Member-facing UI says “squad EVM” / “squad key,” not “roster.”
 
 ## Enforcement
 
