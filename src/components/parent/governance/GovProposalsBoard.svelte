@@ -21,7 +21,11 @@
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import {
+    govWriteSubmittedToast,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -43,6 +47,7 @@
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void | Promise<void> = () => {};
   export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -72,10 +77,10 @@
         treasuryAuthority,
         proposalId,
       });
-      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.execute') } }));
+      showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundingMode));
       onRefreshProposals();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
     } finally {
       acting = false;
     }
@@ -96,7 +101,7 @@
           quartermaster,
           candidate: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeAdd') } }));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeAdd'), fundingMode));
       } else {
         await quartermasterExecuteRemoveCrew({
           network,
@@ -104,11 +109,11 @@
           quartermaster,
           crew: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeRemove') } }));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeRemove'), fundingMode));
       }
       onRefreshProposals();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
     } finally {
       acting = false;
     }

@@ -1,25 +1,32 @@
 /** Copy for squad-key gov writes (EOA vs sponsored UserOp). */
 
+import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
+
 export type GovWriteFundingMode = 'sponsored' | 'self_funded';
+
+function tFn(key: string, values?: Record<string, string>): string {
+  return get(t)(key, values ? { values } : undefined);
+}
 
 /** Short hint shown before submit when funding mode is known. */
 export function govWriteFundingHint(mode: GovWriteFundingMode): string {
   if (mode === 'sponsored') {
-    return 'Gas: sponsored from the squad sponsor pool (roster key has no ETH).';
+    return tFn('governance.funding.sponsored');
   }
-  return 'Gas: paid by your squad-assigned key.';
+  return tFn('governance.funding.selfFunded');
 }
 
 /**
  * When balance is unknown, explain both paths (bootstrap / QM / treasury writes).
  */
 export function govWriteFundingFallbackHint(): string {
-  return 'Gas: your squad-assigned key when it has ETH; otherwise a sponsored UserOp from the squad sponsor pool if you are eligible.';
+  return tFn('governance.funding.fallback');
 }
 
 /** 0 ETH roster and no sponsor infra — actionable before a raw insufficient-funds send. */
 export function govWriteNoSponsorHint(): string {
-  return 'Gas: your squad-assigned key has no ETH and no squad sponsor is deployed. Fund the roster key or deploy a squad sponsor first.';
+  return tFn('governance.funding.noSponsor');
 }
 
 /**
@@ -66,4 +73,18 @@ export function displayGovWriteFundingHint(input: {
     if (bal === 0n) return govWriteNoSponsorHint();
   }
   return govWriteFundingFallbackHint();
+}
+
+/** Success toast text including funding mode when known. */
+export function govWriteSubmittedToast(
+  label: string,
+  mode: GovWriteFundingMode | null | undefined,
+): string {
+  if (mode === 'sponsored') {
+    return tFn('governance.toast.submittedSponsored', { label });
+  }
+  if (mode === 'self_funded') {
+    return tFn('governance.toast.submittedSelfFunded', { label });
+  }
+  return tFn('governance.toast.submitted', { label });
 }

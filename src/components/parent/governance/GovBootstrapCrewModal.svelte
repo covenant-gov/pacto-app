@@ -3,9 +3,12 @@
   import { get } from 'svelte/store';
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
-  import { govWriteFundingFallbackHint } from '../../../lib/governance/gov-write-funding';
+  import {
+    govWriteFundingFallbackHint,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
 
   export let open = false;
@@ -18,6 +21,7 @@
   export let captainAddresses: string[] = [];
   export let onSubmitted: () => void = () => {};
   export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
 
   const titleId = 'gov-bootstrap-crew-title';
   const descId = 'gov-bootstrap-crew-desc';
@@ -86,11 +90,18 @@
         quartermaster,
         candidates,
       });
-      showToast(tFn('governance.bootstrapCrew.toast.submitted', { values: { count: candidates.length } }));
+      const count = candidates.length;
+      const toastKey =
+        fundingMode === 'sponsored'
+          ? 'governance.bootstrapCrew.toast.submittedSponsored'
+          : fundingMode === 'self_funded'
+            ? 'governance.bootstrapCrew.toast.submittedSelfFunded'
+            : 'governance.bootstrapCrew.toast.submitted';
+      showToast(tFn(toastKey, { values: { count } }));
       onSubmitted();
       onClose();
     } catch (e) {
-      error = getInvokeErrorMessage(e, tFn('governance.bootstrapCrew.toast.error'));
+      error = govWriteErrorMessage(e, tFn('governance.bootstrapCrew.toast.error'));
     } finally {
       acting = false;
     }

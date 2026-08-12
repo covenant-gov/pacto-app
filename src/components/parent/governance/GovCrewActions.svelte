@@ -25,7 +25,11 @@
     gateRequiresCrew,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import {
+    govWriteSubmittedToast,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { requireBackupVerified } from '../../../stores/backup-verification';
   import { get } from 'svelte/store';
@@ -42,6 +46,7 @@
   export let onRefreshProposals: () => void = () => {};
   export let onRefreshMutiny: () => void = () => {};
   export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -68,10 +73,10 @@
     acting = true;
     try {
       await fn();
-      showToast(tFn('governance.toast.submitted', { values: { label } }));
+      showToast(govWriteSubmittedToast(label, fundingMode));
       refresh();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label } })));
+      showToast(govWriteErrorMessage(e, label));
     } finally {
       acting = false;
     }
@@ -107,6 +112,8 @@
         {parentId}
         {treasuryAuthority}
         {privilege}
+        {fundingHint}
+        {fundingMode}
         onSubmitted={onRefreshProposals}
       />
 

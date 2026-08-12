@@ -26,12 +26,16 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
+  import {
+    displayGovWriteFundingHint,
+    govWriteSubmittedToast,
+    resolveGovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -103,6 +107,11 @@
     }
   }
 
+  $: fundingMode = resolveGovWriteFundingMode({
+    balanceRaw: rosterBalanceRaw,
+    balanceKnown: rosterBalanceKnown,
+    hasSponsorInfra: hasSponsor,
+  });
   $: fundingHint = displayGovWriteFundingHint({
     balanceRaw: rosterBalanceRaw,
     balanceKnown: rosterBalanceKnown,
@@ -287,10 +296,10 @@
         mutinyModule,
         mutinyId: mutinyStatus.activeMutinyId,
       });
-      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeMutiny') } }));
+      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundingMode));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.executeMutiny') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
     }
   }
 
@@ -358,6 +367,7 @@
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
+        {fundingMode}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
@@ -372,6 +382,7 @@
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
+        {fundingMode}
       />
     {:else}
       <GovCaptainActions
@@ -393,6 +404,7 @@
           void reloadQmPending();
         }}
         {fundingHint}
+        {fundingMode}
       />
     {/if}
   </div>
