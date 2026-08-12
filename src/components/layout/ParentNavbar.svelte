@@ -60,6 +60,7 @@
     syncJoinRequestsForSquad,
   } from '../../stores/squad-join-requests';
   import { refreshPersonalAlertForSquad } from '../../stores/squad-hub-alerts';
+  import { refreshGovActionPromptsForSquad } from '../../stores/gov-action-prompts';
   import { appConfig } from '../../stores/app-config';
 
   const translate = get(t);
@@ -78,6 +79,7 @@
 
   $: if ($activeTopNavTab === 'squads' && activeParent && $deferredSquadRosterKeyParentIds) {
     void refreshPersonalAlertForSquad(activeParent);
+    void refreshGovActionPromptsForSquad(activeParent);
   }
 
   $: personalAlertRefreshKey =
@@ -86,6 +88,7 @@
       : '';
   $: if (personalAlertRefreshKey && activeParent) {
     void refreshPersonalAlertForSquad(activeParent);
+    void refreshGovActionPromptsForSquad(activeParent);
   }
 
   $: rawChannels = activeParent

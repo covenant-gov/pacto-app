@@ -719,5 +719,18 @@
 	"governance.myStatus.toastSyncRequested": "Sync requested — online members will re-share keys and governance.",
 	"governance.myStatus.toastSyncFailed": "Could not request sync. Try again when connected.",
 	"governance.alerts.loading": "Loading alerts…",
-	"governance.alerts.empty": "No personal alerts right now."
+	"governance.alerts.empty": "No personal alerts right now.",
+	"governance.alerts.prompt.voteNeededTitle": "Your vote is needed",
+	"governance.alerts.prompt.voteNeededTreasury": "Vote on treasury proposal #{id}",
+	"governance.alerts.prompt.voteNeededTreasuryCaptain": "Captain vote needed on proposal #{id}",
+	"governance.alerts.prompt.voteNeededMutiny": "Vote on mutiny #{id}",
+	"governance.alerts.prompt.delayUnlockTitle": "Execute unlocks soon",
+	"governance.alerts.prompt.delayUnlockCrewAdd": "Crew add unlocks at {when}",
+	"governance.alerts.prompt.delayUnlockCrewRemove": "Crew remove unlocks at {when}",
+	"governance.alerts.prompt.executeReadyTitle": "Ready to execute",
+	"governance.alerts.prompt.executeReadyTreasury": "Treasury proposal #{id} is ready to execute",
+	"governance.alerts.prompt.executeReadyMutiny": "Mutiny #{id} is ready to execute",
+	"governance.alerts.prompt.executeReadyCrewAdd": "Crew add is ready to execute",
+	"governance.alerts.prompt.executeReadyCrewRemove": "Crew remove is ready to execute",
+	"governance.alerts.prompt.openGovernance": "Open Governance"
 }

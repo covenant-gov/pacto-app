@@ -719,5 +719,18 @@
 	"governance.myStatus.toastSyncRequested": "Sincronización solicitada — los miembros en línea volverán a compartir claves y gobernanza.",
 	"governance.myStatus.toastSyncFailed": "No se pudo solicitar la sincronización. Inténtalo de nuevo cuando estés conectado.",
 	"governance.alerts.loading": "Cargando alertas…",
-	"governance.alerts.empty": "No hay alertas personales ahora."
+	"governance.alerts.empty": "No hay alertas personales ahora.",
+	"governance.alerts.prompt.voteNeededTitle": "Se necesita tu voto",
+	"governance.alerts.prompt.voteNeededTreasury": "Vota la propuesta de tesorería #{id}",
+	"governance.alerts.prompt.voteNeededTreasuryCaptain": "Voto del capitán necesario en la propuesta #{id}",
+	"governance.alerts.prompt.voteNeededMutiny": "Vota el motín #{id}",
+	"governance.alerts.prompt.delayUnlockTitle": "La ejecución se desbloquea pronto",
+	"governance.alerts.prompt.delayUnlockCrewAdd": "Añadir tripulación se desbloquea a las {when}",
+	"governance.alerts.prompt.delayUnlockCrewRemove": "Eliminar tripulación se desbloquea a las {when}",
+	"governance.alerts.prompt.executeReadyTitle": "Listo para ejecutar",
+	"governance.alerts.prompt.executeReadyTreasury": "La propuesta de tesorería #{id} está lista para ejecutar",
+	"governance.alerts.prompt.executeReadyMutiny": "El motín #{id} está listo para ejecutar",
+	"governance.alerts.prompt.executeReadyCrewAdd": "Añadir tripulación está listo para ejecutar",
+	"governance.alerts.prompt.executeReadyCrewRemove": "Eliminar tripulación está listo para ejecutar",
+	"governance.alerts.prompt.openGovernance": "Abrir Gobernanza"
 }
