@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation: Parallel-Agent Sandboxes with Seeded Users</title>
+<link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:400,500,600,700|jetbrains-mono:400,500">
+<style>
+:root{
+  --bg:#fafaf9;--surface:#ffffff;--ink:#1c1917;--muted:#57534e;--line:#e7e5e4;
+  --accent:#4f46e5;--accent-soft:#eef2ff;--accent-text:#3730a3;
+  --warn:#b45309;--warn-soft:#fffbeb;--warn-text:#92400e;
+  --ok:#047857;--ok-soft:#ecfdf5;--ok-text:#065f46;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6}
+.page{max-width:920px;margin-inline:auto;padding:48px 28px 64px}
+p,li{max-width:72ch}
+code{font-family:var(--mono);font-size:.86em;background:#f5f5f4;border:1px solid var(--line);border-radius:4px;padding:.08em .35em}
+a{color:var(--accent-text)}
+h1{font-size:1.9rem;line-height:1.2;margin:.2em 0 .3em}
+h2{font-size:1.35rem;margin:2.2em 0 .6em;padding-top:.6em;border-top:1px solid var(--line)}
+h3{font-size:1.08rem;margin:1.6em 0 .4em}
+.eyebrow{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--accent-text);font-weight:600;margin:0 0 6px}
+header.doc .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{display:inline-block;font-family:var(--mono);font-size:.74rem;background:var(--accent-soft);color:var(--accent-text);border-radius:999px;padding:3px 11px}
+.stats{display:flex;flex-wrap:wrap;gap:22px;margin-top:18px;padding:14px 18px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.stat b{display:block;font-size:1.25rem}
+.stat span{font-size:.78rem;color:var(--muted)}
+.callout{border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:14px 0;background:var(--surface)}
+.callout.reframe{background:var(--accent-soft);border-color:#c7d2fe}
+.callout.reframe .co-label{color:var(--accent-text)}
+.callout.warn{background:var(--warn-soft);border-color:#fde68a}
+.callout.warn .co-label{color:var(--warn-text)}
+.callout.fork{background:var(--ok-soft);border-color:#a7f3d0}
+.callout.fork .co-label{color:var(--ok-text)}
+.co-label{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;font-weight:700;display:block;margin-bottom:4px}
+article.idea{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin:18px 0}
+article.idea h3{margin:0 0 8px;display:flex;align-items:baseline;gap:10px}
+.idchip{font-family:var(--mono);font-size:.78rem;background:var(--accent-soft);color:var(--accent-text);border-radius:999px;padding:2px 10px;white-space:nowrap}
+.idea dl{display:grid;grid-template-columns:110px 1fr;gap:6px 14px;margin:12px 0 0}
+.idea dt{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding-top:2px}
+.idea dd{margin:0}
+.pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pill{font-family:var(--mono);font-size:.74rem;border-radius:999px;padding:3px 11px}
+.pill.conf{background:var(--ok-soft);color:var(--ok-text)}
+.pill.cx{background:var(--warn-soft);color:var(--warn-text)}
+.pill.axis{background:#f5f5f4;color:var(--muted)}
+.pill.src{background:var(--accent-soft);color:var(--accent-text)}
+.jump{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 18px;margin:14px 0}
+.jump ol{margin:6px 0 2px;padding-left:22px;columns:2;column-gap:2rem}
+.jump li{margin:2px 0}
+@media (max-width:680px){.jump ol{columns:1}}
+table{border-collapse:collapse;width:100%;margin:14px 0;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-size:.92rem}
+th{font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+tr:last-child td{border-bottom:none}
+figure{margin:16px 0;padding:0}
+figcaption{font-size:.8rem;color:var(--muted);margin-top:6px}
+footer.composition-signal{margin-top:48px;padding-top:16px;border-top:1px solid var(--line);font-size:.8rem;color:var(--muted)}
+ul.axes{list-style:none;padding:0}
+ul.axes li{margin:6px 0}
+ul.axes .axname{font-family:var(--mono);font-size:.82rem;color:var(--accent-text);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <p class="eyebrow">Ideation</p>
+  <h1>Parallel-Agent Sandboxes with Seeded Users</h1>
+  <div class="meta">
+    <span class="chip">date: 2026-08-10</span>
+    <span class="chip">topic: parallel-agent-sandboxes</span>
+    <span class="chip">mode: repo-grounded</span>
+    <span class="chip">merged: 2026-08-08 seeded-accounts ideation</span>
+  </div>
+  <p style="margin-top:10px;color:var(--muted)">Focus: dev sandboxes with predefined users and populated data; simple, easy, and safe parallel multi-agent development workflows — bridging <code>pacto-app</code>, <code>pacto-dev-env</code>, and <code>pacto-bot-api</code>. This revision folds in the surviving, non-duplicate ideas from the <a href="2026-08-08-dev-sandbox-seeded-accounts-ideation.html">2026-08-08 seeded-accounts ideation</a> so one document carries the whole design.</p>
+  <div class="stats">
+    <div class="stat"><b>46+5</b><span>raw ideas + syntheses (this run)</span></div>
+    <div class="stat"><b>10</b><span>survivors after merge</span></div>
+    <div class="stat"><b>4</b><span>ideas absorbed from 08-08 doc</span></div>
+    <div class="stat"><b>5/5</b><span>axes covered</span></div>
+  </div>
+</header>
+
+<section id="grounding-context">
+<h2>Grounding Context</h2>
+<p><a href="https://github.com/covenant-gov/pacto-app/pull/239">PR #239</a> gave <code>make dev</code> a per-branch data dir (<code>test_fixtures/dev-branch-&lt;slug&gt;</code>), which fixed storage-format gate collisions and created this run's problem: every fresh branch sandbox boots to an empty account-creation screen. <a href="https://github.com/covenant-gov/pacto-app/issues/237">Issue #237</a> tracks the two remaining gaps: fixed Vite ports (<code>1420/1421</code>, <code>strictPort:true</code>) block concurrent <code>make dev</code> across worktrees, and fresh sandboxes carry no account, squad, DMs, or wallet state.</p>
+<p>Codebase facts the survivors are qualified against (verified this run):</p>
+<ul>
+<li><code>TRUSTED_RELAYS</code> is a compile-time constant (<code>src-tauri/src/lib.rs:109-119</code>) with 25+ call sites across MLS, commons, and squad-bot paths; <code>local-dev-setup.ts</code> adds <code>ws://localhost:7000</code> to the <em>user</em> relay list only — MLS traffic cannot reach the local relay at all today.</li>
+<li><strong>The launch wall is network, not crypto.</strong> Argon2id is tuned to ~100&#8202;ms (<code>crypto.rs:39-41</code>); the documented 20–30&#8202;s account-creation wait is relay round-trips — an MLS keypackage publish plus fetch calls with 5–15&#8202;s timeouts against public relays. The relay override is what kills the wall; skipping the interactive flow kills the choreography.</li>
+<li><code>test_login_fixture</code> (debug-only, <code>PACTO_ALLOW_TEST_AUTH=1</code>) creates an account instantly but never persists a PIN-encrypted key or emits an auth event, so the UI stays on the welcome screen (<code>docs/TAURI_MCP_INTEGRATION.md:168</code>). <strong>Identity adoption already ships</strong> — <code>importAccount(recoveryPhrase, pin)</code> at <code>src/stores/auth.ts:250</code> plus a raw-nsec backend primitive — so zero-click login is automation of an existing path, not new capability.</li>
+<li><code>pacto-dev-env</code> runs one shared docker stack (relay :7000/:7001, Anvil :8545/:8546, bot daemon) with idempotent <code>make seed</code> / <code>make seed-squad</code> that already create identities, Safes, and governance contracts, writing <code>full-system.json</code> / <code>squad.json</code> artifacts nothing in pacto-app reads. macOS ControlCenter squats port 7000; the working endpoint is <code>wss://localhost:7001</code>.</li>
+<li><strong>Correction to prior grounding:</strong> <code>pacto-bot-api</code> bots <em>can</em> create MLS groups and invite members — <code>agent.create_mls_group</code> / <code>agent.invite_to_mls_group</code> (+ <code>admin.*</code> variants) exist at <code>schemas/jsonrpc.json:850-971</code> (verified by orchestrator and independent verifier), plus <code>pacto-bot-admin mls-group create|invite</code> CLI verbs.</li>
+<li><strong>Correction:</strong> the MCP bridge's <code>ipc_execute_command</code> cannot invoke app commands; the working path is <code>webview_execute_js</code> → <code>window.__TAURI__.core.invoke(...)</code> (<code>docs/TAURI_MCP_INTEGRATION.md:170</code>).</li>
+<li><code>process_rumor</code> is <code>pub</code> and relay-free (<code>rumor.rs:125-128</code>), so synthetic history can enter storage through the real ingest path with no network. CI provisions zero fixture data across all four jobs.</li>
+<li>Copied binary <code>pacto.db</code> fixtures remain a crypto hazard (per-device Argon2id salt + sentinel, <code>migration.rs:15-23</code>) and a storage-format-gate trigger — regeneration-from-code is the settled fixture policy. Likewise, MLS store bundle transfer is mechanically possible (<code>pacto-bot-admin export/import</code>, exact <code>mdk 0.8.0</code> crate parity) but protocol-hazardous: every export is stamped <code>split_brain_warning: true</code>. Invitation, not transfer, is the safe default.</li>
+</ul>
+<div class="callout reframe">
+<span class="co-label">Reframe</span>
+The seeding machinery mostly exists in the sibling repos — and is stronger than previously believed, since bots can create squads outright. What is missing is (a) one network seam (<code>TRUSTED_RELAYS</code>), (b) one identity seam (a shared manifest + deterministic keys), and (c) per-worktree concurrency (ports). Everything else is orchestration glue — plus a relay-free tier for CI and an on-chain artifact import, both absorbed from the 08-08 round.</p>
+</div>
+<p>External grounding (research value: high): Arcjet's per-agent workspace split (shared singleton infra, per-agent app instances), Foundry Anvil's two-tier <code>evm_snapshot</code>/<code>dumpState</code> pattern, Dagger's <code>container-use</code> (per-agent container on its own branch), Matrix Complement/SyTest black-box protocol suites, and the preview-environment market's consensus that <em>seeded data is the unsolved trickiest piece</em>. No known tool combines worktree-per-agent + seeded protocol services (relay/chain) + persona bots — the triple intersection this repo is positioned to own internally.</p>
+</section>
+
+<section id="topic-axes">
+<h2>Topic Axes</h2>
+<ul class="axes">
+<li><span class="axname">seeded-identities</span> — predefined users and world state: deterministic keys, populated squads/DMs/wallet/governance, fixture lifecycle</li>
+<li><span class="axname">sandbox-lifecycle</span> — per-branch/per-agent sandbox creation, ports, worktrees, concurrency, teardown</li>
+<li><span class="axname">network-seam</span> — pacto-app ↔ pacto-dev-env wiring: relay override, local chain, identity/address handoff</li>
+<li><span class="axname">personas</span> — pacto-bot-api bots as live counterparties and activity generators</li>
+<li><span class="axname">agent-safety</span> — safe, ergonomic parallel agent workflows: MCP verification, guardrails, one-command UX</li>
+</ul>
+</section>
+
+<section id="ranked-ideas">
+<h2>Ranked Ideas</h2>
+<div class="jump">
+<strong style="font-size:.85rem">Jump to:</strong>
+<ol>
+<li><a href="#i1">Debug-gated runtime TRUSTED_RELAYS override</a></li>
+<li><a href="#i2">Born-populated sandboxes: invite-first, bot-created squads</a></li>
+<li><a href="#i3">Deterministic per-worktree ports from the branch slug</a></li>
+<li><a href="#i4">Zero-click authenticated boot (finish test_login_fixture)</a></li>
+<li><a href="#i5">world-state.json manifest + germ-line key derivation</a></li>
+<li><a href="#i6">Persona cast + scenario driver doubling as an MLS conformance suite</a></li>
+<li><a href="#i7">Auto-import the Anvil deployment artifacts</a></li>
+<li><a href="#i8">Relay-free db:seed tier for CI via process_rumor</a></li>
+<li><a href="#i9">Parallel-agent guardrails: doctor, leases, throwaway squads</a></li>
+<li><a href="#i10">Adversarial fixtures that exercise the safety rails</a></li>
+</ol>
+</div>
+
+<article class="idea" id="i1">
+<h3><span class="idchip">1</span> Debug-gated runtime TRUSTED_RELAYS override</h3>
+<p><strong>Description:</strong> Replace the compile-time <code>TRUSTED_RELAYS</code> static with a <code>OnceLock&lt;Vec&lt;String&gt;&gt;</code> resolved once at startup from <code>PACTO_TRUSTED_RELAYS</code> (comma-separated), defaulting to today's three-relay list so all 25+ call sites read through unchanged. Gate the override on the same trust boundary the app already uses: <code>#[cfg(debug_assertions)]</code> plus the existing localhost-only <code>ws://</code> rule (<code>lib.rs:4554-4585</code>) and the <code>PACTO_ALLOW_TEST_AUTH</code>-style env needle. Retire the seven stale <code>ws://localhost:7000</code> doc references in the same pass (<code>wss://localhost:7001</code> is the working endpoint).</p>
+<figure>
+<svg viewBox="0 0 760 190" role="img" aria-label="Before: MLS traffic pinned to public relays. After: one env var routes all MLS traffic to the local stack.">
+<style>.b{fill:#fff;stroke:#a8a29e;rx:8}.t{font:600 12px 'Inter',sans-serif;fill:#1c1917}.s{font:400 11px 'Inter',sans-serif;fill:#57534e}.arr{stroke:#4f46e5;stroke-width:1.6;fill:none;marker-end:url(#ah)}.arrg{stroke:#a8a29e;stroke-width:1.6;fill:none;marker-end:url(#ahg)}</style>
+<defs>
+<marker id="ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4f46e5"/></marker>
+<marker id="ahg" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a8a29e"/></marker>
+</defs>
+<text x="20" y="24" class="t">Today (compile-time)</text>
+<rect x="20" y="40" width="150" height="46" class="b"/><text x="34" y="60" class="t">app MLS paths</text><text x="34" y="76" class="s">25+ call sites</text>
+<rect x="270" y="40" width="160" height="46" class="b"/><text x="284" y="60" class="t">public relays</text><text x="284" y="76" class="s">always, even in dev</text>
+<path d="M170 63 L268 63" class="arrg"/>
+<text x="20" y="128" class="t" fill="#3730a3">With PACTO_TRUSTED_RELAYS (debug builds)</text>
+<rect x="20" y="140" width="150" height="42" class="b"/><text x="34" y="158" class="t">app MLS paths</text><text x="34" y="174" class="s">same call sites</text>
+<rect x="270" y="140" width="200" height="42" class="b" style="stroke:#4f46e5"/><text x="284" y="158" class="t">wss://localhost:7001</text><text x="284" y="174" class="s">pacto-dev-env relay</text>
+<rect x="540" y="140" width="200" height="42" class="b"/><text x="554" y="158" class="t">default: public list</text><text x="554" y="174" class="s">env var unset → unchanged</text>
+<path d="M170 161 L268 161" class="arr"/>
+<path d="M470 161 L538 161" class="arrg"/>
+</svg>
+<figcaption>Illustrative: one env variable moves every MLS path onto the local stack in dev; production behavior is untouched.</figcaption>
+</figure>
+<dl>
+<dt>Axis</dt><dd>network-seam</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>src-tauri/src/lib.rs:109-119</code> (<code>pub(crate) static TRUSTED_RELAYS: &amp;[&amp;str]</code>) with 25+ call sites enumerated in the evidence dossier; <code>lib.rs:4554-4585</code> already restricts plain <code>ws://</code> to localhost; <code>operator_env</code> (dotenvy) already loads a repo-root <code>.env</code> into process env in debug builds — the delivery mechanism exists.</dd>
+<dt>Rationale</dt><dd>The keystone: no seeded sandbox, bot persona, or CI scenario can round-trip MLS (keypackages, welcomes, group messages) locally while MLS traffic is pinned to production relays. And since the 20–30&#8202;s launch wall is relay round-trips, not crypto, this override is also the change that makes sandbox boot fast. Every other idea on this list is capped by this constant. It is also a safety fix — today a "local" sandbox silently talks to production relays.</dd>
+<dt>Downsides</dt><dd>Security-relevant boundary change: widening what a debug build's core protocol can talk to needs explicit review of the gating (env var + debug_assertions + localhost-only). Must not leak into release builds.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">network-seam</span><span class="pill conf">Confidence 85%</span><span class="pill cx">Complexity Medium</span></div>
+</article>
+
+<article class="idea" id="i2">
+<h3><span class="idchip">2</span> Born-populated sandboxes: invite-first, bot-created squads, one-command bootstrap</h3>
+<p><strong>Description:</strong> Sandboxes are never created empty, and nothing is ever copied — the developer (or agent) is <em>invited</em> into a world the bots build. A single <code>make dev-world</code>: brings up the shared <code>pacto-dev-env</code> stack with real readiness gates between stages (up → seed → keypackages → handoff → launch), provisions the branch's app identity, then has a seed bot create the squad via <code>agent.create_mls_group</code> and invite the sandbox account via <code>agent.invite_to_mls_group</code> — with persona bots posting history <em>after</em> the invite (MLS forward secrecy means a new member cannot read pre-join messages), so first paint shows a lived-in squad with a counterparty that replies.</p>
+<p><strong>Step zero — the free experiment:</strong> the bot roster already publishes to <code>wss://jskitty.cat/nostr</code>, which is in the app's default <code>TRUSTED_RELAYS</code>. So <code>pacto-bot-admin mls-group invite --recipient &lt;DEV_NPUB&gt;</code> can put a populated squad in front of a stock debug build <em>today</em>, before any code lands — the cheapest way to validate the whole invite-first design (at the cost of briefly pushing dev traffic over a public relay; not the steady state).</p>
+<figure>
+<svg viewBox="0 0 760 120" role="img" aria-label="Flow: make dev-world brings up the stack with readiness gates, seed bot creates squad and invites the sandbox account, bots post history, app boots into a populated squad.">
+<style>.b2{fill:#fff;stroke:#a8a29e;rx:8}.b2a{fill:#eef2ff;stroke:#4f46e5;rx:8}.t2{font:600 12px 'Inter',sans-serif;fill:#1c1917}.s2{font:400 10.5px 'Inter',sans-serif;fill:#57534e}.a2{stroke:#4f46e5;stroke-width:1.6;fill:none;marker-end:url(#ah2)}.g2{font:600 9.5px 'Inter',sans-serif;fill:#57534e}</style>
+<defs><marker id="ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4f46e5"/></marker></defs>
+<rect x="10" y="30" width="130" height="56" class="b2a"/><text x="24" y="52" class="t2">make dev-world</text><text x="24" y="68" class="s2">one command</text>
+<rect x="175" y="30" width="140" height="56" class="b2"/><text x="189" y="52" class="t2">dev-env up + seed</text><text x="189" y="68" class="s2">relay, anvil, contracts</text>
+<rect x="350" y="30" width="160" height="56" class="b2"/><text x="364" y="52" class="t2">bot creates squad</text><text x="364" y="68" class="s2">create_mls_group + invite</text>
+<rect x="545" y="30" width="90" height="56" class="b2"/><text x="557" y="52" class="t2">bots post</text><text x="557" y="68" class="s2">history</text>
+<rect x="665" y="30" width="90" height="56" class="b2"/><text x="677" y="52" class="t2">app boots</text><text x="677" y="68" class="s2">authed, full</text>
+<path d="M140 58 L173 58" class="a2"/><path d="M315 58 L348 58" class="a2"/><path d="M510 58 L543 58" class="a2"/><path d="M635 58 L663 58" class="a2"/>
+<text x="145" y="24" class="g2">gate</text><text x="320" y="24" class="g2">gate</text><text x="516" y="24" class="g2">gate</text><text x="638" y="24" class="g2">gate</text>
+</svg>
+<figcaption>Illustrative: readiness gates between stages are the substance — today's failure mode is launching the app before the world it expects exists. History is posted after the invite because forward secrecy hides pre-join messages.</figcaption>
+</figure>
+<dl>
+<dt>Axis</dt><dd>sandbox-lifecycle</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>agent.create_mls_group</code> / <code>agent.invite_to_mls_group</code> verified at <code>pacto-bot-api/schemas/jsonrpc.json:850-971</code>; CLI <code>mls-group invite --bot --group --recipient</code> at <code>admin.rs:605-618</code>; <code>seed-squad.sh</code> already creates captain/candidate/crew identities and Safes; auto-<code>hello_message</code> on <code>mls_welcome_received</code> (<code>docs/python-sdk-squad-bots.md:160-180</code>); issue #237 acceptance criterion 2 verbatim. <code>reasoned:</code> MLS binds membership to a client's own key material — a Welcome-derived member gets its own ratchet, so invitation is hazard-free <em>by construction</em>, whereas any store-copy path carries the <code>split_brain_warning: true</code> hazard bot-api itself stamps on every export.</dd>
+<dt>Rationale</dt><dd>The literal user ask — "predefined users with populated data" — via the only path in the design space that is hazard-free by construction rather than hazard-managed. The verified <code>create_mls_group</code> RPC makes it cheaper than the 08-08 round assumed: no app-side squad-creation choreography at all. Depends on idea 1 for local MLS; step zero doesn't.</dd>
+<dt>Downsides</dt><dd>Largest orchestration surface (three repos, one command); cross-repo ownership must be decided (does pacto-app's Makefile shell into siblings, or does pacto-dev-env own the verb?); must degrade gracefully to today's <code>make dev</code> on machines without Docker; invitation grants membership, not history — the backlog step is mandatory, not optional.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">sandbox-lifecycle</span><span class="pill conf">Confidence 82%</span><span class="pill cx">Complexity High</span><span class="pill src">merged: 08-08 #2 + #8</span></div>
+</article>
+
+<article class="idea" id="i3">
+<h3><span class="idchip">3</span> Deterministic per-worktree ports from the branch slug</h3>
+<p><strong>Description:</strong> Hash the branch slug that <code>make dev</code> already computes for <code>PACTO_TEST_SANDBOX_ROOT</code> (Makefile:47-56) into a stable port offset (e.g. <code>1420 + 2·(hash mod N)</code>), export it as <code>PACTO_DEV_PORT</code>, and thread it through <code>vite.config.ts</code> (read env instead of literal <code>1420/1421</code>) and the Tauri dev URL (config override / <code>--config</code> merge at dev time). No human ever picks a port; no two worktrees collide; <code>main</code> keeps 1420.</p>
+<dl>
+<dt>Axis</dt><dd>sandbox-lifecycle</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>vite.config.ts:55-65</code> (<code>port:1420, strictPort:true</code>, HMR 1421), <code>tauri.conf.json:8</code> (<code>devUrl</code> literal); issue #237 problem statement 1 ("two <code>make dev</code> processes can't run concurrently"); the slug-derivation pattern is already trusted for the data dir in the same Makefile target.</dd>
+<dt>Rationale</dt><dd>The cheapest change on this list and the hard precondition for "parallel" in parallel-agent workflows: without it, N agents in N worktrees is structurally impossible regardless of how good seeding gets. Deterministic (not first-free) allocation means an agent can reconnect to its own instance by recomputing the port from its branch.</dd>
+<dt>Downsides</dt><dd>Hash collisions possible on a small port range (mitigate with a wider range or collision fallback); Tauri devUrl templating needs a small wrapper or <code>--config</code> merge since <code>tauri.conf.json</code> is static JSON.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">sandbox-lifecycle</span><span class="pill conf">Confidence 90%</span><span class="pill cx">Complexity Low</span></div>
+</article>
+
+<article class="idea" id="i4">
+<h3><span class="idchip">4</span> Zero-click authenticated boot: finish test_login_fixture</h3>
+<p><strong>Description:</strong> Extend the debug-only <code>test_login_fixture</code> to accept a supplied identity (nsec or manifest-referenced mnemonic, instead of always generating a random one), persist a real PIN-encrypted key via the same <code>encrypt</code>/<code>migration::encrypt_with_password</code> path real PIN creation uses (dev PIN <code>123456</code>), and emit the auth event <code>checkAuthStatus()</code> listens for — so a sandbox launch (or one <code>webview_execute_js</code> → <code>invoke</code> call) lands directly in an authenticated UI. Kills the per-verification choreography every MCP-driven agent pays today: 3 DOM snapshots + 12 single-digit keypress calls.</p>
+<dl>
+<dt>Axis</dt><dd>agent-safety</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>docs/TAURI_MCP_INTEGRATION.md:168</code> ("never emits an event or triggers a reload… never persists a normal PIN-encrypted key for <code>checkAuthStatus()</code> to find"); <code>lib.rs:6091-6150</code> verified to skip the encrypt path; <code>importAccount(recoveryPhrase, pin)</code> already ships at <code>auth.ts:250</code>, so this automates an existing capability rather than adding one; delivery constraint verified at <code>TAURI_MCP_INTEGRATION.md:170</code> (<code>ipc_execute_command</code> can't call app commands — use the documented <code>execute_js</code> invoke helper).</dd>
+<dt>Rationale</dt><dd>AGENTS.md mandates MCP verification for every UI change, so the choreography multiplies linearly with agent count and change count. Note the honest scope: Argon2id itself is ~100&#8202;ms — the 20–30&#8202;s wall is relay timeouts, which idea 1 removes; this idea removes the interactive gate and the fragile scripted flow. Composes with idea 2: the one-command boot needs exactly this to end authenticated, as the supplied-nsec input is the manifest handoff.</dd>
+<dt>Downsides</dt><dd>Debug-gated code reaching into the real auth flow (encrypt, session state) needs a security-conscious review; accepting externally-supplied private keys widens the debug surface; must stay impossible to trigger in release builds. Delivers little alone — without ideas 1–2 the developer lands authenticated into an empty account.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">agent-safety</span><span class="pill conf">Confidence 82%</span><span class="pill cx">Complexity Medium</span><span class="pill src">absorbs 08-08 #7 detail</span></div>
+</article>
+
+<article class="idea" id="i5">
+<h3><span class="idchip">5</span> world-state.json manifest + germ-line key derivation</h3>
+<p><strong>Description:</strong> One canonical, versioned manifest schema — <code>{persona, npub, nsec_env_ref, eth_address, bot_id, squad_role, mnemonic?}</code> — written by <code>seed-squad.sh</code>, consumed by <code>pacto-bot-api.toml</code> generation and by a pacto-app fixture loader (idea 4's supplied-identity input). All dev identities derive from <em>one dev root seed</em> via role-keyed HKDF/BIP-32 derivation instead of <code>Keys::generate()</code>, so the whole cast regenerates byte-identically anywhere. Commit the small derivation recipe (the germ line); always regenerate derived state — encrypted keys, SQLite DBs — fresh per machine (the disposable soma). Nothing binary is ever committed.</p>
+<figure>
+<svg viewBox="0 0 760 168" role="img" aria-label="One root seed derives app mnemonic, bot nsecs and ETH addresses; databases and encrypted keys are always regenerated, never committed.">
+<style>.b3{fill:#fff;stroke:#a8a29e;rx:8}.b3a{fill:#ecfdf5;stroke:#047857;rx:8}.b3w{fill:#fffbeb;stroke:#b45309;rx:8}.t3{font:600 12px 'Inter',sans-serif;fill:#1c1917}.s3{font:400 10.5px 'Inter',sans-serif;fill:#57534e}.a3{stroke:#4f46e5;stroke-width:1.6;fill:none;marker-end:url(#ah3)}</style>
+<defs><marker id="ah3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4f46e5"/></marker></defs>
+<rect x="10" y="56" width="170" height="56" class="b3a"/><text x="24" y="78" class="t3">dev root seed</text><text x="24" y="94" class="s3">committed recipe (germ line)</text>
+<rect x="260" y="10" width="180" height="42" class="b3"/><text x="274" y="28" class="t3">app mnemonic</text><text x="274" y="44" class="s3">HKDF role: user/&lt;branch&gt;</text>
+<rect x="260" y="64" width="180" height="42" class="b3"/><text x="274" y="82" class="t3">bot nsecs</text><text x="274" y="98" class="s3">HKDF role: persona/&lt;name&gt;</text>
+<rect x="260" y="118" width="180" height="42" class="b3"/><text x="274" y="136" class="t3">ETH addresses</text><text x="274" y="152" class="s3">derived from nsec (existing)</text>
+<rect x="520" y="64" width="230" height="42" class="b3w"/><text x="534" y="82" class="t3">DBs + encrypted keys</text><text x="534" y="98" class="s3">always regenerated, never committed</text>
+<path d="M180 76 L258 33" class="a3"/><path d="M180 84 L258 85" class="a3"/><path d="M180 94 L258 137" class="a3"/><path d="M440 85 L518 85" class="a3"/>
+</svg>
+<figcaption>Illustrative: commit the tiny reproducible unit; treat every derived instance as disposable.</figcaption>
+</figure>
+<div class="callout fork">
+<span class="co-label">Open design fork: HKDF determinism vs bunker custody</span>
+<p>The 08-08 round proposed the opposite identity philosophy: mint personas with <code>pacto-bot-admin new --backend bunker_local</code> (NIP-46), so no private key is ever written to a config, env var, or script — the dev stack already runs a <code>nip46-bunker</code> container, and <code>test-bunker</code> verifies connections. Bunker custody removes the secret copy entirely but adds a live signing dependency (offline dev breaks confusingly) and exercises a NIP-46 path the desktop app may not fully support yet. Position taken here: <strong>HKDF-deterministic keys now</strong> (reproducibility and diffability are what parallel agents and CI need), <strong>bunker as the eventual hardening default</strong> once app-side NIP-46 support is confirmed. This is a decision the team should ratify, not a settled fact.</p>
+</div>
+<dl>
+<dt>Axis</dt><dd>seeded-identities</dd>
+<dt>Basis</dt><dd><code>direct:</code> three independent identity shapes exist today (<code>seed-squad.sh:596-598</code> crewMembers JSON, <code>pacto-bot-api.toml.example</code> [[bots]], app-side mnemonic import at <code>lib.rs:6226</code>); <code>signer.rs:432</code> uses random <code>Keys::generate()</code>; per-device salt/sentinel (<code>migration.rs:15-23</code>) is why binary fixtures can't be shared; bunker backend verified at <code>admin.rs:274-277</code> with <code>test-bunker</code> at <code>admin.rs:379-384</code>. <code>reasoned:</code> the germ-line/soma split (store the reproducible pre-image, regenerate instances) is the only fixture policy that is simultaneously safe, portable, and diffable.</dd>
+<dt>Rationale</dt><dd>The compounding foundation: once identities are deterministic and manifest-described, ideas 2, 4, 6, 7, and 9 all consume the same artifact instead of re-inventing identity plumbing per repo — and "which user am I logged in as in this sandbox?" has one answer across all three codebases.</dd>
+<dt>Downsides</dt><dd>Cross-repo schema ownership must be settled (versioning, breaking changes); touching bot-api's key generation is security-adjacent and needs review; derivation must be clearly dev-only; the bunker fork stays open until app NIP-46 support is checked.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">seeded-identities</span><span class="pill conf">Confidence 70%</span><span class="pill cx">Complexity Medium</span><span class="pill src">absorbs 08-08 #10 as fork</span></div>
+</article>
+
+<article class="idea" id="i6">
+<h3><span class="idchip">6</span> Persona cast + scenario driver doubling as an MLS conformance suite</h3>
+<p><strong>Description:</strong> Package the existing Bot SDK surface (<code>@bot.on_squad_join</code>, <code>hello_message</code>, <code>@bot.command</code>, throttles) into a library of pre-rehearsed persona roles — Captain, Skeptical Candidate, Chatty Crew, Governance Objector — selectable at launch (<code>make dev-world PERSONA=captain-with-treasury</code>, <code>crew-with-dm-backlog</code>, <code>candidate-mid-vote</code>; map <code>dev-account</code>/<code>dev-buddy</code> onto specific roster members so two windows hold a genuine two-party conversation). Declarative scenario files name participants and a timeline (<em>t+0 captain DMs the dev; t+5m creates "council"; t+10m crew-1 posts three messages; t+15m a poll opens</em>) and compile to real JSON-RPC verbs against the live local relay + Anvil. The same scenarios run in CI as a Complement-style black-box multi-party MLS regression gate, with <code>trace-events</code> output snapshotted as golden files so a scenario that silently stops producing what it claims fails loudly.</p>
+<dl>
+<dt>Axis</dt><dd>personas</dd>
+<dt>Basis</dt><dd><code>direct:</code> full RPC surface verified including <code>agent.create_mls_group</code>/<code>invite_to_mls_group</code> (<code>jsonrpc.json:850-971</code>); shell-composable primitives <code>send-test-dm</code>, <code>mls-group create|invite</code>, <code>publish-profile</code>, <code>trace-events --since --limit</code> (<code>admin.rs:374-461, 584-618</code>); <code>new --scaffold</code> generates a pytest project (<code>admin.rs:294-308</code>) — the scenario can live as the SDK's own test and cannot drift from its API; <code>python-llm</code> cookiecutter template as packaging vehicle. <code>external:</code> Matrix Complement/SyTest — black-box suites driving real homeservers catch integration bugs mocked-internal tests structurally cannot; the analogy holds (E2EE protocol correctness is only observable over the wire).</dd>
+<dt>Rationale</dt><dd>Turns seeding investment into a second dividend: MLS group messaging currently has no automated multi-party regression coverage, and every scenario written to make sandboxes lively is also a protocol test for free. Scenario-driven state is genuinely cryptographic — something a row-inserting seed script can never produce for MLS. Converts "we have bots" into "we have a cast": a shared asset that compounds instead of bespoke one-off configs.</dd>
+<dt>Downsides</dt><dd>A scenario format is a small language — keep it declarative, resist Turing-completeness; personas are a maintenance surface (cap at three or four deliberately chosen states, each with an owner); wall-clock timelines must be simulated; CI budget and relay-timing flakiness need engineering. Needs ideas 1 and 5 first.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">personas</span><span class="pill conf">Confidence 68%</span><span class="pill cx">Complexity High</span><span class="pill src">absorbs 08-08 #3 + #9</span></div>
+</article>
+
+<article class="idea" id="i7">
+<h3><span class="idchip">7</span> Auto-import the Anvil deployment artifacts, with version pinning</h3>
+<p><strong>Description:</strong> The dev stack already writes real local-chain addresses to <code>full-system.json</code> and <code>squad.json</code>; nothing in pacto-app reads them. Have the dev build import those artifacts at launch to populate the existing <code>local</code> (31337) chain entry and treasury addresses, deleting the manual Settings → EVM step. Stamp each deployment with an accession id the app checks, so a stale or mismatched artifact (an Anvil instance whose contracts no longer match the running build's ABI) refuses loudly instead of silently resolving wrong addresses.</p>
+<dl>
+<dt>Axis</dt><dd>network-seam</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>wallet-assets.json</code> carries a <code>local</code> (31337 → <code>http://localhost:8545</code>) entry with zero-address placeholders; <code>pacto-protocol-addresses.json</code> holds only Sepolia; <code>local-dev-setup.ts</code> explicitly opts out of wiring EVM, leaving it a manual step; the artifacts are written to <code>data/deployments/31337/</code> by the already-idempotent <code>make seed</code>. <code>external:</code> versioned reference assemblies in genomics (GRCh37/GRCh38), where tooling refuses to mix coordinate systems rather than silently producing wrong results.</dd>
+<dt>Rationale</dt><dd>A fully populated artifact sits on disk beside a config file with matching empty fields — an existing bridge with nobody walking across it. Cheapest item on the list after ports, and it completes the world: ideas 1–6 populate the social world, this populates the on-chain one. The pinning half mirrors the storage-format gate philosophy the repo already trusts.</dd>
+<dt>Downsides</dt><dd>Takes on a cross-repo dependency on an artifact format the other repo owns; needs defined behavior when the artifact is absent, stale, or from a wiped chain; an unchecked version stamp is worse than none.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">network-seam</span><span class="pill conf">Confidence 75%</span><span class="pill cx">Complexity Low</span><span class="pill src">from 08-08 #5</span></div>
+</article>
+
+<article class="idea" id="i8">
+<h3><span class="idchip">8</span> Relay-free db:seed tier for CI via process_rumor</h3>
+<p><strong>Description:</strong> Promote the seeding machinery the repo already has — <code>write_legacy_store_fixture</code>, <code>seed_pre_v28_schema</code>, <code>upsert_squad_inner</code>, <code>insert_entry</code> — from private test-vector code into a supported seeding entry point that regenerates a migration-current database on demand, constructing <code>RumorEvent</code>s and feeding them through the public, relay-free <code>process_rumor</code> so synthetic history enters storage via the real ingest path with zero network. Package as a plain Rust library/binary (not a Tauri command, avoiding the orphaned-command trap) so Docker-less CI gets populated-state coverage for the first time.</p>
+<dl>
+<dt>Axis</dt><dd>seeded-identities</dd>
+<dt>Basis</dt><dd><code>direct:</code> all four helpers verified in the 08-08 round (<code>mls_store_reset.rs:970</code>, <code>migrations/mod.rs:186</code>, <code>squad_catalog.rs:267</code>, <code>catch_up.rs:92</code>), each private or test-only; <code>process_rumor</code> confirmed <code>pub</code> and relay-free at <code>rumor.rs:125-128</code>; CI confirmed to provision zero fixture data in any job. <code>external:</code> Rails <code>db:seed</code> as a first-class code-driven seeding command — conspicuously absent from Nostr/E2EE-messenger ecosystems.</dd>
+<dt>Rationale</dt><dd>The complementary tier to idea 2: live-protocol seeding needs the docker stack; this tier needs nothing, so CI, offline laptops, and quick unit-level fixtures stay covered. Regenerating from code structurally avoids the storage-format landmine (no retained artifact can go stale), and the generators double as backward-compatibility vectors for future migrations.</dd>
+<dt>Downsides</dt><dd>Promoting test-only code raises its maintenance obligation. Known open check from the 08-08 verifier: the MLS half is weaker than it first appeared (the local-keypackage claims cited a doc-comment, not executing code) — offline MLS priming needs verification against <code>mls.rs:507-527</code> before anyone commits to that slice; the DM/squad/wallet slices carry no such caveat.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">seeded-identities</span><span class="pill conf">Confidence 70%</span><span class="pill cx">Complexity Medium</span><span class="pill src">from 08-08 #4</span></div>
+</article>
+
+<article class="idea" id="i9">
+<h3><span class="idchip">9</span> Parallel-agent guardrails: doctor, leases, throwaway squads</h3>
+<p><strong>Description:</strong> Three rails that make N concurrent agents safe by construction rather than by policy: (a) a <code>make doctor</code>/launch preflight that validates each sandbox root's schema version against the current build and auto-quarantines stale sandbox profiles (replacing the 5-step manual sqlite3 runbook for fixture data), and refuses launch if <code>PACTO_TEST_SANDBOX_ROOT</code> resolves outside the current worktree; (b) a lease file checked by <code>reseed</code>/<code>seed-squad</code> so parallel agents can't clobber shared Anvil/relay state mid-scenario; (c) every sandbox gets its own throwaway squad (from idea 2), so "don't post in production channels" stops being a judgment call — the only channels an agent can see are its own.</p>
+<dl>
+<dt>Axis</dt><dd>agent-safety</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>OPERATOR_UPDATES.md:156</code> ("one bad profile blocks every account on that machine"), <code>:158-171</code> (manual sqlite3 recovery runbook), <code>:173</code> (branch-hopping isolation doesn't cover all triggers); <code>AGENTS.md:282</code> (channel safety currently rests on agent judgment); <code>seed-squad.sh</code> idempotence implies concurrent-mutation risk was already anticipated.</dd>
+<dt>Rationale</dt><dd>Parallelism multiplies exactly the failure modes these gates exist to catch, while multiplying blast radius (one agent's stale sandbox blocks every agent's account; one agent's reseed corrupts every agent's scenario). Unattended agents cannot execute manual runbooks — recovery must be mechanical or parallel workflows stall on the first incident.</dd>
+<dt>Downsides</dt><dd>Auto-quarantine trades manual-but-safe for automatic-but-riskier — scope it strictly to sandbox/fixture profiles, never the real OS-data account; lease semantics (timeout, stealing) need care to avoid deadlocking CI.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">agent-safety</span><span class="pill conf">Confidence 70%</span><span class="pill cx">Complexity Medium</span></div>
+</article>
+
+<article class="idea" id="i10">
+<h3><span class="idchip">10</span> Adversarial fixtures that exercise the safety rails</h3>
+<p><strong>Description:</strong> A second fixture target that deliberately seeds hostile state rather than a plausible inbox: an <code>Unrecognized</code>-format profile sitting beside a valid one, orphaned rows with no matching event, and enough profiles to actually reach <code>SCAN_DEADLINE</code>. Pair it with a checksum over the resulting logical state so a regenerated fixture that silently diverges is caught as a desync rather than discovered later through an unrelated failure. The proving ground for idea 9's doctor/quarantine rails.</p>
+<dl>
+<dt>Axis</dt><dd>agent-safety</dd>
+<dt>Basis</dt><dd><code>direct:</code> <code>AccountScanVerdict</code> never returns Delete for an <code>Unrecognized</code>/<code>Divergent</code> profile (regression tests at <code>account_manager.rs:352-382,812-830</code>); <code>SCAN_DEADLINE</code> is a real 5&#8202;s bound at <code>storage_format.rs:23</code> no realistic profile count has approached. <code>external:</code> lockstep/rollback netcode computes periodic state checksums because replay divergence is silent and catastrophic otherwise.</dd>
+<dt>Rationale</dt><dd>Different in kind from every other survivor: PR #239 exists because of storage-format collisions, and the safety code written in response has never been exercised by a fixture that triggers it. A realistic populated user never runs those paths; only a deliberately hostile one does. With auto-quarantine (idea 9) in the design, a fixture proving quarantine fires correctly stops being nice-to-have and becomes the test for a new automated behavior.</dd>
+<dt>Downsides</dt><dd>Serves testing rather than the daily DX complaint, so it competes for effort without making anyone's <code>make dev</code> nicer; the checksum half only earns its keep once fixtures regenerate often enough to drift. Build after idea 9, alongside it.</dd>
+</dl>
+<div class="pillrow"><span class="pill axis">agent-safety</span><span class="pill conf">Confidence 68%</span><span class="pill cx">Complexity Medium</span><span class="pill src">from 08-08 #6</span></div>
+</article>
+</section>
+
+<section id="rejection-summary">
+<h2>Rejection Summary</h2>
+<p>Cuts from this run's 46 raw candidates + 5 syntheses, plus the disposition of every 08-08 survivor after the merge.</p>
+<table>
+<thead><tr><th>#</th><th>Idea</th><th>Reason rejected / disposition</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Batch the six-digit PIN dance via execute_js</td><td>Mooted by survivor 4 (no PIN dance at all); prior round already cut it as below the ambition floor.</td></tr>
+<tr><td>2</td><td>Git-hook teardown on branch delete</td><td>Chore below the ambition floor; folded as one bullet into survivor 9's doctor preflight.</td></tr>
+<tr><td>3</td><td>Pre-warmed sandbox pool with SQLite snapshot-swap</td><td>Refuted: copying <code>pacto.db</code> — even regenerated — trips the storage-format gate and the per-device salt hazard; only Anvil/relay state snapshots are safe (folded into 2).</td></tr>
+<tr><td>4</td><td>Unified make snapshot/restore across all three stores</td><td>Same hazard for the app-DB leg; chain/relay legs folded into survivor 2's bootstrap.</td></tr>
+<tr><td>5</td><td>seed_from_manifest called via ipc_execute_command</td><td>Delivery mechanism refuted — <code>ipc_execute_command</code> only forwards bridge built-ins (<code>TAURI_MCP_INTEGRATION.md:170</code>); intent folded into survivor 4 via the execute_js invoke path.</td></tr>
+<tr><td>6</td><td>One shared MMO-style world for all agents</td><td>Weaker duplicate of shared-infra + leases (survivor 9); cohabitation without isolation reintroduces the cross-agent interference it was meant to avoid.</td></tr>
+<tr><td>7</td><td>No-Docker single-binary local stack</td><td>Too expensive relative to value; the compose stack already works and is shared machinery with bot/CI workflows.</td></tr>
+<tr><td>8</td><td>30-second disposable scratch sandboxes</td><td>Restates already-shipped <code>make dev-sandbox</code> behavior; not a new proposal.</td></tr>
+<tr><td>9</td><td>Genesis event-log replay as a standalone idea</td><td>Principle absorbed: "seed by replay, not by copying rows" is survivor 5's fixture policy, survivor 2's live tier, and survivor 8's relay-free tier.</td></tr>
+<tr><td>10</td><td>Arcjet-style per-agent VM cloning</td><td>External citation judged overreached by the verifier; the useful kernel (shared singleton infra, per-agent identity/app only) is the architecture premise of survivors 2 and 9.</td></tr>
+<tr><td>11</td><td>Bots-cannot-create-groups workarounds (welcome-only seeding choreography)</td><td>Basis overturned: <code>agent.create_mls_group</code> exists (<code>jsonrpc.json:929</code>); superseded by survivor 2.</td></tr>
+<tr><td>12</td><td>~20 further raw candidates</td><td>Folded into survivors as duplicates across frames (10 duplicate clusters identified by the verifier): port derivation ×4, relay override ×5, fixture-login ×3, manifest/determinism ×5, persona/conformance ×5.</td></tr>
+<tr><td>13</td><td>08-08 #1, #2, #3, #7, #8, #9 (TRUSTED_RELAYS; joint bootstrap; persona cast; zero-click login; invite-first; scenario files)</td><td>Merged, not rejected: absorbed into survivors 1, 2, 4, and 6 — readiness gates, the step-zero public-relay experiment, the <code>PERSONA=</code> selector, supplied-nsec fixture input, and <code>trace-events</code> golden files all carried forward.</td></tr>
+<tr><td>14</td><td>08-08 #10 Bunker-minted personas (NIP-46, no secret copies)</td><td>Not rejected — held as the explicit open fork inside survivor 5: HKDF determinism now, bunker custody as the eventual hardening default pending an app-side NIP-46 support check.</td></tr>
+<tr><td>15</td><td>08-08 #11 Safe persona handoff (bundle transfer with re-key + atomic retirement)</td><td>Contingency only: build solely if invite-first (survivor 2) proves insufficient for a case that genuinely requires <em>becoming</em> a persona. Split-brain hazard makes transfer the last resort, not a design pillar.</td></tr>
+</tbody>
+</table>
+</section>
+
+<footer class="composition-signal">
+Composed 2026-08-10 by ce-ideate from the session prompt on <a href="https://github.com/covenant-gov/pacto-app/pull/239">PR #239</a> follow-up; revised same day to fold in the surviving ideas of <code>docs/ideation/2026-08-08-dev-sandbox-seeded-accounts-ideation.html</code>. Grounded against <code>pacto-app</code>, <code>pacto-dev-env</code>, and <code>pacto-bot-api</code>: 5 grounding scans, 5 evidence dossiers, web research, 5-frame ideation fleet (46 raw + 5 syntheses), fresh-context basis verification with two grounding claims overturned and re-verified by the orchestrator against <code>schemas/jsonrpc.json</code> and <code>docs/TAURI_MCP_INTEGRATION.md</code>; merge pass carried forward the 08-08 round's launch-wall, shipped-import, and MLS split-brain findings.
+</footer>
+
+</div>
+</body>
+</html>

@@ -268,6 +268,10 @@ async fn deploy_squad_sponsor_impl<R: Runtime>(
     let addrs = pacto_chain_config::squad_sponsor_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
 
+    pacto_chain_config::guard_local_chain_live(&net.key)
+        .await
+        .map_err(|e| wallet_err_json("SPONSOR_CONFIG", e, None))?;
+
     let inputs = match hats_top_hat {
         None => VariantInputs::Ext,
         Some(top_hat) => {

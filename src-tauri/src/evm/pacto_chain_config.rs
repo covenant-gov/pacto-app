@@ -199,6 +199,98 @@ pub fn pacto_gov_deploy_addresses(net_key: &str) -> Result<PactoGovDeployAddress
     })
 }
 
+/// Chain id pacto-app's `local` network is fixed to (matches `wallet_chain_config`'s
+/// `local` entry and the chain `scripts/seed-anvil.sh` seeds).
+const LOCAL_CHAIN_ID: u64 = 31_337;
+
+/// Env var the sibling deployment script exports alongside the `_LOCAL` address
+/// overrides, carrying the chain id backing the deployment artifact it read.
+const LOCAL_CHAIN_ID_ENV: &str = "PACTO_LOCAL_CHAIN_ID";
+
+fn local_artifact_path(chain_id: u64) -> String {
+    format!("data/deployments/{chain_id}/full-system.json")
+}
+
+/// Refuses local-network address resolution when the deployment artifact no longer
+/// describes the chain the build is pointed at, instead of handing back addresses
+/// that resolve to nothing on-chain and failing later inside a contract call.
+///
+/// `factory_has_code` mirrors the `eth_getCode` liveness check
+/// `ensure-external-contracts.sh` already uses for its own idempotence (see
+/// `sponsor_userop.rs`'s `get_code_at` precedent): callers wire it to a live RPC probe
+/// against the resolved `NavePirataFactory`; tests inject a fixed answer so the guard
+/// stays offline and deterministic.
+///
+/// A no-op for every network but `local` — the artifact env vars only ever carry the
+/// `_LOCAL` suffix, so this cannot fire for sepolia/arbitrum/mainnet even if called
+/// unconditionally. A no-op (falls back to the compiled book, no error) when the
+/// artifact env vars are entirely absent, preserving today's behavior.
+pub fn guard_local_chain_artifact(
+    net_key: &str,
+    factory_has_code: impl FnOnce(Address) -> Result<bool, String>,
+) -> Result<(), String> {
+    if net_key != "local" {
+        return Ok(());
+    }
+
+    let Ok(found_raw) = std::env::var(LOCAL_CHAIN_ID_ENV) else {
+        return Ok(());
+    };
+    let found: u64 = found_raw.trim().parse().map_err(|_| {
+        format!(
+            "{env_var}=\"{raw}\" is not a valid chain id.",
+            env_var = LOCAL_CHAIN_ID_ENV,
+            raw = found_raw
+        )
+    })?;
+    if found != LOCAL_CHAIN_ID {
+        return Err(format!(
+            "Local-chain artifact mismatch: {path} targets chain {found}, but pacto-app's `local` network expects chain {expected}. Re-seed the local chain (`make dev-world` or `scripts/seed-anvil.sh`) or point {env_var} at a chain-{expected} deployment.",
+            path = local_artifact_path(found),
+            found = found,
+            expected = LOCAL_CHAIN_ID,
+            env_var = LOCAL_CHAIN_ID_ENV,
+        ));
+    }
+
+    let addrs = pacto_gov_deploy_addresses(net_key)?;
+    let factory = addrs.nave_pirata_factory;
+    match factory_has_code(factory) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(format!(
+            "Local-chain artifact ({path}) names NavePirataFactory {factory:#x}, but it holds no code on chain {expected}. The chain was likely wiped without re-seeding; run `scripts/seed-anvil.sh` (or `make dev-world`) and retry.",
+            path = local_artifact_path(LOCAL_CHAIN_ID),
+            expected = LOCAL_CHAIN_ID,
+        )),
+        Err(e) => Err(format!(
+            "Could not verify NavePirataFactory {factory:#x} on chain {expected}: {e}",
+            expected = LOCAL_CHAIN_ID,
+        )),
+    }
+}
+
+/// Live wrapper over [`guard_local_chain_artifact`] that probes the running chain.
+///
+/// Returns immediately for non-local networks and when the artifact env vars are
+/// absent, so no RPC connection is opened on the paths that do not need one.
+pub async fn guard_local_chain_live(net_key: &str) -> Result<(), String> {
+    if net_key != "local" || std::env::var(LOCAL_CHAIN_ID_ENV).is_err() {
+        return Ok(());
+    }
+
+    let net = super::wallet_chain_config::network_by_key(net_key)
+        .ok_or_else(|| format!("Unknown network `{net_key}`."))?;
+    let urls = super::wallet_chain_config::rpc_urls_for(net);
+    let provider = super::rpc::provider::connect_read_provider(&urls).await?;
+
+    let factory = pacto_gov_deploy_addresses(net_key)?.nave_pirata_factory;
+    let code = alloy::providers::Provider::get_code_at(&provider, factory)
+        .await
+        .map_err(|e| e.to_string());
+
+    guard_local_chain_artifact(net_key, |_| code.map(|c| !c.is_empty()))
+}
+
 #[derive(Clone, Debug)]
 pub struct SquadSponsorDeployAddresses {
     pub squad_sponsor_factory: Address,
@@ -393,6 +485,167 @@ mod tests {
     #[test]
     fn default_fallback_for_chain_id_unknown() {
         assert!(default_fallback_for_chain_id(999_999).is_none());
+    }
+
+    const GOV_LOCAL_ENV_KEYS: &[&str] = &[
+        "PACTO_LOCAL_CHAIN_ID",
+        "PACTO_NAVE_PIRATA_FACTORY",
+        "PACTO_NAVE_PIRATA_FACTORY_LOCAL",
+        "PACTO_NAV_MASTER_QUARTERMASTER",
+        "PACTO_NAV_MASTER_QUARTERMASTER_LOCAL",
+        "PACTO_NAV_MASTER_MUTINY",
+        "PACTO_NAV_MASTER_MUTINY_LOCAL",
+        "PACTO_NAV_MASTER_TREASURY_AUTHORITY",
+        "PACTO_NAV_MASTER_TREASURY_AUTHORITY_LOCAL",
+        "PACTO_NAV_MASTER_SQUAD_ADMIN",
+        "PACTO_NAV_MASTER_SQUAD_ADMIN_LOCAL",
+        "PACTO_NAV_MASTER_SQUAD_ADMIN_EXT",
+        "PACTO_NAV_MASTER_SQUAD_ADMIN_EXT_LOCAL",
+        "PACTO_NAVE_PIRATA_REGISTRY",
+        "PACTO_NAVE_PIRATA_REGISTRY_LOCAL",
+        "PACTO_HATS",
+        "PACTO_HATS_LOCAL",
+        "PACTO_ROLE_HAT_CLONES_FACTORY",
+        "PACTO_ROLE_HAT_CLONES_FACTORY_LOCAL",
+        "PACTO_ROLE_HAT_UPGRADER",
+        "PACTO_ROLE_HAT_UPGRADER_LOCAL",
+    ];
+
+    /// Sets every required `pactoGov` address override so `pacto_gov_deploy_addresses("local")`
+    /// resolves without hitting the (nonexistent) compiled local book entry.
+    fn set_valid_local_gov_env() -> EnvVarGuard {
+        EnvVarGuard::new()
+            .set(
+                "PACTO_NAVE_PIRATA_FACTORY_LOCAL",
+                "0x1111111111111111111111111111111111111111",
+            )
+            .set(
+                "PACTO_NAV_MASTER_QUARTERMASTER_LOCAL",
+                "0x2222222222222222222222222222222222222222",
+            )
+            .set(
+                "PACTO_NAV_MASTER_MUTINY_LOCAL",
+                "0x3333333333333333333333333333333333333333",
+            )
+            .set(
+                "PACTO_NAV_MASTER_TREASURY_AUTHORITY_LOCAL",
+                "0x4444444444444444444444444444444444444444",
+            )
+            .set(
+                "PACTO_NAV_MASTER_SQUAD_ADMIN_LOCAL",
+                "0x5555555555555555555555555555555555555555",
+            )
+            .set(
+                "PACTO_NAV_MASTER_SQUAD_ADMIN_EXT_LOCAL",
+                "0x6666666666666666666666666666666666666666",
+            )
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_matching_resolves_over_book_and_passes() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+        assert!(
+            book_for("local").is_none(),
+            "this test assumes no compiled `local` book entry exists"
+        );
+        let _guard = set_valid_local_gov_env().set("PACTO_LOCAL_CHAIN_ID", "31337");
+
+        let addrs = pacto_gov_deploy_addresses("local").expect("artifact env vars resolve");
+        assert_eq!(
+            addrs.nave_pirata_factory,
+            address!("0x1111111111111111111111111111111111111111"),
+            "addresses must come from the artifact override, not an (absent) compiled book entry"
+        );
+
+        let result = guard_local_chain_artifact("local", |_| Ok(true));
+        assert!(result.is_ok(), "expected the guard to pass: {result:?}");
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_absent_falls_back_silently() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+
+        let result = guard_local_chain_artifact("local", |_| {
+            panic!("factory liveness must not be probed when the artifact is absent")
+        });
+        assert!(
+            result.is_ok(),
+            "absent artifact must fall back to the compiled book without error: {result:?}"
+        );
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_chain_id_mismatch_names_both_chains() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+        let _guard = EnvVarGuard::new().set("PACTO_LOCAL_CHAIN_ID", "1337");
+
+        let err = guard_local_chain_artifact("local", |_| {
+            panic!("factory liveness must not be probed after a chain id mismatch")
+        })
+        .expect_err("chain id mismatch must refuse");
+        assert!(
+            err.contains("1337") && err.contains("31337"),
+            "expected both the found (1337) and expected (31337) chain ids named: {err}"
+        );
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_dead_factory_names_the_address() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+        let _guard = set_valid_local_gov_env().set("PACTO_LOCAL_CHAIN_ID", "31337");
+
+        let err =
+            guard_local_chain_artifact("local", |_| Ok(false)).expect_err("dead factory must refuse");
+        assert!(
+            err.contains("0x1111111111111111111111111111111111111111"),
+            "expected the dead factory address named: {err}"
+        );
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_missing_field_names_the_field() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+        // Factory present, but masterQuartermaster absent from both the artifact
+        // override and the (nonexistent) compiled `local` book entry.
+        let _guard = EnvVarGuard::new()
+            .set(
+                "PACTO_NAVE_PIRATA_FACTORY_LOCAL",
+                "0x1111111111111111111111111111111111111111",
+            )
+            .set("PACTO_LOCAL_CHAIN_ID", "31337");
+
+        let err = guard_local_chain_artifact("local", |_| {
+            panic!("factory liveness must not be probed when a required address is missing")
+        })
+        .expect_err("missing required field must refuse");
+        assert!(
+            err.contains("masterQuartermaster"),
+            "expected the missing field named: {err}"
+        );
+    }
+
+    #[test]
+    fn guard_local_chain_artifact_cannot_fire_on_non_local_networks() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        clear_env(GOV_LOCAL_ENV_KEYS);
+        // A mismatched chain id would refuse on `local`; every non-local network must
+        // short-circuit before either the chain id or liveness checks run.
+        let _guard = EnvVarGuard::new().set("PACTO_LOCAL_CHAIN_ID", "1337");
+
+        for net in ["sepolia", "arbitrum", "mainnet"] {
+            let result = guard_local_chain_artifact(net, |_| {
+                panic!("factory liveness must never be probed for a non-local network")
+            });
+            assert!(
+                result.is_ok(),
+                "guard must be a no-op for `{net}`: {result:?}"
+            );
+        }
     }
 
     static ENV_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());

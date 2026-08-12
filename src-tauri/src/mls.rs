@@ -1,7 +1,8 @@
 //! MLS (Message Layer Security) Module
 //!
 //! This module provides MLS group messaging capabilities using the nostr-mls crate.
-//! We use nostr-mls defaults and communicate exclusively through TRUSTED_RELAYS.
+//! We use nostr-mls defaults and communicate exclusively through the trusted relay set
+//! (`crate::trusted_relays`).
 //!
 //! ## Storage Schema
 //!
@@ -25,7 +26,7 @@ use crate::nostr_tags;
 use crate::rumor::{
     process_rumor, ConversationType, RumorContext, RumorEvent, RumorProcessingResult,
 };
-use crate::{get_nostr_client, STATE, TAURI_APP, TRUSTED_RELAYS};
+use crate::{get_nostr_client, STATE, TAURI_APP};
 use mdk_core::prelude::*;
 use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use nostr_sdk::PublicKey;
@@ -396,12 +397,12 @@ impl MlsService {
     ///
     /// This will:
     /// 1. Generate a new keypackage for the device if needed
-    /// 2. Publish it to TRUSTED_RELAYS via nostr-mls
+    /// 2. Publish it to the trusted relay set via nostr-mls
     /// 3. Update "mls_keypackage_index" with the reference
     pub async fn publish_device_keypackage(&self, device_id: &str) -> Result<(), MlsError> {
         // TODO: Use nostr-mls to generate and publish keypackage
         // TODO: Store keypackage reference in "mls_keypackage_index"
-        // TODO: Use TRUSTED_RELAYS for publishing
+        // TODO: Use the trusted relay set for publishing
 
         // Stub implementation
         let _ = device_id;
@@ -423,7 +424,7 @@ impl MlsService {
       • initial_member_devices: Vec of (member_npub, device_id) pairs chosen by the caller
 
     - Steps:
-      1) Resolve creator pubkey and build NostrGroupConfigData scoped to TRUSTED_RELAYS.
+      1) Resolve creator pubkey and build NostrGroupConfigData scoped to the trusted relay set.
       2) Resolve each member device to its KeyPackage Event before touching the MLS engine:
          • Prefer local plaintext index "mls_keypackage_index" to get keypackage_ref by member npub + device_id.
          • If ref exists: fetch exact event by id; else: fetch latest Kind::MlsKeyPackage by author.
@@ -433,7 +434,7 @@ impl MlsService {
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
-      4) Publish welcome(s) to invited recipients 1:1 via gift_wrap_to on TRUSTED_RELAYS.
+      4) Publish welcome(s) to invited recipients 1:1 via gift_wrap_to on the trusted relay set.
       5) Persist encrypted UI metadata ("mls_groups") with:
          • group_id = wire id (relay filtering id, shown in UI)
          • engine_group_id = engine id (used by [rust.send_mls_group_message()](src-tauri/src/lib.rs:3144))
@@ -463,7 +464,7 @@ impl MlsService {
         // Persistent group creation using sqlite-backed engine.
         // - Resolve signer and relay config
         // - Use engine.create_group() inside a no-await scope (avoid holding !Send across await)
-        // - Publish welcome (if any) to TRUSTED_RELAY
+        // - Publish welcome (if any) to the trusted relay set
         // - Store encrypted UI metadata to "mls_groups"
         //
         // TODO: Resolve `initial_member_devices` into Vec<Event> KeyPackages (from index or network).
@@ -483,10 +484,7 @@ impl MlsService {
             .map_err(|e| MlsError::CryptoError(e.to_string()))?;
 
         // Build group config (relay-scoped)
-        let relay_urls: Vec<RelayUrl> = TRUSTED_RELAYS
-            .iter()
-            .filter_map(|r| RelayUrl::parse(r).ok())
-            .collect();
+        let relay_urls: Vec<RelayUrl> = crate::trusted_relays::trusted_relays().to_vec();
         let description = format!("Vector group: {}", name);
         let group_config = NostrGroupConfigData::new(
             name.to_string(),
@@ -526,7 +524,7 @@ impl MlsService {
             }
 
             let kp_event: Option<Event> = if let Some(id_hex) = ref_event_id_hex {
-                // Fetch exact event by id from TRUSTED_RELAY
+                // Fetch exact event by id from the trusted relay set
                 let id = match EventId::from_hex(&id_hex) {
                     Ok(v) => v,
                     Err(_) => {
@@ -541,7 +539,7 @@ impl MlsService {
                 match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -557,7 +555,7 @@ impl MlsService {
                     }
                 }
             } else {
-                // Fallback: fetch latest KeyPackage by author from TRUSTED_RELAYS
+                // Fallback: fetch latest KeyPackage by author from the trusted relay set
                 let filter = Filter::new()
                     .author(member_pk)
                     .kind(Kind::MlsKeyPackage)
@@ -565,7 +563,7 @@ impl MlsService {
                 match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -674,7 +672,12 @@ impl MlsService {
                 let target = invited_recipients[i];
                 match get_nostr_client()
                     .unwrap()
-                    .gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &target, welcome, [])
+                    .gift_wrap_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &target,
+                        welcome,
+                        [],
+                    )
                     .await
                 {
                     Ok(wrapper_id) => {
@@ -683,7 +686,7 @@ impl MlsService {
                             "[MLS][welcome][published] wrapper_id={}, recipient={}, relays={:?}",
                             wrapper_id.to_hex(),
                             recipient,
-                            TRUSTED_RELAYS
+                            crate::trusted_relays::trusted_relays()
                         );
                     }
                     Err(e) => {
@@ -691,7 +694,9 @@ impl MlsService {
                         let recipient = target.to_bech32().unwrap_or_default();
                         eprintln!(
                             "[MLS][welcome][publish_error] recipient={}, relays={:?}, err={}",
-                            recipient, TRUSTED_RELAYS, e
+                            recipient,
+                            crate::trusted_relays::trusted_relays(),
+                            e
                         );
                     }
                 }
@@ -920,7 +925,7 @@ impl MlsService {
                 let filter = Filter::new().id(id).limit(1);
                 if let Ok(events) = client
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -1044,7 +1049,12 @@ impl MlsService {
                 }
                 for welcome in welcome_rumors {
                     if let Err(e) = client
-                        .gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &member_pk, welcome, [])
+                        .gift_wrap_to(
+                            crate::trusted_relays::trusted_relays().iter().cloned(),
+                            &member_pk,
+                            welcome,
+                            [],
+                        )
                         .await
                     {
                         eprintln!("[MLS] Failed to send welcome: {}", e);
@@ -1146,7 +1156,7 @@ impl MlsService {
             .limit(50);
         client
             .fetch_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                crate::trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
@@ -1617,7 +1627,7 @@ impl MlsService {
     ///
     /// This will:
     /// 1. Read cursor from "mls_event_cursors" for the group
-    /// 2. Query TRUSTED_RELAYS for events since cursor
+    /// 2. Query the trusted relay set for events since cursor
     /// 3. Process each event via engine.process_message
     /// 4. Update cursor position
     ///
@@ -1682,11 +1692,11 @@ impl MlsService {
             .custom_tag(SingleLetterTag::lowercase(Alphabet::H), &gid_for_fetch)
             .limit(1000);
 
-        // 3) Fetch from TRUSTED_RELAYS with reasonable timeout
+        // 3) Fetch from the trusted relay set with reasonable timeout
         let mut used_fallback = false;
         let mut events = match client
             .fetch_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                crate::trusted_relays::trusted_relays().to_vec(),
                 filter.clone(),
                 std::time::Duration::from_secs(15),
             )
@@ -1713,7 +1723,7 @@ impl MlsService {
 
             events = match client
                 .fetch_events_from(
-                    TRUSTED_RELAYS.to_vec(),
+                    crate::trusted_relays::trusted_relays().to_vec(),
                     filter,
                     std::time::Duration::from_secs(15),
                 )
@@ -2919,13 +2929,19 @@ pub async fn send_mls_message(
 
                 // Send the wrapper with expiration
                 client
-                    .send_event_to(TRUSTED_RELAYS.iter().copied(), &wrapper_with_expiry)
+                    .send_event_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &wrapper_with_expiry,
+                    )
                     .await
                     .inspect(|output| crate::record_send_outcome(&wrapper_with_expiry, output))
             } else {
                 // Send normal wrapper without expiration
                 client
-                    .send_event_to(TRUSTED_RELAYS.iter().copied(), &mls_wrapper)
+                    .send_event_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &mls_wrapper,
+                    )
                     .await
                     .inspect(|output| crate::record_send_outcome(&mls_wrapper, output))
             };
@@ -3044,10 +3060,10 @@ mod mls_smoke_tests {
     use std::time::Duration;
 
     #[tokio::test]
-    #[ignore = "requires a running Nostr relay (e.g., ws://localhost:7000)"]
+    #[ignore = "requires a running Nostr relay (e.g., wss://localhost:7001)"]
     async fn run_mls_smoke_test_with_local_relay() {
         let relay =
-            std::env::var("MLS_SMOKE_RELAY").unwrap_or_else(|_| "ws://localhost:7000".to_string());
+            std::env::var("MLS_SMOKE_RELAY").unwrap_or_else(|_| "wss://localhost:7001".to_string());
 
         let signer = Keys::generate();
         let client = Client::builder()

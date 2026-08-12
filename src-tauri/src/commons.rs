@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tauri::{AppHandle, Runtime};
 
+use crate::get_nostr_client;
 use crate::nostr_tags;
 use crate::stored_event::event_kind;
-use crate::{get_nostr_client, TRUSTED_RELAYS};
 
 pub const COMMONS_BROADCAST_D_TAG: &str = "pacto_commons_broadcast";
 pub const COMMONS_BROADCAST_SCHEMA: &str = "pacto.commons.broadcast.v1";
@@ -428,7 +428,7 @@ async fn sync_broadcasts_from_relays(limit: u32) -> Result<u32, String> {
 
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            crate::trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(12),
         )
@@ -539,7 +539,10 @@ pub async fn commons_publish_broadcast<R: Runtime>(
     };
 
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+        .send_event_to(
+            crate::trusted_relays::trusted_relays().iter().cloned(),
+            &event,
+        )
         .await
         .map_err(|e| e.to_string())?;
     crate::record_send_outcome(&event, &send_output);
@@ -754,7 +757,10 @@ pub async fn commons_cancel_broadcast<R: Runtime>(
             .map_err(|e| e.to_string())?
     };
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+        .send_event_to(
+            crate::trusted_relays::trusted_relays().iter().cloned(),
+            &event,
+        )
         .await
         .map_err(|e| e.to_string())?;
     crate::record_send_outcome(&event, &send_output);

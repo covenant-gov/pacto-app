@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Verify that the release binary does not contain debug-only test-auth or
-# MCP-bridge symbols. This is a safety net to ensure #[cfg(debug_assertions)]
-# gating and capability removal keep these symbols out of shipped builds.
+# Verify that the release binary does not contain debug-only test-auth,
+# MCP-bridge, or relay-override symbols. This is a safety net to ensure
+# #[cfg(debug_assertions)] gating and capability removal keep these out of
+# shipped builds.
 
 cd "$(dirname "$0")/.."
 
@@ -24,8 +25,13 @@ fi
 
 echo "Checking release binary for forbidden symbols..."
 FORBIDDEN=(
-  "test_login_fixture"
+  "dev_login"
   "mcp_bridge"
+  "PACTO_TRUSTED_RELAYS"
+  # The `local-relay-tls` feature pulls this in to widen the relay websocket's
+  # root store to the OS trust store. It must never reach a shipped build, or
+  # release relay TLS would trust every CA the host trusts.
+  "rustls_native_certs"
 )
 
 FAILED=0

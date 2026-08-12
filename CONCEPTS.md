@@ -1,6 +1,6 @@
 ---
 name: Pacto Concepts
-last_updated: 2026-07-27
+last_updated: 2026-08-10
 ---
 
 # Pacto Concepts
@@ -79,6 +79,17 @@ A shared vocabulary for humans and coding agents working on Pacto. Terms are ord
 | **Progressive gate** | Enforcement model where the main app shell is available but specific risky actions are blocked until the user completes a required step (e.g., backup verification). |
 | **Backup verified** | Per-account status indicating the user has successfully completed the verified seed-backup ritual. |
 | **Random-subset verification** | Backup verification method that asks the user to enter a random subset of words by their position numbers (e.g., words #3, #7, #12). |
+
+## Dev environment
+
+| Term | Definition |
+|------|------------|
+| **dev-world** | One-command dev boot: an authenticated, populated, locally-routed sandbox built by bots. Requires Docker; refuses the real OS data directory. |
+| **world-state manifest** | Versioned cast description (persona, npub, key reference, ETH address, bot id, squad role); the single identity contract across pacto-app, pacto-dev-env, and pacto-bot-api. |
+| **invite-first** | Dev seeding rule: bots create squads and invite identities in; MLS store copies/transfers are never used (split-brain hazard). |
+| **persona cast** | Small owned set of pre-rehearsed pacto-bot-api bot roles (e.g. captain, skeptical candidate) selectable at dev-world boot. |
+| **sandbox handle** | Machine-readable record a booted sandbox writes into its own root: resolved port set, sandbox root, relay and chain endpoints, manifest path, identity npub. Agents read it instead of assuming defaults. |
+| **sandbox-only identity** | A dev identity stamped at derivation as unusable outside a sandbox. The app refuses to authenticate one while any non-local relay is in the resolved relay set, so a repo-derivable key cannot become a real account. |
 
 ## See also
 

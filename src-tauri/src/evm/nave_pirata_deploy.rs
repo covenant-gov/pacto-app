@@ -305,6 +305,10 @@ pub async fn deploy_nave_pirata_for_parent<R: Runtime>(
     let addrs = pacto_chain_config::pacto_gov_deploy_addresses(&net.key)
         .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
 
+    pacto_chain_config::guard_local_chain_live(&net.key)
+        .await
+        .map_err(|e| wallet_err_json("NAVE_PIRATA_CONFIG", e, None))?;
+
     let captain_addr =
         parse_address(captain.trim()).map_err(|e| wallet_err_json("INVALID_CAPTAIN", e, None))?;
     let alt = alt_parent_id

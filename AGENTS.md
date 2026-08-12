@@ -47,7 +47,7 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 - Global mutable state lives in `lazy_static!` / `once_cell::OnceCell` globals (`STATE`, `NOSTR_CLIENT`, `MNEMONIC_SEED`, `TAURI_APP`, `ENCRYPTION_KEY`). There is no DI framework; modules access these globals directly.
 
 ### Messaging data flow
-1. Nostr events arrive via `nostr-sdk` over `TRUSTED_RELAYS` and custom relays.
+1. Nostr events arrive via `nostr-sdk` over the trusted relay set (`trusted_relays::trusted_relays()`) and custom relays.
 2. NIP-17 gift wraps or MLS messages are unwrapped into `RumorEvent`.
 3. `rumor::process_rumor` (protocol-agnostic) emits `RumorProcessingResult` (text, attachment, reaction, edit, poll, typing, unknown).
 4. Results are persisted as flat `StoredEvent` rows in per-account SQLite (`db.rs`) and materialized into `Message`/`Chat`.
@@ -148,7 +148,7 @@ cd src-tauri && cargo test
 - **Error handling:** String errors for most commands. EVM wallet code uses `wallet_err_json` / `wallet_err_json_with_tx_hash` to return structured `{ code, message, txHash? }`. Always call `wallet_security::redact_urls_in_text` before surfacing RPC errors/logs.
 - **Crypto:** `crypto::internal_encrypt`/`internal_decrypt` use ChaCha20-Poly1305 with an Argon2id-derived key cached in `ENCRYPTION_KEY`. Attachments use AES-256-GCM.
 - **EVM:** Respect signer purpose (`squad` vs `advanced`). Treasury/deploy paths require phrase-derived `bip44_v1` signers, not imported keys. Contract addresses belong in `src/lib/evm/pacto-protocol-addresses.json`, not `.env` or comments.
-- **MLS:** The `mdk` engine is not `Send` across awaits; keep engine usage in non-await scopes or use `Arc<MDK>` carefully. Use `TRUSTED_RELAYS` for keypackage and MLS events.
+- **MLS:** The `mdk` engine is not `Send` across awaits; keep engine usage in non-await scopes or use `Arc<MDK>` carefully. Use `trusted_relays::trusted_relays()` for keypackage and MLS events — never a hand-rolled relay list. Debug builds can point that set at a local stack with `PACTO_TRUSTED_RELAYS`; release builds contain no such override.
 
 ### Cross-cutting
 - **Comments:** Keep them brief and behavior-focused. Point to `docs/` for architecture and operator setup. Never add tracker IDs, spec section markers (`§7`), or checklist breadcrumbs in source.
@@ -258,9 +258,9 @@ If the MCP tools are not available in your session, fall back to the existing te
 
 ### Verification workflow
 
-1. **Start the app** in an isolated sandbox: `make dev-sandbox`. Never verify against a plain `make dev` / `pnpm tauri dev` — that data directory tends to carry a real dev account whose PIN nobody remembers, which silently blocks every step after it.
-2. **Start a driver session**: `xd://mcp__tauri_driver_session` with `{ "action": "start" }`.
-3. **Authenticate** — no account exists in a fresh sandbox. Snapshot the DOM, click "Create Account", then snapshot again for the six PIN-digit input refs and send **one `xd://mcp__tauri_webview_keyboard` `type` call per digit** (each box has `maxlength="1"`; a single call with the whole string only fills the first digit). Use PIN `123456` (the project's throwaway dev PIN, also used by `e2e/login.spec.ts`). Snapshot again for the "Confirm your PIN" screen's fresh refs and repeat. Account creation runs a real Argon2id derivation plus a live MLS relay publish — poll with `webview_dom_snapshot` for 20–30 seconds before the navbar appears; don't assume failure early. (`test_login_fixture` exists for the automated `pnpm test:e2e:tauri` harness but only sets backend state — it never updates the visible UI, so it is not useful here. See `docs/TAURI_MCP_INTEGRATION.md` Step 6 for detail.)
+1. **Start the app** in an isolated sandbox: `make dev-sandbox`. Never verify against a plain `make dev` / `pnpm tauri dev` — that data directory tends to carry a real dev account whose PIN nobody remembers, which silently blocks every step after it. Export `PACTO_DEV_LOGIN_MNEMONIC="<12 words>"` first to land already authenticated (step 3). The target echoes its resolved port set; the app also writes `<sandbox root>/sandbox-handle.json` with the port the MCP bridge actually bound — read that instead of assuming 9223. The root is `test_sandbox/<branch-slug>/<persona>` and is **stable across runs**, so MLS membership and the keypackage private key survive a restart — never override `PACTO_TEST_SANDBOX_ROOT` with a per-run path, or an incoming welcome fails with `No matching key package was found in the key store`. `PERSONA=alice make dev-sandbox` gives a second identity on the same branch with its own ports, for two-client MLS checks; `make dev-sandbox-fresh` wipes one persona back to an empty account.
+2. **Start a driver session**: `xd://mcp__tauri_driver_session` with `{ "action": "start", "port": <mcpBridge from the handle> }`.
+3. **Confirm authentication** — with `PACTO_DEV_LOGIN_MNEMONIC` set, the debug-only `dev_login` command runs at full depth from the layout's startup hook, so your *first* `xd://mcp__tauri_webview_dom_snapshot` already shows the main navbar. No PIN ritual, no keyboard or click calls, no account-creation wait. Fall back to the manual create-account flow only when the fresh-account UI is itself what you are testing: snapshot the DOM, click "Create Account", then send **one `xd://mcp__tauri_webview_keyboard` `type` call per digit** (each box has `maxlength="1"`), PIN `123456`, repeat on the "Confirm your PIN" screen, and poll `webview_dom_snapshot` for 20–30 seconds before concluding it failed.
 4. **Navigate to the affected screen(s)** using `xd://mcp__tauri_webview_interact` (click, scroll) or `xd://mcp__tauri_webview_execute_js` if text selectors are ambiguous.
 5. **Capture evidence**:
    - `xd://mcp__tauri_webview_screenshot` — save the viewport image.

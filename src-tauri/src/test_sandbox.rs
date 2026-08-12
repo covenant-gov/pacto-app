@@ -7,6 +7,15 @@ const DATA_SUBPATH: &str = "data";
 /// Subdirectory used for the sandboxed equivalent of `app_local_data_dir`.
 const LOCAL_SUBPATH: &str = "local";
 
+/// Env var carrying an explicit sandbox root; the single place every
+/// sandbox-aware path resolution reads this variable is `sandbox_root()`.
+const SANDBOX_ROOT_VAR: &str = "PACTO_TEST_SANDBOX_ROOT";
+
+/// Env var marking a dev-world boot. Set by orchestration, never by a plain
+/// `make dev`; startup refuses to proceed under this marker unless a sandbox
+/// root also resolved (see `enforce_dev_world_root`).
+const DEV_WORLD_MARKER: &str = "PACTO_DEV_WORLD";
+
 /// Resolve a subpath under the sandbox root, rejecting escapes.
 ///
 /// The root is canonicalized, then the subpath is resolved component-by-component.
@@ -55,36 +64,129 @@ fn resolve_sandboxed_path(
     Ok(current)
 }
 
-/// Returns the sandboxed `app_data_dir` when `PACTO_TEST_SANDBOX_ROOT` is set,
+/// Returns `PACTO_TEST_SANDBOX_ROOT` when set to a non-blank value, else `None`.
+/// A whitespace-only or empty value counts as unset rather than a root of `""`.
+pub fn sandbox_root() -> Option<PathBuf> {
+    std::env::var(SANDBOX_ROOT_VAR)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Returns the sandboxed `app_data_dir` when a sandbox root is configured,
 /// otherwise delegates to the normal Tauri path.
 pub fn test_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
-    if let Ok(root) = std::env::var("PACTO_TEST_SANDBOX_ROOT") {
-        resolve_sandboxed_path(&root, DATA_SUBPATH)
-    } else {
-        handle
+    match sandbox_root() {
+        Some(root) => resolve_sandboxed_path(&root, DATA_SUBPATH),
+        None => handle
             .path()
             .app_data_dir()
-            .map_err(|e| format!("Failed to get app data dir: {}", e))
+            .map_err(|e| format!("Failed to get app data dir: {}", e)),
     }
 }
 
-/// Returns the sandboxed `app_local_data_dir` when `PACTO_TEST_SANDBOX_ROOT` is set,
+/// Returns the sandboxed `app_local_data_dir` when a sandbox root is configured,
 /// otherwise delegates to the normal Tauri path.
 pub fn test_local_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
-    if let Ok(root) = std::env::var("PACTO_TEST_SANDBOX_ROOT") {
-        resolve_sandboxed_path(&root, LOCAL_SUBPATH)
-    } else {
-        handle
+    match sandbox_root() {
+        Some(root) => resolve_sandboxed_path(&root, LOCAL_SUBPATH),
+        None => handle
             .path()
             .app_local_data_dir()
-            .map_err(|e| format!("Failed to get app local data dir: {}", e))
+            .map_err(|e| format!("Failed to get app local data dir: {}", e)),
     }
+}
+
+/// Refuses a dev-world boot (`PACTO_DEV_WORLD=1`) that has no sandbox root, so it can
+/// never fall through to the real OS app-data directory. A no-op when the marker is
+/// unset: today's `make dev` behavior, on `main` or any per-branch sandbox, is
+/// unchanged whether or not `PACTO_TEST_SANDBOX_ROOT` happens to be set.
+///
+/// When a root is present, its own placement is validated through the existing
+/// `resolve_sandboxed_path` escape check rather than a second validator: the root
+/// path is split into its parent and final component, and that pair is fed through
+/// `resolve_sandboxed_path` exactly as a subpath would be, so a `..` final component
+/// or a symlink whose target escapes the parent is rejected by the same code path
+/// `test_data_dir`/`test_local_data_dir` already rely on. A fresh dev-world root
+/// legitimately may not exist yet -- `resolve_sandboxed_path` only auto-creates its
+/// own `root` argument, never the subpath being checked -- so the directory is
+/// created explicitly afterward, once its placement is known to be safe.
+pub fn enforce_dev_world_root() -> Result<(), String> {
+    if std::env::var(DEV_WORLD_MARKER).unwrap_or_default() != "1" {
+        return Ok(());
+    }
+
+    let root = sandbox_root().ok_or_else(|| {
+        format!(
+            "{} is set but {} is not: dev-world refuses to operate on the real OS app-data directory",
+            DEV_WORLD_MARKER, SANDBOX_ROOT_VAR
+        )
+    })?;
+
+    let mut components = root.components();
+    let last = components
+        .next_back()
+        .ok_or_else(|| format!("{} must not be empty", SANDBOX_ROOT_VAR))?;
+    let parent = components.as_path();
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
+    resolve_sandboxed_path(parent, last.as_os_str())?;
+
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create sandbox root {}: {}", root.display(), e))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// Serializes every test below that touches process-global env vars, since the
+    /// crate's test binary runs tests on multiple threads.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Sets or unsets an env var for the guard's lifetime, restoring whatever was
+    /// there beforehand on drop -- including on an early return from a failed assertion.
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn temp_test_dir(prefix: &str) -> PathBuf {
         let nanos = SystemTime::now()
@@ -136,6 +238,120 @@ mod tests {
         assert!(
             err.contains("relative"),
             "expected relative error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn sandbox_root_none_when_unset() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        assert_eq!(sandbox_root(), None);
+    }
+
+    #[test]
+    fn sandbox_root_none_when_blank() {
+        let _lock = env_lock();
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, "   ");
+        assert_eq!(sandbox_root(), None);
+    }
+
+    #[test]
+    fn sandbox_root_some_when_set() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("sandbox-root-some");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+        assert_eq!(sandbox_root(), Some(PathBuf::from(dir.to_str().unwrap())));
+    }
+
+    #[test]
+    fn enforce_dev_world_root_marker_unset_root_unset_is_ok() {
+        let _lock = env_lock();
+        let _marker = EnvGuard::unset(DEV_WORLD_MARKER);
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        assert_eq!(enforce_dev_world_root(), Ok(()));
+    }
+
+    #[test]
+    fn enforce_dev_world_root_marker_unset_root_set_is_ok() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("enforce-marker-unset-root-set");
+        let _marker = EnvGuard::unset(DEV_WORLD_MARKER);
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+        assert_eq!(enforce_dev_world_root(), Ok(()));
+    }
+
+    #[test]
+    fn enforce_dev_world_root_marker_set_root_unset_names_missing_root() {
+        let _lock = env_lock();
+        let _marker = EnvGuard::set(DEV_WORLD_MARKER, "1");
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        let err = enforce_dev_world_root().unwrap_err();
+        assert!(
+            err.contains(DEV_WORLD_MARKER),
+            "expected marker name in error, got: {}",
+            err
+        );
+        assert!(
+            err.contains(SANDBOX_ROOT_VAR),
+            "expected missing-root name in error, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn enforce_dev_world_root_marker_set_root_valid_resolves_inside_it() {
+        let _lock = env_lock();
+        let base = temp_test_dir("enforce-valid-base");
+        let fresh_root = base.join("fresh-world-root");
+        let _marker = EnvGuard::set(DEV_WORLD_MARKER, "1");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, fresh_root.to_str().unwrap());
+
+        assert_eq!(enforce_dev_world_root(), Ok(()));
+        assert!(
+            fresh_root.is_dir(),
+            "expected enforce_dev_world_root to create the fresh root"
+        );
+
+        let handle = tauri::test::mock_app().handle().clone();
+        let data_dir = test_data_dir(&handle).unwrap();
+        assert!(
+            data_dir.starts_with(fresh_root.canonicalize().unwrap()),
+            "expected test_data_dir to resolve inside the sandbox root, got: {}",
+            data_dir.display()
+        );
+    }
+
+    #[test]
+    fn enforce_dev_world_root_rejects_dotdot_root() {
+        let _lock = env_lock();
+        let base = temp_test_dir("enforce-dotdot-base");
+        let escaping = base.join("..");
+        let _marker = EnvGuard::set(DEV_WORLD_MARKER, "1");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, escaping.to_str().unwrap());
+
+        let err = enforce_dev_world_root().unwrap_err();
+        assert!(err.contains("'..'"), "expected '..' error, got: {}", err);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn enforce_dev_world_root_rejects_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let _lock = env_lock();
+        let base = temp_test_dir("enforce-symlink-base");
+        let outside = temp_test_dir("enforce-symlink-outside");
+        let link = base.join("world-root-link");
+        symlink(&outside, &link).unwrap();
+
+        let _marker = EnvGuard::set(DEV_WORLD_MARKER, "1");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, link.to_str().unwrap());
+
+        let err = enforce_dev_world_root().unwrap_err();
+        assert!(
+            err.contains("escapes"),
+            "expected escape error, got: {}",
             err
         );
     }

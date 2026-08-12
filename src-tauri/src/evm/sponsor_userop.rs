@@ -313,8 +313,7 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
         eip7702_auth,
     };
 
-    let estimated =
-        estimate_sponsored_gas(&bundler, &ctx, placeholder_gas_ceilings()).await?;
+    let estimated = estimate_sponsored_gas(&bundler, &ctx, placeholder_gas_ceilings()).await?;
     let limits = FinalGasLimits {
         call_gas_limit: apply_userop_gas_margin(estimated.call_gas_limit),
         verification_gas_limit: apply_verification_gas_margin(estimated.verification_gas_limit),
@@ -1094,7 +1093,8 @@ fn parse_actual_gas_cost_wei(raw: &Value) -> Option<String> {
                 return None;
             }
             let wei = if t.starts_with("0x") || t.starts_with("0X") {
-                U256::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16).ok()?
+                U256::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16)
+                    .ok()?
             } else {
                 U256::from_str_radix(t, 10).ok()?
             };
@@ -1145,7 +1145,9 @@ pub async fn wait_for_user_operation_receipt(
                     if e.contains("no L1 transaction hash") {
                         wallet_err_json(
                             "USEROP_RECEIPT",
-                            format!("bundler receipt for {user_op_hash} has no L1 transaction hash"),
+                            format!(
+                                "bundler receipt for {user_op_hash} has no L1 transaction hash"
+                            ),
                             None,
                         )
                     } else {
@@ -1269,14 +1271,15 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay, bundler_rpc_url,
-        call_gas_with_margin, clamp_userop_eip1559_fees, classify_bundler_userop_reject,
-        dummy_userop_signature, eip7702_auth_json, encode_eip7702_authorization,
-        explicit_bundler_rpc_url, pack_u128s, parse_estimate_user_op_gas_response, parse_hex_u128,
-        parse_send_user_op_response, paymaster_data, pimlico_bundler_rpc_url,
-        parse_sponsored_user_op_receipt, pimlico_chain_id_for_network, receipt_transaction_hash,
-        retriable_bundler_status, user_op_json, userop_max_cost_wei, SponsoredUserOpReceipt,
-        UserOpParams, FALLBACK_MAX_PRIORITY_FEE,
+        apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay,
+        bundler_rpc_url, call_gas_with_margin, clamp_userop_eip1559_fees,
+        classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
+        encode_eip7702_authorization, explicit_bundler_rpc_url, pack_u128s,
+        parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
+        parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
+        pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
+        user_op_json, userop_max_cost_wei, SponsoredUserOpReceipt, UserOpParams,
+        FALLBACK_MAX_PRIORITY_FEE,
     };
     use crate::evm::sponsor_paymaster::PAYMASTER_DATA_OFFSET;
     use crate::evm::sponsor_paymaster::{encode_paymaster_and_data, DEFAULT_POST_OP_GAS_LIMIT};
@@ -1675,16 +1678,22 @@ mod tests {
         let failed_status = json!({
             "receipt": {"transactionHash": "0xccc", "status": "0x0"}
         });
-        assert!(!parse_sponsored_user_op_receipt(&failed_status)
-            .unwrap()
-            .success);
+        assert!(
+            !parse_sponsored_user_op_receipt(&failed_status)
+                .unwrap()
+                .success
+        );
 
         // Top-level UserOp success wins over nested L1 status.
         let prefer_top = json!({
             "success": true,
             "receipt": {"transactionHash": "0xddd", "status": "0x0"}
         });
-        assert!(parse_sponsored_user_op_receipt(&prefer_top).unwrap().success);
+        assert!(
+            parse_sponsored_user_op_receipt(&prefer_top)
+                .unwrap()
+                .success
+        );
 
         let missing_both = json!({
             "receipt": {"transactionHash": "0xeee"}

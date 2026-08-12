@@ -1777,16 +1777,14 @@ mod sponsored_fee_usage_tests {
             action: "castVote".to_string(),
             target: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
             user_op_hash: user_op_hash.to_string(),
-            tx_hash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc".to_string(),
+            tx_hash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                .to_string(),
         }
     }
 
     #[test]
     fn row_id_prefixes_user_op_hash() {
-        assert_eq!(
-            sponsored_fee_usage_row_id("0xabc"),
-            "sfee-0xabc"
-        );
+        assert_eq!(sponsored_fee_usage_row_id("0xabc"), "sfee-0xabc");
     }
 
     #[test]
@@ -4217,8 +4215,11 @@ fn replace_mls_groups_conn(
         .map_err(|e| format!("Failed to list existing MLS groups: {}", e))?;
     for id in existing_ids {
         if !keep_ids.contains(id.as_str()) {
-            conn.execute("DELETE FROM mls_groups WHERE group_id = ?1", rusqlite::params![id])
-                .map_err(|e| format!("Failed to remove stale MLS group {}: {}", id, e))?;
+            conn.execute(
+                "DELETE FROM mls_groups WHERE group_id = ?1",
+                rusqlite::params![id],
+            )
+            .map_err(|e| format!("Failed to remove stale MLS group {}: {}", id, e))?;
         }
     }
 

@@ -1,14 +1,17 @@
-.PHONY: help install dev dev-sandbox dev-account dev-buddy build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
 	@echo "Pacto — available make targets"
 	@echo ""
 	@echo "  install      install Node/Rust dependencies"
-	@echo "  dev          run the desktop app in development mode"
+	@echo "  dev          run the desktop app in development mode (auto-isolated per branch, except main)"
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
 	@echo "  dev-account  run the desktop app against the persistent, reusable primary test account"
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
+	@echo "  dev-world          populate this worktree's sandbox with a joined squad via the sibling pacto-dev-env orchestrator"
+	@echo "  dev-world-reclaim  remove this worktree's sandbox via the sibling pacto-dev-env orchestrator"
+	@echo ""
 	@echo "  build        build production frontend + Tauri app"
 	@echo "  preview      serve the built static frontend (no Tauri shell)"
 	@echo ""
@@ -38,14 +41,70 @@ install:
 	pnpm install --frozen-lockfile
 	cd src-tauri && cargo fetch
 
+# Persistent per-branch data dir, so switching branches with different DB
+# migrations never trips the storage-format update gate (a newer branch's
+# schema blocking an older one, or vice versa). `main` keeps the real,
+# stable account at the OS-default location with today's exact ports;
+# every other branch gets its own isolated, persistent test_fixtures/ dir
+# and its own branch-hashed port set (scripts/dev-ports.mjs) so parallel
+# worktrees never collide on ports either. Not swept by `make clean`;
+# delete test_fixtures/ manually to reset.
+#
+# Every dev target passes `-f local-relay-tls`. Without it the relay websocket
+# validates against the compiled-in Mozilla roots only and refuses a
+# locally-issued `wss://` relay with `UnknownIssuer`, whatever the OS trust
+# store says. Deliberately not a default feature: see src-tauri/Cargo.toml.
 dev:
-	pnpm tauri dev
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	if [ "$$branch" = "main" ]; then \
+		pnpm tauri dev -f local-relay-tls; \
+	else \
+		slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+		eval "$$(node scripts/dev-ports.mjs --export --branch "$$branch")"; \
+		mkdir -p test_fixtures; \
+		echo "make dev: branch '$$branch' -> port index $$PACTO_DEV_PORT_INDEX, isolated data dir test_fixtures/dev-branch-$$slug"; \
+		echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+		PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-branch-$$slug" \
+		pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'; \
+	fi
 
 # Isolated sandbox account for agent-driven MCP verification (docs/TAURI_MCP_INTEGRATION.md).
 # Avoids colliding with a real dev account whose PIN nobody remembers.
+#
+# The root is branch-scoped and stable, never timestamped. A fresh root each
+# launch orphans the MLS key store holding the keypackage private key, so a
+# welcome issued against the previous run's keypackage fails with "No matching
+# key package was found in the key store" -- a delivery bug that isn't one.
+# Branch-scoping also keeps a newer branch's migrations from tripping the
+# storage-format gate on an older one, same reasoning as `dev` above.
+#
+# PERSONA names a second, third, ... identity on the same branch:
+#   PERSONA=alice make dev-sandbox
+# Each persona gets its own account, data dir, and derived port set, so two
+# can run side by side and invite each other. Personas are stable by design:
+# relaunching returns to the same identity. Wipe one with `dev-sandbox-fresh`,
+# all of them with `make clean`.
+PERSONA ?= solo
 dev-sandbox:
-	@mkdir -p test_sandbox
-	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_sandbox/manual-$(shell date +%s)" PACTO_ALLOW_TEST_AUTH=1 pnpm tauri dev
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	root="$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"; \
+	mkdir -p "$$root"; \
+	eval "$$(node scripts/dev-ports.mjs --export --branch "dev-sandbox-$$slug-$(PERSONA)")"; \
+	echo "make dev-sandbox: branch '$$branch' persona '$(PERSONA)' -> port index $$PACTO_DEV_PORT_INDEX"; \
+	echo "  devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+	echo "  data dir test_sandbox/$$slug/$(PERSONA)"; \
+	PACTO_TEST_SANDBOX_ROOT="$$root" PACTO_ALLOW_TEST_AUTH=1 \
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+
+# Same persona, wiped first -- for when the fresh-account UI is itself what
+# you are testing and an already-authenticated account would skip the flow.
+dev-sandbox-fresh:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	echo "removing test_sandbox/$$slug/$(PERSONA)"; \
+	rm -rf "$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"
+	@$(MAKE) dev-sandbox
 
 # Persistent reusable test identities (docs/TAURI_MCP_INTEGRATION.md). Unlike
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
@@ -53,11 +112,39 @@ dev-sandbox:
 # test_fixtures/ manually to reset.
 dev-account:
 	@mkdir -p test_fixtures
-	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-account" pnpm tauri dev
+	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-account)"; \
+	echo "make dev-account: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-account" \
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
 dev-buddy:
 	@mkdir -p test_fixtures
-	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-buddy" pnpm tauri dev
+	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-buddy)"; \
+	echo "make dev-buddy: port index $$PACTO_DEV_PORT_INDEX -> devServer=$$PACTO_DEV_PORT hmr=$$PACTO_DEV_HMR_PORT mcpBridge=$$PACTO_MCP_BRIDGE_PORT"; \
+	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-buddy" \
+	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
+
+# Delegates world orchestration to the sibling pacto-dev-env checkout so this
+# worktree's branch drives its own populated squad. No gate logic lives here
+# -- see pacto-dev-env's dev-world / dev-world-reclaim targets for that; the
+# moment this target grows a gate, it belongs upstream instead.
+PACTO_DEV_ENV_DIR ?= $(CURDIR)/../pacto-dev-env
+
+dev-world:
+	@if [ ! -d "$(PACTO_DEV_ENV_DIR)" ] || [ ! -f "$(PACTO_DEV_ENV_DIR)/Makefile" ]; then \
+		echo "dev-world: sibling pacto-dev-env checkout not found at $(PACTO_DEV_ENV_DIR)" >&2; \
+		echo "  Set PACTO_DEV_ENV_DIR to its location, or clone pacto-dev-env alongside this repo." >&2; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(PACTO_DEV_ENV_DIR)" dev-world PACTO_APP_DIR="$(CURDIR)"
+
+dev-world-reclaim:
+	@if [ ! -d "$(PACTO_DEV_ENV_DIR)" ] || [ ! -f "$(PACTO_DEV_ENV_DIR)/Makefile" ]; then \
+		echo "dev-world-reclaim: sibling pacto-dev-env checkout not found at $(PACTO_DEV_ENV_DIR)" >&2; \
+		echo "  Set PACTO_DEV_ENV_DIR to its location, or clone pacto-dev-env alongside this repo." >&2; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(PACTO_DEV_ENV_DIR)" dev-world-reclaim PACTO_APP_DIR="$(CURDIR)"
 
 build:
 	# Tauri CLI 2.9.x misinterprets CI=1 as --ci=1 (boolean flags only accept

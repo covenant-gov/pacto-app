@@ -958,7 +958,7 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
 
     let events = client
         .fetch_events_from(
-            crate::TRUSTED_RELAYS.to_vec(),
+            crate::trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(12),
         )
