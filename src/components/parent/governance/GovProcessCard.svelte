@@ -9,6 +9,7 @@
     treasuryProposalOutcomeLabel,
   } from '../../../lib/governance/treasury-proposal-ui';
   import { executableTreasuryProposals, isMutinyExecutable } from '../../../lib/governance/gov-proposal-lists';
+  import ProposalActionSummary from './ProposalActionSummary.svelte';
 
   export let card: GovProcessCard;
   export let showExecute = false;
@@ -86,9 +87,12 @@
     {:else if card.proposal.captainDefeated}
       <p class="proposal-card-meta muted">{$t('governance.proposal.captainVetoed')}</p>
     {/if}
-    <p class="proposal-card-target muted">
-      {$t('governance.proposal.target')} <code class="proposal-card-ref">{card.proposal.to}</code>
-    </p>
+    <ProposalActionSummary
+      to={card.proposal.to}
+      valueWei={card.proposal.valueWei}
+      dataHex={card.proposal.dataHex}
+      operation={card.proposal.operation}
+    />
   {:else if card.kind === 'mutiny'}
     <p class="proposal-card-meta muted">
       {$t('governance.proposal.mutinyMeta', {
