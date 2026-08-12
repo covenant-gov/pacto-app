@@ -12,6 +12,13 @@ replace the normal Tauri paths everywhere account, profile, database, and
 cache state is read or written — nothing under that root touches the
 machine's real profile.
 
+A configured root also relaxes the single-instance guard — debug builds
+only — so parallel sandboxes can run side by side; a release build always
+registers the guard (`multi_instance_allowed`). Note this applies to any
+non-`main` `make dev` too, since that target sets a per-branch root. Two
+processes sharing *one* root are not prevented; each concurrent instance
+needs its own root.
+
 Used today by the per-branch `make dev` target so concurrent worktrees never
 share an account. See `src-tauri/src/test_sandbox.rs` (`sandbox_root`,
 `test_data_dir`, `test_local_data_dir`).

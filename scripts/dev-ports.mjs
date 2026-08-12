@@ -261,12 +261,41 @@ function releaseClaim(claimDir, index) {
   }
 }
 
+// Ports browsers refuse outright: the WHATWG fetch bad-port list (Chromium's
+// ERR_UNSAFE_PORT, same list in WebKit), so a dev server bound to one serves
+// curl fine while the webview silently renders a blank page. An index whose
+// ports land here is unusable regardless of what the OS says about occupancy.
+// With this file's bases and strides the only in-range hit is index 30
+// (devServer 1720 -- H.323). Only the spec entries at or above this file's
+// lowest derivable port (1420) are listed; extend downward if a base ever
+// drops below that.
+const UNSAFE_BROWSER_PORTS = new Set([
+  1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669,
+  6679, 6697, 10080,
+]);
+
 /**
- * Resolve the port set for a branch. Derives the index, then (unless
- * `probe: false`) atomically claims it and confirms with real listeners
- * that it's actually free, advancing to the next index when either check
- * fails. `main` never advances -- its ports are pinned so `make dev` on
- * `main` keeps behaving exactly as today.
+ * True when every port this index derives is one a browser engine will
+ * actually fetch from.
+ * @param {number} index
+ * @returns {boolean}
+ */
+export function browserSafeIndex(index) {
+  const ports = portsForIndex(index);
+  return (
+    !UNSAFE_BROWSER_PORTS.has(ports.devServer) &&
+    !UNSAFE_BROWSER_PORTS.has(ports.hmr) &&
+    !UNSAFE_BROWSER_PORTS.has(ports.mcpBridge)
+  );
+}
+
+/**
+ * Resolve the port set for a branch. Derives the index, then skips any index
+ * whose ports a browser refuses to fetch from, then (unless `probe: false`)
+ * atomically claims it and confirms with real listeners that it's actually
+ * free, advancing to the next index when any check fails. `main` never
+ * advances -- its ports are pinned (and browser-safe by construction) so
+ * `make dev` on `main` keeps behaving exactly as today.
  *
  * @param {{ branch?: string, probe?: boolean, maxIndex?: number, claimDir?: string, claimGraceMs?: number }} [options]
  * @returns {Promise<{ index: number, derivedIndex: number, advanced: boolean, ports: { devServer: number, hmr: number, mcpBridge: number } }>}
@@ -282,16 +311,33 @@ export async function resolvePortSet({
   const derivedIndex = deriveIndex(resolvedBranch);
 
   if (!probe || resolvedBranch === MAIN_BRANCH) {
+    let index = derivedIndex;
+    if (resolvedBranch !== MAIN_BRANCH) {
+      let attempts = 0;
+      for (; !browserSafeIndex(index) && attempts <= maxIndex; attempts++) {
+        index = index >= maxIndex ? 1 : index + 1;
+      }
+      if (!browserSafeIndex(index)) {
+        throw new Error(
+          `every port index from 1 to ${maxIndex} derives a browser-refused port; ` +
+            `check UNSAFE_BROWSER_PORTS against the port bases and strides`
+        );
+      }
+    }
     return {
-      index: derivedIndex,
+      index,
       derivedIndex,
-      advanced: false,
-      ports: portsForIndex(derivedIndex),
+      advanced: index !== derivedIndex,
+      ports: portsForIndex(index),
     };
   }
 
   let index = derivedIndex > maxIndex ? 1 + ((derivedIndex - 1) % maxIndex) : derivedIndex;
   for (let attempts = 0; attempts <= maxIndex; attempts++) {
+    if (!browserSafeIndex(index)) {
+      index = index >= maxIndex ? 1 : index + 1;
+      continue;
+    }
     const ports = portsForIndex(index);
     if (claimIndex(claimDir, index, resolvedBranch, claimGraceMs)) {
       if (await allPortsFree(ports)) {
