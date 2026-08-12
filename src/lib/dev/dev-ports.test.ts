@@ -119,10 +119,10 @@ describe('dev-ports', () => {
       expect(portsForIndex(3)).toEqual({ devServer: 1450, hmr: 1451, mcpBridge: 9523 });
     });
 
-    it('index 30 lands on the browser unsafe-port blocklist (1720/1721)', () => {
-      // Chromium refuses these with ERR_UNSAFE_PORT and WebKit keeps the same
-      // list, so a dev server bound there serves curl fine while the webview
-      // renders a blank page.
+    it('index 30 lands on the browser unsafe-port blocklist (devServer 1720)', () => {
+      // Chromium refuses 1720 with ERR_UNSAFE_PORT and WebKit blocks the same
+      // fetch-spec list, so a dev server bound there serves curl fine while
+      // the webview renders a blank page.
       expect(portsForIndex(30)).toEqual({ devServer: 1720, hmr: 1721, mcpBridge: 12223 });
       expect(browserSafeIndex(30)).toBe(false);
       expect(browserSafeIndex(29)).toBe(true);
@@ -157,10 +157,13 @@ describe('dev-ports', () => {
     });
 
     it('advances a branch deriving the browser-unsafe index 30, probed or not', async () => {
-      // Find a real branch name that hashes onto the poisoned index.
+      // Find a real branch name that hashes onto the poisoned index. Bounded
+      // so a hash or range change fails the assertion instead of hanging the
+      // worker (a synchronous loop outlives vitest's testTimeout).
       let n = 0;
-      while (deriveIndex(`unsafe-probe-${n}`) !== 30) n++;
+      while (n < 10_000 && deriveIndex(`unsafe-probe-${n}`) !== 30) n++;
       const branch = `unsafe-probe-${n}`;
+      expect(deriveIndex(branch)).toBe(30);
 
       const unprobed = await resolvePortSet({ branch, probe: false });
       expect(unprobed.derivedIndex).toBe(30);

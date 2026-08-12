@@ -294,7 +294,7 @@ mod tests {
         let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
         assert!(
             !multi_instance_allowed(),
-            "a plain dev run must stay single-instance"
+            "a run with no sandbox root must stay single-instance"
         );
     }
 

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import packageJson from './package.json' with { type: 'json' };
 import { svelteTesting } from '@testing-library/svelte/vite';
@@ -73,14 +74,21 @@ export default defineConfig({
       : undefined,
     watch: {
       // A dev sandbox writes its app log, SQLite database and MLS store under
-      // test_sandbox/ while the dev server is up, and a git worktree nests a
-      // whole second checkout under .worktrees/. Watching either feeds the
-      // running app's own disk churn back in as source changes.
+      // test_sandbox/ (make dev-sandbox) or test_fixtures/ (make dev,
+      // dev-account, dev-buddy) while the dev server is up, and a git worktree
+      // nests a whole second checkout under .worktrees/. Watching any of them
+      // feeds the running app's own disk churn back in as source changes.
+      //
+      // The worktrees pattern is anchored to this checkout: patterns match
+      // absolute paths, so a bare '**/.worktrees/**' would make a dev server
+      // running *inside* a worktree ignore its own sources (serving fine, HMR
+      // silently dead).
       ignored: [
         '**/src-tauri/**',
         '**/build-agent/**',
         '**/test_sandbox/**',
-        '**/.worktrees/**',
+        '**/test_fixtures/**',
+        `${fileURLToPath(new URL('.', import.meta.url)).replaceAll('\\', '/')}.worktrees/**`,
       ],
     },
   },
