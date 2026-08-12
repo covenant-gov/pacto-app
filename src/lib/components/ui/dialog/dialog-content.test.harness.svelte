@@ -5,5 +5,7 @@
 </script>
 
 <Dialog.Root open>
-	<Dialog.Content {showCloseButton} />
+	<Dialog.Content {showCloseButton}>
+		<p>Dialog harness body</p>
+	</Dialog.Content>
 </Dialog.Root>
