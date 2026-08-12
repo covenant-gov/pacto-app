@@ -1215,12 +1215,12 @@
   .polls-chat-layout-btn:hover {
     background: var(--bg-hover);
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .polls-chat-layout-btn[aria-pressed='true'] {
-    color: var(--accent);
-    border-color: var(--accent);
+    color: var(--brand);
+    border-color: var(--brand);
   }
 
   .polls-channel-body {
@@ -1279,7 +1279,7 @@
 
   .polls-channel-split-handle:hover::after,
   .polls-channel-split-handle:focus-visible::after {
-    background: var(--accent);
+    background: var(--brand);
   }
 
   .polls-channel-chat-pane {
@@ -1312,7 +1312,7 @@
   }
 
   .polls-channel-chat-collapsed-action {
-    color: var(--accent);
+    color: var(--brand);
     font-weight: 600;
   }
 
@@ -1402,7 +1402,7 @@
   .channel-modal-primary {
     padding: 6px 14px;
     font-size: 0.875rem;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
     border-radius: 6px;
     color: #fff;
@@ -1410,7 +1410,7 @@
   }
 
   .channel-modal-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .channel-modal-close:disabled,
@@ -1540,7 +1540,7 @@
     width: 36px;
     height: 36px;
     border: 3px solid var(--border-subtle);
-    border-top-color: var(--accent);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: chat-view-spin 0.9s linear infinite;
   }

@@ -138,7 +138,7 @@
     inset: 0;
     z-index: 3;
     pointer-events: none;
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: inset 0 0 0 2px var(--brand);
   }
 
   .commons-category-focus-tags {
@@ -174,9 +174,9 @@
   }
 
   .commons-category-focus-tag.is-active {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    border-color: var(--brand);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-category-focus-tag-count {

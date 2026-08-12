@@ -71,7 +71,7 @@
     margin: 4px 0;
     background: var(--bg-hover, rgba(0, 0, 0, 0.04));
     border-radius: 8px;
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--brand);
   }
 
   .announce-body {

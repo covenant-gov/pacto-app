@@ -458,7 +458,7 @@
   }
 
   .backup-quiz-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
     outline: none;
   }
@@ -503,7 +503,7 @@
 
   .btn-primary {
     border: none;
-    background: var(--accent);
+    background: var(--brand);
     color: white;
   }
 

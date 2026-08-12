@@ -393,8 +393,8 @@
     padding: 8px 14px;
     border-radius: 6px;
     border: none;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.8125rem;
   }
   .btn-primary:disabled {
@@ -405,7 +405,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: var(--accent);
+    color: var(--brand);
     font-size: 0.75rem;
     cursor: pointer;
     text-decoration: underline;

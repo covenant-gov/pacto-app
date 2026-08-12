@@ -225,7 +225,7 @@
   }
 
   .formatted-message-body :global(a) {
-    color: var(--accent);
+    color: var(--brand);
     text-decoration: none;
   }
 
@@ -252,7 +252,7 @@
   }
 
   .formatted-message-body :global(.mention) {
-    color: var(--accent);
+    color: var(--brand);
     font-weight: 500;
     background: var(--bg-hover);
     border-radius: 4px;

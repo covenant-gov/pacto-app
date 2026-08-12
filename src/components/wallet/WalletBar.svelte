@@ -550,7 +550,7 @@
     font-weight: 600;
     font-size: 1rem;
     color: #fff;
-    background-color: var(--accent);
+    background-color: var(--brand);
   }
 
   .wallet-bar-peer-text {
@@ -804,7 +804,7 @@
   }
 
   .wallet-bar-btn-primary {
-    background-color: var(--accent);
+    background-color: var(--brand);
     color: #fff;
   }
 

@@ -61,7 +61,7 @@
   .logo-placeholder {
     width: 96px;
     height: 96px;
-    background: var(--accent);
+    background: var(--brand);
     border-radius: 24px;
     display: flex;
     align-items: center;
@@ -109,12 +109,12 @@
   }
 
   .btn-primary {
-    background: var(--accent);
+    background: var(--brand);
     color: #ffffff;
   }
 
   .btn-primary:hover {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 
@@ -130,7 +130,7 @@
 
   .btn-secondary:hover {
     background: var(--border-subtle);
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 

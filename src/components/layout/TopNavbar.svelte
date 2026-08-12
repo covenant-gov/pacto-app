@@ -132,7 +132,7 @@
   }
 
   .mode-segment:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -151,8 +151,8 @@
     padding: 0 5px;
     margin-left: 6px;
     border-radius: 9px;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.6875rem;
     font-weight: 600;
     vertical-align: middle;

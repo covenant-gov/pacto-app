@@ -339,7 +339,7 @@
   }
 
   .tag-picker-flat-item.is-selected {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
   }
 
   .tag-picker-flat-item:disabled {

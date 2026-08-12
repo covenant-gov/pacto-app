@@ -520,13 +520,13 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
 
   .btn-secondary {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
   }
@@ -593,7 +593,7 @@
     border: none;
     padding: 0;
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
     cursor: pointer;
     text-decoration: underline;
   }
@@ -655,8 +655,8 @@
   }
 
   .signer-option.selected {
-    border-color: var(--accent, #6ea8fe);
-    background: color-mix(in srgb, var(--accent, #6ea8fe) 8%, var(--bg-panel));
+    border-color: var(--brand, #6ea8fe);
+    background: color-mix(in srgb, var(--brand, #6ea8fe) 8%, var(--bg-panel));
   }
 
   .signer-option:has(input:disabled) {

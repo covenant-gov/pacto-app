@@ -158,7 +158,7 @@
 
   .update-progress-bar {
     height: 100%;
-    background-color: var(--accent-primary);
+    background-color: var(--brand);
     transition: width 0.2s ease;
   }
 

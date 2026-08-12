@@ -373,7 +373,7 @@
     width: 48px;
     height: 48px;
     border: 4px solid var(--border-subtle);
-    border-top-color: var(--accent);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin-bottom: 16px;
@@ -447,7 +447,7 @@
     width: 128px;
     height: 128px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--brand);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -489,7 +489,7 @@
   }
 
   .website {
-    color: var(--accent);
+    color: var(--brand);
     text-decoration: none;
     font-size: 0.9375rem;
   }
@@ -555,7 +555,7 @@
   }
 
   .btn-copy-account-id:hover {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -604,7 +604,7 @@
 
   .edit-input:focus,
   .edit-textarea:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .edit-input:disabled,
@@ -681,7 +681,7 @@
 
   .btn-save-edit {
     padding: 10px 20px;
-    background: var(--accent);
+    background: var(--brand);
     color: #fff;
     border: none;
     border-radius: 6px;
@@ -692,7 +692,7 @@
   }
 
   .btn-save-edit:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .btn-save-edit:disabled {
@@ -723,6 +723,6 @@
 
   .btn-export-seed:hover,
   .btn-export-all:hover {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 </style>

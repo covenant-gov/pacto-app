@@ -668,7 +668,7 @@
     color: #fff;
     font-weight: 600;
     font-size: 1.125rem;
-    background-color: var(--accent);
+    background-color: var(--brand);
   }
 
   .dm-thread-header-info {
@@ -721,7 +721,7 @@
 
   .dm-thread-wallet-btn:hover {
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .dm-thread-wallet-icon {
@@ -777,7 +777,7 @@
 
   .dm-thread-dropdown-trigger:hover {
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .dm-thread-chevron {
@@ -857,7 +857,7 @@
   }
 
   .dm-thread-nickname-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .dm-thread-nickname-btn {
@@ -870,12 +870,12 @@
   }
 
   .dm-thread-nickname-save {
-    background: var(--accent);
+    background: var(--brand);
     color: #fff;
   }
 
   .dm-thread-nickname-save:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .dm-thread-nickname-cancel {
@@ -927,7 +927,7 @@
     width: 14px;
     height: 14px;
     border: 2px solid var(--border);
-    border-top-color: var(--accent);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: dm-thread-deleting-spin 0.7s linear infinite;
     flex-shrink: 0;

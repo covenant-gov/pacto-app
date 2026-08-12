@@ -173,7 +173,7 @@
   }
 
   .btn-cancel {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
   }

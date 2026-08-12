@@ -233,7 +233,7 @@
     border-radius: 8px;
     border: 1px dashed var(--border);
     background: transparent;
-    color: var(--accent);
+    color: var(--brand);
     cursor: pointer;
   }
 

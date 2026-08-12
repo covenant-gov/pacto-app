@@ -172,7 +172,7 @@
   }
 
   .key-textarea:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
     background: var(--bg-hover);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
   }
@@ -204,12 +204,12 @@
   }
 
   .btn-primary {
-    background: var(--accent);
+    background: var(--brand);
     color: #ffffff;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
     box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
   }
 
@@ -226,7 +226,7 @@
 
   .btn-secondary:hover:not(:disabled) {
     background: var(--border-subtle);
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -239,7 +239,7 @@
     padding: 12px 16px;
     background: rgba(88, 101, 242, 0.1);
     border-radius: 8px;
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--brand);
   }
 
   .import-notice p {

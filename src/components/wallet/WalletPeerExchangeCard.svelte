@@ -107,7 +107,7 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     max-width: 380px;
-    border-left: 3px solid var(--accent, #6c5ce7);
+    border-left: 3px solid var(--brand, #6c5ce7);
   }
 
   .wpeer-card.collapsed {
@@ -170,7 +170,7 @@
   }
 
   .wpeer-accept {
-    background: var(--accent, #6c5ce7);
+    background: var(--brand, #6c5ce7);
     color: #fff;
     border-color: transparent;
   }

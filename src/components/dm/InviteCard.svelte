@@ -162,7 +162,7 @@
     height: 40px;
     border-radius: 8px;
     overflow: hidden;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -191,7 +191,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .invite-card-title {
@@ -218,7 +218,7 @@
     padding: 0;
     border: none;
     background: none;
-    color: var(--accent);
+    color: var(--brand);
     font: inherit;
     font-weight: 500;
     cursor: pointer;
@@ -226,7 +226,7 @@
   }
 
   .invite-card-inviter-link:hover {
-    color: var(--accent-hover, var(--accent));
+    color: var(--brand-hover);
   }
 
   .invite-card.collapsed .invite-card-text,
@@ -281,12 +281,12 @@
   }
 
   .invite-card-btn-accept {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .invite-card-btn-decline {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border-color: var(--border-subtle);
   }

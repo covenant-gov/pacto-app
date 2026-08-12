@@ -424,7 +424,7 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--brand);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -542,7 +542,7 @@
   }
 
   .viewer-menu .menu-item:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 

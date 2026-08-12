@@ -347,7 +347,7 @@
   }
 
   .broadcast-duration-option:has(input:checked) {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
     background: var(--bg-panel);
   }
@@ -386,9 +386,9 @@
   }
 
   .broadcast-btn-submit {
-    background: var(--accent);
+    background: var(--brand);
     border: none;
-    color: var(--accent-contrast, #fff);
+    color: var(--on-brand);
   }
 
   .broadcast-btn-terminate {

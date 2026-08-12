@@ -205,8 +205,8 @@
     border-radius: 6px;
     font-size: 0.875rem;
     cursor: pointer;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
 
@@ -215,7 +215,7 @@
     border: none;
     padding: 0;
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
     cursor: pointer;
     text-decoration: underline;
   }

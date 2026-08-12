@@ -197,7 +197,7 @@
 
   .input:focus,
   .textarea:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .input::placeholder,
@@ -254,11 +254,11 @@
   }
 
   .btn-primary {
-    background-color: var(--accent);
+    background-color: var(--brand);
     color: #ffffff;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background-color: var(--accent-hover);
+    background-color: var(--brand-hover);
   }
 </style>

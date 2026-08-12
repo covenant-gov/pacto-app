@@ -198,17 +198,17 @@
   .restore-access {
     flex-shrink: 0;
     padding: 0.2rem 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--accent, #7c6df2) 50%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand, #7c6df2) 50%, transparent);
     border-radius: 0.35rem;
     background: transparent;
-    color: var(--accent, #7c6df2);
+    color: var(--brand, #7c6df2);
     font-size: 0.7rem;
     font-weight: 600;
     cursor: pointer;
   }
 
   .restore-access:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent, #7c6df2) 12%, transparent);
+    background: color-mix(in srgb, var(--brand, #7c6df2) 12%, transparent);
   }
 
   .restore-access:disabled {
@@ -246,7 +246,7 @@
 
   .restore-confirm {
     border: none;
-    background: var(--accent, #7c6df2);
+    background: var(--brand, #7c6df2);
     color: var(--text-on-accent, #fff);
   }
 

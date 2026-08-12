@@ -539,7 +539,7 @@
 
   .wallet-stub-input:focus,
   .wallet-stub-select:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 1px;
   }
 
@@ -597,8 +597,8 @@
     font-size: 0.8125rem;
     font-weight: 600;
     font-family: inherit;
-    color: var(--accent-contrast, #fff);
-    background: var(--accent);
+    color: var(--on-brand);
+    background: var(--brand);
     border: none;
     border-radius: 8px;
     text-decoration: none;
@@ -607,12 +607,12 @@
   }
 
   .wallet-stub-error-link:hover {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
     filter: brightness(1.02);
   }
 
   .wallet-stub-error-link:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -642,7 +642,7 @@
   }
 
   .wallet-stub-retry:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -663,7 +663,7 @@
     font-family: ui-monospace, monospace;
     color: var(--text-secondary);
     word-break: break-all;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     border-radius: 6px;
     border: 1px solid var(--border-subtle);
   }
@@ -714,7 +714,7 @@
   }
 
   .wallet-stub-btn-primary {
-    background: var(--accent);
+    background: var(--brand);
     color: #fff;
   }
 </style>

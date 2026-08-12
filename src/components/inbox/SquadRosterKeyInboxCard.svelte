@@ -82,7 +82,7 @@
     padding: 14px 16px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--brand);
     border-radius: 8px;
     max-width: 520px;
   }
@@ -118,8 +118,8 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
 
@@ -130,7 +130,7 @@
   }
 
   .btn-secondary {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
   }

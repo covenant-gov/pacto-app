@@ -488,7 +488,7 @@
   }
 
   .allowlist-call-toggle:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -547,8 +547,8 @@
     padding: 8px 14px;
     border-radius: 6px;
     border: 0;
-    background: var(--accent);
-    color: var(--accent-fg, #000);
+    background: var(--brand);
+    color: var(--on-brand);
     font: inherit;
     cursor: pointer;
   }
@@ -576,7 +576,7 @@
   }
 
   .allowlist-sim.ok {
-    color: var(--accent, #4ade80);
+    color: var(--brand, #4ade80);
   }
 
   .allowlist-sim.err {

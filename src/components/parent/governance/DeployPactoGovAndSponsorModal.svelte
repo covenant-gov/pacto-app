@@ -770,7 +770,7 @@
     cursor: pointer;
   }
   .signer-option.selected {
-    border-color: var(--accent, #2dd4bf);
+    border-color: var(--brand, #2dd4bf);
   }
   .signer-option-body {
     display: flex;

@@ -407,7 +407,7 @@
   }
 
   .pin-box:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
     box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
   }
 
@@ -476,8 +476,8 @@
   }
 
   .btn-reveal-secret[aria-pressed='true'] {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 
   .reveal-icon {
@@ -501,7 +501,7 @@
   }
 
   .btn-copy:hover {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .copy-icon {

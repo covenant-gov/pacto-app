@@ -240,7 +240,7 @@
     font-size: 0.875rem;
     font-family: inherit;
     color: var(--text-primary);
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: 6px;
     outline: none;
@@ -251,8 +251,8 @@
   }
 
   .messenger-search-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px var(--brand);
   }
 
   .dm-list-container {
@@ -292,7 +292,7 @@
   }
 
   .dm-row:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
@@ -343,8 +343,8 @@
     height: 20px;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.6875rem;
     font-weight: 700;
     line-height: 20px;
@@ -385,6 +385,6 @@
 
   .resize-handle:hover,
   .resize-handle:focus {
-    background-color: var(--accent);
+    background-color: var(--brand);
   }
 </style>

@@ -451,7 +451,7 @@
     height: 18px;
     margin: 8px 0 0 0;
     cursor: pointer;
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .deploy-safe-member-row:last-child {
@@ -512,7 +512,7 @@
     height: 18px;
     margin: 0;
     cursor: pointer;
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .deploy-safe-warn {
@@ -553,13 +553,13 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover, var(--accent));
+    background: var(--brand-hover);
   }
 
   .btn-primary:disabled {
@@ -568,7 +568,7 @@
   }
 
   .btn-secondary {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
   }

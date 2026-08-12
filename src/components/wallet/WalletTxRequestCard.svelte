@@ -99,7 +99,7 @@
     padding: 12px 14px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--brand);
     border-radius: 8px;
     max-width: 380px;
   }
@@ -185,7 +185,7 @@
   .wallet-tx-request-icon-inner {
     font-size: 1.125rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .wallet-tx-request-body {
@@ -199,7 +199,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .wallet-tx-request-title {
@@ -266,12 +266,12 @@
   }
 
   .wallet-tx-request-btn-accept {
-    background: var(--accent);
+    background: var(--brand);
     color: #fff;
   }
 
   .wallet-tx-request-btn-accept:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .wallet-tx-request-btn-decline {

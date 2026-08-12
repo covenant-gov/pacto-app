@@ -435,7 +435,7 @@
   }
 
   .w-import-btn-primary {
-    background: var(--accent);
+    background: var(--brand);
     color: #fff;
   }
 

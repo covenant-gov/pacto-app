@@ -648,7 +648,7 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--brand);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -708,7 +708,7 @@
   .msg-reply {
     margin-bottom: 6px;
     padding-left: 10px;
-    border-left: 3px solid var(--reply-border, var(--accent));
+    border-left: 3px solid var(--reply-border, var(--brand));
     color: var(--text-muted);
     font-size: 0.8125rem;
     line-height: 1.3;
@@ -817,7 +817,7 @@
 
   .reaction-chip.own {
     background: rgba(88, 101, 242, 0.18);
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .reaction-count {
@@ -867,7 +867,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent);
+    background: var(--brand);
     color: #ffffff;
     font-size: 0.6875rem;
     font-weight: 600;
@@ -943,7 +943,7 @@
   }
 
   .quick-reaction-btn:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
@@ -973,7 +973,7 @@
   }
 
   .quick-reaction-expand:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
@@ -1030,7 +1030,7 @@
   }
 
   .reaction-picker-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .reaction-picker-scroll {
@@ -1077,7 +1077,7 @@
   }
 
   .reaction-picker-emoji:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 

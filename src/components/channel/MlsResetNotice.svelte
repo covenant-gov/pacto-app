@@ -63,7 +63,7 @@
     padding: 0.5rem 0.9rem;
     border: none;
     border-radius: 0.5rem;
-    background: var(--accent, #7c6df2);
+    background: var(--brand, #7c6df2);
     color: var(--text-on-accent, #fff);
     font-size: 0.85rem;
     font-weight: 600;
@@ -73,9 +73,9 @@
   .mls-reset-notice {
     margin: 0.75rem;
     padding: 1rem 1.1rem;
-    border: 1px solid color-mix(in srgb, var(--accent, #7c6df2) 45%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand, #7c6df2) 45%, transparent);
     border-radius: 0.75rem;
-    background: color-mix(in srgb, var(--surface-2, #24242c) 90%, var(--accent, #7c6df2));
+    background: color-mix(in srgb, var(--surface-2, #24242c) 90%, var(--brand, #7c6df2));
     color: var(--text-primary, #f5f5f7);
   }
 

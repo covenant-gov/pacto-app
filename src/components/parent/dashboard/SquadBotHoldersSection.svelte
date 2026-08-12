@@ -364,7 +364,7 @@
     padding: 8px 14px;
     border-radius: 6px;
     font-size: 0.875rem;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
     cursor: pointer;
