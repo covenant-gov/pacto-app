@@ -74,7 +74,8 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `src/routes/` | Single route (`+page.svelte`) plus layout; adapter-static SPA fallback. |
 | `src/stores/` | Svelte writable/derived stores for auth, DMs, squads, MLS chat, navigation, persistence, theme. |
 | `src/lib/` | Side-effect modules and typed Tauri wrappers: `api/*`, `app/*`, `wallet/*`, `squad/*`, `governance/*`, `dashboard/*`, `mls/*`, `dm/*`, `utils/*`. |
-| `src/components/` | Svelte UI components grouped by domain: `auth/`, `dm/`, `channel/`, `parent/`, `wallet/`, `ui/`, `layout/`. |
+| `src/lib/components/ui/` | Vendored shadcn-svelte primitives (Tailwind + bits-ui); treat as upstream-shaped Pacto code. |
+| `src/components/` | Pacto-authored Svelte UI grouped by domain: `auth/`, `dm/`, `channel/`, `parent/`, `wallet/`, `ui/`, `layout/`. |
 | `src-tauri/` | Tauri v2 Rust backend and app configuration. |
 | `src-tauri/src/` | Rust crate source. |
 | `src-tauri/src/evm/` | EVM wallet, key derivation, RPC, contract bindings, governance deployments. |

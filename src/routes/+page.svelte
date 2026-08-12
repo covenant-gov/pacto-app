@@ -989,7 +989,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     <TopNavbar />
   </header>
   <BackupBanner />
-  <main class="container">
+  <main class="app-shell">
     <Navbar />
     <div class="content-wrap">
       {#if $activeView === 'profile'}
@@ -1204,7 +1204,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     flex-shrink: 0;
     z-index: 10;
   }
-  .page .container {
+  .page .app-shell {
     flex: 1;
     min-height: 0;
     display: flex;

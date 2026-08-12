@@ -3,6 +3,7 @@
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
   import UpdateGate from '../components/updater/UpdateGate.svelte';
+  import { TooltipProvider } from '$lib/components/ui/tooltip/index.js';
   import { isAuthenticated, currentUser, checkSession } from '../stores/auth';
   import { resolveGateAtLaunch } from '../lib/updater/update-gate';
   import { DEFAULT_THEME, getStoredTheme, setTheme } from '../stores/theme';
@@ -41,15 +42,17 @@
   });
 </script>
 
-<UpdateGate>
-  {#if $isAuthenticated && $currentUser}
-    <div class="layout-root">
-      <slot />
-    </div>
-  {:else}
-    <Login />
-  {/if}
-</UpdateGate>
+<TooltipProvider>
+  <UpdateGate>
+    {#if $isAuthenticated && $currentUser}
+      <div class="layout-root">
+        <slot />
+      </div>
+    {:else}
+      <Login />
+    {/if}
+  </UpdateGate>
+</TooltipProvider>
 
 <style>
   .layout-root {
