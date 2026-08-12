@@ -254,6 +254,7 @@ export interface DmChatSnapshot {
   messageCount: number | undefined;
   loadedOffset: number | undefined;
   wasPinned: boolean;
+  wasActive: boolean;
 }
 
 export const activeDmId = writable<string | null>(null);
@@ -528,6 +529,19 @@ export const dmSyncStatusEffective: Readable<SyncStatus> = derived(
 export const typingByChat = writable<Record<string, string[]>>({});
 
 export function deleteDmChat(npub: string): void {
+  // Clear selection first so open-conversation loads cannot keep a deleted peer selected.
+  activeDmId.update((id) => (id === npub ? null : id));
+  lastOpenedDmByTab.update((tabs) => {
+    let changed = false;
+    const next = { ...tabs };
+    for (const key of Object.keys(next) as DmTab[]) {
+      if (next[key] === npub) {
+        next[key] = null;
+        changed = true;
+      }
+    }
+    return changed ? next : tabs;
+  });
   dmChatsByNpub.update((m) => {
     const next = { ...m };
     delete next[npub];
@@ -566,18 +580,6 @@ export function deleteDmChat(npub: string): void {
     delete next[npub];
     return next;
   });
-  lastOpenedDmByTab.update((tabs) => {
-    let changed = false;
-    const next = { ...tabs };
-    for (const key of Object.keys(next) as DmTab[]) {
-      if (next[key] === npub) {
-        next[key] = null;
-        changed = true;
-      }
-    }
-    return changed ? next : tabs;
-  });
-  activeDmId.update((id) => (id === npub ? null : id));
 }
 
 export function revertDmChat(npub: string, snapshot: DmChatSnapshot): void {
@@ -593,5 +595,8 @@ export function revertDmChat(npub: string, snapshot: DmChatSnapshot): void {
   }
   if (snapshot.wasPinned) {
     pinnedDmNpubs.update((s) => new Set(s).add(npub));
+  }
+  if (snapshot.wasActive) {
+    activeDmId.set(npub);
   }
 }

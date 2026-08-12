@@ -30,6 +30,7 @@ import {
   squadTrackedTokensNonceByParentId,
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
+import { drainPendingAdmitQueue } from '../parent/pending-admit';
 
 export interface MlsStructuredRefreshHandlers {
   mergeTreasurySafesForParent: (parentId: string) => void;
@@ -90,6 +91,7 @@ export function onMlsStructuredMessage(
   }
   if (parseSquadAdmitNeeded(raw)) {
     onMlsAdmitNeeded(raw, gid);
+    void drainPendingAdmitQueue();
   }
   if (parseSquadChannelsCatalog(raw)) {
     applySquadChannelsCatalog(raw, gid);
@@ -146,5 +148,6 @@ export function onMlsStructuredMessage(
     if (squadId) {
       void syncJoinRequestsForSquad(squadId);
     }
+    void drainPendingAdmitQueue();
   }
 }

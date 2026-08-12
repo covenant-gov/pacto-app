@@ -2,8 +2,10 @@
  * Helpers for pairwise DM wallet-address exchange (request → grant → reciprocal grant).
  */
 
+import { get, writable } from 'svelte/store';
 import {
   formatWalletPeerInfoGrant,
+  formatWalletPeerInfoRequest,
   parseWalletPeerInfoGrant,
   parseWalletPeerInfoRequest,
   type WalletPeerInfoGrantPayload,
@@ -13,6 +15,80 @@ export type WalletPeerExchangeMessage = {
   mine?: boolean;
   content?: string | null;
 };
+
+/** Peer npubs with a wallet-info request currently posting (survives WalletBar remount). */
+export const walletPeerInfoRequestInFlight = writable<Set<string>>(new Set());
+export const walletPeerInfoRequestInFlightRevision = writable(0);
+
+export function resetWalletPeerInfoRequestInFlight(): void {
+  walletPeerInfoRequestInFlight.set(new Set());
+  walletPeerInfoRequestInFlightRevision.set(0);
+}
+
+export function isWalletPeerInfoRequestInFlight(peerNpub: string): boolean {
+  const id = peerNpub.trim();
+  return id.length > 0 && get(walletPeerInfoRequestInFlight).has(id);
+}
+
+export function markWalletPeerInfoRequestInFlight(peerNpub: string): void {
+  const id = peerNpub.trim();
+  if (!id) return;
+  walletPeerInfoRequestInFlight.update((s) => {
+    if (s.has(id)) return s;
+    const next = new Set(s);
+    next.add(id);
+    return next;
+  });
+  walletPeerInfoRequestInFlightRevision.update((n) => n + 1);
+}
+
+export function clearWalletPeerInfoRequestInFlight(peerNpub: string): void {
+  const id = peerNpub.trim();
+  if (!id) return;
+  let removed = false;
+  walletPeerInfoRequestInFlight.update((s) => {
+    if (!s.has(id)) return s;
+    removed = true;
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+  if (removed) walletPeerInfoRequestInFlightRevision.update((n) => n + 1);
+}
+
+export type SendWalletPeerInfoRequestResult =
+  | { ok: true }
+  | { ok: false; code: 'in_flight' | 'no_address' | 'send_failed' | 'error' };
+
+/** Format + post a wallet peer-info request; in-flight state survives sidebar remount. */
+export async function sendWalletPeerInfoRequest(input: {
+  peerNpub: string;
+  requesterNpub: string;
+  post: (json: string) => Promise<boolean>;
+  getMyEvmAddress: () => Promise<string>;
+}): Promise<SendWalletPeerInfoRequestResult> {
+  const peer = input.peerNpub.trim();
+  const me = input.requesterNpub.trim();
+  if (!peer || !me) return { ok: false, code: 'error' };
+  if (isWalletPeerInfoRequestInFlight(peer)) {
+    return { ok: false, code: 'in_flight' };
+  }
+  markWalletPeerInfoRequestInFlight(peer);
+  try {
+    const myAddr = (await input.getMyEvmAddress())?.trim() || '';
+    if (!myAddr) return { ok: false, code: 'no_address' };
+    const json = formatWalletPeerInfoRequest({
+      request_id: crypto.randomUUID(),
+      requester_npub: me,
+    });
+    const ok = await input.post(json);
+    return ok ? { ok: true } : { ok: false, code: 'send_failed' };
+  } catch {
+    return { ok: false, code: 'error' };
+  } finally {
+    clearWalletPeerInfoRequestInFlight(peer);
+  }
+}
 
 /** True if this thread already has an outbound grant for `requestId`. */
 export function threadHasOutboundGrantForRequest(

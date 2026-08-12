@@ -3,21 +3,34 @@
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
+use alloy::sol_types::SolCall;
 use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 
 use super::access_control::{require_capability, with_gov_write_lock, GovCapability};
+use super::contracts::pacto_gov::read_bindings::IMutinyModule::{
+    captainResignCall, castVoteCall, executeMutinyCall, startMutinyToArbitraryContractCall,
+    startMutinyToArbitraryEoaCall, startMutinyToCommitteeCall, startMutinyToCrewMemberCall,
+    startMutinyToPauseCaptainCall,
+};
+use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
+    bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, executeAddCrewCall,
+    executeRemoveCrewCall, requestAddCrewCall, requestRemoveCrewCall,
+};
+use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
+    captainVoteCall, crewVoteCall, executeCall, proposeCall,
+};
 use super::gov_read::rpc_urls_or_default;
 use super::rpc::signer::{
     load_squad_roster_embedded_signer, require_roster_treasury_signing_allowed,
 };
 use super::rpc::{
     connect_read_provider, connect_signing_provider, contract_call_request, send_and_confirm,
-    wallet_err_json,
+    wallet_err_json, wallet_err_json_with_tx_hash,
 };
 use super::sponsor_userop::{
     call_gas_with_margin, estimate_call_gas, roster_native_balance_wei, send_sponsored_gov_userop,
-    wait_for_user_operation_tx_hash, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
+    wait_for_user_operation_receipt, FALLBACK_CALL_GAS_LIMIT, FALLBACK_MAX_FEE,
 };
 use super::wallet_chain_config;
 use crate::db;
@@ -90,10 +103,41 @@ pub async fn send_gov_module_call<R: Runtime>(
                     // the next write reuse the same EntryPoint nonce. Callers expect a real L1
                     // transaction hash, not the bundler userOp hash.
                     // Receipt poll must hit the bundler that accepted the UserOp.
-                    let tx_hash =
-                        wait_for_user_operation_tx_hash(&send.bundler_url, &send.user_op_hash)
+                    let receipt =
+                        wait_for_user_operation_receipt(&send.bundler_url, &send.user_op_hash)
                             .await?;
-                    return Ok((tx_hash, net.key.clone(), net.chain_id));
+                    if !receipt.success {
+                        return Err(wallet_err_json_with_tx_hash(
+                            "USEROP_FAILED",
+                            format!(
+                                "sponsored UserOp {} was included but reverted (tx {})",
+                                send.user_op_hash, receipt.tx_hash
+                            ),
+                            None,
+                            receipt.tx_hash.clone(),
+                        ));
+                    }
+                    if let Some(amount_wei) = receipt.actual_gas_cost_wei.as_ref() {
+                        persist_sponsored_fee_usage(
+                            &app,
+                            pid,
+                            &net.key,
+                            net.chain_id,
+                            signer.address(),
+                            to,
+                            &calldata,
+                            &send.user_op_hash,
+                            &receipt.tx_hash,
+                            amount_wei,
+                        );
+                    } else {
+                        log::warn!(
+                            target: "pacto_wallet",
+                            "sponsored UserOp {} succeeded without actualGasCost; skipping fee ledger row",
+                            send.user_op_hash
+                        );
+                    }
+                    return Ok((receipt.tx_hash, net.key.clone(), net.chain_id));
                 }
                 Err(e) => {
                     // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
@@ -194,6 +238,109 @@ fn is_soft_sponsor_config_error(err: &str) -> bool {
     )
 }
 
+fn calldata_selector_hex(calldata: &[u8]) -> String {
+    if calldata.len() >= 4 {
+        format!("0x{}", hex::encode(&calldata[..4]))
+    } else {
+        "0x".to_string()
+    }
+}
+
+/// Best-effort human label for known pacto-gov module selectors.
+fn gov_call_action_label(calldata: &[u8]) -> (String, String) {
+    let selector = calldata_selector_hex(calldata);
+    if calldata.len() < 4 {
+        return (selector.clone(), selector);
+    }
+    let sel: [u8; 4] = calldata[..4].try_into().unwrap();
+    let name = if sel == proposeCall::SELECTOR {
+        "propose"
+    } else if sel == crewVoteCall::SELECTOR {
+        "crewVote"
+    } else if sel == captainVoteCall::SELECTOR {
+        "captainVote"
+    } else if sel == executeCall::SELECTOR {
+        "execute"
+    } else if sel == castVoteCall::SELECTOR {
+        "castVote"
+    } else if sel == executeMutinyCall::SELECTOR {
+        "executeMutiny"
+    } else if sel == captainResignCall::SELECTOR {
+        "captainResign"
+    } else if sel == startMutinyToCrewMemberCall::SELECTOR {
+        "startMutinyToCrewMember"
+    } else if sel == startMutinyToCommitteeCall::SELECTOR {
+        "startMutinyToCommittee"
+    } else if sel == startMutinyToArbitraryEoaCall::SELECTOR {
+        "startMutinyToArbitraryEoa"
+    } else if sel == startMutinyToArbitraryContractCall::SELECTOR {
+        "startMutinyToArbitraryContract"
+    } else if sel == startMutinyToPauseCaptainCall::SELECTOR {
+        "startMutinyToPauseCaptain"
+    } else if sel == bootstrapCrewCall::SELECTOR {
+        "bootstrapCrew"
+    } else if sel == requestAddCrewCall::SELECTOR {
+        "requestAddCrew"
+    } else if sel == cancelAddCrewCall::SELECTOR {
+        "cancelAddCrew"
+    } else if sel == executeAddCrewCall::SELECTOR {
+        "executeAddCrew"
+    } else if sel == requestRemoveCrewCall::SELECTOR {
+        "requestRemoveCrew"
+    } else if sel == cancelRemoveCrewCall::SELECTOR {
+        "cancelRemoveCrew"
+    } else if sel == executeRemoveCrewCall::SELECTOR {
+        "executeRemoveCrew"
+    } else {
+        return (selector.clone(), selector);
+    };
+    (selector, name.to_string())
+}
+
+fn persist_sponsored_fee_usage<R: Runtime>(
+    app: &AppHandle<R>,
+    parent_id: &str,
+    chain: &str,
+    chain_id: u64,
+    actor_evm: Address,
+    target: Address,
+    calldata: &[u8],
+    user_op_hash: &str,
+    tx_hash: &str,
+    amount_wei: &str,
+) {
+    let actor_npub = match crate::account_manager::get_current_account() {
+        Ok(npub) => npub,
+        Err(e) => {
+            log::warn!(
+                target: "pacto_wallet",
+                "sponsored fee ledger skipped (no current account): {e}"
+            );
+            return;
+        }
+    };
+    let (selector, action) = gov_call_action_label(calldata);
+    let row = db::SquadSponsoredFeeUsageInsert {
+        parent_id: parent_id.to_string(),
+        chain: chain.to_string(),
+        chain_id,
+        actor_npub,
+        actor_evm: format!("{actor_evm:#x}"),
+        amount_wei: amount_wei.to_string(),
+        selector,
+        action,
+        target: format!("{target:#x}"),
+        user_op_hash: user_op_hash.to_string(),
+        tx_hash: tx_hash.to_string(),
+    };
+    if let Err(e) = db::insert_squad_sponsored_fee_usage(app, &row) {
+        log::warn!(
+            target: "pacto_wallet",
+            "sponsored fee ledger insert failed for {user_op_hash}: {e}"
+        );
+    }
+}
+
 /// Prefer explicit parent_id; else look up from an infra address stored as canonical_ref.
 pub fn resolve_parent_id_for_module<R: Runtime>(
     app: &AppHandle<R>,
@@ -238,10 +385,13 @@ pub fn explicit_parent_id(parent_id: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        explicit_parent_id, is_soft_sponsor_config_error, select_write_path, wallet_error_code,
-        WritePath,
+        explicit_parent_id, gov_call_action_label, is_soft_sponsor_config_error, select_write_path,
+        wallet_error_code, WritePath,
     };
+    use crate::evm::contracts::pacto_gov::read_bindings::IMutinyModule::castVoteCall;
+    use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::bootstrapCrewCall;
     use alloy::primitives::U256;
+    use alloy::sol_types::SolCall;
 
     #[test]
     fn explicit_parent_id_trims_and_rejects_empty() {
@@ -307,5 +457,27 @@ mod tests {
         assert!(!is_soft_sponsor_config_error(err));
         assert_eq!(wallet_error_code("not json"), None);
         assert_eq!(wallet_error_code(r#"{"code":7}"#), None);
+    }
+
+    #[test]
+    fn gov_call_action_label_maps_known_selectors() {
+        let vote = castVoteCall {
+            _mutinyId: U256::from(1u64),
+        }
+        .abi_encode();
+        let (sel, name) = gov_call_action_label(&vote);
+        assert_eq!(name, "castVote");
+        assert_eq!(sel, format!("0x{}", hex::encode(castVoteCall::SELECTOR)));
+
+        let boot = bootstrapCrewCall {
+            _candidates: vec![],
+        }
+        .abi_encode();
+        assert_eq!(gov_call_action_label(&boot).1, "bootstrapCrew");
+
+        let unknown = [0xaa, 0xbb, 0xcc, 0xdd];
+        let (sel, name) = gov_call_action_label(&unknown);
+        assert_eq!(sel, "0xaabbccdd");
+        assert_eq!(name, "0xaabbccdd");
     }
 }

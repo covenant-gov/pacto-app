@@ -14,8 +14,10 @@
     canManageBotHolders,
     ensureSquadBot,
     getSquadBotState,
+    isSquadBotHolderActionInFlight,
     removeSquadBotHolder,
     rotateSquadBotKey,
+    squadBotHolderActionInFlightRevision,
     type SquadBotState,
   } from '../../../lib/squad/squad-bot';
   import { refreshMlsGroupMembers } from '../../../stores/mls-group-members';
@@ -27,12 +29,13 @@
 
   let state: SquadBotState | null = null;
   let loading = true;
-  let acting = false;
   let addNpub = '';
   let error = '';
   let copiedBotNpub = false;
 
   $: squadId = announcementsGroupId?.trim() || '';
+  $: void $squadBotHolderActionInFlightRevision;
+  $: acting = squadId ? isSquadBotHolderActionInFlight(squadId) : false;
   $: myNpub = $currentUser?.npub ?? '';
   $: canManage = canManageBotHolders({
     squadAdminActive,
@@ -98,9 +101,7 @@
       showToast(block);
       return;
     }
-    acting = true;
     const result = await addSquadBotHolder(squadId, addNpub);
-    acting = false;
     if (!result.ok) {
       showToast(result.error);
       return;
@@ -112,9 +113,7 @@
 
   async function onRemove(npub: string) {
     if (!squadId || acting) return;
-    acting = true;
     const result = await removeSquadBotHolder(squadId, npub);
-    acting = false;
     if (!result.ok) {
       showToast(result.error);
       return;
@@ -125,10 +124,8 @@
 
   async function onRotate() {
     if (!squadId || acting) return;
-    acting = true;
     await refreshMlsGroupMembers(squadId).catch(() => {});
     const result = await rotateSquadBotKey(squadId);
-    acting = false;
     if (!result.ok) {
       showToast(result.error);
       return;

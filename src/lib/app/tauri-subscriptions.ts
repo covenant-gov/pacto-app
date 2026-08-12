@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { listen, type UnlistenFn } from '../api';
 import {
   listPendingMlsWelcomes,
@@ -14,6 +15,10 @@ import {
   handleInviteeConsentForAdmit,
   parseSquadInviteAccepted,
 } from '../squad/squad-outbound-invite';
+import {
+  handleBotJoinResponseDm,
+  tryCompletePendingApprovedJoins,
+} from '../squad/join-request-finalize';
 import { updateChannelNameIfPlaceholder } from '../squad/squad-catalog';
 import { dmLog, dmError } from '../utils/dm-debug';
 import { dropSessionState, initSessionFocusChecks, showMigrationCompleteToast } from '../../stores/auth';
@@ -22,6 +27,7 @@ import {
   backendDmMessages,
   backendGroupMessages,
   dmChatsByNpub,
+  deletingDmNpubs,
   dmSyncStatus,
   typingByChat,
   pendingMlsWelcomes,
@@ -128,11 +134,15 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
       mine: message.mine,
     });
     if (!chat_id.startsWith('npub1')) return;
+    if (get(deletingDmNpubs).has(chat_id)) return;
     const content = message.content ?? '';
     const inviteAccepted = parseSquadInviteAccepted(content);
     if (inviteAccepted && !message.mine) {
       void handleInviteeConsentForAdmit(inviteAccepted, { broadcastAdmitNeeded: true });
       return;
+    }
+    if (!message.mine) {
+      void handleBotJoinResponseDm(content, chat_id);
     }
     const m = normalizeDmPayload(message);
     backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
@@ -192,6 +202,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
     });
     const m = normalizeDmPayload(message);
     if (chat_id.startsWith('npub1')) {
+      if (get(deletingDmNpubs).has(chat_id)) return;
       backendDmMessages.update((byNpub: Record<string, DmMessage[]>) => {
         const list = byNpub[chat_id] ?? [];
         const out = list.filter((x) => x.id !== old_id && x.id !== m.id);
@@ -305,6 +316,7 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
         ? String((event.payload as { group_id?: string }).group_id ?? '')
         : '';
     notifyPendingInviteWelcome(groupId || null);
+    void tryCompletePendingApprovedJoins(groupId || null);
   });
 
   register(unsubs, 'mls_store_reset', (event) => {

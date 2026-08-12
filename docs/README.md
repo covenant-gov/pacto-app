@@ -26,7 +26,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
 | **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
-| **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu); [OPERATOR_UPDATES.md](./build/OPERATOR_UPDATES.md) covers signed in-app updates and the [mandatory update gate](./build/OPERATOR_UPDATES.md#marking-a-release-as-breaking) |
+| **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu); [OPERATOR_UPDATES.md](./build/OPERATOR_UPDATES.md) covers signed in-app updates and the [mandatory update gate](./build/OPERATOR_UPDATES.md#marking-a-release-as-breaking); [DEV_SANDBOX.md](./build/DEV_SANDBOX.md) covers the debug-only dev-world data-directory refusal |
 | **[testing/](./testing/)** | Test coverage status and backend phased testing plan ([README](./testing/README.md)) |
 
 **Cross-cutting:**

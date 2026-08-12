@@ -3,7 +3,7 @@
  * roster EVM, known governance announces, squad network/RPC selection, and open channels.
  */
 
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
   getMlsGroupMembers,
   inviteMemberToGroup,
@@ -21,7 +21,7 @@ import {
   squadInfraLegacyProvider,
 } from '../governance/api';
 import { currentUser } from '../../stores/auth';
-import { publishSquadMemberEvmShare } from './squad-member-evm-share';
+import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './squad-member-evm-share';
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
@@ -32,6 +32,46 @@ import { squads } from '../../stores/squads';
 
 export const SQUAD_STATE_SYNC_REQUEST_TYPE = 'squad_state_sync_request';
 export const SQUAD_STATE_SYNC_REQUEST_VERSION = 1;
+
+/** Announcements group ids with a sync request currently publishing. */
+export const squadStateSyncRequestInFlight = writable<Set<string>>(new Set());
+export const squadStateSyncRequestInFlightRevision = writable(0);
+
+export function resetSquadStateSyncRequestInFlight(): void {
+  squadStateSyncRequestInFlight.set(new Set());
+  squadStateSyncRequestInFlightRevision.set(0);
+}
+
+export function isSquadStateSyncInFlight(announcementsGroupId: string): boolean {
+  const id = announcementsGroupId.trim();
+  return id.length > 0 && get(squadStateSyncRequestInFlight).has(id);
+}
+
+function markSquadStateSyncInFlight(announcementsGroupId: string): void {
+  const id = announcementsGroupId.trim();
+  if (!id) return;
+  squadStateSyncRequestInFlight.update((s) => {
+    if (s.has(id)) return s;
+    const next = new Set(s);
+    next.add(id);
+    return next;
+  });
+  squadStateSyncRequestInFlightRevision.update((n) => n + 1);
+}
+
+function clearSquadStateSyncInFlight(announcementsGroupId: string): void {
+  const id = announcementsGroupId.trim();
+  if (!id) return;
+  let removed = false;
+  squadStateSyncRequestInFlight.update((s) => {
+    if (!s.has(id)) return s;
+    removed = true;
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+  if (removed) squadStateSyncRequestInFlightRevision.update((n) => n + 1);
+}
 
 const RESPOND_COOLDOWN_MS = 15_000;
 const RESPONDED_KEYS_CAP = 200;
@@ -134,28 +174,34 @@ function markResponded(respondKey: string, parentId: string): void {
 export async function requestSquadStateSync(announcementsGroupId: string): Promise<boolean> {
   const gid = announcementsGroupId.trim();
   if (!gid) return false;
+  if (isSquadStateSyncInFlight(gid)) return false;
   const me = get(currentUser)?.npub?.trim();
   if (!me) return false;
+  markSquadStateSyncInFlight(gid);
   try {
-    await syncMlsGroupsNow(gid);
-  } catch {
-    /* still attempt publish */
-  }
-  const requestId =
-    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const json = formatSquadStateSyncRequest({
-    parentId: gid,
-    requestId,
-    requesterNpub: me,
-  });
-  try {
-    await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
-    return true;
-  } catch (e) {
-    console.warn('[squad-state-sync] request publish failed', e);
-    return false;
+    try {
+      await syncMlsGroupsNow(gid);
+    } catch {
+      /* still attempt publish */
+    }
+    const requestId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const json = formatSquadStateSyncRequest({
+      parentId: gid,
+      requestId,
+      requesterNpub: me,
+    });
+    try {
+      await sendDmMessage(gid, json, '', { virtualBucket: 'announcements' });
+      return true;
+    } catch (e) {
+      console.warn('[squad-state-sync] request publish failed', e);
+      return false;
+    }
+  } finally {
+    clearSquadStateSyncInFlight(gid);
   }
 }
 
@@ -218,8 +264,12 @@ export async function respondToSquadStateSyncRequest(
 
   if (wantEvm) {
     try {
-      const ok = await publishSquadMemberEvmShare(parentId);
-      if (ok) anyOk = true;
+      const bound = await getBoundSquadEvmAddressForParent(parentId);
+      if (bound) {
+        const ok = await publishSquadMemberEvmShare(parentId, { evmAddress: bound });
+        if (ok) anyOk = true;
+      }
+      /* unbound: omit EVM; still help with infra/network/channels */
     } catch (e) {
       console.warn('[squad-state-sync] EVM republish failed', e);
     }

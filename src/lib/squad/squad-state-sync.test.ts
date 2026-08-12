@@ -4,6 +4,7 @@ const {
   sendDmMessage,
   syncMlsGroupsNow,
   publishSquadMemberEvmShare,
+  getBoundSquadEvmAddressForParent,
   publishSquadNetworkUpdated,
   publishSquadRpcUpdated,
   listSquadInfra,
@@ -37,6 +38,7 @@ const {
     sendDmMessage: vi.fn(),
     syncMlsGroupsNow: vi.fn(),
     publishSquadMemberEvmShare: vi.fn(),
+    getBoundSquadEvmAddressForParent: vi.fn(),
     publishSquadNetworkUpdated: vi.fn(),
     publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
@@ -88,6 +90,7 @@ vi.mock('./squad-member-evm-share', async (importOriginal) => {
   return {
     ...actual,
     publishSquadMemberEvmShare: (...args: unknown[]) => publishSquadMemberEvmShare(...args),
+    getBoundSquadEvmAddressForParent: (...args: unknown[]) => getBoundSquadEvmAddressForParent(...args),
   };
 });
 
@@ -114,9 +117,11 @@ vi.mock('../../stores/auth', () => ({
 
 import {
   formatSquadStateSyncRequest,
+  isSquadStateSyncInFlight,
   maybeAutoRequestSquadStateSyncAfterJoin,
   parseSquadStateSyncRequest,
   requestSquadStateSync,
+  resetSquadStateSyncRequestInFlight,
   resetSquadStateSyncRespondStateForTests,
   respondToSquadStateSyncRequest,
   SQUAD_STATE_SYNC_REQUEST_TYPE,
@@ -126,10 +131,12 @@ describe('squad-state-sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetSquadStateSyncRespondStateForTests();
+    resetSquadStateSyncRequestInFlight();
     currentUser.set({ npub: 'npub1responder' });
     syncMlsGroupsNow.mockResolvedValue({ synced: 0, total: 0 });
     sendDmMessage.mockResolvedValue(undefined);
     publishSquadMemberEvmShare.mockResolvedValue(true);
+    getBoundSquadEvmAddressForParent.mockResolvedValue('0xbound');
     publishSquadNetworkUpdated.mockResolvedValue(true);
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
@@ -154,6 +161,7 @@ describe('squad-state-sync', () => {
   });
 
   afterEach(() => {
+    resetSquadStateSyncRequestInFlight();
     vi.unstubAllGlobals();
   });
 
@@ -238,6 +246,26 @@ describe('squad-state-sync', () => {
     );
   });
 
+  it('marks sync request in-flight during publish and no-ops concurrent calls', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    sendDmMessage.mockImplementation(async () => {
+      expect(isSquadStateSyncInFlight('ann-gid')).toBe(true);
+      await gate;
+    });
+
+    const pending = requestSquadStateSync('ann-gid');
+    await vi.waitFor(() => expect(isSquadStateSyncInFlight('ann-gid')).toBe(true));
+    await expect(requestSquadStateSync('ann-gid')).resolves.toBe(false);
+    expect(sendDmMessage).toHaveBeenCalledTimes(1);
+
+    release();
+    await expect(pending).resolves.toBe(true);
+    expect(isSquadStateSyncInFlight('ann-gid')).toBe(false);
+  });
+
   it('requestSquadStateSync handles empty gid, missing user, and publish failures', async () => {
     await expect(requestSquadStateSync('  ')).resolves.toBe(false);
     currentUser.set(null);
@@ -296,7 +324,9 @@ describe('squad-state-sync', () => {
       requesterNpub: 'npub1joiner',
     });
     await respondToSquadStateSyncRequest(raw, 'ann-gid');
-    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid');
+    expect(publishSquadMemberEvmShare).toHaveBeenCalledWith('ann-gid', {
+      evmAddress: '0xbound',
+    });
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
     const govCalls = sendDmMessage.mock.calls.filter((c) =>
       String(c[1]).includes('governance_updated'),
@@ -304,6 +334,18 @@ describe('squad-state-sync', () => {
     expect(govCalls).toHaveLength(1);
     expect(String(govCalls[0][1])).toContain('pacto_gov');
     expect(String(govCalls[0][1])).not.toContain('gnosis_safe');
+  });
+
+  it('skips EVM republish when unbound but still syncs network', async () => {
+    getBoundSquadEvmAddressForParent.mockResolvedValueOnce(null);
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-unbound',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
+    expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
   });
 
   it('debounces duplicate respond for the same request_id', async () => {

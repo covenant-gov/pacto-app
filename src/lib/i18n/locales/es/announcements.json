@@ -31,13 +31,13 @@
 	"announcements.signerShare.mine": "Actualizaste tu clave EVM para este Escuadrón",
 	"announcements.signerShare.theirs": "{authorName} actualizó su clave EVM para este Escuadrón",
 	"announcements.signerShare.aMember": "Un miembro",
-	"announcements.squadBot.rosterMine": "Actualizaste la lista de bot del escuadrón",
-	"announcements.squadBot.rosterTheirs": "{authorName} actualizó la lista de bot del escuadrón",
+	"announcements.squadBot.rosterMine": "Actualizaste los titulares de la bandeja de entrada",
+	"announcements.squadBot.rosterTheirs": "{authorName} actualizó los titulares de la bandeja de entrada",
 	"announcements.squadBot.aMember": "Un miembro",
-	"announcements.squadBot.rotatedMine": "Rotaste la clave del bot del escuadrón",
-	"announcements.squadBot.rotatedTheirs": "{authorName} rotó la clave del bot del escuadrón",
-	"announcements.squadBot.updateTitle": "Actualización del bot del escuadrón",
-	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 titulares de clave} one {1 titular de clave} other {{count} titulares de clave}}",
+	"announcements.squadBot.rotatedMine": "Rotaste la clave de bandeja de entrada",
+	"announcements.squadBot.rotatedTheirs": "{authorName} rotó la clave de bandeja de entrada",
+	"announcements.squadBot.updateTitle": "Actualización de bandeja de entrada",
+	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 titulares} one {1 titular} other {{count} titulares}}",
 	"announcements.squadBot.keyEpoch": "Época de clave {keyEpoch}",
-	"announcements.squadBot.botLabel": "Bot {shortNpub}"
+	"announcements.squadBot.botLabel": "Bandeja {shortNpub}"
 }

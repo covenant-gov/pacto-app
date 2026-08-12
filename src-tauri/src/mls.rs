@@ -1,7 +1,8 @@
 //! MLS (Message Layer Security) Module
 //!
 //! This module provides MLS group messaging capabilities using the nostr-mls crate.
-//! We use nostr-mls defaults and communicate exclusively through TRUSTED_RELAYS.
+//! We use nostr-mls defaults and communicate exclusively through the trusted relay set
+//! (`crate::trusted_relays`).
 //!
 //! ## Storage Schema
 //!
@@ -25,7 +26,7 @@ use crate::nostr_tags;
 use crate::rumor::{
     process_rumor, ConversationType, RumorContext, RumorEvent, RumorProcessingResult,
 };
-use crate::{get_nostr_client, STATE, TAURI_APP, TRUSTED_RELAYS};
+use crate::{get_nostr_client, STATE, TAURI_APP};
 use mdk_core::prelude::*;
 use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use nostr_sdk::PublicKey;
@@ -396,12 +397,12 @@ impl MlsService {
     ///
     /// This will:
     /// 1. Generate a new keypackage for the device if needed
-    /// 2. Publish it to TRUSTED_RELAYS via nostr-mls
+    /// 2. Publish it to the trusted relay set via nostr-mls
     /// 3. Update "mls_keypackage_index" with the reference
     pub async fn publish_device_keypackage(&self, device_id: &str) -> Result<(), MlsError> {
         // TODO: Use nostr-mls to generate and publish keypackage
         // TODO: Store keypackage reference in "mls_keypackage_index"
-        // TODO: Use TRUSTED_RELAYS for publishing
+        // TODO: Use the trusted relay set for publishing
 
         // Stub implementation
         let _ = device_id;
@@ -423,7 +424,7 @@ impl MlsService {
       • initial_member_devices: Vec of (member_npub, device_id) pairs chosen by the caller
 
     - Steps:
-      1) Resolve creator pubkey and build NostrGroupConfigData scoped to TRUSTED_RELAYS.
+      1) Resolve creator pubkey and build NostrGroupConfigData scoped to the trusted relay set.
       2) Resolve each member device to its KeyPackage Event before touching the MLS engine:
          • Prefer local plaintext index "mls_keypackage_index" to get keypackage_ref by member npub + device_id.
          • If ref exists: fetch exact event by id; else: fetch latest Kind::MlsKeyPackage by author.
@@ -433,7 +434,7 @@ impl MlsService {
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
-      4) Publish welcome(s) to invited recipients 1:1 via gift_wrap_to on TRUSTED_RELAYS.
+      4) Publish welcome(s) to invited recipients 1:1 via gift_wrap_to on the trusted relay set.
       5) Persist encrypted UI metadata ("mls_groups") with:
          • group_id = wire id (relay filtering id, shown in UI)
          • engine_group_id = engine id (used by [rust.send_mls_group_message()](src-tauri/src/lib.rs:3144))
@@ -463,7 +464,7 @@ impl MlsService {
         // Persistent group creation using sqlite-backed engine.
         // - Resolve signer and relay config
         // - Use engine.create_group() inside a no-await scope (avoid holding !Send across await)
-        // - Publish welcome (if any) to TRUSTED_RELAY
+        // - Publish welcome (if any) to the trusted relay set
         // - Store encrypted UI metadata to "mls_groups"
         //
         // TODO: Resolve `initial_member_devices` into Vec<Event> KeyPackages (from index or network).
@@ -483,10 +484,7 @@ impl MlsService {
             .map_err(|e| MlsError::CryptoError(e.to_string()))?;
 
         // Build group config (relay-scoped)
-        let relay_urls: Vec<RelayUrl> = TRUSTED_RELAYS
-            .iter()
-            .filter_map(|r| RelayUrl::parse(r).ok())
-            .collect();
+        let relay_urls: Vec<RelayUrl> = crate::trusted_relays::trusted_relays().to_vec();
         let description = format!("Vector group: {}", name);
         let group_config = NostrGroupConfigData::new(
             name.to_string(),
@@ -526,7 +524,7 @@ impl MlsService {
             }
 
             let kp_event: Option<Event> = if let Some(id_hex) = ref_event_id_hex {
-                // Fetch exact event by id from TRUSTED_RELAY
+                // Fetch exact event by id from the trusted relay set
                 let id = match EventId::from_hex(&id_hex) {
                     Ok(v) => v,
                     Err(_) => {
@@ -541,7 +539,7 @@ impl MlsService {
                 match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -557,7 +555,7 @@ impl MlsService {
                     }
                 }
             } else {
-                // Fallback: fetch latest KeyPackage by author from TRUSTED_RELAYS
+                // Fallback: fetch latest KeyPackage by author from the trusted relay set
                 let filter = Filter::new()
                     .author(member_pk)
                     .kind(Kind::MlsKeyPackage)
@@ -565,7 +563,7 @@ impl MlsService {
                 match get_nostr_client()
                     .unwrap()
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -674,7 +672,12 @@ impl MlsService {
                 let target = invited_recipients[i];
                 match get_nostr_client()
                     .unwrap()
-                    .gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &target, welcome, [])
+                    .gift_wrap_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &target,
+                        welcome,
+                        [],
+                    )
                     .await
                 {
                     Ok(wrapper_id) => {
@@ -683,7 +686,7 @@ impl MlsService {
                             "[MLS][welcome][published] wrapper_id={}, recipient={}, relays={:?}",
                             wrapper_id.to_hex(),
                             recipient,
-                            TRUSTED_RELAYS
+                            crate::trusted_relays::trusted_relays()
                         );
                     }
                     Err(e) => {
@@ -691,7 +694,9 @@ impl MlsService {
                         let recipient = target.to_bech32().unwrap_or_default();
                         eprintln!(
                             "[MLS][welcome][publish_error] recipient={}, relays={:?}, err={}",
-                            recipient, TRUSTED_RELAYS, e
+                            recipient,
+                            crate::trusted_relays::trusted_relays(),
+                            e
                         );
                     }
                 }
@@ -920,7 +925,7 @@ impl MlsService {
                 let filter = Filter::new().id(id).limit(1);
                 if let Ok(events) = client
                     .fetch_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        crate::trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(10),
                     )
@@ -1044,7 +1049,12 @@ impl MlsService {
                 }
                 for welcome in welcome_rumors {
                     if let Err(e) = client
-                        .gift_wrap_to(TRUSTED_RELAYS.iter().copied(), &member_pk, welcome, [])
+                        .gift_wrap_to(
+                            crate::trusted_relays::trusted_relays().iter().cloned(),
+                            &member_pk,
+                            welcome,
+                            [],
+                        )
                         .await
                     {
                         eprintln!("[MLS] Failed to send welcome: {}", e);
@@ -1146,7 +1156,7 @@ impl MlsService {
             .limit(50);
         client
             .fetch_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                crate::trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
@@ -1211,12 +1221,12 @@ impl MlsService {
             }
         };
 
-        // Publish the evolution event (leave proposal) to the relay, if any.
+        // Publish the leave proposal; peers cannot drop membership without it.
         if let Some(evolution_event) = &evolution_event {
-            match client.send_event(evolution_event).await {
-                Ok(output) => crate::record_send_outcome(evolution_event, &output),
-                Err(e) => eprintln!("[MLS] Failed to publish leave proposal: {}", e),
-            }
+            let send_output = client.send_event(evolution_event).await.map_err(|e| {
+                MlsError::NetworkError(format!("Failed to publish leave proposal: {}", e))
+            })?;
+            crate::record_send_outcome(evolution_event, &send_output);
         }
 
         // Remove the group from local metadata
@@ -1380,8 +1390,9 @@ impl MlsService {
         Ok(())
     }
 
-    /// When a member publishes a voluntary leave proposal, MDK rejects it as non-admin and
-    /// leaves the group tree unchanged. Group admins finalize the leave with remove + commit.
+    /// Legacy fallback: when MDK rejects a leave proposal as Unprocessable (non-admin),
+    /// an MLS admin finalizes with remove + commit. MDK 0.8 SelfRemove uses
+    /// `publish_and_merge_auto_commit` instead.
     pub async fn finalize_voluntary_leave_as_admin(
         &self,
         wire_group_id: &str,
@@ -1469,14 +1480,154 @@ impl MlsService {
             );
         }
 
+        self.announce_member_left(wire_group_id, leaver).await;
+
         Ok(true)
+    }
+
+    /// Publish an MDK auto-committed SelfRemove, merge it, and refresh roster.
+    ///
+    /// MDK 0.8 returns `MessageProcessingResult::Proposal(UpdateGroupResult)` when it stages a
+    /// leave commit locally; the commit must be published and merged or remaining members keep
+    /// the leaver in the tree.
+    pub async fn publish_and_merge_auto_commit(
+        &self,
+        wire_group_id: &str,
+        mls_group_id: &GroupId,
+        evolution_event: &nostr_sdk::Event,
+        leaver: Option<nostr_sdk::PublicKey>,
+    ) -> Result<(), MlsError> {
+        let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
+
+        let mut publish_error = String::new();
+        let mut send_output = None;
+        for attempt in 0..3 {
+            match client.send_event(evolution_event).await {
+                Ok(output) if !output.success.is_empty() => {
+                    send_output = Some(output);
+                    break;
+                }
+                Ok(_) => publish_error = "no relay acknowledged the event".into(),
+                Err(e) => publish_error = e.to_string(),
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
+            }
+        }
+        let send_output = send_output.ok_or_else(|| {
+            MlsError::NetworkError(format!("Failed to publish auto-commit: {}", publish_error))
+        })?;
+        crate::record_send_outcome(evolution_event, &send_output);
+
+        let mut merge_error = String::new();
+        let mut merged = false;
+        for attempt in 0..3 {
+            let result = {
+                let engine = self.engine()?;
+                engine.merge_pending_commit(mls_group_id)
+            };
+            match result {
+                Ok(()) => {
+                    merged = true;
+                    break;
+                }
+                Err(e) => merge_error = e.to_string(),
+            }
+            if attempt < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
+        }
+        if !merged {
+            return Err(MlsError::NostrMlsError(format!(
+                "Failed to merge auto-commit: {}",
+                merge_error
+            )));
+        }
+
+        if let Some(handle) = TAURI_APP.get() {
+            handle
+                .emit(
+                    "mls_group_updated",
+                    serde_json::json!({ "group_id": wire_group_id }),
+                )
+                .ok();
+        }
+
+        if let Err(e) = crate::sync_mls_group_participants(wire_group_id.to_string()).await {
+            eprintln!(
+                "[MLS] Failed to sync participants after auto-commit ({}): {}",
+                wire_group_id, e
+            );
+        }
+
+        if let Some(leaver) = leaver {
+            self.announce_member_left(wire_group_id, leaver).await;
+        }
+
+        Ok(())
+    }
+
+    /// Best-effort #announcements notice after a leave commit lands.
+    async fn announce_member_left(&self, wire_group_id: &str, leaver: nostr_sdk::PublicKey) {
+        use nostr_sdk::prelude::*;
+
+        let member_npub = match leaver.to_bech32() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!(
+                    "[MLS] announce_member_left: bech32 encode failed for {}: {}",
+                    leaver.to_hex(),
+                    e
+                );
+                return;
+            }
+        };
+
+        let client = match get_nostr_client() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pk = match client.signer().await {
+            Ok(signer) => match signer.get_public_key().await {
+                Ok(pk) => pk,
+                Err(e) => {
+                    eprintln!("[MLS] announce_member_left: pubkey: {}", e);
+                    return;
+                }
+            },
+            Err(e) => {
+                eprintln!("[MLS] announce_member_left: signer: {}", e);
+                return;
+            }
+        };
+
+        let content = serde_json::json!({
+            "type": "squad_member_left",
+            "payload": {
+                "parent_id": wire_group_id,
+                "member_npub": member_npub,
+            },
+            "pacto_virtual_bucket": "announcements",
+        })
+        .to_string();
+
+        let rumor = EventBuilder::new(Kind::TextNote, &content)
+            .tag(nostr_tags::custom_tag("pacto_bucket", ["announcements"]))
+            .build(pk);
+
+        if let Err(e) = send_mls_message(wire_group_id, rumor, None).await {
+            eprintln!(
+                "[MLS] Failed to announce member left in {}: {}",
+                wire_group_id, e
+            );
+        }
     }
 
     /// Sync group messages since last cursor position
     ///
     /// This will:
     /// 1. Read cursor from "mls_event_cursors" for the group
-    /// 2. Query TRUSTED_RELAYS for events since cursor
+    /// 2. Query the trusted relay set for events since cursor
     /// 3. Process each event via engine.process_message
     /// 4. Update cursor position
     ///
@@ -1541,11 +1692,11 @@ impl MlsService {
             .custom_tag(SingleLetterTag::lowercase(Alphabet::H), &gid_for_fetch)
             .limit(1000);
 
-        // 3) Fetch from TRUSTED_RELAYS with reasonable timeout
+        // 3) Fetch from the trusted relay set with reasonable timeout
         let mut used_fallback = false;
         let mut events = match client
             .fetch_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                crate::trusted_relays::trusted_relays().to_vec(),
                 filter.clone(),
                 std::time::Duration::from_secs(15),
             )
@@ -1572,7 +1723,7 @@ impl MlsService {
 
             events = match client
                 .fetch_events_from(
-                    TRUSTED_RELAYS.to_vec(),
+                    crate::trusted_relays::trusted_relays().to_vec(),
                     filter,
                     std::time::Duration::from_secs(15),
                 )
@@ -1631,8 +1782,14 @@ impl MlsService {
 
         // Track if we were evicted from this group
         let mut was_evicted = false;
-        // Member leave proposals MDK could not commit (non-admin sender).
+        // Member leave proposals MDK could not commit (non-admin sender) — legacy fallback.
         let mut leaves_to_finalize: Vec<nostr_sdk::PublicKey> = Vec::new();
+        // MDK 0.8 SelfRemove auto-commits: publish + merge after engine scope.
+        let mut auto_commits_to_publish: Vec<(
+            nostr_sdk::Event,
+            GroupId,
+            nostr_sdk::PublicKey,
+        )> = Vec::new();
 
         // Resolve my pubkey before entering engine scope (for mine flag)
         let my_pubkey_hex = if let Ok(signer) = client.signer().await {
@@ -1798,19 +1955,13 @@ impl MlsService {
 
                                 processed = processed.saturating_add(1);
                             }
-                            MessageProcessingResult::Proposal(_proposal) => {
-                                // Proposal received (e.g., leave proposal)
-                                // Emit event to notify UI that group state may have changed
-                                if let Some(handle) = TAURI_APP.get() {
-                                    handle
-                                        .emit(
-                                            "mls_group_updated",
-                                            serde_json::json!({
-                                                "group_id": gid_for_fetch
-                                            }),
-                                        )
-                                        .ok();
-                                }
+                            MessageProcessingResult::Proposal(update) => {
+                                // SelfRemove (and similar) auto-commit: stage publish+merge after engine drop.
+                                auto_commits_to_publish.push((
+                                    update.evolution_event,
+                                    update.mls_group_id,
+                                    ev.pubkey,
+                                ));
 
                                 processed = processed.saturating_add(1);
                             }
@@ -1914,6 +2065,36 @@ impl MlsService {
                     Err(e) => {
                         eprintln!(
                             "[MLS] Failed to finalize voluntary leave for {} in {}: {}",
+                            leaver.to_hex(),
+                            gid_for_fetch,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        if !was_evicted && !auto_commits_to_publish.is_empty() {
+            for (evolution_event, mls_group_id, leaver) in auto_commits_to_publish {
+                match self
+                    .publish_and_merge_auto_commit(
+                        &gid_for_fetch,
+                        &mls_group_id,
+                        &evolution_event,
+                        Some(leaver),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        eprintln!(
+                            "[MLS] Published and merged auto-commit leave for {} in {}",
+                            leaver.to_hex(),
+                            gid_for_fetch
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[MLS] Failed to publish/merge auto-commit leave for {} in {}: {}",
                             leaver.to_hex(),
                             gid_for_fetch,
                             e
@@ -2748,13 +2929,19 @@ pub async fn send_mls_message(
 
                 // Send the wrapper with expiration
                 client
-                    .send_event_to(TRUSTED_RELAYS.iter().copied(), &wrapper_with_expiry)
+                    .send_event_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &wrapper_with_expiry,
+                    )
                     .await
                     .inspect(|output| crate::record_send_outcome(&wrapper_with_expiry, output))
             } else {
                 // Send normal wrapper without expiration
                 client
-                    .send_event_to(TRUSTED_RELAYS.iter().copied(), &mls_wrapper)
+                    .send_event_to(
+                        crate::trusted_relays::trusted_relays().iter().cloned(),
+                        &mls_wrapper,
+                    )
                     .await
                     .inspect(|output| crate::record_send_outcome(&mls_wrapper, output))
             };
@@ -2873,10 +3060,10 @@ mod mls_smoke_tests {
     use std::time::Duration;
 
     #[tokio::test]
-    #[ignore = "requires a running Nostr relay (e.g., ws://localhost:7000)"]
+    #[ignore = "requires a running Nostr relay (e.g., wss://localhost:7001)"]
     async fn run_mls_smoke_test_with_local_relay() {
         let relay =
-            std::env::var("MLS_SMOKE_RELAY").unwrap_or_else(|_| "ws://localhost:7000".to_string());
+            std::env::var("MLS_SMOKE_RELAY").unwrap_or_else(|_| "wss://localhost:7001".to_string());
 
         let signer = Keys::generate();
         let client = Client::builder()
@@ -3397,6 +3584,7 @@ mod mls_restore_tests {
 #[cfg(test)]
 mod mls_leave_group_state_lost_tests {
     use super::*;
+    use nostr_sdk::prelude::*;
 
     /// Covers the store-reset scenario: after a legacy pre-0.8.0 MDK store was
     /// archived, the fresh engine store has no record of a group Pacto's own
@@ -3423,6 +3611,84 @@ mod mls_leave_group_state_lost_tests {
         assert!(
             matches!(err, mdk_core::Error::GroupNotFound),
             "MlsService::leave_group's local-only-cleanup fallback matches on this variant"
+        );
+    }
+
+    /// Pins MDK 0.8 SelfRemove: admin process_message returns Proposal(UpdateGroupResult);
+    /// after merge_pending_commit the leaver is gone. Mirrors publish_and_merge_auto_commit.
+    #[tokio::test]
+    async fn self_remove_proposal_auto_commit_then_merge_drops_leaver() {
+        let alice_keys = Keys::generate();
+        let bob_keys = Keys::generate();
+
+        let alice_mdk = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([11u8; 32])).unwrap(),
+        );
+        let bob_mdk = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([12u8; 32])).unwrap(),
+        );
+
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let bob_kp = bob_mdk
+            .create_key_package_for_event(&bob_keys.public_key(), [relay_url.clone()])
+            .expect("bob keypackage");
+        let bob_kp_event = EventBuilder::new(Kind::MlsKeyPackage, bob_kp.content)
+            .tags(bob_kp.tags_443)
+            .build(bob_keys.public_key())
+            .sign(&bob_keys)
+            .await
+            .expect("sign bob keypackage");
+
+        let group_config = NostrGroupConfigData::new(
+            "leave-test".to_string(),
+            "leave-test group".to_string(),
+            None,
+            None,
+            None,
+            vec![relay_url],
+            vec![alice_keys.public_key()],
+        );
+        let create = alice_mdk
+            .create_group(
+                &alice_keys.public_key(),
+                vec![bob_kp_event],
+                group_config,
+            )
+            .expect("create group");
+        let group_id = create.group.mls_group_id;
+        alice_mdk
+            .merge_pending_commit(&group_id)
+            .expect("alice merge create");
+
+        let welcome = &create.welcome_rumors[0];
+        let preview = bob_mdk
+            .process_welcome(&EventId::all_zeros(), welcome)
+            .expect("bob process welcome");
+        bob_mdk
+            .accept_welcome(&preview)
+            .expect("bob accept welcome");
+
+        let leave = bob_mdk.leave_group(&group_id).expect("bob leave");
+        let processed = alice_mdk
+            .process_message(&leave.evolution_event)
+            .expect("alice process leave");
+
+        let MessageProcessingResult::Proposal(update) = processed else {
+            panic!("expected Proposal(UpdateGroupResult) auto-commit, got {:?}", processed);
+        };
+
+        alice_mdk
+            .merge_pending_commit(&update.mls_group_id)
+            .expect("alice merge leave commit");
+
+        let members = alice_mdk.get_members(&group_id).expect("get_members");
+        assert!(
+            !members.contains(&bob_keys.public_key()),
+            "leaver must be absent after merge"
+        );
+        assert!(
+            members.contains(&alice_keys.public_key()),
+            "admin must remain"
         );
     }
 }

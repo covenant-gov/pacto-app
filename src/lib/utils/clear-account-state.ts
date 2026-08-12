@@ -42,6 +42,7 @@ import {
   relayStatusByUrl,
   typingByChat,
   dmSendError,
+  deletingDmNpubs,
 } from '../../stores/dm';
 import {
   dmThreadScrolledToBottom,
@@ -86,12 +87,27 @@ import { GOVERNANCE_SNAPSHOT_CACHE_PREFIX } from '../dashboard/governance-snapsh
 import { SAFE_STATE_DISK_CACHE_PREFIX } from '../dashboard/safe-state-disk-cache';
 import { resetRelayedWalletTxKeys } from '../wallet/wallet-dm-transfer';
 import { resetInviteAcceptState } from '../invites/accept-invite';
+import { resetPendingAdmitState, PENDING_ADMIT_PREFIX, stopPendingAdmitDrain } from '../parent/pending-admit';
+import {
+  resetPendingSquadAdmissions,
+  PENDING_SQUAD_ADMISSION_PREFIX,
+} from '../../stores/pending-squad-admission';
+import {
+  PENDING_APPROVED_JOINS_PREFIX,
+  resetPendingApprovedJoins,
+} from '../squad/join-request-finalize';
+import { stopJoinInboxHolderSync } from '../squad/join-inbox-holder-sync';
 import { resetCommonsPrefetchSession } from '../commons/commons-prefetch';
 import { resetDashboardPrefetchSession } from '../app/dashboard-parent-prefetch';
 import { INVITE_DECISION_SCOPED_PREFIXES } from '../../stores/invite-decisions';
 import { recentEmojisStore } from '../../stores/emojis';
 import { PACTO_COMMONS_BROADCASTS_PREFIX } from '../commons/local-broadcast-state';
 import { PACTO_COMMONS_JOIN_REQUESTS_PREFIX, resetCommonsJoinRequestRevision } from '../commons/commons-join-request';
+import { resetJoinRequestRespondInFlight } from '../squad/squad-join-mls';
+import { resetWalletPeerInfoRequestInFlight } from '../wallet/wallet-peer-exchange';
+import { resetSquadBotHolderActionInFlight } from '../squad/squad-bot';
+import { resetSquadStateSyncRequestInFlight } from '../squad/squad-state-sync';
+import { resetDeferredSquadRosterKeyParentIds } from '../squad/squad-roster-key-choice';
 import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
@@ -137,6 +153,9 @@ const SCOPED_KEY_PREFIXES = [
   PACTO_SQUAD_JOIN_MUTED_PREFIX,
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
+  PENDING_SQUAD_ADMISSION_PREFIX,
+  PENDING_ADMIT_PREFIX,
+  PENDING_APPROVED_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
@@ -161,10 +180,20 @@ function clearAccountLocalStorage(npub?: string): void {
 export function clearAccountState(npub?: string): void {
   setCurrentNpubForPersistence(null);
   resetInviteAcceptState();
+  stopJoinInboxHolderSync();
+  stopPendingAdmitDrain();
+  resetPendingAdmitState();
+  resetPendingSquadAdmissions();
+  resetPendingApprovedJoins();
   resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
   resetCommonsPrefetchSession();
   resetCommonsJoinRequestRevision();
+  resetJoinRequestRespondInFlight();
+  resetWalletPeerInfoRequestInFlight();
+  resetSquadBotHolderActionInFlight();
+  resetSquadStateSyncRequestInFlight();
+  resetDeferredSquadRosterKeyParentIds();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetMlsGroupMembersStores();
@@ -187,6 +216,7 @@ export function clearAccountState(npub?: string): void {
   pinnedDmNpubs.set(new Set());
   blockedDmNpubs.set(new Set());
   dmChatsByNpub.set({});
+  deletingDmNpubs.set(new Set());
   activeDmId.set(null);
   lastOpenedDmByTab.set({
     friends: null,

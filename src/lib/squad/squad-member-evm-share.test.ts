@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { invoke, sendDmMessage, getActiveSquadEvmSignerAddress, listEvmAccounts, listEvmAccountSquadBindings } =
+const { invoke, sendDmMessage, listEvmAccounts, listEvmAccountSquadBindings } =
   vi.hoisted(() => ({
     invoke: vi.fn(),
     sendDmMessage: vi.fn(),
-    getActiveSquadEvmSignerAddress: vi.fn(),
     listEvmAccounts: vi.fn(),
     listEvmAccountSquadBindings: vi.fn(),
   }));
@@ -18,7 +17,6 @@ vi.mock('../api/nostr', () => ({
 }));
 
 vi.mock('../wallet/evm-accounts', () => ({
-  getActiveSquadEvmSignerAddress: (...args: unknown[]) => getActiveSquadEvmSignerAddress(...args),
   listEvmAccounts: (...args: unknown[]) => listEvmAccounts(...args),
 }));
 
@@ -39,10 +37,8 @@ const PARENT = 'ann-gid';
 describe('resolveSquadMemberEvmShareAddress', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getActiveSquadEvmSignerAddress.mockResolvedValue(DEFAULT);
     listEvmAccountSquadBindings.mockResolvedValue([]);
     listEvmAccounts.mockResolvedValue([]);
-    invoke.mockResolvedValue(null);
   });
 
   it('prefers explicit address', async () => {
@@ -52,7 +48,7 @@ describe('resolveSquadMemberEvmShareAddress', () => {
     expect(listEvmAccountSquadBindings).not.toHaveBeenCalled();
   });
 
-  it('prefers bound squad address over active Default', async () => {
+  it('prefers bound squad address', async () => {
     listEvmAccountSquadBindings.mockResolvedValueOnce([
       { evmAccountId: 'acc-bound', parentId: PARENT },
     ]);
@@ -61,18 +57,16 @@ describe('resolveSquadMemberEvmShareAddress', () => {
       { id: 'acc-default', address: DEFAULT, isActive: true, purpose: 'squad' },
     ]);
     await expect(resolveSquadMemberEvmShareAddress(PARENT)).resolves.toBe(BOUND);
-    expect(getActiveSquadEvmSignerAddress).not.toHaveBeenCalled();
   });
 
-  it('falls back to active when unbound', async () => {
-    await expect(resolveSquadMemberEvmShareAddress(PARENT)).resolves.toBe(DEFAULT);
+  it('returns null when unbound (no active Default invent)', async () => {
+    await expect(resolveSquadMemberEvmShareAddress(PARENT)).resolves.toBeNull();
   });
 });
 
 describe('publishSquadMemberEvmShare', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getActiveSquadEvmSignerAddress.mockResolvedValue(DEFAULT);
     listEvmAccountSquadBindings.mockResolvedValue([
       { evmAccountId: 'acc-bound', parentId: PARENT },
     ]);
@@ -95,6 +89,12 @@ describe('publishSquadMemberEvmShare', () => {
       parentId: PARENT,
       evmAddress: BOUND,
     });
+  });
+
+  it('does not publish when unbound', async () => {
+    listEvmAccountSquadBindings.mockResolvedValueOnce([]);
+    await expect(publishSquadMemberEvmShare(PARENT)).resolves.toBe(false);
+    expect(sendDmMessage).not.toHaveBeenCalled();
   });
 });
 

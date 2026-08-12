@@ -1,7 +1,8 @@
 import { writable } from 'svelte/store';
 import { needsSquadRosterKeyChoice } from '../lib/squad/squad-roster-key-choice';
 import { ANNOUNCEMENTS_CHANNEL_NAME } from '../lib/squad/hub-channel-names';
-import { recordActionNeededEntry, resolveCatchUpEntry } from '../lib/api/catch-up';
+import { recordActionNeededEntry } from '../lib/api/catch-up';
+import { hydrateCatchUpCount, resolveOneCatchUpEntry } from './catch-up';
 import type { Squad } from './squads';
 
 /** Per-user action needed in my-dashboard alerts (roster signer prompt). */
@@ -69,9 +70,11 @@ export async function refreshPersonalAlertForSquad(squad: Squad): Promise<void> 
   if (groupId) {
     const sourceEventId = `roster-key:${id}`;
     if (needed) {
-      recordActionNeededEntry(groupId, sourceEventId).catch(() => {});
+      void recordActionNeededEntry(groupId, sourceEventId)
+        .then(() => hydrateCatchUpCount())
+        .catch(() => {});
     } else {
-      resolveCatchUpEntry(sourceEventId).catch(() => {});
+      resolveOneCatchUpEntry(sourceEventId).catch(() => {});
     }
   }
 }

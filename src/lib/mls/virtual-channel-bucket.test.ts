@@ -350,4 +350,13 @@ describe('announceCardAllowedForTimelineBucket', () => {
     });
     expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
   });
+
+  it('routes squad_member_left to announcements', () => {
+    const raw = JSON.stringify({
+      type: 'squad_member_left',
+      payload: { parent_id: 'p', member_npub: 'npub1bob' },
+      pacto_virtual_bucket: 'announcements',
+    });
+    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
+  });
 });

@@ -250,7 +250,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 32);
+        assert_eq!(last_version, embedded_ceiling());
 
         let events_table: bool = conn
             .query_row(
@@ -295,9 +295,10 @@ mod tests {
                 row.get(0)
             })
             .expect("history should exist");
+        let expected = embedded::migrations::runner().get_migrations().len() as i32;
         assert_eq!(
-            count, 32,
-            "27 pre-refinery migrations baselined plus V28–V32 actually run"
+            count, expected,
+            "27 pre-refinery migrations baselined plus every post-ceiling migration actually run"
         );
 
         // Running migrations again should be idempotent.
@@ -382,7 +383,8 @@ mod tests {
             )
             .expect("history should exist");
         assert_eq!(
-            last_version, 32,
+            last_version,
+            embedded_ceiling(),
             "an existing history table means every migration actually runs, never gets stamped"
         );
     }
@@ -471,7 +473,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("history should exist");
-        assert_eq!(last_version, 32);
+        assert_eq!(last_version, embedded_ceiling());
 
         let has_virtual_bucket: bool = conn
             .query_row(

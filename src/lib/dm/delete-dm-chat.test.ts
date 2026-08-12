@@ -12,6 +12,7 @@ vi.mock('../../stores/toast', () => ({
 import { deleteDmChatBackend } from '../api/nostr';
 import { showToast } from '../../stores/toast';
 import {
+  activeDmId,
   backendDmMessages,
   deletingDmNpubs,
   dmChatsByNpub,
@@ -28,6 +29,7 @@ const mockedShowToast = vi.mocked(showToast);
 describe('startDeleteDmChat', () => {
   beforeEach(() => {
     deletingDmNpubs.set(new Set());
+    activeDmId.set('alice');
     dmChatsByNpub.set({
       alice: {
         npub: 'alice',
@@ -47,7 +49,7 @@ describe('startDeleteDmChat', () => {
     vi.clearAllMocks();
   });
 
-  it('awaits backend success before clearing frontend state and unread', async () => {
+  it('clears frontend state immediately and still invokes backend', async () => {
     let resolveDelete!: () => void;
     mockedDeleteBackend.mockReturnValueOnce(
       new Promise<void>((resolve) => {
@@ -58,22 +60,24 @@ describe('startDeleteDmChat', () => {
     startDeleteDmChat('alice');
 
     expect(get(deletingDmNpubs).has('alice')).toBe(true);
-    expect(get(dmChatsByNpub)['alice']).toBeDefined();
+    expect(get(dmChatsByNpub)['alice']).toBeUndefined();
+    expect(get(backendDmMessages)['alice']).toBeUndefined();
+    expect(get(typingByChat)['alice']).toBeUndefined();
+    expect(get(unreadCountsByChat)['alice']).toBe(0);
+    expect(get(activeDmId)).toBeNull();
     expect(mockedDeleteBackend).toHaveBeenCalledWith('alice');
 
     resolveDelete();
     await vi.waitFor(() => {
-      expect(get(dmChatsByNpub)['alice']).toBeUndefined();
+      expect(get(deletingDmNpubs).has('alice')).toBe(false);
     });
 
-    expect(get(backendDmMessages)['alice']).toBeUndefined();
-    expect(get(typingByChat)['alice']).toBeUndefined();
-    expect(get(unreadCountsByChat)['alice']).toBe(0);
-    expect(get(deletingDmNpubs).has('alice')).toBe(false);
+    expect(get(dmChatsByNpub)['alice']).toBeUndefined();
+    expect(get(activeDmId)).toBeNull();
     expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
-  it('leaves chat state intact and toasts on backend failure', async () => {
+  it('reverts chat state, reselects peer, and toasts on unexpected backend failure', async () => {
     mockedDeleteBackend.mockRejectedValueOnce(new Error('boom'));
 
     startDeleteDmChat('alice');
@@ -85,7 +89,26 @@ describe('startDeleteDmChat', () => {
     expect(get(dmChatsByNpub)['alice']).toBeDefined();
     expect(get(backendDmMessages)['alice']).toHaveLength(1);
     expect(get(unreadCountsByChat)['alice']).toBe(3);
+    expect(get(activeDmId)).toBe('alice');
     expect(mockedShowToast).toHaveBeenCalledWith('Could not delete chat. Please try again.');
+  });
+
+  it('treats Chat not found as success without reverting or reselecting', async () => {
+    mockedDeleteBackend.mockRejectedValueOnce(
+      new Error('Chat not found: npub1alicexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'),
+    );
+
+    startDeleteDmChat('alice');
+
+    await vi.waitFor(() => {
+      expect(get(deletingDmNpubs).has('alice')).toBe(false);
+    });
+
+    expect(get(dmChatsByNpub)['alice']).toBeUndefined();
+    expect(get(backendDmMessages)['alice']).toBeUndefined();
+    expect(get(unreadCountsByChat)['alice']).toBe(0);
+    expect(get(activeDmId)).toBeNull();
+    expect(mockedShowToast).not.toHaveBeenCalled();
   });
 
   it('no-ops when a delete is already in flight for the peer', () => {

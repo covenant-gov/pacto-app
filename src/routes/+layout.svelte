@@ -9,6 +9,7 @@
   import { scheduleCommonsStartupPrefetch } from '../lib/commons/commons-prefetch';
   import { locale } from '../stores/locale';
   import { loadAppConfig } from '../stores/app-config';
+  import { runDevAutologin } from '../lib/dev/autologin';
 
   // Before first paint: clear any leftover auth state. The backend session check on mount
   // is the authoritative source of truth, so never assume the session is still valid.
@@ -29,6 +30,10 @@
     void resolveGateAtLaunch();
     // Confirm the backend session on every layout mount; drop auth state if locked.
     void checkSession();
+    // Debug-only headless login for agent sandboxes; no-op without a configured
+    // identity. Runs after the gate/session calls above so the storage-format
+    // gate still settles first.
+    void runDevAutologin();
     void loadAppConfig();
     scheduleCommonsStartupPrefetch();
     const stored = getStoredTheme();

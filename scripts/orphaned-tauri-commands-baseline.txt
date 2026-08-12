@@ -76,7 +76,6 @@ start_image_precompression
 start_recording
 stop_recording
 switch_account
-test_login_fixture
 toggle_muted
 transcribe
 update_relay_mode

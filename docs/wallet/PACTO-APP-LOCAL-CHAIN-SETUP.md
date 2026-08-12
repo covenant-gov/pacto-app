@@ -10,7 +10,7 @@ Both are first-class and do **not** conflict. They differ only in how the fronte
 |---|---|---|
 | Typically run with | `pnpm tauri:dev` | production build (`pnpm build` / `pnpm tauri:build`), or `pnpm tauri:dev` |
 | `import.meta.env.DEV` | `true` | `false` for a production build; `true` under `tauri:dev` |
-| Nostr transport | real/public relays you add | local relay `ws://localhost:7000` |
+| Nostr transport | real/public relays you add | local relay `wss://localhost:7001` (Caddy TLS) |
 | Chain under test | Sepolia (plus mainnet/Arbitrum as needed) | Local Anvil `http://localhost:8545` (chain `31337`) |
 | Fresh-account enabled chains | **dev:** Sepolia + Local Anvil auto-checked | **prod build:** Arbitrum only → enable Local Anvil manually |
 | Needs the `pacto-dev-env` Docker stack | no | yes |
@@ -21,7 +21,7 @@ Why they don't collide: **Local Anvil is opt-in in every build and never force-e
 
 ## The one dev-only convenience: local relay auto-add
 
-In **Vite dev builds** (`import.meta.env.DEV`), the app adds `ws://localhost:7000` as a custom Nostr relay to a newly unlocked account if it is missing — a convenience for workflow B. It does **not** auto-enable the `local` chain or set its RPC; those are manual, opt-in steps (see §3). Existing user changes are never overwritten; the applied marker lives in `sessionStorage` and resets on restart. Source: `src/lib/dev/local-dev-setup.ts`, wired from account create / import / unlock in `src/stores/auth.ts`. If the relay is not running at unlock, it logs a warning and continues.
+In **Vite dev builds** (`import.meta.env.DEV`), the app adds `wss://localhost:7001` as a custom Nostr relay to a newly unlocked account if it is missing — a convenience for workflow B. It does **not** auto-enable the `local` chain or set its RPC; those are manual, opt-in steps (see §3). Existing user changes are never overwritten; the applied marker lives in `sessionStorage` and resets on restart. Source: `src/lib/dev/local-dev-setup.ts`, wired from account create / import / unlock in `src/stores/auth.ts`. If the relay is not running at unlock, it logs a warning and continues.
 
 ## How `local` behaves across builds
 
@@ -40,15 +40,22 @@ docker compose up -d --build
 
 This starts:
 
-- Nostr relay on `ws://localhost:7000`
+- Nostr relay on `wss://localhost:7001` (Caddy TLS)
 - Anvil EVM testnet on `http://localhost:8545`
+
+The relay is TLS-only: trust Caddy's local development CA once per machine
+before the app will connect —
+
+```bash
+caddy trust
+```
 
 Verify both endpoints respond:
 
 ```bash
 curl -s http://localhost:8545 -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
-curl -s http://localhost:7000 | head -5
+curl -s https://localhost:7001 | head -5
 ```
 
 ## 2. Add the local relay
@@ -58,10 +65,10 @@ In the app:
 1. Open **Settings** from the navbar tab labeled **Settings**.
 2. In the left sidebar, click **Nostr**.
 3. Under **Add custom relay**:
-   - **Relay URL**: `ws://localhost:7000`
+   - **Relay URL**: `wss://localhost:7001`
    - **Mode**: `Read & write`
 4. Click **Add**.
-5. Confirm `ws://localhost:7000` appears under **Connected relays**.
+5. Confirm `wss://localhost:7001` appears under **Connected relays**.
 
 > If the relay is not running when the app starts, messages and profile sync will fail. Start the Docker stack first.
 
@@ -91,92 +98,38 @@ Anvil ships with deterministic, funded accounts. In **Settings → EVM**:
 
 3. The app imports it as an **Advanced account**. You can use it to send local ETH and to sign direct contract interactions; squad treasury flows still use the derived squad signer.
 
-This key derives address `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`, which holds 10,000 ETH on a fresh Anvil node. You will use the same key to deploy the pacto-gov contracts in the next step.
+This key derives address `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`, which holds 10,000 ETH on a fresh Anvil node.
 
-## 5. Deploy pacto-gov contracts locally
+## 5. Deploy contracts and import their addresses automatically
 
-The app reads Pacto contract addresses from `src/lib/evm/pacto-protocol-addresses.json` at compile time. For the local network those addresses do not exist yet, so you must deploy the contracts and supply the addresses.
-
-From the `pacto-gov` repo:
+`pacto-gov` contracts are deployed by the `pacto-dev-env` Docker stack's seeding step, not by hand. From the sibling `pacto-dev-env` checkout:
 
 ```bash
-cd ~/src/covenant-gov/pacto-gov
-forge install
-forge build
-forge script Deploy --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast --chain 31337 -vvvvv
+cd ~/Projects/pacto-dev-env
+make seed
 ```
 
-After broadcast, Foundry writes the deployment artifact to:
+This deploys the contracts to the local Anvil node and writes the deployment artifact to `data/deployments/31337/full-system.json`.
 
-```text
-pacto-gov/deployments/31337/full-system.json
-```
+`make dev-world` (run from either `pacto-app` or `pacto-dev-env`) runs this seed step and launches the app with the artifact's addresses already applied — no manual step is needed for the common case.
 
-Copy the addresses into pacto-app’s `src/lib/evm/pacto-protocol-addresses.json` under a new `"local"` network block. The required fields are:
-
-```json
-{
-  "networks": {
-    "local": {
-      "chainId": 31337,
-      "meta": {
-        "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-      },
-      "pactoGov": {
-        "navePirataFactory": "<full-system.json navePirataFactory>",
-        "navePirataRegistry": "<full-system.json navePirataRegistry>",
-        "masterQuartermaster": "<full-system.json masterQuartermaster>",
-        "masterMutiny": "<full-system.json masterMutinyModule>",
-        "masterTreasuryAuthority": "<full-system.json masterTreasuryAuthority>",
-        "masterSquadAdminImpl": "<full-system.json masterSquadAdminImpl>",
-        "masterSquadAdminExtImpl": "<full-system.json masterSquadAdminExtImpl>",
-        "hats": "<full-system.json hats>",
-        "roleHatClonesFactory": "<full-system.json roleHatClonesFactory>",
-        "roleHatUpgrader": "<full-system.json roleHatUpgrader>"
-      },
-      "safe": {
-        "proxyFactory": "<full-system.json safeProxyFactory>",
-        "singleton": "<full-system.json safeSingleton>",
-        "fallbackHandler": "0x017062a1dE2FE6b99BE3d9d37841FeD19F573804"
-      }
-    }
-  }
-}
-```
-
-For `squadSponsor`, either omit the block if you are not testing sponsorship locally, or deploy `pacto-squad-sponsor` and fill in `factory`, `paymaster`, `entryPoint`, and `navePirataRegistry`.
-
-### Alternative: env overrides for quick experiments
-
-Instead of editing `pacto-protocol-addresses.json`, you can export env vars before running the Tauri app:
+To wire the addresses into a dev build you are launching yourself, `eval` the sibling's export lines before starting the app:
 
 ```bash
-export PACTO_NAVE_PIRATA_FACTORY=0x...
-export PACTO_NAV_MASTER_QUARTERMASTER=0x...
-export PACTO_NAV_MASTER_MUTINY=0x...
-export PACTO_NAV_MASTER_TREASURY_AUTHORITY=0x...
-export PACTO_NAV_MASTER_SQUAD_ADMIN=0x...
-export PACTO_NAV_MASTER_SQUAD_ADMIN_EXT=0x...
-export PACTO_HATS=0x...
-export PACTO_ROLE_HAT_CLONES_FACTORY=0x...
-export PACTO_ROLE_HAT_UPGRADER=0x...
-export PACTO_NAVE_PIRATA_REGISTRY=0x...
-```
-
-The Rust backend resolves these at runtime. They are useful for one-off testing, but the JSON change is required for anyone else using the same build.
-
-## 6. Rebuild and verify
-
-After editing `pacto-protocol-addresses.json`:
-
-```bash
+eval "$(cd ~/Projects/pacto-dev-env && make world-env)"
 cd ~/src/covenant-gov/pacto-app
-pnpm check
+make dev-sandbox   # or: pnpm tauri dev -f local-relay-tls
 ```
 
-Then run the app and test:
+`make world-env` reads the deployment artifact and prints one `export` per contract address, each carrying a `_LOCAL` suffix (e.g. `PACTO_NAVE_PIRATA_FACTORY_LOCAL`). The backend's address resolver checks the suffixed override before falling back to the compiled address book, so these variables apply only to the `local` network and never affect Sepolia or mainnet. Nothing needs to be copied into `pacto-protocol-addresses.json`.
 
-- **Settings → Nostr**: `ws://localhost:7000` is connected.
+If the artifact is missing or its chain id doesn't match the chain you're pointed at, the backend refuses at startup naming what it expected instead of silently resolving to the compiled addresses or a zero address.
+
+## 6. Verify
+
+The exported addresses take effect on the next app launch — no rebuild or manual edit is required. Run the app and test:
+
+- **Settings → Nostr**: `wss://localhost:7001` is connected.
 - **Settings → EVM → RPC endpoints**: **Local Anvil** defaults to `http://localhost:8545`.
 - **Settings → EVM → EVM accounts**: the imported Anvil account shows a balance.
 - Create or open a squad and deploy a Nave Pirata treasury; the factory call should land on the local Anvil node.
@@ -184,9 +137,8 @@ Then run the app and test:
 ## Security warnings
 
 - The private key `0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` is public. **Use it only on a local Anvil node.** Never import it into a mainnet wallet, commit it, or share it.
-- `ws://localhost:7000` and `http://localhost:8545` are unencrypted local endpoints. Do not expose them to a network.
-- Do not commit your local `pacto-protocol-addresses.json` changes unless the project explicitly asks for them; local contract addresses are not portable across Anvil restarts.
-- When Anvil restarts, all state resets. You must redeploy the contracts and update the addresses again.
+- `http://localhost:8545` is an unencrypted local endpoint; `wss://localhost:7001` is TLS via Caddy's local dev CA (trusted once with `caddy trust`). Do not expose either to a network.
+- When Anvil restarts, all state resets. Re-run `make seed` (or `make dev-world`) from `pacto-dev-env` to redeploy the contracts; the next `world-env` eval (or `dev-world` run) picks up the refreshed addresses automatically.
 
 ## Files to review when changing local behavior
 

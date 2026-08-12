@@ -5,7 +5,11 @@
   import { getDmPeerEvmAddress } from '../../lib/api/wallet-peers';
   import { getEvmAddress } from '../../lib/api/auth';
   import { getActiveEvmSignerAddress } from '../../lib/wallet/evm-accounts';
-  import { formatWalletPeerInfoRequest } from '../../lib/wallet/dm-messages';
+  import {
+    isWalletPeerInfoRequestInFlight,
+    sendWalletPeerInfoRequest,
+    walletPeerInfoRequestInFlightRevision,
+  } from '../../lib/wallet/wallet-peer-exchange';
   import { profiles } from '../../stores/profiles';
   import { currentUser } from '../../stores/auth';
   import { getProfileAvatarSrc, getProfileDisplayName } from '../../lib/utils/profile';
@@ -96,7 +100,9 @@
   let watchedErc20Rows: WatchedErc20Row[] = [];
 
   let peerWalletReady = false;
-  let walletInfoRequestSending = false;
+
+  $: void $walletPeerInfoRequestInFlightRevision;
+  $: peerInfoRequestInFlight = npub ? isWalletPeerInfoRequestInFlight(npub) : false;
 
   /** Unlock Send/Request only after pairwise `dm_peer_evm` exchange. */
   async function syncPeerWalletReady() {
@@ -120,7 +126,7 @@
   async function sendWalletInfoRequest() {
     const me = get(currentUser)?.npub;
     const peerNpub = npub;
-    if (!me || !peerNpub || walletInfoRequestSending) return;
+    if (!me || !peerNpub || peerInfoRequestInFlight) return;
     if (peerWalletReady) {
       showToast(tFn('wallet.alreadyHavePayoutAddress'));
       return;
@@ -130,31 +136,28 @@
       showToast(tFn('wallet.useDesktopAppForRequest'));
       return;
     }
-    walletInfoRequestSending = true;
-    try {
-      const myAddr =
-        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '';
-      if (npub !== peerNpub) return;
-      if (!myAddr) {
-        showToast(tFn('wallet.addOrSelectWallet'));
-        return;
-      }
-      const json = formatWalletPeerInfoRequest({
-        request_id: crypto.randomUUID(),
-        requester_npub: me,
-      });
-      const ok = await post(json);
-      if (npub !== peerNpub) return;
-      if (ok) {
-        showToast(tFn('wallet.requestSent'));
-      } else {
-        showToast(tFn('wallet.couldNotSendRequest'));
-      }
-    } catch {
-      showToast(tFn('wallet.couldNotSendRequestShort'));
-    } finally {
-      walletInfoRequestSending = false;
+    const result = await sendWalletPeerInfoRequest({
+      peerNpub,
+      requesterNpub: me,
+      post,
+      getMyEvmAddress: async () =>
+        (await getActiveEvmSignerAddress())?.trim() || (await getEvmAddress())?.trim() || '',
+    });
+    if (npub !== peerNpub) return;
+    if (result.ok) {
+      showToast(tFn('wallet.requestSent'));
+      return;
     }
+    if (result.code === 'in_flight') return;
+    if (result.code === 'no_address') {
+      showToast(tFn('wallet.addOrSelectWallet'));
+      return;
+    }
+    showToast(
+      result.code === 'error'
+        ? tFn('wallet.couldNotSendRequestShort')
+        : tFn('wallet.couldNotSendRequest'),
+    );
   }
 
   function reloadWatchedRows() {
@@ -418,10 +421,10 @@
       <button
         type="button"
         class="wallet-bar-btn wallet-bar-btn-primary wallet-bar-btn-full"
-        disabled={walletInfoRequestSending || !$currentUser}
+        disabled={peerInfoRequestInFlight || !$currentUser}
         on:click={sendWalletInfoRequest}
       >
-        {walletInfoRequestSending ? $t('wallet.sending') : $t('wallet.sendExchangeRequest')}
+        {peerInfoRequestInFlight ? $t('wallet.sending') : $t('wallet.sendExchangeRequest')}
       </button>
     </div>
   {:else}

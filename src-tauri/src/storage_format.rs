@@ -651,7 +651,10 @@ mod tests {
                 if let Some((version_str, _)) = rest.split_once("__") {
                     if let Ok(version) = version_str.parse::<i64>() {
                         file_versions.insert(version);
-                        by_version.entry(version).or_default().push(file_name.clone());
+                        by_version
+                            .entry(version)
+                            .or_default()
+                            .push(file_name.clone());
                     }
                 }
             }

@@ -106,17 +106,16 @@ mod app_config;
 mod nostr_sign;
 mod nostr_tags;
 
-/// # Trusted Relays
-///
-/// The 'Trusted Relays' handle events that MAY have a small amount of public-facing metadata attached (i.e: Expiration tags).
-///
-/// These relays may be used for events like Typing Indicators, Key Exchanges (forward-secrecy setup) and more.
-/// Multiple relays provide redundancy for critical operations.
-pub(crate) static TRUSTED_RELAYS: &[&str] = &[
-    "wss://jskitty.cat/nostr",
-    "wss://asia.vectorapp.io/nostr",
-    "wss://nostr.computingcache.com",
-];
+// Runtime-resolved trusted relay set: production default, debug-only
+// `PACTO_TRUSTED_RELAYS` override.
+mod trusted_relays;
+
+// Machine-readable record of where this sandbox landed (ports, root, endpoints).
+mod sandbox_handle;
+
+// Debug-only headless login used by agents and the e2e harness.
+#[cfg(debug_assertions)]
+mod dev_login;
 
 /// # Blossom Media Servers
 ///
@@ -289,6 +288,15 @@ struct ChatState {
     // fetch_messages(false) call (e.g. a wake trigger racing the normal continuation loop)
     // advancing sync_window_end a second time before the first call's fetch finishes.
     slice_in_flight: bool,
+    // True when a slice attempt was deferred because the relay pool was empty (or the stream
+    // failed with "no relays specified") rather than a genuine per-relay error. Unlike
+    // `abandon_sync_slice`, `defer_sync_slice_for_empty_pool` leaves `sync_mode` and the claimed
+    // window untouched and only sets this so `next_sync_slice` retries the *same* window next
+    // time instead of advancing past it or ending the walk.
+    sync_slice_relay_wait: bool,
+    // `is_last` slice flag captured at deferral time (see `sync_slice_relay_wait`), replayed
+    // unchanged to `record_slice_result` once the deferred slice is retried.
+    sync_slice_deferred_is_last: bool,
 }
 
 impl ChatState {
@@ -305,6 +313,8 @@ impl ChatState {
             last_catch_up_until: 0,
             last_catch_up_monotonic: None,
             slice_in_flight: false,
+            sync_slice_relay_wait: false,
+            sync_slice_deferred_is_last: false,
         }
     }
 
@@ -656,11 +666,27 @@ fn single_relay_fetch_since(last_catch_up_until: u64, now: u64) -> u64 {
 /// Returns `None` when there is nothing to do this call: a slice is already claimed by a
 /// concurrent invocation (`slice_in_flight`), or the account-wide sync is `Finished` and
 /// still within the catch-up grace window.
+///
+/// A slice deferred by `defer_sync_slice_for_empty_pool` (`sync_slice_relay_wait`) is retried
+/// first, before the `slice_in_flight` check: it re-claims the *exact* window that deferral
+/// captured rather than falling through to the normal branch selection, which would advance
+/// past it (ForwardSync/BackwardSync/DeepRescan) or require the catch-up grace window to
+/// re-elapse (CatchUp/Finished).
 fn next_sync_slice(
     state: &mut ChatState,
     now: u64,
     now_monotonic: u64,
 ) -> Option<(u64, u64, bool)> {
+    if state.sync_slice_relay_wait {
+        state.sync_slice_relay_wait = false;
+        state.slice_in_flight = true;
+        return Some((
+            state.sync_window_start,
+            state.sync_window_end,
+            state.sync_slice_deferred_is_last,
+        ));
+    }
+
     if state.slice_in_flight {
         return None;
     }
@@ -1126,6 +1152,7 @@ mod catch_up_tests {
 #[cfg(test)]
 mod fetch_messages_state_machine_tests {
     use super::{
+        abandon_sync_slice, defer_sync_slice_for_empty_pool, is_empty_relay_pool_error,
         next_sync_slice, record_slice_result, ChatState, SyncMode, CATCH_UP_GRACE_SECS,
         CATCH_UP_SLICE_SECS,
     };
@@ -1289,10 +1316,125 @@ mod fetch_messages_state_machine_tests {
         );
         assert_eq!(state.sync_mode, SyncMode::CatchUp);
     }
+
+    #[test]
+    fn deferred_slice_from_an_empty_pool_is_retried_immediately_not_abandoned() {
+        // Regression guard: on a first-boot login, the account-wide sync
+        // claims its initial ForwardSync window, but the relay pool is still empty when the
+        // stream tries to establish (relay setup hasn't completed yet). The old behavior
+        // (`abandon_sync_slice`) reset the walk to `Finished` permanently in practice — nothing
+        // else re-triggers `fetch_messages(false)` on a fresh session, and even a prompt retry
+        // within the 60s catch-up grace window would see `next_sync_slice` return `None` (see
+        // `abandon_sync_slice_leaves_a_prompt_retry_with_nothing_to_do` below).
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::ForwardSync;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000_000;
+        state.sync_window_end = 1_100_000;
+        state.slice_in_flight = true; // claimed by the slice that's about to fail
+
+        let now = 2_000_000_000u64;
+
+        // The stream establishment failed because the pool was empty — defer, don't abandon.
+        defer_sync_slice_for_empty_pool(&mut state, /* is_last */ false);
+
+        assert!(
+            !state.slice_in_flight,
+            "the claim is released so a retry isn't rejected as a concurrent duplicate"
+        );
+        assert_eq!(
+            state.sync_mode,
+            SyncMode::ForwardSync,
+            "deferral must not terminate the walk like abandon_sync_slice does"
+        );
+        assert!(state.is_syncing, "still syncing — just waiting on relays");
+
+        // A relay connects moments later (well within the 60s catch-up grace window) and the
+        // caller retries via fetch_messages(false) -> next_sync_slice.
+        let retry = next_sync_slice(&mut state, now, 0);
+
+        assert_eq!(
+            retry,
+            Some((1_000_000, 1_100_000, false)),
+            "the exact deferred window must be retried, not skipped or gated on the grace window"
+        );
+        assert!(
+            state.slice_in_flight,
+            "the retried slice re-claims the in-flight guard"
+        );
+        assert!(
+            !state.sync_slice_relay_wait,
+            "the deferred-retry flag is consumed once the slice is re-claimed"
+        );
+    }
+
+    #[test]
+    fn abandon_sync_slice_leaves_a_prompt_retry_with_nothing_to_do() {
+        // Contrast case: the OLD (pre-fix) permanent-abandon path. A retry that arrives
+        // promptly (well inside the 60s catch-up grace window) finds nothing to do, because
+        // `abandon_sync_slice` doesn't preserve the claimed window and `next_sync_slice`
+        // requires the grace window to elapse before promoting a `Finished` sync into anything.
+        let mut state = ChatState::new();
+        state.sync_mode = SyncMode::ForwardSync;
+        state.is_syncing = true;
+        state.sync_window_start = 1_000_000;
+        state.sync_window_end = 1_100_000;
+        state.slice_in_flight = true;
+        state.last_catch_up_until = 1_999_999_970; // a very recent watermark from earlier in the session
+
+        let now = 2_000_000_000u64; // 30s later — inside the 60s grace window
+
+        abandon_sync_slice(&mut state);
+        assert_eq!(state.sync_mode, SyncMode::Finished);
+
+        let retry = next_sync_slice(&mut state, now, 0);
+        assert_eq!(
+            retry, None,
+            "abandon_sync_slice leaves a prompt retry with nothing to do inside the grace window"
+        );
+    }
+
+    #[test]
+    fn empty_relay_pool_error_detection_matches_no_relays_variants_only() {
+        assert!(is_empty_relay_pool_error("no relays specified"));
+        assert!(is_empty_relay_pool_error("No Relays"));
+        assert!(!is_empty_relay_pool_error("relay banned"));
+        assert!(!is_empty_relay_pool_error("connection refused"));
+    }
 }
 
 lazy_static! {
     pub(crate) static ref STATE: Mutex<ChatState> = Mutex::new(ChatState::new());
+}
+
+/// Max poll attempts `wait_for_populated_relay_pool` makes after the initial check.
+const RELAY_POOL_WAIT_MAX_ATTEMPTS: u32 = 5;
+/// Starting backoff delay between poll attempts, doubling each time up to a 1.6s cap
+/// (200ms, 400ms, 800ms, 1.6s, 1.6s — worst case ~4.6s total).
+const RELAY_POOL_WAIT_INITIAL_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+const RELAY_POOL_WAIT_MAX_DELAY: std::time::Duration = std::time::Duration::from_millis(1600);
+
+/// Bounded, backed-off wait for the relay pool to gain at least one relay. Login/startup adds
+/// relays to the pool right after the client is built (see `connect`), and this can race a
+/// caller that is about to establish a stream or subscription — which would otherwise fail
+/// immediately with nostr-sdk's "no relays specified"/"no relays".
+/// Polls with exponential backoff instead of busy-looping, and gives up after
+/// `RELAY_POOL_WAIT_MAX_ATTEMPTS` so a genuinely relay-less session still fails fast rather than
+/// hanging. Returns `true` once a relay is present (whether immediately or after waiting).
+async fn wait_for_populated_relay_pool(client: &Client) -> bool {
+    if !client.relays().await.is_empty() {
+        return true;
+    }
+
+    let mut delay = RELAY_POOL_WAIT_INITIAL_DELAY;
+    for _ in 0..RELAY_POOL_WAIT_MAX_ATTEMPTS {
+        tokio::time::sleep(delay).await;
+        if !client.relays().await.is_empty() {
+            return true;
+        }
+        delay = std::cmp::min(delay * 2, RELAY_POOL_WAIT_MAX_DELAY);
+    }
+    false
 }
 
 #[tauri::command]
@@ -1630,16 +1772,35 @@ async fn fetch_messages<R: Runtime>(handle: AppHandle<R>, init: bool, relay_url:
             }
         }
     } else {
-        // Fetch from all relays
+        // Fetch from all relays. A brand-new session's account-wide stream can race relay setup
+        // (login/startup adds relays to the pool right after this fires) — give the pool a
+        // bounded chance to gain a relay before establishing the stream, instead of racing
+        // ahead into a doomed "no relays specified" attempt: the stream must not be established
+        // before the pool is populated.
+        if client.relays().await.is_empty() {
+            wait_for_populated_relay_pool(&client).await;
+        }
         match client
             .stream_events(filter, std::time::Duration::from_secs(60))
             .await
         {
             Ok(stream) => stream,
             Err(e) => {
-                eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
                 let mut state = STATE.lock().await;
-                abandon_sync_slice(&mut state);
+                if is_empty_relay_pool_error(&e.to_string()) {
+                    // Retryable: the pool is (still) empty, even after the bounded wait above.
+                    // Defer instead of abandoning so the exact same window is retried once a
+                    // relay connects (see `connect`'s retry hook), rather than leaving the
+                    // account looking synced while it silently ingests nothing forever.
+                    println!(
+                        "[Sync] Account-wide relay event stream deferred: {} (will retry once a relay connects)",
+                        e
+                    );
+                    defer_sync_slice_for_empty_pool(&mut state, catch_up_is_last_slice);
+                } else {
+                    eprintln!("[Sync] Account-wide relay event stream failed: {}", e);
+                    abandon_sync_slice(&mut state);
+                }
                 return;
             }
         }
@@ -1961,7 +2122,7 @@ async fn start_typing(receiver: String) -> bool {
             );
             match client
                 .gift_wrap_to(
-                    TRUSTED_RELAYS.iter().copied(),
+                    trusted_relays::trusted_relays().iter().cloned(),
                     &pubkey,
                     rumor,
                     [Tag::expiration(expiry_time)],
@@ -2120,6 +2281,9 @@ async fn evict_chat_messages(chat_id: String, keep_count: usize) -> Result<(), S
 /// Delete a DM chat and all its messages from the database and in-memory state.
 /// chat_id is the other party's npub for DMs. Persists a deletion cutoff so relay
 /// replay cannot restore history at or before the delete time.
+///
+/// Returns as soon as SQLite work finishes. In-memory `STATE` cleanup is best-effort
+/// and must not block the invoke when sync holds the lock.
 #[tauri::command]
 async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
     let deleted_at = std::time::SystemTime::now()
@@ -2127,10 +2291,28 @@ async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Re
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     db::upsert_dm_deletion_cutoff(&handle, &chat_id, deleted_at).await?;
-    db::delete_chat(handle.clone(), &chat_id).await?;
-    let mut state = STATE.lock().await;
-    state.chats.retain(|c| c.id != chat_id);
+    match db::delete_chat(handle.clone(), &chat_id).await {
+        Ok(()) => {}
+        Err(e) if e.starts_with("Chat not found:") => {}
+        Err(e) => return Err(e),
+    }
+    drop_dm_chat_from_state(chat_id);
     Ok(())
+}
+
+/// Remove a DM from in-memory chats without awaiting a contended `STATE` lock.
+fn drop_dm_chat_from_state(chat_id: String) {
+    match STATE.try_lock() {
+        Ok(mut state) => {
+            state.chats.retain(|c| c.id != chat_id);
+        }
+        Err(_) => {
+            tokio::spawn(async move {
+                let mut state = STATE.lock().await;
+                state.chats.retain(|c| c.id != chat_id);
+            });
+        }
+    }
 }
 
 /// Build and return the file hash index for deduplication
@@ -2330,6 +2512,32 @@ fn abandon_sync_slice(state: &mut ChatState) {
     state.sync_mode = SyncMode::Finished;
     state.sync_empty_iterations = 0;
     state.sync_total_iterations = 0;
+}
+
+/// Defer the in-flight slice because the relay pool was empty (or the stream failed with "no
+/// relays specified"/"no relays") rather than abandoning it permanently like `abandon_sync_slice`
+/// does. Keeps `sync_mode`, `is_syncing`, and the claimed `sync_window_start`/`sync_window_end`
+/// untouched, and only releases `slice_in_flight` — so `next_sync_slice` retries the *exact*
+/// window on its next call instead of skipping ahead (ForwardSync/BackwardSync/DeepRescan) or
+/// requiring the catch-up grace window to elapse again (CatchUp/Finished). A `fetch_messages`
+/// call arriving after the deferral is not rejected — it performs the retry itself, which is the
+/// point. Exactly one caller can: `next_sync_slice` consumes the flag and re-claims
+/// `slice_in_flight` under the same `STATE` mutex, so the deferred window is handed out once and
+/// two slices still cannot run at the same time.
+/// An empty pool at login/startup must be retryable, not terminal.
+fn defer_sync_slice_for_empty_pool(state: &mut ChatState, is_last: bool) {
+    state.slice_in_flight = false;
+    state.sync_slice_relay_wait = true;
+    state.sync_slice_deferred_is_last = is_last;
+}
+
+/// True for a relay-pool error whose only defect is having no relays configured yet (nostr-sdk's
+/// `NoRelaysSpecified`/"no relays specified" and `NoRelays`/"no relays") — the exact state a
+/// fresh login or a startup race leaves the pool in before relay setup completes. Distinct from
+/// a real per-relay failure (auth, network, protocol), which should still abandon the slice via
+/// `abandon_sync_slice` rather than retry indefinitely.
+fn is_empty_relay_pool_error(message: &str) -> bool {
+    message.to_lowercase().contains("no relays")
 }
 
 #[cfg(test)]
@@ -2640,8 +2848,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
             // (inbound and outbound) so relay replay cannot restore purged history.
             if contact.starts_with("npub1") {
                 if let Some(handle) = TAURI_APP.get() {
-                    if let Ok(Some(deleted_at)) =
-                        db::get_dm_deletion_cutoff(handle, &contact).await
+                    if let Ok(Some(deleted_at)) = db::get_dm_deletion_cutoff(handle, &contact).await
                     {
                         if db::dm_created_at_at_or_before_cutoff(
                             rumor.created_at.as_u64(),
@@ -3416,6 +3623,14 @@ async fn notifs() -> Result<bool, String> {
     let signer = client.signer().await.map_err(|e| e.to_string())?;
     let pubkey = signer.get_public_key().await.map_err(|e| e.to_string())?;
 
+    // A login/startup race can call this before relay setup completes (the same class of bug
+    // as the account-wide sync in `fetch_messages`). Give the pool a
+    // bounded chance to gain a relay before subscribing, so these live subscriptions don't fail
+    // outright on "no relays specified" and never start listening.
+    if client.relays().await.is_empty() {
+        wait_for_populated_relay_pool(&client).await;
+    }
+
     // Live GiftWraps to us (DMs, files, MLS welcomes)
     let giftwrap_filter = Filter::new().pubkey(pubkey).kind(Kind::GiftWrap).limit(0);
 
@@ -4015,14 +4230,37 @@ async fn notifs() -> Result<bool, String> {
                                             }
                                             None
                                         }
-                                        mdk_core::prelude::MessageProcessingResult::Proposal(_proposal) => {
-                                            // Proposal received (e.g., leave proposal)
-                                            // Emit event to notify UI that group state may have changed
-                                            if let Some(handle) = TAURI_APP.get() {
-                                                handle.emit("mls_group_updated", serde_json::json!({
-                                                    "group_id": group_id_for_persist
-                                                })).ok();
-                                            }
+                                        mdk_core::prelude::MessageProcessingResult::Proposal(update) => {
+                                            // MDK 0.8 SelfRemove auto-commit: publish + merge on the same
+                                            // service that staged the commit (do not open a fresh MDK).
+                                            let evolution = update.evolution_event;
+                                            let mls_gid = update.mls_group_id;
+                                            let leaver = ev.pubkey;
+                                            let gid = group_id_for_persist.clone();
+                                            drop(engine);
+                                            rt.block_on(async {
+                                                match svc
+                                                    .publish_and_merge_auto_commit(
+                                                        &gid,
+                                                        &mls_gid,
+                                                        &evolution,
+                                                        Some(leaver),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(()) => eprintln!(
+                                                        "[MLS] Live: published and merged auto-commit leave for {} in {}",
+                                                        leaver.to_hex(),
+                                                        gid
+                                                    ),
+                                                    Err(e) => eprintln!(
+                                                        "[MLS] Live: failed to publish/merge auto-commit leave for {} in {}: {}",
+                                                        leaver.to_hex(),
+                                                        gid,
+                                                        e
+                                                    ),
+                                                }
+                                            });
                                             None
                                         }
                                         mdk_core::prelude::MessageProcessingResult::Unprocessable { mls_group_id: _ } => {
@@ -4127,9 +4365,9 @@ async fn notifs() -> Result<bool, String> {
 
 /// Default relays that come pre-configured
 pub(crate) const DEFAULT_RELAYS: &[&str] = &[
-    "wss://jskitty.cat/nostr",        // TRUSTED_RELAY
-    "wss://asia.vectorapp.io/nostr",  // TRUSTED_RELAY
-    "wss://nostr.computingcache.com", // TRUSTED_RELAY
+    "wss://jskitty.cat/nostr",        // also in the trusted relay set
+    "wss://asia.vectorapp.io/nostr",  // also in the trusted relay set
+    "wss://nostr.computingcache.com", // also in the trusted relay set
     "wss://relay.damus.io",           // Damus (popular)
     "wss://relay.primal.net",         // Primal (popular)
     "wss://nos.lol",                  // nos.lol (popular)
@@ -4454,8 +4692,15 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
 
     let mut relay_infos: Vec<RelayInfo> = Vec::new();
 
-    // First, add all default relays (even if disabled)
-    for default_url in DEFAULT_RELAYS {
+    // First, add all default relays (even if disabled). Under a debug relay
+    // override they are never connected, so listing them would misreport a
+    // sandbox's real exposure.
+    let listed_defaults: &[&str] = if crate::trusted_relays::is_overridden() {
+        &[]
+    } else {
+        DEFAULT_RELAYS
+    };
+    for default_url in listed_defaults {
         let url_str = default_url.to_string();
         let is_disabled = disabled_defaults
             .iter()
@@ -6088,67 +6333,6 @@ async fn debug_hot_reload_sync() -> Result<serde_json::Value, String> {
     }))
 }
 
-/// Debug-only fixture authentication for automated end-to-end tests.
-/// Requires `PACTO_ALLOW_TEST_AUTH=1` and creates a fresh sandboxed account.
-#[cfg(debug_assertions)]
-#[tauri::command]
-async fn test_login_fixture<R: Runtime>(handle: AppHandle<R>) -> Result<serde_json::Value, String> {
-    if std::env::var("PACTO_ALLOW_TEST_AUTH").unwrap_or_default() != "1" {
-        return Err("Test auth disabled".to_string());
-    }
-
-    // Generate a fresh Nostr keypair.
-    let keys = Keys::generate();
-    let npub = keys.public_key.to_bech32().map_err(|e| e.to_string())?;
-
-    // Initialize the Nostr client.
-    let client = Client::builder()
-        .signer(keys.clone())
-        // Gossip is opt-in from nostr-sdk 0.44: absent a gossip database it stays off.
-        .opts(ClientOptions::new())
-        .monitor(Monitor::new(1024))
-        .build();
-    set_nostr_client(client);
-
-    // Build a minimal profile and reset state.
-    let mut profile = Profile::new();
-    profile.id = npub.clone();
-    profile.mine = true;
-    profile.name = "Fixture Account".to_string();
-    {
-        let mut st = STATE.lock().await;
-        st.clear_session();
-        st.profiles.push(profile);
-    }
-
-    // Mark the account pending before touching the filesystem so a concurrent
-    // `list_accounts` scan (e.g. the login screen's boot-time account check)
-    // can't treat the in-flight directory as an orphan and delete it before
-    // the pkey is written.
-    account_manager::set_pending_account(npub.clone())?;
-    account_manager::init_profile_database(&handle, &npub).await?;
-    account_manager::set_current_account(npub.clone())?;
-    account_manager::clear_pending_account()?;
-
-    // Set up key-derivation version 2 so test sessions can use commands that
-    // normally require a PIN-protected account (e.g. sending messages).
-    {
-        let conn = account_manager::get_db_connection(&handle)?;
-        crate::migration::create_new_account_salt(&handle, &conn)?;
-        account_manager::return_db_connection(conn);
-    }
-
-    let state = STATE.lock().await;
-    Ok(serde_json::json!({
-        "success": true,
-        "npub": npub,
-        "profiles": &state.profiles,
-        "chats": &state.chats,
-        "is_syncing": state.is_syncing,
-        "sync_mode": format!("{:?}", state.sync_mode)
-    }))
-}
-
 /// Build client and profile state after keys are resolved (mnemonic- or nsec-derived).
 async fn complete_login_from_keys(keys: Keys) -> Result<LoginKeyPair, String> {
     let client = Client::builder()
@@ -6307,8 +6491,15 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
         .await
         .unwrap_or_default();
 
-    // Add default relays (unless disabled or already present)
-    for default_url in DEFAULT_RELAYS {
+    // Add default relays (unless disabled or already present). A debug relay
+    // override means "route all traffic here", so seeding the public defaults
+    // beside it would put sandbox traffic on production relays.
+    let seeded_defaults: &[&str] = if crate::trusted_relays::is_overridden() {
+        &[]
+    } else {
+        DEFAULT_RELAYS
+    };
+    for default_url in seeded_defaults {
         let is_disabled = disabled_defaults
             .iter()
             .any(|d| d.to_lowercase() == default_url.to_lowercase());
@@ -6376,6 +6567,18 @@ async fn connect<R: Runtime>(handle: AppHandle<R>) -> bool {
 
     // Connect to all relays in the pool
     client.connect().await;
+
+    // If the account-wide sync deferred a slice waiting on relays (see
+    // `defer_sync_slice_for_empty_pool`), this call just populated the pool
+    // it was waiting on — retry now instead of leaving it deferred until some unrelated trigger
+    // (wake/reconnect) happens to fire `fetch_messages(false)` again.
+    if STATE.lock().await.sync_slice_relay_wait {
+        let handle_retry = handle.clone();
+        tokio::spawn(async move {
+            fetch_messages(handle_retry, false, None).await;
+        });
+    }
+
     true
 }
 
@@ -6420,7 +6623,7 @@ async fn encrypt<R: Runtime>(
                     Ok(event) => {
                         // Send only to trusted relays
                         match client
-                            .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+                            .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &event)
                             .await
                         {
                             Ok(output) => {
@@ -6617,11 +6820,10 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
         }
     }
 
-    // Delete the legacy MLS folder in AppData (for backwards compatibility)
-    if let Ok(mls_dir) = handle
-        .path()
-        .resolve("mls", tauri::path::BaseDirectory::AppData)
-    {
+    // Delete the legacy MLS folder in the app data dir (backwards compatibility).
+    // Resolved through the sandbox helper so a sandboxed run never reaches the
+    // real OS app-data directory.
+    if let Ok(mls_dir) = crate::test_sandbox::test_data_dir(&handle).map(|d| d.join("mls")) {
         if mls_dir.exists() {
             let _ = std::fs::remove_dir_all(&mls_dir);
         }
@@ -7135,7 +7337,7 @@ async fn get_or_create_invite_code() -> Result<String, String> {
 
     // Send only to trusted relays
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &event)
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &event)
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&event, &send_output);
@@ -7168,7 +7370,7 @@ async fn accept_invite_code(invite_code: String) -> Result<String, String> {
     // Find the invite event
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7444,7 +7646,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
 
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7473,7 +7675,7 @@ async fn get_invited_users(npub: String) -> Result<u32, String> {
 
     let mut acceptance_events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             acceptance_filter,
             std::time::Duration::from_secs(10),
         )
@@ -7522,7 +7724,7 @@ async fn check_fawkes_badge(npub: String) -> Result<bool, String> {
 
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -7600,35 +7802,42 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
     let force_refresh = mls_store_reset_state::keypackage_refresh_required(&handle)?;
     let cache = cache && !force_refresh;
 
-    // Ensure we're connected to TRUSTED_RELAYS (needed for both cache verification and publishing)
-    for relay in TRUSTED_RELAYS.iter() {
-        if let Ok(relay_url) = nostr_sdk::RelayUrl::parse(relay) {
-            // Check if relay is in the pool
-            if !client.relays().await.contains_key(&relay_url) {
-                println!("[MLS][KeyPackage] Adding TRUSTED_RELAY to pool: {}", relay);
-                client.add_relay(*relay).await.map_err(|e| e.to_string())?;
-            }
+    // Ensure we're connected to the trusted relay set (needed for both cache verification and publishing)
+    for relay_url in trusted_relays::trusted_relays().iter() {
+        // Check if relay is in the pool
+        if !client.relays().await.contains_key(relay_url) {
+            println!(
+                "[MLS][KeyPackage] Adding trusted relay to pool: {}",
+                relay_url
+            );
+            client
+                .add_relay(relay_url.clone())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
 
-            // Connect with timeout if not already connected
-            match client.relay(relay_url.clone()).await {
-                Ok(relay_instance) => {
-                    if !relay_instance.is_connected() {
-                        println!("[MLS][KeyPackage] Connecting to TRUSTED_RELAY: {}", relay);
-                        let _ = client.connect_relay(*relay).await;
-                        // Give it time to connect
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    }
-                }
-                Err(_) => {
-                    // Relay not in pool, add and connect
+        // Connect with timeout if not already connected
+        match client.relay(relay_url.clone()).await {
+            Ok(relay_instance) => {
+                if !relay_instance.is_connected() {
                     println!(
-                        "[MLS][KeyPackage] Adding and connecting to TRUSTED_RELAY: {}",
-                        relay
+                        "[MLS][KeyPackage] Connecting to trusted relay: {}",
+                        relay_url
                     );
-                    let _ = client.add_relay(*relay).await;
-                    let _ = client.connect_relay(*relay).await;
+                    let _ = client.connect_relay(relay_url.clone()).await;
+                    // Give it time to connect
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 }
+            }
+            Err(_) => {
+                // Relay not in pool, add and connect
+                println!(
+                    "[MLS][KeyPackage] Adding and connecting to trusted relay: {}",
+                    relay_url
+                );
+                let _ = client.add_relay(relay_url.clone()).await;
+                let _ = client.connect_relay(relay_url.clone()).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }
     }
@@ -7671,7 +7880,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
 
                 match client
                     .stream_events_from(
-                        TRUSTED_RELAYS.to_vec(),
+                        trusted_relays::trusted_relays().to_vec(),
                         filter,
                         std::time::Duration::from_secs(5),
                     )
@@ -7699,10 +7908,7 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         let mls_service = MlsService::new_persistent_for_keypackage_refresh(&handle)
             .map_err(|e| e.to_string())?;
         let engine = mls_service.engine().map_err(|e| e.to_string())?;
-        let relay_urls: Vec<nostr_sdk::RelayUrl> = TRUSTED_RELAYS
-            .iter()
-            .filter_map(|r| nostr_sdk::RelayUrl::parse(r).ok())
-            .collect();
+        let relay_urls: Vec<nostr_sdk::RelayUrl> = trusted_relays::trusted_relays().to_vec();
         engine
             .create_key_package_for_event(&my_pubkey, relay_urls)
             .map_err(|e| e.to_string())?
@@ -7717,9 +7923,9 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
         .await
         .map_err(|e| e.to_string())?;
 
-    // Publish to TRUSTED_RELAYS
+    // Publish to the trusted relay set
     let send_output = client
-        .send_event_to(TRUSTED_RELAYS.iter().copied(), &kp_event)
+        .send_event_to(trusted_relays::trusted_relays().iter().cloned(), &kp_event)
         .await
         .map_err(|e| e.to_string())?;
     record_send_outcome(&kp_event, &send_output);
@@ -7785,7 +7991,7 @@ async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Res
         let filter = Filter::new().id(event_id).kind(Kind::GiftWrap).limit(1);
         let event = match client
             .stream_events_from(
-                TRUSTED_RELAYS.to_vec(),
+                trusted_relays::trusted_relays().to_vec(),
                 filter,
                 std::time::Duration::from_secs(10),
             )
@@ -8666,8 +8872,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Leave an MLS group
-/// TODO: Implement MLS leave operation
+/// Leave an MLS group (publishes SelfRemove proposal, then local cleanup).
 #[tauri::command]
 async fn leave_mls_group(group_id: String) -> Result<(), String> {
     require_key_derivation_version_2()?;
@@ -8684,7 +8889,7 @@ async fn leave_mls_group(group_id: String) -> Result<(), String> {
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-//// Refresh keypackages for a contact from TRUSTED_RELAY
+//// Refresh keypackages for a contact from the trusted relay set
 //// Fetches Kind::MlsKeyPackage from the contact, updates local index, and returns (device_id, keypackage_ref)
 #[tauri::command]
 async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, String)>, String> {
@@ -8701,10 +8906,10 @@ async fn refresh_keypackages_for_contact(npub: String) -> Result<Vec<(String, St
         // Only need the newest KeyPackage
         .limit(1);
 
-    // Fetch from TRUSTED_RELAYS with short timeout
+    // Fetch from the trusted relay set with a short timeout
     let mut events = client
         .stream_events_from(
-            TRUSTED_RELAYS.to_vec(),
+            trusted_relays::trusted_relays().to_vec(),
             filter,
             std::time::Duration::from_secs(10),
         )
@@ -8806,6 +9011,18 @@ async fn sync_all_profiles() -> Result<(), String> {
 pub fn run() {
     operator_env::load_operator_env();
 
+    if let Err(e) = trusted_relays::init_from_env() {
+        eprintln!("[trusted_relays] {e}");
+        std::process::exit(1);
+    }
+
+    // Runs before any account or database work: a world boot may never resolve
+    // the real OS app-data directory. See docs/build/DEV_SANDBOX.md.
+    if let Err(e) = test_sandbox::enforce_dev_world_root() {
+        eprintln!("[dev-world] {e}");
+        std::process::exit(1);
+    }
+
     #[cfg(target_os = "linux")]
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer
@@ -8837,10 +9054,39 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init());
 
-    // MCP Bridge plugin for AI-assisted debugging (desktop debug builds only)
+    // MCP Bridge plugin for AI-assisted debugging (desktop debug builds only).
+    // Loopback-only, on the branch-derived base port so parallel sandboxes do
+    // not collide. The plugin scans forward from the base, so the bound port is
+    // resolved here and published in the sandbox handle.
+    #[cfg(all(debug_assertions, desktop))]
+    let bound_bridge_port: Option<u16>;
     #[cfg(all(debug_assertions, desktop))]
     {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+        const BRIDGE_BIND_ADDRESS: &str = "127.0.0.1";
+        let base = std::env::var("PACTO_MCP_BRIDGE_PORT")
+            .ok()
+            .and_then(|p| p.trim().parse::<u16>().ok())
+            .unwrap_or(9223);
+        let port =
+            tauri_plugin_mcp_bridge::discovery::find_available_port(BRIDGE_BIND_ADDRESS, base);
+        bound_bridge_port = Some(port);
+        builder = builder.plugin(
+            tauri_plugin_mcp_bridge::Builder::new()
+                .bind_address(BRIDGE_BIND_ADDRESS)
+                .base_port(port)
+                .build(),
+        );
+    }
+    #[cfg(not(all(debug_assertions, desktop)))]
+    let bound_bridge_port: Option<u16> = None;
+
+    // Publish where this sandbox landed before the app is built, so an
+    // orchestrator finds the handle even if window creation stalls. No-op
+    // without a sandbox root.
+    match sandbox_handle::write_handle(bound_bridge_port) {
+        Ok(Some(path)) => println!("[sandbox] handle written: {}", path.display()),
+        Ok(None) => {}
+        Err(e) => eprintln!("[sandbox] failed to write handle: {e}"),
     }
 
     // Desktop-only plugins
@@ -8939,6 +9185,10 @@ pub fn run() {
                 profile_sync::start_profile_sync_processor().await;
             });
 
+            // Debug-only background connectivity probe for the resolved relay set;
+            // no-op unless PACTO_TRUSTED_RELAYS was set.
+            trusted_relays::probe_endpoints_in_background();
+
             // Setup deep link listener for macOS/iOS/Android
             // On these platforms, deep links are received as events rather than CLI args
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
@@ -8975,6 +9225,7 @@ pub fn run() {
             db::list_squad_tracked_tokens,
             db::upsert_squad_tracked_token,
             db::remove_squad_tracked_token,
+            db::list_squad_sponsored_fee_usage,
             db::upsert_squad_infra,
             dashboard_poll::list_dashboard_polls,
             dashboard_poll::send_dashboard_poll_create,
@@ -8995,6 +9246,7 @@ pub fn run() {
             squad_bot::squad_bot_remove_holder,
             squad_bot::squad_bot_rotate_key,
             squad_bot::squad_bot_sync_join_dms,
+            squad_bot::squad_bot_send_join_response,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,
@@ -9064,7 +9316,7 @@ pub fn run() {
             #[cfg(debug_assertions)]
             debug_hot_reload_sync,
             #[cfg(debug_assertions)]
-            test_login_fixture,
+            dev_login::dev_login,
             notifs,
             get_relays,
             get_media_servers,

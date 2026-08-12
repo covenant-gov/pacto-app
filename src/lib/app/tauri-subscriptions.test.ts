@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => {
     backendDmMessages: createMockStore<Record<string, DmMessage[]>>({}),
     backendGroupMessages: createMockStore<Record<string, DmMessage[]>>({}),
     dmChatsByNpub: createMockStore<Record<string, unknown>>({}),
+    deletingDmNpubs: createMockStore<Set<string>>(new Set()),
     dmSyncStatus: createMockStore<string>('idle'),
     typingByChat: createMockStore<Record<string, string[]>>({}),
     pendingMlsWelcomes: createMockStore<unknown[]>([]),
@@ -65,6 +66,7 @@ const mocks = vi.hoisted(() => {
     installSyncHealthTicker: vi.fn(() => vi.fn()),
     applyMlsStoreResetState: vi.fn(),
     refreshMlsStoreResetState: vi.fn(),
+    handleBotJoinResponseDm: vi.fn(),
   };
 
   const migrationCompleteToast = createMockStore<{ shown: boolean; message: string } | null>(null);
@@ -126,6 +128,20 @@ vi.mock('../invites/accept-invite', () => ({
     mocks.mockFunctions.notifyPendingInviteWelcome(...args),
 }));
 
+vi.mock('../squad/join-request-finalize', () => ({
+  handleBotJoinResponseDm: (...args: unknown[]) =>
+    mocks.mockFunctions.handleBotJoinResponseDm(...args),
+  tryCompletePendingApprovedJoins: vi.fn(),
+}));
+
+vi.mock('../squad/squad-outbound-invite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../squad/squad-outbound-invite')>();
+  return {
+    ...actual,
+    handleInviteeConsentForAdmit: vi.fn(),
+  };
+});
+
 vi.mock('../squad/squad-catalog', () => ({
   updateChannelNameIfPlaceholder: (...args: unknown[]) =>
     mocks.mockFunctions.updateChannelNameIfPlaceholder(...args),
@@ -147,6 +163,7 @@ vi.mock('../../stores/app', () => ({
   backendDmMessages: mocks.mockStores.backendDmMessages,
   backendGroupMessages: mocks.mockStores.backendGroupMessages,
   dmChatsByNpub: mocks.mockStores.dmChatsByNpub,
+  deletingDmNpubs: mocks.mockStores.deletingDmNpubs,
   dmSyncStatus: mocks.mockStores.dmSyncStatus,
   typingByChat: mocks.mockStores.typingByChat,
   pendingMlsWelcomes: mocks.mockStores.pendingMlsWelcomes,
@@ -219,6 +236,7 @@ describe('subscribeAppEvents', () => {
     mocks.mockStores.backendDmMessages.set({});
     mocks.mockStores.backendGroupMessages.set({});
     mocks.mockStores.dmChatsByNpub.set({});
+    mocks.mockStores.deletingDmNpubs.set(new Set());
     mocks.mockStores.dmSyncStatus.set('idle');
     mocks.mockStores.typingByChat.set({});
     mocks.mockStores.pendingMlsWelcomes.set([]);
@@ -351,6 +369,18 @@ describe('subscribeAppEvents', () => {
       expect(chatMessages![0].id).toBe('m1');
     });
 
+    it('passes the authenticated DM sender to join response handling', () => {
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', {
+        chat_id: 'npub1joininbox',
+        message: dmMessage({ content: 'response' }),
+      });
+      expect(mocks.mockFunctions.handleBotJoinResponseDm).toHaveBeenCalledWith(
+        'response',
+        'npub1joininbox',
+      );
+    });
+
     it('updates dmChatsByNpub metadata', () => {
       unsubscribe = subscribeAppEvents(handlers);
       emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ at: 5000, mine: false }) });
@@ -358,6 +388,14 @@ describe('subscribeAppEvents', () => {
       expect(chat).toBeDefined();
       expect(chat.hasFromThem).toBe(true);
       expect(chat.lastAt).toBe(5000);
+    });
+
+    it('skips DM store upserts while the peer is being deleted', () => {
+      mocks.mockStores.deletingDmNpubs.set(new Set(['npub1chat']));
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_new', { chat_id: 'npub1chat', message: dmMessage({ id: 'm-skip' }) });
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
+      expect(mocks.mockStores.dmChatsByNpub.get()).toEqual({});
     });
 
     it('clears typing indicator for the chat', () => {
@@ -395,6 +433,17 @@ describe('subscribeAppEvents', () => {
       const list = mocks.mockStores.backendDmMessages.get()['npub1chat']!;
       expect(list).toHaveLength(1);
       expect(list[0].id).toBe('new1');
+    });
+
+    it('skips DM updates while the peer is being deleted', () => {
+      mocks.mockStores.deletingDmNpubs.set(new Set(['npub1chat']));
+      unsubscribe = subscribeAppEvents(handlers);
+      emit('message_update', {
+        chat_id: 'npub1chat',
+        old_id: 'old1',
+        message: dmMessage({ id: 'new1', at: 2000 }),
+      });
+      expect(mocks.mockStores.backendDmMessages.get()).toEqual({});
     });
 
     it('syncs MLS groups eagerly for an incoming squad invite DM update', () => {

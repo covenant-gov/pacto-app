@@ -350,7 +350,8 @@
     prevMembersGroupIdForPanel = null;
   }
 
-  $: if ($showMembersPanel && panelMembersGroupId) {
+  // Refresh roster on MLS membership bumps even when the Members panel is closed (Crew / invite).
+  $: if (panelMembersGroupId) {
     const gid = panelMembersGroupId;
     const version = $membershipVersionByGroupId[gid] ?? 0;
     const prev = prevMembersVersionByGroup[gid] ?? -1;

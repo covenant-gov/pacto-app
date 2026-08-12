@@ -34,9 +34,11 @@ import {
   activeDmTab,
   dmSendError,
   dmThreadAnnouncementsByNpub,
+  deletingDmNpubs,
   type DmChatState,
   type DmMessage,
 } from '../../stores/dm';
+import { deferredSquadRosterKeyParentIds } from '../squad/squad-roster-key-choice';
 import {
   acceptedSquadInviteIds,
   declinedSquadInviteIds,
@@ -166,6 +168,8 @@ describe('clearAccountState', () => {
     composingNewChat.set(true);
     dmSendError.set('boom');
     dmThreadAnnouncementsByNpub.set({ npub1: [] });
+    deletingDmNpubs.set(new Set(['npub1']));
+    deferredSquadRosterKeyParentIds.set(['squad-1']);
 
     clearAccountState('npub1abcdef');
 
@@ -177,6 +181,8 @@ describe('clearAccountState', () => {
     expect(get(composingNewChat)).toBe(false);
     expect(get(dmSendError)).toBeNull();
     expect(get(dmThreadAnnouncementsByNpub)).toEqual({});
+    expect(get(deletingDmNpubs).size).toBe(0);
+    expect(get(deferredSquadRosterKeyParentIds)).toEqual([]);
   });
 
   it('resets invite decision stores to defaults', () => {

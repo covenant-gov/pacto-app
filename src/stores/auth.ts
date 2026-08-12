@@ -189,6 +189,38 @@ export async function checkAuthStatus(): Promise<'needs-auth' | 'needs-pin' | 'a
   }
 }
 
+export interface AdoptDevSessionParams {
+  npub: string;
+  pubkey: string;
+}
+
+/**
+ * Post-login tail shared by `importAccount` and the debug-only dev-session
+ * adoption path below: activates the default tab, loads npub-scoped
+ * persistence, marks the session authenticated, and kicks off local-dev
+ * defaults plus the post-login network sync.
+ */
+async function completePostLoginSession(npub: string, pubkey: string): Promise<void> {
+  activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
+  loadAccountState(npub);
+  closeWalletSidebar();
+  isAuthenticated.set(true);
+  currentUser.set({ npub, pubkey });
+  freezeGate();
+  await maybeApplyLocalDevDefaults(npub);
+  runPostLoginNetworkSync(npub);
+}
+
+/**
+ * Hydrate frontend session state for a backend-authenticated dev identity
+ * (`devLogin('full')`, see `lib/dev/autologin`). The backend already holds
+ * real PIN-encrypted credentials and an open connection, so this only
+ * mirrors the frontend half of a normal login.
+ */
+export async function adoptDevSession({ npub, pubkey }: AdoptDevSessionParams): Promise<void> {
+  await completePostLoginSession(npub, pubkey);
+}
+
 /**
  * Create a new account with generated keys
  * @param pin - 6-digit PIN for encryption
@@ -275,21 +307,9 @@ export async function importAccount(recoveryPhrase: string, pin: string): Promis
 
     // Get current account npub from backend
     const npub = await getCurrentAccount();
-
-    activeTopNavTab.set(DEFAULT_TOP_NAV_TAB);
-    loadAccountState(npub);
-    closeWalletSidebar();
-
-    isAuthenticated.set(true);
-    currentUser.set({
-      npub: npub,
-      pubkey: keys.public
-    });
-    freezeGate();
-    await maybeApplyLocalDevDefaults(npub);
+    await completePostLoginSession(npub, keys.public);
     await markBackupVerified(true);
     authLoading.set(false);
-    runPostLoginNetworkSync(npub);
 
     dmLog('importAccount: done');
   } catch (error: unknown) {

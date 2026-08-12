@@ -1,7 +1,7 @@
 /**
  * Minimal end-to-end spec for the real-Tauri harness.
  *
- * Uses MCP tools to authenticate via the debug-only test fixture, send a text
+ * Uses MCP tools to authenticate via the debug-only backend-depth dev login, send a text
  * message, and assert the message persists in the backend database. A screenshot
  * is captured for visual verification.
  */
@@ -41,7 +41,7 @@ function unwrapExecuteJs(result, label) {
  * Invoke a Tauri command via webview JS.
  *
  * `ipc_execute_command` cannot call app commands (only `plugin:mcp-bridge|*`).
- * A single async execute_js is capped at ~5s by the bridge; fixture login can
+ * A single async execute_js is capped at ~5s by the bridge; dev login can
  * exceed that on CI, so we start the invoke once and poll a window slot.
  */
 async function invokeTauri(callTool, command, args = {}) {
@@ -90,8 +90,9 @@ async function invokeTauri(callTool, command, args = {}) {
 }
 
 export async function run({ callTool, saveArtifact }) {
-  // 1. Authenticate with the debug-only test fixture.
-  const auth = await invokeTauri(callTool, 'test_login_fixture');
+  // 1. Authenticate at backend depth (no PIN-encrypted key, no frontend session — see
+  // docs/TAURI_MCP_INTEGRATION.md for the full-depth path a UI-driving spec would use instead).
+  const auth = await invokeTauri(callTool, 'dev_login', { depth: 'backend' });
   const npub = auth?.npub;
   assert.ok(
     npub && typeof npub === 'string' && npub.startsWith('npub1'),

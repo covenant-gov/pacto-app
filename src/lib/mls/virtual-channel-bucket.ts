@@ -135,7 +135,8 @@ export function deriveVirtualBucketFromMessageContent(content: string | undefine
     rec['type'] === 'squad_rpc_updated' ||
     rec['type'] === 'squad_outbound_invite' ||
     rec['type'] === 'squad_admit_needed' ||
-    rec['type'] === 'squad_channels_catalog'
+    rec['type'] === 'squad_channels_catalog' ||
+    rec['type'] === 'squad_member_left'
   ) {
     return 'announcements';
   }
