@@ -1047,7 +1047,10 @@ pub async fn squad_bot_send_join_response<R: Runtime>(
     let client =
         crate::get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
     let send_output = client
-        .send_event_to(crate::TRUSTED_RELAYS.iter().copied(), &gift_wrap)
+        .send_event_to(
+            crate::trusted_relays::trusted_relays().iter().cloned(),
+            &gift_wrap,
+        )
         .await
         .map_err(|e| e.to_string())?;
     crate::record_send_outcome(&gift_wrap, &send_output);
