@@ -11,6 +11,7 @@ import {
   portsForIndex,
   resolvePortSet,
   readSandboxHandle,
+  browserSafeIndex,
 } from '../../../scripts/dev-ports.mjs';
 
 const SCRIPT_PATH = fileURLToPath(new URL('../../../scripts/dev-ports.mjs', import.meta.url));
@@ -117,6 +118,17 @@ describe('dev-ports', () => {
     it('spaces devServer/hmr by 10 and mcpBridge by 100 per index', () => {
       expect(portsForIndex(3)).toEqual({ devServer: 1450, hmr: 1451, mcpBridge: 9523 });
     });
+
+    it('index 30 lands on the browser unsafe-port blocklist (1720/1721)', () => {
+      // Chromium refuses these with ERR_UNSAFE_PORT and WebKit keeps the same
+      // list, so a dev server bound there serves curl fine while the webview
+      // renders a blank page.
+      expect(portsForIndex(30)).toEqual({ devServer: 1720, hmr: 1721, mcpBridge: 12223 });
+      expect(browserSafeIndex(30)).toBe(false);
+      expect(browserSafeIndex(29)).toBe(true);
+      expect(browserSafeIndex(31)).toBe(true);
+      expect(browserSafeIndex(0)).toBe(true);
+    });
   });
 
   describe('resolvePortSet', () => {
@@ -142,6 +154,25 @@ describe('dev-ports', () => {
       expect(result.index).toBe(12);
       expect(result.advanced).toBe(false);
       expect(result.ports).toEqual(portsForIndex(12));
+    });
+
+    it('advances a branch deriving the browser-unsafe index 30, probed or not', async () => {
+      // Find a real branch name that hashes onto the poisoned index.
+      let n = 0;
+      while (deriveIndex(`unsafe-probe-${n}`) !== 30) n++;
+      const branch = `unsafe-probe-${n}`;
+
+      const unprobed = await resolvePortSet({ branch, probe: false });
+      expect(unprobed.derivedIndex).toBe(30);
+      expect(unprobed.index).toBe(31);
+      expect(unprobed.advanced).toBe(true);
+
+      const claimDir = makeTempDir();
+      const probed = await resolvePortSet({ branch, probe: true, claimDir });
+      expect(probed.index).not.toBe(30);
+      expect(browserSafeIndex(probed.index)).toBe(true);
+      // The unusable index must not be claimed on the way past.
+      expect(fs.existsSync(path.join(claimDir, 'index-30.claim.json'))).toBe(false);
     });
 
     it('advances past an occupied derived index and reports advanced: true', async () => {

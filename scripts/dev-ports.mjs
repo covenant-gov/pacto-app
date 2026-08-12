@@ -261,6 +261,33 @@ function releaseClaim(claimDir, index) {
   }
 }
 
+// Ports browser engines refuse outright: Chromium fails them with
+// ERR_UNSAFE_PORT and WebKit keeps the same legacy-protocol blocklist, so a
+// dev server bound to one serves curl fine while the webview silently renders
+// a blank page. An index whose ports land here is unusable regardless of what
+// the OS says about occupancy. With this file's strides the only in-range hit
+// is index 30 (devServer 1720, hmr 1721 -- the H.323 cluster), but the whole
+// list is checked so a stride change cannot quietly reintroduce the bug.
+const UNSAFE_BROWSER_PORTS = new Set([
+  1719, 1720, 1721, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669,
+  6697, 10080,
+]);
+
+/**
+ * True when every port this index derives is one a browser engine will
+ * actually fetch from.
+ * @param {number} index
+ * @returns {boolean}
+ */
+export function browserSafeIndex(index) {
+  const ports = portsForIndex(index);
+  return (
+    !UNSAFE_BROWSER_PORTS.has(ports.devServer) &&
+    !UNSAFE_BROWSER_PORTS.has(ports.hmr) &&
+    !UNSAFE_BROWSER_PORTS.has(ports.mcpBridge)
+  );
+}
+
 /**
  * Resolve the port set for a branch. Derives the index, then (unless
  * `probe: false`) atomically claims it and confirms with real listeners
@@ -282,16 +309,24 @@ export async function resolvePortSet({
   const derivedIndex = deriveIndex(resolvedBranch);
 
   if (!probe || resolvedBranch === MAIN_BRANCH) {
+    let index = derivedIndex;
+    for (let attempts = 0; !browserSafeIndex(index) && attempts <= maxIndex; attempts++) {
+      index = index >= maxIndex ? 1 : index + 1;
+    }
     return {
-      index: derivedIndex,
+      index,
       derivedIndex,
-      advanced: false,
-      ports: portsForIndex(derivedIndex),
+      advanced: index !== derivedIndex,
+      ports: portsForIndex(index),
     };
   }
 
   let index = derivedIndex > maxIndex ? 1 + ((derivedIndex - 1) % maxIndex) : derivedIndex;
   for (let attempts = 0; attempts <= maxIndex; attempts++) {
+    if (!browserSafeIndex(index)) {
+      index = index >= maxIndex ? 1 : index + 1;
+      continue;
+    }
     const ports = portsForIndex(index);
     if (claimIndex(claimDir, index, resolvedBranch, claimGraceMs)) {
       if (await allPortsFree(ports)) {
