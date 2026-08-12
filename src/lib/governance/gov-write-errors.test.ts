@@ -28,7 +28,7 @@ describe('parseWalletErrorCode', () => {
 });
 
 describe('govWriteErrorMessage', () => {
-  it('maps known sponsor/paymaster codes to i18n keys', () => {
+  it('maps known sponsor/paymaster/ACL codes to i18n keys', () => {
     expect(govWriteErrorMessage('{"code":"SPONSOR_POOL_LOW","message":"x"}', 'Vote')).toBe(
       'governance.error.sponsorPoolLow',
     );
@@ -37,6 +37,12 @@ describe('govWriteErrorMessage', () => {
     );
     expect(govWriteErrorMessage('{"code":"PAYMASTER_REJECTED","message":"x"}', 'Vote')).toBe(
       'governance.error.paymasterRejected',
+    );
+    expect(govWriteErrorMessage('{"code":"ACL_UNBOUND","message":"x"}', 'Vote')).toBe(
+      'governance.error.aclUnbound',
+    );
+    expect(govWriteErrorMessage('{"code":"ACL_DENIED","message":"x"}', 'Vote')).toBe(
+      'governance.error.aclDenied',
     );
   });
 

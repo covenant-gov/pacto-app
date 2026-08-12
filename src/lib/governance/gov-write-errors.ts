@@ -22,6 +22,8 @@ const CODE_TO_I18N: Record<string, string> = {
   PAYMASTER_VERIFICATION_GAS: 'governance.error.paymasterOperator',
   PAYMASTER_GAS_EFFICIENCY: 'governance.error.paymasterOperator',
   PAYMASTER_DATA: 'governance.error.paymasterOperator',
+  ACL_UNBOUND: 'governance.error.aclUnbound',
+  ACL_DENIED: 'governance.error.aclDenied',
 };
 
 /** Extract wallet_err_json `code` when present. */
@@ -51,7 +53,7 @@ export function parseWalletErrorCode(e: unknown): string | null {
   return null;
 }
 
-/** Member-safe gov-write error; maps SPONSOR_/PAYMASTER_ codes to i18n. */
+/** Member-safe gov-write error; maps SPONSOR_/PAYMASTER_/ACL_ codes to i18n. */
 export function govWriteErrorMessage(e: unknown, fallbackLabel: string): string {
   const code = parseWalletErrorCode(e);
   if (code) {

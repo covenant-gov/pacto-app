@@ -95,8 +95,8 @@
       return {
         enabled: false,
         reason: qmStatus?.mutinyActive
-          ? tFn('governance.gate.cannotBootstrapMutiny')
-          : tFn('governance.gate.bootstrapOnlyEmptyRoster'),
+          ? 'governance.gate.cannotBootstrapMutiny'
+          : 'governance.gate.bootstrapOnlyEmptyRoster',
       };
     }
     return captainGate;
@@ -393,7 +393,7 @@
         <GovCtaButton
           label={tFn('governance.action.resignCaptain')}
           gate={mutinyActive
-            ? { enabled: false, reason: tFn('governance.gate.cannotResignWhileMutiny') }
+            ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
             : captainGate}
           {acting}
           onClick={() =>

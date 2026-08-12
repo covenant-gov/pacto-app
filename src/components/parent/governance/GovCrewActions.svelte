@@ -219,7 +219,7 @@
             <GovCtaButton
               label={mutinyHasVotedFlag ? tFn('governance.action.alreadyVoted') : tFn('governance.action.castMutinyVote')}
               variant="primary"
-              gate={mutinyHasVotedFlag ? { enabled: false, reason: tFn('governance.gate.alreadyVoted') } : crewGate}
+              gate={mutinyHasVotedFlag ? { enabled: false, reason: 'governance.gate.alreadyVoted' } : crewGate}
               {acting}
               onClick={() =>
                 void run(tFn('governance.action.mutinyVote'), () =>

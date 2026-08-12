@@ -6,6 +6,7 @@ import {
   gateRequiresCaptainOrCrew,
   gateRequiresCrew,
   gateSquadAdminWrite,
+  localizeAclReason,
   resolveGovernancePrivilege,
 } from './governance-privilege';
 import type { SquadCapabilitiesDto } from './api';
@@ -121,10 +122,29 @@ describe('governance gates', () => {
       },
     };
     expect(gateRequiresCrew(denied)).toEqual({ enabled: false, reason: 'governance.gate.accessDenied' });
-    expect(gateRequiresCaptain(denied)).toEqual({ enabled: false, reason: 'Nope' });
+    expect(gateRequiresCaptain(denied)).toEqual({
+      enabled: false,
+      reason: 'governance.gate.accessDenied',
+    });
     expect(gateRequiresCaptainOrCrew(denied).enabled).toBe(true);
-    expect(gatePermissionlessSigner(denied)).toEqual({ enabled: false, reason: 'No exec' });
+    expect(gatePermissionlessSigner(denied)).toEqual({
+      enabled: false,
+      reason: 'governance.gate.accessDenied',
+    });
     expect(gateSquadAdminWrite(denied).enabled).toBe(true);
+  });
+
+  it('maps known ACL strings and fails closed on unknown', () => {
+    expect(localizeAclReason('Link a squad EVM address to act.')).toBe(
+      'governance.gate.linkSquadEvmAddressToAct',
+    );
+    expect(
+      localizeAclReason(
+        'No squad EVM address linked for this parent; link a roster key before acting.',
+      ),
+    ).toBe('governance.gate.linkSquadEvmAddressToAct');
+    expect(localizeAclReason('governance.gate.requiresCrew')).toBe('governance.gate.requiresCrew');
+    expect(localizeAclReason('Nope')).toBe('governance.gate.accessDenied');
   });
 
   it('falls back to hat checks without capability flags', () => {

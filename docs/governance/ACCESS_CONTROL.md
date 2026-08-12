@@ -55,6 +55,8 @@ Tauri IPC is not a security boundary if only the UI gates.
 | Tracked tokens | `db::upsert_squad_tracked_token` / `remove_squad_tracked_token` |
 | UI snapshot | `get_squad_capabilities` → `governance-privilege.ts` / `PactoGovGovernanceShell` |
 
+Member-facing disable/fail copy is i18n’d (`governance.gate.*`, `govWriteErrorMessage` for `ACL_*` / sponsor codes). This doc stays the operator source for hat/ACL mechanics — not a UI copy catalog.
+
 Hat IDs and Safe / Squad Admin addresses come from the Nave Pirata registry deployment for the parent’s `pacto_gov` infra row (`chain` + `canonical_ref` top hat).
 
 ## Capabilities

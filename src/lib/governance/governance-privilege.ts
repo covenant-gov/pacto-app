@@ -101,10 +101,13 @@ export type CtaGate =
   | { enabled: true; reason: '' }
   | { enabled: false; reason: string };
 
-/** Map backend ACL reason strings to i18n keys. Unknown reasons are passed through. */
+/** Map backend ACL reason strings to i18n keys. Unknown reasons fail closed to accessDenied. */
 export function localizeAclReason(reason: string): string {
-  switch (reason) {
+  const trimmed = reason.trim();
+  if (trimmed.startsWith('governance.gate.')) return trimmed;
+  switch (trimmed) {
     case 'Link a squad EVM address to act.':
+    case 'No squad EVM address linked for this parent; link a roster key before acting.':
       return 'governance.gate.linkSquadEvmAddressToAct';
     case 'Link a squad EVM address to sign.':
       return 'governance.gate.linkSquadEvmAddressToSign';
@@ -120,7 +123,7 @@ export function localizeAclReason(reason: string): string {
     case 'Access denied.':
       return 'governance.gate.accessDenied';
     default:
-      return reason;
+      return 'governance.gate.accessDenied';
   }
 }
 

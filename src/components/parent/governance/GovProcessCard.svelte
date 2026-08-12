@@ -134,15 +134,20 @@
   {/if}
 
   {#if showExecute && execUi.showExecute && onExecute}
-    <button
-      type="button"
-      class="execute-btn"
-      disabled={executePending || !execUi.executeEnabled}
-      title={executeTitle}
-      on:click={() => onExecute()}
-    >
-      {$t('governance.common.execute')}
-    </button>
+    <div class="execute-wrap">
+      <button
+        type="button"
+        class="execute-btn"
+        disabled={executePending || !execUi.executeEnabled}
+        title={executeTitle}
+        on:click={() => onExecute()}
+      >
+        {$t('governance.common.execute')}
+      </button>
+      {#if !execUi.executeEnabled && execUi.disabledReasonKey}
+        <p class="execute-reason muted">{executeTitle}</p>
+      {/if}
+    </div>
   {/if}
 </li>
 
@@ -215,8 +220,13 @@
   .muted {
     color: var(--text-muted);
   }
-  .execute-btn {
+  .execute-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     margin-top: 4px;
+  }
+  .execute-btn {
     font-size: 0.8125rem;
     padding: 6px 12px;
     border-radius: 6px;
@@ -224,9 +234,15 @@
     cursor: pointer;
     background: #16a34a;
     color: #fff;
+    align-self: flex-start;
   }
   .execute-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+  }
+  .execute-reason {
+    margin: 0;
+    font-size: 0.6875rem;
+    line-height: 1.3;
   }
 </style>
