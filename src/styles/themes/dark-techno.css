@@ -1,6 +1,8 @@
-/* Dark-Techno — default dark UI; cool blue-gray chrome, cyan accent. Typography: app.css. */
+/* Dark-Techno — default dark UI; cool blue-gray chrome, cyan brand. Typography: app.css. */
 :root,
 [data-theme="dark-techno"] {
+  color-scheme: dark;
+
   --bg-page: #1a1f28;
   --bg-panel: #222831;
   --bg-elevated: #2b3240;
@@ -13,18 +15,18 @@
   --border: #455061;
   --border-subtle: #343c4c;
 
-  --accent: #22d3ee;
-  --accent-hover: #06b6d4;
-  --on-accent: #0f172a;
+  --brand: #22d3ee;
+  --brand-hover: #06b6d4;
+  --on-brand: #0c1219;
   --danger: #f472b6;
   --success: #4ade80;
   --warning: #fb923c;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);
-  --blockquote-border: var(--accent);
+  --blockquote-border: var(--brand);
   --spoiler-bg: var(--text-primary);
-  --reply-border: var(--accent);
+  --reply-border: var(--brand);
 
   --icon-dropdown-filter: brightness(0) invert(1);
 

@@ -29,15 +29,15 @@
 .modal-content .btn-primary,
 .modal-overlay .btn-primary,
 .btn-primary {
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
+  background: var(--brand);
+  color: var(--on-brand);
   border: 1px solid transparent;
 }
 
 .modal-content .btn-primary:hover:not(:disabled),
 .modal-overlay .btn-primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover, var(--accent));
+  background: var(--brand-hover);
 }
 
 .modal-content .btn-primary:disabled,
@@ -50,7 +50,7 @@
 .modal-content .btn-secondary,
 .modal-overlay .btn-secondary,
 .btn-secondary {
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
 }
@@ -59,7 +59,7 @@
 .modal-overlay .btn-secondary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled) {
   background: var(--bg-hover);
-  border-color: var(--accent);
+  border-color: var(--brand);
   color: var(--text-primary);
 }
 
@@ -91,18 +91,18 @@
 }
 
 .modal-overlay .btn-cancel:hover:not(:disabled) {
-  border-color: var(--accent);
+  border-color: var(--brand);
   color: var(--text-primary);
 }
 
 .modal-overlay :is(.btn-confirm, .btn-close) {
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
+  background: var(--brand);
+  color: var(--on-brand);
   border: 1px solid transparent;
 }
 
 .modal-overlay :is(.btn-confirm, .btn-close):hover:not(:disabled) {
-  background: var(--accent-hover, var(--accent));
+  background: var(--brand-hover);
 }
 
 .modal-overlay :is(.btn-cancel, .btn-confirm, .btn-close):disabled {

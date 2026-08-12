@@ -1,5 +1,7 @@
-/* Techno — light gray structure, cyan accent. Typography: app.css. */
+/* Techno — light gray structure, cyan brand. Typography: app.css. */
 [data-theme="techno"] {
+  color-scheme: light;
+
   --bg-page: #f0eeea;
   --bg-panel: #e2dfda;
   --bg-elevated: #f7f5f2;
@@ -10,18 +12,18 @@
   --border: #262626;
   --border-subtle: #c7c4bd;
 
-  --accent: #0891b2;
-  --accent-hover: #0e7490;
-  --on-accent: #ffffff;
+  --brand: #0891b2;
+  --brand-hover: #0e7490;
+  --on-brand: #141414;
   --danger: #db2777;
   --success: #16a34a;
   --warning: #ea580c;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);
-  --blockquote-border: var(--accent);
+  --blockquote-border: var(--brand);
   --spoiler-bg: var(--text-primary);
-  --reply-border: var(--accent);
+  --reply-border: var(--brand);
 
   --icon-dropdown-filter: brightness(0);
 
