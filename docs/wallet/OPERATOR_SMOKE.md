@@ -177,10 +177,12 @@ Requires **squad-purpose** vs **advanced-purpose** signers. Two test accounts he
 - [ ] **New key for this squad** → new derived account bound; global active unchanged; DM Send unchanged.
 - [ ] **Defer** → no roster until card completed.
 - [ ] Create path does not auto-share without personal-alerts choice.
+- [ ] After create (or invite join), peer **Request sync** / auto catch-up: unbound member must **not** emit `squad_member_evm_share`; Alerts card still shows; infra/network still sync.
+- [ ] After bind (default or new key): one intentional `#announcements` share; Alerts card clears; Crew shows bound address for self.
 
 **Deploy & air-gap**
 
-- [ ] Curated deploy (e.g. Safe) uses **roster-bound** address when it differs from global active.
+- [ ] Curated deploy (e.g. Safe) uses **roster-bound** address when it differs from global active; unbound deploy stays fail-closed (no WalletBar invent).
 - [ ] Advanced address still rejected on roster ingest; Advanced panel unrelated to roster.
 
 See **Personal alerts & per-squad roster keys** above.

@@ -10,7 +10,6 @@ vi.mock('./squad-member-evm-share', () => ({
 
 vi.mock('../wallet/evm-accounts', () => ({
   addEvmAccountRow: vi.fn(),
-  getActiveSquadEvmSignerAddress: vi.fn(),
   isSquadPurposeAccount: (r: { purpose: string }) => r.purpose === 'squad',
   listEvmAccounts: vi.fn(),
 }));

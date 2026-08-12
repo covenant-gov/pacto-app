@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { sendDmMessage, getDmMessages, getMlsGroupMembers } from '../api/nostr';
 import { currentUser } from '../../stores/auth';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
@@ -11,6 +11,46 @@ export const SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA = 'pacto.squad.bot_join_response.
 export const SQUAD_JOIN_REQUEST_SCHEMA = 'pacto.squad.join_request.v1';
 export const SQUAD_JOIN_REQUEST_RESPONSE_SCHEMA = 'pacto.squad.join_request_response.v1';
 
+/** Request event ids currently being accepted/rejected (survives Crew remount). */
+export const joinRequestRespondInFlight = writable<Set<string>>(new Set());
+export const joinRequestRespondInFlightRevision = writable(0);
+
+export function resetJoinRequestRespondInFlight(): void {
+  joinRequestRespondInFlight.set(new Set());
+  joinRequestRespondInFlightRevision.set(0);
+}
+
+export function isJoinRequestRespondInFlight(requestId: string): boolean {
+  const id = requestId.trim();
+  return id.length > 0 && get(joinRequestRespondInFlight).has(id);
+}
+
+export function markJoinRequestRespondInFlight(requestId: string): void {
+  const id = requestId.trim();
+  if (!id) return;
+  joinRequestRespondInFlight.update((s) => {
+    if (s.has(id)) return s;
+    const next = new Set(s);
+    next.add(id);
+    return next;
+  });
+  joinRequestRespondInFlightRevision.update((n) => n + 1);
+}
+
+export function clearJoinRequestRespondInFlight(requestId: string): void {
+  const id = requestId.trim();
+  if (!id) return;
+  let removed = false;
+  joinRequestRespondInFlight.update((s) => {
+    if (!s.has(id)) return s;
+    removed = true;
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+  if (removed) joinRequestRespondInFlightRevision.update((n) => n + 1);
+}
+
 export interface SquadBotJoinDmDto {
   requestId: string;
   squadId: string;
@@ -21,12 +61,14 @@ export interface SquadBotJoinDmDto {
 }
 
 export function formatBotJoinDm(input: {
+  requestId: string;
   squadId: string;
   squadName: string;
   broadcastEventId: string;
 }): string {
   return JSON.stringify({
     schema: SQUAD_BOT_JOIN_DM_SCHEMA,
+    requestId: input.requestId.trim(),
     squadId: input.squadId.trim(),
     squadName: input.squadName.trim(),
     broadcastEventId: input.broadcastEventId.trim(),
@@ -76,7 +118,7 @@ export function parseBotJoinDm(content: string | null | undefined): SquadBotJoin
   const requestId = wire.requestId?.trim() ?? '';
   const requesterNpub = wire.requesterNpub?.trim() ?? '';
   const createdAt = typeof wire.createdAt === 'number' ? wire.createdAt : 0;
-  if (!squadId || !broadcastEventId) return null;
+  if (!requestId || !squadId || !broadcastEventId) return null;
   return {
     requestId,
     squadId,
@@ -215,6 +257,7 @@ export function isExpectedNonHolderBotSyncError(message: string): boolean {
   return (
     lower.includes('holder') ||
     lower.includes('bot secret') ||
+    lower.includes('join inbox') ||
     lower.includes('not initialized') ||
     lower.includes('stale')
   );
@@ -310,32 +353,40 @@ export async function respondToMlsJoinRequest(input: {
   squadId: string;
   status: 'accepted' | 'rejected';
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const me = get(currentUser)?.npub;
-  if (!me) return { ok: false, error: 'Not signed in.' };
-  const pending = await loadPendingJoinRequestsFromMls(input.squadId);
-  const row = pending.find((r) => r.eventId === input.requestId);
-  if (!row) {
-    return { ok: false, error: 'Join request is no longer pending.' };
+  const requestId = input.requestId.trim();
+  if (!requestId) return { ok: false, error: 'Missing join request id.' };
+  if (isJoinRequestRespondInFlight(requestId)) {
+    return { ok: false, error: '' };
   }
-  const content = formatMlsJoinRequestResponse({
-    requestId: input.requestId,
-    squadId: input.squadId,
-    status: input.status,
-    responderNpub: me,
-    respondedAt: Math.floor(Date.now() / 1000),
-  });
+  markJoinRequestRespondInFlight(requestId);
   try {
+    const me = get(currentUser)?.npub;
+    if (!me) return { ok: false, error: 'Not signed in.' };
+    const pending = await loadPendingJoinRequestsFromMls(input.squadId);
+    const row = pending.find((r) => r.eventId === requestId);
+    if (!row) {
+      return { ok: false, error: 'Join request is no longer pending.' };
+    }
+    const content = formatMlsJoinRequestResponse({
+      requestId,
+      squadId: input.squadId,
+      status: input.status,
+      responderNpub: me,
+      respondedAt: Math.floor(Date.now() / 1000),
+    });
     await sendDmMessage(input.squadId, content, '', { virtualBucket: 'join_requests' });
     void notifyJoinRequesterViaDm({
       requesterNpub: row.requesterNpub,
       squadId: row.squadId,
       squadName: row.squadName,
-      requestId: input.requestId,
+      requestId,
       status: input.status,
     }).catch((e) => console.warn('[squad-join] requester notify DM failed', e));
     return { ok: true };
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not update join request.') };
+  } finally {
+    clearJoinRequestRespondInFlight(requestId);
   }
 }
 
@@ -354,5 +405,9 @@ async function notifyJoinRequesterViaDm(input: {
     requestId: input.requestId,
     status: input.status,
   });
-  await sendDmMessage(npub, content);
+  await invoke('squad_bot_send_join_response', {
+    squadId: input.squadId.trim(),
+    requesterNpub: npub,
+    content,
+  });
 }

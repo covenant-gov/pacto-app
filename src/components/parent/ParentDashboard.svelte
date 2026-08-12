@@ -634,7 +634,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
   $: if (!$showMembersPanel) prevMembersGroupIdForPanel = null;
 
-  $: if ($showMembersPanel && announcementsGroupId) {
+  // Refresh roster on MLS membership bumps even when the Members panel is closed (Crew / invite).
+  $: if (announcementsGroupId) {
     const gid = announcementsGroupId;
     const version = $membershipVersionByGroupId[gid] ?? 0;
     const prev = prevMembersVersionByGroup[gid] ?? -1;

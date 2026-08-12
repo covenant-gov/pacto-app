@@ -52,9 +52,9 @@ Default hub channels after invite accept: **dashboard**, **announcements**, **jo
 | **#personal-alerts** | `inbox` | **Prompts to action** for the viewing member only — e.g. the roster signer setup card (`SquadRosterKeyInboxCard`) until they bind a squad-purpose EVM account; bot key rotate prompts for holders. Not a feed of other members' automation. |
 | **#polls** | `polls` | Dashboard poll vote wire traffic. |
 
-**Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts**. After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Only an explicit account binding satisfies the prompt.
+**Roster EVM:** Each member must explicitly bind a squad-purpose signer (`squad_member_evm_account`) via **#personal-alerts** (Use default / Generate new / Defer). After binding, the client publishes `squad_member_evm_share` to **#announcements** so the squad sees the address change. Only an explicit account binding satisfies the prompt; **Defer** means no share and no ACL identity. Create and state-sync never invent an address from the WalletBar Default.
 
-That bound address is the **only** EVM identity the squad **ACL** (access control) uses for Hats / Squad Admin checks and governance signing (fail closed if unbound). See [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
+That bound address is the **only** EVM identity the squad **ACL** (access control) uses for Hats / Squad Admin checks and governance signing (fail closed if unbound — share row alone is not enough). Members may **view** governance / infra / network without sharing a key; participate (hats / writes) requires bind. See [`docs/governance/ACCESS_CONTROL.md`](../governance/ACCESS_CONTROL.md).
 
 ---
 
@@ -92,8 +92,8 @@ Roster bindings (`squad_member_evm_account`, `squad_member_evm`) and on-chain in
 
 ## 6. Invites
 
-- **Squad / squad-pair invites (user-facing):** `squad_invite` in the Pacto App inbox. Outbound invites do **not** MLS-add until the invitee Accepts. The inviter also publishes `squad_outbound_invite` on `#announcements`; on Accept the invitee DMs `squad_invite_accepted` to admitter npubs so **any online member** can run admit.
-- **Join-request Approve:** consent is already given — approver runs the admit pipeline (announcements + all **open** channels) under the hood. No second inbox Accept card.
+- **Squad / squad-pair invites (user-facing):** `squad_invite` in the Pacto App inbox. Outbound invites do **not** MLS-add until the invitee Accepts. The inviter also publishes `squad_outbound_invite` on `#announcements`; on Accept the invitee DMs `squad_invite_accepted` to admitter npubs so **any online member** can run admit. Accept is durable: the invitee card moves to a **joining** state (no hard 90s failure) until a Welcome arrives and is auto-finalized.
+- **Join-request Approve:** consent is already given — **Join inbox holders** (shared Nostr identity holders with a local secret) Accept/Reject in Crew. Approve publishes MLS `accepted` immediately and durably retries MLS admit; the requester auto-finalizes the Welcome (no second Accept card).
 - **Channels:** never show invite cards. MLS welcomes + optional under-the-hood `channel_in_squad` notify (auto-accepted when already in the squad). Custom channels are **`open`** (everyone in announcements; late joiners auto-join) or **`closed`** (selected members only; invisible to others until manually added). `access` is persisted on each channel row; missing `access` on a custom channel is treated as **open** for catch-up (legacy rows).
 
 ---
@@ -114,7 +114,7 @@ Squad dashboard mirrors that are not on-chain (roster EVM, infra announces, allo
 
 **Ingest trust:** announce side effects require a non-empty MLS author who is treated as a **group member** (in-memory participants when known; otherwise a known `mls_groups` row). MLS delivery authenticates senders; creator-only ingest is not used. Publish-time ACL (Captain hat, bot holder) remains separate.
 
-**Late joiners / catch-up:** MLS Kind-444 backfill is bounded (~48h). When a member joins `#announcements`, the client auto-publishes `squad_state_sync_request` with `requested: ['evm','infra','network','channels']`. Online peers republish roster EVM, network, announcements-scoped `governance_updated`, an open-channel **catalog** (`squad_channels_catalog`), and MLS-admit the requester into any **open** custom channels they are missing. Anyone can also press **Request sync** on My Dashboard → Status (same request). Hats wearers are read on-chain after `pacto_gov` infra is present — they are not MLS-synced as wearer lists.
+**Late joiners / catch-up:** MLS Kind-444 backfill is bounded (~48h). When a member joins `#announcements`, the client auto-publishes `squad_state_sync_request` with `requested: ['evm','infra','network','channels']`. Online peers republish network, announcements-scoped `governance_updated`, an open-channel **catalog** (`squad_channels_catalog`), and MLS-admit the requester into any **open** custom channels they are missing. Peers republish roster EVM **only if** they have a `squad_member_evm_account` binding for that parent; unbound peers omit EVM and still help with infra/network/channels. Anyone can also press **Request sync** on My Dashboard → Status (same request). Hats wearers are read on-chain after `pacto_gov` infra is present — they are not MLS-synced as wearer lists.
 
 **Wire ids:** `parent_id` / `squad_id` on announces must equal the announcements MLS group id.
 

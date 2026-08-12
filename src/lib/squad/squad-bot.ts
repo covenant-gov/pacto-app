@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { get, writable } from 'svelte/store';
 import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 
@@ -6,6 +7,49 @@ export const SQUAD_BOT_META_SCHEMA = 'pacto.squad_bot.meta.v1';
 export const SQUAD_BOT_KEY_ROTATED_SCHEMA = 'pacto.squad_bot.key_rotated.v1';
 export const SQUAD_BOT_ROTATE_PROMPT_SCHEMA = 'pacto.squad_bot.rotate_prompt.v1';
 export const SQUAD_BOT_KEY_SHARE_SCHEMA = 'pacto.squad_bot.key_share.v1';
+
+/** Squad ids with an add/remove/rotate holder mutation in flight (survives remount). */
+export const squadBotHolderActionInFlight = writable<Set<string>>(new Set());
+export const squadBotHolderActionInFlightRevision = writable(0);
+
+export function resetSquadBotHolderActionInFlight(): void {
+  squadBotHolderActionInFlight.set(new Set());
+  squadBotHolderActionInFlightRevision.set(0);
+}
+
+export function isSquadBotHolderActionInFlight(squadId: string): boolean {
+  const id = squadId.trim();
+  return id.length > 0 && get(squadBotHolderActionInFlight).has(id);
+}
+
+function markSquadBotHolderActionInFlight(squadId: string): boolean {
+  const id = squadId.trim();
+  if (!id) return false;
+  if (get(squadBotHolderActionInFlight).has(id)) return false;
+  squadBotHolderActionInFlight.update((s) => {
+    const next = new Set(s);
+    next.add(id);
+    return next;
+  });
+  squadBotHolderActionInFlightRevision.update((n) => n + 1);
+  return true;
+}
+
+function clearSquadBotHolderActionInFlight(squadId: string): void {
+  const id = squadId.trim();
+  if (!id) return;
+  let removed = false;
+  squadBotHolderActionInFlight.update((s) => {
+    if (!s.has(id)) return s;
+    removed = true;
+    const next = new Set(s);
+    next.delete(id);
+    return next;
+  });
+  if (removed) squadBotHolderActionInFlightRevision.update((n) => n + 1);
+}
+
+const HOLDER_ACTION_BUSY = 'Bot holder update already in progress.';
 
 export interface SquadBotState {
   squadId: string;
@@ -72,15 +116,21 @@ export async function addSquadBotHolder(
   squadId: string,
   holderNpub: string
 ): Promise<{ ok: true; state: SquadBotState } | { ok: false; error: string }> {
+  const id = squadId.trim();
+  if (!markSquadBotHolderActionInFlight(id)) {
+    return { ok: false, error: HOLDER_ACTION_BUSY };
+  }
   try {
     const bundle = await invoke<SquadBotPublishBundle>('squad_bot_add_holder', {
-      squadId: squadId.trim(),
+      squadId: id,
       holderNpub: holderNpub.trim(),
     });
-    await publishBundle(squadId, bundle);
+    await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not add bot key holder.') };
+  } finally {
+    clearSquadBotHolderActionInFlight(id);
   }
 }
 
@@ -88,29 +138,41 @@ export async function removeSquadBotHolder(
   squadId: string,
   holderNpub: string
 ): Promise<{ ok: true; state: SquadBotState } | { ok: false; error: string }> {
+  const id = squadId.trim();
+  if (!markSquadBotHolderActionInFlight(id)) {
+    return { ok: false, error: HOLDER_ACTION_BUSY };
+  }
   try {
     const bundle = await invoke<SquadBotPublishBundle>('squad_bot_remove_holder', {
-      squadId: squadId.trim(),
+      squadId: id,
       holderNpub: holderNpub.trim(),
     });
-    await publishBundle(squadId, bundle);
+    await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not remove bot key holder.') };
+  } finally {
+    clearSquadBotHolderActionInFlight(id);
   }
 }
 
 export async function rotateSquadBotKey(
   squadId: string
 ): Promise<{ ok: true; state: SquadBotState } | { ok: false; error: string }> {
+  const id = squadId.trim();
+  if (!markSquadBotHolderActionInFlight(id)) {
+    return { ok: false, error: HOLDER_ACTION_BUSY };
+  }
   try {
     const bundle = await invoke<SquadBotPublishBundle>('squad_bot_rotate_key', {
-      squadId: squadId.trim(),
+      squadId: id,
     });
-    await publishBundle(squadId, bundle);
+    await publishBundle(id, bundle);
     return { ok: true, state: bundle.state };
   } catch (e: unknown) {
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not rotate bot key.') };
+  } finally {
+    clearSquadBotHolderActionInFlight(id);
   }
 }
 

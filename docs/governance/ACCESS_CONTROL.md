@@ -6,25 +6,27 @@ Normative rules for *who may perform action X on squad Y* in the desktop app. On
 
 1. One Nostr identity (npub) per unlocked account.
 2. Many EVM keys may derive from the same BIP-39 phrase (`bip44_v1`, squad purpose).
-3. Per-squad roster binds `(parent_id, member_npub) → EVM address` (`squad_member_evm` / `squad_member_evm_account`, MLS share).
-4. **ACL** (access control) checks use **that roster address only** (v1). Multi-key “any of my bip44 keys wears the hat” is out of scope.
+3. Per-squad **binding** `(parent_id, member_npub) → evm_account_id` (`squad_member_evm_account`) is consent via **#personal-alerts**. After bind, the client may publish `squad_member_evm_share` → local share row `squad_member_evm` for Crew display.
+4. **ACL** (access control) resolves identity from the **binding only** (v1): load the bound account’s address. A share row or WalletBar Default without a binding is **not** squad identity. Multi-key “any of my bip44 keys wears the hat” is out of scope.
 
-**Fail closed:** if the current npub has no roster EVM for `parent_id`, every capability is denied (including permissionless execute). Signing paths must not fall back to an unbound personal signer for squad-scoped writes.
+**Fail closed:** if the current npub has no `squad_member_evm_account` for `parent_id`, every capability is denied (`ACL_UNBOUND`), including permissionless execute — even if a legacy share row exists. Signing paths must not fall back to an unbound personal signer or invent roster identity from the active Default.
 
 ```mermaid
 flowchart TD
   mnemonic[BIP39_mnemonic]
   nostr[Nostr_npub]
   evmKeys[EVM_bip44_accounts]
-  roster[squad_member_evm]
+  binding[squad_member_evm_account]
+  share[squad_member_evm_display]
   hats[On_chain_Hats]
   squadAdmin[On_chain_SquadAdmin]
   acl[access_control]
   mnemonic --> nostr
   mnemonic --> evmKeys
-  nostr --> roster
-  evmKeys --> roster
-  roster --> acl
+  nostr --> binding
+  evmKeys --> binding
+  binding --> acl
+  binding --> share
   hats --> acl
   squadAdmin --> acl
   acl --> uiGates[UI_gates]

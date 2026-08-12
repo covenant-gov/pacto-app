@@ -79,6 +79,16 @@ describe('summarizeStructuredMessageContent', () => {
     expect(
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn)
     ).toBe('messaging.structuredNotice.squadInviteAccepted');
+    expect(
+      summarizeStructuredMessageContent(
+        JSON.stringify({
+          type: 'squad_member_left',
+          payload: { parent_id: 'g1', member_npub: 'npub1bob' },
+          pacto_virtual_bucket: 'announcements',
+        }),
+        tFn
+      )
+    ).toBe('messaging.structuredNotice.squadMemberLeft');
   });
 
   it('covers schema/type fallbacks and invalid JSON', () => {

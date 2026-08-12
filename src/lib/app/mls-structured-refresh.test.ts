@@ -5,6 +5,10 @@ vi.mock('../../stores/squad-join-requests', () => ({
   syncJoinRequestsForSquad: vi.fn(),
 }));
 
+vi.mock('../parent/pending-admit', () => ({
+  drainPendingAdmitQueue: vi.fn(),
+}));
+
 const respondToSquadStateSyncRequest = vi.fn();
 vi.mock('../squad/squad-state-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../squad/squad-state-sync')>();

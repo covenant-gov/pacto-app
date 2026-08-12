@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sendDmMessage } from '../api/nostr';
-import { getActiveSquadEvmSignerAddress, listEvmAccounts } from '../wallet/evm-accounts';
+import { listEvmAccounts } from '../wallet/evm-accounts';
 import { listEvmAccountSquadBindings } from './evm-account-squad-bindings';
 
 export const SQUAD_MEMBER_EVM_SHARE_TYPE = 'squad_member_evm_share';
@@ -31,7 +31,7 @@ export function listSquadMemberEvmInvokeArgs(
 }
 
 export type PublishSquadMemberEvmShareOptions = {
-  /** If set, publish this address for the current user for this parent (e.g. Change signer). Otherwise uses wallet preference below. */
+  /** Explicit address from bind flows; otherwise only the bound account may publish. */
   evmAddress?: string | null;
   /** Optional UI parent id when it differs from the announcements roster key. */
   altParentId?: string | null;
@@ -61,8 +61,8 @@ export async function getBoundSquadEvmAddressForParent(
 }
 
 /**
- * Address to publish for this parent: explicit → bound account → resolve (binding/share/active) → active.
- * Preferring binding prevents Default WalletBar overwrites after fund-then-deploy.
+ * Address to publish: explicit (bind flow) → bound account → null.
+ * Never invents WalletBar Default or share-row-only identity.
  */
 export async function resolveSquadMemberEvmShareAddress(
   announcementsMlsGroupId: string,
@@ -73,24 +73,12 @@ export async function resolveSquadMemberEvmShareAddress(
   const explicit = options?.evmAddress?.trim();
   if (explicit) return explicit;
 
-  const bound = await getBoundSquadEvmAddressForParent(rosterId, options?.altParentId);
-  if (bound) return bound;
-
-  try {
-    const resolved = await invoke<string | null>('resolve_squad_roster_evm_address', {
-      parentId: rosterId,
-      memberNpub: null,
-    });
-    if (resolved?.trim()) return resolved.trim();
-  } catch {
-    /* fall through */
-  }
-  return (await getActiveSquadEvmSignerAddress())?.trim() || null;
+  return getBoundSquadEvmAddressForParent(rosterId, options?.altParentId);
 }
 
 /**
- * Record the current user's squad roster signer for this parent and publish a `squad_member_evm_share` row to #announcements.
- * `announcementsMlsGroupId` is both the MLS destination and roster `parent_id` (must match for all members).
+ * Publish a `squad_member_evm_share` only when there is an explicit address or a binding.
+ * `announcementsMlsGroupId` is both the MLS destination and roster `parent_id`.
  */
 export async function publishSquadMemberEvmShare(
   announcementsMlsGroupId: string,

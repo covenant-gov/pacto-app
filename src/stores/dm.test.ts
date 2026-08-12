@@ -305,6 +305,7 @@ describe('dm', () => {
         messageCount: 3,
         loadedOffset: 0,
         wasPinned: true,
+        wasActive: true,
       };
 
       revertDmChat('alice', snapshot);
@@ -314,6 +315,20 @@ describe('dm', () => {
       expect(get(messageCountByChat)['alice']).toBe(3);
       expect(get(loadedOffsetByChat)['alice']).toBe(0);
       expect(get(pinnedDmNpubs).has('alice')).toBe(true);
+      expect(get(activeDmId)).toBe('alice');
+    });
+
+    it('does not reselect when wasActive is false', () => {
+      activeDmId.set(null);
+      revertDmChat('alice', {
+        chatState: makeChat('alice', { hasFromMe: true, hasFromThem: true, lastAt: 1 }),
+        messages: [],
+        messageCount: undefined,
+        loadedOffset: undefined,
+        wasPinned: false,
+        wasActive: false,
+      });
+      expect(get(activeDmId)).toBeNull();
     });
   });
 

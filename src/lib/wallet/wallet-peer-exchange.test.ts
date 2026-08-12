@@ -1,10 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { get } from 'svelte/store';
 import {
   shouldSendReciprocalWalletPeerGrant,
   shouldPersistInboundWalletPeerGrant,
   threadHasOutboundRequestForId,
   threadHasOutboundGrantForRequest,
   formatReciprocalWalletPeerGrant,
+  isWalletPeerInfoRequestInFlight,
+  resetWalletPeerInfoRequestInFlight,
+  sendWalletPeerInfoRequest,
+  walletPeerInfoRequestInFlight,
+  walletPeerInfoRequestInFlightRevision,
+  markWalletPeerInfoRequestInFlight,
+  clearWalletPeerInfoRequestInFlight,
 } from './wallet-peer-exchange';
 import { formatWalletPeerInfoGrant, formatWalletPeerInfoRequest } from './dm-messages';
 
@@ -201,5 +209,61 @@ describe('wallet-peer-exchange', () => {
         messages,
       })
     ).toBe(false);
+  });
+});
+
+describe('wallet peer-info request in-flight', () => {
+  beforeEach(() => {
+    resetWalletPeerInfoRequestInFlight();
+  });
+
+  afterEach(() => {
+    resetWalletPeerInfoRequestInFlight();
+  });
+
+  it('marks, checks, and clears peer npubs', () => {
+    const before = get(walletPeerInfoRequestInFlightRevision);
+    expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(false);
+
+    markWalletPeerInfoRequestInFlight(NPUB_B);
+    expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(true);
+    expect(get(walletPeerInfoRequestInFlight).has(NPUB_B)).toBe(true);
+    expect(get(walletPeerInfoRequestInFlightRevision)).toBe(before + 1);
+
+    clearWalletPeerInfoRequestInFlight(NPUB_B);
+    expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(false);
+  });
+
+  it('sendWalletPeerInfoRequest marks during await and clears after', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const post = vi.fn(async () => {
+      expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(true);
+      await gate;
+      return true;
+    });
+
+    const pending = sendWalletPeerInfoRequest({
+      peerNpub: NPUB_B,
+      requesterNpub: NPUB_A,
+      post,
+      getMyEvmAddress: async () => ADDR_A,
+    });
+
+    await vi.waitFor(() => expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(true));
+    const concurrent = await sendWalletPeerInfoRequest({
+      peerNpub: NPUB_B,
+      requesterNpub: NPUB_A,
+      post,
+      getMyEvmAddress: async () => ADDR_A,
+    });
+    expect(concurrent).toEqual({ ok: false, code: 'in_flight' });
+    expect(post).toHaveBeenCalledTimes(1);
+
+    release();
+    await expect(pending).resolves.toEqual({ ok: true });
+    expect(isWalletPeerInfoRequestInFlight(NPUB_B)).toBe(false);
   });
 });

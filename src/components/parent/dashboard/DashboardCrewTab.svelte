@@ -7,6 +7,10 @@
   import { profiles } from '../../../stores/profiles';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
+  import {
+    needsSquadRosterKeyChoice,
+    squadMemberEvmForDisplay,
+  } from '../../../lib/squad/squad-roster-key-choice';
   import { npubByEvmAddressFromSquadRoster } from '../../../lib/governance/hats-tree-annotations';
   import {
     isHatsSponsoredAddress,
@@ -19,6 +23,7 @@
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
+  import { onMount } from 'svelte';
 
   export let squad: Squad;
   export let announcementsGroupId: string | null = null;
@@ -48,10 +53,12 @@
   export let crewWearers: string[] = [];
 
   let sponsoringAddress = '';
+  let rosterKeyNeeded = false;
 
   $: myNpub = $currentUser?.npub ?? '';
-  $: myRosterEvm = (myNpub ? squadMemberEvmByNpub[myNpub]?.trim() : '') || '';
-  $: npubByAddress = npubByEvmAddressFromSquadRoster(squadMemberEvmByNpub);
+  $: displayEvmByNpub = squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded);
+  $: myRosterEvm = (myNpub ? displayEvmByNpub[myNpub]?.trim() : '') || '';
+  $: npubByAddress = npubByEvmAddressFromSquadRoster(displayEvmByNpub);
   $: permittedByAddress = permittedByAddressFromExtStatus(sponsorExtStatus?.memberPermits ?? []);
   $: addressOwner = sponsorExtStatus?.addressOwner?.trim().toLowerCase() ?? '';
   $: ownerNpub = addressOwner ? npubByAddress[addressOwner] : undefined;
@@ -60,6 +67,13 @@
   $: hatsWired = sponsorExtStatus?.hatsWired === true;
   $: canManagePermits = iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId;
   $: showSponsoredCol = hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError);
+
+  onMount(() => {
+    if (!parentId) return;
+    void needsSquadRosterKeyChoice(parentId, announcementsGroupId).then((needed) => {
+      rosterKeyNeeded = needed;
+    });
+  });
 
   function shortAddress(addr: string): string {
     if (!addr || addr.length < 12) return addr;
@@ -149,7 +163,7 @@
       <ul class="roles-member-list" role="list">
         {#each channelMembers as memberNpub (memberNpub)}
           {@const npub = memberNpub as string}
-          {@const rosterEvm = squadMemberEvmByNpub[npub]}
+          {@const rosterEvm = displayEvmByNpub[npub]}
           {@const rosterKey = rosterEvm?.trim().toLowerCase() ?? ''}
           {@const avatarSrc = getProfileAvatarSrc($profiles[npub])}
           {@const isHatsSponsored =

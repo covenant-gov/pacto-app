@@ -12,6 +12,7 @@ pub const SQUAD_BOT_KEY_ROTATED_SCHEMA: &str = "pacto.squad_bot.key_rotated.v1";
 pub const SQUAD_BOT_ROTATE_PROMPT_SCHEMA: &str = "pacto.squad_bot.rotate_prompt.v1";
 pub const SQUAD_BOT_KEY_SHARE_SCHEMA: &str = "pacto.squad_bot.key_share.v1";
 pub const SQUAD_BOT_JOIN_DM_SCHEMA: &str = "pacto.squad.bot_join_dm.v1";
+pub const SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA: &str = "pacto.squad.bot_join_response.v1";
 pub const SQUAD_BOT_JOIN_DM_LOOKBACK_SECS: u64 = 7 * 24 * 3600;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -912,6 +913,7 @@ pub struct SquadBotJoinDmDto {
 #[serde(rename_all = "camelCase")]
 struct SquadBotJoinDmWire {
     schema: String,
+    request_id: String,
     squad_id: String,
     squad_name: String,
     broadcast_event_id: String,
@@ -923,6 +925,7 @@ fn parse_join_dm_content(content: &str) -> Option<SquadBotJoinDmWire> {
         return None;
     }
     if wire.squad_id.trim().is_empty()
+        || wire.request_id.trim().is_empty()
         || wire.squad_name.trim().is_empty()
         || wire.broadcast_event_id.trim().is_empty()
     {
@@ -986,10 +989,7 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
         if requester_npub == bot_npub {
             continue;
         }
-        let request_id = rumor
-            .id
-            .map(|id| id.to_hex())
-            .unwrap_or_else(|| event.id.to_hex());
+        let request_id = wire.request_id.trim().to_string();
         if !seen.insert(request_id.clone()) {
             continue;
         }
@@ -1004,6 +1004,57 @@ pub async fn squad_bot_sync_join_dms<R: Runtime>(
     }
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     Ok(out)
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SquadBotJoinResponseWire {
+    schema: String,
+    squad_id: String,
+    request_id: String,
+    status: String,
+}
+
+fn valid_join_response_content(content: &str, squad_id: &str) -> bool {
+    let Ok(wire) = serde_json::from_str::<SquadBotJoinResponseWire>(content.trim()) else {
+        return false;
+    };
+    wire.schema == SQUAD_BOT_JOIN_RESPONSE_DM_SCHEMA
+        && wire.squad_id.trim() == squad_id
+        && !wire.request_id.trim().is_empty()
+        && matches!(wire.status.as_str(), "accepted" | "rejected")
+}
+
+/// Send an authenticated join response from the shared Join inbox identity.
+#[tauri::command]
+pub async fn squad_bot_send_join_response<R: Runtime>(
+    handle: AppHandle<R>,
+    squad_id: String,
+    requester_npub: String,
+    content: String,
+) -> Result<(), String> {
+    let squad_id = squad_id.trim().to_string();
+    let requester = PublicKey::parse(requester_npub.trim()).map_err(|e| e.to_string())?;
+    if !valid_join_response_content(&content, &squad_id) {
+        return Err("Invalid join response".into());
+    }
+
+    let (bot_keys, _) = bot_keys_for_holder(&handle, &squad_id).await?;
+    let rumor = EventBuilder::private_msg_rumor(requester, content).build(bot_keys.public_key());
+    let gift_wrap = EventBuilder::gift_wrap(&bot_keys, &requester, rumor, [])
+        .await
+        .map_err(|e| e.to_string())?;
+    let client =
+        crate::get_nostr_client().map_err(|_| "Nostr client not initialized".to_string())?;
+    let send_output = client
+        .send_event_to(
+            crate::trusted_relays::trusted_relays().iter().cloned(),
+            &gift_wrap,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    crate::record_send_outcome(&gift_wrap, &send_output);
+    Ok(())
 }
 
 /// Pure helpers for unit tests (membership / holder list rules).
@@ -1059,15 +1110,26 @@ mod tests {
 
     #[test]
     fn parse_join_dm_accepts_schema() {
-        let raw = r#"{"schema":"pacto.squad.bot_join_dm.v1","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
+        let raw = r#"{"schema":"pacto.squad.bot_join_dm.v1","requestId":"r1","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
         let wire = parse_join_dm_content(raw).expect("parse");
         assert_eq!(wire.squad_id, "s1");
+        assert_eq!(wire.request_id, "r1");
     }
 
     #[test]
     fn parse_join_dm_rejects_other_schema() {
-        let raw =
-            r#"{"schema":"other","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
+        let raw = r#"{"schema":"other","requestId":"r1","squadId":"s1","squadName":"Pirates","broadcastEventId":"e1"}"#;
         assert!(parse_join_dm_content(raw).is_none());
+    }
+
+    #[test]
+    fn join_response_requires_matching_squad_and_request() {
+        let raw = r#"{"schema":"pacto.squad.bot_join_response.v1","squadId":"s1","requestId":"r1","status":"accepted"}"#;
+        assert!(valid_join_response_content(raw, "s1"));
+        assert!(!valid_join_response_content(raw, "s2"));
+        assert!(!valid_join_response_content(
+            r#"{"schema":"pacto.squad.bot_join_response.v1","squadId":"s1","requestId":"","status":"accepted"}"#,
+            "s1"
+        ));
     }
 }

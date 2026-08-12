@@ -2281,6 +2281,9 @@ async fn evict_chat_messages(chat_id: String, keep_count: usize) -> Result<(), S
 /// Delete a DM chat and all its messages from the database and in-memory state.
 /// chat_id is the other party's npub for DMs. Persists a deletion cutoff so relay
 /// replay cannot restore history at or before the delete time.
+///
+/// Returns as soon as SQLite work finishes. In-memory `STATE` cleanup is best-effort
+/// and must not block the invoke when sync holds the lock.
 #[tauri::command]
 async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Result<(), String> {
     let deleted_at = std::time::SystemTime::now()
@@ -2288,10 +2291,28 @@ async fn delete_dm_chat<R: Runtime>(handle: AppHandle<R>, chat_id: String) -> Re
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
     db::upsert_dm_deletion_cutoff(&handle, &chat_id, deleted_at).await?;
-    db::delete_chat(handle.clone(), &chat_id).await?;
-    let mut state = STATE.lock().await;
-    state.chats.retain(|c| c.id != chat_id);
+    match db::delete_chat(handle.clone(), &chat_id).await {
+        Ok(()) => {}
+        Err(e) if e.starts_with("Chat not found:") => {}
+        Err(e) => return Err(e),
+    }
+    drop_dm_chat_from_state(chat_id);
     Ok(())
+}
+
+/// Remove a DM from in-memory chats without awaiting a contended `STATE` lock.
+fn drop_dm_chat_from_state(chat_id: String) {
+    match STATE.try_lock() {
+        Ok(mut state) => {
+            state.chats.retain(|c| c.id != chat_id);
+        }
+        Err(_) => {
+            tokio::spawn(async move {
+                let mut state = STATE.lock().await;
+                state.chats.retain(|c| c.id != chat_id);
+            });
+        }
+    }
 }
 
 /// Build and return the file hash index for deduplication
@@ -4209,14 +4230,37 @@ async fn notifs() -> Result<bool, String> {
                                             }
                                             None
                                         }
-                                        mdk_core::prelude::MessageProcessingResult::Proposal(_proposal) => {
-                                            // Proposal received (e.g., leave proposal)
-                                            // Emit event to notify UI that group state may have changed
-                                            if let Some(handle) = TAURI_APP.get() {
-                                                handle.emit("mls_group_updated", serde_json::json!({
-                                                    "group_id": group_id_for_persist
-                                                })).ok();
-                                            }
+                                        mdk_core::prelude::MessageProcessingResult::Proposal(update) => {
+                                            // MDK 0.8 SelfRemove auto-commit: publish + merge on the same
+                                            // service that staged the commit (do not open a fresh MDK).
+                                            let evolution = update.evolution_event;
+                                            let mls_gid = update.mls_group_id;
+                                            let leaver = ev.pubkey;
+                                            let gid = group_id_for_persist.clone();
+                                            drop(engine);
+                                            rt.block_on(async {
+                                                match svc
+                                                    .publish_and_merge_auto_commit(
+                                                        &gid,
+                                                        &mls_gid,
+                                                        &evolution,
+                                                        Some(leaver),
+                                                    )
+                                                    .await
+                                                {
+                                                    Ok(()) => eprintln!(
+                                                        "[MLS] Live: published and merged auto-commit leave for {} in {}",
+                                                        leaver.to_hex(),
+                                                        gid
+                                                    ),
+                                                    Err(e) => eprintln!(
+                                                        "[MLS] Live: failed to publish/merge auto-commit leave for {} in {}: {}",
+                                                        leaver.to_hex(),
+                                                        gid,
+                                                        e
+                                                    ),
+                                                }
+                                            });
                                             None
                                         }
                                         mdk_core::prelude::MessageProcessingResult::Unprocessable { mls_group_id: _ } => {
@@ -8828,8 +8872,7 @@ async fn get_mls_group_members(group_id: String) -> Result<GroupMembers, String>
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Leave an MLS group
-/// TODO: Implement MLS leave operation
+/// Leave an MLS group (publishes SelfRemove proposal, then local cleanup).
 #[tauri::command]
 async fn leave_mls_group(group_id: String) -> Result<(), String> {
     require_key_derivation_version_2()?;
@@ -9203,6 +9246,7 @@ pub fn run() {
             squad_bot::squad_bot_remove_holder,
             squad_bot::squad_bot_rotate_key,
             squad_bot::squad_bot_sync_join_dms,
+            squad_bot::squad_bot_send_join_response,
             db::upsert_squad_member_evm,
             db::list_squad_member_evm,
             db::upsert_squad_member_evm_account,

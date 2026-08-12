@@ -2,7 +2,11 @@ import { sendDmMessage } from '../api/nostr';
 import { getInvokeErrorMessage } from '../utils/tauri-errors';
 import type { CommonsBroadcastDto } from './types';
 import {
+  clearJoinRequestRecord,
+  clearJoinRequestInFlight,
   commonsJoinRequestBlockReason,
+  isJoinRequestInFlight,
+  markJoinRequestInFlight,
   recordJoinRequestSent,
   squadIdFromBroadcast,
 } from './commons-join-request';
@@ -38,6 +42,10 @@ export async function sendCommonsJoinRequest(
   requesterNpub: string,
   localSquadIds: string[]
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const squadId = squadIdFromBroadcast(broadcast);
+  if (isJoinRequestInFlight(squadId)) {
+    return { ok: true };
+  }
   const blockReason = commonsJoinRequestBlockReason(broadcast, requesterNpub, localSquadIds);
   if (blockReason) {
     return { ok: false, error: blockReason };
@@ -48,17 +56,33 @@ export async function sendCommonsJoinRequest(
     return { ok: false, error: 'Squad broadcast is missing a bot author.' };
   }
 
-  const squadId = squadIdFromBroadcast(broadcast);
+  if (!squadId) {
+    return { ok: false, error: 'Missing squad id.' };
+  }
+
+  const requestId = crypto.randomUUID();
   const content = formatBotJoinDm({
+    requestId,
     squadId,
     squadName: broadcast.squadName ?? 'Squad',
     broadcastEventId: broadcast.eventId,
   });
+  markJoinRequestInFlight(squadId);
+  recordJoinRequestSent({
+    requestId,
+    squadId,
+    squadName: broadcast.squadName ?? 'Squad',
+    botNpub,
+    broadcastEventId: broadcast.eventId,
+    sentAt: Math.floor(Date.now() / 1000),
+  });
   try {
     await sendDmMessage(botNpub, content);
-    recordJoinRequestSent(squadId);
     return { ok: true };
   } catch (e: unknown) {
+    clearJoinRequestRecord(squadId, requestId);
     return { ok: false, error: getInvokeErrorMessage(e, 'Could not send join request.') };
+  } finally {
+    clearJoinRequestInFlight(squadId);
   }
 }

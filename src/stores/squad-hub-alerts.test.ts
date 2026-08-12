@@ -1,6 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import * as rosterKeyChoice from '../lib/squad/squad-roster-key-choice';
+
+const mockResolveCatchUpEntry = vi.hoisted(() => vi.fn());
+const mockGetCatchUpCount = vi.hoisted(() => vi.fn());
+const mockRecordActionNeededEntry = vi.hoisted(() => vi.fn());
+
+vi.mock('../lib/api/catch-up', () => ({
+  resolveCatchUpEntry: (...args: unknown[]) => mockResolveCatchUpEntry(...args),
+  getCatchUpCount: (...args: unknown[]) => mockGetCatchUpCount(...args),
+  recordActionNeededEntry: (...args: unknown[]) => mockRecordActionNeededEntry(...args),
+  listCatchUpEntries: vi.fn(),
+  resolveAllCatchUpEntries: vi.fn(),
+}));
+
 import {
   personalAlertsNeededBySquadId,
   refreshPersonalAlertForSquad,
@@ -10,11 +23,16 @@ import {
   incrementMentionAlert,
   clearMentionAlert,
 } from './squad-hub-alerts';
+import { catchUpCount, resetCatchUpStore } from './catch-up';
 import type { Squad } from './squads';
 
 describe('squad hub channel alerts', () => {
   beforeEach(() => {
     resetSquadHubAlertStores();
+    resetCatchUpStore();
+    mockResolveCatchUpEntry.mockReset().mockResolvedValue(true);
+    mockGetCatchUpCount.mockReset().mockResolvedValue(0);
+    mockRecordActionNeededEntry.mockReset().mockResolvedValue(undefined);
   });
 
   it('personal alert flag is independent per squad', () => {
@@ -77,6 +95,40 @@ describe('squad hub channel alerts', () => {
 
     expect(get(personalAlertsNeededBySquadId).squad1).toBe(true);
     needsSpy.mockRestore();
+  });
+
+  it('refreshPersonalAlertForSquad refreshes catchUpCount when roster-key prompt clears', async () => {
+    const squad = {
+      id: 'squad1',
+      name: 'Test',
+      channels: [{ name: 'announcements', groupId: 'grp-1', order: 0 }],
+    } as Squad;
+    catchUpCount.set(3);
+    mockGetCatchUpCount.mockResolvedValueOnce(2);
+    vi.spyOn(rosterKeyChoice, 'needsSquadRosterKeyChoice').mockResolvedValue(false);
+
+    await refreshPersonalAlertForSquad(squad);
+    await vi.waitFor(() => {
+      expect(mockResolveCatchUpEntry).toHaveBeenCalledWith('roster-key:squad1');
+      expect(get(catchUpCount)).toBe(2);
+    });
+  });
+
+  it('refreshPersonalAlertForSquad records and hydrates count when roster-key is needed', async () => {
+    const squad = {
+      id: 'squad1',
+      name: 'Test',
+      channels: [{ name: 'announcements', groupId: 'grp-1', order: 0 }],
+    } as Squad;
+    catchUpCount.set(0);
+    mockGetCatchUpCount.mockResolvedValueOnce(1);
+    vi.spyOn(rosterKeyChoice, 'needsSquadRosterKeyChoice').mockResolvedValue(true);
+
+    await refreshPersonalAlertForSquad(squad);
+    await vi.waitFor(() => {
+      expect(mockRecordActionNeededEntry).toHaveBeenCalledWith('grp-1', 'roster-key:squad1');
+      expect(get(catchUpCount)).toBe(1);
+    });
   });
 
   it('mention alert increments count for the correct squad and channel', () => {

@@ -31,13 +31,13 @@
 	"announcements.signerShare.mine": "You updated your EVM key for this Squad",
 	"announcements.signerShare.theirs": "{authorName} updated their EVM key for this Squad",
 	"announcements.signerShare.aMember": "A member",
-	"announcements.squadBot.rosterMine": "You updated the squad bot roster",
-	"announcements.squadBot.rosterTheirs": "{authorName} updated the squad bot roster",
+	"announcements.squadBot.rosterMine": "You updated the Join inbox holders",
+	"announcements.squadBot.rosterTheirs": "{authorName} updated the Join inbox holders",
 	"announcements.squadBot.aMember": "A member",
-	"announcements.squadBot.rotatedMine": "You rotated the squad bot key",
-	"announcements.squadBot.rotatedTheirs": "{authorName} rotated the squad bot key",
-	"announcements.squadBot.updateTitle": "Squad bot update",
-	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 key holders} one {1 key holder} other {{count} key holders}}",
+	"announcements.squadBot.rotatedMine": "You rotated the Join inbox key",
+	"announcements.squadBot.rotatedTheirs": "{authorName} rotated the Join inbox key",
+	"announcements.squadBot.updateTitle": "Join inbox update",
+	"announcements.squadBot.keyHolders": "{count, plural, =0 {0 holders} one {1 holder} other {{count} holders}}",
 	"announcements.squadBot.keyEpoch": "Key epoch {keyEpoch}",
-	"announcements.squadBot.botLabel": "Bot {shortNpub}"
+	"announcements.squadBot.botLabel": "Inbox {shortNpub}"
 }

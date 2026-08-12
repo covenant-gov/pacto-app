@@ -1,10 +1,27 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
 import {
   canAddBotHolder,
   canManageBotHolders,
   hasSquadAdminHolderManageRights,
+  isSquadBotHolderActionInFlight,
+  resetSquadBotHolderActionInFlight,
+  rotateSquadBotKey,
+  addSquadBotHolder,
+  squadBotHolderActionInFlight,
+  squadBotHolderActionInFlightRevision,
   SQUAD_BOT_META_SCHEMA,
 } from './squad-bot';
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
+
+vi.mock('../api/nostr', () => ({
+  sendDmMessage: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { invoke } from '@tauri-apps/api/core';
 
 describe('canAddBotHolder', () => {
   const members = ['npub1a', 'npub1b', 'npub1c'];
@@ -83,5 +100,62 @@ describe('canManageBotHolders', () => {
 describe('squad bot schema constants', () => {
   it('matches wire doc', () => {
     expect(SQUAD_BOT_META_SCHEMA).toBe('pacto.squad_bot.meta.v1');
+  });
+});
+
+describe('squad bot holder action in-flight', () => {
+  beforeEach(() => {
+    resetSquadBotHolderActionInFlight();
+    vi.mocked(invoke).mockReset();
+  });
+
+  afterEach(() => {
+    resetSquadBotHolderActionInFlight();
+  });
+
+  it('reset clears in-flight set', () => {
+    squadBotHolderActionInFlight.set(new Set(['s1']));
+    squadBotHolderActionInFlightRevision.set(3);
+    resetSquadBotHolderActionInFlight();
+    expect(isSquadBotHolderActionInFlight('s1')).toBe(false);
+    expect(get(squadBotHolderActionInFlight).size).toBe(0);
+    expect(get(squadBotHolderActionInFlightRevision)).toBe(0);
+  });
+
+  it('marks during mutator and rejects concurrent action', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const state = {
+      squadId: 's1',
+      botNpub: 'npub1bot',
+      holders: ['npub1a', 'npub1b'],
+      keyEpoch: 1,
+      updatedAt: 1,
+      hasLocalSecret: true,
+      iAmHolder: true,
+    };
+    vi.mocked(invoke).mockImplementation(async () => {
+      expect(isSquadBotHolderActionInFlight('s1')).toBe(true);
+      await gate;
+      return {
+        state,
+        mlsAnnouncements: [],
+        mlsInbox: [],
+        keyShares: [],
+      };
+    });
+
+    const pending = addSquadBotHolder('s1', 'npub1b');
+    await vi.waitFor(() => expect(isSquadBotHolderActionInFlight('s1')).toBe(true));
+    await expect(rotateSquadBotKey('s1')).resolves.toEqual({
+      ok: false,
+      error: 'Bot holder update already in progress.',
+    });
+
+    release();
+    await expect(pending).resolves.toEqual({ ok: true, state });
+    expect(isSquadBotHolderActionInFlight('s1')).toBe(false);
   });
 });

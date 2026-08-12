@@ -9,7 +9,12 @@
   import { getProfileDisplayName, getProfileAvatarSrc } from '../../lib/utils/profile';
   import { showToast } from '../../stores/toast';
   import { openCommonsUserDmRequest, sendCommonsJoinRequest } from '../../lib/commons/commons-card-actions';
-  import { commonsJoinRequestBlockReason, commonsJoinRequestRevision } from '../../lib/commons/commons-join-request';
+  import {
+    commonsJoinRequestBlockReason,
+    commonsJoinRequestRevision,
+    isJoinRequestInFlight,
+    squadIdFromBroadcast,
+  } from '../../lib/commons/commons-join-request';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
 
   export let broadcast: CommonsBroadcastDto;
@@ -18,7 +23,6 @@
   const tFn = get(t);
 
   let messageBusy = false;
-  let joinBusy = false;
   let actionError = '';
 
   function formatExpiry(expiresAt: number): string {
@@ -60,6 +64,10 @@
     $commonsJoinRequestRevision;
     return isSquad ? commonsJoinRequestBlockReason(broadcast, myNpub, localSquadIds) : null;
   })();
+  $: joinInFlight = (() => {
+    $commonsJoinRequestRevision;
+    return isSquad && isJoinRequestInFlight(squadIdFromBroadcast(broadcast));
+  })();
   $: canMessage = isUser && !!myNpub && broadcast.authorNpub !== myNpub;
   $: canJoin = isSquad && !joinBlockReason && !!myNpub;
   $: profileName = userProfile ? getProfileDisplayName(userProfile) : '';
@@ -78,21 +86,16 @@
   }
 
   async function handleJoinRequest() {
-    if (!canJoin || !myNpub || joinBusy) return;
+    if (!canJoin || !myNpub || joinInFlight) return;
     actionError = '';
-    joinBusy = true;
-    try {
-      const result = await sendCommonsJoinRequest(broadcast, myNpub, localSquadIds);
-      if (!result.ok) {
-        actionError = result.error;
-        return;
-      }
-      actionError = '';
-      showToast(tFn('commons.detail.joinToast', { values: { squadLabel } }));
-      onClose();
-    } finally {
-      joinBusy = false;
+    const result = await sendCommonsJoinRequest(broadcast, myNpub, localSquadIds);
+    if (!result.ok) {
+      actionError = result.error;
+      return;
     }
+    actionError = '';
+    showToast(tFn('commons.detail.joinToast', { values: { squadLabel } }));
+    onClose();
   }
 </script>
 
@@ -137,10 +140,10 @@
         <button
           type="button"
           class="commons-detail-btn commons-detail-btn-primary"
-          disabled={joinBusy}
+          disabled={joinInFlight}
           on:click={handleJoinRequest}
         >
-          {joinBusy ? $t('commons.detail.sending') : $t('commons.detail.requestJoin')}
+          {joinInFlight ? $t('commons.detail.sending') : $t('commons.detail.requestJoin')}
         </button>
       {:else if isSquad && joinBlockReason && myNpub && broadcast.authorNpub !== myNpub}
         <p class="commons-detail-note muted">{joinBlockReason}</p>
