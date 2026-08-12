@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
   import SquadSponsorWithdrawModal from './SquadSponsorWithdrawModal.svelte';
+  import SquadSponsoredFeeUsagePanel from './SquadSponsoredFeeUsagePanel.svelte';
   import type { SquadInfraDto } from '../../../lib/governance/api';
   import {
     SPONSOR_LOW_BALANCE_WEI,
@@ -62,6 +63,7 @@
 
   let defaultBalance: SignerBalance = emptyBalance();
   let squadBalance: SignerBalance = emptyBalance();
+  let feeUsageRefreshToken = 0;
 
   $: network = parseSupportedChainId(sponsorRow?.chain);
   $: poolBalanceWei = summary ? BigInt(summary.poolBalanceWei) : null;
@@ -110,6 +112,7 @@
       if (force) summary = null;
     } finally {
       loading = false;
+      if (force) feeUsageRefreshToken += 1;
     }
   }
 
@@ -460,6 +463,14 @@
         </button>
       </div>
     {/if}
+  {/if}
+
+  {#if sponsorRow}
+    <SquadSponsoredFeeUsagePanel
+      parentId={parentId}
+      chain={sponsorRow.chain || summary?.chain || network}
+      refreshToken={feeUsageRefreshToken}
+    />
   {/if}
 </section>
 
