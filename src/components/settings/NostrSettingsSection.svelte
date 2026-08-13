@@ -603,7 +603,7 @@
     border: none;
     border-radius: 8px;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.9375rem;
     font-weight: 600;
     font-family: inherit;
@@ -681,7 +681,7 @@
   }
 
   .nostr-relay-badge--custom {
-    background: rgba(88, 101, 242, 0.15);
+    background: color-mix(in srgb, var(--brand) 15%, transparent);
     color: var(--brand);
   }
 

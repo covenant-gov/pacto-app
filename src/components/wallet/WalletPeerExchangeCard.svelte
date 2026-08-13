@@ -171,7 +171,7 @@
 
   .wpeer-accept {
     background: var(--brand, #6c5ce7);
-    color: #fff;
+    color: var(--on-brand);
     border-color: transparent;
   }
 

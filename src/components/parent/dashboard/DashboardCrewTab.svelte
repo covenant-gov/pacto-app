@@ -428,7 +428,7 @@
   }
   .roles-evm-copy-btn:hover {
     color: var(--text-primary);
-    background: var(--bg-elevated);
+    background: var(--bg-hover);
   }
   .roles-evm-copy-icon {
     display: block;

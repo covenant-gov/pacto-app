@@ -428,7 +428,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #ffffff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 0.9375rem;
   }

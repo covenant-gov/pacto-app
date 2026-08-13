@@ -549,7 +549,7 @@
     justify-content: center;
     font-weight: 600;
     font-size: 1rem;
-    color: #fff;
+    color: var(--on-brand);
     background-color: var(--brand);
   }
 
@@ -805,7 +805,7 @@
 
   .wallet-bar-btn-primary {
     background-color: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .wallet-bar-btn-secondary {

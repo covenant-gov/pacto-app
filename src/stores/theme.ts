@@ -6,7 +6,7 @@ import { writable } from 'svelte/store';
  * 2. `@import` it in `app.css` (default skin should also target `:root` and load first)
  * 3. Append `{ value, label }` below
  * 4. Allow `<id>` in the inline script in `src/app.html` (prevents theme flash on load)
- * 5. Mark dark skins in `DARK_THEME_IDS` so `.dark` and `color-scheme` stay in sync
+ * 5. Mark dark skins in `DARK_THEME_IDS` so `color-scheme: dark` stays in sync
  */
 export const THEME_OPTIONS = [
   { value: 'techno', label: 'Techno' },
@@ -20,7 +20,7 @@ export type Theme = (typeof THEME_OPTIONS)[number]['value'];
 
 export const DEFAULT_THEME: Theme = 'dark-techno';
 
-/** Dark skins get `html.dark` so shadcn `dark:` utilities work. */
+/** These ids use `color-scheme: dark`. */
 export const DARK_THEME_IDS = ['dark-techno', 'aztec', 'midnight', 'union'] as const;
 
 export type DarkTheme = (typeof DARK_THEME_IDS)[number];
@@ -54,7 +54,6 @@ export function getStoredTheme(): Theme | null {
 function applyThemeToDocument(value: Theme): void {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-theme', value);
-  document.documentElement.classList.toggle('dark', isDarkTheme(value));
 }
 
 export const theme = writable<Theme>(DEFAULT_THEME);

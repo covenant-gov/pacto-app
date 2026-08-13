@@ -97,7 +97,10 @@
     text-align: left;
   }
 
-  .commons-menu-cat:hover,
+  .commons-menu-cat:hover {
+    background: var(--bg-hover);
+  }
+
   .commons-menu-cat.is-open {
     background: var(--bg-elevated);
   }

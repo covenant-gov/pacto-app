@@ -1405,7 +1405,7 @@
     background: var(--brand);
     border: none;
     border-radius: 6px;
-    color: #fff;
+    color: var(--on-brand);
     cursor: pointer;
   }
 

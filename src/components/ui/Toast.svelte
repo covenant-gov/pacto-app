@@ -87,7 +87,7 @@
     align-items: center;
     justify-content: center;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     border-radius: 50%;
     font-size: 0.75rem;
     font-weight: 700;

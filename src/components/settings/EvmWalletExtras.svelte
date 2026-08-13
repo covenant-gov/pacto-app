@@ -560,7 +560,7 @@
     border-radius: 8px;
     border: none;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 0.875rem;
     font-family: inherit;

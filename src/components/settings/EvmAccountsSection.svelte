@@ -443,7 +443,7 @@
     border: none;
     border-radius: 8px;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.875rem;
     font-weight: 600;
     font-family: inherit;

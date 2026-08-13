@@ -561,6 +561,6 @@
 
   .home-send-btn-primary {
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
   }
 </style>

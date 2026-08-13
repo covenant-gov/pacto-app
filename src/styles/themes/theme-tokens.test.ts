@@ -104,10 +104,6 @@ describe('theme token contract', () => {
     for (const id of THEME_IDS) {
       expect(appHtml).toContain(`t !== '${id}'`);
     }
-    for (const id of DARK_THEME_IDS) {
-      expect(appHtml).toContain(`t === '${id}'`);
-    }
-    expect(appHtml).toContain("classList.toggle('dark', dark)");
   });
 
   for (const id of THEME_IDS) {

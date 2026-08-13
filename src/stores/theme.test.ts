@@ -13,12 +13,10 @@ import {
 describe('theme', () => {
   let storage: Map<string, string>;
   let documentAttribute: string | null;
-  let darkClassOn: boolean;
 
   beforeEach(() => {
     storage = new Map();
     documentAttribute = null;
-    darkClassOn = false;
     theme.set(DEFAULT_THEME);
 
     vi.stubGlobal('localStorage', {
@@ -38,13 +36,6 @@ describe('theme', () => {
           documentAttribute = value;
         },
         getAttribute: (_name: string) => documentAttribute,
-        classList: {
-          toggle: (token: string, force?: boolean) => {
-            if (token !== 'dark') return;
-            darkClassOn = force === true;
-          },
-          contains: (token: string) => token === 'dark' && darkClassOn,
-        },
       },
     });
   });
@@ -70,14 +61,6 @@ describe('theme', () => {
     expect(get(theme)).toBe('union');
     expect(storage.get('pacto_theme')).toBe('union');
     expect(documentAttribute).toBe('union');
-    expect(darkClassOn).toBe(true);
-  });
-
-  it('toggles the dark class for light and dark themes', () => {
-    setTheme('techno');
-    expect(darkClassOn).toBe(false);
-    setTheme('midnight');
-    expect(darkClassOn).toBe(true);
   });
 
   it('marks the expected themes as dark', () => {

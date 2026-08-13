@@ -66,11 +66,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 24px rgba(88, 101, 242, 0.3);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--brand) 30%, transparent);
   }
 
   .logo-text {
-    color: #ffffff;
+    color: var(--on-brand);
     font-size: 3rem;
     font-weight: 700;
   }
@@ -110,12 +110,12 @@
 
   .btn-primary {
     background: var(--brand);
-    color: #ffffff;
+    color: var(--on-brand);
   }
 
   .btn-primary:hover {
     background: var(--brand-hover);
-    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 40%, transparent);
   }
 
   .btn-primary:active {

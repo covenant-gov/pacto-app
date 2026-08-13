@@ -665,7 +665,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 1.125rem;
     background-color: var(--brand);
@@ -871,7 +871,7 @@
 
   .dm-thread-nickname-save {
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .dm-thread-nickname-save:hover:not(:disabled) {

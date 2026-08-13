@@ -267,7 +267,7 @@
 
   .wallet-tx-request-btn-accept {
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .wallet-tx-request-btn-accept:hover:not(:disabled) {

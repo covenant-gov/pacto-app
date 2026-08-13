@@ -612,7 +612,7 @@
   }
 
   .message.mentioned {
-    background: rgba(88, 101, 242, 0.12);
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
   }
 
   .message.compact {
@@ -652,7 +652,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #ffffff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 1rem;
   }
@@ -794,7 +794,7 @@
   }
 
   .message-reactions.overlay-media .reaction-chip.own {
-    background: rgba(88, 101, 242, 0.55);
+    background: color-mix(in srgb, var(--brand) 55%, transparent);
   }
 
   .reaction-chip {
@@ -816,7 +816,7 @@
   }
 
   .reaction-chip.own {
-    background: rgba(88, 101, 242, 0.18);
+    background: color-mix(in srgb, var(--brand) 18%, transparent);
     border-color: var(--brand);
   }
 
@@ -868,7 +868,7 @@
     align-items: center;
     justify-content: center;
     background: var(--brand);
-    color: #ffffff;
+    color: var(--on-brand);
     font-size: 0.6875rem;
     font-weight: 600;
   }
@@ -948,7 +948,7 @@
   }
 
   .quick-reaction-btn.own {
-    background: rgba(88, 101, 242, 0.18);
+    background: color-mix(in srgb, var(--brand) 18%, transparent);
   }
 
   .quick-reaction-expand {

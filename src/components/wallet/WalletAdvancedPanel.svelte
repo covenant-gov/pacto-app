@@ -469,7 +469,7 @@
   }
 
   .wallet-advanced-sim-ok {
-    color: var(--brand, #4ade80);
+    color: var(--success, #4ade80);
   }
 
   .wallet-advanced-sim-err {

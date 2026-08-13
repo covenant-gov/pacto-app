@@ -95,7 +95,7 @@
   .server-button.active,
   .server-button:hover {
     background: var(--brand);
-    box-shadow: 0 2px 8px rgba(80,100,255,0.2);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 20%, transparent);
   }
 
   .server-button:focus {

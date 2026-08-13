@@ -451,7 +451,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #ffffff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 3rem;
     border: 4px solid var(--border-subtle);
@@ -682,7 +682,7 @@
   .btn-save-edit {
     padding: 10px 20px;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     border: none;
     border-radius: 6px;
     font-size: 0.9375rem;

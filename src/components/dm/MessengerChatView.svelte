@@ -255,7 +255,7 @@
 
   .btn-primary {
     background-color: var(--brand);
-    color: #ffffff;
+    color: var(--on-brand);
   }
 
   .btn-primary:hover:not(:disabled) {

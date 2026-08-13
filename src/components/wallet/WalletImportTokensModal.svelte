@@ -436,7 +436,7 @@
 
   .w-import-btn-primary {
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .w-import-btn-secondary {

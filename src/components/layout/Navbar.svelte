@@ -933,7 +933,7 @@
     background: var(--brand);
     border: none;
     border-radius: 8px;
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.9375rem;
     cursor: pointer;
   }
@@ -1030,7 +1030,7 @@
     height: 48px;
     border-radius: 50%;
     background: var(--brand);
-    color: var(--text-primary);
+    color: var(--on-brand);
     display: flex;
     align-items: center;
     justify-content: center;

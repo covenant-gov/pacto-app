@@ -64,7 +64,7 @@
     border: none;
     border-radius: 0.5rem;
     background: var(--brand, #7c6df2);
-    color: var(--text-on-accent, #fff);
+    color: var(--on-brand);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;

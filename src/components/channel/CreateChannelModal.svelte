@@ -317,7 +317,7 @@
   .create-channel-btn-create {
     background: var(--brand);
     border: none;
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .create-channel-btn-create:hover:not(:disabled) {

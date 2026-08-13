@@ -247,7 +247,7 @@
   .restore-confirm {
     border: none;
     background: var(--brand, #7c6df2);
-    color: var(--text-on-accent, #fff);
+    color: var(--on-brand);
   }
 
   .restore-confirm:disabled,

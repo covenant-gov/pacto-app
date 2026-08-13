@@ -354,7 +354,7 @@
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--bg-elevated);
+    background: var(--bg-hover);
   }
 
   .btn-secondary:disabled {
