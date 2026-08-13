@@ -103,9 +103,9 @@
   }
 
   .catch-up-filter-btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    border-color: var(--brand);
+    color: var(--on-brand);
   }
 
   .catch-up-filter-squad {

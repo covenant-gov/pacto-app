@@ -228,7 +228,7 @@
   }
 
   .broadcast-duration-option:has(input:checked) {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
     background: var(--bg-panel);
   }
@@ -250,9 +250,9 @@
     border-radius: 8px;
     font-size: 0.875rem;
     cursor: pointer;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
-    color: var(--accent-contrast, #fff);
+    color: var(--on-brand);
   }
 
   .broadcast-btn-submit:disabled {

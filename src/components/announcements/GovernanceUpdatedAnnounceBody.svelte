@@ -136,7 +136,7 @@
 
   .gov-updated-explorer-link {
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
     text-decoration: none;
   }
 

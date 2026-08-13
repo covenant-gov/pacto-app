@@ -161,17 +161,17 @@
     inset: 0;
     z-index: 4;
     pointer-events: none;
-    box-shadow: inset 0 0 0 1px var(--accent);
+    box-shadow: inset 0 0 0 1px var(--brand);
     transition: box-shadow 0.2s ease;
   }
 
   .commons-browser-tile:hover:not(.commons-browser-tile-active) .commons-browser-frame {
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: inset 0 0 0 2px var(--brand);
   }
 
   .commons-browser-tile-active .commons-browser-frame,
   .commons-browser-tile:focus-visible .commons-browser-frame {
-    box-shadow: inset 0 0 0 2px var(--accent);
+    box-shadow: inset 0 0 0 2px var(--brand);
   }
 
   .commons-browser-badge {
@@ -183,7 +183,7 @@
     font-weight: 600;
     padding: 3px 8px;
     border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 </style>

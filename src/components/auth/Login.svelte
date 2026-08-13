@@ -219,7 +219,7 @@
     width: 48px;
     height: 48px;
     border: 4px solid var(--border-subtle, #313338);
-    border-top-color: var(--accent, #5865f2);
+    border-top-color: var(--brand, #5865f2);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }

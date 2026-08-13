@@ -1,6 +1,8 @@
-/* Midnight — moody violet/indigo night, magenta highlights, lilac type
-   (inspired by purple nocturnal / mesh artwork references). Typography: app.css only. */
+/* Midnight — moody violet/indigo night, magenta brand, lilac type.
+   Typography: app.css only. */
 [data-theme="midnight"] {
+  color-scheme: dark;
+
   /* Surfaces: elevated lighter than page so cards/rumors read as distinct planes */
   --bg-page: #12081f;
   --bg-panel: #1a0f2e;
@@ -14,17 +16,18 @@
   --border: #7c4dcb;
   --border-subtle: #4a3d68;
 
-  --accent: #e879f9;
-  --accent-hover: #d946ef;
+  --brand: #e879f9;
+  --brand-hover: #d946ef;
+  --on-brand: #160818;
   --danger: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);
-  --blockquote-border: var(--accent);
+  --blockquote-border: var(--brand);
   --spoiler-bg: var(--text-primary);
-  --reply-border: var(--accent);
+  --reply-border: var(--brand);
 
   --icon-dropdown-filter: brightness(0) invert(1);
 

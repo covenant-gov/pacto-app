@@ -85,7 +85,7 @@
   }
 
   .notification-level-menu-check {
-    color: var(--accent);
+    color: var(--brand);
     font-weight: 700;
   }
 </style>

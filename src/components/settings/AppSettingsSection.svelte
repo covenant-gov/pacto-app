@@ -257,7 +257,7 @@
   }
 
   .theme-option input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .theme-option-label {
@@ -313,7 +313,7 @@
   }
 
   .startup-check-toggle input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .dev-build-note {
@@ -326,8 +326,8 @@
     padding: 8px 16px;
     border: none;
     border-radius: 8px;
-    background: var(--accent);
-    color: #ffffff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
@@ -339,7 +339,7 @@
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .security-section {
@@ -371,7 +371,7 @@
   }
 
   .timeout-option input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .timeout-option input:disabled {

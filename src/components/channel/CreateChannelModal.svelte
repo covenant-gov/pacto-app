@@ -315,13 +315,13 @@
   }
 
   .create-channel-btn-create {
-    background: var(--accent);
+    background: var(--brand);
     border: none;
-    color: #fff;
+    color: var(--on-brand);
   }
 
   .create-channel-btn-create:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .create-channel-btn-secondary {

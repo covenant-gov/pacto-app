@@ -74,7 +74,8 @@ Pacto is a private, censorship-resistant community organizing platform with no K
 | `src/routes/` | Single route (`+page.svelte`) plus layout; adapter-static SPA fallback. |
 | `src/stores/` | Svelte writable/derived stores for auth, DMs, squads, MLS chat, navigation, persistence, theme. |
 | `src/lib/` | Side-effect modules and typed Tauri wrappers: `api/*`, `app/*`, `wallet/*`, `squad/*`, `governance/*`, `dashboard/*`, `mls/*`, `dm/*`, `utils/*`. |
-| `src/components/` | Svelte UI components grouped by domain: `auth/`, `dm/`, `channel/`, `parent/`, `wallet/`, `ui/`, `layout/`. |
+| `src/lib/components/ui/` | Vendored shadcn-svelte primitives (Tailwind + bits-ui); treat as upstream-shaped Pacto code. |
+| `src/components/` | Pacto-authored Svelte UI grouped by domain: `auth/`, `dm/`, `channel/`, `parent/`, `wallet/`, `ui/`, `layout/`. |
 | `src-tauri/` | Tauri v2 Rust backend and app configuration. |
 | `src-tauri/src/` | Rust crate source. |
 | `src-tauri/src/evm/` | EVM wallet, key derivation, RPC, contract bindings, governance deployments. |
@@ -383,3 +384,23 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+## Learned User Preferences
+
+- All agent and subagent output uses simplified technical English: terse, expert, no filler.
+- Orchestrator/first-mate: spawn subagents for implementation, verify their work, do not implement yourself; stop and ask if anything is unclear; no unapproved fixes or workarounds.
+- Git commits must be GPG-signed by the human. Agents must not read keys, bypass signing, rebase around unsigned commits, or add Cursor/agent Co-authored-by trailers.
+- Conventional commits: adapt to the local repo convention; one commit per logical change; subject summarizes why, not a file list.
+- PR review comments are a sample, not the full set. Search the codebase for every instance of the issue class before treating a thread as complete.
+- Node version manager is fnm, not nvm.
+- UI feature branches use the `ui/` prefix. Do not use `build/` for app UI work.
+- Do not convert Svelte files to runes during CSS/token-only fixes unless asked.
+
+## Learned Workspace Facts
+
+- Theme contract: text on `--brand` fills uses `color: var(--on-brand)` with no hex fallback and no `--text-on-accent`. Hover surfaces use `--bg-hover`; static elevated surfaces use `--bg-elevated`. Success text uses `--success`, not `--brand`. `--bg-tertiary` is undefined in all themes.
+- Dark skins are `[data-theme=…]` on `<html>`, not `html.dark`. shadcn `dark:` utilities already key off the data-theme custom variant.
+- Design system foundation is Tailwind CSS 4 + shadcn; theme tokens and decisions belong in repo CSS/docs, not one-off component hex.
+- GitHub stacked PRs are the preferred way to land sequential UI work (foundations then theme tokens).
+- Squad dashboard slug is `dashboard`, not `squad-dashboard`. `#announcements` is publish-only; discussion belongs in governance chat. Proposal mentions should render as number+title pills, not a bare `#n`.
+

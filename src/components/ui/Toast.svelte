@@ -86,8 +86,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
     border-radius: 50%;
     font-size: 0.75rem;
     font-weight: 700;
@@ -116,9 +116,9 @@
     padding: 4px 10px;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--brand);
     background: transparent;
-    border: 1px solid var(--accent);
+    border: 1px solid var(--brand);
     border-radius: 6px;
     cursor: pointer;
   }

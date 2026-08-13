@@ -9101,22 +9101,33 @@ pub fn run() {
                 .build(),
         );
 
-        // Single-instance plugin: ensures deep links are passed to existing instance
-        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            // Handle deep links from single-instance (Windows/Linux)
-            let urls: Vec<String> = args
-                .iter()
-                .filter(|arg| arg.starts_with("vector://") || arg.contains("vectorapp.io"))
-                .cloned()
-                .collect();
-            if !urls.is_empty() {
-                deep_link::handle_deep_link(app, urls);
-            }
-            // Focus the existing window
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }));
+        // Single-instance plugin: ensures deep links are passed to existing instance.
+        //
+        // Skipped for a dev sandbox. The guard is keyed on the app identifier, so it
+        // cannot tell two sandboxes apart: the second one hands its argv to the first
+        // and exits, which surfaces as an app that writes its handle, starts its
+        // bridge, and then never logs in. Parallel agent sandboxes are separate
+        // accounts in separate data directories and must run side by side.
+        //
+        // `multi_instance_allowed` is debug-only, so a release build always registers
+        // the plugin no matter what the environment says.
+        if !crate::test_sandbox::multi_instance_allowed() {
+            builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+                // Handle deep links from single-instance (Windows/Linux)
+                let urls: Vec<String> = args
+                    .iter()
+                    .filter(|arg| arg.starts_with("vector://") || arg.contains("vectorapp.io"))
+                    .cloned()
+                    .collect();
+                if !urls.is_empty() {
+                    deep_link::handle_deep_link(app, urls);
+                }
+                // Focus the existing window
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            }));
+        }
     }
 
     builder

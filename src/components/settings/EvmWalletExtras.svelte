@@ -388,7 +388,7 @@
   }
 
   .evm-extras-select:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -443,7 +443,7 @@
     padding: 0;
     border: none;
     background: none;
-    color: var(--accent);
+    color: var(--brand);
     font: inherit;
     font-weight: 600;
     cursor: pointer;
@@ -451,7 +451,7 @@
   }
 
   .evm-extras-inline-link:hover {
-    color: var(--accent-hover);
+    color: var(--brand-hover);
   }
 
   .evm-extras-rpc-add {
@@ -474,7 +474,7 @@
   }
 
   .evm-extras-input:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -552,15 +552,15 @@
   }
 
   .evm-extras-toggle input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .evm-extras-btn {
     padding: 8px 16px;
     border-radius: 8px;
     border: none;
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 0.875rem;
     font-family: inherit;
@@ -568,7 +568,7 @@
   }
 
   .evm-extras-btn:hover {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .evm-extras-btn-secondary {

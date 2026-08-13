@@ -517,7 +517,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: var(--accent);
+    color: var(--brand);
     font-size: 0.8125rem;
     cursor: pointer;
     text-decoration: underline;

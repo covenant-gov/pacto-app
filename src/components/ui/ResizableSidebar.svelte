@@ -116,6 +116,6 @@
 
   .resize-handle:hover,
   .resize-handle:focus {
-    background-color: var(--accent);
+    background-color: var(--brand);
   }
 </style>

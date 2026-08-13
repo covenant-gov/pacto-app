@@ -45,13 +45,13 @@
     border-radius: 6px;
     cursor: pointer;
     border: 1px solid var(--border-subtle);
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     align-self: flex-start;
   }
   .gov-cta.primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
   .gov-cta.execute {

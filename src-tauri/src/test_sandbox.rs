@@ -74,6 +74,20 @@ pub fn sandbox_root() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// True when this process is a dev sandbox and may therefore run beside other
+/// instances of the app.
+///
+/// The single-instance guard is keyed on the app identifier, so it cannot tell
+/// two sandboxes apart and would make the second hand its argv to the first and
+/// exit. Parallel agent sandboxes are separate accounts in separate data
+/// directories, so the guard has to be skipped for them.
+///
+/// Debug-only by construction: a release build has no sandbox concept to honor
+/// here, so it stays single-instance whatever the environment claims.
+pub fn multi_instance_allowed() -> bool {
+    cfg!(debug_assertions) && sandbox_root().is_some()
+}
+
 /// Returns the sandboxed `app_data_dir` when a sandbox root is configured,
 /// otherwise delegates to the normal Tauri path.
 pub fn test_data_dir<R: Runtime>(handle: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -262,6 +276,36 @@ mod tests {
         let dir = temp_test_dir("sandbox-root-some");
         let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
         assert_eq!(sandbox_root(), Some(PathBuf::from(dir.to_str().unwrap())));
+    }
+
+    #[test]
+    fn multi_instance_allowed_only_with_a_sandbox_root() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("multi-instance-allowed");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+        // Mirrors the release posture: the helper may only ever relax the
+        // guard in a debug build.
+        assert_eq!(multi_instance_allowed(), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn multi_instance_refused_without_a_sandbox_root() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        assert!(
+            !multi_instance_allowed(),
+            "a run with no sandbox root must stay single-instance"
+        );
+    }
+
+    #[test]
+    fn multi_instance_refused_when_root_is_blank() {
+        let _lock = env_lock();
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, "   ");
+        assert!(
+            !multi_instance_allowed(),
+            "a blank root is not a sandbox and must not relax the guard"
+        );
     }
 
     #[test]

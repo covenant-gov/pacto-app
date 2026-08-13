@@ -145,7 +145,7 @@
   }
   .dashboard-mode-segment {
     border: none;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     padding: 6px 12px;
     font-size: 0.8125rem;

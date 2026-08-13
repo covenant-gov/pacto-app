@@ -240,7 +240,7 @@
     background: none;
     border: none;
     padding: 0;
-    color: var(--accent);
+    color: var(--brand);
     font-size: 0.8125rem;
     cursor: pointer;
     text-decoration: underline;
@@ -257,12 +257,12 @@
     cursor: pointer;
   }
   .btn-primary {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     border: none;
   }
   .btn-secondary {
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
   }

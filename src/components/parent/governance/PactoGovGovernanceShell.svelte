@@ -443,9 +443,9 @@
     cursor: pointer;
   }
   .submode-tab.selected {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 28%, transparent);
   }
   .submode-panel {
     min-width: 0;

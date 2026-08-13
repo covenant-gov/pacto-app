@@ -1,3 +1,6 @@
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tw-animate-css';
 @import './styles/themes/dark-techno.css';
 @import './styles/themes/aztec.css';
 @import './styles/themes/midnight.css';
@@ -5,10 +8,53 @@
 @import './styles/themes/union.css';
 @import './styles/modal-buttons.css';
 
-/* Typography shared by every theme (sans body, monospace headings). Colors stay per-[data-theme]. */
+@custom-variant dark (&:is([data-theme="dark-techno"] *, [data-theme="dark-techno"], [data-theme="aztec"] *, [data-theme="aztec"], [data-theme="midnight"] *, [data-theme="midnight"], [data-theme="union"] *, [data-theme="union"]));
+
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/instrument-sans-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/instrument-sans-500.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/instrument-sans-600.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-500.woff2') format('woff2');
+}
+
+/* Typography shared by every theme. Colors stay per-[data-theme].
+ * Prefer --font-mono-family for technical mono. Some local ui-monospace stacks remain. */
 :root {
-  --font-ui: Inter, Avenir, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+  --font-ui: 'Instrument Sans', -apple-system, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  --font-mono-family: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
 
   font-family: var(--font-ui);
   font-size: 16px;
@@ -24,15 +70,75 @@
   -webkit-text-size-adjust: 100%;
 
   overscroll-behavior: none;
+
+  --radius: 0.5rem;
+  --notif: #cb4f10;
+  --gov-success: var(--success);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* Map Pacto tokens into shadcn names. Do not redefine theme-owned --border. */
+:root,
+[data-theme] {
+  --background: var(--bg-page);
+  --foreground: var(--text-primary);
+  --card: var(--bg-panel);
+  --card-foreground: var(--text-primary);
+  --popover: var(--bg-elevated);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--bg-elevated);
+  --secondary-foreground: var(--text-primary);
+  --muted: var(--bg-panel);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--bg-hover);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--text-primary);
+  --input: var(--border-subtle);
+  --ring: var(--brand);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border-subtle);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-notif: var(--notif);
+  --color-gov-success: var(--gov-success);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono-family);
 }
 
 :is(h1, h2, h3, h4, h5, h6) {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-weight: 600;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   min-height: 100%;
   margin: 0;
@@ -46,7 +152,14 @@ body {
   flex-direction: column;
 }
 
-.container {
+[data-slot],
+[data-slot] *,
+[data-slot] *::before,
+[data-slot] *::after {
+  box-sizing: border-box;
+}
+
+.app-shell {
   margin: 0;
   display: flex;
   flex-direction: row;

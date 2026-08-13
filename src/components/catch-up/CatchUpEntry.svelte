@@ -130,8 +130,8 @@
   }
 
   .catch-up-entry-kind-action_prompt {
-    color: var(--accent);
-    border-color: var(--accent);
+    color: var(--brand);
+    border-color: var(--brand);
   }
 
   .catch-up-entry-location {

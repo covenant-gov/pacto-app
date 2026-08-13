@@ -172,9 +172,9 @@
   }
 
   .key-textarea:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
     background: var(--bg-hover);
-    box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
   }
 
   .key-textarea:disabled {
@@ -204,13 +204,13 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: #ffffff;
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
+    background: var(--brand-hover);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 40%, transparent);
   }
 
   .btn-primary:disabled {
@@ -226,7 +226,7 @@
 
   .btn-secondary:hover:not(:disabled) {
     background: var(--border-subtle);
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -237,9 +237,9 @@
 
   .import-notice {
     padding: 12px 16px;
-    background: rgba(88, 101, 242, 0.1);
+    background: color-mix(in srgb, var(--brand) 10%, transparent);
     border-radius: 8px;
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--brand);
   }
 
   .import-notice p {

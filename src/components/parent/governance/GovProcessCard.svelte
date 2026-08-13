@@ -160,8 +160,8 @@
     list-style: none;
   }
   .proposal-card-active {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 25%, transparent);
   }
   .proposal-card-executable {
     border-color: color-mix(in srgb, #16a34a 55%, var(--border-subtle));
@@ -191,7 +191,7 @@
     color: var(--text-muted);
   }
   .proposal-card-status-active {
-    color: var(--accent);
+    color: var(--brand);
     font-weight: 600;
   }
   .proposal-card-title {

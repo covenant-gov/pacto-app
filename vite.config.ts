@@ -1,9 +1,11 @@
 import { defineConfig } from 'vitest/config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import packageJson from './package.json' with { type: 'json' };
 import { svelteTesting } from '@testing-library/svelte/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -45,7 +47,9 @@ function getAppVersion(): string {
 
 // https://vite.dev/config/ — Vitest uses the same file (see `test` below).
 export default defineConfig({
-  plugins: Array.isArray(plugins) ? [...plugins, svelteTesting()] : [plugins, svelteTesting()],
+  plugins: Array.isArray(plugins)
+    ? [...plugins, tailwindcss(), svelteTesting()]
+    : [plugins, tailwindcss(), svelteTesting()],
 
   /** Expose `ALCHEMY_RPC_KEY` to the client (same var the Tauri backend reads). */
   envPrefix: ['VITE_', 'ALCHEMY_'],
@@ -69,7 +73,23 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ['**/src-tauri/**', '**/build-agent/**'],
+      // A dev sandbox writes its app log, SQLite database and MLS store under
+      // test_sandbox/ (make dev-sandbox) or test_fixtures/ (make dev,
+      // dev-account, dev-buddy) while the dev server is up, and a git worktree
+      // nests a whole second checkout under .worktrees/. Watching any of them
+      // feeds the running app's own disk churn back in as source changes.
+      //
+      // The worktrees pattern is anchored to this checkout: patterns match
+      // absolute paths, so a bare '**/.worktrees/**' would make a dev server
+      // running *inside* a worktree ignore its own sources (serving fine, HMR
+      // silently dead).
+      ignored: [
+        '**/src-tauri/**',
+        '**/build-agent/**',
+        '**/test_sandbox/**',
+        '**/test_fixtures/**',
+        `${fileURLToPath(new URL('.', import.meta.url)).replaceAll('\\', '/')}.worktrees/**`,
+      ],
     },
   },
 

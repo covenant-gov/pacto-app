@@ -268,9 +268,9 @@
   }
 
   .commons-detail-btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    border-color: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-detail-btn:disabled {

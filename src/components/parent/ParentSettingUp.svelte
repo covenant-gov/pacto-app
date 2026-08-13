@@ -44,7 +44,7 @@
     width: 28px;
     height: 28px;
     border: 3px solid var(--border-subtle);
-    border-top-color: var(--accent);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: parent-setting-up-spin 0.9s linear infinite;
   }
@@ -70,15 +70,15 @@
     margin-top: 4px;
     padding: 6px 12px;
     font-size: 0.8125rem;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
     border-radius: 6px;
-    color: #fff;
+    color: var(--on-brand);
     cursor: pointer;
   }
 
   .setting-up-retry-btn:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .setting-up-retry-btn:disabled {

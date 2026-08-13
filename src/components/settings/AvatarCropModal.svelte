@@ -531,7 +531,7 @@
     width: 36px;
     height: 36px;
     border: 3px solid var(--border-subtle);
-    border-top-color: var(--accent);
+    border-top-color: var(--brand);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -601,7 +601,7 @@
 
   .crop-zoom-slider {
     flex: 1;
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .crop-step-btn {

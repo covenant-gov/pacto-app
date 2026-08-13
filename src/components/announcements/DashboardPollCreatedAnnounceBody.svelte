@@ -32,7 +32,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .poll-announce-title {

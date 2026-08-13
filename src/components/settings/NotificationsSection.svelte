@@ -289,7 +289,7 @@
   }
 
   .theme-option input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .theme-option-label {
@@ -321,7 +321,7 @@
   }
 
   .mute-toggle input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .permission-state {
@@ -347,14 +347,14 @@
     padding: 6px 12px;
     border-radius: 8px;
     font-size: 0.8125rem;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
     cursor: pointer;
   }
 
   .btn-secondary:hover:not(:disabled) {
-    background: var(--bg-elevated);
+    background: var(--bg-hover);
   }
 
   .btn-secondary:disabled {
