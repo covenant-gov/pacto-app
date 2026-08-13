@@ -195,6 +195,48 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib --no-default-features
 
+  relay-free-harness:
+    # Relay-free seeding harness: builds populated per-account storage with
+    # zero network calls, through the real ingest path.
+    # No dev-env docker-compose stack. `iptables -j DROP` on OUTPUT proves the
+    # binary's own "zero network calls" claim at runtime, not just an
+    # assertion -- NET_ADMIN is the one added capability it needs.
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/covenant-gov/pacto-app/pacto-ci:latest
+      options: --user root --cap-add=NET_ADMIN
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build relay-free harness
+        working-directory: src-tauri
+        run: cargo build --no-default-features --features relay-free-harness --bin relay-free-harness
+
+      - name: Install iptables
+        run: apt-get update -qq && apt-get install -y -qq iptables
+
+      - name: Seed a sandbox with no network reachable
+        working-directory: src-tauri
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/relay-free-harness-sandbox"
+          iptables -A OUTPUT -j DROP
+          ./target/debug/relay-free-harness --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
+            | tee /tmp/harness-first-run.log
+          grep -q "Seeded npub=" /tmp/harness-first-run.log
+
+      - name: Rerun is idempotent, still with no network reachable
+        working-directory: src-tauri
+        run: |
+          set -euo pipefail
+          ./target/debug/relay-free-harness --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
+            | tee /tmp/harness-second-run.log
+          grep -q "already seeded" /tmp/harness-second-run.log
+
   landing-build:
     runs-on: ubuntu-latest
     steps:
