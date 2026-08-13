@@ -458,8 +458,8 @@
   }
 
   .backup-quiz-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.2);
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
     outline: none;
   }
 
@@ -503,8 +503,8 @@
 
   .btn-primary {
     border: none;
-    background: var(--accent);
-    color: white;
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .btn-primary:disabled {

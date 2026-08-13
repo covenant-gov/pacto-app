@@ -447,8 +447,8 @@
   }
 
   .dashboard-poll-vote-btn.voted {
-    border-color: var(--accent);
-    color: var(--accent);
+    border-color: var(--brand);
+    color: var(--brand);
   }
 
   .dashboard-polls-composer {

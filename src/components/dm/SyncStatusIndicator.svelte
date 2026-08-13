@@ -264,8 +264,8 @@
 
   .sync-status-popover-confirm {
     border: none;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .sync-status-popover-confirm:disabled,

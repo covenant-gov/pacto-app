@@ -72,8 +72,8 @@
     height: 20px;
     padding: 0 6px;
     border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.6875rem;
     font-weight: 700;
     line-height: 20px;

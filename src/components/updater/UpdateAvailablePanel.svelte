@@ -151,14 +151,14 @@
   .update-progress {
     width: 100%;
     height: 8px;
-    background-color: var(--bg-tertiary);
+    background-color: var(--bg-elevated);
     border-radius: 4px;
     overflow: hidden;
   }
 
   .update-progress-bar {
     height: 100%;
-    background-color: var(--accent-primary);
+    background-color: var(--brand);
     transition: width 0.2s ease;
   }
 

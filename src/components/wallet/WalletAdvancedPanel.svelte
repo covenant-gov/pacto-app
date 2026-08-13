@@ -469,7 +469,7 @@
   }
 
   .wallet-advanced-sim-ok {
-    color: var(--accent, #4ade80);
+    color: var(--success, #4ade80);
   }
 
   .wallet-advanced-sim-err {
@@ -487,8 +487,8 @@
     padding: 8px 14px;
     border-radius: 6px;
     border: 0;
-    background: var(--accent);
-    color: var(--accent-fg, #000);
+    background: var(--brand);
+    color: var(--on-brand);
     font: inherit;
     font-size: 0.875rem;
     cursor: pointer;

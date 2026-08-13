@@ -206,7 +206,7 @@
   }
 
   .commons-personal-avatar.is-active {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .commons-personal-avatar img {
@@ -266,11 +266,11 @@
   }
 
   .commons-personal-inline-btn.is-accent {
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .commons-personal-inline-btn.is-accent:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
   }
 
   .commons-personal-inline-btn:disabled {
@@ -287,8 +287,8 @@
   }
 
   .commons-status-dot-active {
-    background: var(--accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+    background: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent);
   }
 
   .commons-personal-message {
@@ -309,7 +309,7 @@
     padding: 0;
     border: none;
     background: none;
-    color: var(--accent);
+    color: var(--brand);
     font-size: inherit;
     line-height: inherit;
     cursor: pointer;

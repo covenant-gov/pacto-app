@@ -216,7 +216,7 @@
   }
 
   .hats-tree-node-card.has-wearers .hats-tree-node-footer {
-    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    background: color-mix(in srgb, var(--brand) 22%, transparent);
     color: var(--text-primary);
   }
 
@@ -246,7 +246,7 @@
   }
 
   .wearer-link:hover {
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .wearer-roles {

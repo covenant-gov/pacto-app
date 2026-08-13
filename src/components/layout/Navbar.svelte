@@ -930,16 +930,16 @@
 
   .organize-btn-create {
     padding: 8px 16px;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
     border-radius: 8px;
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.9375rem;
     cursor: pointer;
   }
 
   .organize-btn-create:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .organize-btn-create:disabled {
@@ -996,8 +996,8 @@
     top: -1px;
     height: 3px;
     border-radius: 2px;
-    background: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--brand);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 40%, transparent);
     pointer-events: none;
     z-index: 2;
   }
@@ -1007,8 +1007,8 @@
     height: 3px;
     margin: 2px 0 6px;
     border-radius: 2px;
-    background: var(--accent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+    background: var(--brand);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 40%, transparent);
     flex-shrink: 0;
   }
 
@@ -1019,7 +1019,7 @@
   }
 
   .tab-list.squad-rail-dragging .squad-nav-item:not(.is-dragging) :global(.server-button.active) {
-    background: var(--accent);
+    background: var(--brand);
   }
 
   .squad-drag-ghost {
@@ -1029,8 +1029,8 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: var(--accent);
-    color: var(--text-primary);
+    background: var(--brand);
+    color: var(--on-brand);
     display: flex;
     align-items: center;
     justify-content: center;

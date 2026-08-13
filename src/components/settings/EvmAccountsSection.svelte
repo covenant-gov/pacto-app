@@ -442,8 +442,8 @@
     padding: 8px 16px;
     border: none;
     border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.875rem;
     font-weight: 600;
     font-family: inherit;
@@ -491,7 +491,7 @@
   .evm-section :global(.wallet-view-account-badge) {
     font-size: 0.72rem;
     font-weight: 600;
-    color: var(--accent);
+    color: var(--brand);
     text-transform: uppercase;
   }
 
@@ -551,11 +551,11 @@
   }
 
   .evm-section :global(.wallet-view-btn-export-key:hover) {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .evm-section :global(.evm-account-edit-btn:hover:not(:disabled)) {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .evm-accounts-list {
@@ -652,7 +652,7 @@
 
   .evm-account-squad-link:hover .evm-account-squad-name {
     text-decoration: underline;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .evm-account-squad-name {

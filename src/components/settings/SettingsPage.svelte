@@ -140,7 +140,7 @@
     align-items: center;
     gap: 6px;
     padding: 8px 12px;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
     border-radius: 8px;
     color: var(--text-secondary);
@@ -157,7 +157,7 @@
   }
 
   .settings-back:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -220,7 +220,7 @@
   }
 
   .settings-sidebar-link:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 

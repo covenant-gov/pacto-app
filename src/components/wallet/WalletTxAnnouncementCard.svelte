@@ -95,16 +95,16 @@
   }
 
   .wallet-tx-announce-pending {
-    border-left-color: var(--accent);
+    border-left-color: var(--brand);
   }
 
   .wallet-tx-announce-pending .wallet-tx-announce-badge {
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .wallet-tx-announce-pending .wallet-tx-announce-icon {
     background: rgba(0, 136, 204, 0.15);
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .wallet-tx-announce-failed {
@@ -199,7 +199,7 @@
     font-weight: 500;
     border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     cursor: pointer;
     font-family: inherit;
@@ -219,8 +219,8 @@
     font-size: 0.8125rem;
     font-weight: 600;
     font-family: inherit;
-    color: var(--accent-contrast, #fff);
-    background: var(--accent);
+    color: var(--on-brand);
+    background: var(--brand);
     border: none;
     border-radius: 8px;
     text-decoration: none;
@@ -229,12 +229,12 @@
   }
 
   .wallet-tx-announce-link:hover {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
     filter: brightness(1.02);
   }
 
   .wallet-tx-announce-link:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 </style>

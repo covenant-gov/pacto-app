@@ -215,13 +215,13 @@
   }
 
   .safe-copy-btn:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
   .safe-explorer-link {
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
     text-decoration: none;
     flex-shrink: 0;
   }

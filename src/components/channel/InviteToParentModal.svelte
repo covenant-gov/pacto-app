@@ -184,7 +184,7 @@
     height: 18px;
     margin: 0;
     cursor: pointer;
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .invite-to-parent-row:hover {
@@ -221,7 +221,7 @@
 
   .invite-to-parent-npub-input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .invite-to-parent-error {
@@ -257,16 +257,16 @@
 
   .invite-to-parent-btn-invite {
     padding: 8px 16px;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
     border-radius: 8px;
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.9375rem;
     cursor: pointer;
   }
 
   .invite-to-parent-btn-invite:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .invite-to-parent-btn-invite:disabled {

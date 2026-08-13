@@ -489,7 +489,7 @@
   }
 
   .nostr-npub-copy-btn:hover {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -508,7 +508,7 @@
   }
 
   .nostr-export-key-btn:hover {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -590,7 +590,7 @@
 
   .nostr-add-relay-input:focus,
   .nostr-add-relay-select:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .nostr-add-relay-input:disabled,
@@ -602,8 +602,8 @@
     padding: 10px 18px;
     border: none;
     border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.9375rem;
     font-weight: 600;
     font-family: inherit;
@@ -612,7 +612,7 @@
   }
 
   .nostr-add-relay-btn:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .nostr-add-relay-btn:disabled {
@@ -681,8 +681,8 @@
   }
 
   .nostr-relay-badge--custom {
-    background: rgba(88, 101, 242, 0.15);
-    color: var(--accent);
+    background: color-mix(in srgb, var(--brand) 15%, transparent);
+    color: var(--brand);
   }
 
   .nostr-relay-mode {
@@ -729,7 +729,7 @@
   }
 
   .nostr-relay-toggle input {
-    accent-color: var(--accent);
+    accent-color: var(--brand);
   }
 
   .nostr-relay-remove-btn {

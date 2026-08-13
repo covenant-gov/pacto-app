@@ -97,7 +97,10 @@
     text-align: left;
   }
 
-  .commons-menu-cat:hover,
+  .commons-menu-cat:hover {
+    background: var(--bg-hover);
+  }
+
   .commons-menu-cat.is-open {
     background: var(--bg-elevated);
   }
@@ -146,9 +149,9 @@
   }
 
   .commons-menu-child.is-active {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    border-color: var(--brand);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-menu-child-count {

@@ -61,16 +61,16 @@
   .logo-placeholder {
     width: 96px;
     height: 96px;
-    background: var(--accent);
+    background: var(--brand);
     border-radius: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8px 24px rgba(88, 101, 242, 0.3);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--brand) 30%, transparent);
   }
 
   .logo-text {
-    color: #ffffff;
+    color: var(--on-brand);
     font-size: 3rem;
     font-weight: 700;
   }
@@ -109,13 +109,13 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: #ffffff;
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .btn-primary:hover {
-    background: var(--accent-hover);
-    box-shadow: 0 4px 12px rgba(88, 101, 242, 0.4);
+    background: var(--brand-hover);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 40%, transparent);
   }
 
   .btn-primary:active {
@@ -130,7 +130,7 @@
 
   .btn-secondary:hover {
     background: var(--border-subtle);
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 

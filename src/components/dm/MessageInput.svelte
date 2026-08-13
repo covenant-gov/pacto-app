@@ -1177,7 +1177,7 @@
   }
 
   .emoji-search-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .emoji-picker-close {
@@ -1245,8 +1245,8 @@
   }
 
   .emoji-panel-tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    color: var(--brand);
+    border-bottom-color: var(--brand);
   }
 
   .emoji-picker-empty {

@@ -116,7 +116,7 @@
     width: 48px;
     height: 48px;
     border: 4px solid var(--border-subtle, #313338);
-    border-top-color: var(--accent, #5865f2);
+    border-top-color: var(--brand, #5865f2);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -149,7 +149,7 @@
     max-width: 440px;
     padding: 32px;
     border-radius: 12px;
-    background: var(--bg-secondary, #2b2d31);
+    background: var(--bg-elevated, #2b2d31);
     border: 1px solid var(--border-subtle, #313338);
   }
 
@@ -184,7 +184,7 @@
   }
 
   .gate-block-fallback a {
-    color: var(--accent, #5865f2);
+    color: var(--brand, #5865f2);
     font-size: 0.875rem;
   }
 
@@ -192,8 +192,8 @@
     padding: 10px 16px;
     border: none;
     border-radius: 8px;
-    background: var(--accent, #5865f2);
-    color: white;
+    background: var(--brand, #5865f2);
+    color: var(--on-brand);
     font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;

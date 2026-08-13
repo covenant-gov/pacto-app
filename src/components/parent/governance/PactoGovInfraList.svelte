@@ -115,7 +115,7 @@
   }
 
   .pacto-gov-infra-link {
-    color: var(--accent);
+    color: var(--brand);
     text-decoration: none;
   }
 

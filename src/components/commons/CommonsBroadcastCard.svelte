@@ -215,7 +215,7 @@
   }
 
   .commons-tile:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 2px;
   }
 
@@ -346,9 +346,9 @@
   }
 
   .commons-tile-btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    border-color: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-tile-btn:disabled {

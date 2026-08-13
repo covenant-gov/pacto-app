@@ -304,8 +304,8 @@
     margin: 0 0 4px 0;
     padding: 2px 8px;
     border-radius: 999px;
-    background: var(--accent-subtle);
-    color: var(--accent);
+    background: color-mix(in srgb, var(--brand) 18%, transparent);
+    color: var(--brand);
     font-size: 0.75rem;
     font-weight: 500;
     width: fit-content;
@@ -356,13 +356,13 @@
   }
 
   .join-request-btn.is-accept {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    border-color: var(--brand);
+    color: var(--on-brand);
   }
 
   .join-request-btn.is-accept:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .join-request-btn.is-reject {

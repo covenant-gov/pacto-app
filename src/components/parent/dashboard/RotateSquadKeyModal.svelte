@@ -65,7 +65,7 @@
   }
 
   .rotate-option:hover:not(:disabled) {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .rotate-option:disabled {

@@ -203,7 +203,7 @@
   }
 
   .pin-digit:focus {
-    border-color: var(--accent, #22d3ee);
+    border-color: var(--brand, #22d3ee);
     background: var(--bg-hover, #363e4f);
     box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
   }
@@ -225,7 +225,7 @@
     width: 32px;
     height: 32px;
     border: 3px solid var(--border-subtle, #343c4c);
-    border-top-color: var(--accent, #22d3ee);
+    border-top-color: var(--brand, #22d3ee);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -256,7 +256,7 @@
 
   .btn-back:hover:not(:disabled) {
     background: var(--border-subtle, #343c4c);
-    border-color: var(--accent, #22d3ee);
+    border-color: var(--brand, #22d3ee);
     color: var(--text-primary, #f2f5f9);
   }
 

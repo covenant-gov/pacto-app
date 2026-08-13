@@ -171,7 +171,7 @@
     font-size: 0.875rem;
   }
   .check-done {
-    color: var(--accent, #2a8);
+    color: var(--brand, #2a8);
     font-weight: 700;
   }
   .check-todo,
@@ -220,7 +220,7 @@
     padding: 8px 14px;
     border-radius: 6px;
     font-size: 0.875rem;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-secondary);
     border: 1px solid var(--border-subtle);
     cursor: pointer;

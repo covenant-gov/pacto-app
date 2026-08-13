@@ -314,7 +314,7 @@
     font-size: 0.875rem;
     border: 1px solid var(--border-subtle);
     border-radius: 6px;
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-primary);
     margin-bottom: 8px;
     box-sizing: border-box;

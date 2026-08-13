@@ -217,10 +217,10 @@
 
   .pair-btn-create {
     padding: 8px 16px;
-    background: var(--accent);
+    background: var(--brand);
     border: none;
     border-radius: 8px;
-    color: #fff;
+    color: var(--on-brand);
     font-size: 0.9375rem;
     cursor: pointer;
   }

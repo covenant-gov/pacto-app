@@ -269,7 +269,7 @@
   }
 
   :global(.dwc-summary-edit:hover:not(:disabled)) {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   :global(.dwc-summary-edit:disabled) {
@@ -300,8 +300,8 @@
     padding: 8px 16px;
     border: none;
     border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.875rem;
     font-weight: 600;
     font-family: inherit;
@@ -310,7 +310,7 @@
   }
 
   .dwc-btn:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--brand-hover);
   }
 
   .dwc-btn:disabled {
@@ -350,7 +350,7 @@
   }
 
   .dwc-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .dwc-modal-backdrop {

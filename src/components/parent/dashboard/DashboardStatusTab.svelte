@@ -429,7 +429,7 @@
   }
   .rpc-provider-link {
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
   }
   .rpc-share-note {
     margin: 0 0 8px;
@@ -451,7 +451,7 @@
     padding: 4px 8px;
     border-radius: 6px;
     border: 1px solid var(--border-subtle);
-    background: var(--bg-secondary);
+    background: var(--bg-elevated);
     color: var(--text-primary);
     font-size: 0.875rem;
   }

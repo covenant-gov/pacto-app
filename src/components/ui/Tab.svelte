@@ -87,15 +87,15 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--brand);
     border: 2px solid var(--bg-panel);
     pointer-events: none;
   }
 
   .server-button.active,
   .server-button:hover {
-    background: var(--accent);
-    box-shadow: 0 2px 8px rgba(80,100,255,0.2);
+    background: var(--brand);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand) 20%, transparent);
   }
 
   .server-button:focus {
@@ -103,8 +103,8 @@
   }
 
   .server-button:focus-visible {
-    background: var(--accent);
-    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--accent);
+    background: var(--brand);
+    box-shadow: 0 0 0 2px var(--bg-panel), 0 0 0 4px var(--brand);
   }
 
   .label {

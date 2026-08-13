@@ -445,7 +445,7 @@
 
   .home-send-input:focus,
   .home-send-select:focus {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: 1px;
   }
 
@@ -513,7 +513,7 @@
 
   .home-send-error-link {
     font-size: 0.8125rem;
-    color: var(--accent);
+    color: var(--brand);
   }
 
   .home-send-retry-hint {
@@ -560,7 +560,7 @@
   }
 
   .home-send-btn-primary {
-    background: var(--accent);
-    color: #fff;
+    background: var(--brand);
+    color: var(--on-brand);
   }
 </style>

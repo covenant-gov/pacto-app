@@ -220,7 +220,7 @@
   }
 
   .commons-filters-browse.is-open {
-    border-color: var(--accent);
+    border-color: var(--brand);
     color: var(--text-primary);
   }
 
@@ -300,8 +300,8 @@
   }
 
   .commons-segmented-option:has(input:checked) {
-    background: var(--accent);
-    color: var(--accent-contrast, #fff);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .commons-segmented-option input {

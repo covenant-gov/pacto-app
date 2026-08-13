@@ -612,7 +612,7 @@
   }
 
   .message.mentioned {
-    background: rgba(88, 101, 242, 0.12);
+    background: color-mix(in srgb, var(--brand) 12%, transparent);
   }
 
   .message.compact {
@@ -648,11 +648,11 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--brand);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #ffffff;
+    color: var(--on-brand);
     font-weight: 600;
     font-size: 1rem;
   }
@@ -708,7 +708,7 @@
   .msg-reply {
     margin-bottom: 6px;
     padding-left: 10px;
-    border-left: 3px solid var(--reply-border, var(--accent));
+    border-left: 3px solid var(--reply-border, var(--brand));
     color: var(--text-muted);
     font-size: 0.8125rem;
     line-height: 1.3;
@@ -794,7 +794,7 @@
   }
 
   .message-reactions.overlay-media .reaction-chip.own {
-    background: rgba(88, 101, 242, 0.55);
+    background: color-mix(in srgb, var(--brand) 55%, transparent);
   }
 
   .reaction-chip {
@@ -816,8 +816,8 @@
   }
 
   .reaction-chip.own {
-    background: rgba(88, 101, 242, 0.18);
-    border-color: var(--accent);
+    background: color-mix(in srgb, var(--brand) 18%, transparent);
+    border-color: var(--brand);
   }
 
   .reaction-count {
@@ -867,8 +867,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent);
-    color: #ffffff;
+    background: var(--brand);
+    color: var(--on-brand);
     font-size: 0.6875rem;
     font-weight: 600;
   }
@@ -943,12 +943,12 @@
   }
 
   .quick-reaction-btn:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
   .quick-reaction-btn.own {
-    background: rgba(88, 101, 242, 0.18);
+    background: color-mix(in srgb, var(--brand) 18%, transparent);
   }
 
   .quick-reaction-expand {
@@ -973,7 +973,7 @@
   }
 
   .quick-reaction-expand:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
@@ -1030,7 +1030,7 @@
   }
 
   .reaction-picker-input:focus {
-    border-color: var(--accent);
+    border-color: var(--brand);
   }
 
   .reaction-picker-scroll {
@@ -1077,7 +1077,7 @@
   }
 
   .reaction-picker-emoji:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--brand);
     outline-offset: -2px;
   }
 
