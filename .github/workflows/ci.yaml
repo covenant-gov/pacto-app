@@ -221,20 +221,27 @@ jobs:
 
       - name: Seed a sandbox with no network reachable
         working-directory: src-tauri
+        # The CI image's default shell is dash, which has no `pipefail`, so
+        # redirect rather than pipe -- `set -e` then still fails the step on a
+        # non-zero harness exit instead of only on a failed `grep`.
         run: |
-          set -euo pipefail
+          set -eu
           mkdir -p "$RUNNER_TEMP/relay-free-harness-sandbox"
           iptables -A OUTPUT -j DROP
-          ./target/debug/relay-free-harness --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
-            | tee /tmp/harness-first-run.log
+          ./target/debug/relay-free-harness \
+            --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
+            > /tmp/harness-first-run.log 2>&1
+          cat /tmp/harness-first-run.log
           grep -q "Seeded npub=" /tmp/harness-first-run.log
 
       - name: Rerun is idempotent, still with no network reachable
         working-directory: src-tauri
         run: |
-          set -euo pipefail
-          ./target/debug/relay-free-harness --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
-            | tee /tmp/harness-second-run.log
+          set -eu
+          ./target/debug/relay-free-harness \
+            --sandbox-root "$RUNNER_TEMP/relay-free-harness-sandbox" \
+            > /tmp/harness-second-run.log 2>&1
+          cat /tmp/harness-second-run.log
           grep -q "already seeded" /tmp/harness-second-run.log
 
   landing-build:
