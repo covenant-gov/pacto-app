@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -166,6 +167,211 @@ pub fn enforce_dev_world_root() -> Result<(), String> {
         .map_err(|e| format!("Failed to create sandbox root {}: {}", root.display(), e))?;
 
     Ok(())
+}
+
+/// Filename of the per-root lockfile that records which live process holds
+/// exclusive use of a sandbox root's data.
+const LOCK_FILE_NAME: &str = "sandbox.lock";
+
+/// How long a lock is honored after its recorded pid reads as dead, before
+/// it is treated as abandoned and reclaimed. Mirrors `isClaimStale` in
+/// `scripts/dev-ports.mjs`: a lock is only reclaimed once *both* signals
+/// agree it is stale. That script's grace window exists because its typical
+/// caller (the Makefile's `dev-ports.mjs --export`) exits within
+/// milliseconds, long before the app it kicked off actually binds -- pid
+/// liveness alone would reclaim a perfectly live launch. This lock has no
+/// such caller: it is acquired directly by the sandbox app's own process
+/// and held for its whole run, so a dead pid is already an exact signal;
+/// this grace window is a small defensive margin against the read racing
+/// the exact instant of process death, not a resolve-to-bind allowance.
+const LOCK_STALE_GRACE_MS: u128 = 1_000;
+
+/// Recorded lock-holder identity, the same pid/timestamp shape
+/// `scripts/dev-ports.mjs` already uses for its own claim files.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SandboxLockRecord {
+    pid: u32,
+    #[serde(rename = "acquiredAtMs")]
+    acquired_at_ms: u128,
+}
+
+/// A live claim on one sandbox root, held for as long as this value stays
+/// alive. Drop removes the lockfile, so releasing and relaunching against
+/// the same root is immediate and never depends on `LOCK_STALE_GRACE_MS`.
+#[derive(Debug)]
+pub struct SandboxLaunchLock {
+    path: PathBuf,
+}
+
+impl Drop for SandboxLaunchLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(unix)]
+fn pid_is_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    // SAFETY: signal 0 sends no signal; it only probes existence/permission,
+    // the same `kill(pid, 0)` idiom `scripts/dev-ports.mjs` uses.
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if result == 0 {
+        return true;
+    }
+    // EPERM means the pid exists but is owned by someone else -- still alive.
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(not(unix))]
+fn pid_is_alive(pid: u32) -> bool {
+    // No `kill(pid, 0)`-equivalent probe without an extra dependency on this
+    // platform. Treat a recorded holder as alive unless it names this very
+    // process, so an unsupported platform fails safe (refuses) instead of
+    // guessing at a stranger process's liveness.
+    pid == std::process::id()
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+/// True once a recorded lock is safe to reclaim: its pid reads as dead, and
+/// it has aged past the grace window.
+fn lock_is_stale(record: &SandboxLockRecord, now_ms: u128, grace_ms: u128) -> bool {
+    if pid_is_alive(record.pid) {
+        return false;
+    }
+    now_ms.saturating_sub(record.acquired_at_ms) >= grace_ms
+}
+
+/// Create `path` and write `record` into it, failing if the file already
+/// exists. `O_EXCL`-style atomicity: of any number of processes racing to
+/// create the same path, the OS guarantees exactly one `create_new` wins.
+fn write_lock_exclusive(path: &Path, record: &SandboxLockRecord) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    let json = serde_json::to_vec(record)
+        .map_err(std::io::Error::other)?;
+    file.write_all(&json)
+}
+
+/// Missing, unreadable, or mid-write from a racing claimant all read the
+/// same as "no live record here".
+fn read_lock(path: &Path) -> Option<SandboxLockRecord> {
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Claims exclusive use of the current sandbox root for this process, so a
+/// second launch against a root a live process already holds cannot
+/// silently share (and corrupt) its SQLite/MLS store.
+///
+/// `Ok(None)` in the two cases this guard must never block: no sandbox root
+/// is configured (an ordinary, non-sandboxed launch), and a release build --
+/// debug-only by construction via `cfg!(debug_assertions)`, exactly like
+/// `multi_instance_allowed`, so an environment cannot spoof the guard into
+/// existing where the sandbox concept itself does not.
+///
+/// When a root is configured in a debug build: a live lock refuses, naming
+/// the holder pid; a lock whose holder reads as dead (`kill(pid, 0)`,
+/// `EPERM` counts as alive) and has aged past the grace window is reclaimed
+/// rather than left to wedge the root forever, reusing the exact staleness
+/// reasoning `scripts/dev-ports.mjs` already proves out for its own claim
+/// files.
+pub fn acquire_sandbox_launch_lock() -> Result<Option<SandboxLaunchLock>, String> {
+    if !cfg!(debug_assertions) {
+        return Ok(None);
+    }
+    let Some(root) = sandbox_root() else {
+        return Ok(None);
+    };
+
+    std::fs::create_dir_all(&root)
+        .map_err(|e| format!("Failed to create sandbox root {}: {}", root.display(), e))?;
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize sandbox root: {}", e))?;
+    let path = root.join(LOCK_FILE_NAME);
+    let record = SandboxLockRecord {
+        pid: std::process::id(),
+        acquired_at_ms: now_ms(),
+    };
+
+    if write_lock_exclusive(&path, &record).is_ok() {
+        return Ok(Some(SandboxLaunchLock { path }));
+    }
+
+    let existing = read_lock(&path);
+    let is_live = existing
+        .as_ref()
+        .map(|r| !lock_is_stale(r, now_ms(), LOCK_STALE_GRACE_MS))
+        .unwrap_or(false); // unreadable/corrupt lock is not a live claim: reclaim it
+    if let Some(holder) = existing.filter(|_| is_live) {
+        return Err(format!(
+            "sandbox root {} is already in use by a live process (pid {}) -- stop that process, \
+             or delete {} if it is actually gone",
+            root.display(),
+            holder.pid,
+            path.display()
+        ));
+    }
+
+    // Stale, unreadable, or corrupt: reclaim. The unlink is best-effort --
+    // another racer may already have removed it -- the exclusive create
+    // right after is what actually decides the single winner.
+    let _ = std::fs::remove_file(&path);
+    write_lock_exclusive(&path, &record).map_err(|e| {
+        format!(
+            "sandbox root {} lock contention while reclaiming a stale lock: {}",
+            root.display(),
+            e
+        )
+    })?;
+    Ok(Some(SandboxLaunchLock { path }))
+}
+
+/// Default filename `tauri_plugin_window_state` uses absent an override.
+const DEFAULT_WINDOW_STATE_FILENAME: &str = ".window-state.json";
+
+/// FNV-1a, 32-bit -- deterministic and dependency-free, matching the hash
+/// `scripts/dev-ports.mjs` already uses to derive its own per-branch values.
+fn fnv1a32(input: &str) -> u32 {
+    const FNV_OFFSET: u32 = 0x811c_9dc5;
+    const FNV_PRIME: u32 = 0x0100_0193;
+    input
+        .bytes()
+        .fold(FNV_OFFSET, |hash, byte| (hash ^ byte as u32).wrapping_mul(FNV_PRIME))
+}
+
+/// Filename to hand `tauri_plugin_window_state::Builder::with_filename`.
+///
+/// The plugin always saves under the shared `app_config_dir`, which
+/// `test_sandbox` does not redirect (only `app_data_dir`/`app_local_data_dir`
+/// are sandboxed) -- so, unkeyed, two concurrent sandboxes restore window
+/// geometry from the very same file and land stacked on top of each other.
+/// Keying the filename itself off the sandbox root fixes that without
+/// touching the shared config directory. Debug-only by construction, like
+/// `multi_instance_allowed`: a release build has no sandbox root to key on
+/// and always gets the plugin's own default.
+pub fn window_state_filename() -> String {
+    if !cfg!(debug_assertions) {
+        return DEFAULT_WINDOW_STATE_FILENAME.to_string();
+    }
+    match sandbox_root() {
+        Some(root) => format!(
+            ".window-state-sandbox-{:08x}.json",
+            fnv1a32(&root.to_string_lossy())
+        ),
+        None => DEFAULT_WINDOW_STATE_FILENAME.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -410,5 +616,149 @@ mod tests {
             "expected escape error, got: {}",
             err
         );
+    }
+
+    fn write_lock_record(path: &Path, pid: u32, acquired_at_ms: u128) {
+        let record = SandboxLockRecord {
+            pid,
+            acquired_at_ms,
+        };
+        std::fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn sandbox_launch_lock_none_without_a_sandbox_root() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        assert!(
+            acquire_sandbox_launch_lock().unwrap().is_none(),
+            "a plain, non-sandboxed launch must never be blocked by the guard"
+        );
+    }
+
+    #[test]
+    fn sandbox_launch_lock_matches_debug_only_posture() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-debug-only");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+        let guard = acquire_sandbox_launch_lock().unwrap();
+        // Mirrors multi_instance_allowed's own posture check: the guard may
+        // only ever exist in a debug build.
+        assert_eq!(guard.is_some(), cfg!(debug_assertions));
+    }
+
+    #[test]
+    fn sandbox_launch_lock_refuses_when_holder_is_live_and_names_it() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-live-holder");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+
+        let canonical = dir.canonicalize().unwrap();
+        let holder_pid = std::process::id();
+        write_lock_record(&canonical.join(LOCK_FILE_NAME), holder_pid, now_ms());
+
+        let err = acquire_sandbox_launch_lock().unwrap_err();
+        assert!(
+            err.contains(&holder_pid.to_string()),
+            "expected the holder pid in the refusal, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sandbox_launch_lock_reclaims_when_holder_is_dead() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-dead-holder");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("spawn a short-lived child");
+        let dead_pid = child.id();
+        child.wait().expect("wait for child to exit");
+
+        let canonical = dir.canonicalize().unwrap();
+        let old_timestamp = now_ms().saturating_sub(LOCK_STALE_GRACE_MS + 1_000);
+        write_lock_record(&canonical.join(LOCK_FILE_NAME), dead_pid, old_timestamp);
+
+        let guard = acquire_sandbox_launch_lock()
+            .unwrap()
+            .expect("a dead holder must be reclaimed, not wedge the root");
+        drop(guard);
+    }
+
+    #[test]
+    fn sandbox_launch_lock_release_then_relaunch_is_clean() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-relaunch");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+
+        let first = acquire_sandbox_launch_lock()
+            .unwrap()
+            .expect("first launch against a fresh root must succeed");
+        let lock_path = dir.canonicalize().unwrap().join(LOCK_FILE_NAME);
+        assert!(lock_path.exists());
+        drop(first);
+        assert!(
+            !lock_path.exists(),
+            "releasing the lock must remove the lockfile, not leak it"
+        );
+
+        let second = acquire_sandbox_launch_lock()
+            .unwrap()
+            .expect("relaunch against the same root after a clean release must succeed");
+        drop(second);
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    fn sandbox_launch_lock_different_roots_both_succeed() {
+        let _lock = env_lock();
+        let dir_a = temp_test_dir("launch-lock-root-a");
+        let dir_b = temp_test_dir("launch-lock-root-b");
+
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir_a.to_str().unwrap());
+        let guard_a = acquire_sandbox_launch_lock().unwrap();
+
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir_b.to_str().unwrap());
+        let guard_b = acquire_sandbox_launch_lock().unwrap();
+
+        if cfg!(debug_assertions) {
+            assert!(guard_a.is_some(), "sandbox A must launch");
+            assert!(guard_b.is_some(), "sandbox B must launch concurrently");
+        }
+    }
+
+    #[test]
+    fn window_state_filename_defaults_without_a_sandbox_root() {
+        let _lock = env_lock();
+        let _root = EnvGuard::unset(SANDBOX_ROOT_VAR);
+        assert_eq!(window_state_filename(), DEFAULT_WINDOW_STATE_FILENAME);
+    }
+
+    #[test]
+    fn window_state_filename_differs_across_sandbox_roots() {
+        let _lock = env_lock();
+        let dir_a = temp_test_dir("window-state-root-a");
+        let dir_b = temp_test_dir("window-state-root-b");
+
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir_a.to_str().unwrap());
+        let name_a = window_state_filename();
+
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir_b.to_str().unwrap());
+        let name_b = window_state_filename();
+
+        if cfg!(debug_assertions) {
+            assert_ne!(
+                name_a, name_b,
+                "two sandbox roots must not restore window geometry from the same file"
+            );
+            assert_ne!(name_a, DEFAULT_WINDOW_STATE_FILENAME);
+            assert_ne!(name_b, DEFAULT_WINDOW_STATE_FILENAME);
+        } else {
+            assert_eq!(name_a, DEFAULT_WINDOW_STATE_FILENAME);
+            assert_eq!(name_b, DEFAULT_WINDOW_STATE_FILENAME);
+        }
     }
 }
