@@ -7,10 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Clean up chat, messages, and cursor on voluntary group leave (mls)
+- Durably remove mls_groups row on voluntary leave
+- Make dm delete purge history and gate relay replay (#233)
+- Switch refinery migration versions to UTC timestamps
+- Recover mls on wake and route poll creates to announcements (#235)
+- Treat the whole loopback range and .localhost aliases as local
+- Give dev sandboxes a stable branch-scoped root and named personas
+- Keep public default relays out of an overridden sandbox
+- Mark dev-login identities backup-verified so sandboxes can act
+- Retry account-wide sync and live subscriptions after an empty relay pool
+- Make dev-ports index claims atomic across concurrent sandboxes
+- Satisfy checkJs on the claim helpers
+- Durable consent-first invite admit and Join inbox reliability (#241)
+- Harden tailwind and shadcn foundation for review blockers (ui)
+- Satisfy svelte-check for foundation test harness (ui)
+- Let dev sandboxes run beside each other
+- Stop the dev server watching sandbox and worktree trees
+- Never derive a port set browsers refuse to fetch from
+- Address review findings on the sandbox concurrency fix
+- Run the harness CI steps under the image's dash shell
+- Refuse a second launch against one sandbox root
+- Fail closed on non-unix sandbox lock liveness (review)
+- Address PR review feedback (#263)
+- Default cargo run to pacto binary over relay-free-harness
+- Seed a squads catalog row for the relay-free harness squad
+
+
+### Chores
+- Raise legacy sequential migration ceiling to V32
+- Correct the deferral comment and drop tracker ids from source
+- Drop tracker id from a test name
+
+
+### Features
+- Add make new-migration generator plus CI format check
+- Persist sponsored userop fee ledger for treasury (#242)
+- Boot agent sandboxes authenticated, local-routed, and collision-free
+- Let debug builds reach a locally-issued wss relay
+- Refuse stale local-chain artifacts and delegate the world verb
+- Seed a populated sandbox with no docker and no network
+- Quarantine stale sandbox profiles instead of bricking boot
+- Widen storage-doctor quarantine gate to non-io.pacto identifiers
+- Add dev-sandbox-seeded for a one-command populated sandbox
+
+
+### Other
+- Add shared tailwind v4 and shadcn-svelte base (ui)
+- Address PR review feedback (#262)
+
+    Stamp fixture identities sandbox-only, embed local-only relays, harden
+    sandbox-root/mnemonic policy, make mid-squad crashes recoverable, and
+    scope CI network isolation with unshare plus stronger seed assertions.
+
+
+### Refactor
+- Give pacto tokens one clear meaning (#259) (theme)
+
+
+### Testing
+- Guard PRODUCTION_IDENTIFIER against tauri.conf.json drift
+
+## v0.5.5
+
+### Bug Fixes
 - Local-only cleanup when leaving an mls-store-reset group
 - Deploy the download page from the release run (ci)
 - Avoid following symlinks when scanning profile directories (#230)
 - Match any commit in the push for release auto-tagging
+
+
+### Chores
+- Bump version to 0.5.5 (release)
 
 
 ### Features
