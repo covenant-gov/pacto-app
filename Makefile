@@ -1,4 +1,4 @@
-.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-sandbox-seeded dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -7,6 +7,7 @@ help:
 	@echo "  install      install Node/Rust dependencies"
 	@echo "  dev          run the desktop app in development mode (auto-isolated per branch, except main)"
 	@echo "  dev-sandbox  run the desktop app against a throwaway account for MCP-driven UI verification"
+	@echo "  dev-sandbox-seeded  dev-sandbox, pre-seeded and already logged in -- no env vars to remember"
 	@echo "  dev-account  run the desktop app against the persistent, reusable primary test account"
 	@echo "  dev-buddy    run the desktop app against the persistent, reusable secondary test account"
 	@echo "  dev-world          populate this worktree's sandbox with a joined squad via the sibling pacto-dev-env orchestrator"
@@ -121,6 +122,20 @@ relay-free-harness-seed:
 	mkdir -p "$$root"; \
 	echo "relay-free-harness-seed: $$root"; \
 	cd src-tauri && cargo run --no-default-features --features relay-free-harness --bin relay-free-harness -- --sandbox-root "$$root"
+
+# One-command populated + authenticated sandbox: seeds (idempotent, ~instant
+# on a rerun) then launches dev-sandbox pinned to the relay-free-harness
+# persona with its public fixture mnemonic and a local-only relay set
+# already wired in -- the exact combination `dev_login` requires to
+# authenticate a sandbox-only identity (KD9/R25 refusal). Deliberately a
+# separate target from `dev-sandbox`: that one stays blank-slate by default
+# so it still serves onboarding-UI testing and multi-persona MLS checks,
+# where different personas must NOT collapse onto the same identity.
+dev-sandbox-seeded: relay-free-harness-seed
+	@PERSONA=relay-free-harness \
+	PACTO_TRUSTED_RELAYS=wss://localhost:7001 \
+	PACTO_DEV_LOGIN_MNEMONIC="test test test test test test test test test test test junk" \
+	$(MAKE) dev-sandbox
 
 # Persistent reusable test identities (docs/TAURI_MCP_INTEGRATION.md). Unlike
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
