@@ -9028,6 +9028,19 @@ pub fn run() {
         std::process::exit(1);
     }
 
+    // A second launch against a root a live process already holds would
+    // otherwise silently share (and corrupt) that process's SQLite/MLS
+    // store, now that the single-instance guard is skipped for sandboxes.
+    // Held for this process's whole run -- see test_sandbox.rs -- and
+    // released on drop, which fires when `run()` returns at app exit.
+    let _sandbox_launch_lock = match test_sandbox::acquire_sandbox_launch_lock() {
+        Ok(guard) => guard,
+        Err(e) => {
+            eprintln!("[sandbox] {e}");
+            std::process::exit(1);
+        }
+    };
+
     #[cfg(target_os = "linux")]
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer
@@ -9099,10 +9112,17 @@ pub fn run() {
     {
         // Window state plugin: saves and restores window position, size, maximized state, etc.
         // Exclude VISIBLE flag so window starts hidden (we show it after content loads to prevent white flash)
+        //
+        // Filename is keyed off the sandbox root (debug builds only): the
+        // plugin always saves under the shared app_config_dir, which
+        // test_sandbox does not redirect, so concurrent sandboxes would
+        // otherwise restore geometry from one shared file and stack on top
+        // of each other. See test_sandbox::window_state_filename.
         use tauri_plugin_window_state::StateFlags;
         builder = builder.plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .with_filename(crate::test_sandbox::window_state_filename())
                 .build(),
         );
 
