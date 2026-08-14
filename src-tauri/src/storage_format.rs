@@ -244,7 +244,7 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
     }
 }
 
-// -- storage doctor / quarantine (U15) -----------------------------------
+// -- storage doctor / quarantine -----------------------------------
 
 /// Subdirectory under the sandbox root holding quarantined profile
 /// directories -- a sibling of `data`/`local`, so a quarantined profile
@@ -444,7 +444,22 @@ fn quarantine_stale_profiles(app_data_dir: &Path, running_identifier: &str) {
     }
     let sandbox_root = crate::test_sandbox::sandbox_root();
     let quarantine_root = match sandbox_root {
-        Some(root) => root,
+        Some(root) => {
+            // A caller (a test, or a future command) could pass an arbitrary
+            // `app_data_dir` while `PACTO_TEST_SANDBOX_ROOT` happens to be set
+            // to an unrelated sandbox root. Refuse the whole scan up front
+            // when that's the case, rather than relying on N individual
+            // per-profile `revalidate_before_move` refusals below.
+            let (Ok(canonical_app_data_dir), Ok(canonical_root)) =
+                (app_data_dir.canonicalize(), root.canonicalize())
+            else {
+                return;
+            };
+            if !canonical_app_data_dir.starts_with(&canonical_root) {
+                return;
+            }
+            root
+        }
         None if running_identifier != PRODUCTION_IDENTIFIER => app_data_dir.to_path_buf(),
         None => return,
     };
@@ -512,8 +527,10 @@ impl From<StorageFormatScanReport> for StorageCompatibilityReport {
     }
 }
 
-/// Pure report builder shared by the command and its tests: `scan_profiles`
-/// plus this build's own version, with no `AppHandle` involved.
+/// No longer a pure/read-only report builder: it first calls
+/// `quarantine_stale_profiles`, which may `rename` an offending profile
+/// directory aside via the storage doctor before `scan_profiles` builds
+/// this report.
 /// `running_identifier` is this process's app identifier -- `io.pacto` for
 /// the operator's real account, anything else (e.g. a demo client running
 /// as `io.pacto.demo.<n>`) for a distinct, non-operator app-data
@@ -1064,6 +1081,7 @@ mod tests {
     #[test]
     fn compatibility_report_is_compatible_for_directory_with_no_profiles() {
         let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         let root = unique_temp_dir("compat-empty");
         std::fs::create_dir_all(&root).unwrap();
 
@@ -1082,6 +1100,7 @@ mod tests {
     #[test]
     fn compatibility_report_is_incompatible_for_one_failing_profile() {
         let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         let root = unique_temp_dir("compat-incompatible");
         let profile_dir = root.join("npub1compatincompatibleprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
@@ -1114,6 +1133,7 @@ mod tests {
     #[test]
     fn get_storage_compatibility_command_succeeds_against_a_mock_app() {
         let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         // Exercises the command's own plumbing (AppHandle -> test_data_dir
         // -> compatibility_report). Deliberately does not assert on
         // unrecognized_count/highest_offending_version: mock_app's
@@ -1141,7 +1161,7 @@ mod tests {
         assert!(!message.contains('\\'));
     }
 
-    // -- storage doctor / quarantine (U15) -----------------------------
+    // -- storage doctor / quarantine -----------------------------
 
     #[test]
     fn quarantine_moves_profile_exceeding_ceiling_and_boot_proceeds() {
@@ -1251,6 +1271,41 @@ mod tests {
         assert!(!stale_dir.exists(), "only the stale profile moves");
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_refuses_a_scan_directory_outside_the_sandbox_root() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let root = unique_temp_dir("scan-containment-sandbox-root");
+        std::fs::create_dir_all(&root).unwrap();
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        // Deliberately NOT nested under `root` -- an arbitrary caller-supplied
+        // `app_data_dir` while the sandbox-root env var happens to be set.
+        let outside_dir = unique_temp_dir("scan-containment-outside-app-data");
+        let profile_dir = outside_dir.join("npub1outsidescanprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        let report = compatibility_report(&outside_dir, "io.pacto");
+
+        assert!(
+            !report.all_recognized,
+            "the whole-scan refusal only skips quarantine, not scan_profiles's own report"
+        );
+        assert!(
+            profile_dir.exists(),
+            "nothing is moved when app_data_dir doesn't canonicalize under the sandbox root"
+        );
+        assert!(
+            !root.join(QUARANTINE_DIR_NAME).exists(),
+            "the scan is refused before any quarantine directory is created"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside_dir);
     }
 
     #[test]
