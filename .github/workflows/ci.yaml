@@ -215,7 +215,9 @@ jobs:
 
       - name: Harness unit tests
         working-directory: src-tauri
-        run: cargo test --lib --no-default-features --features relay-free-harness harness::
+        # Quoted: the trailing `::` module filter would otherwise read as a
+        # YAML mapping key and make this whole file unparseable.
+        run: "cargo test --lib --no-default-features --features relay-free-harness harness::"
 
       - name: Build relay-free harness
         working-directory: src-tauri
