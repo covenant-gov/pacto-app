@@ -230,7 +230,7 @@ fn pid_is_alive(pid: u32) -> bool {
     // platform. Treat a recorded holder as alive unless it names this very
     // process, so an unsupported platform fails safe (refuses) instead of
     // guessing at a stranger process's liveness.
-    pid == std::process::id()
+    pid != std::process::id()
 }
 
 fn now_ms() -> u128 {
@@ -660,6 +660,56 @@ mod tests {
         let err = acquire_sandbox_launch_lock().unwrap_err();
         assert!(
             err.contains(&holder_pid.to_string()),
+            "expected the holder pid in the refusal, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sandbox_launch_lock_refuses_when_foreign_holder_is_live() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-foreign-live-holder");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn a live child to hold the lock");
+        let holder_pid = child.id();
+        let canonical = dir.canonicalize().unwrap();
+        write_lock_record(&canonical.join(LOCK_FILE_NAME), holder_pid, now_ms());
+
+        let result = acquire_sandbox_launch_lock();
+        let _ = child.kill();
+        let _ = child.wait();
+
+        let err = result.expect_err("a live foreign holder must be refused, not reclaimed");
+        assert!(
+            err.contains(&holder_pid.to_string()),
+            "expected the holder pid in the refusal, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    #[cfg(not(unix))]
+    fn sandbox_launch_lock_refuses_foreign_pid_without_a_liveness_probe() {
+        let _lock = env_lock();
+        let dir = temp_test_dir("launch-lock-foreign-pid-fail-closed");
+        let _root = EnvGuard::set(SANDBOX_ROOT_VAR, dir.to_str().unwrap());
+
+        // A stranger pid past the grace window must still be treated as live
+        // when this platform cannot probe it -- otherwise a second Windows
+        // launch reclaims a live first instance after 1s.
+        let foreign_pid = std::process::id().wrapping_add(1).max(1);
+        let canonical = dir.canonicalize().unwrap();
+        let old_timestamp = now_ms().saturating_sub(LOCK_STALE_GRACE_MS + 1_000);
+        write_lock_record(&canonical.join(LOCK_FILE_NAME), foreign_pid, old_timestamp);
+
+        let err = acquire_sandbox_launch_lock().unwrap_err();
+        assert!(
+            err.contains(&foreign_pid.to_string()),
             "expected the holder pid in the refusal, got: {}",
             err
         );
