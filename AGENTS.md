@@ -254,6 +254,7 @@ Use the MCP tools for verification if **all** of the following are true:
 - The change touches `src/components/`, `src/routes/`, `src/app.css`, or any frontend-visible code.
 - The Tauri MCP server is configured in your client (`xd://mcp__tauri_*` tools are available).
 - You can run the app in debug mode (`make dev-sandbox`).
+- For a **populated** sandbox with no docker/network: `make relay-free-harness-seed` (see `docs/build/DEV_SANDBOX.md`). Opening that DB still needs local `PACTO_TRUSTED_RELAYS` + `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1`.
 
 If the MCP tools are not available in your session, fall back to the existing test suite (`pnpm test`, `pnpm check`) and note the limitation in your handoff.
 

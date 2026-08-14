@@ -117,6 +117,11 @@ mod sandbox_handle;
 #[cfg(debug_assertions)]
 mod dev_login;
 
+// Relay-free seeding harness. Non-default feature; never compiled into
+// a release build or the default app binary. See src/bin/relay_free_harness.rs.
+#[cfg(feature = "relay-free-harness")]
+pub mod harness;
+
 /// # Blossom Media Servers
 ///
 /// Two ordered lists with automatic failover: the first server that accepts wins.

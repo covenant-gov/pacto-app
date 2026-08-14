@@ -52,3 +52,31 @@ account state.
 - Root path rejected as escaping: point it at a plain directory with no
   `..` segments and no symlink in the final path component.
 - Just want plain `make dev` (no world boot): leave `PACTO_DEV_WORLD` unset.
+
+
+## Relay-free harness seed
+
+`make relay-free-harness-seed` builds a populated per-account sandbox with
+**zero network and no docker**, through the real ingest path
+(`rumor::process_rumor`, an in-process MLS welcome, `db::*`). The binary is
+gated behind the non-default `relay-free-harness` feature and is absent from
+default / release builds.
+
+- Root must sit under `test_sandbox/` or `test_fixtures/` (enforced by the
+  binary, not just the Makefile).
+- The seeded identity is the public Anvil/Hardhat fixture by default. Prefer
+  `PACTO_DEV_LOGIN_MNEMONIC` over `--mnemonic` so a phrase never appears on
+  argv; a non-fixture phrase requires `--allow-non-fixture-mnemonic`.
+- The harness stamps `.pacto_dev_identity_sandbox_only` under the root and a
+  matching SQL setting. Opening that DB in the live app still requires
+  `PACTO_TRUSTED_RELAYS` (local) and `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1` (or
+  the on-disk stamp) -- the same KD9 / R25 refusal `dev_login` already
+  enforces.
+- MLS group metadata embeds a loopback placeholder relay, never the compiled
+  production set.
+- `SEED_MARKER_VERSION` in `src-tauri/src/harness.rs` is the idempotency
+  handshake across contributors; bump it when seed semantics change, and wipe
+  old roots rather than reseeding over an unexpected marker.
+- Treat this binary as an ingest + MLS + migrations canary: later `rumor` /
+  `MlsService` / `db` / MDK changes can break the CI job without touching the
+  harness files.

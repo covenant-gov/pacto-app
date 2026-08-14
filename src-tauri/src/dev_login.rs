@@ -56,6 +56,7 @@ fn resolve_pin(pin: Option<String>) -> String {
 
 fn sandbox_only_requested() -> bool {
     std::env::var("PACTO_DEV_IDENTITY_SANDBOX_ONLY").unwrap_or_default() == "1"
+        || crate::test_sandbox::sandbox_only_identity_stamped()
 }
 
 /// Message for the sandbox-only refusal: names the identity's npub (never
