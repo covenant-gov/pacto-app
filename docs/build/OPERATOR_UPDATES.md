@@ -151,11 +151,17 @@ Use these in priority order.
 
    **After using either path to correct a value, mirror the final value back into the tracked `scripts/release-compatibility.json` and commit it.** The workflow and the local script both operate on the *published* `latest.json` only; they never write the tracked file. If the tracked file is left at the old value, the next tagged release re-runs the automatic stamping job with that stale value and silently regresses the correction.
 
-## Recovering a machine the local storage-format check blocked
+## Recovering a stale profile
 
-This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `pacto.db` on launch and finds a migration history that this build doesn't recognize — for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
+This is a **different** trigger from the minimum-version check above: it never touches the network. It fires when the app opens a profile's `pacto.db` on launch and finds a migration history this build doesn't recognize -- for example, a profile last opened by a newer or divergent build. Because the check runs before account selection, one bad profile blocks **every** account on that machine, not just the one it belongs to.
 
-The block screen deliberately does not show which npub or file path is at fault, so recovery is manual:
+### Automatic recovery (sandboxes and non-operator identifiers)
+
+The storage doctor quarantines automatically whenever `PACTO_TEST_SANDBOX_ROOT` is set (`make dev` on a branch other than `main`, `make dev-sandbox`, `make dev-world`, or anywhere else the env var is set) **or** the running app identifier is anything other than the real operator identifier `io.pacto` (for example a demo client running as `io.pacto.demo.<n>`). In either case it moves the offending profile directory aside before the compatibility check runs, and boot proceeds against a fresh profile -- no manual step, and no other account on that machine is blocked. The quarantine directory is `<sandbox_root>/quarantine/` when a sandbox root is active, or `<app_data_dir>/quarantine/` (a sibling of the profile directories) when it's the non-operator-identifier case with no sandbox root. What moved and why is recorded in a `quarantine-record.json` next to the quarantine directory (the profile, the verdict, and the offending schema version), appended to on every quarantine so the full history survives across boots.
+
+### Manual recovery for the real OS data directory
+
+Only the real operator account -- app identifier `io.pacto`, no `PACTO_TEST_SANDBOX_ROOT` active -- never auto-quarantines. This is by construction: it's the one case the doctor is deliberately gated away from, so a developer's or user's actual account can never be touched by it. It's exactly the case the block screen still applies to, with no npub or file path shown, so recovery here is manual:
 
 1. Note the schema version number the block screen reports.
 2. Profile directories live under `<app_data_dir>/npub1…/pacto.db` — see [`../storage-layout/SQLITE_AND_FILES.md`](../storage-layout/SQLITE_AND_FILES.md) for the full on-disk layout. `<app_data_dir>` here is Tauri's per-OS app data directory *including* this app's identifier (`io.pacto`, from `src-tauri/tauri.conf.json`):
@@ -170,7 +176,9 @@ The block screen deliberately does not show which npub or file path is at fault,
 4. The one profile whose `version` matches the number from the block screen is the offender. Move that single directory aside (e.g. rename `npub1…` to `npub1…-quarantined`) — do not delete it.
 5. Relaunch the app. Every other account on the machine unblocks immediately; the moved-aside profile no longer participates in account discovery until it is restored (e.g. by a build that recognizes its schema).
 
-**Local dev cause and prevention:** the most common local trigger isn't a shipped release at all — it's checking out a branch with newer migrations, running it against your primary account, then switching back to a branch that doesn't have those migrations yet. `make dev` isolates its data directory per git branch automatically (except `main`, which keeps the OS-default account unchanged), so this can't happen from branch-hopping; see `Makefile`'s `dev` target.
+The gate here is `PACTO_TEST_SANDBOX_ROOT` and the running app identifier, not the git branch. `make dev` on `main` usually leaves the env var unset, but that's a `Makefile` convention, not the contract: `PACTO_TEST_SANDBOX_ROOT=... make dev` on `main`, or any build running under an identifier other than `io.pacto`, gets automatic recovery regardless of branch.
+
+**Local dev cause and prevention:** the most common trigger isn't a shipped release at all -- it's checking out a branch with newer migrations, running it against a sandbox, then switching back to a branch that doesn't have those migrations yet. Every non-`main` branch already gets its own sandboxed data directory (`make dev`'s per-branch isolation), which is exactly what the doctor above now cleans up automatically instead of blocking the branch's next launch.
 
 ## Limits of this gate
 
