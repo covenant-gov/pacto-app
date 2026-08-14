@@ -544,6 +544,29 @@ pub(crate) fn get_storage_compatibility<R: Runtime>(
 mod tests {
     use super::*;
 
+    // -- PRODUCTION_IDENTIFIER stays in sync with tauri.conf.json ---------
+
+    /// If this ever fails, `PRODUCTION_IDENTIFIER` has drifted from
+    /// `tauri.conf.json`'s real `identifier` -- and until it's fixed, the
+    /// widened quarantine gate would misclassify the operator's real
+    /// profile as non-operator and quarantine it, moving a real user's
+    /// account data aside on every debug boot.
+    #[test]
+    fn production_identifier_matches_tauri_conf_json() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("tauri.conf.json parses as JSON");
+        let identifier = conf
+            .get("identifier")
+            .and_then(|v| v.as_str())
+            .expect("tauri.conf.json has a string \"identifier\" field");
+        assert_eq!(
+            identifier, PRODUCTION_IDENTIFIER,
+            "PRODUCTION_IDENTIFIER must track tauri.conf.json's identifier exactly -- a stale \
+             constant here means the quarantine gate would treat the operator's real account as \
+             non-operator and quarantine it"
+        );
+    }
+
     fn fixture_migration(version: i64, name: &str, checksum: u64) -> refinery::Migration {
         refinery::Migration::applied(
             version,
