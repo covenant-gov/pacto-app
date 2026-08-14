@@ -41,8 +41,9 @@ const HARNESS_EPOCH_SECS: u64 = 1_735_000_000;
 /// `SEED_MARKER_VERSION` means "already seeded, do nothing" on a rerun --
 /// the harness's primary idempotency guard.
 const SEED_MARKER_KEY: &str = "harness_seed_complete";
-/// Bumped when seed semantics change (sandbox-only stamp, local-only relays).
-const SEED_MARKER_VERSION: &str = "2";
+/// Bumped when seed semantics change (sandbox-only stamp, local-only relays,
+/// `squads` catalog row for the seeded squad).
+const SEED_MARKER_VERSION: &str = "3";
 
 /// Anvil/Hardhat's well-known public test mnemonic -- already the default
 /// local chain this repo's sandboxes point at. A fine default: this identity
@@ -450,6 +451,54 @@ async fn persist_dm_text<R: Runtime>(
     }
 }
 
+/// Default channel rows for a freshly seeded squad -- mirrors
+/// `src/lib/squad/hub-channel-rows.ts::defaultChannelRowsForGroupId`: the
+/// `announcements` channel *is* the squad root MLS group, plus the virtual
+/// `polls` channel routed through that same group.
+fn harness_squad_channels(group_id: &str) -> Vec<crate::squad_catalog::SquadChannelRow> {
+    vec![
+        crate::squad_catalog::SquadChannelRow {
+            name: "announcements".to_string(),
+            group_id: group_id.to_string(),
+            order: 0,
+            access: None,
+        },
+        crate::squad_catalog::SquadChannelRow {
+            name: "polls".to_string(),
+            group_id: group_id.to_string(),
+            order: 1,
+            access: None,
+        },
+    ]
+}
+
+/// Upsert the `squads` catalog row the frontend's Squads UI actually reads
+/// (`list_squads` -> `hydrateSquadsFromDb`). `mls_groups`/`chats` rows alone
+/// leave the seeded squad unreachable through the app -- the Squads store
+/// never learns about it without this row.
+fn ensure_squad_catalog_row<R: Runtime>(
+    handle: &AppHandle<R>,
+    group_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let row = crate::squad_catalog::SquadRow {
+        id: group_id.to_string(),
+        name: name.to_string(),
+        icon_url: None,
+        channels: harness_squad_channels(group_id),
+        kind: "squad".to_string(),
+        paired_squads: None,
+        visibility: "private".to_string(),
+        commons_tags: None,
+        created_at_ms: (HARNESS_EPOCH_SECS as i64) * 1000,
+        updated_at_ms: (HARNESS_EPOCH_SECS as i64) * 1000,
+    };
+    let conn = account_manager::get_db_connection(handle)?;
+    let result = crate::squad_catalog::upsert_squad_inner(&conn, &row);
+    account_manager::return_db_connection(conn);
+    result
+}
+
 /// Seed the squad slice. A second, ephemeral in-process MLS engine plays the
 /// inviter -- it creates the group against the sandbox identity's real,
 /// locally-stored keypackage, produces a real welcome, and the harness feeds
@@ -471,6 +520,7 @@ async fn seed_squad_slice<R: Runtime>(
         .into_iter()
         .find(|g| g.name == SQUAD_NAME)
     {
+        ensure_squad_catalog_row(handle, &existing.group_id, &existing.name)?;
         return Ok(Some(existing.group_id));
     }
 
@@ -594,6 +644,7 @@ async fn seed_squad_slice<R: Runtime>(
         nostr_group_id.clone(),
         vec![sandbox_npub, inviter_npub],
     );
+    ensure_squad_catalog_row(handle, &nostr_group_id, &group_name)?;
     chat.metadata.set_name(group_name);
     db::save_chat(handle.clone(), &chat).await?;
 
@@ -677,6 +728,7 @@ async fn recover_squad_from_mls_store<R: Runtime>(
     };
     db::save_mls_group(handle.clone(), &metadata).await?;
 
+    ensure_squad_catalog_row(handle, &nostr_group_id, &group_name)?;
     let mut chat = Chat::new_mls_group(nostr_group_id.clone(), vec![]);
     chat.metadata.set_name(group_name);
     db::save_chat(handle.clone(), &chat).await?;
