@@ -7,36 +7,38 @@
   import { profiles } from '../../stores/profiles';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { showToast } from '../../stores/toast';
-  import { backendDmMessages } from '../../stores/dm';
+  import { backendDmMessages, activeDmTab } from '../../stores/dm';
+  import { activeTopNavTab, activeView } from '../../stores/navigation';
   import { findWelcomeInviteSource } from '../../lib/invites/find-invite-source';
+  import { pendingMlsWelcomes } from '../../stores/mls-chat';
+  import { resolveWelcomeEntry } from './resolve-welcome-entry';
 
   let { entry }: { entry: CatchUpEntry } = $props();
 
   /**
    * `welcome` entries reference an MLS group the member hasn't joined yet,
    * so it never appears in `$squads` — `resolveCatchUpTarget` alone would
-   * leave these permanently unopenable. Route them to the DM invite instead.
+   * leave these permanently unopenable. Route them to the DM invite when
+   * the invite DM is locally cached, else to DMs -> Requests where the
+   * entry's own pending welcome renders a join card (the DM cache only
+   * loads one message per chat at startup, so this fallback is common).
    */
   let welcomeSource = $derived(
     entry.kind === 'welcome' ? findWelcomeInviteSource(entry.chatId, $backendDmMessages) : null
   );
-  let target = $derived(
+  let resolvedWelcome = $derived(
     entry.kind === 'welcome'
-      ? welcomeSource
-        ? ({ kind: 'dm', npub: welcomeSource.npub } as const)
-        : null
-      : resolveCatchUpTarget(entry, $squads)
+      ? resolveWelcomeEntry(entry.chatId, welcomeSource, $pendingMlsWelcomes, $t('notifications.catchup.welcomeUnavailable'))
+      : null
+  );
+  let target = $derived(
+    entry.kind === 'welcome' ? (resolvedWelcome?.target ?? null) : resolveCatchUpTarget(entry, $squads)
   );
 
   /** Where this entry opens: a squad/channel name, or a DM peer's display name. */
   let locationLabel = $derived.by(() => {
-    if (entry.kind === 'welcome') {
-      if (!welcomeSource) return '';
-      return welcomeSource.channelName
-        ? `${welcomeSource.squadName} · #${welcomeSource.channelName}`
-        : welcomeSource.squadName;
-    }
-    if (!target) return '';
+    if (entry.kind === 'welcome') return resolvedWelcome?.locationLabel ?? '';
+    if (!target || target.kind === 'dm-requests') return '';
     if (target.kind === 'dm') {
       return getProfileDisplayName($profiles[target.npub]);
     }
@@ -50,6 +52,12 @@
 
   function open() {
     if (!target) return;
+    if (target.kind === 'dm-requests') {
+      activeTopNavTab.set('dms');
+      activeDmTab.set('requests');
+      activeView.set('hub');
+      return;
+    }
     navigateToTarget(target);
   }
 

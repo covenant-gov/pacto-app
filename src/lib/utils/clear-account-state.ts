@@ -58,6 +58,7 @@ import {
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
   reciprocatedWalletPeerInfoRequestIds,
+  declinedWelcomeGroupIds,
 } from '../../stores/invite-decisions';
 import {
   squads,
@@ -241,6 +242,7 @@ export function clearAccountState(npub?: string): void {
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
+  declinedWelcomeGroupIds.set([]);
   mlsHistoryWelcomeGroupIds.set([]);
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});
