@@ -6,19 +6,44 @@
 //! `PACTO_TEST_SANDBOX_ROOT` is set. All real work lives in
 //! `pacto_lib::harness`; see that module for the seeding logic itself.
 //!
-//! Usage: `relay-free-harness [--sandbox-root PATH] [--mnemonic PHRASE] [--pin PIN]`
-//! (or `PACTO_TEST_SANDBOX_ROOT` / `--mnemonic` default / `--pin` default).
+//! Usage:
+//! `relay-free-harness [--sandbox-root PATH] [--pin PIN] [--allow-non-fixture-mnemonic]`
+//!
+//! Mnemonic resolution prefers `PACTO_DEV_LOGIN_MNEMONIC` (never printed). The
+//! `--mnemonic` flag is accepted only for the well-known fixture phrase, or for
+//! any phrase when `--allow-non-fixture-mnemonic` /
+//! `PACTO_HARNESS_ALLOW_NON_FIXTURE_MNEMONIC=1` is set. Prefer the env var so a
+//! real phrase never lands on argv / `ps` / shell history.
 
-use pacto_lib::harness::{self, HarnessConfig};
+use pacto_lib::harness::{self, HarnessConfig, DEFAULT_MNEMONIC};
 
 struct Args {
     sandbox_root: Option<String>,
     config: HarnessConfig,
 }
 
+fn env_flag(name: &str) -> bool {
+    matches!(
+        std::env::var(name).ok().as_deref().map(str::trim),
+        Some("1") | Some("true") | Some("TRUE") | Some("yes") | Some("YES")
+    )
+}
+
+fn resolve_mnemonic(cli_mnemonic: Option<String>) -> String {
+    if let Ok(from_env) = std::env::var("PACTO_DEV_LOGIN_MNEMONIC") {
+        let trimmed = from_env.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    cli_mnemonic.unwrap_or_else(|| DEFAULT_MNEMONIC.to_string())
+}
+
 fn parse_args() -> Args {
     let mut sandbox_root: Option<String> = None;
-    let mut config = HarnessConfig::default();
+    let mut cli_mnemonic: Option<String> = None;
+    let mut pin = harness::DEFAULT_PIN.to_string();
+    let mut allow_non_fixture_mnemonic = env_flag("PACTO_HARNESS_ALLOW_NON_FIXTURE_MNEMONIC");
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
@@ -30,16 +55,19 @@ fn parse_args() -> Args {
                 }));
             }
             "--mnemonic" => {
-                config.mnemonic = args.next().unwrap_or_else(|| {
+                cli_mnemonic = Some(args.next().unwrap_or_else(|| {
                     eprintln!("--mnemonic requires a phrase argument");
                     std::process::exit(2);
-                });
+                }));
             }
             "--pin" => {
-                config.pin = args.next().unwrap_or_else(|| {
+                pin = args.next().unwrap_or_else(|| {
                     eprintln!("--pin requires a PIN argument");
                     std::process::exit(2);
                 });
+            }
+            "--allow-non-fixture-mnemonic" => {
+                allow_non_fixture_mnemonic = true;
             }
             "--help" | "-h" => {
                 print_usage();
@@ -53,20 +81,35 @@ fn parse_args() -> Args {
         }
     }
 
+    let config = HarnessConfig {
+        mnemonic: resolve_mnemonic(cli_mnemonic),
+        pin,
+        allow_non_fixture_mnemonic,
+    };
+
     Args { sandbox_root, config }
 }
 
 fn print_usage() {
     eprintln!(
-        "Usage: relay-free-harness [--sandbox-root PATH] [--mnemonic PHRASE] [--pin PIN]\n\n\
+        "Usage: relay-free-harness [--sandbox-root PATH] [--pin PIN] [--allow-non-fixture-mnemonic]\n\n\
          Builds populated per-account storage under PATH (or $PACTO_TEST_SANDBOX_ROOT) with zero \
-         network calls, through the real ingest path."
+         network calls, through the real ingest path.\n\n\
+         Mnemonic: defaults to the public Anvil/Hardhat fixture. Prefer \
+         PACTO_DEV_LOGIN_MNEMONIC over --mnemonic so the phrase never appears on argv. \
+         A non-fixture phrase requires --allow-non-fixture-mnemonic (or \
+         PACTO_HARNESS_ALLOW_NON_FIXTURE_MNEMONIC=1). The phrase is never printed.\n\n\
+         Opening a seeded DB in the live app still requires PACTO_TRUSTED_RELAYS \
+         (local) and PACTO_DEV_IDENTITY_SANDBOX_ONLY=1 (or the on-disk sandbox-only stamp)."
     );
 }
 
 #[tokio::main]
 async fn main() {
-    let Args { sandbox_root, config } = parse_args();
+    let Args {
+        sandbox_root,
+        config,
+    } = parse_args();
     if let Some(root) = sandbox_root {
         std::env::set_var("PACTO_TEST_SANDBOX_ROOT", root);
     }

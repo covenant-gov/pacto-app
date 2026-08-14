@@ -16,6 +16,18 @@ const SANDBOX_ROOT_VAR: &str = "PACTO_TEST_SANDBOX_ROOT";
 /// root also resolved (see `enforce_dev_world_root`).
 const DEV_WORLD_MARKER: &str = "PACTO_DEV_WORLD";
 
+/// Filename stamped under `PACTO_TEST_SANDBOX_ROOT` when a recipe-derived /
+/// fixture identity was seeded (KD9 / R25). `dev_login` treats its presence
+/// like `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1`.
+pub const SANDBOX_ONLY_MARKER_FILE: &str = ".pacto_dev_identity_sandbox_only";
+
+/// True when the configured sandbox root carries the sandbox-only identity stamp.
+pub fn sandbox_only_identity_stamped() -> bool {
+    sandbox_root()
+        .map(|root| root.join(SANDBOX_ONLY_MARKER_FILE).is_file())
+        .unwrap_or(false)
+}
+
 /// Resolve a subpath under the sandbox root, rejecting escapes.
 ///
 /// The root is canonicalized, then the subpath is resolved component-by-component.

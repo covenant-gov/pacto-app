@@ -11,6 +11,13 @@
 //! the inviter and feeds a real welcome into the sandbox identity's own
 //! persistent engine. No wire-byte fixtures are committed anywhere -- every
 //! credential and welcome is generated fresh, in-process, on every run.
+//!
+//! Seeded identities are public fixtures. The harness stamps them sandbox-only
+//! (see [`SANDBOX_ONLY_MARKER_FILE`] / [`SANDBOX_ONLY_SETTING_KEY`]) so
+//! `dev_login` refuses them while any non-local relay is in the set. Opening a
+//! seeded DB in the live app still requires `PACTO_TRUSTED_RELAYS` (local) plus
+//! `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1` (or the on-disk stamp). MLS group config
+//! embeds a loopback placeholder relay -- never the compiled production set.
 
 use crate::mls::{MlsGroupMetadata, MlsService};
 use crate::rumor::{
@@ -21,6 +28,7 @@ use mdk_core::prelude::*;
 use mdk_sqlite_storage::{EncryptionConfig, MdkSqliteStorage};
 use nostr_sdk::prelude::*;
 use sha2::{Digest, Sha256};
+use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Runtime};
 
 /// Fixed point every seeded rumor's `created_at` counts up from. Deterministic
@@ -33,14 +41,28 @@ const HARNESS_EPOCH_SECS: u64 = 1_735_000_000;
 /// `SEED_MARKER_VERSION` means "already seeded, do nothing" on a rerun --
 /// the harness's primary idempotency guard.
 const SEED_MARKER_KEY: &str = "harness_seed_complete";
-const SEED_MARKER_VERSION: &str = "1";
+/// Bumped when seed semantics change (sandbox-only stamp, local-only relays).
+const SEED_MARKER_VERSION: &str = "2";
 
 /// Anvil/Hardhat's well-known public test mnemonic -- already the default
 /// local chain this repo's sandboxes point at. A fine default: this identity
 /// is a seeding fixture, not a real account, so its key material is public
-/// by construction. Override with `--mnemonic`.
+/// by construction. Prefer `PACTO_DEV_LOGIN_MNEMONIC` over argv; a non-fixture
+/// phrase requires `--allow-non-fixture-mnemonic`.
 pub const DEFAULT_MNEMONIC: &str = "test test test test test test test test test test test junk";
 pub const DEFAULT_PIN: &str = "123456";
+
+/// Loopback placeholder embedded in MLS group / keypackage relay metadata so a
+/// relay-free seed never points at production relays. Accepted by
+/// `trusted_relays::all_relays_local()`.
+const HARNESS_LOCAL_RELAY: &str = "ws://127.0.0.1:1";
+
+/// On-disk stamp under the sandbox root; `dev_login` treats its presence like
+/// `PACTO_DEV_IDENTITY_SANDBOX_ONLY=1`.
+/// Re-export for callers that already import this module.
+pub use crate::test_sandbox::SANDBOX_ONLY_MARKER_FILE;
+/// SQL setting mirroring the on-disk stamp for in-DB discoverability.
+pub const SANDBOX_ONLY_SETTING_KEY: &str = "dev_identity_sandbox_only";
 
 const DEVICE_ID: &str = "relay-free-harness";
 const SQUAD_NAME: &str = "Relay-Free Harness Squad";
@@ -51,6 +73,9 @@ const ATTACHMENTS_SKIP_REASON_KEY: &str = "harness_attachments_skip_reason";
 pub struct HarnessConfig {
     pub mnemonic: String,
     pub pin: String,
+    /// Required when `mnemonic` is not [`DEFAULT_MNEMONIC`]. Prevents a real
+    /// recovery phrase from being persisted under the throwaway PIN by accident.
+    pub allow_non_fixture_mnemonic: bool,
 }
 
 impl Default for HarnessConfig {
@@ -58,6 +83,7 @@ impl Default for HarnessConfig {
         Self {
             mnemonic: DEFAULT_MNEMONIC.to_string(),
             pin: DEFAULT_PIN.to_string(),
+            allow_non_fixture_mnemonic: false,
         }
     }
 }
@@ -72,16 +98,87 @@ pub struct HarnessReport {
     pub attachments_skip_reason: String,
 }
 
-/// Resolve the sandbox root, refusing to proceed without one. Enforced here
-/// (not just by a Makefile/CI wrapper) so running the binary directly can
-/// never fall through to the real OS app-data directory -- the same
-/// discipline `test_sandbox::enforce_dev_world_root` applies to the main app.
-pub fn require_sandbox_root() -> Result<std::path::PathBuf, String> {
-    crate::test_sandbox::sandbox_root().ok_or_else(|| {
+/// Resolve the sandbox root, refusing to proceed without one under an allowed
+/// placement. Presence alone is not enough: the path must resolve under a
+/// `test_sandbox` or `test_fixtures` directory component (the same trees
+/// `make dev` / `make dev-sandbox` use), so a real OS app-data dir cannot be
+/// passed as `--sandbox-root`.
+pub fn require_sandbox_root() -> Result<PathBuf, String> {
+    let root = crate::test_sandbox::sandbox_root().ok_or_else(|| {
         "PACTO_TEST_SANDBOX_ROOT is not set; the relay-free harness refuses to run without an \
          explicit sandbox root rather than risk touching the real OS data directory."
             .to_string()
+    })?;
+    validate_sandbox_root_placement(&root)?;
+    Ok(root)
+}
+
+/// True when `root` has a `test_sandbox` or `test_fixtures` path component.
+pub fn sandbox_root_placement_ok(root: &Path) -> bool {
+    root.components().any(|c| match c {
+        Component::Normal(part) => {
+            let s = part.to_string_lossy();
+            s == "test_sandbox" || s == "test_fixtures"
+        }
+        _ => false,
     })
+}
+
+fn validate_sandbox_root_placement(root: &Path) -> Result<(), String> {
+    if sandbox_root_placement_ok(root) {
+        return Ok(());
+    }
+    Err(format!(
+        "sandbox root {} is not under test_sandbox/ or test_fixtures/; refusing to \
+         seed outside the repo's sandbox trees (pass a path like \
+         <repo>/test_sandbox/... or <repo>/test_fixtures/...)",
+        root.display()
+    ))
+}
+
+/// Local-only relay list for MLS metadata. Never the compiled production set.
+fn harness_local_relays() -> Result<Vec<RelayUrl>, String> {
+    let url = RelayUrl::parse(HARNESS_LOCAL_RELAY)
+        .map_err(|e| format!("harness local relay placeholder: {e}"))?;
+    Ok(vec![url])
+}
+
+/// Refuse a non-fixture mnemonic unless the operator opted in explicitly.
+pub fn validate_mnemonic_policy(config: &HarnessConfig) -> Result<(), String> {
+    let phrase = config.mnemonic.trim();
+    if phrase == DEFAULT_MNEMONIC {
+        return Ok(());
+    }
+    if config.allow_non_fixture_mnemonic {
+        return Ok(());
+    }
+    Err(
+        "non-fixture mnemonic refused: pass --allow-non-fixture-mnemonic (or set \
+         PACTO_HARNESS_ALLOW_NON_FIXTURE_MNEMONIC=1) to persist a non-default phrase \
+         under the harness PIN. Prefer PACTO_DEV_LOGIN_MNEMONIC over --mnemonic so the \
+         phrase never appears on argv."
+            .to_string(),
+    )
+}
+
+fn stamp_sandbox_only_identity<R: Runtime>(
+    handle: &AppHandle<R>,
+    root: &Path,
+) -> Result<(), String> {
+    let marker = root.join(SANDBOX_ONLY_MARKER_FILE);
+    std::fs::write(
+        &marker,
+        "sandbox-only fixture identity (KD9/R25). Opening this DB in the live app \
+requires PACTO_TRUSTED_RELAYS pointed at local relays and \
+PACTO_DEV_IDENTITY_SANDBOX_ONLY=1 (or this marker file).\n",
+    )
+    .map_err(|e| format!("failed to write {}: {e}", marker.display()))?;
+    db::set_sql_setting(
+        handle.clone(),
+        SANDBOX_ONLY_SETTING_KEY.to_string(),
+        "1".to_string(),
+    )?;
+    Ok(())
 }
 
 /// Entry point: seed DMs, a squad, and wallet state under the resolved
@@ -90,7 +187,8 @@ pub async fn run<R: Runtime>(
     handle: &AppHandle<R>,
     config: HarnessConfig,
 ) -> Result<HarnessReport, String> {
-    require_sandbox_root()?;
+    let root = require_sandbox_root()?;
+    validate_mnemonic_policy(&config)?;
 
     let keys = Keys::from_mnemonic(config.mnemonic.trim(), None)
         .map_err(|e| format!("Invalid harness mnemonic: {e}"))?;
@@ -111,11 +209,13 @@ pub async fn run<R: Runtime>(
         }
         return Err(format!(
             "{SEED_MARKER_KEY} is set to unexpected value {existing:?} (expected \
-             {SEED_MARKER_VERSION:?}); refusing to reseed over unrecognized state"
+             {SEED_MARKER_VERSION:?}); refusing to reseed over unrecognized state. \
+             Wipe the sandbox root (or bump/clear the marker) before reseeding."
         ));
     }
 
     bootstrap_identity_secrets(handle, &keys, &config).await?;
+    stamp_sandbox_only_identity(handle, &root)?;
 
     let dm_messages_seeded = seed_dm_slice(handle, &keys).await?;
     let squad_group_id = seed_squad_slice(handle, &keys).await?;
@@ -374,10 +474,21 @@ async fn seed_squad_slice<R: Runtime>(
         return Ok(Some(existing.group_id));
     }
 
+    // Crash after accept_welcome but before save_mls_group leaves the
+    // persistent MLS store with a group and no SQL row. Treat that as
+    // already-seeded and finish the SQL side -- never mint a second
+    // keypackage or call create_group against an engine that already has
+    // a group.
+    if let Some(group_id) = recover_squad_from_mls_store(handle).await? {
+        return Ok(Some(group_id));
+    }
+
     let sandbox_kp_event = generate_and_store_device_keypackage(handle, keys).await?;
 
     let inviter_keys = derive_synthetic_keys("squad-inviter/v1");
-    let relays: Vec<RelayUrl> = crate::trusted_relays::trusted_relays().to_vec();
+    // Relay-free seed: never embed the compiled production relay set in MLS
+    // group config. A loopback placeholder keeps metadata local-only.
+    let relays = harness_local_relays()?;
     let group_config = NostrGroupConfigData::new(
         SQUAD_NAME.to_string(),
         "Seeded by the relay-free harness".to_string(),
@@ -458,7 +569,11 @@ async fn seed_squad_slice<R: Runtime>(
             .iter()
             .find(|g| hex::encode(g.nostr_group_id) == nostr_group_id)
             .map(|g| hex::encode(g.mls_group_id.as_slice()))
-            .unwrap_or_else(|| nostr_group_id.clone())
+            .ok_or_else(|| {
+                format!(
+                    "squad slice: get_groups() missed nostr_group_id {nostr_group_id} after accept_welcome"
+                )
+            })?
     };
 
     let metadata = MlsGroupMetadata {
@@ -473,7 +588,12 @@ async fn seed_squad_slice<R: Runtime>(
     };
     db::save_mls_group(handle.clone(), &metadata).await?;
 
-    let mut chat = Chat::new_mls_group(nostr_group_id.clone(), vec![]);
+    let sandbox_npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
+    let inviter_npub = inviter_keys.public_key().to_bech32().map_err(|e| e.to_string())?;
+    let mut chat = Chat::new_mls_group(
+        nostr_group_id.clone(),
+        vec![sandbox_npub, inviter_npub],
+    );
     chat.metadata.set_name(group_name);
     db::save_chat(handle.clone(), &chat).await?;
 
@@ -486,27 +606,84 @@ async fn seed_squad_slice<R: Runtime>(
                 .map_err(|e| format!("sandbox process_message: {e}"))?
         }; // engine dropped here, before any await
 
-        if let MessageProcessingResult::ApplicationMessage(app_msg) = msg_result {
-            let rumor_event = RumorEvent {
-                id: app_msg.id,
-                kind: app_msg.kind,
-                content: app_msg.content.clone(),
-                tags: app_msg.tags.clone(),
-                created_at: app_msg.created_at,
-                pubkey: app_msg.pubkey,
-            };
-            let context = RumorContext {
-                sender: app_msg.pubkey,
-                is_mine: app_msg.pubkey == keys.public_key(),
-                conversation_id: nostr_group_id.clone(),
-                conversation_type: ConversationType::MlsGroup,
-            };
-            if let RumorProcessingResult::TextMessage(msg) = process_rumor(rumor_event, context).await? {
+        let MessageProcessingResult::ApplicationMessage(app_msg) = msg_result else {
+            return Err(format!(
+                "squad slice: expected ApplicationMessage from process_message, got {msg_result:?}"
+            ));
+        };
+        let rumor_event = RumorEvent {
+            id: app_msg.id,
+            kind: app_msg.kind,
+            content: app_msg.content.clone(),
+            tags: app_msg.tags.clone(),
+            created_at: app_msg.created_at,
+            pubkey: app_msg.pubkey,
+        };
+        let context = RumorContext {
+            sender: app_msg.pubkey,
+            is_mine: app_msg.pubkey == keys.public_key(),
+            conversation_id: nostr_group_id.clone(),
+            conversation_type: ConversationType::MlsGroup,
+        };
+        match process_rumor(rumor_event, context).await? {
+            RumorProcessingResult::TextMessage(msg) => {
                 db::save_message(handle.clone(), &nostr_group_id, &msg).await?;
+            }
+            other => {
+                return Err(format!(
+                    "squad slice: expected TextMessage from process_rumor, got {other:?}"
+                ));
             }
         }
     }
 
+    Ok(Some(nostr_group_id))
+}
+
+
+/// If the persistent MLS store already has a group (partial seed), persist the
+/// missing `mls_groups` / chat rows and return its nostr group id. Returns
+/// `None` when the store is empty and a fresh invite is safe.
+async fn recover_squad_from_mls_store<R: Runtime>(
+    handle: &AppHandle<R>,
+) -> Result<Option<String>, String> {
+    let existing = {
+        let mls =
+            MlsService::new_persistent(handle).map_err(|e| format!("sandbox MLS engine: {e}"))?;
+        let engine = mls.engine().map_err(|e| e.to_string())?;
+        let groups = engine.get_groups().map_err(|e| e.to_string())?;
+        groups.into_iter().next()
+    };
+    let Some(group) = existing else {
+        return Ok(None);
+    };
+
+    let nostr_group_id = hex::encode(group.nostr_group_id);
+    let engine_group_id = hex::encode(group.mls_group_id.as_slice());
+    let group_name = if group.name.trim().is_empty() {
+        SQUAD_NAME.to_string()
+    } else {
+        group.name.clone()
+    };
+    let metadata = MlsGroupMetadata {
+        group_id: nostr_group_id.clone(),
+        engine_group_id,
+        creator_pubkey: group.admin_pubkeys.first().map(|pk| pk.to_hex()).unwrap_or_default(),
+        name: group_name.clone(),
+        avatar_ref: None,
+        created_at: HARNESS_EPOCH_SECS,
+        updated_at: HARNESS_EPOCH_SECS,
+        evicted: false,
+    };
+    db::save_mls_group(handle.clone(), &metadata).await?;
+
+    let mut chat = Chat::new_mls_group(nostr_group_id.clone(), vec![]);
+    chat.metadata.set_name(group_name);
+    db::save_chat(handle.clone(), &chat).await?;
+
+    println!(
+        "[relay-free-harness] recovered partial squad seed from MLS store (group {nostr_group_id})"
+    );
     Ok(Some(nostr_group_id))
 }
 
@@ -526,7 +703,7 @@ async fn generate_and_store_device_keypackage<R: Runtime>(
             MlsService::new_persistent(handle).map_err(|e| format!("sandbox MLS engine: {e}"))?;
         let engine = mls.engine().map_err(|e| e.to_string())?;
         engine
-            .create_key_package_for_event(&keys.public_key(), crate::trusted_relays::trusted_relays().to_vec())
+            .create_key_package_for_event(&keys.public_key(), harness_local_relays()?)
             .map_err(|e| format!("create_key_package_for_event: {e}"))?
     }; // engine dropped here, before any await
 
@@ -614,5 +791,28 @@ mod tests {
         if std::env::var("PACTO_TEST_SANDBOX_ROOT").is_err() {
             assert!(require_sandbox_root().is_err());
         }
+    }
+
+    #[test]
+    fn sandbox_root_placement_requires_known_tree() {
+        assert!(sandbox_root_placement_ok(Path::new(
+            "/tmp/test_sandbox/relay-free-harness"
+        )));
+        assert!(sandbox_root_placement_ok(Path::new(
+            "/repo/test_fixtures/dev-account"
+        )));
+        assert!(!sandbox_root_placement_ok(Path::new(
+            "/home/user/Library/Application Support/app"
+        )));
+    }
+
+    #[test]
+    fn mnemonic_policy_refuses_non_fixture_without_opt_in() {
+        let mut config = HarnessConfig::default();
+        assert!(validate_mnemonic_policy(&config).is_ok());
+        config.mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".into();
+        assert!(validate_mnemonic_policy(&config).is_err());
+        config.allow_non_fixture_mnemonic = true;
+        assert!(validate_mnemonic_policy(&config).is_ok());
     }
 }

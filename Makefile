@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
+.PHONY: help install relay-free-harness-seed dev dev-sandbox dev-sandbox-fresh dev-account dev-buddy dev-world dev-world-reclaim build preview test validate check lint format rust-test rust-check rust-fmt rust-clippy new-migration e2e e2e-install e2e-tauri release-symbol-check clean distclean tauri-info signer-key
 
 # Default target shows available commands.
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "  format       format frontend and Rust sources"
 	@echo ""
 	@echo "  rust-test    run cargo test in src-tauri"
+	@echo "  relay-free-harness-seed  seed a populated sandbox with no docker/network"
 	@echo "  rust-check   cargo check the Rust backend"
 	@echo "  rust-fmt     format Rust sources with rustfmt"
 	@echo "  rust-clippy  lint Rust sources with clippy"
@@ -105,6 +106,21 @@ dev-sandbox-fresh:
 	echo "removing test_sandbox/$$slug/$(PERSONA)"; \
 	rm -rf "$(CURDIR)/test_sandbox/$$slug/$(PERSONA)"
 	@$(MAKE) dev-sandbox
+
+# Seed a populated per-account sandbox with zero network / no docker, through
+# the real ingest path. Treat as an ingest+MLS+migrations canary: rumor /
+# MlsService / db / MDK changes can break this without touching the harness
+# files. Requires a root under test_sandbox/ or test_fixtures/. Opening the
+# seeded DB in the live app still needs PACTO_TRUSTED_RELAYS (local) and
+# PACTO_DEV_IDENTITY_SANDBOX_ONLY=1 (or the on-disk stamp). SEED_MARKER_VERSION
+# lives in src-tauri/src/harness.rs -- bump it when seed semantics change.
+relay-free-harness-seed:
+	@branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached); \
+	slug=$$(node -e "import('./scripts/dev-ports.mjs').then(m => process.stdout.write(m.slugForBranch(process.argv[1])))" "$$branch"); \
+	root="$(CURDIR)/test_sandbox/$$slug/relay-free-harness"; \
+	mkdir -p "$$root"; \
+	echo "relay-free-harness-seed: $$root"; \
+	cd src-tauri && cargo run --no-default-features --features relay-free-harness --bin relay-free-harness -- --sandbox-root "$$root"
 
 # Persistent reusable test identities (docs/TAURI_MCP_INTEGRATION.md). Unlike
 # dev-sandbox, these keep the same PIN-protected account, DM history, and
