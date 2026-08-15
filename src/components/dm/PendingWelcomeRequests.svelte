@@ -32,8 +32,8 @@
     try {
       await acceptOfferedWelcome(welcome);
     } catch (e) {
-      // Leaving the card in place is the useful failure: the welcome is still
-      // pending in the engine, so a retry is legitimate.
+      // Leaving the card in place is the useful failure: retry is legitimate
+      // whether the engine still has the welcome or only local materialization failed.
       dmError('accept pending welcome', e);
       failedGroupId = welcome.groupId;
     } finally {
@@ -49,7 +49,14 @@
       <li class="welcome-card">
         <div class="welcome-icon">
           {#if welcome.imageUrl}
-            <img src={welcome.imageUrl} alt="" class="welcome-icon-img" />
+            <img
+              src={welcome.imageUrl}
+              alt=""
+              class="welcome-icon-img"
+              referrerpolicy="no-referrer"
+              loading="lazy"
+              decoding="async"
+            />
           {:else}
             <span class="welcome-icon-placeholder" aria-hidden="true">
               {welcome.name.charAt(0).toUpperCase()}
@@ -82,7 +89,7 @@
               type="button"
               class="welcome-btn welcome-btn-accept"
               disabled={joining}
-              onclick={() => accept(welcome)}
+              onclick={() => void accept(welcome)}
             >
               {joining
                 ? $t('messaging.pendingWelcome.joining')

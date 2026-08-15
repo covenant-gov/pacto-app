@@ -9,9 +9,15 @@ import { squads } from '../../stores/squads';
 import { blockedDmNpubs } from '../../stores/dm';
 import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
 import { pendingSquadAdmissions } from '../../stores/pending-squad-admission';
+import {
+  clearPendingWelcomeFinalizationByGroupId,
+  pendingWelcomeFinalizations,
+} from '../../stores/pending-welcome-finalization';
 import { resolveOneCatchUpEntry } from '../../stores/catch-up';
+import { dmError } from '../utils/dm-debug';
 import { sameMlsGroupId } from './accept-invite';
 import {
+  offeredWelcomeFromFinalization,
   offeredWelcomes,
   recordDeclinedWelcomeGroupId,
   type OfferedWelcome,
@@ -31,16 +37,16 @@ export const offeredWelcomeList = derived(
     declinedWelcomeGroupIds,
     pendingSquadAdmissions,
     blockedDmNpubs,
-    joiningWelcomeGroupIds,
+    pendingWelcomeFinalizations,
   ] as const,
-  ([$welcomes, $squads, $declined, $admissions, $blocked, $joining]): OfferedWelcome[] =>
+  ([$welcomes, $squads, $declined, $admissions, $blocked, $finalizations]): OfferedWelcome[] =>
     offeredWelcomes({
       welcomes: $welcomes,
       squadIds: $squads.map((s) => s.id),
       declinedGroupIds: $declined,
       pendingAdmissionGroupIds: $admissions.map((p) => p.groupId),
       blockedNpubs: $blocked,
-      joiningGroupIds: new Set($joining),
+      unmaterialized: $finalizations.map(offeredWelcomeFromFinalization),
     })
 );
 
@@ -53,9 +59,14 @@ export const offeredWelcomeList = derived(
  */
 export function declineWelcomeForGroup(groupId: string): void {
   recordDeclinedWelcomeGroupId(groupId);
+  clearPendingWelcomeFinalizationByGroupId(groupId);
   const pending = get(pendingMlsWelcomes).find((w) => sameMlsGroupId(w.nostr_group_id, groupId));
   if (!pending) return;
-  void resolveOneCatchUpEntry(pending.wrapper_event_id).catch(() => {
-    // Row stays until the next Catch up refresh; the refusal itself is recorded.
-  });
+  // hydrateCatchUp does not reconcile against declinedWelcomeGroupIds, so a
+  // failed resolve leaves the Catch up row stuck. Retry once, then log.
+  void resolveOneCatchUpEntry(pending.wrapper_event_id).catch(() =>
+    resolveOneCatchUpEntry(pending.wrapper_event_id).catch((e) => {
+      dmError('resolve catch-up after declining welcome', e);
+    })
+  );
 }

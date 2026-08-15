@@ -19,9 +19,24 @@
  * this surface is for.
  */
 
+import { get } from 'svelte/store';
 import { acceptMlsWelcome, type PendingMlsWelcome } from '../api/nostr';
 import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
-import { finalizeSquadAfterAnnouncementsWelcome, sameMlsGroupId } from './accept-invite';
+import { currentNpubForPersistence } from '../../stores/persistence-context';
+import {
+  clearPendingWelcomeFinalizationByGroupId,
+  getPendingWelcomeFinalizationByGroupId,
+  pendingWelcomeFinalizations,
+  stashPendingWelcomeFinalizationForNpub,
+  upsertPendingWelcomeFinalization,
+  type PendingWelcomeFinalization,
+} from '../../stores/pending-welcome-finalization';
+import { dmError } from '../utils/dm-debug';
+import {
+  finalizeSquadAfterAnnouncementsWelcome,
+  sameMlsGroupId,
+  squadInviteResolvedByMembership,
+} from './accept-invite';
 
 /** A pending welcome with the fields the request card needs. */
 export interface OfferedWelcome {
@@ -49,8 +64,11 @@ export interface OfferedWelcomeInputs {
   /** Groups whose DM invite was already accepted; the consent-first path owns those. */
   pendingAdmissionGroupIds: string[];
   blockedNpubs: ReadonlySet<string>;
-  /** Group ids with an accept in flight, so a card cannot be double-submitted. */
-  joiningGroupIds: ReadonlySet<string>;
+  /**
+   * Engine-accepted welcomes whose local squad row never materialized. Shown
+   * even when `list_pending_mls_welcomes` no longer reports them.
+   */
+  unmaterialized: OfferedWelcome[];
 }
 
 /** Pending welcomes still awaiting a decision, newest-first order preserved. */
@@ -60,17 +78,14 @@ export function offeredWelcomes({
   declinedGroupIds,
   pendingAdmissionGroupIds,
   blockedNpubs,
-  joiningGroupIds,
+  unmaterialized,
 }: OfferedWelcomeInputs): OfferedWelcome[] {
   // One normalization path for every id filter: group ids reach us from MLS
   // metadata, squad rows and localStorage, and their case does not always match.
   const resolved = new Set(
-    [
-      ...squadIds,
-      ...declinedGroupIds,
-      ...pendingAdmissionGroupIds,
-      ...joiningGroupIds,
-    ].map((id) => id.trim().toLowerCase())
+    [...squadIds, ...declinedGroupIds, ...pendingAdmissionGroupIds].map((id) =>
+      id.trim().toLowerCase()
+    )
   );
   const seen = new Set<string>();
   const offered: OfferedWelcome[] = [];
@@ -92,20 +107,97 @@ export function offeredWelcomes({
       memberCount: welcome.member_count,
     });
   }
+
+  // Engine-accepted rows are independent of pendingMlsWelcomes membership.
+  for (const extra of unmaterialized) {
+    const groupId = extra.groupId?.trim();
+    if (!groupId) continue;
+    const key = groupId.toLowerCase();
+    if (seen.has(key) || resolved.has(key)) continue;
+    seen.add(key);
+    offered.push(extra);
+  }
   return offered;
+}
+
+function finalizationFromWelcome(welcome: OfferedWelcome): PendingWelcomeFinalization {
+  return {
+    welcomeId: welcome.id,
+    groupId: welcome.groupId,
+    name: welcome.name,
+    description: welcome.description,
+    imageUrl: welcome.imageUrl,
+    inviterNpub: welcome.inviterNpub,
+    memberCount: welcome.memberCount,
+    acceptedAt: Date.now(),
+  };
+}
+
+export function offeredWelcomeFromFinalization(row: PendingWelcomeFinalization): OfferedWelcome {
+  return {
+    id: row.welcomeId,
+    groupId: row.groupId,
+    name: row.name,
+    description: row.description,
+    imageUrl: row.imageUrl,
+    inviterNpub: row.inviterNpub,
+    memberCount: row.memberCount,
+  };
 }
 
 /**
  * Join the group behind a pending welcome: accept it in the engine, then run the
  * same squad materialization the DM invite path runs. No DM message backs this,
  * so no invite-decision id is recorded.
+ *
+ * MLS consumes the welcome at accept time. If local materialization then fails,
+ * a durable finalization record keeps the card retryable without re-accepting.
  */
 export async function acceptOfferedWelcome(welcome: OfferedWelcome): Promise<void> {
-  await acceptMlsWelcome(welcome.id);
+  const startedAs = get(currentNpubForPersistence);
+  const alreadyAccepted = getPendingWelcomeFinalizationByGroupId(welcome.groupId);
+  if (!alreadyAccepted) {
+    await acceptMlsWelcome(welcome.id);
+    const row = finalizationFromWelcome(welcome);
+    // Persist before finalize so a persistSquad failure (or crash) is retryable
+    // without re-calling acceptMlsWelcome — the engine has already consumed it.
+    if (get(currentNpubForPersistence) !== startedAs) {
+      if (startedAs) stashPendingWelcomeFinalizationForNpub(startedAs, row);
+      throw new Error('Account changed during welcome accept');
+    }
+    upsertPendingWelcomeFinalization(row);
+  } else if (get(currentNpubForPersistence) !== startedAs) {
+    throw new Error('Account changed during welcome accept');
+  }
+
   await finalizeSquadAfterAnnouncementsWelcome(
     { groupId: welcome.groupId, name: welcome.name },
     null
   );
+  clearPendingWelcomeFinalizationByGroupId(welcome.groupId);
+}
+
+/** Retry local materialization for engine-accepted welcomes after a later login. */
+export async function tryCompletePendingWelcomeFinalization(groupId: string): Promise<boolean> {
+  const pending = getPendingWelcomeFinalizationByGroupId(groupId);
+  if (!pending) return false;
+  if (squadInviteResolvedByMembership(groupId)) {
+    clearPendingWelcomeFinalizationByGroupId(groupId);
+    return true;
+  }
+  await finalizeSquadAfterAnnouncementsWelcome({ groupId: pending.groupId, name: pending.name }, null);
+  clearPendingWelcomeFinalizationByGroupId(groupId);
+  return true;
+}
+
+export async function tryCompleteAllPendingWelcomeFinalizations(): Promise<void> {
+  for (const row of get(pendingWelcomeFinalizations)) {
+    try {
+      await tryCompletePendingWelcomeFinalization(row.groupId);
+    } catch (e) {
+      dmError('tryCompletePendingWelcomeFinalization', e);
+    }
+  }
 }
 
 /**

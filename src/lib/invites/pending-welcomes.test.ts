@@ -1,6 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { get, writable } from 'svelte/store';
 
+const acceptMlsWelcomeMock = vi.fn();
+const finalizeMock = vi.fn();
+
 // accept-invite.ts drags in squad-catalog / outbound-invite / backup-verification /
 // dm-debug, none of which recordDeclinedWelcomeGroupId ever calls, but importing the
 // module runs their top-level code. Mirror accept-invite.test.ts's mocks so import
@@ -30,8 +33,37 @@ vi.mock('../../stores/auth', () => ({
   currentUser: writable({ npub: 'npub1invitee' }),
 }));
 
-import { offeredWelcomes, recordDeclinedWelcomeGroupId, type OfferedWelcomeInputs } from './pending-welcomes';
+vi.mock('../api/nostr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/nostr')>();
+  return {
+    ...actual,
+    acceptMlsWelcome: (...args: unknown[]) => acceptMlsWelcomeMock(...args),
+  };
+});
+
+vi.mock('./accept-invite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./accept-invite')>();
+  return {
+    ...actual,
+    finalizeSquadAfterAnnouncementsWelcome: (...args: unknown[]) => finalizeMock(...args),
+  };
+});
+
+import {
+  acceptOfferedWelcome,
+  offeredWelcomes,
+  recordDeclinedWelcomeGroupId,
+  type OfferedWelcome,
+  type OfferedWelcomeInputs,
+} from './pending-welcomes';
 import { declinedWelcomeGroupIds } from '../../stores/invite-decisions';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import {
+  getPendingWelcomeFinalizationByGroupId,
+  pendingWelcomeFinalizations,
+  resetPendingWelcomeFinalizations,
+  upsertPendingWelcomeFinalization,
+} from '../../stores/pending-welcome-finalization';
 import type { PendingMlsWelcome } from '../api/nostr';
 
 function welcome(overrides: Partial<PendingMlsWelcome> = {}): PendingMlsWelcome {
@@ -56,7 +88,20 @@ function inputs(overrides: Partial<OfferedWelcomeInputs> = {}): OfferedWelcomeIn
     declinedGroupIds: [],
     pendingAdmissionGroupIds: [],
     blockedNpubs: new Set<string>(),
-    joiningGroupIds: new Set<string>(),
+    unmaterialized: [],
+    ...overrides,
+  };
+}
+
+function offered(overrides: Partial<OfferedWelcome> = {}): OfferedWelcome {
+  return {
+    id: 'welcome-1',
+    groupId: 'group-1',
+    name: 'Alpha',
+    description: null,
+    imageUrl: null,
+    inviterNpub: 'npub1inviter',
+    memberCount: 3,
     ...overrides,
   };
 }
@@ -119,12 +164,25 @@ describe('offeredWelcomes', () => {
     expect(result).toEqual([]);
   });
 
-  it('filters out a welcome whose group has an accept already in flight', () => {
+  it('still offers a welcome whose group has an accept already in flight', () => {
     const w = welcome({ nostr_group_id: 'group-1' });
-    const result = offeredWelcomes(
-      inputs({ welcomes: [w], joiningGroupIds: new Set(['group-1']) })
-    );
-    expect(result).toEqual([]);
+    const result = offeredWelcomes(inputs({ welcomes: [w] }));
+    expect(result).toHaveLength(1);
+    expect(result[0]!.groupId).toBe('group-1');
+  });
+
+  it('includes an unmaterialized welcome even when it is gone from pendingMlsWelcomes', () => {
+    const extra = offered({ id: 'welcome-stuck', groupId: 'group-stuck', name: 'Stuck' });
+    const result = offeredWelcomes(inputs({ unmaterialized: [extra] }));
+    expect(result).toEqual([extra]);
+  });
+
+  it('does not duplicate an unmaterialized welcome that is still in the pending list', () => {
+    const w = welcome({ id: 'welcome-1', nostr_group_id: 'group-1' });
+    const extra = offered({ id: 'welcome-1', groupId: 'group-1' });
+    const result = offeredWelcomes(inputs({ welcomes: [w], unmaterialized: [extra] }));
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe('welcome-1');
   });
 
   it('filters out a welcome from a blocked npub', () => {
@@ -162,11 +220,9 @@ describe('offeredWelcomes', () => {
       expect(result).toEqual([]);
     });
 
-    it('a mixed-case joining group id suppresses the welcome', () => {
-      const w = welcome({ nostr_group_id: 'abc' });
-      const result = offeredWelcomes(
-        inputs({ welcomes: [w], joiningGroupIds: new Set(['ABC']) })
-      );
+    it('a mixed-case unmaterialized group id is suppressed by a squad id', () => {
+      const extra = offered({ groupId: 'abc' });
+      const result = offeredWelcomes(inputs({ squadIds: ['ABC'], unmaterialized: [extra] }));
       expect(result).toEqual([]);
     });
   });
@@ -235,5 +291,77 @@ describe('recordDeclinedWelcomeGroupId', () => {
     recordDeclinedWelcomeGroupId('');
     recordDeclinedWelcomeGroupId('   ');
     expect(get(declinedWelcomeGroupIds)).toEqual([]);
+  });
+});
+
+describe('acceptOfferedWelcome', () => {
+  beforeEach(() => {
+    acceptMlsWelcomeMock.mockReset().mockResolvedValue(true);
+    finalizeMock.mockReset().mockResolvedValue(undefined);
+    resetPendingWelcomeFinalizations();
+    setCurrentNpubForPersistence('npub1invitee');
+  });
+
+  afterEach(() => {
+    resetPendingWelcomeFinalizations();
+    setCurrentNpubForPersistence(null);
+  });
+
+  it('accepts the welcome, materializes the squad, and does not record an invite id', async () => {
+    await acceptOfferedWelcome(offered());
+    expect(acceptMlsWelcomeMock).toHaveBeenCalledOnce();
+    expect(acceptMlsWelcomeMock).toHaveBeenCalledWith('welcome-1');
+    expect(finalizeMock).toHaveBeenCalledOnce();
+    expect(finalizeMock).toHaveBeenCalledWith({ groupId: 'group-1', name: 'Alpha' }, null);
+    expect(get(pendingWelcomeFinalizations)).toEqual([]);
+  });
+
+  it('propagates acceptMlsWelcome rejection and does not finalize', async () => {
+    acceptMlsWelcomeMock.mockRejectedValueOnce(new Error('engine down'));
+    await expect(acceptOfferedWelcome(offered())).rejects.toThrow('engine down');
+    expect(finalizeMock).not.toHaveBeenCalled();
+    expect(get(pendingWelcomeFinalizations)).toEqual([]);
+  });
+
+  it('keeps a durable finalization record when finalize fails, and retry skips acceptMlsWelcome', async () => {
+    finalizeMock.mockRejectedValueOnce(new Error('persist failed'));
+    await expect(acceptOfferedWelcome(offered())).rejects.toThrow('persist failed');
+    expect(acceptMlsWelcomeMock).toHaveBeenCalledOnce();
+    const stuck = getPendingWelcomeFinalizationByGroupId('group-1');
+    expect(stuck).toMatchObject({ welcomeId: 'welcome-1', groupId: 'group-1', name: 'Alpha' });
+
+    finalizeMock.mockResolvedValueOnce(undefined);
+    await acceptOfferedWelcome(offered());
+    expect(acceptMlsWelcomeMock).toHaveBeenCalledOnce();
+    expect(finalizeMock).toHaveBeenCalledTimes(2);
+    expect(getPendingWelcomeFinalizationByGroupId('group-1')).toBeUndefined();
+  });
+
+  it('aborts store mutations when the active npub changes after engine accept', async () => {
+    acceptMlsWelcomeMock.mockImplementation(async () => {
+      setCurrentNpubForPersistence('npub1other');
+    });
+    await expect(acceptOfferedWelcome(offered())).rejects.toThrow(
+      'Account changed during welcome accept'
+    );
+    expect(finalizeMock).not.toHaveBeenCalled();
+    expect(get(pendingWelcomeFinalizations)).toEqual([]);
+  });
+
+  it('skips acceptMlsWelcome when a finalization record already exists', async () => {
+    upsertPendingWelcomeFinalization({
+      welcomeId: 'welcome-1',
+      groupId: 'group-1',
+      name: 'Alpha',
+      description: null,
+      imageUrl: null,
+      inviterNpub: 'npub1inviter',
+      memberCount: 3,
+      acceptedAt: 1,
+    });
+    await acceptOfferedWelcome(offered());
+    expect(acceptMlsWelcomeMock).not.toHaveBeenCalled();
+    expect(finalizeMock).toHaveBeenCalledOnce();
+    expect(getPendingWelcomeFinalizationByGroupId('group-1')).toBeUndefined();
   });
 });
