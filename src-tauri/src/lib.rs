@@ -114,6 +114,10 @@ mod nostr_tags;
 // `PACTO_TRUSTED_RELAYS` override.
 mod trusted_relays;
 
+// Certificate parsing, expiry classification, and the isolated TLS capture
+// path for the relay diagnostics certificate panel (U8).
+mod relay_cert;
+
 // Machine-readable record of where this sandbox landed (ports, root, endpoints).
 mod sandbox_handle;
 
@@ -210,6 +214,21 @@ pub(crate) fn get_nostr_client() -> Result<Arc<Client>, String> {
 }
 pub(crate) fn set_nostr_client(client: Client) {
     *NOSTR_CLIENT.write().expect("NOSTR_CLIENT lock") = Some(Arc::new(client));
+    LOGIN_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Bumped on every `set_nostr_client` call (every login path funnels through it). The
+/// live-monitor loops capture this value when they spawn; diagnostic writes compare their
+/// captured generation against the current one and skip on mismatch, so a stale monitor left
+/// running for a previous account can never attribute a failure reason to the current one
+/// (KTD9). Logout does not bump it -- there is no new client to capture a generation from
+/// until the next login.
+pub(crate) static LOGIN_GENERATION: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Current login generation, for capture by a newly spawned monitor task.
+pub(crate) fn current_login_generation() -> u64 {
+    LOGIN_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
 }
 pub(crate) fn clear_nostr_client() {
     *NOSTR_CLIENT.write().expect("NOSTR_CLIENT lock") = None;
@@ -4439,9 +4458,244 @@ static RELAY_METRICS: Lazy<RwLock<HashMap<String, RelayMetrics>>> =
 static RELAY_LOGS: Lazy<RwLock<HashMap<String, VecDeque<RelayLog>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// Global storage for classified relay connection failures, cleared on reconnect, removal,
+/// disable, and logout. Never shown for a relay whose live status reads connected -- see the
+/// read-side gate in `get_relays`.
+static RELAY_FAILURES: Lazy<RwLock<HashMap<String, RelayFailure>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Shared normalization for every diagnostic-static key: trim, strip a trailing slash, then
+/// lowercase. `get_relays`'s pool-matching lowercases without stripping a trailing slash, so
+/// that comparison must never be reused as a key source here.
+fn normalize_relay_url(url: &str) -> String {
+    url.trim().trim_end_matches('/').to_lowercase()
+}
+
+/// Serializes tests that clear a diagnostics static (`RELAY_FAILURES`, `RELAY_LOGS`,
+/// `RELAY_METRICS`, `RELAY_CERTIFICATES`) so parallel `cargo test --lib` threads never race
+/// clearing one another's fixtures. Test-only -- never touched by production code paths.
+#[cfg(test)]
+pub(crate) static DIAGNOSTICS_TEST_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+/// Store a classified failure for `url`, guarded by the login generation captured when the
+/// caller (a monitor task) spawned. A mismatch means a stale monitor loop left running for a
+/// previous account is writing -- skip rather than attribute the failure to the current one
+/// (KTD9).
+fn store_relay_failure_if_current(url: &str, failure: RelayFailure, captured_generation: u64) {
+    if captured_generation != current_login_generation() {
+        return;
+    }
+    if let Ok(mut failures) = RELAY_FAILURES.write() {
+        failures.insert(normalize_relay_url(url), failure);
+    }
+}
+
+/// Clear any stored failure reason for `url`. Reconnect-to-Connected, relay removal, relay
+/// disable, and logout all route through this.
+fn clear_relay_failure(url: &str) {
+    if let Ok(mut failures) = RELAY_FAILURES.write() {
+        failures.remove(&normalize_relay_url(url));
+    }
+}
+
+#[cfg(test)]
+mod relay_failure_diagnostics_tests {
+    use super::{
+        add_relay_log, clear_relay_diagnostics_on_logout, clear_relay_failure,
+        current_login_generation, normalize_relay_url, relay_failure_for,
+        store_relay_failure_if_current, update_relay_metrics, RelayFailure, RelayFailureCode,
+        RelayInfo, DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES, RELAY_LOGS, RELAY_METRICS,
+    };
+
+    fn failure(code: RelayFailureCode) -> RelayFailure {
+        RelayFailure { code, detail: None }
+    }
+
+    #[test]
+    fn store_then_read_round_trips_and_relays_are_independent() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        store_relay_failure_if_current(
+            "wss://round-trip-a.example",
+            failure(RelayFailureCode::ConnectionRefused),
+            generation,
+        );
+        store_relay_failure_if_current(
+            "wss://round-trip-b.example",
+            failure(RelayFailureCode::TimedOut),
+            generation,
+        );
+
+        let a = relay_failure_for("wss://round-trip-a.example", "disconnected").unwrap();
+        let b = relay_failure_for("wss://round-trip-b.example", "terminated").unwrap();
+        assert_eq!(a.code, RelayFailureCode::ConnectionRefused);
+        assert_eq!(b.code, RelayFailureCode::TimedOut);
+
+        clear_relay_failure("wss://round-trip-a.example");
+        clear_relay_failure("wss://round-trip-b.example");
+    }
+
+    #[test]
+    fn get_relays_projection_omits_reason_when_connected_but_map_retains_it() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        let url = "wss://still-stored.example";
+        store_relay_failure_if_current(url, failure(RelayFailureCode::TlsFailed), generation);
+
+        // The read-side gate (KTD8): a "connected" status omits the reason from the
+        // get_relays projection even though the map entry is untouched.
+        assert!(relay_failure_for(url, "connected").is_none());
+        assert!(RELAY_FAILURES
+            .read()
+            .unwrap()
+            .contains_key(&normalize_relay_url(url)));
+        assert!(relay_failure_for(url, "disconnected").is_some());
+
+        clear_relay_failure(url);
+    }
+
+    #[test]
+    fn clearing_on_connected_removes_the_entry() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        let url = "wss://clears-on-connect.example";
+        store_relay_failure_if_current(
+            url,
+            failure(RelayFailureCode::NetworkUnreachable),
+            generation,
+        );
+        assert!(relay_failure_for(url, "disconnected").is_some());
+
+        clear_relay_failure(url);
+
+        assert!(!RELAY_FAILURES
+            .read()
+            .unwrap()
+            .contains_key(&normalize_relay_url(url)));
+    }
+
+    #[test]
+    fn trailing_slash_key_normalizes_both_directions() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+
+        // Stored with a trailing slash, looked up without one.
+        store_relay_failure_if_current(
+            "wss://slash-fixture-a.example/",
+            failure(RelayFailureCode::ProtocolError),
+            generation,
+        );
+        assert!(relay_failure_for("wss://slash-fixture-a.example", "disconnected").is_some());
+        clear_relay_failure("wss://slash-fixture-a.example");
+        assert!(relay_failure_for("wss://slash-fixture-a.example/", "disconnected").is_none());
+
+        // Stored without a trailing slash, looked up with one.
+        store_relay_failure_if_current(
+            "wss://slash-fixture-b.example",
+            failure(RelayFailureCode::ProtocolError),
+            generation,
+        );
+        assert!(relay_failure_for("wss://slash-fixture-b.example/", "disconnected").is_some());
+        clear_relay_failure("wss://slash-fixture-b.example/");
+        assert!(relay_failure_for("wss://slash-fixture-b.example", "disconnected").is_none());
+    }
+
+    #[test]
+    fn removing_a_relay_clears_reason_and_readding_shows_none() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        let url = "wss://remove-readd.example";
+        store_relay_failure_if_current(url, failure(RelayFailureCode::Unknown), generation);
+        assert!(relay_failure_for(url, "disconnected").is_some());
+
+        // Mirrors remove_custom_relay's clear-after-pool-removal.
+        clear_relay_failure(url);
+        // Re-adding the same URL must show no stale reason.
+        assert!(relay_failure_for(url, "disconnected").is_none());
+    }
+
+    #[test]
+    fn disabling_custom_and_default_relay_each_clear() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        let custom_url = "wss://disable-custom.example";
+        let default_url = "wss://disable-default.example";
+        store_relay_failure_if_current(
+            custom_url,
+            failure(RelayFailureCode::DnsFailed),
+            generation,
+        );
+        store_relay_failure_if_current(
+            default_url,
+            failure(RelayFailureCode::DnsFailed),
+            generation,
+        );
+
+        // Mirrors toggle_custom_relay's and toggle_default_relay's disable branches, which
+        // both route through clear_relay_failure identically.
+        clear_relay_failure(custom_url);
+        clear_relay_failure(default_url);
+
+        assert!(relay_failure_for(custom_url, "disconnected").is_none());
+        assert!(relay_failure_for(default_url, "disconnected").is_none());
+    }
+
+    #[test]
+    fn write_under_a_stale_login_generation_is_skipped() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let url = "wss://stale-generation.example";
+        // Guaranteed to differ from the live generation without depending on its exact value.
+        let stale_generation = current_login_generation().wrapping_sub(1000);
+
+        store_relay_failure_if_current(url, failure(RelayFailureCode::Unknown), stale_generation);
+
+        assert!(relay_failure_for(url, "disconnected").is_none());
+    }
+
+    #[test]
+    fn logout_clears_failures_logs_and_metrics() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let generation = current_login_generation();
+        let url = "wss://logout-fixture.example";
+        store_relay_failure_if_current(url, failure(RelayFailureCode::Unknown), generation);
+        add_relay_log(url, "warn", "fixture entry");
+        update_relay_metrics(url, |m| m.ping_ms = Some(1));
+
+        clear_relay_diagnostics_on_logout();
+
+        assert!(RELAY_FAILURES.read().unwrap().is_empty());
+        assert!(RELAY_LOGS.read().unwrap().is_empty());
+        assert!(RELAY_METRICS.read().unwrap().is_empty());
+    }
+
+    /// Not just `.is_none()` on the Rust value -- asserts the actual wire shape, since a plain
+    /// `Option<T>` field with no `skip_serializing_if` would otherwise cross IPC as an explicit
+    /// `null`, which is present, not absent.
+    #[test]
+    fn failure_reason_serializes_as_an_absent_key_not_null_or_an_empty_object() {
+        let info = RelayInfo {
+            url: "wss://no-reason.example".to_string(),
+            status: "connected".to_string(),
+            is_default: false,
+            is_custom: true,
+            enabled: true,
+            mode: "both".to_string(),
+            failure_reason: None,
+        };
+
+        let value = serde_json::to_value(&info).unwrap();
+        let object = value.as_object().unwrap();
+        assert!(
+            !object.contains_key("failure_reason"),
+            "expected failure_reason to be absent, got {:?}",
+            object.get("failure_reason")
+        );
+    }
+}
+
 /// Add a log entry for a relay
 fn add_relay_log(url: &str, level: &str, message: &str) {
-    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    let normalized = normalize_relay_url(url);
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -4471,7 +4725,7 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
 
 /// Update metrics for a relay
 fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
-    let normalized = url.trim().trim_end_matches('/').to_lowercase();
+    let normalized = normalize_relay_url(url);
     if let Ok(mut metrics) = RELAY_METRICS.write() {
         let relay_metrics = metrics
             .entry(normalized)
@@ -4513,9 +4767,666 @@ pub(crate) fn record_send_outcome(event: &Event, output: &Output<EventId>) {
     }
 }
 
+// ============================================================================
+// Relay Failure Classification
+// ============================================================================
+
+/// Stable, snake_case reason code for a failed relay connection attempt. Closed set so the
+/// frontend owns all user-facing wording (KTD3) -- adding an outcome is a protocol change,
+/// not a string tweak. `auth_required` and `not_a_relay` are produced by the probe's query
+/// path (U3), never by this classifier.
+#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayFailureCode {
+    DnsFailed,
+    ConnectionRefused,
+    NetworkUnreachable,
+    TimedOut,
+    TlsFailed,
+    ProtocolError,
+    AuthRequired,
+    NotARelay,
+    InvalidUrl,
+    Unknown,
+}
+
+/// A classified relay failure: a stable code plus an optional redacted, length-capped detail
+/// string. The detail is diagnostic context only -- callers must never derive control flow
+/// from it, only from `code`.
+#[derive(serde::Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct RelayFailure {
+    pub code: RelayFailureCode,
+    pub detail: Option<String>,
+}
+
+/// Cap on the redacted detail string stored alongside a `RelayFailure`. A failed WebSocket
+/// upgrade can carry a full relay-controlled rejection body, so this is applied before
+/// redaction, not just before display.
+const RELAY_FAILURE_DETAIL_CAP: usize = 200;
+
+/// Truncate to at most `cap` bytes on a UTF-8 boundary, then redact any embedded relay URL.
+fn cap_and_redact_detail(raw: &str, cap: usize) -> String {
+    let truncated = if raw.len() > cap {
+        let mut end = cap;
+        while end > 0 && !raw.is_char_boundary(end) {
+            end -= 1;
+        }
+        &raw[..end]
+    } else {
+        raw
+    };
+    evm::wallet_security::redact_urls_in_text(truncated)
+}
+
+/// Map a `std::io::ErrorKind` shared by both `async_wsocket::Error::Io` and the `Io` variant
+/// nested inside `tungstenite::Error` -- a mid-upgrade reset is a transport failure, not a
+/// TLS one, so both paths go through this same mapping. Resolver failures never produce
+/// `NotFound`, so it is deliberately left unmapped here and falls to `Unknown` (KTD2).
+fn classify_io_kind(kind: std::io::ErrorKind) -> RelayFailureCode {
+    use std::io::ErrorKind;
+    match kind {
+        ErrorKind::ConnectionRefused => RelayFailureCode::ConnectionRefused,
+        // The only resolution-related kind async-wsocket produces; a bare DNS failure
+        // surfaces as the unstable, non-matchable `Uncategorized` and is not reachable here.
+        ErrorKind::AddrNotAvailable => RelayFailureCode::DnsFailed,
+        ErrorKind::TimedOut => RelayFailureCode::TimedOut,
+        ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => {
+            RelayFailureCode::NetworkUnreachable
+        }
+        _ => RelayFailureCode::Unknown,
+    }
+}
+
+/// Map the `tungstenite::Error` nested inside `async_wsocket::Error::Ws`, matched on the
+/// inner variant rather than the whole `Ws(_)` wrapper.
+fn classify_tungstenite_error(err: &tungstenite::Error) -> RelayFailureCode {
+    match err {
+        tungstenite::Error::Tls(_) => RelayFailureCode::TlsFailed,
+        // tokio-tungstenite's rustls backend never returns `tungstenite::Error::Tls` for a
+        // failed client handshake -- `tokio-rustls` surfaces a rejected/expired/mismatched
+        // certificate (and any other TLS record-processing failure) as
+        // `io::Error::new(io::ErrorKind::InvalidData, rustls::Error)`, which
+        // `client_async_tls` then wraps as `tungstenite::Error::Io`. Verified against the
+        // vendored tokio-rustls 0.26 source (`common/mod.rs`) and a real loopback handshake
+        // against an expired certificate (see the relay_cert containment regression test).
+        tungstenite::Error::Io(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            RelayFailureCode::TlsFailed
+        }
+        tungstenite::Error::Io(e) => classify_io_kind(e.kind()),
+        tungstenite::Error::Protocol(_)
+        | tungstenite::Error::Capacity(_)
+        | tungstenite::Error::Http(_)
+        | tungstenite::Error::HttpFormat(_) => RelayFailureCode::ProtocolError,
+        tungstenite::Error::Url(_) => RelayFailureCode::InvalidUrl,
+        _ => RelayFailureCode::Unknown,
+    }
+}
+
+/// Map the `async_wsocket::Error` reached by downcasting `TransportError::Backend`.
+fn classify_async_wsocket_error(err: &async_wsocket::Error) -> RelayFailureCode {
+    match err {
+        async_wsocket::Error::Io(e) => classify_io_kind(e.kind()),
+        async_wsocket::Error::Timeout => RelayFailureCode::TimedOut,
+        async_wsocket::Error::Url(_) => RelayFailureCode::InvalidUrl,
+        async_wsocket::Error::Ws(e) => classify_tungstenite_error(e),
+        _ => RelayFailureCode::Unknown,
+    }
+}
+
+/// Classify a relay connection failure into a stable code plus an optional redacted detail.
+/// Never walks `source()` -- `async_wsocket::Error`'s `Error` impl is empty, so that walk
+/// always yields `None`. The typed downcast through `TransportError::Backend` is the only
+/// route that survives the async-wsocket crate boundary (KTD2).
+pub(crate) fn classify_relay_error(err: &nostr_sdk::pool::relay::Error) -> RelayFailure {
+    use nostr_sdk::pool::relay::Error as RelayError;
+    use nostr_sdk::pool::transport::error::TransportError;
+
+    let code = match err {
+        RelayError::Transport(TransportError::Backend(b)) => b
+            .downcast_ref::<async_wsocket::Error>()
+            .map(classify_async_wsocket_error)
+            .unwrap_or(RelayFailureCode::Unknown),
+        _ => RelayFailureCode::Unknown,
+    };
+    let detail = Some(cap_and_redact_detail(
+        &err.to_string(),
+        RELAY_FAILURE_DETAIL_CAP,
+    ));
+    RelayFailure { code, detail }
+}
+
+#[cfg(test)]
+mod relay_failure_classifier_tests {
+    use super::{
+        cap_and_redact_detail, classify_relay_error, RelayFailureCode, RELAY_FAILURE_DETAIL_CAP,
+    };
+    use nostr_sdk::pool::relay::Error as RelayError;
+    use nostr_sdk::pool::transport::error::TransportError;
+    use nostr_sdk::{RelayOptions, RelayPool};
+    use std::io;
+    use std::time::Duration;
+
+    fn transport_err(inner: async_wsocket::Error) -> RelayError {
+        RelayError::Transport(TransportError::backend(inner))
+    }
+
+    #[test]
+    fn io_connection_refused_maps_to_connection_refused() {
+        let err = transport_err(async_wsocket::Error::Io(io::Error::from(
+            io::ErrorKind::ConnectionRefused,
+        )));
+        assert_eq!(
+            classify_relay_error(&err).code,
+            RelayFailureCode::ConnectionRefused
+        );
+    }
+
+    #[test]
+    fn io_addr_not_available_maps_to_dns_failed() {
+        let err = transport_err(async_wsocket::Error::Io(io::Error::from(
+            io::ErrorKind::AddrNotAvailable,
+        )));
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::DnsFailed);
+    }
+
+    #[test]
+    fn io_timed_out_maps_to_timed_out() {
+        let err = transport_err(async_wsocket::Error::Io(io::Error::from(
+            io::ErrorKind::TimedOut,
+        )));
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::TimedOut);
+    }
+
+    #[test]
+    fn io_unreachable_kinds_map_to_network_unreachable() {
+        for kind in [
+            io::ErrorKind::HostUnreachable,
+            io::ErrorKind::NetworkUnreachable,
+            io::ErrorKind::NetworkDown,
+        ] {
+            let err = transport_err(async_wsocket::Error::Io(io::Error::from(kind)));
+            assert_eq!(
+                classify_relay_error(&err).code,
+                RelayFailureCode::NetworkUnreachable,
+                "kind {kind:?} should map to network_unreachable"
+            );
+        }
+    }
+
+    #[test]
+    fn async_wsocket_timeout_variant_maps_to_timed_out() {
+        let err = transport_err(async_wsocket::Error::Timeout);
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::TimedOut);
+    }
+
+    #[test]
+    fn async_wsocket_url_variant_maps_to_invalid_url() {
+        let err = transport_err(async_wsocket::Error::Url(url::ParseError::EmptyHost));
+        assert_eq!(
+            classify_relay_error(&err).code,
+            RelayFailureCode::InvalidUrl
+        );
+    }
+
+    #[test]
+    fn ws_tls_error_maps_to_tls_failed() {
+        let ws_err = tungstenite::Error::Tls(tungstenite::error::TlsError::InvalidDnsName);
+        let err = transport_err(async_wsocket::Error::Ws(ws_err));
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::TlsFailed);
+    }
+
+    #[test]
+    fn ws_io_error_maps_to_kind_code_not_tls_failed() {
+        let ws_err = tungstenite::Error::Io(io::Error::from(io::ErrorKind::ConnectionRefused));
+        let err = transport_err(async_wsocket::Error::Ws(ws_err));
+        let code = classify_relay_error(&err).code;
+        assert_eq!(code, RelayFailureCode::ConnectionRefused);
+        assert_ne!(code, RelayFailureCode::TlsFailed);
+    }
+
+    #[test]
+    fn ws_invalid_data_io_error_maps_to_tls_failed() {
+        // tokio-rustls surfaces a rejected/expired certificate as
+        // `io::Error::new(io::ErrorKind::InvalidData, rustls::Error)`, not as
+        // `tungstenite::Error::Tls`. Proven end-to-end by the relay_cert containment
+        // regression test against a real expired-certificate loopback listener.
+        let ws_err = tungstenite::Error::Io(io::Error::from(io::ErrorKind::InvalidData));
+        let err = transport_err(async_wsocket::Error::Ws(ws_err));
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::TlsFailed);
+    }
+
+    #[test]
+    fn ws_protocol_error_maps_to_protocol_error() {
+        let ws_err =
+            tungstenite::Error::Protocol(tungstenite::error::ProtocolError::WrongHttpMethod);
+        let err = transport_err(async_wsocket::Error::Ws(ws_err));
+        assert_eq!(
+            classify_relay_error(&err).code,
+            RelayFailureCode::ProtocolError
+        );
+    }
+
+    #[test]
+    fn ws_unmatched_variant_maps_to_unknown_without_panicking() {
+        let ws_err = tungstenite::Error::AlreadyClosed;
+        let err = transport_err(async_wsocket::Error::Ws(ws_err));
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::Unknown);
+    }
+
+    #[test]
+    fn non_transport_variant_maps_to_unknown_without_panicking() {
+        let err = RelayError::NotConnected;
+        assert_eq!(classify_relay_error(&err).code, RelayFailureCode::Unknown);
+    }
+
+    #[test]
+    fn detail_over_cap_is_truncated_before_storage() {
+        let raw = "x".repeat(RELAY_FAILURE_DETAIL_CAP + 500);
+        let capped = cap_and_redact_detail(&raw, RELAY_FAILURE_DETAIL_CAP);
+        assert!(capped.len() <= RELAY_FAILURE_DETAIL_CAP);
+    }
+
+    #[test]
+    fn detail_wss_url_with_non_allowlisted_param_is_redacted() {
+        let raw = "rejected by wss://relay.example.com/?t=SECRET during upgrade";
+        let capped = cap_and_redact_detail(raw, RELAY_FAILURE_DETAIL_CAP);
+        assert!(!capped.contains("SECRET"));
+    }
+
+    /// The only test proving the typed downcast survives the async-wsocket crate boundary:
+    /// a real `Relay::try_connect` against a closed loopback port, driven through the actual
+    /// relay-pool connection path rather than a locally constructed error.
+    #[tokio::test]
+    async fn try_connect_against_closed_port_classifies_connection_refused() {
+        // Bind then immediately drop so the OS guarantees the port refuses new connections,
+        // unlike a bare unused ephemeral port which could collide with something else.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+
+        let pool = RelayPool::new();
+        let url = format!("ws://127.0.0.1:{port}");
+        pool.add_relay(&url, RelayOptions::new().reconnect(false))
+            .await
+            .expect("add_relay");
+        let relay = pool.relay(&url).await.expect("relay handle");
+
+        let err = relay
+            .try_connect(Duration::from_secs(5))
+            .await
+            .expect_err("connecting to a closed port must fail");
+
+        assert_eq!(
+            classify_relay_error(&err).code,
+            RelayFailureCode::ConnectionRefused
+        );
+
+        pool.shutdown().await;
+    }
+}
+
+// ============================================================================
+// Pre-add relay probe (U3): resolve, connect through a throwaway pool, and run
+// one bounded read-only query before the operator ever saves the URL. Never
+// touches `get_nostr_client()` or the operator's live pool (R6, KTD5).
+// ============================================================================
+
+/// Single deadline covering DNS resolution, connect, and the query round-trip
+/// together (R13). This is the only bound an operator actually observes.
+const PROBE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Deliberately far larger than `PROBE_DEADLINE`. The relay-pool crate's own
+/// per-call timeout is not optional, so it is set here to a value that can
+/// never legitimately win a race against the probe's own outer deadline --
+/// otherwise a genuine end-of-stored-events response and true silence would
+/// both surface as `Ok(Events::empty())` and become indistinguishable.
+const PROBE_INNER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// Result of a pre-add relay probe (F1). `round_trip_ms` is present only when
+/// the candidate answered; a failure carries the classified reason and never a
+/// round-trip measurement.
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum ProbeResult {
+    Reachable { round_trip_ms: u64 },
+    Unreachable { failure: RelayFailure },
+}
+
+impl ProbeResult {
+    fn failure(code: RelayFailureCode) -> Self {
+        ProbeResult::Unreachable {
+            failure: RelayFailure { code, detail: None },
+        }
+    }
+}
+
+/// Classify a `pool::Error` surfaced by the throwaway probe pool: unwrap the
+/// `Relay(..)` variant into U1's classifier, and map every other pool-level
+/// variant (bad URL, pool shutdown, relay not found, ...) to `unknown` -- none
+/// of them carry connectivity meaning (KTD2).
+fn classify_probe_pool_error(err: &nostr_sdk::pool::pool::Error) -> RelayFailure {
+    match err {
+        nostr_sdk::pool::pool::Error::Relay(inner) => classify_relay_error(inner),
+        other => RelayFailure {
+            code: RelayFailureCode::Unknown,
+            detail: Some(cap_and_redact_detail(
+                &other.to_string(),
+                RELAY_FAILURE_DETAIL_CAP,
+            )),
+        },
+    }
+}
+
+/// Remove the candidate relay from the throwaway pool on every explicit exit
+/// path (R6). The deadline-cancellation path relies on `RelayPool`'s own
+/// `Drop` instead, since a cancelled future never reaches this call.
+async fn teardown_probe_pool(pool: &RelayPool, url: &str) {
+    let _ = pool.force_remove_relay(url).await;
+}
+
+/// Resolve, connect through a throwaway pool, and run one bounded read-only
+/// query. Never touches `get_nostr_client()` and never writes to the
+/// candidate. The caller wraps this in the probe's single deadline; on
+/// success it returns the query's elapsed milliseconds.
+async fn run_relay_probe(url: &str) -> Result<u64, RelayFailure> {
+    // Resolve the host explicitly -- the only typed route to `dns_failed`;
+    // inside the monitor loops a resolver failure arrives as the unstable,
+    // non-matchable `io::ErrorKind::Uncategorized` (KTD2).
+    let parsed = url::Url::parse(url).map_err(|_| RelayFailure {
+        code: RelayFailureCode::InvalidUrl,
+        detail: None,
+    })?;
+    let host = parsed.host_str().ok_or(RelayFailure {
+        code: RelayFailureCode::InvalidUrl,
+        detail: None,
+    })?;
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    let mut addrs = match tokio::net::lookup_host((host, port)).await {
+        Ok(addrs) => addrs,
+        Err(_) => {
+            return Err(RelayFailure {
+                code: RelayFailureCode::DnsFailed,
+                detail: None,
+            })
+        }
+    };
+    if addrs.next().is_none() {
+        return Err(RelayFailure {
+            code: RelayFailureCode::DnsFailed,
+            detail: None,
+        });
+    }
+
+    let pool = RelayPool::new();
+
+    if let Err(e) = pool
+        .add_relay(url, RelayOptions::new().reconnect(false))
+        .await
+    {
+        let failure = classify_probe_pool_error(&e);
+        teardown_probe_pool(&pool, url).await;
+        return Err(failure);
+    }
+
+    if let Err(e) = pool.try_connect_relay(url, PROBE_INNER_TIMEOUT).await {
+        let failure = classify_probe_pool_error(&e);
+        teardown_probe_pool(&pool, url).await;
+        return Err(failure);
+    }
+
+    let relay = match pool.relay(url).await {
+        Ok(relay) => relay,
+        Err(e) => {
+            let failure = classify_probe_pool_error(&e);
+            teardown_probe_pool(&pool, url).await;
+            return Err(failure);
+        }
+    };
+
+    // One bounded read-only query -- never a write. An end-of-stored-events
+    // response confirms the relay; a close-with-reason answer is
+    // `auth_required`; total silence is caught by the caller's outer deadline.
+    let filter = Filter::new().kinds(vec![Kind::Metadata]).limit(1);
+    let started = std::time::Instant::now();
+    let query_result = relay
+        .fetch_events(filter, PROBE_INNER_TIMEOUT, ReqExitPolicy::ExitOnEOSE)
+        .await;
+    let round_trip_ms = started.elapsed().as_millis() as u64;
+
+    teardown_probe_pool(&pool, url).await;
+    drop(pool);
+
+    match query_result {
+        Ok(_events) => Ok(round_trip_ms),
+        Err(nostr_sdk::pool::relay::Error::RelayMessage(_))
+        | Err(nostr_sdk::pool::relay::Error::AuthenticationFailed) => Err(RelayFailure {
+            code: RelayFailureCode::AuthRequired,
+            detail: None,
+        }),
+        Err(e) => Err(RelayFailure {
+            code: RelayFailureCode::Unknown,
+            detail: Some(cap_and_redact_detail(
+                &e.to_string(),
+                RELAY_FAILURE_DETAIL_CAP,
+            )),
+        }),
+    }
+}
+
+/// Pre-add relay probe (Tauri command): validate, resolve, connect through a
+/// throwaway pool, and run one read-only query round-trip, all under a single
+/// 10-second deadline. Never joins the operator's live pool and writes
+/// nothing to the candidate relay (R4, R5, R6, R7, R13).
+#[tauri::command]
+async fn probe_relay(url: String) -> Result<ProbeResult, String> {
+    let normalized = match validate_relay_url(&url) {
+        Ok(normalized) => normalized,
+        Err(_) => return Ok(ProbeResult::failure(RelayFailureCode::InvalidUrl)),
+    };
+
+    match tokio::time::timeout(PROBE_DEADLINE, run_relay_probe(&normalized)).await {
+        Ok(Ok(round_trip_ms)) => Ok(ProbeResult::Reachable { round_trip_ms }),
+        Ok(Err(failure)) => Ok(ProbeResult::Unreachable { failure }),
+        // The single deadline -- resolution, connect, and query together --
+        // elapsed with no classifiable response at all.
+        Err(_) => Ok(ProbeResult::failure(RelayFailureCode::NotARelay)),
+    }
+}
+
+/// Certificate metadata plus a freshly computed expiry verdict for the wire.
+/// The verdict is never cached alongside the certificate (`relay_cert`'s
+/// cache holds only the time-invariant parse result) -- it is recomputed
+/// against the current time on every call, so a certificate served from
+/// cache still reports an up-to-date expiry state (KTD10).
+#[derive(serde::Serialize)]
+struct RelayCertificateView {
+    #[serde(flatten)]
+    certificate: relay_cert::RelayCertificate,
+    expiry_verdict: relay_cert::ExpiryVerdict,
+}
+
+/// Fetches the certificate a `wss://` relay presents over an isolated TLS
+/// handshake (`relay_cert`), never the app's own connection. `Ok(None)`
+/// covers every case that isn't "here is a certificate" -- a `ws://` URL, an
+/// unreachable host, and a stalled handshake past its deadline are all
+/// indistinguishable to the panel, so none of them is surfaced as `Err`.
+#[tauri::command]
+async fn get_relay_certificate(url: String) -> Result<Option<RelayCertificateView>, String> {
+    let Some(certificate) = relay_cert::fetch_certificate(&url).await else {
+        return Ok(None);
+    };
+    let now_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let expiry_verdict = relay_cert::expiry_verdict(certificate.not_after, now_unix);
+    Ok(Some(RelayCertificateView {
+        certificate,
+        expiry_verdict,
+    }))
+}
+
+#[cfg(test)]
+mod probe_relay_tests {
+    use super::{probe_relay, ProbeResult, RelayFailureCode};
+
+    #[tokio::test]
+    async fn invalid_url_returns_immediately_with_no_network_attempt() {
+        let started = std::time::Instant::now();
+        let result = probe_relay("not a url".to_string()).await.unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(500),
+            "invalid_url must short-circuit before any connection attempt"
+        );
+        match result {
+            ProbeResult::Unreachable { failure } => {
+                assert_eq!(failure.code, RelayFailureCode::InvalidUrl);
+            }
+            ProbeResult::Reachable { .. } => panic!("expected an invalid_url failure"),
+        }
+    }
+
+    #[tokio::test]
+    async fn public_ws_url_is_rejected_by_the_validator() {
+        let result = probe_relay("ws://relay.example.com".to_string())
+            .await
+            .unwrap();
+        match result {
+            ProbeResult::Unreachable { failure } => {
+                assert_eq!(failure.code, RelayFailureCode::InvalidUrl);
+            }
+            ProbeResult::Reachable { .. } => panic!("a public ws:// URL must be rejected"),
+        }
+    }
+
+    #[tokio::test]
+    async fn unresolvable_hostname_returns_dns_failed() {
+        let result = probe_relay("wss://this-definitely-does-not-resolve.invalid".to_string())
+            .await
+            .unwrap();
+        match result {
+            ProbeResult::Unreachable { failure } => {
+                assert_eq!(failure.code, RelayFailureCode::DnsFailed);
+            }
+            ProbeResult::Reachable { .. } => panic!("an unresolvable hostname must fail"),
+        }
+    }
+
+    #[tokio::test]
+    async fn closed_local_port_classifies_connection_refused() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+        let url = format!("ws://127.0.0.1:{port}");
+
+        // Run twice: if the throwaway pool or its connection ever leaked out
+        // of `run_relay_probe`, a stale relay entry or hung socket would
+        // either change the second call's classification or make it hang.
+        for _ in 0..2 {
+            let started = std::time::Instant::now();
+            let result = probe_relay(url.clone()).await.unwrap();
+            assert!(started.elapsed() < std::time::Duration::from_secs(5));
+            match result {
+                ProbeResult::Unreachable { failure } => {
+                    assert_eq!(failure.code, RelayFailureCode::ConnectionRefused);
+                }
+                ProbeResult::Reachable { .. } => panic!("a closed port must fail to connect"),
+            }
+        }
+    }
+
+    /// Exercises the exact teardown call `run_relay_probe` uses on every exit
+    /// path: after `force_remove_relay`, the pool holds no relay at all.
+    #[tokio::test]
+    async fn probe_pool_teardown_leaves_no_relay_registered() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+        let url = format!("ws://127.0.0.1:{port}");
+
+        let pool = nostr_sdk::RelayPool::new();
+        pool.add_relay(&url, nostr_sdk::RelayOptions::new().reconnect(false))
+            .await
+            .expect("add_relay");
+        let _ = pool
+            .try_connect_relay(&url, std::time::Duration::from_secs(5))
+            .await;
+        let _ = pool.force_remove_relay(&url).await;
+
+        assert_eq!(
+            pool.relays().await.len(),
+            0,
+            "force_remove_relay must leave no relay registered"
+        );
+    }
+
+    #[tokio::test]
+    async fn each_failure_code_round_trips_through_the_dto_and_carries_no_round_trip_ms() {
+        for code in [
+            RelayFailureCode::DnsFailed,
+            RelayFailureCode::ConnectionRefused,
+            RelayFailureCode::NetworkUnreachable,
+            RelayFailureCode::TimedOut,
+            RelayFailureCode::TlsFailed,
+            RelayFailureCode::ProtocolError,
+            RelayFailureCode::AuthRequired,
+            RelayFailureCode::NotARelay,
+            RelayFailureCode::InvalidUrl,
+            RelayFailureCode::Unknown,
+        ] {
+            let result = ProbeResult::failure(code);
+            let json = serde_json::to_value(&result).unwrap();
+            assert_eq!(json["outcome"], "unreachable");
+            assert!(
+                json.get("round_trip_ms").is_none(),
+                "a failure DTO must never carry a round-trip measurement"
+            );
+            assert!(json["failure"]["code"].is_string());
+        }
+
+        let reachable =
+            serde_json::to_value(&ProbeResult::Reachable { round_trip_ms: 42 }).unwrap();
+        assert_eq!(reachable["outcome"], "reachable");
+        assert_eq!(reachable["round_trip_ms"], 42);
+    }
+
+    #[tokio::test]
+    async fn accept_then_stall_host_returns_within_the_deadline() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+
+        // Accept and hold the connection open without ever completing a
+        // WebSocket upgrade, so the probe genuinely has nothing to read.
+        tokio::spawn(async move {
+            if let Ok((_stream, _)) = listener.accept().await {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        });
+
+        let url = format!("ws://127.0.0.1:{port}");
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(12), probe_relay(url))
+            .await
+            .expect("probe_relay must return within its own 10s deadline")
+            .unwrap();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(12),
+            "probe must honor its single 10-second deadline"
+        );
+        // Whatever the exact classification, it must be a failure -- the
+        // listener never speaks Nostr.
+        assert!(matches!(result, ProbeResult::Unreachable { .. }));
+    }
+}
+
 #[cfg(test)]
 mod relay_metrics_tests {
-    use super::{get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome};
+    use super::{
+        get_relay_logs, get_relay_metrics, record_event_received, record_send_outcome,
+        DIAGNOSTICS_TEST_LOCK,
+    };
     use crate::nostr_sign;
     use nostr_sdk::prelude::{EventBuilder, Keys, Kind, Output, RelayUrl};
     use std::collections::{HashMap, HashSet};
@@ -4530,6 +5441,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn accepted_relays_get_events_sent_and_bytes_up() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let event = test_event("published");
         let accepted = RelayUrl::parse("wss://test-send-outcome-accepted.example").unwrap();
         let output = Output {
@@ -4549,6 +5461,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn rejected_relays_get_a_warn_log_and_no_sent_count() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let event = test_event("rejected");
         let rejected = RelayUrl::parse("wss://test-send-outcome-rejected.example").unwrap();
         let output = Output {
@@ -4570,6 +5483,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn multiple_accepted_relays_each_get_their_own_counters() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let event = test_event("fanout");
         let relay_a = RelayUrl::parse("wss://test-send-outcome-fanout-a.example").unwrap();
         let relay_b = RelayUrl::parse("wss://test-send-outcome-fanout-b.example").unwrap();
@@ -4588,6 +5502,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn accumulates_events_received_and_bytes_down_for_same_relay() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let url = "wss://test-record-received-accumulate.example";
         let event_a = test_event("first");
         let event_b = test_event("second, a little longer");
@@ -4605,6 +5520,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn normalizes_relay_url_without_leaking_across_distinct_relays() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let canonical = "wss://test-record-received-normalize.example";
         let variant = "WSS://Test-Record-Received-Normalize.example/";
         let other = "wss://test-record-received-other.example";
@@ -4620,6 +5536,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn get_relay_metrics_reflects_recorded_events() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let url = "wss://test-record-received-readpath.example";
         record_event_received(url, &test_event("readable"));
 
@@ -4630,6 +5547,7 @@ mod relay_metrics_tests {
 
     #[tokio::test]
     async fn repeated_identical_send_failures_collapse_into_one_log_entry() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let rejected = RelayUrl::parse("wss://test-send-outcome-repeated-failure.example").unwrap();
         for i in 0..3 {
             let event = test_event(&format!("retry {i}"));
@@ -4683,6 +5601,22 @@ struct RelayInfo {
     is_custom: bool,
     enabled: bool,
     mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_reason: Option<RelayFailure>,
+}
+
+/// Read-side gate for R3: a stored failure reason is never surfaced for a relay whose live
+/// status resolves to connected, regardless of how the write side raced the real transition
+/// (KTD8). Looks up through the shared normalization so a trailing-slash mismatch between the
+/// stored key and the caller's URL never misses.
+fn relay_failure_for(url: &str, status: &str) -> Option<RelayFailure> {
+    if status == "connected" {
+        return None;
+    }
+    RELAY_FAILURES
+        .read()
+        .ok()
+        .and_then(|failures| failures.get(&normalize_relay_url(url)).cloned())
 }
 
 /// Get all relays with their current status
@@ -4735,6 +5669,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             ("disabled".to_string(), "both".to_string())
         };
 
+        let failure_reason = relay_failure_for(&url_str, &status);
         relay_infos.push(RelayInfo {
             url: url_str,
             status,
@@ -4742,6 +5677,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             is_custom: false,
             enabled: !is_disabled,
             mode,
+            failure_reason,
         });
     }
 
@@ -4767,6 +5703,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             "disabled".to_string()
         };
 
+        let failure_reason = relay_failure_for(&custom.url, &status);
         relay_infos.push(RelayInfo {
             url: custom.url.clone(),
             status,
@@ -4774,6 +5711,7 @@ async fn get_relays<R: Runtime>(handle: AppHandle<R>) -> Result<Vec<RelayInfo>, 
             is_custom: true,
             enabled: custom.enabled,
             mode: custom.mode.clone(),
+            failure_reason,
         });
     }
 
@@ -5049,6 +5987,7 @@ async fn toggle_default_relay<R: Runtime>(
             }
         } else {
             // Remove the relay from pool
+            clear_relay_failure(&normalized_url);
             if let Err(e) = client.pool().remove_relay(&normalized_url).await {
                 eprintln!(
                     "[Relay] Note: Could not disable default relay in pool: {}",
@@ -5170,6 +6109,8 @@ async fn remove_custom_relay<R: Runtime>(
         }
     }
 
+    clear_relay_failure(&url);
+
     Ok(true)
 }
 
@@ -5222,6 +6163,7 @@ async fn toggle_custom_relay<R: Runtime>(
             }
         } else {
             // Disconnect and remove
+            clear_relay_failure(&url);
             if let Err(e) = client.pool().remove_relay(&url).await {
                 eprintln!("[Relay] Note: Could not disable relay in pool: {}", e);
             } else {
@@ -5327,6 +6269,10 @@ async fn monitor_relay_connections() -> Result<bool, String> {
     }
 
     let client = get_nostr_client().expect("Nostr client not initialized");
+    // Captured once, at spawn time, and reused by every task below. Compared against the
+    // live generation on every diagnostic write so a stale monitor loop left running for a
+    // previous account can never attribute a failure to the current one (KTD9).
+    let login_generation = current_login_generation();
     let handle = TAURI_APP.get().unwrap().clone();
 
     // Get the monitor and subscribe to real-time notifications
@@ -5398,6 +6344,7 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // Relay connection terminated (hard disconnect)
                         }
                         RelayStatus::Connected => {
+                            clear_relay_failure(&url_str);
                             // When a relay reconnects, fetch its bounded catch-up window from just
                             // that relay — skip if a fetch for this relay is already in flight so
                             // rapid Connected/Disconnected flapping never overlaps fetches.
@@ -5529,15 +6476,34 @@ async fn monitor_relay_connections() -> Result<bool, String> {
             // Force reconnect unhealthy relays
             for (url, relay) in unhealthy_relays {
                 let url_str = url.to_string();
-                // First disconnect if needed
-                if relay.status() == RelayStatus::Connected {
+                // Force a disconnect first for any status `try_connect` can't act on -- the
+                // SDK's `can_connect` only accepts Initialized | Terminated | Sleeping, so
+                // anything else (Connected included) would otherwise make `try_connect`
+                // return `Ok(())` without attempting anything and no cause would ever be
+                // produced.
+                if !matches!(
+                    relay.status(),
+                    RelayStatus::Initialized | RelayStatus::Terminated | RelayStatus::Sleeping
+                ) {
                     let _ = relay.disconnect();
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
 
                 // Try to reconnect
                 add_relay_log(&url_str, "info", "Attempting reconnection...");
-                let _ = relay.try_connect(std::time::Duration::from_secs(10)).await;
+                match relay.try_connect(std::time::Duration::from_secs(10)).await {
+                    Ok(()) => {
+                        // Cheap optimization only -- R3's real guarantee is the read-side gate
+                        // in `get_relays` (KTD8), not this status re-check.
+                        if relay.status() == RelayStatus::Connected {
+                            clear_relay_failure(&url_str);
+                        }
+                    }
+                    Err(e) => {
+                        let failure = classify_relay_error(&e);
+                        store_relay_failure_if_current(&url_str, failure, login_generation);
+                    }
+                }
 
                 // Emit status update
                 handle_health
@@ -5566,12 +6532,24 @@ async fn monitor_relay_connections() -> Result<bool, String> {
             // Check all relays every 5 seconds
             let relays = client.relays().await;
 
-            for (_url, relay) in relays {
+            for (url, relay) in relays {
                 let status = relay.status();
+                let url_str = url.to_string();
 
-                // If relay is terminated, attempt to reconnect
+                // If relay is terminated, attempt to reconnect. `Terminated` is one of the
+                // statuses `try_connect` can act on directly, so no forced disconnect first.
                 if status == RelayStatus::Terminated {
-                    let _ = relay.try_connect(std::time::Duration::from_secs(5)).await;
+                    match relay.try_connect(std::time::Duration::from_secs(5)).await {
+                        Ok(()) => {
+                            if relay.status() == RelayStatus::Connected {
+                                clear_relay_failure(&url_str);
+                            }
+                        }
+                        Err(e) => {
+                            let failure = classify_relay_error(&e);
+                            store_relay_failure_if_current(&url_str, failure, login_generation);
+                        }
+                    }
                 }
             }
 
@@ -6921,6 +7899,26 @@ async fn logout<R: Runtime>(handle: AppHandle<R>) {
     let _ = account_manager::clear_current_account();
     mnemonic_seed_clear();
     clear_encryption_key();
+
+    clear_relay_diagnostics_on_logout();
+    relay_cert::clear_certificate_cache();
+    // `state` guard dropped here
+}
+
+/// Diagnostics are account-scoped (R15): clear stored failure reasons, plus the relay logs and
+/// metrics that render in the same panel and otherwise hold ten entries per relay for the life
+/// of the process with no other clear site in the crate. Split out of `logout` so it is
+/// testable without the filesystem and account side effects the rest of `logout` carries.
+fn clear_relay_diagnostics_on_logout() {
+    if let Ok(mut failures) = RELAY_FAILURES.write() {
+        failures.clear();
+    }
+    if let Ok(mut logs) = RELAY_LOGS.write() {
+        logs.clear();
+    }
+    if let Ok(mut metrics) = RELAY_METRICS.write() {
+        metrics.clear();
+    }
     // `state` guard dropped here
 }
 
@@ -9449,6 +10447,8 @@ pub fn run() {
             get_relay_metrics,
             get_relay_logs,
             monitor_relay_connections,
+            probe_relay,
+            get_relay_certificate,
             start_typing,
             connect,
             encrypt,
