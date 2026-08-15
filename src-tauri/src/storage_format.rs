@@ -5,11 +5,22 @@
 //! update instead of surfacing refinery's own opaque migration error. Never
 //! calls `run_migrations` or `get_db_connection` -- either would migrate the
 //! database as a side effect of merely checking it.
+//!
+//! The one exception to "read-only" is the storage doctor
+//! (`quarantine_stale_profiles`, called from `compatibility_report`):
+//! inside a sandbox root, or when the running app identifier is not the
+//! real `io.pacto` account, it moves an offending profile directory aside
+//! before the scan runs, rather than merely reporting it. It never touches
+//! the real OS data directory for `io.pacto` -- see `compatibility_report`
+//! for the gate.
 
 use rusqlite::{Connection, OpenFlags};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Runtime};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 /// Busy-timeout mirroring `account_manager::account_has_valid_pkey`'s
 /// precedent: wait out a transient lock from the main pooled connection
@@ -233,6 +244,260 @@ pub(crate) fn scan_profiles(app_data_dir: &Path) -> StorageFormatScanReport {
     }
 }
 
+// -- storage doctor / quarantine -----------------------------------
+
+/// Subdirectory under the sandbox root holding quarantined profile
+/// directories -- a sibling of `data`/`local`, so a quarantined profile
+/// disappears from `app_data_dir` entirely and every account-listing scan
+/// (`scan_profiles`, `account_manager::list_accounts`) simply never sees it
+/// again; boot proceeds as if the profile had never existed.
+const QUARANTINE_DIR_NAME: &str = "quarantine";
+
+/// File under the sandbox root recording every quarantine action, appended
+/// to rather than overwritten so an agent can see the full history of what
+/// the doctor moved and why.
+const QUARANTINE_RECORD_FILE_NAME: &str = "quarantine-record.json";
+
+const QUARANTINE_RECORD_VERSION: u32 = 1;
+
+/// The real operator account's app identifier (`src-tauri/tauri.conf.json`).
+/// A running identifier that differs from this -- e.g. a demo client
+/// launched as `io.pacto.demo.<n>` -- can never be resolving to the
+/// operator's real app-data directory, so it is safe to quarantine under
+/// even without an explicit sandbox root.
+const PRODUCTION_IDENTIFIER: &str = "io.pacto";
+
+/// Monotonic in-process counter mixed into every quarantine destination
+/// name so two profiles quarantined within the same boot -- even at
+/// identical nanosecond resolution, or sharing a profile name because a
+/// freshly recreated profile went stale again -- never collide.
+static QUARANTINE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// One quarantine action, as recorded in `QUARANTINE_RECORD_FILE_NAME`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuarantineEntry {
+    profile: String,
+    verdict: String,
+    offending_version: i64,
+    quarantined_path: String,
+    quarantined_at: String,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuarantineRecordFile {
+    version: u32,
+    entries: Vec<QuarantineEntry>,
+}
+
+/// Whether `verdict` is one the doctor quarantines, and the offending
+/// version to record for it. Reuses the exact verdict `classify_database`
+/// already produces -- no parallel notion of staleness. `Fresh`,
+/// `PreRefinery`, and `Recognized` are left alone; `PreRefinery` is a
+/// legitimate baseline target for `run_migrations`, not a version problem.
+fn quarantine_label(verdict: StorageFormatVerdict) -> Option<(&'static str, i64)> {
+    match verdict {
+        StorageFormatVerdict::Unrecognized(version) => Some(("unrecognized", version)),
+        StorageFormatVerdict::Divergent(version) => Some(("divergent", version)),
+        StorageFormatVerdict::Fresh
+        | StorageFormatVerdict::PreRefinery
+        | StorageFormatVerdict::Recognized => None,
+    }
+}
+
+/// Immediately before moving `path`, re-verifies it is still a real
+/// directory inside `sandbox_root` and not a symlink. The classification
+/// that decided `path` is offending already happened by the time this
+/// runs; nothing stops the filesystem from changing in between, so this is
+/// the only thing standing between a would-be redirect and the actual
+/// `rename`. `symlink_metadata` -- not `metadata` -- is essential: it
+/// reports on `path` itself rather than whatever it points to, so a
+/// symlink swapped in after classification is caught here instead of
+/// silently followed into the move.
+fn revalidate_before_move(path: &Path, sandbox_root: &Path) -> Result<(), String> {
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("profile path vanished before quarantine: {e}"))?;
+    if meta.file_type().is_symlink() {
+        return Err("refusing to quarantine a symlink".to_string());
+    }
+    if !meta.is_dir() {
+        return Err("profile path is no longer a directory".to_string());
+    }
+
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|e| format!("failed to canonicalize profile path: {e}"))?;
+    let canonical_root = sandbox_root
+        .canonicalize()
+        .map_err(|e| format!("failed to canonicalize sandbox root: {e}"))?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err("profile path escapes the sandbox root".to_string());
+    }
+
+    Ok(())
+}
+
+/// Builds a quarantine destination guaranteed unique for this process: a
+/// nanosecond timestamp (the "timestamped name") plus a monotonic counter,
+/// so two quarantines landing in the same boot -- however close in time --
+/// never collide on `rename`'s target.
+fn quarantine_destination(quarantine_dir: &Path, profile_name: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let sequence = QUARANTINE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    quarantine_dir.join(format!("{profile_name}-{nanos}-{sequence}"))
+}
+
+/// Moves `profile_path` aside into `<sandbox_root>/quarantine` under a
+/// timestamped name, after re-validating it. Returns the record entry to
+/// append on success; leaves the profile exactly where it was on any
+/// failure -- an unquarantined offending profile still shows up in the
+/// existing compatibility report, so refusing to move is always safe.
+fn quarantine_profile(
+    profile_path: &Path,
+    profile_name: &str,
+    sandbox_root: &Path,
+    verdict: &'static str,
+    offending_version: i64,
+) -> Result<QuarantineEntry, String> {
+    revalidate_before_move(profile_path, sandbox_root)?;
+
+    let quarantine_dir = sandbox_root.join(QUARANTINE_DIR_NAME);
+    std::fs::create_dir_all(&quarantine_dir)
+        .map_err(|e| format!("failed to create quarantine directory: {e}"))?;
+    let destination = quarantine_destination(&quarantine_dir, profile_name);
+
+    std::fs::rename(profile_path, &destination)
+        .map_err(|e| format!("failed to move profile into quarantine: {e}"))?;
+
+    let quarantined_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "unknown-time".to_string());
+
+    Ok(QuarantineEntry {
+        profile: profile_name.to_string(),
+        verdict: verdict.to_string(),
+        offending_version,
+        quarantined_path: destination.display().to_string(),
+        quarantined_at,
+    })
+}
+
+/// Appends `entries` to `QUARANTINE_RECORD_FILE_NAME` under `sandbox_root`,
+/// tolerating a missing or unreadable prior file (starts a fresh record
+/// rather than losing the quarantine action itself). A write failure is
+/// logged, never propagated -- the move already happened, and boot must
+/// proceed regardless of whether the record could be written.
+fn append_quarantine_record(sandbox_root: &Path, entries: Vec<QuarantineEntry>) {
+    if entries.is_empty() {
+        return;
+    }
+
+    let path = sandbox_root.join(QUARANTINE_RECORD_FILE_NAME);
+    let mut record: QuarantineRecordFile = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    record.version = QUARANTINE_RECORD_VERSION;
+    record.entries.extend(entries);
+
+    match serde_json::to_string_pretty(&record) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, json) {
+                eprintln!(
+                    "[storage-doctor] failed to write quarantine record {}: {e}",
+                    path.display()
+                );
+            }
+        }
+        Err(e) => eprintln!("[storage-doctor] failed to serialize quarantine record: {e}"),
+    }
+}
+
+/// Moves every offending profile directory under `app_data_dir` aside
+/// before `scan_profiles` builds its report -- but only in debug builds,
+/// and only when a sandbox root is active (`test_sandbox::sandbox_root`)
+/// or `running_identifier` is not the real operator account
+/// (`PRODUCTION_IDENTIFIER`). A release build never quarantines. Against
+/// the real `io.pacto` OS data directory with no sandbox root this is a
+/// no-op: the offending profile is left for the existing compatibility
+/// report to name, exactly today's behavior, and quarantine can therefore
+/// never touch the operator's real account. Any other identifier --
+/// e.g. a demo client running as `io.pacto.demo.<n>` -- resolves to its
+/// own, distinct app-data directory, so quarantining there carries the
+/// same "never touches `io.pacto`" guarantee a sandbox root gives, even
+/// with no sandbox root configured. When no sandbox root is active, the
+/// offending profile's own `app_data_dir` stands in as the quarantine
+/// root (`<app_data_dir>/quarantine`, a sibling of the profile
+/// directories it holds) since there is no `<root>/data` layout to anchor
+/// it to.
+///
+/// A profile is offending exactly when `classify_database` -- the same
+/// per-profile classification `scan_profiles` already runs -- returns
+/// `Unrecognized` or `Divergent`; every other verdict is left alone.
+fn quarantine_stale_profiles(app_data_dir: &Path, running_identifier: &str) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let sandbox_root = crate::test_sandbox::sandbox_root();
+    let quarantine_root = match sandbox_root {
+        Some(root) => {
+            // A caller (a test, or a future command) could pass an arbitrary
+            // `app_data_dir` while `PACTO_TEST_SANDBOX_ROOT` happens to be set
+            // to an unrelated sandbox root. Refuse the whole scan up front
+            // when that's the case, rather than relying on N individual
+            // per-profile `revalidate_before_move` refusals below.
+            let (Ok(canonical_app_data_dir), Ok(canonical_root)) =
+                (app_data_dir.canonicalize(), root.canonicalize())
+            else {
+                return;
+            };
+            if !canonical_app_data_dir.starts_with(&canonical_root) {
+                return;
+            }
+            root
+        }
+        None if running_identifier != PRODUCTION_IDENTIFIER => app_data_dir.to_path_buf(),
+        None => return,
+    };
+
+    let Ok(dir_entries) = std::fs::read_dir(app_data_dir) else {
+        return;
+    };
+
+    let mut quarantined = Vec::new();
+    for entry in dir_entries.flatten() {
+        let path = entry.path();
+        let Some(profile_name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if !path.is_dir() || !profile_name.starts_with("npub1") {
+            continue;
+        }
+
+        let verdict = classify_database(&path.join("pacto.db"));
+        let Some((label, offending_version)) = quarantine_label(verdict) else {
+            continue;
+        };
+
+        match quarantine_profile(
+            &path,
+            &profile_name,
+            &quarantine_root,
+            label,
+            offending_version,
+        ) {
+            Ok(record) => quarantined.push(record),
+            Err(e) => eprintln!("[storage-doctor] refused to quarantine {profile_name}: {e}"),
+        }
+    }
+
+    append_quarantine_record(&quarantine_root, quarantined);
+}
+
 /// Frontend-facing report combining `StorageFormatScanReport` with the
 /// highest schema version this build supports, so the launch gate can
 /// render "recognized" vs. "this build only supports up to schema X, found
@@ -262,9 +527,19 @@ impl From<StorageFormatScanReport> for StorageCompatibilityReport {
     }
 }
 
-/// Pure report builder shared by the command and its tests: `scan_profiles`
-/// plus this build's own version, with no `AppHandle` involved.
-pub(crate) fn compatibility_report(app_data_dir: &Path) -> StorageCompatibilityReport {
+/// No longer a pure/read-only report builder: it first calls
+/// `quarantine_stale_profiles`, which may `rename` an offending profile
+/// directory aside via the storage doctor before `scan_profiles` builds
+/// this report.
+/// `running_identifier` is this process's app identifier -- `io.pacto` for
+/// the operator's real account, anything else (e.g. a demo client running
+/// as `io.pacto.demo.<n>`) for a distinct, non-operator app-data
+/// directory -- and feeds `quarantine_stale_profiles`'s gate.
+pub(crate) fn compatibility_report(
+    app_data_dir: &Path,
+    running_identifier: &str,
+) -> StorageCompatibilityReport {
+    quarantine_stale_profiles(app_data_dir, running_identifier);
     scan_profiles(app_data_dir).into()
 }
 
@@ -279,12 +554,35 @@ pub(crate) fn get_storage_compatibility<R: Runtime>(
 ) -> Result<StorageCompatibilityReport, String> {
     let app_data_dir = crate::test_sandbox::test_data_dir(&app)
         .map_err(|_| "Unable to resolve app storage location".to_string())?;
-    Ok(compatibility_report(&app_data_dir))
+    Ok(compatibility_report(&app_data_dir, &app.config().identifier))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- PRODUCTION_IDENTIFIER stays in sync with tauri.conf.json ---------
+
+    /// If this ever fails, `PRODUCTION_IDENTIFIER` has drifted from
+    /// `tauri.conf.json`'s real `identifier` -- and until it's fixed, the
+    /// widened quarantine gate would misclassify the operator's real
+    /// profile as non-operator and quarantine it, moving a real user's
+    /// account data aside on every debug boot.
+    #[test]
+    fn production_identifier_matches_tauri_conf_json() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("tauri.conf.json parses as JSON");
+        let identifier = conf
+            .get("identifier")
+            .and_then(|v| v.as_str())
+            .expect("tauri.conf.json has a string \"identifier\" field");
+        assert_eq!(
+            identifier, PRODUCTION_IDENTIFIER,
+            "PRODUCTION_IDENTIFIER must track tauri.conf.json's identifier exactly -- a stale \
+             constant here means the quarantine gate would treat the operator's real account as \
+             non-operator and quarantine it"
+        );
+    }
 
     fn fixture_migration(version: i64, name: &str, checksum: u64) -> refinery::Migration {
         refinery::Migration::applied(
@@ -323,6 +621,60 @@ mod tests {
     fn write_migrated_db(path: &Path) {
         let mut conn = rusqlite::Connection::open(path).unwrap();
         crate::migrations::run_migrations(&mut conn).unwrap();
+    }
+
+    // -- storage doctor / quarantine test helpers --------------------------
+
+    static ENV_TEST_MUTEX: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    /// Restores whatever `key` held (or its absence) when the guard drops,
+    /// so one test's sandbox-root override never leaks into the next.
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    /// A sandbox root plus its `data` subdirectory, mirroring
+    /// `test_sandbox::test_data_dir`'s real layout closely enough for the
+    /// containment check in `revalidate_before_move` to hold.
+    fn sandboxed_layout(label: &str) -> (PathBuf, PathBuf) {
+        let root = unique_temp_dir(&format!("sandbox-root-{label}"));
+        let app_data_dir = root.join("data");
+        std::fs::create_dir_all(&app_data_dir).unwrap();
+        (root, app_data_dir)
+    }
+
+    fn insert_future_migration(db_path: &Path, version: i64) {
+        let conn = rusqlite::Connection::open(db_path).unwrap();
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+             VALUES (?1, 'future_migration', '2026-01-01T00:00:00Z', 'deadbeef')",
+            rusqlite::params![version],
+        )
+        .unwrap();
     }
 
     // -- pure classify_history ------------------------------------------
@@ -728,10 +1080,12 @@ mod tests {
 
     #[test]
     fn compatibility_report_is_compatible_for_directory_with_no_profiles() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         let root = unique_temp_dir("compat-empty");
         std::fs::create_dir_all(&root).unwrap();
 
-        let report = compatibility_report(&root);
+        let report = compatibility_report(&root, "io.pacto");
         assert!(report.all_recognized);
         assert_eq!(report.unrecognized_count, 0);
         assert_eq!(report.highest_offending_version, None);
@@ -745,6 +1099,8 @@ mod tests {
 
     #[test]
     fn compatibility_report_is_incompatible_for_one_failing_profile() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         let root = unique_temp_dir("compat-incompatible");
         let profile_dir = root.join("npub1compatincompatibleprofile");
         std::fs::create_dir_all(&profile_dir).unwrap();
@@ -762,7 +1118,7 @@ mod tests {
             .unwrap();
         }
 
-        let report = compatibility_report(&root);
+        let report = compatibility_report(&root, "io.pacto");
         assert!(!report.all_recognized);
         assert_eq!(report.unrecognized_count, 1);
         assert_eq!(report.highest_offending_version, Some(above_ceiling));
@@ -776,6 +1132,8 @@ mod tests {
 
     #[test]
     fn get_storage_compatibility_command_succeeds_against_a_mock_app() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
         // Exercises the command's own plumbing (AppHandle -> test_data_dir
         // -> compatibility_report). Deliberately does not assert on
         // unrecognized_count/highest_offending_version: mock_app's
@@ -801,5 +1159,397 @@ mod tests {
         assert!(!message.contains("npub1"));
         assert!(!message.contains('/'));
         assert!(!message.contains('\\'));
+    }
+
+    // -- storage doctor / quarantine -----------------------------
+
+    #[test]
+    fn quarantine_moves_profile_exceeding_ceiling_and_boot_proceeds() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("exceeds-ceiling");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1exceedsceilingprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        insert_future_migration(&db_path, above_ceiling);
+
+        let report = compatibility_report(&app_data_dir, "io.pacto");
+
+        assert!(
+            report.all_recognized,
+            "boot proceeds once the stale profile is gone"
+        );
+        assert!(
+            !profile_dir.exists(),
+            "offending profile is gone from app_data_dir"
+        );
+        assert!(root.join(QUARANTINE_DIR_NAME).is_dir());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_moves_profile_with_divergent_checksum_and_boot_proceeds() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("divergent-checksum");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1divergentchecksumprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        let (_, applied) = {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            read_history_table(&conn, "refinery_schema_history").unwrap()
+        };
+        let tampered_version = applied
+            .first()
+            .expect("migrated db has at least one applied row")
+            .version;
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute(
+                "UPDATE refinery_schema_history SET checksum = 'tampered' WHERE version = ?1",
+                rusqlite::params![tampered_version],
+            )
+            .unwrap();
+        }
+
+        let report = compatibility_report(&app_data_dir, "io.pacto");
+
+        assert!(
+            report.all_recognized,
+            "boot proceeds once the stale profile is gone"
+        );
+        assert!(!profile_dir.exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_leaves_a_healthy_profile_untouched() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("healthy");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1healthyquarantineprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        write_migrated_db(&profile_dir.join("pacto.db"));
+
+        let report = compatibility_report(&app_data_dir, "io.pacto");
+
+        assert!(report.all_recognized);
+        assert!(profile_dir.exists(), "a recognized profile is never moved");
+        assert!(!root.join(QUARANTINE_DIR_NAME).exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_moves_only_the_stale_profile_beside_a_healthy_one() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("mixed");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let healthy_dir = app_data_dir.join("npub1mixedhealthyprofile");
+        std::fs::create_dir_all(&healthy_dir).unwrap();
+        write_migrated_db(&healthy_dir.join("pacto.db"));
+
+        let stale_dir = app_data_dir.join("npub1mixedstaleprofile");
+        std::fs::create_dir_all(&stale_dir).unwrap();
+        let stale_db = stale_dir.join("pacto.db");
+        write_migrated_db(&stale_db);
+        insert_future_migration(&stale_db, crate::migrations::embedded_ceiling() + 1);
+
+        let report = compatibility_report(&app_data_dir, "io.pacto");
+
+        assert!(report.all_recognized);
+        assert!(healthy_dir.exists(), "the healthy sibling is untouched");
+        assert!(!stale_dir.exists(), "only the stale profile moves");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_refuses_a_scan_directory_outside_the_sandbox_root() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let root = unique_temp_dir("scan-containment-sandbox-root");
+        std::fs::create_dir_all(&root).unwrap();
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        // Deliberately NOT nested under `root` -- an arbitrary caller-supplied
+        // `app_data_dir` while the sandbox-root env var happens to be set.
+        let outside_dir = unique_temp_dir("scan-containment-outside-app-data");
+        let profile_dir = outside_dir.join("npub1outsidescanprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        let report = compatibility_report(&outside_dir, "io.pacto");
+
+        assert!(
+            !report.all_recognized,
+            "the whole-scan refusal only skips quarantine, not scan_profiles's own report"
+        );
+        assert!(
+            profile_dir.exists(),
+            "nothing is moved when app_data_dir doesn't canonicalize under the sandbox root"
+        );
+        assert!(
+            !root.join(QUARANTINE_DIR_NAME).exists(),
+            "the scan is refused before any quarantine directory is created"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outside_dir);
+    }
+
+    #[test]
+    fn no_sandbox_root_reports_but_does_not_quarantine() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
+
+        let root = unique_temp_dir("no-sandbox-root-doctor");
+        let profile_dir = root.join("npub1realosdoctorprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        insert_future_migration(&db_path, above_ceiling);
+
+        let report = compatibility_report(&root, "io.pacto");
+
+        assert!(!report.all_recognized);
+        assert_eq!(report.unrecognized_count, 1);
+        assert_eq!(report.highest_offending_version, Some(above_ceiling));
+        assert!(
+            profile_dir.exists(),
+            "with no sandbox root active, nothing is moved -- today's update-required \
+             screen, not a new failure mode"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // -- widened gate: debug_assertions && (sandbox_root || identifier != io.pacto) --
+
+    #[test]
+    fn gate_quarantines_with_sandbox_root_and_operator_identifier() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("gate-sandbox-operator");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1gatesandboxoperator");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        quarantine_stale_profiles(&app_data_dir, "io.pacto");
+
+        // Unchanged behavior: a sandbox root alone was always enough,
+        // whatever the identifier -- gated only by debug_assertions,
+        // mirroring `test_sandbox::multi_instance_allowed_only_with_a_sandbox_root`.
+        assert_eq!(!profile_dir.exists(), cfg!(debug_assertions));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gate_quarantines_a_non_operator_identifier_with_no_sandbox_root() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
+
+        let app_data_dir = unique_temp_dir("gate-demo-identifier");
+        std::fs::create_dir_all(&app_data_dir).unwrap();
+        let profile_dir = app_data_dir.join("npub1gatedemoidentifier");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        // The new case: no sandbox root, but a running identifier other
+        // than `io.pacto` can never resolve to the operator's real
+        // app-data directory, so it is safe to quarantine under.
+        quarantine_stale_profiles(&app_data_dir, "io.pacto.demo.2");
+
+        assert_eq!(!profile_dir.exists(), cfg!(debug_assertions));
+        if cfg!(debug_assertions) {
+            assert!(
+                app_data_dir.join(QUARANTINE_DIR_NAME).is_dir(),
+                "with no sandbox root, the profile's own app_data_dir anchors the quarantine dir"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    #[test]
+    fn gate_leaves_the_operator_identifier_untouched_with_no_sandbox_root() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let _env = EnvGuard::unset("PACTO_TEST_SANDBOX_ROOT");
+
+        let app_data_dir = unique_temp_dir("gate-real-operator");
+        std::fs::create_dir_all(&app_data_dir).unwrap();
+        let profile_dir = app_data_dir.join("npub1gaterealoperator");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        // The review objection this gate exists to preserve: no sandbox
+        // root and the real operator identifier must never move the real
+        // OS-data account, in any build.
+        quarantine_stale_profiles(&app_data_dir, "io.pacto");
+
+        assert!(profile_dir.exists());
+        assert!(!app_data_dir.join(QUARANTINE_DIR_NAME).exists());
+
+        let _ = std::fs::remove_dir_all(&app_data_dir);
+    }
+
+    #[test]
+    fn gate_is_debug_assertions_guarded_even_when_both_conditions_hold() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("gate-debug-guard");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1gatedebugguard");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        insert_future_migration(&db_path, crate::migrations::embedded_ceiling() + 1);
+
+        // Both disjuncts hold (a sandbox root AND a non-operator
+        // identifier), so whether the profile moves is governed purely by
+        // the `cfg!(debug_assertions)` outer guard: a release build must
+        // never quarantine anything, whatever else is true.
+        quarantine_stale_profiles(&app_data_dir, "io.pacto.demo.9");
+
+        assert_eq!(!profile_dir.exists(), cfg!(debug_assertions));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn quarantine_refuses_a_profile_path_replaced_by_a_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("symlink-swap");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1symlinkswapprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        insert_future_migration(&db_path, above_ceiling);
+        // Classification (a real directory, verdict Unrecognized) already
+        // happened by this point in the real flow; simulate the swap that
+        // can land in the gap between classification and the move.
+        let verdict = classify_database(&db_path);
+        assert_eq!(verdict, StorageFormatVerdict::Unrecognized(above_ceiling));
+
+        let decoy_target = unique_temp_dir("symlink-swap-decoy");
+        std::fs::create_dir_all(&decoy_target).unwrap();
+        std::fs::remove_dir_all(&profile_dir).unwrap();
+        symlink(&decoy_target, &profile_dir).unwrap();
+
+        let result = quarantine_profile(
+            &profile_dir,
+            "npub1symlinkswapprofile",
+            &root,
+            "unrecognized",
+            above_ceiling,
+        );
+
+        assert!(
+            result.is_err(),
+            "a symlink swapped in must be refused, not followed"
+        );
+        assert!(profile_dir.exists(), "the symlink itself is left in place");
+        assert!(decoy_target.exists(), "its target is untouched");
+        assert!(
+            !root.join(QUARANTINE_DIR_NAME).exists(),
+            "nothing was moved into quarantine"
+        );
+
+        let _ = std::fs::remove_file(&profile_dir);
+        let _ = std::fs::remove_dir_all(&decoy_target);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantine_record_names_profile_verdict_and_offending_version() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("record-fields");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let profile_dir = app_data_dir.join("npub1recordfieldsprofile");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+        let db_path = profile_dir.join("pacto.db");
+        write_migrated_db(&db_path);
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+        insert_future_migration(&db_path, above_ceiling);
+
+        let report = compatibility_report(&app_data_dir, "io.pacto");
+        assert!(report.all_recognized);
+
+        let raw = std::fs::read_to_string(root.join(QUARANTINE_RECORD_FILE_NAME))
+            .expect("quarantine record is written");
+        let record: QuarantineRecordFile =
+            serde_json::from_str(&raw).expect("quarantine record parses");
+
+        assert_eq!(record.entries.len(), 1);
+        let entry = &record.entries[0];
+        assert_eq!(entry.profile, "npub1recordfieldsprofile");
+        assert_eq!(entry.verdict, "unrecognized");
+        assert_eq!(entry.offending_version, above_ceiling);
+        assert!(!entry.quarantined_path.is_empty());
+        assert!(!entry.quarantined_at.is_empty());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn quarantining_twice_in_one_boot_does_not_collide() {
+        let _guard = ENV_TEST_MUTEX.lock();
+        let (root, app_data_dir) = sandboxed_layout("twice-in-one-boot");
+        let _env = EnvGuard::set("PACTO_TEST_SANDBOX_ROOT", root.to_str().unwrap());
+
+        let above_ceiling = crate::migrations::embedded_ceiling() + 1;
+
+        for _ in 0..2 {
+            let profile_dir = app_data_dir.join("npub1twiceinonebootprofile");
+            std::fs::create_dir_all(&profile_dir).unwrap();
+            let db_path = profile_dir.join("pacto.db");
+            write_migrated_db(&db_path);
+            insert_future_migration(&db_path, above_ceiling);
+
+            let report = compatibility_report(&app_data_dir, "io.pacto");
+            assert!(report.all_recognized);
+        }
+
+        let quarantined: Vec<_> = std::fs::read_dir(root.join(QUARANTINE_DIR_NAME))
+            .unwrap()
+            .flatten()
+            .collect();
+        assert_eq!(
+            quarantined.len(),
+            2,
+            "two quarantine runs in one boot must not collide on directory names"
+        );
+
+        let raw = std::fs::read_to_string(root.join(QUARANTINE_RECORD_FILE_NAME)).unwrap();
+        let record: QuarantineRecordFile = serde_json::from_str(&raw).unwrap();
+        assert_eq!(record.entries.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -49,6 +49,7 @@ import {
   declinedWalletPeerInfoRequestMessageIds,
   reciprocatedWalletPeerInfoRequestIds,
 } from '../../stores/invite-decisions';
+import { joiningWelcomeGroupIds } from '../invites/pending-welcomes-store';
 import { squads, ungroupedChannels, channelMessages, type Channel, type Squad } from '../../stores/squads';
 import { recentEmojisStore, type EmojiEntry } from '../../stores/emojis';
 import { unreadCountsByChat } from '../../stores/unread';
@@ -205,6 +206,12 @@ describe('clearAccountState', () => {
     expect(get(acceptedWalletPeerInfoRequestMessageIds)).toEqual([]);
     expect(get(declinedWalletPeerInfoRequestMessageIds)).toEqual([]);
     expect(get(reciprocatedWalletPeerInfoRequestIds)).toEqual([]);
+  });
+
+  it('resets in-flight pending-welcome join state', () => {
+    joiningWelcomeGroupIds.set(['group-1']);
+    clearAccountState('npub1abcdef');
+    expect(get(joiningWelcomeGroupIds)).toEqual([]);
   });
 
   it('resets unread state stores', () => {

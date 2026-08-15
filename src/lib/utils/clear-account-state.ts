@@ -58,6 +58,7 @@ import {
   acceptedWalletPeerInfoRequestMessageIds,
   declinedWalletPeerInfoRequestMessageIds,
   reciprocatedWalletPeerInfoRequestIds,
+  declinedWelcomeGroupIds,
 } from '../../stores/invite-decisions';
 import {
   squads,
@@ -92,6 +93,11 @@ import {
   resetPendingSquadAdmissions,
   PENDING_SQUAD_ADMISSION_PREFIX,
 } from '../../stores/pending-squad-admission';
+import {
+  resetPendingWelcomeFinalizations,
+  PENDING_WELCOME_FINALIZATION_PREFIX,
+} from '../../stores/pending-welcome-finalization';
+import { joiningWelcomeGroupIds } from '../invites/pending-welcomes-store';
 import {
   PENDING_APPROVED_JOINS_PREFIX,
   resetPendingApprovedJoins,
@@ -155,6 +161,7 @@ const SCOPED_KEY_PREFIXES = [
   'pacto_local_dev_defaults_applied_v1',
   ...INVITE_DECISION_SCOPED_PREFIXES,
   PENDING_SQUAD_ADMISSION_PREFIX,
+  PENDING_WELCOME_FINALIZATION_PREFIX,
   PENDING_ADMIT_PREFIX,
   PENDING_APPROVED_JOINS_PREFIX,
   STARTUP_CHECK_PREFIX,
@@ -185,6 +192,8 @@ export function clearAccountState(npub?: string): void {
   stopPendingAdmitDrain();
   resetPendingAdmitState();
   resetPendingSquadAdmissions();
+  resetPendingWelcomeFinalizations();
+  joiningWelcomeGroupIds.set([]);
   resetPendingApprovedJoins();
   resetRelayedWalletTxKeys();
   resetDashboardPrefetchSession();
@@ -243,6 +252,7 @@ export function clearAccountState(npub?: string): void {
   acceptedWalletPeerInfoRequestMessageIds.set([]);
   declinedWalletPeerInfoRequestMessageIds.set([]);
   reciprocatedWalletPeerInfoRequestIds.set([]);
+  declinedWelcomeGroupIds.set([]);
   mlsHistoryWelcomeGroupIds.set([]);
   dmWalletPeerExchangeTick.set(0);
   backendGroupMessages.set({});

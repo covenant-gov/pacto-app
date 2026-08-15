@@ -10,11 +10,13 @@ import { loadDeferredSquadRosterKeyParentIds } from '../lib/squad/squad-roster-k
 import { getInviteDecisionLoadEntries } from './invite-decisions';
 import { setCurrentNpubForPersistence, persistenceKey } from './persistence-context';
 import { loadPendingSquadAdmissions } from './pending-squad-admission';
+import { loadPendingWelcomeFinalizations } from './pending-welcome-finalization';
 import {
   loadPendingAdmitQueue,
   startPendingAdmitDrain,
 } from '../lib/parent/pending-admit';
 import { tryCompleteAllPendingSquadAdmissions } from '../lib/invites/accept-invite';
+import { tryCompleteAllPendingWelcomeFinalizations } from '../lib/invites/pending-welcomes';
 import {
   startJoinInboxHolderSync,
 } from '../lib/squad/join-inbox-holder-sync';
@@ -70,11 +72,13 @@ export function loadAccountState(npub: string): void {
   void loadBackupVerified();
   loadMlsHistoryWelcome(npub);
   loadPendingSquadAdmissions(npub);
+  loadPendingWelcomeFinalizations(npub);
   loadPendingAdmitQueue();
   loadPendingApprovedJoins();
   startPendingAdmitDrain();
   startJoinInboxHolderSync();
   void tryCompleteAllPendingSquadAdmissions();
+  void tryCompleteAllPendingWelcomeFinalizations();
   void tryCompletePendingApprovedJoins();
   // Nav order must load before hydrate reconciles / seeds the rail.
   if (typeof localStorage !== 'undefined') {

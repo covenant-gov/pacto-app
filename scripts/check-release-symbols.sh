@@ -28,6 +28,10 @@ FORBIDDEN=(
   "dev_login"
   "mcp_bridge"
   "PACTO_TRUSTED_RELAYS"
+  # Non-default `relay-free-harness` feature / bin must never reach a shipped build.
+  "relay_free_harness"
+  "relay-free-harness"
+  "harness_seed_complete"
   # The `local-relay-tls` feature pulls this in to widen the relay websocket's
   # root store to the OS trust store. It must never reach a shipped build, or
   # release relay TLS would trust every CA the host trusts.

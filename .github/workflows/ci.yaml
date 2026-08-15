@@ -195,6 +195,73 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib --no-default-features
 
+  relay-free-harness:
+    # Relay-free seeding harness: builds populated per-account storage with
+    # zero network calls, through the real ingest path.
+    # No dev-env docker-compose stack. The harness binary alone runs inside
+    # `unshare --net` so checkout / rust-cache / apt keep network, while the
+    # seed itself has an empty network namespace. This is an honest-binary
+    # smoke test (the PR-built binary is not adversarially sandboxed).
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/covenant-gov/pacto-app/pacto-ci:latest
+      options: --user root --cap-add=SYS_ADMIN
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Harness unit tests
+        working-directory: src-tauri
+        # Quoted: the trailing `::` module filter would otherwise read as a
+        # YAML mapping key and make this whole file unparseable.
+        run: "cargo test --lib --no-default-features --features relay-free-harness harness::"
+
+      - name: Build relay-free harness
+        working-directory: src-tauri
+        run: cargo build --no-default-features --features relay-free-harness --bin relay-free-harness
+
+      - name: Install sqlite3
+        run: apt-get update -qq && apt-get install -y -qq sqlite3
+
+      - name: Seed a sandbox with no network namespace
+        working-directory: src-tauri
+        # The CI image's default shell is dash, which has no `pipefail`, so
+        # redirect rather than pipe -- `set -e` then still fails the step on a
+        # non-zero harness exit instead of only on a failed `grep`.
+        # Root must sit under test_sandbox/ (harness placement check).
+        run: |
+          set -eu
+          SANDBOX_ROOT="$GITHUB_WORKSPACE/test_sandbox/relay-free-harness-ci"
+          mkdir -p "$SANDBOX_ROOT"
+          unshare --net -- ./target/debug/relay-free-harness \
+            --sandbox-root "$SANDBOX_ROOT" \
+            > /tmp/harness-first-run.log 2>&1
+          cat /tmp/harness-first-run.log
+          grep -q "Seeded npub=" /tmp/harness-first-run.log
+          grep -q "dm_messages=2" /tmp/harness-first-run.log
+          grep -E -q 'squad_group_id=Some\("[^"]+"\)' /tmp/harness-first-run.log
+          # sqlite3-assert the counts already documented in the PR body.
+          ACCOUNT_DB=$(find "$SANDBOX_ROOT" -name 'pacto.db' | head -n 1)
+          test -n "$ACCOUNT_DB"
+          test "$(sqlite3 "$ACCOUNT_DB" 'SELECT COUNT(*) FROM events;')" -eq 6
+          test "$(sqlite3 "$ACCOUNT_DB" 'SELECT COUNT(*) FROM chats;')" -eq 2
+          test "$(sqlite3 "$ACCOUNT_DB" 'SELECT COUNT(*) FROM mls_groups;')" -eq 1
+          test "$(sqlite3 "$ACCOUNT_DB" 'SELECT COUNT(*) FROM evm_accounts;')" -eq 1
+
+      - name: Rerun is idempotent, still with no network namespace
+        working-directory: src-tauri
+        run: |
+          set -eu
+          SANDBOX_ROOT="$GITHUB_WORKSPACE/test_sandbox/relay-free-harness-ci"
+          unshare --net -- ./target/debug/relay-free-harness \
+            --sandbox-root "$SANDBOX_ROOT" \
+            > /tmp/harness-second-run.log 2>&1
+          cat /tmp/harness-second-run.log
+          grep -q "already seeded" /tmp/harness-second-run.log
+
   landing-build:
     runs-on: ubuntu-latest
     steps:
