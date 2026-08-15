@@ -21,6 +21,8 @@
   import userPlaceholder from '../../icons/user-placeholder.svg';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
+  import PendingWelcomeRequests from './PendingWelcomeRequests.svelte';
+  import { offeredWelcomeList } from '../../lib/invites/pending-welcomes-store';
 
   $: title = $t(`messaging.dm.navbar.${$activeDmTab}`);
 
@@ -118,6 +120,9 @@
   {/if}
 
   <div class="dm-list-container">
+    {#if $activeDmTab === 'requests'}
+      <PendingWelcomeRequests />
+    {/if}
     {#if filteredEntries.length > 0}
       <ul class="dm-list" role="list">
         {#each filteredEntries as raw ((raw as DmEntry).npub)}
@@ -158,7 +163,7 @@
           </li>
         {/each}
       </ul>
-    {:else}
+    {:else if $activeDmTab !== 'requests' || $offeredWelcomeList.length === 0}
       <div class="empty-state">
         <p>
           {$activeDmTab === 'search' && dmSearchQuery.trim() !== ''

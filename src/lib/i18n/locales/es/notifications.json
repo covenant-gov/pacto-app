@@ -47,6 +47,7 @@
 	"notifications.catchup.entryKind.direct_message": "Mensaje directo",
 	"notifications.catchup.entryKind.action_prompt": "Necesita acción",
 	"notifications.catchup.entryKind.welcome": "Invitación",
+	"notifications.catchup.welcomeUnavailable": "Esta invitación ya no está disponible",
 	"notifications.catchup.openAria": "Abrir",
 	"notifications.catchup.resolveAria": "Descartar",
 	"notifications.catchup.resolveError": "No se pudo descartar ese elemento.",

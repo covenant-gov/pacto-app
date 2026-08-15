@@ -156,6 +156,8 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     acceptingSquadInviteId,
     acceptingChannelInSquadId,
   } from '../lib/invites/accept-invite';
+  import { declineWelcomeForGroup } from '../lib/invites/pending-welcomes-store';
+  import { parseSquadInviteMessage } from '../lib/api/nostr';
 
   const loadChatView = createLazyComponent(() => import('../components/channel/ChatView.svelte'));
 
@@ -1019,6 +1021,10 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
                 onDeclineSquad={(msg: DmMessage) => {
                   declinedSquadInviteIds.update((ids: string[]) => (ids.includes(msg.id) ? ids : [...ids, msg.id]));
+                  // Also refuse the matching MLS welcome, so a pending-welcome
+                  // card cannot re-offer a squad the user just turned down.
+                  const declined = parseSquadInviteMessage(msg.content ?? '');
+                  if (declined) declineWelcomeForGroup(declined.groupId);
                   resolveOneCatchUpEntry(msg.id).catch(() => {});
                 }}
                 onDeclineChannelInSquad={(msg: DmMessage) => {

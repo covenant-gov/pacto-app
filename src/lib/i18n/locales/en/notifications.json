@@ -47,6 +47,7 @@
 	"notifications.catchup.entryKind.direct_message": "Direct message",
 	"notifications.catchup.entryKind.action_prompt": "Needs action",
 	"notifications.catchup.entryKind.welcome": "Invite",
+	"notifications.catchup.welcomeUnavailable": "This invite is no longer available",
 	"notifications.catchup.openAria": "Open",
 	"notifications.catchup.resolveAria": "Clear",
 	"notifications.catchup.resolveError": "Could not clear that item.",

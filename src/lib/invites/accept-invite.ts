@@ -55,7 +55,7 @@ function tt(
   }
 }
 
-/** Group IDs we just accepted — skip unattributed "Add to squad" modal for these. */
+/** Group IDs whose welcome we accepted ourselves, so the accept handler can skip them. */
 const acceptedSquadInviteGroupIds = new Set<string>();
 
 /** Maps channel group id → parent squad while welcome accept is in flight. */
@@ -358,7 +358,8 @@ export async function acceptAnnouncementsInvite(
 
 export async function finalizeSquadAfterAnnouncementsWelcome(
   payload: AnnouncementsInvitePayload,
-  messageId: string
+  /** DM invite message id, or null when a bare MLS welcome drove the join. */
+  messageId: string | null
 ): Promise<void> {
   clearPendingSquadAdmissionByGroupId(payload.groupId);
   const now = Date.now();
@@ -400,9 +401,11 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
   activeHubChannelName.set(ANNOUNCEMENTS_CHANNEL_NAME);
   activeTopNavTab.set('squads');
   activeView.set('hub');
-  acceptedSquadInviteIds.update((ids: string[]) =>
-    ids.includes(messageId) ? ids : [...ids, messageId]
-  );
+  if (messageId !== null) {
+    acceptedSquadInviteIds.update((ids: string[]) =>
+      ids.includes(messageId) ? ids : [...ids, messageId]
+    );
+  }
   markMlsHistoryWelcome(payload.groupId);
   void syncMlsGroupsNow(payload.groupId).catch((e) =>
     dmError('syncMlsGroupsNow after accept invite', e)
