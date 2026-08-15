@@ -990,6 +990,7 @@
       {#if emojiPanelOpen && !disabled}
         <div
           class="emoji-panel"
+          class:emoji-panel--gifs={emojiPanelTab === 'gifs'}
           role="dialog"
           aria-label={$t('messaging.messageInput.insertEmojiAria')}
           tabindex="-1"
@@ -1134,18 +1135,18 @@
                 </div>
               {:else}
                 <div class="emoji-picker-section">
-                  <div class="emoji-picker-grid">
+                  <div class="emoji-picker-grid gif-picker-grid">
                     {#each gifsResults as gif (gif.id)}
                       <button
                         type="button"
-                        class="emoji-picker-item"
+                        class="emoji-picker-item gif-picker-item"
                         role="gridcell"
                         disabled={disabled || isSendingAttachment}
                         aria-label={gif.title || gif.slug}
                         title={gif.title}
                         on:click={() => selectGif(gif)}
                       >
-                        <img src={gif.previewUrl} alt={gif.title} width="28" height="28" />
+                        <img src={gif.previewUrl} alt={gif.title} loading="lazy" />
                       </button>
                     {/each}
                   </div>
@@ -1566,6 +1567,31 @@
 
   .emoji-picker-item:hover {
     background: var(--bg-hover);
+  }
+
+  .emoji-panel--gifs {
+    width: 384px;
+    max-height: 420px;
+  }
+
+  .gif-picker-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .gif-picker-item {
+    width: auto;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border-radius: 8px;
+  }
+
+  .gif-picker-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
   }
 
   .message-input {
