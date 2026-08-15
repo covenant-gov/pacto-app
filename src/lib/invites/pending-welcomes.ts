@@ -71,6 +71,9 @@ export interface OfferedWelcomeInputs {
   unmaterialized: OfferedWelcome[];
 }
 
+/** Max pending-welcome cards shown at once (newest first). Recovery rows are not capped. */
+export const MAX_OFFERED_WELCOMES = 20;
+
 /** Pending welcomes still awaiting a decision, newest-first order preserved. */
 export function offeredWelcomes({
   welcomes,
@@ -88,7 +91,7 @@ export function offeredWelcomes({
     )
   );
   const seen = new Set<string>();
-  const offered: OfferedWelcome[] = [];
+  const pending: OfferedWelcome[] = [];
 
   for (const welcome of welcomes) {
     const groupId = welcome.nostr_group_id?.trim();
@@ -97,7 +100,7 @@ export function offeredWelcomes({
     if (seen.has(key) || resolved.has(key)) continue;
     if (welcome.welcomer && blockedNpubs.has(welcome.welcomer)) continue;
     seen.add(key);
-    offered.push({
+    pending.push({
       id: welcome.id,
       groupId,
       name: welcome.group_name?.trim() || groupId,
@@ -108,16 +111,17 @@ export function offeredWelcomes({
     });
   }
 
-  // Engine-accepted rows are independent of pendingMlsWelcomes membership.
+  // Engine-accepted rows stay visible even when the pending list is capped.
+  const extras: OfferedWelcome[] = [];
   for (const extra of unmaterialized) {
     const groupId = extra.groupId?.trim();
     if (!groupId) continue;
     const key = groupId.toLowerCase();
     if (seen.has(key) || resolved.has(key)) continue;
     seen.add(key);
-    offered.push(extra);
+    extras.push(extra);
   }
-  return offered;
+  return [...extras, ...pending.slice(0, MAX_OFFERED_WELCOMES)];
 }
 
 function finalizationFromWelcome(welcome: OfferedWelcome): PendingWelcomeFinalization {

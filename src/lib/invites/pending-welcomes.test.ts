@@ -51,6 +51,7 @@ vi.mock('./accept-invite', async (importOriginal) => {
 
 import {
   acceptOfferedWelcome,
+  MAX_OFFERED_WELCOMES,
   offeredWelcomes,
   recordDeclinedWelcomeGroupId,
   type OfferedWelcome,
@@ -258,6 +259,27 @@ describe('offeredWelcomes', () => {
     expect(result).toEqual([]);
     expect(welcomes).toEqual([]);
     expect(squadIds).toEqual(['s1']);
+  });
+
+  it('caps pending welcomes to the newest MAX_OFFERED_WELCOMES entries', () => {
+    const welcomes = Array.from({ length: MAX_OFFERED_WELCOMES + 5 }, (_, i) =>
+      welcome({ id: `welcome-${i}`, nostr_group_id: `group-${i}` })
+    );
+    const result = offeredWelcomes(inputs({ welcomes }));
+    expect(result).toHaveLength(MAX_OFFERED_WELCOMES);
+    expect(result.map((w) => w.id)).toEqual(
+      welcomes.slice(0, MAX_OFFERED_WELCOMES).map((w) => w.id)
+    );
+  });
+
+  it('does not drop an unmaterialized recovery row when the pending list is at the cap', () => {
+    const welcomes = Array.from({ length: MAX_OFFERED_WELCOMES }, (_, i) =>
+      welcome({ id: `welcome-${i}`, nostr_group_id: `group-${i}` })
+    );
+    const extra = offered({ id: 'welcome-stuck', groupId: 'group-stuck', name: 'Stuck' });
+    const result = offeredWelcomes(inputs({ welcomes, unmaterialized: [extra] }));
+    expect(result[0]).toEqual(extra);
+    expect(result).toHaveLength(MAX_OFFERED_WELCOMES + 1);
   });
 });
 
