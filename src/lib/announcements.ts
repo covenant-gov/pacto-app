@@ -55,6 +55,7 @@ export interface StickerPackUpdatedPayload {
     mime: string;
     size: number;
   }>;
+  /** Unix milliseconds; last-write-wins comparison against the stored row is strict `>`. */
   updated_at: number;
   deleted: boolean;
 }

@@ -1272,12 +1272,13 @@ pub async fn message(
 }
 
 /// Sends a picked Klipy GIF as a lightweight, unencrypted attachment carrying
-/// the provider URL byte-identical (KD8: Klipy's terms forbid re-hosting, so
-/// there is no upload and nothing to encrypt). `key`/`nonce` are left empty,
+/// the provider URL byte-identical — Klipy's terms forbid re-hosting, so
+/// there is no upload and nothing to encrypt. `key`/`nonce` are left empty,
 /// which marks this as a "remote plaintext" attachment to the receive path
-/// (`rumor::process_file_attachment`) and to the frontend, which is the only
-/// place such a URL is ever fetched — and only after checking it against
-/// Klipy's CDN allowlist in Rust (`klipy::klipy_fetch_media`).
+/// (`rumor::process_file_attachment`) and to the frontend. `url` is checked
+/// against Klipy's CDN allowlist right here — the same predicate
+/// `klipy::klipy_fetch_media` enforces on the receive side — not merely
+/// downstream by the picker or the frontend fetch wrapper.
 ///
 /// Deliberately standalone rather than routed through `message()`: that
 /// function's attachment branch always encrypts and uploads real bytes,
@@ -1294,8 +1295,8 @@ pub async fn klipy_gif_message(
     let handle = TAURI_APP.get().ok_or("App handle not available")?;
     crate::migration::require_key_derivation_version_2_on_handle(handle)?;
 
-    if url.trim().is_empty() {
-        return Err("Missing GIF URL".to_string());
+    if !crate::klipy::is_klipy_media_url(&url) {
+        return Err("Refusing to send: not a Klipy media URL".to_string());
     }
 
     let current_time = std::time::SystemTime::now()

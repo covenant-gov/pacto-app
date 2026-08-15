@@ -11,7 +11,7 @@
   import playIcon from '../../icons/play.svg';
   import cloudDownloadIcon from '../../icons/cloud-download.svg';
   import saveIcon from '../../icons/download.svg';
-  import { fetchGifMedia, isKlipyMediaUrl } from '../../lib/api/klipy';
+  import { fetchGifBlobUrl, isKlipyMediaUrl } from '../../lib/api/klipy';
 
   export let attachment: Attachment;
   export let chatId: string = '';
@@ -65,8 +65,7 @@
     klipyUnavailable = false;
     const previousBlobSrc = klipyBlobSrc;
     try {
-      const bytes = await fetchGifMedia(url);
-      klipyBlobSrc = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+      klipyBlobSrc = await fetchGifBlobUrl(url);
     } catch {
       klipyBlobSrc = undefined;
       klipyUnavailable = true;

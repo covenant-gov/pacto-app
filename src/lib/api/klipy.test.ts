@@ -12,6 +12,7 @@ import {
   GIFS_SEARCH_DEBOUNCE_MS,
   sendGifMessage,
   fetchGifMedia,
+  fetchGifBlobUrl,
   isKlipyMediaUrl,
   type KlipyPage,
 } from './klipy';
@@ -198,7 +199,7 @@ describe('isKlipyMediaUrl', () => {
 
 describe('fetchGifMedia', () => {
   it('invokes klipy_fetch_media and returns the bytes as a Uint8Array', async () => {
-    mockedInvoke.mockResolvedValueOnce([1, 2, 3, 4]);
+    mockedInvoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3, 4]).buffer);
     const url = 'https://static.klipy.com/hd.gif';
     const got = await fetchGifMedia(url);
     expect(got).toBeInstanceOf(Uint8Array);
@@ -211,6 +212,27 @@ describe('fetchGifMedia', () => {
     await expect(fetchGifMedia('http://127.0.0.1:8080/x')).rejects.toThrow(
       'Refusing to fetch: not a Klipy media URL'
     );
+  });
+});
+
+describe('fetchGifBlobUrl', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fetches the bytes and wraps them in an object URL for an image/gif blob', async () => {
+    mockedInvoke.mockResolvedValueOnce(new Uint8Array([1, 2, 3]).buffer);
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob://mock-gif');
+    vi.stubGlobal('URL', { ...URL, createObjectURL });
+    const url = 'https://static.klipy.com/hd.gif';
+
+    const got = await fetchGifBlobUrl(url);
+
+    expect(got).toBe('blob://mock-gif');
+    expect(mockedInvoke).toHaveBeenCalledWith('klipy_fetch_media', { url });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const [blob] = createObjectURL.mock.calls[0];
+    expect(blob.type).toBe('image/gif');
   });
 });
 

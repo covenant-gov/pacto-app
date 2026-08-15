@@ -246,6 +246,7 @@
 	"messaging.messageInput.fileOption": "Archivo",
 	"messaging.messageInput.gifsDisclosureAccept": "Activar búsqueda de GIFs",
 	"messaging.messageInput.gifsDisclosureBody": "Busca GIFs de Klipy desde esta app. Usar esta pestaña envía tu texto de búsqueda, tu dirección IP y el GIF que elijas a Klipy cada vez — tu identidad de Pacto nunca se envía.",
+	"messaging.messageInput.gifsDisclosureBodyRecipients": "Cuando envías un GIF, el cliente del destinatario lo descarga directamente de Klipy para mostrarlo, así que su dirección IP también llega a Klipy — aunque nunca haya abierto esta pestaña ni aceptado este aviso.",
 	"messaging.messageInput.gifsDisclosureDecline": "Ahora no",
 	"messaging.messageInput.gifsDisclosureTitle": "Búsqueda de GIFs de Klipy",
 	"messaging.messageInput.gifsLoading": "Cargando GIFs…",

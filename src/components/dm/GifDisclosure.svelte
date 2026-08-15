@@ -11,6 +11,7 @@
 <div class="gif-disclosure" role="region" aria-label={$t('messaging.messageInput.gifsDisclosureTitle')}>
   <h4 class="gif-disclosure-title">{$t('messaging.messageInput.gifsDisclosureTitle')}</h4>
   <p class="gif-disclosure-body">{$t('messaging.messageInput.gifsDisclosureBody')}</p>
+  <p class="gif-disclosure-body">{$t('messaging.messageInput.gifsDisclosureBodyRecipients')}</p>
   <div class="gif-disclosure-actions">
     <button type="button" class="gif-disclosure-decline" onclick={onDecline}>
       {$t('messaging.messageInput.gifsDisclosureDecline')}
@@ -61,8 +62,8 @@
 
   .gif-disclosure-accept {
     border: none;
-    background: var(--accent);
-    color: var(--bg-primary);
+    background: var(--brand);
+    color: var(--on-brand);
   }
 
   .gif-disclosure-decline {

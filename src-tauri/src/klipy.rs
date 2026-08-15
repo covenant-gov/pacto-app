@@ -1,7 +1,7 @@
 //! Single Klipy egress chokepoint: search, trending, and share-trigger requests.
 //!
-//! Every outbound Klipy call goes through this module so a future Tor gate (see
-//! issue #173) has exactly one place to change, and so the API key never crosses
+//! Every outbound Klipy call goes through this module so a future Tor gate
+//! has exactly one place to change, and so the API key never crosses
 //! the IPC boundary — it lives only in process memory here, resolved once per
 //! call through [`klipy_api_key`]. Klipy places the key in the request *path*
 //! (`/api/v1/{app_key}/...`), which makes leaking it through logs and error text
@@ -185,11 +185,16 @@ fn pick_full(file: &RawFile) -> Option<RawVariant> {
         .or_else(|| file.sm.as_ref().and_then(|s| s.gif.clone()))
 }
 
-/// Drops an item outright rather than surfacing a half-populated result if
-/// neither fallback chain finds a usable `gif` variant.
+/// Drops an item outright if neither fallback chain finds a usable `gif`
+/// variant, or if either the preview or full URL fails the Klipy media host
+/// allowlist ([`is_klipy_media_url`]) — a non-allowlisted URL drops the
+/// whole item rather than surfacing a half-populated result.
 fn map_item(item: RawItem) -> Option<KlipyGifDto> {
     let preview = pick_preview(&item.file)?;
     let full = pick_full(&item.file)?;
+    if !is_klipy_media_url(&preview.url) || !is_klipy_media_url(&full.url) {
+        return None;
+    }
     Some(KlipyGifDto {
         id: item.id,
         slug: item.slug,
@@ -348,7 +353,9 @@ const KLIPY_MEDIA_HOSTS: &[&str] = &["static.klipy.com", "static1.klipy.com", "s
 
 /// True only for an `https://` URL whose host is one of [`KLIPY_MEDIA_HOSTS`].
 /// Pure and network-free so the SSRF-refusal behavior is directly testable.
-fn is_klipy_media_url(url: &str) -> bool {
+/// Shared with `message::klipy_gif_message`, which enforces the same
+/// allowlist on the send path rather than duplicating the host list.
+pub(crate) fn is_klipy_media_url(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
     };
@@ -358,18 +365,59 @@ fn is_klipy_media_url(url: &str) -> bool {
             .is_some_and(|host| KLIPY_MEDIA_HOSTS.contains(&host))
 }
 
+/// Media response body cap: real Klipy GIFs run a few MB; this refuses a
+/// hostile allowlisted-host response from exhausting memory.
+const MAX_MEDIA_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Redirect-hop cap for `MEDIA_CLIENT`'s custom policy — a custom `Policy`
+/// does not inherit reqwest's default 10-hop limit for free.
+const MAX_MEDIA_REDIRECTS: usize = 10;
+
+/// True when `content_type` starts with `image/`, the shape every real Klipy
+/// media response has. Pure so it is testable without a live response.
+fn is_image_content_type(content_type: &str) -> bool {
+    content_type.starts_with("image/")
+}
+
+/// Separate from [`HTTP_CLIENT`]: media fetches need a redirect policy that
+/// re-checks the allowlist on every hop, so an open redirect on an
+/// allowlisted host cannot be used to reach an arbitrary origin. JSON calls
+/// through `HTTP_CLIENT` never follow user-influenced redirects, so they
+/// keep the default policy instead.
+static MEDIA_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(10))
+        .user_agent("Pacto/1.0")
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= MAX_MEDIA_REDIRECTS {
+                return attempt.error("too many redirects fetching Klipy media");
+            }
+            if is_klipy_media_url(attempt.url().as_str()) {
+                attempt.follow()
+            } else {
+                attempt.error("redirect target left the Klipy media allowlist")
+            }
+        }))
+        .build()
+        .expect("failed to build Klipy media HTTP client")
+});
+
 /// Fetches Klipy-hosted media bytes for rendering a received GIF attachment.
 /// This is the only place a Klipy media byte is ever fetched from: never the
 /// webview, never a generic downloader, and the bytes are handed back for an
 /// in-memory render only — nothing here ever touches disk, per Klipy's
-/// no-retain terms. The host allowlist keeps an attachment that merely claims
-/// a "Klipy" URL from turning this into an open fetch/SSRF primitive.
+/// no-retain terms. The host allowlist (re-checked on every redirect hop),
+/// the [`MAX_MEDIA_BYTES`] cap, and the `image/*` content-type check keep an
+/// attachment that merely claims a "Klipy" URL from turning this into an
+/// open fetch/SSRF primitive or a memory-exhaustion vector. Bytes cross the
+/// IPC boundary as a raw response body, never a JSON `Vec<u8>` array.
 #[tauri::command]
-pub async fn klipy_fetch_media(url: String) -> Result<Vec<u8>, String> {
+pub async fn klipy_fetch_media(url: String) -> Result<tauri::ipc::Response, String> {
     if !is_klipy_media_url(&url) {
         return Err("Refusing to fetch: not a Klipy media URL".to_string());
     }
-    let resp = HTTP_CLIENT
+    let mut resp = MEDIA_CLIENT
         .get(&url)
         .send()
         .await
@@ -381,11 +429,29 @@ pub async fn klipy_fetch_media(url: String) -> Result<Vec<u8>, String> {
             "",
         ));
     }
-    let bytes = resp
-        .bytes()
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !is_image_content_type(content_type) {
+        return Err("Refusing to fetch: Klipy media response was not an image".to_string());
+    }
+    if resp.content_length().is_some_and(|len| len > MAX_MEDIA_BYTES) {
+        return Err("Refusing to fetch: Klipy media response exceeded the size cap".to_string());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|e| redact_klipy_error(&format!("Klipy media read failed: {e}"), ""))?;
-    Ok(bytes.to_vec())
+        .map_err(|e| redact_klipy_error(&format!("Klipy media read failed: {e}"), ""))?
+    {
+        bytes.extend_from_slice(&chunk);
+        if bytes.len() as u64 > MAX_MEDIA_BYTES {
+            return Err("Refusing to fetch: Klipy media response exceeded the size cap".to_string());
+        }
+    }
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[cfg(test)]
@@ -608,6 +674,23 @@ mod tests {
     }
 
     #[test]
+    fn drops_an_item_whose_variant_url_is_not_a_klipy_host() {
+        let fixture = format!(
+            r#"{{"result":true,"data":{{"data":[{{
+                "id": "evil-item",
+                "slug": "evil",
+                "title": "Evil",
+                "file": {{ "hd": {hd}, "md": {md}, "sm": {sm} }}
+            }}],"page":1,"per_page":24,"total":1}}}}"#,
+            hd = variant_json("https://evil.example.com/hd.gif"),
+            md = variant_json("https://static.klipy.com/md.gif"),
+            sm = variant_json("https://static.klipy.com/sm.gif"),
+        );
+        let page = parse_klipy_page(&fixture).expect("valid fixture parses");
+        assert!(page.items.is_empty());
+    }
+
+    #[test]
     fn has_more_true_on_a_middle_page() {
         let fixture = r#"{"result":true,"data":{"data":[],"page":1,"per_page":2,"total":5}}"#;
         let page = parse_klipy_page(fixture).expect("valid fixture parses");
@@ -655,5 +738,28 @@ mod tests {
     #[test]
     fn rejects_a_malformed_url() {
         assert!(!is_klipy_media_url("not a url"));
+    }
+
+    // ---- klipy_fetch_media redirect + content hardening --------------------
+
+    #[test]
+    fn redirect_hop_off_the_allowlist_is_rejected() {
+        // The same predicate `MEDIA_CLIENT`'s redirect policy applies to
+        // every hop destination, exercised directly since the policy closure
+        // itself needs a live client to invoke.
+        assert!(!is_klipy_media_url("https://evil.example.com/hd.gif"));
+        assert!(is_klipy_media_url("https://static.klipy.com/hd.gif"));
+    }
+
+    #[test]
+    fn accepts_image_content_types() {
+        assert!(is_image_content_type("image/gif"));
+        assert!(is_image_content_type("image/webp; charset=binary"));
+    }
+
+    #[test]
+    fn rejects_non_image_content_types() {
+        assert!(!is_image_content_type("text/html"));
+        assert!(!is_image_content_type(""));
     }
 }

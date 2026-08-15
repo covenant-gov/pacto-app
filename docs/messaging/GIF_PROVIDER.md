@@ -7,13 +7,19 @@ rather than an encrypted Blossom blob, and exactly what Klipy sees.
 this deliberately does not use), [`OVERVIEW.md`](./OVERVIEW.md).
 
 **Status:** search, trending, the opt-in disclosure gate, the share-trigger
-callback, and the `KLIPY_API_KEY` egress module (§5, §6) are shipped. Landing
-alongside this document: sending a picked GIF as its own message type and
-routing the *recipient's* fetch of that GIF's media through
-`src-tauri/src/klipy.rs` rather than the plain-text send path it uses today.
+callback, sending a picked GIF as its own message type, and the
+`KLIPY_API_KEY` egress module (§5, §6) are shipped. The *recipient's* fetch
+of a sent GIF's media — including the search-picker's own thumbnails, which
+previously loaded straight from the webview — now routes through
+`klipy_fetch_media` in `src-tauri/src/klipy.rs` like every other Klipy call:
+`map_item` drops any result whose URL is not on the `KLIPY_MEDIA_HOSTS`
+allowlist, `klipy_gif_message` refuses a non-Klipy URL on send, and
+`klipy_fetch_media` itself refuses non-allowlisted redirect hops, caps the
+response body at 16 MiB, and requires an `image/` response content-type.
 The privacy exposure this document discloses — the recipient's IP reaching
-Klipy when the GIF renders — holds either way; what changes is only which
-code performs that fetch.
+Klipy when the GIF renders — is unchanged by this; routing the fetch
+through Rust hardens *what URL* can be fetched, not *whether* the fetch
+happens.
 
 ---
 
@@ -86,7 +92,10 @@ request to Klipy the moment their client renders it, even if they personally
 never opened the GIFs tab or accepted the disclosure on their own account.
 There is currently no separate recipient-side opt-out; the sender's
 disclosure is what gates the *search*, not the *rendering* of a GIF someone
-else already sent.
+else already sent. `GifDisclosure.svelte`'s copy now names this directly —
+the sender is told, before opting in, that sending a GIF also exposes the
+recipient's IP address to Klipy — so the disclosure and this document agree,
+even though no recipient-side gate exists yet.
 
 ---
 

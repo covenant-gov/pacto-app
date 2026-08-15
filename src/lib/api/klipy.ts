@@ -131,8 +131,9 @@ export function createGifsSearchScheduler(
 
 /** Sends a picked GIF as a lightweight, unencrypted attachment carrying the
  * Klipy URL byte-identical. Never uploads or re-hosts the media — Klipy's
- * terms forbid it (KD8). Not gated on the disclosure flag: the search tab is
- * the opt-in gate; sending a GIF already picked from it is not a new request.
+ * terms forbid it (see docs/messaging/GIF_PROVIDER.md). Not gated on the
+ * disclosure flag: the search tab is the opt-in gate; sending a GIF already
+ * picked from it is not a new request.
  * Backend: klipy_gif_message. */
 export async function sendGifMessage(
   receiver: string,
@@ -170,9 +171,18 @@ export function isKlipyMediaUrl(url: string): boolean {
  * render. Never persisted to disk (Klipy's no-retain terms). Backend: klipy_fetch_media. */
 export async function fetchGifMedia(url: string): Promise<Uint8Array> {
   try {
-    const bytes = await invoke<number[]>('klipy_fetch_media', { url });
-    return new Uint8Array(bytes);
+    const buf = await invoke<ArrayBuffer>('klipy_fetch_media', { url });
+    return new Uint8Array(buf);
   } catch (e) {
     throw new Error(getInvokeErrorMessage(e), { cause: e });
   }
+}
+
+/** Wraps {@link fetchGifMedia} bytes in a `blob:` URL for a DOM `src`
+ * attribute. This is the only path by which Klipy media reaches a DOM `src`
+ * — the caller owns the object URL and must call `URL.revokeObjectURL` once
+ * it is no longer displayed. */
+export async function fetchGifBlobUrl(url: string): Promise<string> {
+  const bytes = await fetchGifMedia(url);
+  return URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
 }

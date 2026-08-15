@@ -45,6 +45,7 @@
     isGifsDisclosureAccepted,
     acceptGifsDisclosure,
     createGifsSearchScheduler,
+    fetchGifBlobUrl,
     type KlipyGif,
   } from '../../lib/api/klipy';
 
@@ -90,6 +91,7 @@
   // Media panel (emoji + GIFs)
   let emojiPanelOpen = false;
   let emojiPanelTab: 'emoji' | 'gifs' | 'stickers' = 'emoji';
+  let emojiPanelBodyEl: HTMLDivElement | undefined;
   let emojiSearchQuery = "";
 
   // Attachment type menu
@@ -150,6 +152,7 @@
     dropUnregister?.();
     gifsSearchScheduler.cancel();
     gifsRequestToken++;
+    revokeGifThumbCache();
   });
 
   $: excludedNpubs = (() => {
@@ -637,6 +640,7 @@
     emojiPanelTab = 'emoji';
     gifsSearchScheduler.cancel();
     gifsRequestToken++;
+    revokeGifThumbCache();
     if (opts?.refocusComposer) {
       await tick();
       textareaEl?.focus();
@@ -656,6 +660,7 @@
     if (emojiPanelTab === 'gifs' && tab !== 'gifs') {
       gifsSearchScheduler.cancel();
       gifsRequestToken++;
+      revokeGifThumbCache();
     }
     emojiPanelTab = tab;
     if (tab === 'gifs') {
@@ -697,12 +702,29 @@
     }
   }
 
-  $: if (emojiPanelTab === 'stickers') {
-    for (const group of stickerGroups) {
-      for (const entry of group.entries) {
-        void ensureStickerImageCached(entry);
-      }
-    }
+  /** Lazily fetches a sticker's decrypted image only once its tile scrolls into the
+   * picker viewport, rather than prefetching every entry in every visible pack the
+   * moment the tab opens. Falls back to a no-op (image loads on click via
+   * `insertSticker`) where IntersectionObserver is unavailable. */
+  function stickerVisible(node: HTMLElement, entry: StickerEntry) {
+    if (typeof IntersectionObserver === 'undefined') return {};
+    const observer = new IntersectionObserver(
+      (observedEntries) => {
+        for (const observedEntry of observedEntries) {
+          if (observedEntry.isIntersecting) {
+            void ensureStickerImageCached(entry);
+            observer.unobserve(node);
+          }
+        }
+      },
+      { root: emojiPanelBodyEl ?? null },
+    );
+    observer.observe(node);
+    return {
+      destroy() {
+        observer.disconnect();
+      },
+    };
   }
 
   async function insertSticker(entry: StickerEntry) {
@@ -734,6 +756,38 @@
   let gifsFetchFailed = false;
   let gifsConfigured: boolean | null = null;
   let gifsRequestToken = 0;
+
+  let gifThumbCache: Record<string, string> = {};
+
+  /** Revokes every cached GIF thumbnail blob URL and clears the cache. Called from every
+   * teardown point (destroy, panel close, tab switch away from GIFs, and before a fresh
+   * results page replaces `gifsResults`) so a leaked blob never outlives its thumbnail. */
+  function revokeGifThumbCache() {
+    for (const blobUrl of Object.values(gifThumbCache)) {
+      URL.revokeObjectURL(blobUrl);
+    }
+    gifThumbCache = {};
+  }
+
+  /** Fetches a GIF thumbnail through the Rust egress chokepoint (never a direct webview
+   * fetch of the Klipy URL) and caches the resulting blob URL, mirroring
+   * `ensureStickerImageCached`. Discards a stale resolve — and revokes its blob URL — if
+   * the search query or tab changed while the fetch was in flight. */
+  async function ensureGifThumbCached(gif: KlipyGif) {
+    if (gifThumbCache[gif.previewUrl]) return;
+    const token = gifsRequestToken;
+    try {
+      const blobUrl = await fetchGifBlobUrl(gif.previewUrl);
+      if (token !== gifsRequestToken) {
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+      gifThumbCache = { ...gifThumbCache, [gif.previewUrl]: blobUrl };
+    } catch {
+      // leave uncached; the tile stays blank until a future render retries it
+    }
+  }
+
   const gifsSearchScheduler = createGifsSearchScheduler((query, page) => {
     void runGifsQuery(query, page);
   });
@@ -748,6 +802,7 @@
         if (token !== gifsRequestToken) return;
       }
       if (!gifsConfigured) {
+        revokeGifThumbCache();
         gifsResults = [];
         gifsHasMore = false;
         return;
@@ -755,13 +810,17 @@
       const trimmed = query.trim();
       const result = trimmed ? await searchGifs(trimmed, page) : await trendingGifs(page);
       if (token !== gifsRequestToken) return;
+      if (page === 1) revokeGifThumbCache();
       gifsResults = page === 1 ? result.items : [...gifsResults, ...result.items];
       gifsPage = result.page;
       gifsHasMore = result.hasMore;
     } catch (err) {
       if (token !== gifsRequestToken) return;
       console.error('Klipy gifs fetch failed:', err);
-      if (page === 1) gifsResults = [];
+      if (page === 1) {
+        revokeGifThumbCache();
+        gifsResults = [];
+      }
       gifsHasMore = false;
       gifsFetchFailed = true;
     } finally {
@@ -786,6 +845,12 @@
     gifsSearchScheduler.scheduleSearch(emojiSearchQuery);
   }
 
+  $: if (emojiPanelTab === 'gifs') {
+    for (const gif of gifsResults) {
+      void ensureGifThumbCached(gif);
+    }
+  }
+
   function handleGifsDisclosureAccept() {
     acceptGifsDisclosure();
     gifsDisclosureAccepted = true;
@@ -795,8 +860,8 @@
     switchEmojiPanelTab('emoji');
   }
 
-  /** Sends a picked GIF as a lightweight, unencrypted attachment carrying the
-   * Klipy URL byte-identical (never uploads or re-hosts the media — KD8). */
+  /** Sends a picked GIF as a lightweight, unencrypted attachment carrying the Klipy URL
+   * byte-identical. Never uploads or re-hosts the media — see docs/messaging/GIF_PROVIDER.md. */
   async function sendGifUrl(gif: KlipyGif) {
     if (disabled || isSendingAttachment || !onSendGif) return;
     isSendingAttachment = true;
@@ -1023,7 +1088,7 @@
               </svg>
             </button>
           </div>
-          <div class="emoji-panel-body" on:scroll={handleEmojiPanelBodyScroll}>
+          <div class="emoji-panel-body" bind:this={emojiPanelBodyEl} on:scroll={handleEmojiPanelBodyScroll}>
             {#if emojiPanelTab === 'emoji'}
               {#if emojiSearchQuery.trim()}
                 <div class="emoji-picker-section">
@@ -1107,6 +1172,7 @@
                           role="gridcell"
                           disabled={disabled || isSendingAttachment}
                           aria-label={$t('messaging.messageInput.insertStickerNamed', { values: { shortcode: entry.shortcode } })}
+                          use:stickerVisible={entry}
                           on:click={() => insertSticker(entry)}
                         >
                           {#if stickerImageCache[entry.url]}
@@ -1146,7 +1212,9 @@
                         title={gif.title}
                         on:click={() => selectGif(gif)}
                       >
-                        <img src={gif.previewUrl} alt={gif.title} loading="lazy" />
+                        {#if gifThumbCache[gif.previewUrl]}
+                          <img src={gifThumbCache[gif.previewUrl]} alt={gif.title} loading="lazy" />
+                        {/if}
                       </button>
                     {/each}
                   </div>

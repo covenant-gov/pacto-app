@@ -2452,9 +2452,9 @@ pub fn upsert_sticker_pack_inner<R: Runtime>(
         Ok(serde_json::Value::Array(_)) => {}
         _ => return Err("entries is not a JSON array".to_string()),
     }
-    let now = std::time::SystemTime::now()
+    let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     let conn = crate::account_manager::get_db_connection(handle)?;
     conn.execute(
@@ -2467,7 +2467,7 @@ pub fn upsert_sticker_pack_inner<R: Runtime>(
                updated_by = excluded.updated_by, \
                deleted = excluded.deleted"
         ),
-        rusqlite::params![sid, pid, nm, entries_json, now, author, deleted as i64],
+        rusqlite::params![sid, pid, nm, entries_json, now_ms, author, deleted as i64],
     )
     .map_err(|e| format!("Failed to upsert sticker_pack: {}", e))?;
     crate::account_manager::return_db_connection(conn);
@@ -2476,7 +2476,7 @@ pub fn upsert_sticker_pack_inner<R: Runtime>(
         pack_id: pid.to_string(),
         name: nm.to_string(),
         entries: entries_json.to_string(),
-        updated_at: now,
+        updated_at: now_ms,
         updated_by: author.to_string(),
         deleted,
     })
@@ -2878,15 +2878,22 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
     );
 }
 
+/// Max sticker entries a single pack announce may declare, and the max serialized
+/// `entries` JSON size, in bytes — both bound what one squad member can make every
+/// other client store and render.
+const STICKER_PACK_MAX_ENTRIES: usize = 300;
+const STICKER_PACK_MAX_ENTRIES_BYTES: usize = 128 * 1024;
+
 /// If content is a `sticker_pack_updated` announce JSON, upsert `sticker_packs`.
 /// Wire format: `payload.squad_id`, `payload.pack_id`, `payload.name`, `payload.entries` (array),
-/// `payload.updated_at` (unix seconds), `payload.deleted`.
+/// `payload.updated_at` (unix milliseconds), `payload.deleted`.
 /// Requires MLS message author and `payload.squad_id` == `chat_id`. Author must be an MLS group member.
 /// Last-write-wins on `updated_at`: unlike governance, two squad members can plausibly edit a pack
 /// in the same sync window, so an incoming announce that is older than or equal to the stored row
 /// (including a `deleted: true` tombstone racing a newer edit) is a no-op, not an overwrite. The
 /// comparison and write happen in one atomic `UPSERT ... WHERE`, so concurrent ingests can't race
-/// each other into applying a stale value.
+/// each other into applying a stale value. `entries` beyond `STICKER_PACK_MAX_ENTRIES` items or
+/// `STICKER_PACK_MAX_ENTRIES_BYTES` bytes is also a no-op, same as any other malformed announce.
 pub fn maybe_upsert_sticker_pack_from_announce<R: Runtime>(
     handle: &AppHandle<R>,
     content: &str,
@@ -2929,7 +2936,13 @@ pub fn maybe_upsert_sticker_pack_from_announce<R: Runtime>(
         Some(v) if v.is_array() => v,
         _ => return,
     };
+    if entries_val.as_array().map(Vec::len).unwrap_or(0) > STICKER_PACK_MAX_ENTRIES {
+        return;
+    }
     let entries_json = entries_val.to_string();
+    if entries_json.len() > STICKER_PACK_MAX_ENTRIES_BYTES {
+        return;
+    }
     let Some(updated_at) = p.get("updated_at").and_then(|v| v.as_i64()) else {
         return;
     };
@@ -3209,6 +3222,47 @@ mod sticker_pack_announce_tests {
         maybe_upsert_sticker_pack_from_announce(app.handle(), &bad_entries, "squad-8", Some("npub1author"));
 
         assert!(stored_row(app.handle(), "squad-8", "pack-1").is_none());
+    }
+
+    #[test]
+    fn announce_exceeding_entry_count_cap_is_a_noop() {
+        let app = setup("npub1stickertoomanyentries");
+        insert_chat_with_participants(app.handle(), "squad-9", &["npub1author"]);
+        let entries: Vec<serde_json::Value> = (0..(STICKER_PACK_MAX_ENTRIES + 1))
+            .map(|i| {
+                serde_json::json!({
+                    "shortcode": format!("s{i}"),
+                    "url": "https://x",
+                    "key": "aa",
+                    "nonce": "bb",
+                    "mime": "image/png",
+                    "size": 10
+                })
+            })
+            .collect();
+        let entries_json = serde_json::to_string(&entries).unwrap();
+        let content = announce("squad-9", "pack-1", "Too Many", &entries_json, 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-9", Some("npub1author"));
+        assert!(stored_row(app.handle(), "squad-9", "pack-1").is_none());
+    }
+
+    #[test]
+    fn announce_exceeding_entries_byte_cap_is_a_noop() {
+        let app = setup("npub1stickertoobig");
+        insert_chat_with_participants(app.handle(), "squad-10", &["npub1author"]);
+        let huge_url = "u".repeat(STICKER_PACK_MAX_ENTRIES_BYTES + 1);
+        let entries_json = serde_json::to_string(&serde_json::json!([{
+            "shortcode": "big",
+            "url": huge_url,
+            "key": "aa",
+            "nonce": "bb",
+            "mime": "image/png",
+            "size": 10
+        }]))
+        .unwrap();
+        let content = announce("squad-10", "pack-1", "Too Big", &entries_json, 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-10", Some("npub1author"));
+        assert!(stored_row(app.handle(), "squad-10", "pack-1").is_none());
     }
 }
 

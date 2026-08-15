@@ -170,6 +170,30 @@ fn find_cached_sticker(cache_dir: &std::path::Path, cache_key: &str) -> Option<S
     None
 }
 
+/// Validates that `key`/`nonce` decode to hex of exactly the length
+/// `crypto::decrypt_data` requires. Called before any network request: an
+/// attacker-controlled MLS announce entry must not be able to make this
+/// client issue a GET at all, let alone reach `GenericArray::from_slice`.
+fn validate_sticker_crypto_params(key: &str, nonce: &str) -> Result<(), String> {
+    let key_bytes = hex::decode(key).map_err(|e| format!("Invalid key hex: {}", e))?;
+    if key_bytes.len() != crypto::AES_KEY_LEN {
+        return Err(format!(
+            "Invalid key hex: expected {} bytes, got {}",
+            crypto::AES_KEY_LEN,
+            key_bytes.len()
+        ));
+    }
+    let nonce_bytes = hex::decode(nonce).map_err(|e| format!("Invalid nonce hex: {}", e))?;
+    if nonce_bytes.len() != crypto::AES_NONCE_LEN {
+        return Err(format!(
+            "Invalid nonce hex: expected {} bytes, got {}",
+            crypto::AES_NONCE_LEN,
+            nonce_bytes.len()
+        ));
+    }
+    Ok(())
+}
+
 /// Downloads and decrypts a sticker image, mirroring `decrypt_and_save_attachment`
 /// (`net::download` then `crypto::decrypt_data`). Caches the decrypted file on
 /// disk keyed by the source URL and decryption key so repeated picker renders
@@ -181,6 +205,8 @@ pub async fn fetch_sticker_image<R: Runtime>(
     key: String,
     nonce: String,
 ) -> Result<String, String> {
+    validate_sticker_crypto_params(&key, &nonce)?;
+
     let cache_dir = sticker_cache_dir(&handle)?;
     let cache_key = sticker_cache_key(&url, &key);
 
@@ -395,6 +421,10 @@ mod tests {
         .unwrap();
         assert!(first.updated_at > 0);
 
+        // A short sleep guarantees the second save lands in a different
+        // millisecond, so the strict `>` below is deterministic rather than
+        // a race against how fast two calls happen to execute back to back.
+        std::thread::sleep(std::time::Duration::from_millis(2));
         let second = save_sticker_pack(
             handle.clone(),
             "squad-1".to_string(),
@@ -404,7 +434,9 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(second.updated_at >= first.updated_at);
+        // Millisecond-precision `updated_at` makes two saves issued back to
+        // back distinct, not merely non-decreasing.
+        assert!(second.updated_at > first.updated_at);
         assert_eq!(second.name, "Pack One Renamed");
 
         crate::account_manager::close_db_connection();
@@ -440,5 +472,41 @@ mod tests {
         assert!(!listed_after_delete.iter().any(|p| p.pack_id == "pack-2"));
 
         crate::account_manager::close_db_connection();
+    }
+
+    #[test]
+    fn validate_sticker_crypto_params_accepts_well_formed_hex() {
+        let params = crypto::generate_encryption_params();
+        assert!(validate_sticker_crypto_params(&params.key, &params.nonce).is_ok());
+    }
+
+    #[test]
+    fn validate_sticker_crypto_params_rejects_empty_key() {
+        let params = crypto::generate_encryption_params();
+        let err = validate_sticker_crypto_params("", &params.nonce).unwrap_err();
+        assert!(err.contains("Invalid key hex"));
+    }
+
+    #[test]
+    fn validate_sticker_crypto_params_rejects_short_key() {
+        let params = crypto::generate_encryption_params();
+        // "aa" is valid hex but decodes to a single byte, far short of the
+        // 32-byte AES-256 key `crypto::decrypt_data` requires.
+        let err = validate_sticker_crypto_params("aa", &params.nonce).unwrap_err();
+        assert!(err.contains("Invalid key hex"));
+    }
+
+    #[test]
+    fn validate_sticker_crypto_params_rejects_short_nonce() {
+        let params = crypto::generate_encryption_params();
+        let err = validate_sticker_crypto_params(&params.key, "bb").unwrap_err();
+        assert!(err.contains("Invalid nonce hex"));
+    }
+
+    #[test]
+    fn validate_sticker_crypto_params_rejects_non_hex() {
+        let params = crypto::generate_encryption_params();
+        assert!(validate_sticker_crypto_params("not-hex", &params.nonce).is_err());
+        assert!(validate_sticker_crypto_params(&params.key, "not-hex").is_err());
     }
 }

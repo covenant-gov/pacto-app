@@ -47,6 +47,10 @@ transport, same authorization model, same persistence shape:
                "updated_at": 0, "deleted": false } }
 ```
 
+`updated_at` is unix **milliseconds**. An `entries` array over 300 items, or a
+serialized `entries` JSON over 128 KiB, is dropped on ingest as a malformed
+announce — see [§3](#3-conflict-resolution-last-write-wins-on-updated_at).
+
 The frontend builds this content (`src/lib/announcements.ts`,
 `ANNOUNCE_TYPE_STICKER_PACK_UPDATED`) and sends it like any other message; the
 `sticker_pack_updated` type routes it to the squad's `announcements` virtual
@@ -106,6 +110,21 @@ error. `updated_at` itself is stamped server-side from the system clock when a
 member saves locally (`save_sticker_pack`, `src-tauri/src/sticker_pack.rs`),
 never trusted from the announce payload at authoring time, so a client cannot
 backdate its own edit to win a future race.
+
+`updated_at` is unix **milliseconds**, not seconds. Second precision made two
+edits landing inside the same wall-clock second indistinguishable under the
+strict `>` comparison above, so the second edit was silently dropped as a
+no-op on every peer — a real loss with two members actively curating a pack
+in the same window. Millisecond precision makes that collision the rare case
+instead of the common one; the comparison stays strict `>` (never `>=`), so a
+tombstone can never overwrite an edit stamped in the same millisecond.
+
+**Ingest also caps a pack's declared size**, independent of the timestamp
+comparison: an announce whose `entries` array has more than 300 items, or
+whose serialized `entries` JSON exceeds 128 KiB, is dropped as a malformed
+announce — the same no-op path as any other invalid payload. This bounds what
+a single squad member's client (or a compromised one) can make every other
+member's client store and render from one announce.
 
 ---
 
