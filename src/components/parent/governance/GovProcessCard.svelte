@@ -20,7 +20,7 @@
   export let privilegeReasonKey = '';
   export let onExecute: (() => void) | undefined = undefined;
 
-  let nowSec = Math.floor(Date.now() / 1000);
+  let delayElapsed = false;
   let unlockTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearUnlockTimer() {
@@ -36,16 +36,27 @@
   $: isActive =
     card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
   $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
-  $: execUi = govExecuteUiState({ card, privilegeReasonKey, nowSec });
+  $: cardUnlockAtSec =
+    card.kind === 'crew_add' || card.kind === 'crew_remove'
+      ? card.executableAt > 0
+        ? card.executableAt
+        : null
+      : null;
   $: {
     clearUnlockTimer();
-    if (execUi.unlockAtSec != null && execUi.unlockAtSec > nowSec) {
-      const delayMs = Math.max(0, (execUi.unlockAtSec - nowSec) * 1000);
+    const alreadyOpen = cardUnlockAtSec == null || cardUnlockAtSec <= Math.floor(Date.now() / 1000);
+    delayElapsed = alreadyOpen;
+    if (!alreadyOpen && cardUnlockAtSec != null) {
       unlockTimer = setTimeout(() => {
-        nowSec = Math.floor(Date.now() / 1000);
-      }, delayMs);
+        delayElapsed = true;
+      }, Math.max(0, cardUnlockAtSec * 1000 - Date.now()));
     }
   }
+  $: execUi = govExecuteUiState({
+    card,
+    privilegeReasonKey,
+    nowSec: delayElapsed ? Math.floor(Date.now() / 1000) : 0,
+  });
   $: isExecutable =
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0
