@@ -18,6 +18,18 @@
     if (trimmed.length < 12) return trimmed;
     return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
   }
+
+  function extraNativeAmount(valueWei: string): string | null {
+    try {
+      return BigInt(valueWei) > 0n ? formatNativeEthAmount(valueWei) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  let extraNative = $derived(
+    summary.kind === 'native_transfer' ? null : extraNativeAmount(summary.valueWei),
+  );
 </script>
 
 <div class="action-summary">
@@ -87,6 +99,12 @@
       <summary>{$t('governance.proposal.action.showRawCalldata')}</summary>
       <code class="action-ref action-raw-hex">{summary.dataHex}</code>
     </details>
+  {/if}
+
+  {#if extraNative}
+    <p class="action-meta muted">
+      {$t('governance.proposal.action.alsoSendsNative', { values: { amount: extraNative } })}
+    </p>
   {/if}
 </div>
 

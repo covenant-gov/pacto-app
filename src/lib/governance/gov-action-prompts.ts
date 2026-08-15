@@ -52,6 +52,8 @@ export function deriveGovActionPrompts(params: {
   mutinyMode: boolean;
   treasuryVoteMap: Record<string, boolean>;
   mutinyHasVoted: boolean;
+  /** When false, skip mutiny vote-needed (vote-status read failed). */
+  mutinyVoteKnown?: boolean;
   nowSec?: number;
   maxPrompts?: number;
 }): GovActionPrompt[] {
@@ -136,17 +138,12 @@ export function deriveGovActionPrompts(params: {
     }
   }
 
-  // Vote-needed (treasury captain)
+  // Vote-needed (treasury captain) — captainApproved/Defeated already filter the list
   if (captainGate.enabled) {
     for (const p of captainVotableProposals(params.proposals)) {
-      if (params.treasuryVoteMap[p.proposalId]) continue;
-      const sid = `gov-vote:treasury-captain:${parentId}:${p.proposalId}`;
-      if (out.some((x) => x.sourceEventId === sid || x.sourceEventId === `gov-vote:treasury:${parentId}:${p.proposalId}`)) {
-        continue;
-      }
       out.push({
         kind: 'vote_needed',
-        sourceEventId: sid,
+        sourceEventId: `gov-vote:treasury-captain:${parentId}:${p.proposalId}`,
         parentId,
         titleKey: 'governance.alerts.prompt.voteNeededTitle',
         bodyKey: 'governance.alerts.prompt.voteNeededTreasuryCaptain',
@@ -159,6 +156,7 @@ export function deriveGovActionPrompts(params: {
   // Vote-needed (mutiny) — not yet executable
   if (
     crewGate.enabled &&
+    params.mutinyVoteKnown !== false &&
     isMutinyActive(params.mutinyStatus) &&
     params.mutinyStatus &&
     !params.mutinyHasVoted &&

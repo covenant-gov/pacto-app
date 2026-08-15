@@ -3,6 +3,7 @@
   import { treasuryAuthorityPropose } from '../../../lib/governance/api';
   import { gateRequiresCaptainOrCrew, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
   import {
+    fundedByFromWriteResult,
     govWriteSubmittedToast,
     type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
@@ -34,7 +35,7 @@
     acting = true;
     const label = tFn('governance.action.submitProposal');
     try {
-      await treasuryAuthorityPropose({
+      const result = await treasuryAuthorityPropose({
         network,
         parentId,
         treasuryAuthority,
@@ -43,7 +44,7 @@
         dataHex: proposeData,
         operation: proposeOp,
       });
-      showToast(govWriteSubmittedToast(label, fundingMode));
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       onSubmitted();
     } catch (e) {
       showToast(govWriteErrorMessage(e, label));

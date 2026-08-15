@@ -75,6 +75,14 @@ export function displayGovWriteFundingHint(input: {
   return govWriteFundingFallbackHint();
 }
 
+/** Read the backend-selected path from a gov write result. */
+export function fundedByFromWriteResult(result: unknown): GovWriteFundingMode | null {
+  if (!result || typeof result !== 'object') return null;
+  const raw = (result as { fundedBy?: unknown }).fundedBy;
+  if (raw === 'sponsored' || raw === 'self_funded') return raw;
+  return null;
+}
+
 /** Success toast text including funding mode when known. */
 export function govWriteSubmittedToast(
   label: string,

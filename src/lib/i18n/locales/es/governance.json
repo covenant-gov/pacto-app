@@ -210,6 +210,7 @@
 	"governance.proposal.action.token": "Token",
 	"governance.proposal.action.recipient": "Destinatario",
 	"governance.proposal.action.spender": "Autorizado",
+	"governance.proposal.action.alsoSendsNative": "También envía {amount} ETH",
 	"governance.proposal.execute": "Ejecutar propuesta",
 	"governance.proposal.voteYea": "Votar a favor",
 	"governance.proposal.voteNay": "Votar en contra",

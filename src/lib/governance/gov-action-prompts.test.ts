@@ -133,6 +133,51 @@ describe('deriveGovActionPrompts', () => {
     expect(prompts.some((p) => p.sourceEventId === 'gov-execute:treasury:squad-1:1')).toBe(true);
   });
 
+  it('does not emit execute-ready until captainApproved', () => {
+    const prompts = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [treasury({ status: 'active_passed_crew', captainApproved: false })],
+      mutinyStatus: null,
+      qmPending: [],
+      privilege: privilege(),
+      mutinyMode: false,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+    });
+    expect(prompts.some((p) => p.kind === 'execute_ready')).toBe(false);
+  });
+
+  it('emits captain vote-needed even when the crew hasVoted map is true', () => {
+    const prompts = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [treasury({ status: 'active_passed_crew' })],
+      mutinyStatus: null,
+      qmPending: [],
+      privilege: privilege({ wearsCaptain: true, wearsCrew: true }),
+      mutinyMode: false,
+      treasuryVoteMap: { '1': true },
+      mutinyHasVoted: false,
+    });
+    expect(prompts.some((p) => p.sourceEventId === 'gov-vote:treasury-captain:squad-1:1')).toBe(
+      true,
+    );
+  });
+
+  it('skips mutiny vote-needed when the vote-status read is unknown', () => {
+    const prompts = deriveGovActionPrompts({
+      parentId: 'squad-1',
+      proposals: [],
+      mutinyStatus: mutiny({ yeas: 1, snapshot: 3 }),
+      qmPending: [],
+      privilege: privilege(),
+      mutinyMode: true,
+      treasuryVoteMap: {},
+      mutinyHasVoted: false,
+      mutinyVoteKnown: false,
+    });
+    expect(prompts.some((p) => p.sourceEventId === 'gov-vote:mutiny:squad-1:9')).toBe(false);
+  });
+
   it('emits mutiny vote when active below threshold', () => {
     const prompts = deriveGovActionPrompts({
       parentId: 'squad-1',
@@ -152,7 +197,7 @@ describe('deriveGovActionPrompts', () => {
       parentId: 'squad-1',
       proposals: [
         treasury({ proposalId: '1', status: 'active' }),
-        treasury({ proposalId: '2', status: 'active_passed_crew' }),
+        treasury({ proposalId: '2', status: 'active_passed_crew', captainApproved: true }),
       ],
       mutinyStatus: null,
       qmPending: [

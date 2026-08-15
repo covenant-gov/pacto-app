@@ -43,7 +43,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     calldata: Vec<u8>,
     capability: GovCapability,
     rpc_urls_override: Option<Vec<String>>,
-) -> Result<(String, String, u64), String> {
+) -> Result<(String, String, u64, String), String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
@@ -137,7 +137,12 @@ pub async fn send_gov_module_call<R: Runtime>(
                             send.user_op_hash
                         );
                     }
-                    return Ok((receipt.tx_hash, net.key.clone(), net.chain_id));
+                    return Ok((
+                        receipt.tx_hash,
+                        net.key.clone(),
+                        net.chain_id,
+                        "sponsored".to_string(),
+                    ));
                 }
                 Err(e) => {
                     // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
@@ -179,6 +184,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         format!("0x{:x}", receipt.transaction_hash),
         net.key.clone(),
         net.chain_id,
+        "self_funded".to_string(),
     ))
 }
 

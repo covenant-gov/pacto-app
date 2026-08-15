@@ -74,6 +74,25 @@ describe('summarizeTreasuryProposalAction', () => {
     });
   });
 
+  it('keeps native valueWei on an erc20 transfer', () => {
+    const dataHex = encodeFunctionData({
+      abi: ABI,
+      functionName: 'transfer',
+      args: [RECIPIENT, 1_000_000n],
+    });
+    const valueWei = parseEther('0.25').toString();
+    const summary = summarizeTreasuryProposalAction({
+      to: TOKEN,
+      valueWei,
+      dataHex,
+      operation: 'call',
+    });
+    expect(summary.kind).toBe('erc20_transfer');
+    if (summary.kind !== 'erc20_transfer') return;
+    expect(summary.valueWei).toBe(valueWei);
+    expect(formatNativeEthAmount(summary.valueWei)).toBe('0.25');
+  });
+
   it('fails closed on unknown calldata with short selector', () => {
     const dataHex = '0xdeadbeef00000000000000000000000000000000000000000000000000000001';
     const summary = summarizeTreasuryProposalAction({

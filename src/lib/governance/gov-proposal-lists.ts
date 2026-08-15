@@ -12,9 +12,11 @@ export function captainVotableProposals(proposals: TreasuryProposalDto[]): Treas
   );
 }
 
-/** Treasury proposals that may be executable on-chain (crew threshold met). */
+/** Treasury proposals executable on-chain (crew pass + captain approval). */
 export function executableTreasuryProposals(proposals: TreasuryProposalDto[]): TreasuryProposalDto[] {
-  return proposals.filter((p) => p.status === 'active_passed_crew' && !p.executed);
+  return proposals.filter(
+    (p) => p.status === 'active_passed_crew' && p.captainApproved && !p.executed,
+  );
 }
 
 export function isMutinyActive(status: MutinyStatusDto | null | undefined): boolean {

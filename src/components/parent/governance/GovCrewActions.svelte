@@ -26,6 +26,7 @@
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
   import {
+    fundedByFromWriteResult,
     govWriteSubmittedToast,
     type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
@@ -72,8 +73,8 @@
     if (acting) return;
     acting = true;
     try {
-      await fn();
-      showToast(govWriteSubmittedToast(label, fundingMode));
+      const result = await fn();
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       refresh();
     } catch (e) {
       showToast(govWriteErrorMessage(e, label));

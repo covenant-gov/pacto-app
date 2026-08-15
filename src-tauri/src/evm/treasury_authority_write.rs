@@ -19,6 +19,7 @@ pub struct TreasuryAuthorityWriteResult {
     pub chain: String,
     pub chain_id: u64,
     pub treasury_authority: String,
+    pub funded_by: String,
 }
 
 fn parse_operation(raw: &str) -> Result<Operation, String> {
@@ -70,7 +71,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
         _op: op,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) = send_gov_module_call(
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
         app,
         network,
         pid,
@@ -85,6 +86,7 @@ pub async fn treasury_authority_propose<R: Runtime>(
         chain,
         chain_id,
         treasury_authority: format!("{:#x}", ta),
+        funded_by,
     })
 }
 
@@ -108,7 +110,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
         _support: support,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) = send_gov_module_call(
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
         app,
         network,
         parent,
@@ -123,6 +125,7 @@ pub async fn treasury_authority_crew_vote<R: Runtime>(
         chain,
         chain_id,
         treasury_authority: format!("{:#x}", ta),
+        funded_by,
     })
 }
 
@@ -146,7 +149,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
         _support: support,
     }
     .abi_encode();
-    let (tx_hash, chain, chain_id) = send_gov_module_call(
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
         app,
         network,
         parent,
@@ -161,6 +164,7 @@ pub async fn treasury_authority_captain_vote<R: Runtime>(
         chain,
         chain_id,
         treasury_authority: format!("{:#x}", ta),
+        funded_by,
     })
 }
 
@@ -179,7 +183,7 @@ pub async fn treasury_authority_execute<R: Runtime>(
         .map_err(|e| wallet_err_json("INVALID_PROPOSAL_ID", e.to_string(), None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", ta))?;
     let calldata = executeCall { _proposalId: pid_u }.abi_encode();
-    let (tx_hash, chain, chain_id) = send_gov_module_call(
+    let (tx_hash, chain, chain_id, funded_by) = send_gov_module_call(
         app,
         network,
         parent,
@@ -194,6 +198,7 @@ pub async fn treasury_authority_execute<R: Runtime>(
         chain,
         chain_id,
         treasury_authority: format!("{:#x}", ta),
+        funded_by,
     })
 }
 

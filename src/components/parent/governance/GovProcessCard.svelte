@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import type { GovProcessCard } from '../../../lib/governance/gov-process';
   import { govProcessToolLabel } from '../../../lib/governance/gov-process';
@@ -19,11 +20,32 @@
   export let privilegeReasonKey = '';
   export let onExecute: (() => void) | undefined = undefined;
 
+  let nowSec = Math.floor(Date.now() / 1000);
+  let unlockTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearUnlockTimer() {
+    if (unlockTimer != null) {
+      clearTimeout(unlockTimer);
+      unlockTimer = null;
+    }
+  }
+
+  onDestroy(clearUnlockTimer);
+
   $: tool = $t(govProcessToolLabel(card));
   $: isActive =
     card.kind === 'treasury' ? isTreasuryProposalActive(card.proposal.status) : true;
   $: isPast = card.kind === 'treasury' ? isTreasuryProposalPast(card.proposal.status) : false;
-  $: execUi = govExecuteUiState({ card, privilegeReasonKey });
+  $: execUi = govExecuteUiState({ card, privilegeReasonKey, nowSec });
+  $: {
+    clearUnlockTimer();
+    if (execUi.unlockAtSec != null && execUi.unlockAtSec > nowSec) {
+      const delayMs = Math.max(0, (execUi.unlockAtSec - nowSec) * 1000);
+      unlockTimer = setTimeout(() => {
+        nowSec = Math.floor(Date.now() / 1000);
+      }, delayMs);
+    }
+  }
   $: isExecutable =
     card.kind === 'treasury'
       ? executableTreasuryProposals([card.proposal]).length > 0

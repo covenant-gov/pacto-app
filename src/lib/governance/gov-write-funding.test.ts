@@ -14,6 +14,7 @@ import {
   govWriteFundingFallbackHint,
   govWriteFundingHint,
   govWriteNoSponsorHint,
+  fundedByFromWriteResult,
   govWriteSubmittedToast,
   resolveGovWriteFundingMode,
 } from './gov-write-funding';
@@ -95,6 +96,16 @@ describe('displayGovWriteFundingHint', () => {
         hasSponsorInfra: true,
       }),
     ).toBe(govWriteFundingHint('sponsored'));
+  });
+});
+
+describe('fundedByFromWriteResult', () => {
+  it('reads sponsored or self_funded and ignores unknown', () => {
+    expect(fundedByFromWriteResult({ fundedBy: 'sponsored' })).toBe('sponsored');
+    expect(fundedByFromWriteResult({ fundedBy: 'self_funded' })).toBe('self_funded');
+    expect(fundedByFromWriteResult({ fundedBy: 'maybe' })).toBeNull();
+    expect(fundedByFromWriteResult({})).toBeNull();
+    expect(fundedByFromWriteResult(null)).toBeNull();
   });
 });
 

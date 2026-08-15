@@ -145,6 +145,7 @@ pub struct QuartermasterWriteResult {
     pub chain: String,
     pub chain_id: u64,
     pub quartermaster: String,
+    pub funded_by: String,
 }
 
 #[tauri::command]
@@ -328,13 +329,14 @@ async fn qm_write<R: Runtime>(
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
-    let (tx_hash, chain, chain_id) =
+    let (tx_hash, chain, chain_id, funded_by) =
         send_gov_module_call(app, network, parent, qm, calldata, capability, rpc_urls).await?;
     Ok(QuartermasterWriteResult {
         tx_hash,
         chain,
         chain_id,
         quartermaster: format!("{:#x}", qm),
+        funded_by,
     })
 }
 

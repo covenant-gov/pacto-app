@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { t } from 'svelte-i18n';
-import { recordActionNeededEntry } from '../lib/api/catch-up';
+import { listCatchUpEntries, recordActionNeededEntry } from '../lib/api/catch-up';
 import {
   fetchQuartermasterPendingActions,
   fetchTreasuryProposalVoteMap,
@@ -62,13 +62,29 @@ function maybeToastNewPrompts(squad: Squad, prompts: GovActionPrompt[]): void {
   }
 }
 
+async function seedRecordedIds(squadId: string): Promise<Set<string> | null> {
+  const cached = recordedIdsBySquadId.get(squadId);
+  if (cached) return cached;
+  try {
+    const rows = await listCatchUpEntries('action_prompt', squadId);
+    const prev = new Set(
+      rows.map((row) => row.sourceEventId).filter((id) => id.startsWith('gov-')),
+    );
+    recordedIdsBySquadId.set(squadId, prev);
+    return prev;
+  } catch {
+    return null;
+  }
+}
+
 async function reconcileCatchUp(
   groupId: string,
   squadId: string,
   prompts: GovActionPrompt[],
 ): Promise<void> {
   const nextIds = new Set(prompts.map((p) => p.sourceEventId));
-  const prev = recordedIdsBySquadId.get(squadId) ?? new Set<string>();
+  const prev = await seedRecordedIds(squadId);
+  if (!prev) return;
 
   for (const id of nextIds) {
     try {
@@ -127,29 +143,36 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
       capabilities,
     });
 
-    const [{ proposals }, mutinyStatus] = await Promise.all([
+    const [treasuryResult, mutinyResult] = await Promise.all([
       fetchTreasuryProposals({
         network,
         treasuryAuthority,
         parentId: id,
       }),
       mutinyModule
-        ? getMutinyStatus({ network, mutinyModule, parentId: id }).catch(() => null)
-        : Promise.resolve(null),
+        ? getMutinyStatus({ network, mutinyModule, parentId: id }).then(
+            (status) => ({ status, error: '' as const }),
+            (e: unknown) => ({ status: null, error: String(e) }),
+          )
+        : Promise.resolve({ status: null, error: '' as const }),
     ]);
     if (refreshGenBySquadId.get(id) !== gen) return;
+    if (treasuryResult.error || mutinyResult.error) return;
 
-    const qmPending =
+    const { proposals } = treasuryResult;
+    const mutinyStatus = mutinyResult.status;
+
+    const qmResult =
       quartermaster.trim().length > 0
-        ? (
-            await fetchQuartermasterPendingActions({
-              network,
-              quartermaster,
-              parentId: id,
-            })
-          ).pending
-        : [];
+        ? await fetchQuartermasterPendingActions({
+            network,
+            quartermaster,
+            parentId: id,
+          })
+        : { pending: [], error: '' };
     if (refreshGenBySquadId.get(id) !== gen) return;
+    if (qmResult.error) return;
+    const qmPending = qmResult.pending;
 
     const voter = privilege.myAddress?.trim() ?? '';
     const treasuryVoteMap =
@@ -164,6 +187,7 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
     if (refreshGenBySquadId.get(id) !== gen) return;
 
     let mutinyVoted = false;
+    let mutinyVoteKnown = true;
     if (voter && mutinyModule && mutinyStatus && isMutinyActive(mutinyStatus)) {
       try {
         mutinyVoted = await mutinyHasVoted({
@@ -174,7 +198,7 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
           parentId: id,
         });
       } catch {
-        mutinyVoted = false;
+        mutinyVoteKnown = false;
       }
     }
     if (refreshGenBySquadId.get(id) !== gen) return;
@@ -188,6 +212,7 @@ export async function refreshGovActionPromptsForSquad(squad: Squad): Promise<voi
       mutinyMode: isMutinyActive(mutinyStatus),
       treasuryVoteMap,
       mutinyHasVoted: mutinyVoted,
+      mutinyVoteKnown,
     });
 
     govActionPromptsBySquadId.update((m) => ({ ...m, [id]: prompts }));

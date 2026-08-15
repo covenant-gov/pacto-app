@@ -117,9 +117,21 @@ describe('govExecuteUiState', () => {
       unlockAtSec: null,
     });
 
-    const passed: GovProcessCard = {
+    const awaitingCaptain: GovProcessCard = {
       kind: 'treasury',
       proposal: treasury({ status: 'active_passed_crew' }),
+      sortKey: 1,
+    };
+    expect(govExecuteUiState({ card: awaitingCaptain })).toMatchObject({
+      showExecute: false,
+      executeEnabled: false,
+      disabledReasonKey: '',
+      unlockAtSec: null,
+    });
+
+    const passed: GovProcessCard = {
+      kind: 'treasury',
+      proposal: treasury({ status: 'active_passed_crew', captainApproved: true }),
       sortKey: 1,
     };
     expect(govExecuteUiState({ card: passed })).toMatchObject({

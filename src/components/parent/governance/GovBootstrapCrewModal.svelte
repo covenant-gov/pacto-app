@@ -4,6 +4,7 @@
   import Modal from '../../ui/Modal.svelte';
   import { quartermasterBootstrapCrew } from '../../../lib/governance/api';
   import {
+    fundedByFromWriteResult,
     govWriteFundingFallbackHint,
     type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
@@ -84,17 +85,18 @@
     acting = true;
     error = '';
     try {
-      await quartermasterBootstrapCrew({
+      const result = await quartermasterBootstrapCrew({
         network,
         parentId,
         quartermaster,
         candidates,
       });
       const count = candidates.length;
+      const fundedBy = fundedByFromWriteResult(result);
       const toastKey =
-        fundingMode === 'sponsored'
+        fundedBy === 'sponsored'
           ? 'governance.bootstrapCrew.toast.submittedSponsored'
-          : fundingMode === 'self_funded'
+          : fundedBy === 'self_funded'
             ? 'governance.bootstrapCrew.toast.submittedSelfFunded'
             : 'governance.bootstrapCrew.toast.submitted';
       showToast(tFn(toastKey, { values: { count } }));

@@ -22,6 +22,7 @@
   } from '../../../lib/governance/gov-process';
   import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
   import {
+    fundedByFromWriteResult,
     govWriteSubmittedToast,
     type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
@@ -71,13 +72,13 @@
     if (acting || !execGate.enabled) return;
     acting = true;
     try {
-      await treasuryAuthorityExecute({
+      const result = await treasuryAuthorityExecute({
         network,
         parentId,
         treasuryAuthority,
         proposalId,
       });
-      showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundingMode));
+      showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundedByFromWriteResult(result)));
       onRefreshProposals();
     } catch (e) {
       showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
@@ -95,21 +96,21 @@
     acting = true;
     try {
       if (card.kind === 'crew_add') {
-        await quartermasterExecuteAddCrew({
+        const result = await quartermasterExecuteAddCrew({
           network,
           parentId,
           quartermaster,
           candidate: card.address,
         });
-        showToast(govWriteSubmittedToast(tFn('governance.action.executeAdd'), fundingMode));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeAdd'), fundedByFromWriteResult(result)));
       } else {
-        await quartermasterExecuteRemoveCrew({
+        const result = await quartermasterExecuteRemoveCrew({
           network,
           parentId,
           quartermaster,
           crew: card.address,
         });
-        showToast(govWriteSubmittedToast(tFn('governance.action.executeRemove'), fundingMode));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeRemove'), fundedByFromWriteResult(result)));
       }
       onRefreshProposals();
     } catch (e) {

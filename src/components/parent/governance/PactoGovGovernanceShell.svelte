@@ -28,6 +28,7 @@
   } from '../../../lib/governance/governance-privilege';
   import {
     displayGovWriteFundingHint,
+    fundedByFromWriteResult,
     govWriteSubmittedToast,
     resolveGovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
@@ -290,13 +291,13 @@
     const mutinyModule = payload.mutinyModule?.trim();
     if (!mutinyModule || !mutinyStatus) return;
     try {
-      await mutinyExecute({
+      const result = await mutinyExecute({
         network,
         parentId,
         mutinyModule,
         mutinyId: mutinyStatus.activeMutinyId,
       });
-      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundingMode));
+      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
       await reloadMutiny(true);
     } catch (e) {
       showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
