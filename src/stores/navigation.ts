@@ -33,6 +33,14 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
+/** Bumped to open Status → Add custom RPC after a dashboard RPC read failure. */
+export const squadStatusRpcFocusNonce = writable(0);
+
+export function focusSquadStatusRpcEditor() {
+  squadDashboardChannelMode.set('status');
+  squadStatusRpcFocusNonce.update((n) => n + 1);
+}
+
 /** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
 export type MyDashboardChannelMode = 'status' | 'alerts';
 

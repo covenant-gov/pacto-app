@@ -10,6 +10,8 @@
     HATS_TREE_DEFAULT_MAX_NODES,
     isHatsTreeLikelyTruncated,
   } from '../../../lib/governance/hats-tree-read';
+  import RpcReadErrorCard from './RpcReadErrorCard.svelte';
+  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
   export let squadInfraRows: unknown[] | undefined = undefined;
   export let structureSummary: DashboardStructureSummary | null | undefined = undefined;
@@ -32,6 +34,8 @@
   $: rolesTreeRefreshing = hatsTreeRefreshing || rolesTreeAnnotationsRefreshing;
   $: rolesTreeLoading = hatsTreeLoading || rolesTreeAnnotationsLoading;
   $: chainKey = structureSummary?.chainKey ?? null;
+  $: hatsTreeRpcKind = rpcReadErrorKind(hatsTreeError);
+  $: rolesAnnotationsRpcKind = rpcReadErrorKind(rolesTreeAnnotationsError);
 </script>
 
 {#if squadInfraRows !== undefined && !structureSummary}
@@ -84,17 +88,29 @@
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.explorerError')}</p>
     {/if}
     {#if hatsTreeError && hatsTree}
-      <p class="chain-read-error" role="alert">{hatsTreeError}</p>
+      {#if hatsTreeRpcKind}
+        <RpcReadErrorCard kind={hatsTreeRpcKind} />
+      {:else}
+        <p class="chain-read-error" role="alert">{hatsTreeError}</p>
+      {/if}
     {/if}
     {#if rolesTreeAnnotationsError}
-      <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
+      {#if rolesAnnotationsRpcKind}
+        <RpcReadErrorCard kind={rolesAnnotationsRpcKind} />
+      {:else}
+        <p class="chain-read-error" role="alert">{rolesTreeAnnotationsError}</p>
+      {/if}
     {/if}
     {#if hatsTreeLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingTree')}</p>
     {:else if rolesTreeAnnotationsLoading && !hatsTree}
       <p class="dashboard-placeholder-text muted">{$t('governance.roles.loadingLabels')}</p>
     {:else if !hatsTree && hatsTreeError}
-      <p class="chain-read-error" role="alert">{hatsTreeError}</p>
+      {#if hatsTreeRpcKind}
+        <RpcReadErrorCard kind={hatsTreeRpcKind} />
+      {:else}
+        <p class="chain-read-error" role="alert">{hatsTreeError}</p>
+      {/if}
     {:else if hatsTree}
       {#if isHatsTreeLikelyTruncated(hatsTree)}
         <p class="hats-tree-truncation-note muted" role="status">

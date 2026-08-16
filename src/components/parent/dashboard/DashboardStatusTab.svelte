@@ -28,6 +28,7 @@
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
   import { onMount } from 'svelte';
+  import { squadStatusRpcFocusNonce } from '../../../stores/navigation';
 
   export let squad: Squad;
   export let permissionsCtx: DashboardPermissionsContext;
@@ -61,6 +62,7 @@
   let rpcFormError = '';
   let rpcPublishing = false;
   let rosterKeyNeeded = false;
+  let lastRpcFocusNonce = 0;
 
   $: myNpub = $currentUser?.npub ?? '';
   $: displayEvmByNpub = squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded);
@@ -111,6 +113,16 @@
     editingRpc = mode;
     rpcUrlDraft = '';
     rpcFormError = '';
+  }
+
+  $: if ($squadStatusRpcFocusNonce > lastRpcFocusNonce) {
+    lastRpcFocusNonce = $squadStatusRpcFocusNonce;
+    openRpcEdit('primary');
+    if (typeof document !== 'undefined') {
+      queueMicrotask(() => {
+        document.getElementById('squad-status-rpc')?.scrollIntoView({ block: 'nearest' });
+      });
+    }
   }
 
   function cancelRpcEdit() {

@@ -1,5 +1,7 @@
 <script lang="ts">
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import RpcReadErrorCard from '../dashboard/RpcReadErrorCard.svelte';
+  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
   import GovProcessCardView from './GovProcessCard.svelte';
   import {
     quartermasterExecuteAddCrew,
@@ -67,6 +69,8 @@
     (mutinyLoading && !mutinyStatus) ||
     (qmPendingLoading && qmPending.length === 0);
   $: refreshSpinning = proposalsLoading || mutinyLoading || qmPendingLoading;
+  $: proposalsRpcKind = rpcReadErrorKind(proposalsError);
+  $: qmPendingRpcKind = rpcReadErrorKind(qmPendingError);
 
   async function runTreasuryExecute(proposalId: string) {
     if (acting || !execGate.enabled) return;
@@ -164,14 +168,24 @@
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
   {:else if processCards.length === 0}
-    <p class="muted">
-      {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
-    </p>
+    {#if proposalsRpcKind}
+      <RpcReadErrorCard kind={proposalsRpcKind} />
+    {:else if qmPendingRpcKind}
+      <RpcReadErrorCard kind={qmPendingRpcKind} />
+    {:else}
+      <p class="muted">
+        {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
+      </p>
+    {/if}
   {:else}
-    {#if proposalsError}
+    {#if proposalsRpcKind}
+      <RpcReadErrorCard kind={proposalsRpcKind} />
+    {:else if proposalsError}
       <p class="muted">{proposalsError}</p>
     {/if}
-    {#if qmPendingError}
+    {#if qmPendingRpcKind}
+      <RpcReadErrorCard kind={qmPendingRpcKind} />
+    {:else if qmPendingError}
       <p class="muted">{qmPendingError}</p>
     {/if}
     <ul class="proposal-list" role="list">
