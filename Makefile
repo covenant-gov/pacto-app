@@ -148,6 +148,12 @@ dev-account:
 	PACTO_TEST_SANDBOX_ROOT="$(CURDIR)/test_fixtures/dev-account" \
 	pnpm tauri dev -f local-relay-tls --config '{"build":{"devUrl":"http://localhost:'"$$PACTO_DEV_PORT"'"}}'
 
+# Second app window for two-account verification (squad invites, sticker packs,
+# DM round-trips). Reuses the debug binary and the Vite server that `dev-account`
+# or `dev-sandbox` already started, because a second `pnpm tauri dev` would fight
+# over port 1420. Start one of those first, then run this in another terminal.
+# Side-by-side instances work because a PACTO_TEST_SANDBOX_ROOT run skips the
+# single-instance plugin.
 dev-buddy:
 	@mkdir -p test_fixtures
 	@eval "$$(node scripts/dev-ports.mjs --export --branch dev-buddy)"; \

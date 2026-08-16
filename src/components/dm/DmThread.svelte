@@ -57,6 +57,9 @@
   export let onSendFile:
     | ((bytes: ArrayBuffer, fileName: string, repliedTo: string, useCompression: boolean) => Promise<void>)
     | undefined = undefined;
+  export let onSendGif:
+    | ((url: string, slug: string, repliedTo: string) => Promise<void>)
+    | undefined = undefined;
   export let onTyping: () => void = () => {};
   export let onAcceptSquadInvite: (msg: DmMessage, groupId: string) => void = () => {};
   export let onAcceptChannelInSquad: (
@@ -121,6 +124,12 @@
   ): Promise<void> {
     if (!onSendFile) return;
     await onSendFile(bytes, fileName, repliedTo, useCompression);
+    cancelReply();
+  }
+
+  async function handleSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+    if (!onSendGif) return;
+    await onSendGif(url, slug, repliedTo);
     cancelReply();
   }
 
@@ -587,6 +596,7 @@
     disabled={peerBlockedByMe || chatDeleting}
     onSend={handleSend}
     onSendFile={handleSendFile}
+    onSendGif={handleSendGif}
     onTyping={onTyping}
     repliedTo={replyToMessageId ?? undefined}
     repliedToPreview={replyPreview}

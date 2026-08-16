@@ -121,6 +121,7 @@ import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
+import { resetStickerPacksStore } from '../../stores/stickers';
 import { STARTUP_CHECK_PREFIX } from '../../stores/startup-check';
 import { backupVerified } from '../../stores/backup-verification';
 import {
@@ -207,6 +208,7 @@ export function clearAccountState(npub?: string): void {
   resetSquadHubAlertStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();
+  resetStickerPacksStore();
   clearPendingReactions();
   clearPendingAttachment();
   clearLinkPreviewRequests();

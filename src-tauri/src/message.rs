@@ -1271,6 +1271,225 @@ pub async fn message(
     }
 }
 
+/// Sends a picked Klipy GIF as a lightweight, unencrypted attachment carrying
+/// the provider URL byte-identical — Klipy's terms forbid re-hosting, so
+/// there is no upload and nothing to encrypt. `key`/`nonce` are left empty,
+/// which marks this as a "remote plaintext" attachment to the receive path
+/// (`rumor::process_file_attachment`) and to the frontend. `url` is checked
+/// against Klipy's CDN allowlist right here — the same predicate
+/// `klipy::klipy_fetch_media` enforces on the receive side — not merely
+/// downstream by the picker or the frontend fetch wrapper.
+///
+/// Deliberately standalone rather than routed through `message()`: that
+/// function's attachment branch always encrypts and uploads real bytes,
+/// which is exactly what Klipy's terms forbid here. Mirrors `message()`'s
+/// pending-state and giftwrap/MLS send flow for a single attachment message.
+#[tauri::command]
+pub async fn klipy_gif_message(
+    receiver: String,
+    url: String,
+    slug: String,
+    replied_to: String,
+) -> Result<bool, String> {
+    crate::session::heartbeat();
+    let handle = TAURI_APP.get().ok_or("App handle not available")?;
+    crate::migration::require_key_derivation_version_2_on_handle(handle)?;
+
+    if !crate::klipy::is_klipy_media_url(&url) {
+        return Err("Refusing to send: not a Klipy media URL".to_string());
+    }
+
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let pending_id = Arc::new(String::from("pending-") + &current_time.as_nanos().to_string());
+
+    let client = get_nostr_client().expect("Nostr client not initialized");
+    let signer = client.signer().await.map_err(|e| e.to_string())?;
+    let my_public_key = signer.get_public_key().await.map_err(|e| e.to_string())?;
+    let my_npub_for_msg = my_public_key.to_bech32().ok();
+
+    let is_group_chat = {
+        let state = STATE.lock().await;
+        if let Some(chat) = state.get_chat(&receiver) {
+            chat.is_mls_group()
+        } else {
+            !receiver.starts_with("npub1")
+        }
+    };
+
+    let attachment = Attachment {
+        id: slug.clone(),
+        extension: "gif".to_string(),
+        url: url.clone(),
+        downloaded: false,
+        ..Attachment::default()
+    };
+
+    let mut msg = Message {
+        id: pending_id.as_ref().clone(),
+        replied_to: replied_to.clone(),
+        at: current_time.as_millis() as u64,
+        attachments: vec![attachment],
+        pending: true,
+        mine: true,
+        npub: if is_group_chat { my_npub_for_msg.clone() } else { None },
+        ..Message::default()
+    };
+
+    if !msg.replied_to.is_empty() {
+        let _ = db::populate_reply_context(handle, &mut msg).await;
+    }
+
+    {
+        let mut state = STATE.lock().await;
+        if is_group_chat {
+            state.create_or_get_mls_group_chat(&receiver, vec![]);
+            state.add_message_to_chat(&receiver, msg.clone());
+        } else {
+            state.add_message_to_participant(&receiver, msg.clone());
+        }
+    }
+
+    let receiver_pubkey = if !is_group_chat {
+        PublicKey::from_bech32(receiver.as_str()).map_err(|e| format!("Invalid npub: {}", e))?
+    } else {
+        my_public_key
+    };
+
+    let mut rumor = EventBuilder::new(Kind::from_u16(15), url);
+    if !is_group_chat {
+        rumor = rumor.tag(Tag::public_key(receiver_pubkey));
+    }
+    rumor = rumor
+        .tag(nostr_tags::custom_tag("file-type", ["image/gif"]))
+        .tag(nostr_tags::custom_tag("size", ["0"]))
+        .tag(nostr_tags::custom_tag("decryption-key", [""]))
+        .tag(nostr_tags::custom_tag("decryption-nonce", [""]))
+        .tag(nostr_tags::custom_tag("ox", [slug.as_str()]));
+
+    if !replied_to.is_empty() {
+        rumor = rumor.tag(nostr_tags::e_tag([
+            replied_to,
+            String::from(""),
+            String::from("reply"),
+        ]));
+    }
+
+    let ms_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    rumor = rumor.tag(nostr_tags::custom_tag(
+        "ms",
+        [(ms_time.as_millis() % 1000).to_string()],
+    ));
+
+    let built_rumor = rumor.build(my_public_key);
+    let rumor_id = built_rumor.id.unwrap();
+
+    if is_group_chat {
+        // `send_mls_message` handles all state management internally (message
+        // ID update, success/failure marking, DB save), same as `message()`.
+        return match crate::mls::send_mls_message(
+            &receiver,
+            built_rumor,
+            Some(pending_id.to_string()),
+        )
+        .await
+        {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                eprintln!("Failed to send Klipy GIF via MLS: {:?}", e);
+                Ok(false)
+            }
+        };
+    }
+
+    // DM: NIP-17 giftwrap with retry, mirroring `message()`.
+    let mut send_attempts = 0;
+    const MAX_ATTEMPTS: u32 = 12;
+    const RETRY_DELAY: u64 = 5;
+    let mut succeeded = false;
+    let mut wrapper_id_hex = String::new();
+
+    while send_attempts < MAX_ATTEMPTS {
+        send_attempts += 1;
+        match client
+            .gift_wrap(&receiver_pubkey, built_rumor.clone(), [])
+            .await
+        {
+            Ok(output) => {
+                if !output.success.is_empty() {
+                    wrapper_id_hex = output.id().to_hex();
+                    succeeded = true;
+                    break;
+                } else if !output.failed.is_empty() && send_attempts == MAX_ATTEMPTS {
+                    mark_message_failed(Arc::clone(&pending_id), &receiver).await;
+                    return Ok(false);
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to send Klipy GIF (attempt {}/{}): {:?}",
+                    send_attempts, MAX_ATTEMPTS, e
+                );
+                if send_attempts == MAX_ATTEMPTS {
+                    mark_message_failed(Arc::clone(&pending_id), &receiver).await;
+                    return Ok(false);
+                }
+            }
+        }
+        if !succeeded && send_attempts < MAX_ATTEMPTS {
+            tokio::time::sleep(tokio::time::Duration::from_secs(RETRY_DELAY)).await;
+        }
+    }
+
+    if !succeeded {
+        mark_message_failed(Arc::clone(&pending_id), &receiver).await;
+        return Ok(false);
+    }
+
+    // Update the pending message in place, persist, and notify the frontend.
+    {
+        let mut state = STATE.lock().await;
+        if let Some(chat) = state
+            .chats
+            .iter_mut()
+            .find(|chat| chat.id() == &receiver || chat.has_participant(&receiver))
+        {
+            let updated = chat
+                .messages
+                .iter_mut()
+                .find(|m| m.id == *pending_id)
+                .map(|message| {
+                    message.id = rumor_id.to_hex();
+                    message.pending = false;
+                    message.wrapper_event_id = Some(wrapper_id_hex.clone());
+                    message.clone()
+                });
+            if let Some(updated) = updated {
+                let chat_to_save = chat.clone();
+                drop(state);
+                let _ = save_chat(handle.clone(), &chat_to_save).await;
+                let _ = db::save_message(handle.clone(), &receiver, &updated).await;
+                let _ = handle.emit(
+                    "message_update",
+                    serde_json::json!({
+                        "old_id": pending_id.as_ref(),
+                        "message": &updated,
+                        "chat_id": &receiver
+                    }),
+                );
+            }
+        }
+    }
+
+    // Send to our own public key too, for message recovery across devices.
+    let _ = client.gift_wrap(&my_public_key, built_rumor, []).await;
+
+    Ok(true)
+}
+
 #[tauri::command]
 pub async fn paste_message<R: Runtime>(
     handle: AppHandle<R>,

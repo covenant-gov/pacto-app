@@ -262,6 +262,15 @@ pub async fn internal_decrypt(ciphertext: String) -> Result<String, ()> {
     decrypt_with_key(&ciphertext, &key)
 }
 
+/// AES-256 key length, in bytes: `Aes256`'s fixed key size. `pub(crate)` so
+/// callers that must validate before ever reaching `decrypt_data` (e.g. the
+/// sticker fetch path, before issuing a network request) can check the same
+/// bound instead of duplicating a literal.
+pub(crate) const AES_KEY_LEN: usize = 32;
+
+/// AES-GCM nonce length, in bytes: the `U16` nonce size parameter used here.
+pub(crate) const AES_NONCE_LEN: usize = 16;
+
 pub fn decrypt_data(
     encrypted_data: &[u8],
     key_hex: &str,
@@ -275,6 +284,24 @@ pub fn decrypt_data(
     // Decode key and nonce from hex
     let key_bytes = hex::decode(key_hex).map_err(|e| format!("Invalid key hex: {}", e))?;
     let nonce_bytes = hex::decode(nonce_hex).map_err(|e| format!("Invalid nonce hex: {}", e))?;
+
+    // `GenericArray::from_slice` below panics unless the decoded length matches
+    // exactly, and this data can come straight from an attacker-controlled MLS
+    // announce, so reject bad lengths here instead of ever reaching it.
+    if key_bytes.len() != AES_KEY_LEN {
+        return Err(format!(
+            "Invalid key hex: expected {} bytes, got {}",
+            AES_KEY_LEN,
+            key_bytes.len()
+        ));
+    }
+    if nonce_bytes.len() != AES_NONCE_LEN {
+        return Err(format!(
+            "Invalid nonce hex: expected {} bytes, got {}",
+            AES_NONCE_LEN,
+            nonce_bytes.len()
+        ));
+    }
 
     // Split input into ciphertext and authentication tag
     let (ciphertext, tag_bytes) = encrypted_data.split_at(encrypted_data.len() - 16);
@@ -362,6 +389,43 @@ mod tests {
         let result = decrypt_data(&[0u8; 32], &hex::encode([0u8; 32]), "not-hex");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid nonce hex"));
+    }
+
+    #[test]
+    fn decrypt_rejects_empty_key() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let encrypted = encrypt_data(b"hello", &params).expect("encrypt");
+        // An empty key hex decodes to zero bytes; must not panic in
+        // `GenericArray::from_slice`.
+        let result = decrypt_data(&encrypted, "", &params.nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_short_key() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let encrypted = encrypt_data(b"hello", &params).expect("encrypt");
+        // "aa" is valid hex but decodes to a single byte, far short of the
+        // 32-byte AES-256 key.
+        let result = decrypt_data(&encrypted, "aa", &params.nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_short_nonce() {
+        let params = EncryptionParams {
+            key: hex::encode([0u8; 32]),
+            nonce: hex::encode([0u8; 16]),
+        };
+        let encrypted = encrypt_data(b"hello", &params).expect("encrypt");
+        let result = decrypt_data(&encrypted, &params.key, "bb");
+        assert!(result.is_err());
     }
 
     #[test]
