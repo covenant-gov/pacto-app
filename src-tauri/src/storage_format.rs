@@ -116,8 +116,11 @@ pub(crate) enum StorageFormatVerdict {
 /// `refinery_schema_history` for every migration that predates the switch.
 ///
 /// Used only to *recognize* a legacy-stamped row -- in `classify_history`
-/// below and in `migrations::reconcile_legacy_checksums` -- never to write
-/// a checksum this build computes for a migration it applies itself.
+/// below and in `migrations::reconcile_legacy_checksums_for_table`, reused
+/// for both `pacto.db`'s `refinery_schema_history` and the MLS store's
+/// `_refinery_schema_history_nostr_mls` (see
+/// `mls_store_reset::reconcile_mls_store_legacy_checksums`) -- never to
+/// write a checksum this build computes for a migration it applies itself.
 pub(crate) fn legacy_i32_checksum(name: &str, version: i64, sql: &str) -> u64 {
     let mut hasher = SipHasher13::new();
     name.hash(&mut hasher);
@@ -776,6 +779,29 @@ mod tests {
             classify_history(&applied, true, true, std::slice::from_ref(&migration)),
             StorageFormatVerdict::Recognized
         );
+    }
+
+    /// Anchors `legacy_i32_checksum` to a value computed *outside* this
+    /// reproduction: two throwaway crates pinned to the exact
+    /// `refinery-core = 0.9.2` this build resolves to, one built with the
+    /// `int8-versions` feature and one without, both hashing
+    /// `Migration::unapplied("V1__initial_schema", "CREATE TABLE t (id INTEGER);")`.
+    /// Every other test derives its expected legacy digest from
+    /// `legacy_i32_checksum` itself, so a deterministic-but-wrong
+    /// reproduction (wrong field order, hashing the unparsed input name
+    /// instead of refinery's parsed one, a future `siphasher` major-version
+    /// skew against refinery-core's own) would still pass them all. This
+    /// test fails if that ever happens.
+    #[test]
+    fn legacy_i32_checksum_matches_independently_measured_golden_value() {
+        let name = "initial_schema";
+        let sql = "CREATE TABLE t (id INTEGER);";
+        assert_eq!(legacy_i32_checksum(name, 1, sql), 470904781690771365);
+
+        let migration =
+            refinery::Migration::unapplied("V1__initial_schema", sql).expect("unapplied migration");
+        assert_eq!(migration.name(), name);
+        assert_eq!(migration.checksum(), 17539547413937229480);
     }
 
     #[test]

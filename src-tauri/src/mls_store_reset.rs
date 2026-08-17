@@ -95,6 +95,51 @@ fn classify_store(store_path: &Path, encryption_key: &[u8; 32]) -> StoreClassifi
     StoreClassification::Legacy
 }
 
+/// Reconciles `_refinery_schema_history_nostr_mls` against
+/// `mls_legacy_checksum`'s vendored `mdk-sqlite-storage` migration set,
+/// before `MdkSqliteStorage::new_with_key` gets a chance to run its own
+/// checksum-verifying refinery `Runner` over that table. Called only from
+/// `reset_with_connection`'s `Current` arm, after `classify_store` has
+/// already confirmed the history table is readable at `store_path`.
+///
+/// Tries a plain (unkeyed) connection first, then falls back to
+/// `encryption_key` -- mirroring `classify_store`'s own plain-then-keyed
+/// order. A real MDK 0.8.0+ store is always SQLCipher-encrypted, so the
+/// plain attempt's `UPDATE`s fail closed with a "file is not a database"
+/// error (SQLCipher rejects an unkeyed read past the header) and the keyed
+/// attempt is what actually reconciles it; a plain attempt succeeding is
+/// reserved for test fixtures that model a `Current` store without real
+/// encryption. See `mls_legacy_checksum` for why this repair exists at all.
+fn reconcile_mls_store_legacy_checksums(
+    store_path: &Path,
+    encryption_key: &[u8; 32],
+) -> Result<(), String> {
+    let migrations = crate::mls_legacy_checksum::embedded_migration_set();
+
+    if let Ok(conn) = Connection::open(store_path) {
+        if crate::migrations::reconcile_legacy_checksums_for_table(
+            &conn,
+            crate::mls_legacy_checksum::MLS_HISTORY_TABLE_NAME,
+            &migrations,
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
+    let conn = Connection::open(store_path)
+        .map_err(|e| format!("Failed to open MLS store for checksum reconciliation: {e}"))?;
+    let key_hex = hex::encode(encryption_key);
+    conn.execute_batch(&format!("PRAGMA key = \"x'{key_hex}'\";"))
+        .map_err(|e| format!("Failed to key MLS store for checksum reconciliation: {e}"))?;
+    crate::migrations::reconcile_legacy_checksums_for_table(
+        &conn,
+        crate::mls_legacy_checksum::MLS_HISTORY_TABLE_NAME,
+        &migrations,
+    )
+}
+
 fn archive_path(profile_dir: &Path, now: u64) -> PathBuf {
     let base = profile_dir.join(format!("{ARCHIVE_PREFIX}{now}"));
     if !base.exists() {
@@ -380,7 +425,15 @@ fn reset_with_connection(
                 "Unsupported MLS store schema version {version}; refusing to open or archive. Expected 1–5 (current) or ≥100 (legacy)."
             ));
         }
-        StoreClassification::Fresh | StoreClassification::Current => {
+        StoreClassification::Fresh => {
+            put_setting(conn, RESET_MARKER_KEY, "complete")?;
+            if let Err(e) = prune_archives(profile_dir, now) {
+                eprintln!("[MLS Reset] Failed to prune archives: {e}");
+            }
+            return Ok(ResetOutcome::default());
+        }
+        StoreClassification::Current => {
+            reconcile_mls_store_legacy_checksums(store_path, encryption_key)?;
             put_setting(conn, RESET_MARKER_KEY, "complete")?;
             if let Err(e) = prune_archives(profile_dir, now) {
                 eprintln!("[MLS Reset] Failed to prune archives: {e}");
@@ -1320,5 +1373,138 @@ mod tests {
 
             cleanup(&path);
         }
+    }
+
+    /// Regression test for the second half of the checksum-width break
+    /// (see `crate::mls_legacy_checksum`): a `_refinery_schema_history_nostr_mls`
+    /// row stamped with the legacy i32-schema-version checksum -- what
+    /// every pre-0.6.0 build actually wrote, since `mdk-sqlite-storage`
+    /// 0.8.0 was already pinned before Pacto enabled `int8-versions` --
+    /// makes the real `mdk_sqlite_storage` crate's own refinery runner
+    /// abort with `DivergentVersion` on reopen. Proves the failure mode
+    /// `reconcile_mls_store_legacy_checksums` exists to prevent actually
+    /// occurs against the real MDK crate, not just this crate's model of
+    /// it.
+    #[test]
+    fn mls_store_with_legacy_checksums_fails_to_reopen_without_reconciliation() {
+        let root = temp_dir("mls-legacy-checksum-sanity");
+        let store_path = root.join("mls.db");
+        let key = [33u8; 32];
+
+        let storage = mdk_sqlite_storage::MdkSqliteStorage::new_with_key(
+            &store_path,
+            mdk_sqlite_storage::EncryptionConfig::new(key),
+        )
+        .expect("fresh store creates and migrates cleanly");
+        drop(storage);
+
+        let conn = Connection::open(&store_path).unwrap();
+        conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex::encode(key)))
+            .unwrap();
+        for migration in crate::mls_legacy_checksum::embedded_migration_set() {
+            let Some(sql) = migration.sql() else { continue };
+            let legacy = crate::storage_format::legacy_i32_checksum(
+                migration.name(),
+                migration.version(),
+                sql,
+            )
+            .to_string();
+            conn.execute(
+                "UPDATE _refinery_schema_history_nostr_mls SET checksum = ?1 WHERE version = ?2",
+                rusqlite::params![legacy, migration.version()],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        // classify_store only looks at the version number, not the
+        // checksum -- this is exactly why the bug slips past detection.
+        assert_eq!(
+            classify_store(&store_path, &key),
+            StoreClassification::Current
+        );
+
+        let reopened = mdk_sqlite_storage::MdkSqliteStorage::new_with_key(
+            &store_path,
+            mdk_sqlite_storage::EncryptionConfig::new(key),
+        );
+        assert!(
+            reopened.is_err(),
+            "a legacy-checksum-stamped store must fail to reopen without reconciliation -- \
+             otherwise this test no longer reproduces the field bug"
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Same legacy-checksum-stamped store as the sanity test above, but run
+    /// through `reconcile_mls_store_legacy_checksums` first -- the actual
+    /// fix. The real `mdk_sqlite_storage` crate must then reopen the store
+    /// cleanly, proving the reconciliation satisfies that crate's own
+    /// checksum verification, not just this crate's read-only model of it.
+    #[test]
+    fn reconcile_mls_store_legacy_checksums_lets_mdk_reopen() {
+        let root = temp_dir("mls-legacy-checksum-fix");
+        let store_path = root.join("mls.db");
+        let key = [34u8; 32];
+
+        let storage = mdk_sqlite_storage::MdkSqliteStorage::new_with_key(
+            &store_path,
+            mdk_sqlite_storage::EncryptionConfig::new(key),
+        )
+        .expect("fresh store creates and migrates cleanly");
+        drop(storage);
+
+        let conn = Connection::open(&store_path).unwrap();
+        conn.execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex::encode(key)))
+            .unwrap();
+        let mut legacy_checksums = Vec::new();
+        for migration in crate::mls_legacy_checksum::embedded_migration_set() {
+            let Some(sql) = migration.sql() else { continue };
+            let legacy = crate::storage_format::legacy_i32_checksum(
+                migration.name(),
+                migration.version(),
+                sql,
+            )
+            .to_string();
+            conn.execute(
+                "UPDATE _refinery_schema_history_nostr_mls SET checksum = ?1 WHERE version = ?2",
+                rusqlite::params![legacy, migration.version()],
+            )
+            .unwrap();
+            legacy_checksums.push((migration.version(), migration.checksum().to_string()));
+        }
+        drop(conn);
+
+        reconcile_mls_store_legacy_checksums(&store_path, &key)
+            .expect("reconciliation should succeed against a legacy-stamped store");
+
+        let verify = Connection::open(&store_path).unwrap();
+        verify
+            .execute_batch(&format!("PRAGMA key = \"x'{}'\";", hex::encode(key)))
+            .unwrap();
+        for (version, expected_current_checksum) in &legacy_checksums {
+            let stored: String = verify
+                .query_row(
+                    "SELECT checksum FROM _refinery_schema_history_nostr_mls WHERE version = ?1",
+                    [version],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(&stored, expected_current_checksum);
+        }
+        drop(verify);
+
+        let reopened = mdk_sqlite_storage::MdkSqliteStorage::new_with_key(
+            &store_path,
+            mdk_sqlite_storage::EncryptionConfig::new(key),
+        );
+        assert!(
+            reopened.is_ok(),
+            "reconciled store must reopen cleanly: {:?}",
+            reopened.err()
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -53,11 +53,11 @@ pub(crate) fn embedded_migration_set() -> Vec<refinery::Migration> {
 /// baselined by stamping the full migration history without re-running it.
 ///
 /// A database that already has a history table goes through
-/// `reconcile_legacy_checksums` first: a pre-0.6.0 build stamped it with
-/// checksums computed under a narrower `SchemaVersion` type, which
+/// `reconcile_legacy_checksums_for_table` first: a pre-0.6.0 build stamped
+/// it with checksums computed under a narrower `SchemaVersion` type, which
 /// `embedded::migrations::runner().run` below -- refinery's own
 /// checksum-verifying apply -- would otherwise reject as divergent. See
-/// `reconcile_legacy_checksums` for why.
+/// `reconcile_legacy_checksums_for_table` for why.
 pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
     let history_exists: bool = conn
         .query_row(
@@ -82,7 +82,11 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
             baseline_existing_account(conn)?;
         }
     } else {
-        reconcile_legacy_checksums(conn)?;
+        reconcile_legacy_checksums_for_table(
+            conn,
+            "refinery_schema_history",
+            &embedded::migrations::runner().get_migrations().clone(),
+        )?;
     }
 
     embedded::migrations::runner()
@@ -92,18 +96,22 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// One-time repair for a database whose `refinery_schema_history.checksum`
-/// values were stamped by a build compiled without the `int8-versions`
-/// Cargo feature -- every Pacto release before 0.6.0. Enabling that feature
-/// changed `refinery::SchemaVersion` from `i32` to `i64` (needed so a
-/// 14-digit UTC-timestamp migration version fits); refinery hashes
-/// `(name, version, sql)` together, and hashing an `i32` vs an `i64` for the
-/// identical numeric value feeds a different byte width into the hasher --
-/// silently changing the checksum of every migration a pre-0.6.0 install
-/// had already applied, even though nothing about the migration's content
-/// changed. Left unreconciled, `embedded::migrations::runner().run` --
-/// called right after this in `run_migrations` -- aborts with
-/// `DivergentVersion` on the first such row.
+/// Idempotent repair for a database whose refinery history table's
+/// `checksum` values were stamped by a build compiled without the
+/// `int8-versions` Cargo feature -- every Pacto release before 0.6.0, for
+/// `refinery_schema_history` in `pacto.db`; every release before
+/// `int8-versions` propagated through Cargo's unified feature resolution,
+/// for `_refinery_schema_history_nostr_mls` in the MLS store (see
+/// `mls_store_reset::reconcile_mls_store_legacy_checksums`, the other
+/// caller). Enabling that feature changed `refinery::SchemaVersion` from
+/// `i32` to `i64` (needed so a 14-digit UTC-timestamp migration version
+/// fits); refinery hashes `(name, version, sql)` together, and hashing an
+/// `i32` vs an `i64` for the identical numeric value feeds a different
+/// byte width into the hasher -- silently changing the checksum of every
+/// migration a pre-`int8-versions` build had already applied, even though
+/// nothing about the migration's content changed. Left unreconciled, the
+/// refinery `Runner::run` that follows this call for either table aborts
+/// with `DivergentVersion` on the first such row.
 ///
 /// Rewrites the stored checksum to this build's current value wherever it
 /// exactly matches the legacy (i32-schema-version) checksum for that
@@ -111,10 +119,14 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
 /// ever touched by an exact legacy-checksum match. A row that matches
 /// neither checksum is a genuine divergence and is left alone --
 /// `Runner::run` (and `storage_format::classify_history`'s read-only
-/// probe, which tolerates the same legacy checksum) still catch that for
-/// real.
-fn reconcile_legacy_checksums(conn: &rusqlite::Connection) -> Result<(), String> {
-    for migration in embedded::migrations::runner().get_migrations() {
+/// probe, which tolerates the same legacy checksum for `pacto.db`) still
+/// catch that for real.
+pub(crate) fn reconcile_legacy_checksums_for_table(
+    conn: &rusqlite::Connection,
+    table_name: &str,
+    migrations: &[refinery::Migration],
+) -> Result<(), String> {
+    for migration in migrations {
         let Some(sql) = migration.sql() else {
             continue;
         };
@@ -126,9 +138,11 @@ fn reconcile_legacy_checksums(conn: &rusqlite::Connection) -> Result<(), String>
             continue;
         }
         conn.execute(
-            "UPDATE refinery_schema_history \
-             SET checksum = ?1 \
-             WHERE version = ?2 AND name = ?3 AND checksum = ?4",
+            &format!(
+                "UPDATE \"{table_name}\" \
+                 SET checksum = ?1 \
+                 WHERE version = ?2 AND name = ?3 AND checksum = ?4"
+            ),
             rusqlite::params![
                 current_checksum,
                 migration.version(),
@@ -138,7 +152,7 @@ fn reconcile_legacy_checksums(conn: &rusqlite::Connection) -> Result<(), String>
         )
         .map_err(|e| {
             format!(
-                "Failed to reconcile legacy checksum for {}: {}",
+                "Failed to reconcile legacy checksum for {} in {table_name}: {}",
                 migration, e
             )
         })?;
@@ -571,7 +585,7 @@ mod tests {
     }
 
     /// Regression test for the checksum break the `int8-versions` Cargo
-    /// feature introduced (see `reconcile_legacy_checksums`): a V1 row
+    /// feature introduced (see `reconcile_legacy_checksums_for_table`): a V1 row
     /// stamped with the *legacy* i32-schema-version checksum -- what every
     /// pre-0.6.0 build actually wrote -- must still let `run_migrations`
     /// proceed instead of refinery aborting with `DivergentVersion`, and

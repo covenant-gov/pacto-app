@@ -22,6 +22,7 @@ mod account_manager;
 
 mod mls;
 pub use mls::MlsService;
+mod mls_legacy_checksum;
 mod mls_store_reset;
 mod mls_store_reset_state;
 
