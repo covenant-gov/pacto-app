@@ -80,6 +80,9 @@ pub fn normalize_virtual_bucket_for_message(
                     "inbox".to_string()
                 });
             }
+            if ty == Some("sticker_pack_updated") {
+                return Some("announcements".to_string());
+            }
             if matches!(ty, Some("squad_safe_updated" | "safe_proposal")) {
                 return Some("inbox".to_string());
             }
@@ -228,6 +231,32 @@ mod tests {
         let content = r#"{"schema":"pacto.squad_bot.meta.v1","botNpub":"npub1x","keyEpoch":1}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn sticker_pack_updated_derives_announcements_bucket() {
+        let content = r#"{"type":"sticker_pack_updated","payload":{"squad_id":"s","pack_id":"p","name":"n","entries":[],"updated_at":1,"deleted":false}}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn governance_updated_routing_unchanged_by_sticker_pack_branch() {
+        let content = r#"{"type":"governance_updated","payload":{"parent_id":"p","provider":"pacto_gov","canonical_ref":"1"}}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn plain_text_routing_unchanged_by_sticker_pack_branch() {
+        let bucket = normalize_virtual_bucket_for_message(
+            event_kind::PRIVATE_DIRECT_MESSAGE,
+            "just a regular message",
+            &[],
+        );
         assert_eq!(bucket.as_deref(), Some("announcements"));
     }
 }

@@ -3,7 +3,7 @@
   import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
   import { showToast } from '../../stores/toast';
   import { t } from 'svelte-i18n';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import type { Attachment } from '../../stores/dm';
   import { attachmentKind, attachmentDisplayName, type AttachmentKind } from '../../lib/messaging/attachment-display';
   import ImageViewer from './ImageViewer.svelte';
@@ -11,6 +11,7 @@
   import playIcon from '../../icons/play.svg';
   import cloudDownloadIcon from '../../icons/cloud-download.svg';
   import saveIcon from '../../icons/download.svg';
+  import { fetchGifBlobUrl, isKlipyMediaUrl } from '../../lib/api/klipy';
 
   export let attachment: Attachment;
   export let chatId: string = '';
@@ -41,9 +42,49 @@
   $: displayName = attachmentDisplayName(attachment, (key) => $t(key));
   $: kindLabel = $t(KIND_LABEL_KEY[kind]);
 
-  /** Decrypted local file, once `download_attachment` has written it. */
-  $: localSrc =
-    attachment.downloaded && attachment.path ? toDisplaySrc(attachment.path) : undefined;
+  /** Klipy GIFs arrive as a plaintext provider URL — empty `key`/`nonce` marks
+   * "do not decrypt" (see `message::klipy_gif_message`). Rendering fetches
+   * through the Rust egress chokepoint only when the URL's host is on
+   * Klipy's CDN allowlist; the authoritative check lives in Rust
+   * (`klipy_fetch_media`), this is a client-side convenience gate. */
+  $: isKlipyGif = attachment.key === '' && attachment.nonce === '' && isKlipyMediaUrl(attachment.url);
+
+  let klipyBlobSrc: string | undefined;
+  let klipyUnavailable = false;
+  let klipyFetchedForUrl: string | undefined;
+
+  $: if (isKlipyGif && attachment.url !== klipyFetchedForUrl) {
+    klipyFetchedForUrl = attachment.url;
+    void loadKlipyMedia(attachment.url);
+  }
+
+  /** Fetches the GIF into memory and renders it as a blob URL. Never written to
+   * disk, per Klipy's no-retain terms. A fetch failure — e.g. a purged slug —
+   * degrades to the unavailable state instead of throwing into the thread. */
+  async function loadKlipyMedia(url: string) {
+    klipyUnavailable = false;
+    const previousBlobSrc = klipyBlobSrc;
+    try {
+      klipyBlobSrc = await fetchGifBlobUrl(url);
+    } catch {
+      klipyBlobSrc = undefined;
+      klipyUnavailable = true;
+    } finally {
+      if (previousBlobSrc) URL.revokeObjectURL(previousBlobSrc);
+    }
+  }
+
+  onDestroy(() => {
+    if (klipyBlobSrc) URL.revokeObjectURL(klipyBlobSrc);
+  });
+
+  /** Decrypted local file (`download_attachment`), or the in-memory Klipy
+   * blob once fetched — never a decrypted file for a Klipy GIF. */
+  $: localSrc = isKlipyGif
+    ? klipyBlobSrc
+    : attachment.downloaded && attachment.path
+      ? toDisplaySrc(attachment.path)
+      : undefined;
   $: onDisk = localSrc != null;
   $: busy = downloading || attachment.downloading === true;
 
@@ -181,6 +222,30 @@
 <div class="attachment" class:tile-layout={isTile}>
   {#if isTile}
     <div class="media-tile" style="--tile-aspect: {tileAspect}">
+      {#if isKlipyGif}
+        {#if klipyUnavailable}
+          <button
+            type="button"
+            class="klipy-gif-state klipy-gif-unavailable"
+            on:click={() => loadKlipyMedia(attachment.url)}
+            aria-label={$t('messaging.attachment.gifUnavailable')}
+          >
+            <img src={fileIcon} alt="" />
+            <span>{$t('messaging.attachment.gifUnavailable')}</span>
+          </button>
+        {:else if klipyBlobSrc}
+          <button
+            type="button"
+            class="klipy-gif-open"
+            on:click={handleImageClick}
+            aria-label={$t('messaging.attachment.open', { values: { name: displayName } })}
+          >
+            <img src={klipyBlobSrc} alt={displayName} />
+          </button>
+        {:else}
+          <div class="klipy-gif-state klipy-gif-loading" aria-hidden="true"></div>
+        {/if}
+      {:else}
       {#if isVideo && playRequested && localSrc}
         <!-- svelte-ignore a11y-media-has-caption -->
         <video
@@ -236,6 +301,7 @@
             <img src={saveIcon} alt="" />
           </button>
         {/if}
+      {/if}
       {/if}
     </div>
   {:else if isAudio && onDisk}
@@ -389,6 +455,53 @@
     width: 100%;
     max-height: 420px;
     background: #000;
+  }
+
+  .klipy-gif-open {
+    display: block;
+    position: relative;
+    width: 100%;
+    aspect-ratio: var(--tile-aspect, 4 / 3);
+    max-height: 420px;
+    padding: 0;
+    border: none;
+    background: var(--bg-hover);
+    cursor: pointer;
+  }
+
+  .klipy-gif-open img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .klipy-gif-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    aspect-ratio: var(--tile-aspect, 4 / 3);
+    max-height: 420px;
+    background: var(--bg-hover);
+  }
+
+  button.klipy-gif-unavailable {
+    flex-direction: column;
+    gap: 6px;
+    border: none;
+    padding: 0;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+
+  .klipy-gif-unavailable img {
+    width: 28px;
+    height: 28px;
+    opacity: 0.5;
   }
 
   /*

@@ -295,10 +295,10 @@ mod tests {
                 row.get(0)
             })
             .expect("history should exist");
-        let expected = embedded::migrations::runner().get_migrations().len() as i32;
         assert_eq!(
-            count, expected,
-            "27 pre-refinery migrations baselined plus every post-ceiling migration actually run"
+            count as usize,
+            embedded_migration_set().len(),
+            "every embedded migration is either baselined or actually run"
         );
 
         // Running migrations again should be idempotent.

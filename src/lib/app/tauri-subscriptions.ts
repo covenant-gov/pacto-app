@@ -42,6 +42,8 @@ import {
   type SyncStatus,
 } from '../../stores/app';
 import { mergeUnreadCounts } from '../../stores/unread';
+import { applyStickerPacksUpdate } from '../../stores/stickers';
+import type { StickerPack } from '../api/stickers';
 
 import {
   applyMlsStoreResetState,
@@ -304,6 +306,10 @@ export function subscribeAppEvents(handlers: AppEventHandlers): () => void {
 
   register(unsubs, 'unread_counts_changed', (event) => {
     mergeUnreadCounts(event.payload as Record<string, number>);
+  });
+
+  register(unsubs, 'sticker_packs_updated', (event) => {
+    applyStickerPacksUpdate((event.payload as { packs: StickerPack[] }).packs);
   });
 
   refreshPendingWelcomes().catch((e) => dmError('refreshPendingWelcomes', e));

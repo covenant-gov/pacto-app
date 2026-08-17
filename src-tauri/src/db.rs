@@ -3,7 +3,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tauri::{command, AppHandle, Runtime};
+use tauri::{command, AppHandle, Emitter, Runtime};
 
 use crate::crypto::{internal_decrypt, internal_encrypt};
 use crate::message::EditEntry;
@@ -2405,6 +2405,148 @@ fn upsert_squad_infra_inner<R: Runtime>(
     Ok(())
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StickerPackRow {
+    pub squad_id: String,
+    pub pack_id: String,
+    pub name: String,
+    /// Raw JSON text of `StickerEntry[]`, exactly as stored — not parsed here.
+    pub entries: String,
+    pub updated_at: i64,
+    pub updated_by: String,
+    pub deleted: bool,
+}
+
+const STICKER_PACK_COLUMNS: &str = "squad_id, pack_id, name, entries, updated_at, updated_by, deleted";
+
+/// Persist a local sticker-pack edit (create, rename, re-order, or `deleted: true` tombstone)
+/// and stamp `updated_at` from the system clock. The caller sends the MLS announce using the
+/// returned row so the announced `updated_at` matches what was persisted.
+pub fn upsert_sticker_pack_inner<R: Runtime>(
+    handle: &AppHandle<R>,
+    squad_id: &str,
+    pack_id: &str,
+    name: &str,
+    entries_json: &str,
+    updated_by: &str,
+    deleted: bool,
+) -> Result<StickerPackRow, String> {
+    let sid = squad_id.trim();
+    if sid.is_empty() {
+        return Err("squad_id is empty".to_string());
+    }
+    let pid = pack_id.trim();
+    if pid.is_empty() {
+        return Err("pack_id is empty".to_string());
+    }
+    let nm = name.trim();
+    if nm.is_empty() {
+        return Err("name is empty".to_string());
+    }
+    let author = updated_by.trim();
+    if author.is_empty() {
+        return Err("updated_by is empty".to_string());
+    }
+    match serde_json::from_str::<serde_json::Value>(entries_json) {
+        Ok(serde_json::Value::Array(_)) => {}
+        _ => return Err("entries is not a JSON array".to_string()),
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    conn.execute(
+        &format!(
+            "INSERT INTO sticker_packs ({STICKER_PACK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(squad_id, pack_id) DO UPDATE SET \
+               name = excluded.name, \
+               entries = excluded.entries, \
+               updated_at = excluded.updated_at, \
+               updated_by = excluded.updated_by, \
+               deleted = excluded.deleted"
+        ),
+        rusqlite::params![sid, pid, nm, entries_json, now_ms, author, deleted as i64],
+    )
+    .map_err(|e| format!("Failed to upsert sticker_pack: {}", e))?;
+    crate::account_manager::return_db_connection(conn);
+    Ok(StickerPackRow {
+        squad_id: sid.to_string(),
+        pack_id: pid.to_string(),
+        name: nm.to_string(),
+        entries: entries_json.to_string(),
+        updated_at: now_ms,
+        updated_by: author.to_string(),
+        deleted,
+    })
+}
+
+/// Every non-deleted sticker pack in this account's database — i.e. every squad the account
+/// belongs to, since only squads it has synced announcements for have rows here.
+pub fn load_sticker_packs<R: Runtime>(handle: &AppHandle<R>) -> Result<Vec<StickerPackRow>, String> {
+    let conn = crate::account_manager::get_db_connection(handle)?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {STICKER_PACK_COLUMNS} FROM sticker_packs WHERE deleted = 0 ORDER BY squad_id, pack_id"
+        ))
+        .map_err(|e| format!("Failed to prepare sticker_packs query: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(StickerPackRow {
+                squad_id: row.get(0)?,
+                pack_id: row.get(1)?,
+                name: row.get(2)?,
+                entries: row.get(3)?,
+                updated_at: row.get(4)?,
+                updated_by: row.get(5)?,
+                deleted: row.get::<_, i64>(6)? != 0,
+            })
+        })
+        .map_err(|e| format!("Failed to query sticker_packs: {}", e))?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r.map_err(|e| e.to_string())?);
+    }
+    drop(stmt);
+    crate::account_manager::return_db_connection(conn);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod sticker_pack_local_storage_tests {
+    use super::*;
+
+    fn test_conn() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&mut conn).expect("migrations");
+        conn
+    }
+
+    #[test]
+    fn migrated_schema_has_sticker_packs_table_with_pk() {
+        let conn = test_conn();
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('sticker_packs')")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for expected in [
+            "squad_id",
+            "pack_id",
+            "name",
+            "entries",
+            "updated_at",
+            "updated_by",
+            "deleted",
+        ] {
+            assert!(cols.contains(&expected.to_string()), "missing column {expected}");
+        }
+    }
+}
+
 /// Stable SQLite row id for the sponsor infra entry for this parent.
 pub fn squad_sponsor_infra_row_id(parent_id: &str) -> String {
     let pid = parent_id.trim();
@@ -2734,6 +2876,394 @@ pub fn maybe_upsert_governance_from_announce<R: Runtime>(
         pacto_rev,
         provider_payload_str,
     );
+}
+
+/// Max sticker entries a single pack announce may declare, and the max serialized
+/// `entries` JSON size, in bytes — both bound what one squad member can make every
+/// other client store and render.
+const STICKER_PACK_MAX_ENTRIES: usize = 300;
+const STICKER_PACK_MAX_ENTRIES_BYTES: usize = 128 * 1024;
+
+/// If content is a `sticker_pack_updated` announce JSON, upsert `sticker_packs`.
+/// Wire format: `payload.squad_id`, `payload.pack_id`, `payload.name`, `payload.entries` (array),
+/// `payload.updated_at` (unix milliseconds), `payload.deleted`.
+/// Requires MLS message author and `payload.squad_id` == `chat_id`. Author must be an MLS group member.
+/// Last-write-wins on `updated_at`: unlike governance, two squad members can plausibly edit a pack
+/// in the same sync window, so an incoming announce that is older than or equal to the stored row
+/// (including a `deleted: true` tombstone racing a newer edit) is a no-op, not an overwrite. The
+/// comparison and write happen in one atomic `UPSERT ... WHERE`, so concurrent ingests can't race
+/// each other into applying a stale value. `entries` beyond `STICKER_PACK_MAX_ENTRIES` items or
+/// `STICKER_PACK_MAX_ENTRIES_BYTES` bytes is also a no-op, same as any other malformed announce.
+pub fn maybe_upsert_sticker_pack_from_announce<R: Runtime>(
+    handle: &AppHandle<R>,
+    content: &str,
+    chat_id: &str,
+    author_npub: Option<&str>,
+) {
+    let Some(author) = author_npub.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    if parsed.get("type").and_then(|v| v.as_str()) != Some("sticker_pack_updated") {
+        return;
+    }
+    let p = match parsed.get("payload") {
+        Some(v) => v,
+        None => return,
+    };
+    let squad_id = match p.get("squad_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    if !side_effect_parent_matches_chat(chat_id, squad_id) {
+        return;
+    }
+    if !is_author_mls_member_for_chat(handle, chat_id, author) {
+        return;
+    }
+    let pack_id = match p.get("pack_id").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let name = match p.get("name").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim(),
+        _ => return,
+    };
+    let entries_val = match p.get("entries") {
+        Some(v) if v.is_array() => v,
+        _ => return,
+    };
+    if entries_val.as_array().map(Vec::len).unwrap_or(0) > STICKER_PACK_MAX_ENTRIES {
+        return;
+    }
+    let entries_json = entries_val.to_string();
+    if entries_json.len() > STICKER_PACK_MAX_ENTRIES_BYTES {
+        return;
+    }
+    let Some(updated_at) = p.get("updated_at").and_then(|v| v.as_i64()) else {
+        return;
+    };
+    let deleted = p.get("deleted").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    let Ok(conn) = crate::account_manager::get_db_connection(handle) else {
+        return;
+    };
+    let changed = conn
+        .execute(
+            &format!(
+                "INSERT INTO sticker_packs ({STICKER_PACK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+                 ON CONFLICT(squad_id, pack_id) DO UPDATE SET \
+                   name = excluded.name, \
+                   entries = excluded.entries, \
+                   updated_at = excluded.updated_at, \
+                   updated_by = excluded.updated_by, \
+                   deleted = excluded.deleted \
+                 WHERE excluded.updated_at > sticker_packs.updated_at"
+            ),
+            rusqlite::params![squad_id, pack_id, name, entries_json, updated_at, author, deleted as i64],
+        )
+        .unwrap_or(0);
+    crate::account_manager::return_db_connection(conn);
+    if changed > 0 {
+        emit_sticker_packs_updated(handle);
+    }
+}
+
+/// Emit `sticker_packs_updated` with the current non-deleted pack list (camelCase, `entries`
+/// parsed into a JSON array). Call after any local save and after any accepted announce ingest.
+pub fn emit_sticker_packs_updated<R: Runtime>(handle: &AppHandle<R>) {
+    let Ok(rows) = load_sticker_packs(handle) else {
+        return;
+    };
+    let packs: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|row| {
+            let entries: serde_json::Value = serde_json::from_str(&row.entries)
+                .unwrap_or_else(|_| serde_json::Value::Array(Vec::new()));
+            serde_json::json!({
+                "squadId": row.squad_id,
+                "packId": row.pack_id,
+                "name": row.name,
+                "entries": entries,
+                "updatedAt": row.updated_at,
+                "updatedBy": row.updated_by,
+                "deleted": row.deleted,
+            })
+        })
+        .collect();
+    let _ = handle.emit("sticker_packs_updated", serde_json::json!({ "packs": packs }));
+}
+
+#[cfg(test)]
+mod sticker_pack_announce_tests {
+    use super::*;
+
+    /// Fresh mock app + migrated on-disk db for `test_npub`, current account switched to it.
+    fn setup(test_npub: &str) -> tauri::App<tauri::test::MockRuntime> {
+        crate::account_manager::set_current_account(test_npub.to_string()).unwrap();
+        crate::account_manager::close_db_connection();
+        let app = tauri::test::mock_app();
+        let profile_dir =
+            crate::account_manager::get_profile_directory(app.handle(), test_npub).unwrap();
+        let _ = std::fs::remove_dir_all(&profile_dir);
+        let db_path = crate::account_manager::get_database_path(app.handle(), test_npub).unwrap();
+        let mut conn = rusqlite::Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&mut conn).unwrap();
+        crate::account_manager::return_db_connection(conn);
+        app
+    }
+
+    fn insert_chat_with_participants<R: Runtime>(
+        handle: &AppHandle<R>,
+        chat_id: &str,
+        participants: &[&str],
+    ) {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let json = serde_json::to_string(participants).unwrap();
+        conn.execute(
+            "INSERT INTO chats (chat_identifier, chat_type, participants, last_read, created_at, metadata) \
+             VALUES (?1, 0, ?2, '', 1000, '{}')",
+            rusqlite::params![chat_id, json],
+        )
+        .unwrap();
+        crate::account_manager::return_db_connection(conn);
+    }
+
+    struct StoredSticker {
+        name: String,
+        entries: String,
+        updated_at: i64,
+        updated_by: String,
+        deleted: bool,
+    }
+
+    fn stored_row<R: Runtime>(
+        handle: &AppHandle<R>,
+        squad_id: &str,
+        pack_id: &str,
+    ) -> Option<StoredSticker> {
+        let conn = crate::account_manager::get_db_connection(handle).unwrap();
+        let row = conn
+            .query_row(
+                "SELECT name, entries, updated_at, updated_by, deleted FROM sticker_packs \
+                 WHERE squad_id = ?1 AND pack_id = ?2",
+                rusqlite::params![squad_id, pack_id],
+                |r| {
+                    Ok(StoredSticker {
+                        name: r.get(0)?,
+                        entries: r.get(1)?,
+                        updated_at: r.get(2)?,
+                        updated_by: r.get(3)?,
+                        deleted: r.get::<_, i64>(4)? != 0,
+                    })
+                },
+            )
+            .optional()
+            .unwrap();
+        crate::account_manager::return_db_connection(conn);
+        row
+    }
+
+    fn announce(
+        squad_id: &str,
+        pack_id: &str,
+        name: &str,
+        entries_json: &str,
+        updated_at: i64,
+        deleted: bool,
+    ) -> String {
+        format!(
+            r#"{{"pacto_virtual_bucket":"announcements","type":"sticker_pack_updated","payload":{{"squad_id":"{squad_id}","pack_id":"{pack_id}","name":"{name}","entries":{entries_json},"updated_at":{updated_at},"deleted":{deleted}}}}}"#
+        )
+    }
+
+    #[test]
+    fn member_announce_upserts_pack() {
+        let app = setup("npub1stickermemberupsert");
+        insert_chat_with_participants(app.handle(), "squad-1", &["npub1author"]);
+        let content = announce(
+            "squad-1",
+            "pack-1",
+            "Pack One",
+            r#"[{"shortcode":"wave","url":"https://x","key":"aa","nonce":"bb","mime":"image/png","size":10}]"#,
+            1000,
+            false,
+        );
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-1", Some("npub1author"));
+        let row = stored_row(app.handle(), "squad-1", "pack-1").expect("row");
+        assert_eq!(row.name, "Pack One");
+        assert_eq!(row.updated_at, 1000);
+        assert_eq!(row.updated_by, "npub1author");
+        assert!(!row.deleted);
+    }
+
+    #[test]
+    fn non_member_announce_writes_nothing() {
+        let app = setup("npub1stickernonmember");
+        insert_chat_with_participants(app.handle(), "squad-2", &["npub1someoneelse"]);
+        let content = announce("squad-2", "pack-1", "Pack One", "[]", 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-2", Some("npub1stranger"));
+        assert!(stored_row(app.handle(), "squad-2", "pack-1").is_none());
+    }
+
+    #[test]
+    fn squad_id_mismatch_is_dropped() {
+        let app = setup("npub1stickermismatch");
+        insert_chat_with_participants(app.handle(), "squad-3", &["npub1author"]);
+        let content = announce("other-squad", "pack-1", "Pack One", "[]", 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-3", Some("npub1author"));
+        assert!(stored_row(app.handle(), "squad-3", "pack-1").is_none());
+        assert!(stored_row(app.handle(), "other-squad", "pack-1").is_none());
+    }
+
+    #[test]
+    fn older_or_equal_updated_at_leaves_row_untouched() {
+        let app = setup("npub1stickerolderequal");
+        insert_chat_with_participants(app.handle(), "squad-4", &["npub1author"]);
+        let first = announce("squad-4", "pack-1", "Original", "[]", 2000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-4", Some("npub1author"));
+        let equal = announce("squad-4", "pack-1", "Equal Attempt", "[]", 2000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &equal, "squad-4", Some("npub1author"));
+        let older = announce("squad-4", "pack-1", "Older Attempt", "[]", 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-4", Some("npub1author"));
+        let row = stored_row(app.handle(), "squad-4", "pack-1").unwrap();
+        assert_eq!(row.name, "Original");
+        assert_eq!(row.updated_at, 2000);
+    }
+
+    #[test]
+    fn newer_updated_at_replaces_fields() {
+        let app = setup("npub1stickernewer");
+        insert_chat_with_participants(app.handle(), "squad-5", &["npub1author", "npub1author2"]);
+        let first = announce(
+            "squad-5",
+            "pack-1",
+            "Original",
+            r#"[{"shortcode":"a","url":"u1","key":"k1","nonce":"n1","mime":"image/png","size":1}]"#,
+            1000,
+            false,
+        );
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &first, "squad-5", Some("npub1author"));
+        let second = announce(
+            "squad-5",
+            "pack-1",
+            "Renamed",
+            r#"[{"shortcode":"b","url":"u2","key":"k2","nonce":"n2","mime":"image/png","size":2}]"#,
+            2000,
+            false,
+        );
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &second, "squad-5", Some("npub1author2"));
+        let row = stored_row(app.handle(), "squad-5", "pack-1").unwrap();
+        assert_eq!(row.name, "Renamed");
+        assert_eq!(row.updated_at, 2000);
+        assert_eq!(row.updated_by, "npub1author2");
+        assert!(row.entries.contains("\"b\""));
+    }
+
+    #[test]
+    fn out_of_order_announces_converge_on_greatest_updated_at() {
+        let app = setup("npub1stickerooo");
+        insert_chat_with_participants(app.handle(), "squad-6", &["npub1author"]);
+
+        // Newer arrives first; a stale older one arrives late and must not win.
+        let newer = announce("squad-6", "pack-1", "Newer", "[]", 5000, false);
+        let older = announce("squad-6", "pack-1", "Older", "[]", 3000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &older, "squad-6", Some("npub1author"));
+        let row = stored_row(app.handle(), "squad-6", "pack-1").unwrap();
+        assert_eq!(row.name, "Newer");
+        assert_eq!(row.updated_at, 5000);
+
+        // Reverse order on a fresh pack in the same squad: older first, then a genuinely newer one.
+        let older2 = announce("squad-6", "pack-2", "Older2", "[]", 3000, false);
+        let newer2 = announce("squad-6", "pack-2", "Newer2", "[]", 5000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &older2, "squad-6", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &newer2, "squad-6", Some("npub1author"));
+        let row2 = stored_row(app.handle(), "squad-6", "pack-2").unwrap();
+        assert_eq!(row2.name, "Newer2");
+        assert_eq!(row2.updated_at, 5000);
+    }
+
+    #[test]
+    fn deleted_tombstones_and_resists_late_older_resurrection() {
+        let app = setup("npub1stickertombstone");
+        insert_chat_with_participants(app.handle(), "squad-7", &["npub1author"]);
+        let live = announce("squad-7", "pack-1", "Alive", "[]", 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &live, "squad-7", Some("npub1author"));
+        let tombstone = announce("squad-7", "pack-1", "Alive", "[]", 2000, true);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &tombstone, "squad-7", Some("npub1author"));
+        let row = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
+        assert!(row.deleted, "row should be tombstoned");
+
+        // A late-arriving, older, non-deleted announce must not resurrect it.
+        let resurrect_attempt = announce("squad-7", "pack-1", "Resurrected", "[]", 1500, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &resurrect_attempt, "squad-7", Some("npub1author"));
+        let row2 = stored_row(app.handle(), "squad-7", "pack-1").unwrap();
+        assert!(row2.deleted, "tombstone must survive a stale older announce");
+        assert_eq!(row2.name, "Alive");
+    }
+
+    #[test]
+    fn malformed_or_incomplete_content_is_a_noop() {
+        let app = setup("npub1stickermalformed");
+        insert_chat_with_participants(app.handle(), "squad-8", &["npub1author"]);
+
+        maybe_upsert_sticker_pack_from_announce(app.handle(), "not json", "squad-8", Some("npub1author"));
+        maybe_upsert_sticker_pack_from_announce(
+            app.handle(),
+            r#"{"type":"sticker_pack_updated"}"#,
+            "squad-8",
+            Some("npub1author"),
+        );
+        let bad_entries = announce("squad-8", "pack-1", "Bad Entries", "\"not-an-array\"", 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &bad_entries, "squad-8", Some("npub1author"));
+
+        assert!(stored_row(app.handle(), "squad-8", "pack-1").is_none());
+    }
+
+    #[test]
+    fn announce_exceeding_entry_count_cap_is_a_noop() {
+        let app = setup("npub1stickertoomanyentries");
+        insert_chat_with_participants(app.handle(), "squad-9", &["npub1author"]);
+        let entries: Vec<serde_json::Value> = (0..(STICKER_PACK_MAX_ENTRIES + 1))
+            .map(|i| {
+                serde_json::json!({
+                    "shortcode": format!("s{i}"),
+                    "url": "https://x",
+                    "key": "aa",
+                    "nonce": "bb",
+                    "mime": "image/png",
+                    "size": 10
+                })
+            })
+            .collect();
+        let entries_json = serde_json::to_string(&entries).unwrap();
+        let content = announce("squad-9", "pack-1", "Too Many", &entries_json, 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-9", Some("npub1author"));
+        assert!(stored_row(app.handle(), "squad-9", "pack-1").is_none());
+    }
+
+    #[test]
+    fn announce_exceeding_entries_byte_cap_is_a_noop() {
+        let app = setup("npub1stickertoobig");
+        insert_chat_with_participants(app.handle(), "squad-10", &["npub1author"]);
+        let huge_url = "u".repeat(STICKER_PACK_MAX_ENTRIES_BYTES + 1);
+        let entries_json = serde_json::to_string(&serde_json::json!([{
+            "shortcode": "big",
+            "url": huge_url,
+            "key": "aa",
+            "nonce": "bb",
+            "mime": "image/png",
+            "size": 10
+        }]))
+        .unwrap();
+        let content = announce("squad-10", "pack-1", "Too Big", &entries_json, 1000, false);
+        maybe_upsert_sticker_pack_from_announce(app.handle(), &content, "squad-10", Some("npub1author"));
+        assert!(stored_row(app.handle(), "squad-10", "pack-1").is_none());
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -3182,6 +3712,10 @@ pub fn apply_mls_virtual_bucket_side_effects<R: Runtime>(
     if is_announcements_governance_announce_content(content) {
         maybe_upsert_governance_from_announce(handle, content, chat_id, author_npub);
     }
+
+    // Sticker pack announces are always announcements-bucket traffic; ingest unconditionally,
+    // same as governance above, so sync works even if bucket derivation was skipped upstream.
+    maybe_upsert_sticker_pack_from_announce(handle, content, chat_id, author_npub);
 
     // `squad_member_evm_share` is announcements-bucket traffic; apply regardless of inbox gate.
     if effective_bucket == Some("announcements")

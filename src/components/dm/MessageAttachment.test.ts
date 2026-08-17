@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import MessageAttachment from './MessageAttachment.svelte';
 import { downloadAttachment, decodeBlurhash, saveAttachmentAs } from '../../lib/api/nostr';
+import { fetchGifBlobUrl } from '../../lib/api/klipy';
 import type { Attachment } from '../../stores/dm';
 
 vi.mock('../../icons/file.svg', () => ({ default: '/file.svg' }));
@@ -20,6 +21,11 @@ vi.mock('../../lib/api/nostr', () => ({
   saveAttachmentAs: vi.fn().mockResolvedValue('/dest/saved-path'),
 }));
 
+vi.mock('../../lib/api/klipy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/api/klipy')>();
+  return { ...actual, fetchGifBlobUrl: vi.fn() };
+});
+
 vi.mock('../../lib/utils/reveal-in-folder', () => ({
   canRevealInFolder: vi.fn().mockReturnValue(false),
   revealInFolder: vi.fn(),
@@ -28,6 +34,7 @@ vi.mock('../../lib/utils/reveal-in-folder', () => ({
 const mockedDownload = vi.mocked(downloadAttachment);
 const mockedDecodeBlurhash = vi.mocked(decodeBlurhash);
 const mockedSaveAttachmentAs = vi.mocked(saveAttachmentAs);
+const mockedFetchGifBlobUrl = vi.mocked(fetchGifBlobUrl);
 
 const baseAttachment: Attachment = {
   id: 'abc123',
@@ -419,5 +426,83 @@ describe('MessageAttachment', () => {
       expect(poster.getAttribute('src')).toBe('data:image/png;base64,blur');
     });
     expect(document.querySelector('.tile-placeholder')).toBeNull();
+  });
+
+  describe('Klipy GIF attachment (remote plaintext: empty key/nonce)', () => {
+    const klipyAttachment: Attachment = {
+      id: 'gif-slug-1',
+      key: '',
+      nonce: '',
+      extension: 'gif',
+      url: 'https://static.klipy.com/hd.gif?ext=gif&itemid=abc123',
+      path: '',
+      size: 0,
+      img_meta: null,
+      downloaded: false,
+      downloading: false,
+    };
+
+    beforeEach(() => {
+      mockedFetchGifBlobUrl.mockReset();
+      URL.revokeObjectURL = vi.fn();
+    });
+
+    it('fetches through fetchGifBlobUrl and renders the object URL as an image, never the generic download path', async () => {
+      mockedFetchGifBlobUrl.mockResolvedValueOnce('blob://mock-gif');
+      render(MessageAttachment, {
+        props: { attachment: klipyAttachment, chatId: 'npub1abc', messageId: 'm1' },
+      });
+
+      await waitFor(() => {
+        expect(mockedFetchGifBlobUrl).toHaveBeenCalledWith(klipyAttachment.url);
+        const img = screen.queryByAltText('Image.gif') as HTMLImageElement;
+        expect(img).not.toBeNull();
+        expect(img.getAttribute('src')).toBe('blob://mock-gif');
+      });
+      expect(mockedDownload).not.toHaveBeenCalled();
+    });
+
+    it('degrades to the unavailable state on a fetch failure, instead of throwing into the thread', async () => {
+      mockedFetchGifBlobUrl.mockRejectedValueOnce(new Error('Refusing to fetch: not a Klipy media URL'));
+      render(MessageAttachment, {
+        props: { attachment: klipyAttachment, chatId: 'npub1abc', messageId: 'm1' },
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText('GIF unavailable')).not.toBeNull();
+      });
+      expect(screen.queryByAltText('Image.gif')).toBeNull();
+      expect(mockedDownload).not.toHaveBeenCalled();
+    });
+
+    it('retries the fetch when the unavailable state is clicked', async () => {
+      mockedFetchGifBlobUrl.mockRejectedValueOnce(new Error('network error'));
+      render(MessageAttachment, {
+        props: { attachment: klipyAttachment, chatId: 'npub1abc', messageId: 'm1' },
+      });
+      await waitFor(() => {
+        expect(screen.queryByText('GIF unavailable')).not.toBeNull();
+      });
+
+      mockedFetchGifBlobUrl.mockResolvedValueOnce('blob://mock-gif-retry');
+      await fireEvent.click(screen.getByLabelText('GIF unavailable'));
+
+      await waitFor(() => {
+        expect(screen.queryByAltText('Image.gif')).not.toBeNull();
+      });
+    });
+
+    it('never offers Save as… for a Klipy GIF, because its bytes are never written to disk', async () => {
+      mockedFetchGifBlobUrl.mockResolvedValueOnce('blob://mock-gif');
+      render(MessageAttachment, {
+        props: { attachment: klipyAttachment, chatId: 'npub1abc', messageId: 'm1' },
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByAltText('Image.gif')).not.toBeNull();
+      });
+      expect(screen.queryByLabelText('Save as…')).toBeNull();
+      expect(mockedSaveAttachmentAs).not.toHaveBeenCalled();
+    });
   });
 });

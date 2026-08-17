@@ -23,6 +23,8 @@ export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
 
 /** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
 export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
+/** Squad sticker pack sync (`sticker_packs` table), mirrors `governance_updated`. Wire: `sticker_pack_updated`. */
+export const ANNOUNCE_TYPE_STICKER_PACK_UPDATED = 'sticker_pack_updated';
 
 /** Notify-only: QM / TA / mutiny process changed. Revalidate from chain. */
 export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
@@ -52,6 +54,23 @@ export interface GovernanceUpdatedPayload {
   pacto_gov_revision?: string;
   /** JSON string metadata (tx hash, addresses map, etc.). */
   provider_payload?: string;
+}
+/** Payload for `sticker_pack_updated`. `squad_id` is the MLS group id of the squad's announcements chat. */
+export interface StickerPackUpdatedPayload {
+  squad_id: string;
+  pack_id: string;
+  name: string;
+  entries: Array<{
+    shortcode: string;
+    url: string;
+    key: string;
+    nonce: string;
+    mime: string;
+    size: number;
+  }>;
+  /** Unix milliseconds; last-write-wins comparison against the stored row is strict `>`. */
+  updated_at: number;
+  deleted: boolean;
 }
 /** Payload for safe_updated announce. squad_id in JSON is the parent id (squad or network). */
 export interface SquadSafeUpdatedPayload {
@@ -110,7 +129,8 @@ export type AnnouncePayload =
   | SquadMemberEvmSharePayload
   | DashboardPollCreatedPayload
   | GovernanceUpdatedPayload
-  | GovernanceProcessUpdatedPayload;
+  | GovernanceProcessUpdatedPayload
+  | StickerPackUpdatedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
@@ -119,7 +139,8 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload }
   | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload }
   | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload }
-  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload };
+  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_STICKER_PACK_UPDATED; payload: StickerPackUpdatedPayload };
 
 export function isSponsorGovernanceProvider(provider: string): boolean {
   return provider.trim().toLowerCase() === 'sponsor';
@@ -241,6 +262,21 @@ function isGovernanceUpdatedPayload(p: unknown): p is GovernanceUpdatedPayload {
   );
 }
 
+function isStickerPackUpdatedPayload(p: unknown): p is StickerPackUpdatedPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  return (
+    typeof q.squad_id === 'string' &&
+    q.squad_id.trim().length > 0 &&
+    typeof q.pack_id === 'string' &&
+    q.pack_id.trim().length > 0 &&
+    typeof q.name === 'string' &&
+    Array.isArray(q.entries) &&
+    typeof q.updated_at === 'number' &&
+    typeof q.deleted === 'boolean'
+  );
+}
+
 /**
  * Parse message content as an announcement. Returns null if not valid announcement JSON or unknown type.
  */
@@ -278,6 +314,9 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   ) {
     return { type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, payload };
   }
+  if (type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED && isStickerPackUpdatedPayload(payload)) {
+    return { type: ANNOUNCE_TYPE_STICKER_PACK_UPDATED, payload };
+  }
   return null;
 }
 
@@ -293,7 +332,8 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
     options?.virtualBucket ??
     (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ||
     msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ||
-    msg.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED
+    msg.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED ||
+    msg.type === ANNOUNCE_TYPE_STICKER_PACK_UPDATED
       ? 'announcements'
       : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'

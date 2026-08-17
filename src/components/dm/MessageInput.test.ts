@@ -4,6 +4,10 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/sv
 import { get } from 'svelte/store';
 import MessageInput from './MessageInput.svelte';
 import { pendingFilePreview, clearPendingAttachment, type PendingFileAttachment } from '../../lib/messaging/attachment-composer';
+import { setCurrentNpubForPersistence } from '../../stores/persistence-context';
+import { stickerPacks } from '../../stores/stickers';
+import type { StickerPack } from '../../lib/api/stickers';
+import { invoke, type InvokeArgs } from '@tauri-apps/api/core';
 
 vi.mock('../../icons/smile-face.svg', () => ({ default: '/smile-face.svg' }));
 vi.mock('../../icons/attachment.svg', () => ({ default: '/attachment.svg' }));
@@ -29,20 +33,46 @@ vi.mock('@tauri-apps/api/webview', () => ({
   getCurrentWebview: () => ({ onDragDropEvent: mockOnDragDropEvent }),
 }));
 
+type IOEntry = { isIntersecting: boolean; target: Element };
+type IOCallback = (entries: IOEntry[]) => void;
+
+/** Records every IntersectionObserver the sticker-tile `use:stickerVisible` action creates,
+ * so a test can simulate a tile scrolling into view without a real layout engine. */
+class FakeIntersectionObserver {
+  callback: IOCallback;
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  constructor(callback: IOCallback) {
+    this.callback = callback;
+    ioInstances.push(this);
+  }
+}
+let ioInstances: FakeIntersectionObserver[] = [];
+
 beforeEach(() => {
   cleanup();
   clearPendingAttachment();
   mockedOpen.mockReset();
   (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
+  setCurrentNpubForPersistence('npub1test');
   vi.stubGlobal('URL', {
     ...URL,
     createObjectURL: vi.fn(() => 'blob://mock-preview'),
     revokeObjectURL: vi.fn(),
   });
+  ioInstances = [];
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
 });
 
 afterEach(() => {
+  // Unmount while the URL stub is still active: a GIF thumbnail fetch in flight can
+  // resolve during teardown and call revokeObjectURL, which jsdom's real URL lacks.
+  cleanup();
   vi.unstubAllGlobals();
+  setCurrentNpubForPersistence(null);
+  localStorage.clear();
+  stickerPacks.set([]);
 });
 
 describe('MessageInput', () => {
@@ -95,12 +125,15 @@ describe('MessageInput', () => {
     expect(screen.getByRole('tab', { name: /GIFs/i }).getAttribute('aria-selected')).toBe('false');
   });
 
-  it('switches to GIFs placeholder tab', async () => {
+  it('gates the GIFs tab behind the disclosure until it is accepted', async () => {
     render(MessageInput, { props: { channelName: 'general' } });
     await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
     await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
-    expect(screen.queryByText(/GIFs coming soon/i)).not.toBeNull();
     expect(screen.getByRole('tab', { name: /GIFs/i }).getAttribute('aria-selected')).toBe('true');
+    // Nothing may reach Klipy until the user accepts; the tab shows the disclosure.
+    expect(screen.queryByRole('button', { name: /Enable GIF search/i })).not.toBeNull();
+    expect(invoke).not.toHaveBeenCalledWith('klipy_search_gifs', expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith('klipy_trending_gifs', expect.anything());
   });
 
   it('closes panels on Escape and refocuses the composer', async () => {
@@ -224,5 +257,173 @@ describe('MessageInput', () => {
     Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => 96 });
     await fireEvent.input(input, { target: { value: '' } });
     expect(input.style.height).toBe('');
+  });
+
+  it('sends a selected GIF through onSendGif with the byte-identical url and slug, and fires the share-trigger', async () => {
+    const onSendGif = vi.fn().mockResolvedValue(undefined);
+    const fullUrl = 'https://static.klipy.com/hd.gif?ext=gif&itemid=abc123';
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'klipy_is_configured') return Promise.resolve(true);
+      if (cmd === 'klipy_trending_gifs') {
+        return Promise.resolve({
+          items: [
+            {
+              id: '1',
+              slug: 'gif-1',
+              title: 'Cat',
+              previewUrl: 'https://static.klipy.com/sm.gif',
+              fullUrl,
+              width: 100,
+              height: 100,
+            },
+          ],
+          page: 1,
+          perPage: 24,
+          total: 1,
+          hasMore: false,
+        });
+      }
+      if (cmd === 'klipy_report_share') return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general', onSendGif, repliedTo: 'msg-1' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cat')).not.toBeNull();
+    });
+    await fireEvent.click(screen.getByLabelText('Cat'));
+
+    await waitFor(() => {
+      expect(onSendGif).toHaveBeenCalledWith(fullUrl, 'gif-1', 'msg-1');
+    });
+    expect(invoke).toHaveBeenCalledWith('klipy_report_share', { slug: 'gif-1', query: null });
+  });
+
+  it('does nothing when a GIF is picked but no onSendGif handler is wired', async () => {
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'klipy_is_configured') return Promise.resolve(true);
+      if (cmd === 'klipy_trending_gifs') {
+        return Promise.resolve({
+          items: [
+            {
+              id: '1',
+              slug: 'gif-1',
+              title: 'Cat',
+              previewUrl: 'https://static.klipy.com/sm.gif',
+              fullUrl: 'https://static.klipy.com/hd.gif',
+              width: 100,
+              height: 100,
+            },
+          ],
+          page: 1,
+          perPage: 24,
+          total: 1,
+          hasMore: false,
+        });
+      }
+      if (cmd === 'klipy_report_share') return Promise.resolve(true);
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cat')).not.toBeNull();
+    });
+    // Reporting the share still fires (analytics), but nothing throws without onSendGif.
+    await expect(fireEvent.click(screen.getByLabelText('Cat'))).resolves.not.toThrow();
+  });
+
+  it('routes GIF picker thumbnails through klipy_fetch_media and renders a blob URL, never the raw previewUrl', async () => {
+    const previewUrl = 'https://static.klipy.com/sm.gif';
+    const fullUrl = 'https://static.klipy.com/hd.gif';
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: InvokeArgs) => {
+      if (cmd === 'klipy_is_configured') return Promise.resolve(true);
+      if (cmd === 'klipy_trending_gifs') {
+        return Promise.resolve({
+          items: [{ id: '1', slug: 'gif-1', title: 'Cat', previewUrl, fullUrl, width: 100, height: 100 }],
+          page: 1,
+          perPage: 24,
+          total: 1,
+          hasMore: false,
+        });
+      }
+      if (cmd === 'klipy_fetch_media') {
+        expect(args).toEqual({ url: previewUrl });
+        return Promise.resolve(new Uint8Array([1, 2, 3]).buffer);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /GIFs/i }));
+    await fireEvent.click(screen.getByRole('button', { name: /Enable GIF search/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Cat')).not.toBeNull();
+    });
+    // The tile starts blank (no <img>) until the thumbnail resolves through the chokepoint.
+    expect(screen.getByLabelText('Cat').querySelector('img')).toBeNull();
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('klipy_fetch_media', { url: previewUrl });
+    });
+    await waitFor(() => {
+      const img = screen.getByLabelText('Cat').querySelector('img');
+      expect(img?.getAttribute('src')).toBe('blob://mock-preview');
+    });
+  });
+
+  it('does not eagerly prefetch every sticker on tab open; fetches lazily once a tile intersects', async () => {
+    const entry = { shortcode: 'wave', url: 'https://blossom.example/wave.png', key: 'aa', nonce: 'bb', mime: 'image/png', size: 100 };
+    stickerPacks.set([
+      {
+        squadId: 'squad1',
+        packId: 'pack1',
+        name: 'Pack One',
+        entries: [entry],
+        updatedAt: 0,
+        updatedBy: 'npub1test',
+        deleted: false,
+      } as StickerPack,
+    ]);
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === 'fetch_sticker_image') return Promise.resolve('/tmp/cached-wave.png');
+      return Promise.resolve(undefined);
+    });
+
+    render(MessageInput, { props: { channelName: 'general' } });
+    await fireEvent.click(screen.getByLabelText(/Insert emoji or GIF/i));
+    await fireEvent.click(screen.getByRole('tab', { name: /Stickers/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Insert wave')).not.toBeNull();
+    });
+
+    // Opening the tab registers an observer per tile but must not download anything yet.
+    expect(ioInstances.length).toBeGreaterThan(0);
+    expect(invoke).not.toHaveBeenCalledWith('fetch_sticker_image', expect.anything());
+
+    // Only once the tile's IntersectionObserver reports it on-screen does the fetch fire.
+    const observer = ioInstances[0];
+    const tileNode = observer.observe.mock.calls[0]?.[0] as Element;
+    observer.callback([{ isIntersecting: true, target: tileNode }]);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('fetch_sticker_image', {
+        url: entry.url,
+        key: entry.key,
+        nonce: entry.nonce,
+      });
+    });
+    expect(observer.unobserve).toHaveBeenCalledWith(tileNode);
   });
 });

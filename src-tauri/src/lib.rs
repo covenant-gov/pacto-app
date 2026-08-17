@@ -67,6 +67,10 @@ mod dashboard_poll;
 mod commons;
 mod squad_bot;
 
+mod sticker_pack;
+
+mod klipy;
+
 mod virtual_channel_bucket;
 
 mod rumor;
@@ -5642,6 +5646,17 @@ async fn decrypt_and_save_attachment<R: tauri::Runtime>(
     encrypted_data: &[u8],
     attachment: &Attachment,
 ) -> Result<std::path::PathBuf, String> {
+    // Remote-plaintext marker (see `message::klipy_gif_message`): an empty
+    // key/nonce means this attachment was never encrypted — it carries a
+    // provider URL directly, e.g. a Klipy GIF. Attempting AES-GCM decryption
+    // on an empty key would panic (`GenericArray::from_slice` asserts on
+    // length), so refuse before ever calling into `crypto::decrypt_data`.
+    if attachment.key.is_empty() || attachment.nonce.is_empty() {
+        return Err(
+            "This attachment has no decryption key and cannot be decrypted locally".to_string(),
+        );
+    }
+
     // Attempt to decrypt the attachment
     let decrypted_data = crypto::decrypt_data(encrypted_data, &attachment.key, &attachment.nonce)
         .map_err(|e| e.to_string())?;
@@ -5670,6 +5685,44 @@ async fn decrypt_and_save_attachment<R: tauri::Runtime>(
         .map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(file_path)
+}
+
+#[cfg(test)]
+mod remote_plaintext_attachment_tests {
+    use super::*;
+
+    fn test_handle() -> AppHandle<tauri::test::MockRuntime> {
+        tauri::test::mock_builder()
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap()
+            .handle()
+            .clone()
+    }
+
+    /// Shape produced by `message::klipy_gif_message`: empty key/nonce marks
+    /// "remote plaintext, do not decrypt" rather than a corrupted upload.
+    fn remote_plaintext_attachment() -> Attachment {
+        Attachment {
+            id: "abc123slug".to_string(),
+            extension: "gif".to_string(),
+            url: "https://static.klipy.com/hd.gif".to_string(),
+            downloaded: false,
+            ..Attachment::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn refuses_to_decrypt_an_attachment_with_no_decryption_key() {
+        let handle = test_handle();
+        let attachment = remote_plaintext_attachment();
+        // Without the guard this reaches `crypto::decrypt_data` with an empty
+        // key, which panics (`GenericArray::from_slice` on a length
+        // mismatch) instead of returning this clean error.
+        let result =
+            decrypt_and_save_attachment(&handle, b"sixteen+ bytes of fake ciphertext", &attachment)
+                .await;
+        assert!(result.is_err());
+    }
 }
 
 #[tauri::command]
@@ -5818,6 +5871,27 @@ async fn download_attachment(npub: String, msg_id: String, attachment_id: String
 
         found_attachment.unwrap()
     };
+
+    // Remote-plaintext attachment (empty key/nonce, e.g. a Klipy GIF): never a
+    // general-purpose fetch primitive. Rendering one goes through its own
+    // allowlisted command (`klipy_fetch_media`); this generic path refuses
+    // outright rather than fetching an attacker-supplied URL on the user's
+    // behalf.
+    if attachment.key.is_empty() || attachment.nonce.is_empty() {
+        handle
+            .emit(
+                "attachment_download_result",
+                serde_json::json!({
+                    "profile_id": npub,
+                    "msg_id": msg_id,
+                    "id": attachment_id,
+                    "success": false,
+                    "result": "This attachment has no decryption key and cannot be downloaded here."
+                }),
+            )
+            .unwrap();
+        return false;
+    }
 
     // Begin our download progress events
     handle
@@ -6152,6 +6226,13 @@ async fn save_attachment_as(
             attachment_id, msg_id
         )
     })?;
+
+    // Remote-plaintext attachment (empty key/nonce, e.g. a Klipy GIF): nothing
+    // to decrypt, and "Save as…" is never offered for these — Klipy's terms
+    // forbid retaining its media on disk. Refuse rather than fetch-and-write.
+    if attachment.key.is_empty() || attachment.nonce.is_empty() {
+        return Err("This attachment has no decryption key and cannot be saved".to_string());
+    }
 
     // Choose the appropriate base directory based on platform (matches `download_attachment`).
     let base_directory = if cfg!(target_os = "ios") {
@@ -9321,6 +9402,7 @@ pub fn run() {
             message::get_cached_bytes_compression_status,
             message::send_cached_file,
             message::send_file_bytes,
+            message::klipy_gif_message,
             message::clear_cached_file,
             message::clear_android_file_cache,
             message::clear_all_android_file_cache,
@@ -9496,6 +9578,17 @@ pub fn run() {
             image_cache::clear_image_cache,
             image_cache::get_image_cache_stats,
             image_cache::cache_url_image,
+            // Sticker packs
+            sticker_pack::fetch_sticker_image,
+            sticker_pack::list_sticker_packs,
+            sticker_pack::save_sticker_pack,
+            sticker_pack::upload_sticker_image,
+            // Klipy GIFs
+            klipy::klipy_is_configured,
+            klipy::klipy_report_share,
+            klipy::klipy_search_gifs,
+            klipy::klipy_trending_gifs,
+            klipy::klipy_fetch_media,
             // Notification sound commands (desktop only)
             #[cfg(desktop)]
             audio::get_notification_settings,

@@ -19,13 +19,21 @@ export type SquadDashboardChannelMode =
   | 'governance'
   | 'treasury'
   | 'roles'
-  | 'crew';
+  | 'crew'
+  | 'stickers';
 
 export const SQUAD_DASHBOARD_MODE_PREFIX = 'pacto_squad_dashboard_mode';
 
 export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboardChannelMode {
   const v = raw?.trim();
-  if (v === 'status' || v === 'governance' || v === 'treasury' || v === 'roles' || v === 'crew') {
+  if (
+    v === 'status' ||
+    v === 'governance' ||
+    v === 'treasury' ||
+    v === 'roles' ||
+    v === 'crew' ||
+    v === 'stickers'
+  ) {
     return v;
   }
   return 'status';

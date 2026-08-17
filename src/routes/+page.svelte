@@ -33,6 +33,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     syncMlsGroupsNow,
     addParentTreasurySafe,
   } from '../lib/api/nostr';
+  import { sendGifMessage } from '../lib/api/klipy';
   import { startDeleteDmChat } from '../lib/dm/delete-dm-chat';
   import { shouldApplyDmOpenLoad } from '../lib/dm/should-apply-dm-open-load';
   import { buildAnnounceContent, ANNOUNCE_TYPE_SAFE_UPDATED, ANNOUNCE_TYPE_GOVERNANCE_UPDATED } from '../lib/announcements';
@@ -833,6 +834,31 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     }
   }
 
+  async function handleDmSendGif(url: string, slug: string, repliedTo: string): Promise<void> {
+    const id = $activeDmId;
+    if (!id) return;
+    if (!(await maybeRequireSession())) {
+      dmLog('handleDmSendGif: session locked, aborting');
+      return;
+    }
+    dmLog('handleDmSendGif', { receiver: id.slice(0, 20) + '…', slug });
+    $dmSendError = null;
+    try {
+      const ok = await sendGifMessage(id, url, slug, repliedTo);
+      dmLog('handleDmSendGif result', { ok });
+      if (!ok) {
+        $dmSendError = friendlyMessage(
+          'Could not deliver the GIF. It may appear as pending or failed.',
+          'dm_send'
+        );
+      }
+    } catch (e: unknown) {
+      const raw = getInvokeErrorMessage(e, 'Failed to send GIF');
+      $dmSendError = friendlyMessage(raw, 'dm_send');
+      dmError('handleDmSendGif error', e);
+    }
+  }
+
   /** Payment requests: optimistic card in chat; modal closes without blocking on relay delivery. */
   function sendWalletPaymentRequestDm(npub: string, content: string): boolean {
     dmLog('sendWalletPaymentRequestDm', { receiver: npub.slice(0, 20) + '…', contentLen: content.length });
@@ -1016,6 +1042,7 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
                 onLoadOlder={loadOlder}
                 onSend={handleDmSend}
                 onSendFile={handleDmSendFile}
+                onSendGif={handleDmSendGif}
                 onTyping={handleDmTyping}
                 onAcceptSquadInvite={(msg) => acceptSquadOrPairInvite(msg)}
                 onAcceptChannelInSquad={acceptChannelInSquadInvite}
