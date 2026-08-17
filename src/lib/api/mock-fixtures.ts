@@ -132,7 +132,9 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
     ok: false,
     message: 'Wallet balances are only available in the desktop app.',
   }),
-  get_bundler_status: () => ({ source: 'none' }),
+  get_bundler_status: () => ({ source: 'none', hasStoredKey: false }),
+  set_pimlico_api_key: () => undefined,
+  clear_pimlico_api_key: () => undefined,
   wallet_get_usd_spot_prices: () => ({
     ok: false,
     message: 'USD prices are only available in the desktop app.',

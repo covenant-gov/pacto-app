@@ -150,7 +150,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         return Err(wallet_err_json(
                             "SPONSOR_PATH_UNAVAILABLE",
                             format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL) so the Rust backend can reach an EntryPoint v0.7 bundler (repo-root .env is loaded in debug builds)."
+                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
                             ),
                             None,
                         ));

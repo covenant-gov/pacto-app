@@ -60,13 +60,23 @@ pub fn erc4337_account_implementation(network_key: &str) -> Option<Address> {
     pacto_chain_config::erc4337_account_implementation(network_key)
 }
 
-/// EntryPoint v0.7 bundler URL: optional `BUNDLER_RPC_URL` override, else Pimlico from `PIMLICO_API_KEY`.
+/// Account SQLite settings key for an in-app Pimlico API key (never MLS / `.env`).
+const PIMLICO_API_KEY_SETTING: &str = "pimlico_api_key";
+
+/// EntryPoint v0.7 bundler URL: optional `BUNDLER_RPC_URL` override, else stored key, else `PIMLICO_API_KEY`.
 /// Non-`https://` overrides error with `BUNDLER_CONFIG` (no URL echo).
 pub fn bundler_rpc_url(network_key: &str) -> Result<Option<String>, String> {
+    bundler_rpc_url_with_stored(network_key, None)
+}
+
+fn bundler_rpc_url_with_stored(
+    network_key: &str,
+    stored_key: Option<&str>,
+) -> Result<Option<String>, String> {
     if let Some(url) = explicit_bundler_rpc_url()? {
         return Ok(Some(url));
     }
-    Ok(pimlico_bundler_rpc_url(network_key))
+    Ok(pimlico_bundler_rpc_url_with_key(network_key, stored_key))
 }
 
 fn bundler_override_raw() -> Option<String> {
@@ -107,6 +117,10 @@ fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
 
 /// UI status only: no URLs or keys.
 pub fn bundler_status_source(network_key: &str) -> &'static str {
+    bundler_status_source_with_stored(network_key, None)
+}
+
+fn bundler_status_source_with_stored(network_key: &str, stored_key: Option<&str>) -> &'static str {
     if let Some(url) = bundler_override_raw() {
         if host_is_alchemy(&url) {
             return "blocked_alchemy_override";
@@ -116,7 +130,7 @@ pub fn bundler_status_source(network_key: &str) -> &'static str {
         }
         return "none";
     }
-    if pimlico_bundler_rpc_url(network_key).is_some() {
+    if pimlico_bundler_rpc_url_with_key(network_key, stored_key).is_some() {
         "pimlico"
     } else {
         "none"
@@ -127,25 +141,94 @@ pub fn bundler_status_source(network_key: &str) -> &'static str {
 #[serde(rename_all = "camelCase")]
 pub struct BundlerStatusDto {
     pub source: String,
+    pub has_stored_key: bool,
 }
 
 #[tauri::command]
-pub fn get_bundler_status(network: String) -> BundlerStatusDto {
+pub fn get_bundler_status<R: Runtime>(app: AppHandle<R>, network: String) -> BundlerStatusDto {
+    let stored_raw = stored_pimlico_key_raw(&app);
     BundlerStatusDto {
-        source: bundler_status_source(&network).to_string(),
+        source: bundler_status_source_with_stored(&network, stored_raw.as_deref()).to_string(),
+        has_stored_key: stored_raw.is_some(),
     }
 }
 
-/// Pimlico EP v0.7 bundler URL from `PIMLICO_API_KEY` (chain-id path). Sepolia/local → 11155111.
-fn pimlico_bundler_rpc_url(network_key: &str) -> Option<String> {
-    let key = std::env::var("PIMLICO_API_KEY")
+fn validate_pimlico_api_key(raw: &str) -> Result<String, String> {
+    let key = raw.trim();
+    if key.is_empty() || key.chars().any(char::is_whitespace) {
+        return Err(wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Pimlico API key is empty.",
+            None,
+        ));
+    }
+    let lower = key.to_ascii_lowercase();
+    if lower.contains("://") || lower.starts_with("http") || lower.contains("alchemy.com") {
+        return Err(wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Pimlico API key must not be a URL.",
+            None,
+        ));
+    }
+    Ok(key.to_string())
+}
+
+fn stored_pimlico_key_raw<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    db::get_sql_setting(app.clone(), PIMLICO_API_KEY_SETTING.to_string())
+        .ok()
+        .flatten()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn load_stored_pimlico_key<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    stored_pimlico_key_raw(app).and_then(|k| validate_pimlico_api_key(&k).ok())
+}
+
+fn pimlico_env_key() -> Option<String> {
+    std::env::var("PIMLICO_API_KEY")
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())?;
+        .filter(|s| !s.is_empty())
+}
+
+fn resolved_pimlico_key(stored_key: Option<&str>) -> Option<String> {
+    stored_key
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .or_else(pimlico_env_key)
+}
+
+/// Pimlico EP v0.7 bundler URL. Stored account key wins over `PIMLICO_API_KEY`.
+fn pimlico_bundler_rpc_url(network_key: &str) -> Option<String> {
+    pimlico_bundler_rpc_url_with_key(network_key, None)
+}
+
+fn pimlico_bundler_rpc_url_with_key(network_key: &str, stored_key: Option<&str>) -> Option<String> {
+    let key = resolved_pimlico_key(stored_key)?;
     let chain_id = pimlico_chain_id_for_network(network_key)?;
     Some(format!(
         "https://api.pimlico.io/v2/{chain_id}/rpc?apikey={key}"
     ))
+}
+
+#[tauri::command]
+pub fn set_pimlico_api_key<R: Runtime>(app: AppHandle<R>, key: String) -> Result<(), String> {
+    let key = validate_pimlico_api_key(&key)?;
+    crate::account_manager::get_current_account().map_err(|_| {
+        wallet_err_json(
+            "BUNDLER_CONFIG",
+            "Sign in to save a Pimlico API key.",
+            None,
+        )
+    })?;
+    db::set_sql_setting(app, PIMLICO_API_KEY_SETTING.to_string(), key)
+}
+
+#[tauri::command]
+pub fn clear_pimlico_api_key<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    db::remove_setting(app, PIMLICO_API_KEY_SETTING.to_string()).map(|_| ())
 }
 
 fn pimlico_chain_id_for_network(network_key: &str) -> Option<u64> {
@@ -232,10 +315,11 @@ pub async fn send_sponsored_gov_userop<R: Runtime>(
     calldata: Vec<u8>,
 ) -> Result<SponsoredUserOpSend, String> {
     let net_key = network.to_lowercase();
-    let bundler = bundler_rpc_url(&net_key)?.ok_or_else(|| {
+    let stored_key = load_stored_pimlico_key(&app);
+    let bundler = bundler_rpc_url_with_stored(&net_key, stored_key.as_deref())?.ok_or_else(|| {
         wallet_err_json(
             "BUNDLER_CONFIG",
-            "Set PIMLICO_API_KEY (or BUNDLER_RPC_URL) for an EntryPoint v0.7 bundler when the roster key has no ETH.",
+            "Save a Pimlico API key on Status, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL), for an EntryPoint v0.7 bundler when the roster key has no ETH.",
             None,
         )
     })?;
@@ -1322,12 +1406,14 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 mod tests {
     use super::{
         apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay,
-        bundler_rpc_url, bundler_status_source, call_gas_with_margin, clamp_userop_eip1559_fees,
+        bundler_rpc_url, bundler_rpc_url_with_stored, bundler_status_source,
+        bundler_status_source_with_stored, call_gas_with_margin, clamp_userop_eip1559_fees,
         classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
         encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy, pack_u128s,
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
         parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
         pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
+        validate_pimlico_api_key,
         user_op_json, userop_max_cost_wei, SponsoredUserOpReceipt, UserOpParams,
         FALLBACK_MAX_PRIORITY_FEE,
     };
@@ -1985,5 +2071,79 @@ mod tests {
         let _g = EnvVarGuard("PIMLICO_API_KEY", prev);
         std::env::remove_var("PIMLICO_API_KEY");
         assert!(pimlico_bundler_rpc_url("sepolia").is_none());
+    }
+
+    #[test]
+    fn stored_pimlico_key_wins_over_env() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::set_var("PIMLICO_API_KEY", "env-pimlico-key");
+        assert_eq!(
+            bundler_rpc_url_with_stored("sepolia", Some("stored-pimlico-key"))
+                .unwrap()
+                .as_deref(),
+            Some("https://api.pimlico.io/v2/11155111/rpc?apikey=stored-pimlico-key")
+        );
+        assert_eq!(
+            bundler_status_source_with_stored("sepolia", Some("stored-pimlico-key")),
+            "pimlico"
+        );
+    }
+
+    #[test]
+    fn clear_stored_pimlico_key_falls_back_to_env() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::set_var("PIMLICO_API_KEY", "env-pimlico-key");
+        assert_eq!(
+            bundler_rpc_url_with_stored("sepolia", None)
+                .unwrap()
+                .as_deref(),
+            Some("https://api.pimlico.io/v2/11155111/rpc?apikey=env-pimlico-key")
+        );
+    }
+
+    #[test]
+    fn validate_pimlico_api_key_rejects_url() {
+        let err = validate_pimlico_api_key("https://api.pimlico.io/v2/11155111/rpc?apikey=x")
+            .unwrap_err();
+        assert!(err.contains("BUNDLER_CONFIG"));
+        assert!(!err.contains("apikey=x"));
+        assert!(validate_pimlico_api_key("https://eth-sepolia.g.alchemy.com/v2/test-key").is_err());
+        assert!(validate_pimlico_api_key("").is_err());
+        assert!(validate_pimlico_api_key("   ").is_err());
+        assert_eq!(
+            validate_pimlico_api_key("  pim_test_key  ").unwrap(),
+            "pim_test_key"
+        );
+    }
+
+    #[test]
+    fn alchemy_bundler_override_still_blocked_with_stored_key() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::set_var(
+            "BUNDLER_RPC_URL",
+            "https://eth-sepolia.g.alchemy.com/v2/test-key",
+        );
+        std::env::remove_var("PIMLICO_API_KEY");
+        let err = bundler_rpc_url_with_stored("sepolia", Some("stored-pimlico-key")).unwrap_err();
+        assert!(err.contains("BUNDLER_CONFIG"));
+        assert!(!err.contains("eth-sepolia"));
+        assert_eq!(
+            bundler_status_source_with_stored("sepolia", Some("stored-pimlico-key")),
+            "blocked_alchemy_override"
+        );
     }
 }

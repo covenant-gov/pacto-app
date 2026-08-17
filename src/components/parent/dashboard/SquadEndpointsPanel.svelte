@@ -1,14 +1,22 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import EditIconButton from '../../ui/EditIconButton.svelte';
-  import { getBundlerStatus, type BundlerStatusSource } from '../../../lib/api/bundler';
+  import {
+    classifyPimlicoApiKey,
+    clearPimlicoApiKey,
+    getBundlerStatus,
+    setPimlicoApiKey,
+    type BundlerStatusSource,
+  } from '../../../lib/api/bundler';
   import {
     formatSquadRpcLabel,
     squadRpcHasBackup,
     type SquadRpcConfig,
   } from '../../../lib/squad/squad-rpc';
+  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { squadStatusRpcFocusNonce } from '../../../stores/navigation';
+  import { showToast } from '../../../stores/toast';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
   const ALCHEMY_SIGNUP_URL = 'https://www.alchemy.com/';
@@ -37,8 +45,13 @@
   let lastRpcFocusNonce = $state(0);
 
   let bundlerSource = $state<BundlerStatusSource | null>(null);
+  let bundlerHasStoredKey = $state(false);
   let bundlerLoading = $state(false);
   let bundlerError = $state(false);
+  let editingBundler = $state(false);
+  let bundlerKeyDraft = $state('');
+  let bundlerFormError = $state('');
+  let bundlerSaving = $state(false);
 
   const rpcLabelRaw = $derived(formatSquadRpcLabel(squadRpcConfig));
   const rpcLabel = $derived(
@@ -73,6 +86,22 @@
     }
   });
 
+  async function refreshBundlerStatus() {
+    const network = squadNetwork ?? 'sepolia';
+    bundlerLoading = true;
+    bundlerError = false;
+    try {
+      const dto = await getBundlerStatus(network);
+      bundlerSource = dto.source;
+      bundlerHasStoredKey = dto.hasStoredKey;
+    } catch {
+      bundlerError = true;
+      bundlerSource = null;
+    } finally {
+      bundlerLoading = false;
+    }
+  }
+
   $effect(() => {
     const network = squadNetwork ?? 'sepolia';
     let cancelled = false;
@@ -82,6 +111,7 @@
       .then((dto) => {
         if (cancelled) return;
         bundlerSource = dto.source;
+        bundlerHasStoredKey = dto.hasStoredKey;
       })
       .catch(() => {
         if (cancelled) return;
@@ -95,6 +125,55 @@
       cancelled = true;
     };
   });
+
+  function openBundlerEdit() {
+    editingBundler = true;
+    bundlerKeyDraft = '';
+    bundlerFormError = '';
+  }
+
+  function cancelBundlerEdit() {
+    editingBundler = false;
+    bundlerKeyDraft = '';
+    bundlerFormError = '';
+  }
+
+  async function saveBundlerKey() {
+    if (bundlerSaving) return;
+    const classified = classifyPimlicoApiKey(bundlerKeyDraft);
+    if (!classified.ok) {
+      bundlerFormError = $t(`squad.bundler.error.${classified.error}`);
+      return;
+    }
+    bundlerSaving = true;
+    bundlerFormError = '';
+    try {
+      await setPimlicoApiKey(classified.key);
+      showToast($t('squad.bundler.toastSaved'));
+      cancelBundlerEdit();
+      await refreshBundlerStatus();
+    } catch (e) {
+      bundlerFormError = getInvokeErrorMessage(e, $t('squad.bundler.toastFailed'));
+    } finally {
+      bundlerSaving = false;
+    }
+  }
+
+  async function clearBundlerKey() {
+    if (bundlerSaving) return;
+    bundlerSaving = true;
+    bundlerFormError = '';
+    try {
+      await clearPimlicoApiKey();
+      showToast($t('squad.bundler.toastCleared'));
+      cancelBundlerEdit();
+      await refreshBundlerStatus();
+    } catch (e) {
+      bundlerFormError = getInvokeErrorMessage(e, $t('squad.bundler.toastFailed'));
+    } finally {
+      bundlerSaving = false;
+    }
+  }
 
   function openRpcEdit(mode: 'primary' | 'backup') {
     editingRpc = mode;
@@ -217,19 +296,62 @@
   </section>
 
   <section class="endpoint-card" aria-labelledby="squad-bundler-heading">
-    <div class="card-titles">
-      <h3 id="squad-bundler-heading" class="card-title">{$t('squad.bundler.title')}</h3>
-      {#if bundlerLoading && !bundlerSource}
-        <p class="status-value muted">{$t('squad.bundler.loading')}</p>
-      {:else if bundlerError}
-        <p class="rpc-error" role="alert">{$t('squad.bundler.error')}</p>
-      {:else}
-        <p class="status-value" class:status-ok={bundlerSource === 'pimlico'} class:status-warn={bundlerSource !== 'pimlico'}>
-          {$t(bundlerStatusKey)}
-        </p>
+    <div class="card-head">
+      <div class="card-titles">
+        <h3 id="squad-bundler-heading" class="card-title">{$t('squad.bundler.title')}</h3>
+        <p class="card-hint">{$t(bundlerHintKey)}</p>
+      </div>
+      {#if !editingBundler}
+        <EditIconButton
+          ariaLabel={$t('squad.bundler.editAria')}
+          title={$t('squad.bundler.editTitle')}
+          on:click={openBundlerEdit}
+        />
       {/if}
     </div>
-    <p class="card-hint">{$t(bundlerHintKey)}</p>
+
+    {#if editingBundler}
+      <label class="field-label" for="squad-bundler-key-input">{$t('squad.bundler.keyLabel')}</label>
+      <input
+        id="squad-bundler-key-input"
+        class="rpc-input"
+        type="password"
+        autocomplete="off"
+        bind:value={bundlerKeyDraft}
+        placeholder={$t('squad.bundler.keyPlaceholder')}
+        aria-label={$t('squad.bundler.keyLabel')}
+      />
+      {#if bundlerFormError}
+        <p class="rpc-error" role="alert">{bundlerFormError}</p>
+      {/if}
+      <div class="card-actions">
+        <button
+          type="button"
+          class="btn-primary"
+          disabled={!bundlerKeyDraft.trim() || bundlerSaving}
+          onclick={() => void saveBundlerKey()}
+        >
+          {bundlerSaving ? $t('squad.bundler.saving') : $t('squad.bundler.save')}
+        </button>
+        <button type="button" class="btn-secondary" disabled={bundlerSaving} onclick={cancelBundlerEdit}>
+          {$t('squad.bundler.cancel')}
+        </button>
+        {#if bundlerHasStoredKey}
+          <button type="button" class="btn-ghost" disabled={bundlerSaving} onclick={() => void clearBundlerKey()}>
+            {$t('squad.bundler.clear')}
+          </button>
+        {/if}
+      </div>
+    {:else if bundlerLoading && !bundlerSource}
+      <p class="status-value muted">{$t('squad.bundler.loading')}</p>
+    {:else if bundlerError}
+      <p class="rpc-error" role="alert">{$t('squad.bundler.error')}</p>
+    {:else}
+      <p class="status-value" class:status-ok={bundlerSource === 'pimlico'} class:status-warn={bundlerSource !== 'pimlico'}>
+        {$t(bundlerStatusKey)}
+      </p>
+    {/if}
+
     <button type="button" class="link-btn" onclick={() => void openExternalUrl(PIMLICO_DASHBOARD_URL)}>
       {$t('squad.bundler.getKey')}
     </button>
