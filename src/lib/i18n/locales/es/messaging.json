@@ -304,6 +304,7 @@
 	"messaging.structuredNotice.dashboardPollCreated": "Encuesta del panel creada",
 	"messaging.structuredNotice.dashboardPollUpdate": "Actualización de encuesta del panel",
 	"messaging.structuredNotice.governanceUpdated": "Gobernanza actualizada",
+	"messaging.structuredNotice.governanceProcessUpdated": "Proceso de gobernanza actualizado",
 	"messaging.structuredNotice.joinRequestAccepted": "La solicitud de unión a {squadName} fue aceptada",
 	"messaging.structuredNotice.joinRequestFor": "Solicitud de unión a {squadName}",
 	"messaging.structuredNotice.joinRequestRejected": "La solicitud de unión a {squadName} fue rechazada",

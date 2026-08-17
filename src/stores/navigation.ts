@@ -63,6 +63,9 @@ export const squadAllowlistNonceByParentId = writable<Record<string, number>>({}
 /** Bumped when peer MLS tracked-token announces apply — panels refetch. */
 export const squadTrackedTokensNonceByParentId = writable<Record<string, number>>({});
 
+/** Bumped when MLS governance process hints apply — proposals board revalidates from chain. */
+export const governanceProcessNonceByParentId = writable<Record<string, number>>({});
+
 /** Bumped when squad bot meta / key_rotated MLS announces apply. */
 export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});
 

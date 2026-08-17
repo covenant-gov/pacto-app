@@ -67,6 +67,8 @@ sol! {
             external
             returns (uint256 _proposalId);
 
+        function nextProposalId() external view returns (uint256 _id);
+
         function crewVote(uint256 _proposalId, bool _support) external;
 
         function captainVote(uint256 _proposalId, bool _support) external;
@@ -111,6 +113,14 @@ sol! {
         function mutinyActive() external view returns (bool _active);
         function pendingCrewAddAt(address _candidate) external view returns (uint256 _executableAt);
         function pendingCrewRemoveAt(address _crew) external view returns (uint256 _executableAt);
+        function pendingAdds()
+            external
+            view
+            returns (address[] memory _candidates, uint256[] memory _executableAts);
+        function pendingRemoves()
+            external
+            view
+            returns (address[] memory _crew, uint256[] memory _executableAts);
         function crewHatId() external view returns (uint256 _crewHatId);
 
         event CrewAddRequested(address indexed _candidate, uint256 _executableAt);

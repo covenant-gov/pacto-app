@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED,
+  ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED,
   ANNOUNCE_TYPE_SAFE_PROPOSAL,
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE,
@@ -47,6 +48,14 @@ describe('buildAnnounceContent', () => {
           { id: 'b', label: 'B' },
         ],
       },
+    });
+    expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
+  });
+
+  it('sets pacto_virtual_bucket announcements for governance_process_updated', () => {
+    const s = buildAnnounceContent({
+      type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+      payload: { parent_id: 'p', kind: 'ta_proposal', proposal_id: '1' },
     });
     expect(JSON.parse(s).pacto_virtual_bucket).toBe('announcements');
   });
@@ -121,6 +130,15 @@ describe('parseAnnouncement', () => {
         }),
       ),
     ).toMatchObject({ type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED });
+
+    expect(
+      parseAnnouncement(
+        JSON.stringify({
+          type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED,
+          payload: { parent_id: 'p', kind: 'qm_pending', address: '0x1', tx_hash: '0xabc' },
+        }),
+      ),
+    ).toMatchObject({ type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED });
 
     expect(
       parseAnnouncement(

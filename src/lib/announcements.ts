@@ -24,6 +24,19 @@ export const ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED = 'dashboard_poll_created';
 /** Squad/network deployed infra sync (`squad_infra` SQLite rows). Wire: `governance_updated`. */
 export const ANNOUNCE_TYPE_GOVERNANCE_UPDATED = 'governance_updated';
 
+/** Notify-only: QM / TA / mutiny process changed. Revalidate from chain. */
+export const ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED = 'governance_process_updated';
+
+export type GovernanceProcessKind = 'qm_pending' | 'ta_proposal' | 'mutiny';
+
+export interface GovernanceProcessUpdatedPayload {
+  parent_id: string;
+  kind: GovernanceProcessKind;
+  address?: string;
+  proposal_id?: string;
+  tx_hash?: string;
+}
+
 /** Payload for `governance_updated`. `parent_id` is the squad or network root id. */
 export interface GovernanceUpdatedPayload {
   parent_id: string;
@@ -96,7 +109,8 @@ export type AnnouncePayload =
   | SafeProposalPayload
   | SquadMemberEvmSharePayload
   | DashboardPollCreatedPayload
-  | GovernanceUpdatedPayload;
+  | GovernanceUpdatedPayload
+  | GovernanceProcessUpdatedPayload;
 
 /** Discriminated union of all announcement message types. */
 export type AnnounceMessage =
@@ -104,7 +118,8 @@ export type AnnounceMessage =
   | { type: typeof ANNOUNCE_TYPE_SAFE_PROPOSAL; payload: SafeProposalPayload }
   | { type: typeof ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE; payload: SquadMemberEvmSharePayload }
   | { type: typeof ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED; payload: DashboardPollCreatedPayload }
-  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload };
+  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_UPDATED; payload: GovernanceUpdatedPayload }
+  | { type: typeof ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED; payload: GovernanceProcessUpdatedPayload };
 
 export function isSponsorGovernanceProvider(provider: string): boolean {
   return provider.trim().toLowerCase() === 'sponsor';
@@ -197,6 +212,22 @@ function isDashboardPollCreatedPayload(p: unknown): p is DashboardPollCreatedPay
   return true;
 }
 
+function isGovernanceProcessKind(v: unknown): v is GovernanceProcessKind {
+  return v === 'qm_pending' || v === 'ta_proposal' || v === 'mutiny';
+}
+
+function isGovernanceProcessUpdatedPayload(p: unknown): p is GovernanceProcessUpdatedPayload {
+  if (!p || typeof p !== 'object') return false;
+  const q = p as Record<string, unknown>;
+  if (typeof q.parent_id !== 'string' || !q.parent_id.trim() || !isGovernanceProcessKind(q.kind)) {
+    return false;
+  }
+  if (q.address !== undefined && typeof q.address !== 'string') return false;
+  if (q.proposal_id !== undefined && typeof q.proposal_id !== 'string') return false;
+  if (q.tx_hash !== undefined && typeof q.tx_hash !== 'string') return false;
+  return true;
+}
+
 function isGovernanceUpdatedPayload(p: unknown): p is GovernanceUpdatedPayload {
   if (!p || typeof p !== 'object') return false;
   const q = p as Record<string, unknown>;
@@ -241,6 +272,12 @@ export function parseAnnouncement(content: string): AnnounceMessage | null {
   if (type === ANNOUNCE_TYPE_GOVERNANCE_UPDATED && isGovernanceUpdatedPayload(payload)) {
     return { type: ANNOUNCE_TYPE_GOVERNANCE_UPDATED, payload };
   }
+  if (
+    type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED &&
+    isGovernanceProcessUpdatedPayload(payload)
+  ) {
+    return { type: ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED, payload };
+  }
   return null;
 }
 
@@ -254,7 +291,9 @@ export function buildAnnounceContent<T extends AnnounceMessage>(
 ): string {
   const pacto_virtual_bucket =
     options?.virtualBucket ??
-    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED || msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE
+    (msg.type === ANNOUNCE_TYPE_DASHBOARD_POLL_CREATED ||
+    msg.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE ||
+    msg.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED
       ? 'announcements'
       : isAnnouncementsGovernanceAnnounce(msg)
         ? 'announcements'

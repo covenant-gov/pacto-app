@@ -26,6 +26,7 @@ import {
   dashboardPollReplicaNonceByParentId,
   squadAllowlistNonceByParentId,
   squadTrackedTokensNonceByParentId,
+  governanceProcessNonceByParentId,
   squadBotMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
@@ -70,6 +71,7 @@ describe('navigation', () => {
     dashboardPollReplicaNonceByParentId.set({});
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
+    governanceProcessNonceByParentId.set({});
     squadBotMetaNonceBySquadId.set({});
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();

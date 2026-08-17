@@ -38,6 +38,7 @@
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
   import { showToast } from '../../../stores/toast';
+  import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -76,6 +77,13 @@
   let qmPendingLoading = false;
   let qmPendingError = '';
   let qmPendingHydrateKey = '';
+  let lastSeenProcessNonce = 0;
+
+  $: processNonce = $governanceProcessNonceByParentId[parentId.trim()] ?? 0;
+  $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
+    lastSeenProcessNonce = processNonce;
+    refreshAllProposals();
+  }
 
   let rosterBalanceRaw = '0';
   let rosterBalanceKnown = false;
