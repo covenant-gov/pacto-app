@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte';
+  import { page } from '$app/state';
   import '../app.css';
   import Login from '../components/auth/Login.svelte';
   import UpdateGate from '../components/updater/UpdateGate.svelte';
@@ -14,10 +15,18 @@
 
   let { children }: { children: Snippet } = $props();
 
-  // Before first paint: clear any leftover auth state. The backend session check on mount
-  // is the authoritative source of truth, so never assume the session is still valid.
-  isAuthenticated.set(false);
-  currentUser.set(null);
+  function isDesignPath(pathname: string): boolean {
+    return pathname === '/design' || pathname.startsWith('/design/');
+  }
+
+  const initialIsDesignRoute = isDesignPath(page.url.pathname);
+  const isDesignRoute = $derived(isDesignPath(page.url.pathname));
+
+  if (!initialIsDesignRoute) {
+    // Before first paint, backend session state remains authoritative.
+    isAuthenticated.set(false);
+    currentUser.set(null);
+  }
 
   $effect(() => {
     if ($locale) {
@@ -26,7 +35,11 @@
     }
   });
 
-  onMount(() => {
+  let sessionStarted = false;
+
+  function startProductionSession(): void {
+    if (sessionStarted) return;
+    sessionStarted = true;
     // The storage-format probe must precede any account enumeration -
     // checkAuthStatus() (which drives check_any_account_exists ->
     // list_accounts) runs from Login.svelte's own mount, and UpdateGate's
@@ -41,21 +54,40 @@
     void runDevAutologin();
     void loadAppConfig();
     scheduleCommonsStartupPrefetch();
+  }
+
+  onMount(() => {
     const stored = getStoredTheme();
     setTheme(stored ?? DEFAULT_THEME);
+    if (!initialIsDesignRoute) {
+      startProductionSession();
+    }
+  });
+
+  // Start the session if the user leaves /design for a production route.
+  $effect(() => {
+    if (!isDesignPath(page.url.pathname)) {
+      startProductionSession();
+    }
   });
 </script>
 
 <TooltipProvider>
-  <UpdateGate>
-    {#if $isAuthenticated && $currentUser}
-      <div class="layout-root">
-        {@render children()}
-      </div>
-    {:else}
-      <Login />
-    {/if}
-  </UpdateGate>
+  {#if isDesignRoute}
+    <div class="layout-root">
+      {@render children()}
+    </div>
+  {:else}
+    <UpdateGate>
+      {#if $isAuthenticated && $currentUser}
+        <div class="layout-root">
+          {@render children()}
+        </div>
+      {:else}
+        <Login />
+      {/if}
+    </UpdateGate>
+  {/if}
 </TooltipProvider>
 
 <style>

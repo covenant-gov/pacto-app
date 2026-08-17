@@ -1,6 +1,6 @@
 # Shell
 
-App chrome regions and ownership. Describes **current** production layout and the **planned** presentational shell. The planned pieces are not shipped yet.
+App chrome regions and ownership. Describes the **current** production layout and reusable presentational shell.
 
 Current logged-in map (stores, libs, dashboards): [docs/shell/LAYOUT.md](../shell/LAYOUT.md).
 
@@ -15,26 +15,28 @@ Visual model (Discord-style):
 | **Main** | Primary content (chat, dashboard, settings) |
 | **Aside** | Optional detail (members, wallet, inspectors) |
 
-Production today mounts these through `src/routes/+page.svelte` and layout components (`ParentNavbar`, chat views, wallet sidebar). There is **no** shared `AppShell` package yet. CSS class `.app-shell` on `<main>` is a flex row that fills window height — not the future component API.
+Production today mounts its legacy chrome through `src/routes/+page.svelte` and layout components (`ParentNavbar`, chat views, wallet sidebar). The reusable shell under `src/components/shell/` is currently mounted only by the development sandbox; production wiring is a later adapter. CSS class `.app-shell` on the legacy `<main>` remains unrelated to the component API.
 
 ## Responsive rules
 
 Window minimum (Tauri): `minWidth` / `minHeight` **400** (`src-tauri/tauri.conf.json`). Design for a real desktop webview, including that floor.
 
-Planned breakpoints (for future shell work):
+Reusable shell breakpoints (`matchMedia`):
 
-| Mode | Behavior |
-|------|----------|
-| **Wide** | Rail + sidebar + main + aside (if open) visible |
-| **Medium** | Collapse one secondary region; prefer drawers for aside or sidebar |
-| **Narrow** | Rail/sidebar become drawers; **main keeps a usable min width** |
+| Mode | Query | Grid | Drawers |
+|------|-------|------|---------|
+| **Wide** | default / above 1180px | Rail + sidebar + main + aside (if present) | None |
+| **Medium** | `max-width: 1180px` | Rail + sidebar + main | Aside (if present) as a right drawer |
+| **Narrow** | `max-width: 720px` | Compact rail + main | Channel sidebar as a left drawer; aside as a right drawer |
+
+The rail stays in the grid at every width. Only channel and member regions move into drawers.
 
 Drawers:
 
-- Trap focus while open.
-- Return focus to the opener on close.
+- Mount drawer content only while that drawer is open and its region is not in the grid.
+- Trap focus while open. Return focus to the opener on close. Do not mark the opener `inert` / `aria-hidden`.
 - `overscroll-behavior: contain` on drawer surfaces.
-- Honor `prefers-reduced-motion` for open/close (opacity/transform only).
+- Honor `prefers-reduced-motion` for open/close (opacity/transform only). Cheap dim overlay; no backdrop blur.
 
 Prefer **CSS Grid** for the structural shell. Avoid flex percentage math for column widths.
 
@@ -59,27 +61,30 @@ Invariant from LAYOUT.md: components bind UI and call libs; avoid new cross-cutt
 | shadcn primitives | `src/lib/components/ui` | Add via shadcn-svelte; aliases in `components.json` |
 | Existing product widgets | `src/components/ui` | RefreshIconButton, EditIconButton, Modal, Toast, … — **no new shared primitives here** |
 | Feature UI | `src/components/{auth,dm,channel,parent,wallet,…}` | Domain folders |
-| Presentational shell (planned) | `src/components/shell` | Layout-only; no stores, no Tauri, no fixtures |
-| Shell types (planned) | `src/lib/shell` | Props / region types only |
+| Presentational shell | `src/components/shell` | Layout-only; no stores, no Tauri, no fixtures |
+| Shell types | `src/lib/shell` | Props / region types and pure view helpers |
 
 ## State rules
 
 - Loading / empty / error / dense states are required for new UI surfaces.
 - URL state SHOULD reflect filters/tabs where the app already deep-links; this is a SvelteKit static SPA in a Tauri webview, not a multi-page marketing site.
-- Do not put store subscriptions or `invoke` inside shared presentational shell components (once they exist).
+- Do not put store subscriptions or `invoke` inside shared presentational shell components.
 
 See [decisions/0002-shell-data-boundary.md](./decisions/0002-shell-data-boundary.md).
 
-## Phase 4 plan (not implemented)
+## Reusable shell and sandbox
 
-Do not treat these as present:
+Implemented:
 
 1. **`src/components/shell/`** — presentational regions (rail, sidebar, main, aside, drawers).
-2. **`src/lib/shell/`** — shared types for region props.
-3. **`src/routes/design/`** — fixture-only sandbox to exercise the shell with static data. No production stores, no Tauri, no live account.
-4. **Production adapter** — a later thin route/layout that wires real stores into the same presentational shell.
+2. **`src/lib/shell/`** — shared types and pure helpers for shell views.
+3. **`src/routes/design/`** — development-only fixture sandbox for themes, responsive layouts, and preview states. It has no production stores, Tauri calls, or live account data.
 
-Rules for that work:
+Still planned:
+
+4. **Production adapter** — a thin route/layout edge that maps real stores into the same presentational props.
+
+Boundary rules:
 
 - Shared shell components stay presentational.
 - Fixtures live only under the design sandbox route.

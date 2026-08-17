@@ -2,20 +2,20 @@
 
 ## Context
 
-The logged-in app mixes layout chrome with stores, Tauri `invoke`, and domain loaders (see `docs/shell/LAYOUT.md`). A future shared shell (rail / sidebar / main / aside) must stay reusable for:
+The logged-in app mixes layout chrome with stores, Tauri `invoke`, and domain loaders (see `docs/shell/LAYOUT.md`). The shared shell (rail / sidebar / main / aside) must stay reusable for:
 
 - production (real stores), and
-- a fixture-only design sandbox (`src/routes/design/`, planned).
+- a fixture-only design sandbox (`src/routes/design/`).
 
 If shell components import stores or fixtures directly, the sandbox and production paths couple and tests become brittle.
 
 ## Decision
 
-1. **Presentational shell** (planned `src/components/shell`) receives props / snippets only. No Svelte stores, no Tauri, no fixture modules inside those components.
-2. **Types** live in planned `src/lib/shell` (props and region contracts).
-3. **Fixtures** stay under the future design route only. Shared shell never imports them.
+1. **Presentational shell** (`src/components/shell`) receives props / snippets only. No Svelte stores, no Tauri, no fixture modules inside those components.
+2. **Types and pure helpers** live in `src/lib/shell`.
+3. **Fixtures and design catalogs** stay under `src/routes/design/` only. Shared shell never imports them. Design locale files must not be eager-globbed by `src/lib/i18n`.
 4. **Production adapter** (later) maps stores → shell props at the route/layout edge.
-5. Until the shell ships, keep documenting production structure in `docs/shell/LAYOUT.md`. Do not pretend `AppShell` already exists.
+5. Until that adapter ships, production chrome remains as documented in `docs/shell/LAYOUT.md`. The reusable shell is mounted only by the design sandbox.
 
 ## Consequences
 
