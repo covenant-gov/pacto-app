@@ -1,5 +1,7 @@
 <script lang="ts">
   import RefreshIconButton from '../../ui/RefreshIconButton.svelte';
+  import RpcReadErrorCard from '../dashboard/RpcReadErrorCard.svelte';
+  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
   import GovProcessCardView from './GovProcessCard.svelte';
   import {
     quartermasterExecuteAddCrew,
@@ -20,7 +22,13 @@
     govProcessCardKey,
     type GovProcessCard,
   } from '../../../lib/governance/gov-process';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import { govExecuteUiState } from '../../../lib/governance/gov-execute-ui';
+  import {
+    fundedByFromWriteResult,
+    govWriteSubmittedToast,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -42,6 +50,7 @@
   export let onRefreshProposals: () => void = () => {};
   export let onExecuteMutiny: () => void | Promise<void> = () => {};
   export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -60,50 +69,56 @@
     (mutinyLoading && !mutinyStatus) ||
     (qmPendingLoading && qmPending.length === 0);
   $: refreshSpinning = proposalsLoading || mutinyLoading || qmPendingLoading;
+  $: proposalsRpcKind = rpcReadErrorKind(proposalsError);
+  $: qmPendingRpcKind = rpcReadErrorKind(qmPendingError);
 
   async function runTreasuryExecute(proposalId: string) {
     if (acting || !execGate.enabled) return;
     acting = true;
     try {
-      await treasuryAuthorityExecute({
+      const result = await treasuryAuthorityExecute({
         network,
         parentId,
         treasuryAuthority,
         proposalId,
       });
-      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.execute') } }));
+      showToast(govWriteSubmittedToast(tFn('governance.action.execute'), fundedByFromWriteResult(result)));
       onRefreshProposals();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
     } finally {
       acting = false;
     }
   }
 
   async function runCrewExecute(card: Extract<GovProcessCard, { kind: 'crew_add' | 'crew_remove' }>) {
-    if (acting || !qmExecGate.enabled || !quartermaster.trim()) return;
+    const ui = govExecuteUiState({
+      card,
+      privilegeReasonKey: qmExecGate.enabled ? '' : qmExecGate.reason,
+    });
+    if (acting || !ui.executeEnabled || !quartermaster.trim()) return;
     acting = true;
     try {
       if (card.kind === 'crew_add') {
-        await quartermasterExecuteAddCrew({
+        const result = await quartermasterExecuteAddCrew({
           network,
           parentId,
           quartermaster,
           candidate: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeAdd') } }));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeAdd'), fundedByFromWriteResult(result)));
       } else {
-        await quartermasterExecuteRemoveCrew({
+        const result = await quartermasterExecuteRemoveCrew({
           network,
           parentId,
           quartermaster,
           crew: card.address,
         });
-        showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeRemove') } }));
+        showToast(govWriteSubmittedToast(tFn('governance.action.executeRemove'), fundedByFromWriteResult(result)));
       }
       onRefreshProposals();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.execute') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.execute')));
     } finally {
       acting = false;
     }
@@ -129,11 +144,11 @@
     }
   }
 
-  function executeDisabledFor(card: GovProcessCard): string {
+  function privilegeReasonKeyFor(card: GovProcessCard): string {
     if (card.kind === 'crew_add' || card.kind === 'crew_remove') {
-      return qmExecGate.enabled ? '' : $t(qmExecGate.reason);
+      return qmExecGate.enabled ? '' : qmExecGate.reason;
     }
-    return execGate.enabled ? '' : $t(execGate.reason);
+    return execGate.enabled ? '' : execGate.reason;
   }
 </script>
 
@@ -153,14 +168,24 @@
   {#if boardLoading}
     <p class="muted">{$t('governance.status.loadingProposals')}</p>
   {:else if processCards.length === 0}
-    <p class="muted">
-      {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
-    </p>
+    {#if proposalsRpcKind}
+      <RpcReadErrorCard kind={proposalsRpcKind} />
+    {:else if qmPendingRpcKind}
+      <RpcReadErrorCard kind={qmPendingRpcKind} />
+    {:else}
+      <p class="muted">
+        {proposalsError || qmPendingError || $t('governance.empty.noTreasuryProposals')}
+      </p>
+    {/if}
   {:else}
-    {#if proposalsError}
+    {#if proposalsRpcKind}
+      <RpcReadErrorCard kind={proposalsRpcKind} />
+    {:else if proposalsError}
       <p class="muted">{proposalsError}</p>
     {/if}
-    {#if qmPendingError}
+    {#if qmPendingRpcKind}
+      <RpcReadErrorCard kind={qmPendingRpcKind} />
+    {:else if qmPendingError}
       <p class="muted">{qmPendingError}</p>
     {/if}
     <ul class="proposal-list" role="list">
@@ -169,7 +194,7 @@
           {card}
           showExecute
           executePending={acting}
-          executeDisabledReason={executeDisabledFor(card)}
+          privilegeReasonKey={privilegeReasonKeyFor(card)}
           onExecute={() => executeForCard(card)}
         />
       {/each}

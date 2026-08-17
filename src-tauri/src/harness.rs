@@ -263,7 +263,13 @@ fn deterministic_event_id(label: &str) -> EventId {
     EventId::from_slice(&digest).expect("32-byte hash is always a valid EventId")
 }
 
-fn build_rumor(kind: Kind, content: &str, tags: Vec<Tag>, pubkey: PublicKey, at: u64) -> UnsignedEvent {
+fn build_rumor(
+    kind: Kind,
+    content: &str,
+    tags: Vec<Tag>,
+    pubkey: PublicKey,
+    at: u64,
+) -> UnsignedEvent {
     EventBuilder::new(kind, content)
         .tags(tags)
         .custom_created_at(Timestamp::from_secs(at))
@@ -272,7 +278,9 @@ fn build_rumor(kind: Kind, content: &str, tags: Vec<Tag>, pubkey: PublicKey, at:
 
 fn to_rumor_event(unsigned: &UnsignedEvent) -> RumorEvent {
     RumorEvent {
-        id: unsigned.id.expect("EventBuilder::build always computes an id"),
+        id: unsigned
+            .id
+            .expect("EventBuilder::build always computes an id"),
         kind: unsigned.kind,
         content: unsigned.content.clone(),
         tags: unsigned.tags.clone(),
@@ -559,7 +567,11 @@ async fn seed_squad_slice<R: Runtime>(
         let inviter_engine = MDK::new(storage);
 
         let create_out = inviter_engine
-            .create_group(&inviter_keys.public_key(), vec![sandbox_kp_event], group_config)
+            .create_group(
+                &inviter_keys.public_key(),
+                vec![sandbox_kp_event],
+                group_config,
+            )
             .map_err(|e| format!("inviter create_group: {e}"))?;
         let welcome_rumor = create_out
             .welcome_rumors
@@ -639,11 +651,11 @@ async fn seed_squad_slice<R: Runtime>(
     db::save_mls_group(handle.clone(), &metadata).await?;
 
     let sandbox_npub = keys.public_key().to_bech32().map_err(|e| e.to_string())?;
-    let inviter_npub = inviter_keys.public_key().to_bech32().map_err(|e| e.to_string())?;
-    let mut chat = Chat::new_mls_group(
-        nostr_group_id.clone(),
-        vec![sandbox_npub, inviter_npub],
-    );
+    let inviter_npub = inviter_keys
+        .public_key()
+        .to_bech32()
+        .map_err(|e| e.to_string())?;
+    let mut chat = Chat::new_mls_group(nostr_group_id.clone(), vec![sandbox_npub, inviter_npub]);
     ensure_squad_catalog_row(handle, &nostr_group_id, &group_name)?;
     chat.metadata.set_name(group_name);
     db::save_chat(handle.clone(), &chat).await?;
@@ -691,7 +703,6 @@ async fn seed_squad_slice<R: Runtime>(
     Ok(Some(nostr_group_id))
 }
 
-
 /// If the persistent MLS store already has a group (partial seed), persist the
 /// missing `mls_groups` / chat rows and return its nostr group id. Returns
 /// `None` when the store is empty and a fresh invite is safe.
@@ -719,7 +730,11 @@ async fn recover_squad_from_mls_store<R: Runtime>(
     let metadata = MlsGroupMetadata {
         group_id: nostr_group_id.clone(),
         engine_group_id,
-        creator_pubkey: group.admin_pubkeys.first().map(|pk| pk.to_hex()).unwrap_or_default(),
+        creator_pubkey: group
+            .admin_pubkeys
+            .first()
+            .map(|pk| pk.to_hex())
+            .unwrap_or_default(),
         name: group_name.clone(),
         avatar_ref: None,
         created_at: HARNESS_EPOCH_SECS,
@@ -830,7 +845,13 @@ mod tests {
     #[test]
     fn build_rumor_produces_a_computed_id_at_the_requested_time() {
         let keys = derive_synthetic_keys("test-only/v1");
-        let rumor = build_rumor(Kind::PrivateDirectMessage, "hi", vec![], keys.public_key(), HARNESS_EPOCH_SECS);
+        let rumor = build_rumor(
+            Kind::PrivateDirectMessage,
+            "hi",
+            vec![],
+            keys.public_key(),
+            HARNESS_EPOCH_SECS,
+        );
         assert!(rumor.id.is_some());
         assert_eq!(rumor.created_at.as_secs(), HARNESS_EPOCH_SECS);
         assert_eq!(rumor.pubkey, keys.public_key());

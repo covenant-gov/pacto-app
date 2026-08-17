@@ -39,13 +39,15 @@ describe('gov-proposal-lists', () => {
     expect(captainVotableProposals(proposals).map((p) => p.proposalId)).toEqual(['2']);
   });
 
-  it('lists executable treasury proposals', () => {
+  it('lists executable treasury proposals only after captain approval', () => {
     const proposals = [
       proposal({ status: 'active' }),
       proposal({ status: 'active_passed_crew' }),
-      proposal({ status: 'active_passed_crew', executed: true }),
+      proposal({ status: 'active_passed_crew', captainApproved: true }),
+      proposal({ status: 'active_passed_crew', captainApproved: true, executed: true }),
     ];
     expect(executableTreasuryProposals(proposals)).toHaveLength(1);
+    expect(executableTreasuryProposals(proposals)[0]?.captainApproved).toBe(true);
   });
 
   it('detects mutiny active and executable', () => {

@@ -13,7 +13,13 @@ describe('pacto-protocol-addresses', () => {
     expect(sepolia?.erc4337?.accountImplementation).toBe(
       '0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60',
     );
-    expect(sepolia?.pactoGov?.navePirataFactory).toBe('0x44E42cf7b2DadDe6D5fc27B57625EaF3e3D41316');
+    expect(sepolia?.squadSponsor?.navePirataRegistry).toBe(
+      '0x50F7759F65b1a25B1a827D6c97A5dD61f0036278',
+    );
+    expect(sepolia?.pactoGov?.navePirataFactory).toBe('0x6E835c103F4719Fd84EAB57d256132007310B230');
+    expect(sepolia?.pactoGov?.navePirataRegistry).toBe(
+      '0x50F7759F65b1a25B1a827D6c97A5dD61f0036278',
+    );
   });
 
   it('exposes the book version', () => {

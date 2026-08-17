@@ -1,4 +1,4 @@
-//! Read Treasury Authority proposals via sequential `proposal(id)` scans.
+//! Read Treasury Authority proposals via `nextProposalId` then `proposal(id)`.
 
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
@@ -6,13 +6,24 @@ use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
 use super::contracts::pacto_gov::read_bindings::ITreasuryAuthority::{
-    hasVotedCall, proposalCall, Operation,
+    hasVotedCall, nextProposalIdCall, proposalCall, Operation,
 };
 use super::gov_read::connect_gov_read_provider;
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 
-const DEFAULT_MAX_SCAN: u32 = 64;
 const HARD_MAX_SCAN: u32 = 256;
+
+/// Exclusive `nextProposalId` → last id to read, capped.
+fn proposal_scan_last_id(next: U256, hard_max: u32) -> u32 {
+    if next <= U256::from(1u64) {
+        return 0;
+    }
+    let last = next - U256::from(1u64);
+    match u64::try_from(last) {
+        Ok(n) => u32::try_from(n).unwrap_or(hard_max).min(hard_max),
+        Err(_) => hard_max,
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,15 +85,20 @@ fn derive_proposal_status(
 pub async fn list_treasury_proposals_on_chain<P: Provider>(
     provider: &P,
     treasury_authority: Address,
-    max_scan: u32,
+    hard_max: u32,
 ) -> Result<Vec<TreasuryProposalDto>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
+    let next = eth_call_decode(provider, treasury_authority, &nextProposalIdCall {})
+        .await
+        .map_err(|e| wallet_err_json("PROPOSAL_READ", e, None))?;
+    let last = proposal_scan_last_id(next, hard_max);
+
     let mut out = Vec::new();
-    for id in 1..=max_scan {
+    for id in 1..=last {
         let pid = U256::from(id);
         let decoded = eth_call_decode(provider, treasury_authority, &proposalCall { _id: pid })
             .await
@@ -131,10 +147,32 @@ pub async fn list_treasury_proposals<R: Runtime>(
 ) -> Result<Vec<TreasuryProposalDto>, String> {
     let ta = parse_address(treasury_authority.trim())
         .map_err(|e| wallet_err_json("INVALID_TREASURY_AUTHORITY", e, None))?;
-    let scan = max_scan.unwrap_or(DEFAULT_MAX_SCAN).clamp(1, HARD_MAX_SCAN);
+    let cap = max_scan.unwrap_or(HARD_MAX_SCAN).clamp(1, HARD_MAX_SCAN);
 
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    list_treasury_proposals_on_chain(&provider, ta, scan).await
+    list_treasury_proposals_on_chain(&provider, ta, cap).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proposal_scan_last_id;
+    use alloy::primitives::U256;
+
+    #[test]
+    fn next_one_means_no_proposals() {
+        assert_eq!(proposal_scan_last_id(U256::from(1u64), 256), 0);
+        assert_eq!(proposal_scan_last_id(U256::ZERO, 256), 0);
+    }
+
+    #[test]
+    fn next_three_reads_ids_one_and_two() {
+        assert_eq!(proposal_scan_last_id(U256::from(3u64), 256), 2);
+    }
+
+    #[test]
+    fn runaway_next_clamps_to_hard_max() {
+        assert_eq!(proposal_scan_last_id(U256::from(10_000u64), 256), 256);
+    }
 }
 
 #[tauri::command]

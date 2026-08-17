@@ -1785,11 +1785,8 @@ impl MlsService {
         // Member leave proposals MDK could not commit (non-admin sender) — legacy fallback.
         let mut leaves_to_finalize: Vec<nostr_sdk::PublicKey> = Vec::new();
         // MDK 0.8 SelfRemove auto-commits: publish + merge after engine scope.
-        let mut auto_commits_to_publish: Vec<(
-            nostr_sdk::Event,
-            GroupId,
-            nostr_sdk::PublicKey,
-        )> = Vec::new();
+        let mut auto_commits_to_publish: Vec<(nostr_sdk::Event, GroupId, nostr_sdk::PublicKey)> =
+            Vec::new();
 
         // Resolve my pubkey before entering engine scope (for mine flag)
         let my_pubkey_hex = if let Ok(signer) = client.signer().await {
@@ -3649,11 +3646,7 @@ mod mls_leave_group_state_lost_tests {
             vec![alice_keys.public_key()],
         );
         let create = alice_mdk
-            .create_group(
-                &alice_keys.public_key(),
-                vec![bob_kp_event],
-                group_config,
-            )
+            .create_group(&alice_keys.public_key(), vec![bob_kp_event], group_config)
             .expect("create group");
         let group_id = create.group.mls_group_id;
         alice_mdk
@@ -3674,7 +3667,10 @@ mod mls_leave_group_state_lost_tests {
             .expect("alice process leave");
 
         let MessageProcessingResult::Proposal(update) = processed else {
-            panic!("expected Proposal(UpdateGroupResult) auto-commit, got {:?}", processed);
+            panic!(
+                "expected Proposal(UpdateGroupResult) auto-commit, got {:?}",
+                processed
+            );
         };
 
         alice_mdk

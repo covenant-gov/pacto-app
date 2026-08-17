@@ -32,7 +32,12 @@
     type CtaGate,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import {
+    fundedByFromWriteResult,
+    govWriteSubmittedToast,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -52,6 +57,7 @@
   export let onRefreshMutiny: () => void = () => {};
   export let onRefreshQm: () => void = () => {};
   export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
 
   const tFn = get(t);
 
@@ -90,8 +96,8 @@
       return {
         enabled: false,
         reason: qmStatus?.mutinyActive
-          ? tFn('governance.gate.cannotBootstrapMutiny')
-          : tFn('governance.gate.bootstrapOnlyEmptyRoster'),
+          ? 'governance.gate.cannotBootstrapMutiny'
+          : 'governance.gate.bootstrapOnlyEmptyRoster',
       };
     }
     return captainGate;
@@ -107,11 +113,11 @@
     if (acting) return;
     acting = true;
     try {
-      await fn();
-      showToast(tFn('governance.toast.submitted', { values: { label } }));
+      const result = await fn();
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       refresh();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label } })));
+      showToast(govWriteErrorMessage(e, label));
     } finally {
       acting = false;
     }
@@ -144,6 +150,8 @@
         {parentId}
         {treasuryAuthority}
         {privilege}
+        {fundingHint}
+        {fundingMode}
         onSubmitted={onRefreshProposals}
       />
 
@@ -386,7 +394,7 @@
         <GovCtaButton
           label={tFn('governance.action.resignCaptain')}
           gate={mutinyActive
-            ? { enabled: false, reason: tFn('governance.gate.cannotResignWhileMutiny') }
+            ? { enabled: false, reason: 'governance.gate.cannotResignWhileMutiny' }
             : captainGate}
           {acting}
           onClick={() =>
@@ -436,6 +444,7 @@
   captainAddresses={captainWearers}
   onSubmitted={onRefreshQm}
   {fundingHint}
+  {fundingMode}
 />
 
 <style>

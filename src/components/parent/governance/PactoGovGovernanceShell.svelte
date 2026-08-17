@@ -26,13 +26,19 @@
     resolveGovernancePrivilege,
     type GovernancePrivilege,
   } from '../../../lib/governance/governance-privilege';
-  import { displayGovWriteFundingHint } from '../../../lib/governance/gov-write-funding';
+  import {
+    displayGovWriteFundingHint,
+    fundedByFromWriteResult,
+    govWriteSubmittedToast,
+    resolveGovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import type { PactoGovProviderPayloadV1 } from '../../../lib/governance/pacto-gov-payload';
   import { fetchQuartermasterPendingActions } from '../../../lib/dashboard/parent-dashboard-loaders';
   import { parseSupportedChainId } from '../../../lib/wallet/chains';
   import { fetchEvmBalance } from '../../../lib/wallet/signer-balance';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { showToast } from '../../../stores/toast';
+  import { governanceProcessNonceByParentId } from '../../../stores/navigation';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
 
@@ -71,6 +77,13 @@
   let qmPendingLoading = false;
   let qmPendingError = '';
   let qmPendingHydrateKey = '';
+  let lastSeenProcessNonce = 0;
+
+  $: processNonce = $governanceProcessNonceByParentId[parentId.trim()] ?? 0;
+  $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
+    lastSeenProcessNonce = processNonce;
+    refreshAllProposals();
+  }
 
   let rosterBalanceRaw = '0';
   let rosterBalanceKnown = false;
@@ -103,6 +116,11 @@
     }
   }
 
+  $: fundingMode = resolveGovWriteFundingMode({
+    balanceRaw: rosterBalanceRaw,
+    balanceKnown: rosterBalanceKnown,
+    hasSponsorInfra: hasSponsor,
+  });
   $: fundingHint = displayGovWriteFundingHint({
     balanceRaw: rosterBalanceRaw,
     balanceKnown: rosterBalanceKnown,
@@ -281,16 +299,16 @@
     const mutinyModule = payload.mutinyModule?.trim();
     if (!mutinyModule || !mutinyStatus) return;
     try {
-      await mutinyExecute({
+      const result = await mutinyExecute({
         network,
         parentId,
         mutinyModule,
         mutinyId: mutinyStatus.activeMutinyId,
       });
-      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.executeMutiny') } }));
+      showToast(govWriteSubmittedToast(tFn('governance.action.executeMutiny'), fundedByFromWriteResult(result)));
       await reloadMutiny(true);
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.executeMutiny') } })));
+      showToast(govWriteErrorMessage(e, tFn('governance.action.executeMutiny')));
     }
   }
 
@@ -358,6 +376,7 @@
         onRefreshProposals={refreshAllProposals}
         onExecuteMutiny={executeMutinyFromBoard}
         {fundingHint}
+        {fundingMode}
       />
     {:else if govSubMode === 'crew'}
       <GovCrewActions
@@ -372,6 +391,7 @@
         onRefreshProposals={refreshAllProposals}
         onRefreshMutiny={() => reloadMutiny(true)}
         {fundingHint}
+        {fundingMode}
       />
     {:else}
       <GovCaptainActions
@@ -393,6 +413,7 @@
           void reloadQmPending();
         }}
         {fundingHint}
+        {fundingMode}
       />
     {/if}
   </div>

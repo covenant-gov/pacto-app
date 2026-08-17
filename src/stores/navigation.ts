@@ -41,6 +41,14 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
+/** Bumped to open Status → Add custom RPC after a dashboard RPC read failure. */
+export const squadStatusRpcFocusNonce = writable(0);
+
+export function focusSquadStatusRpcEditor() {
+  squadDashboardChannelMode.set('status');
+  squadStatusRpcFocusNonce.update((n) => n + 1);
+}
+
 /** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
 export type MyDashboardChannelMode = 'status' | 'alerts';
 
@@ -62,6 +70,9 @@ export const squadAllowlistNonceByParentId = writable<Record<string, number>>({}
 
 /** Bumped when peer MLS tracked-token announces apply — panels refetch. */
 export const squadTrackedTokensNonceByParentId = writable<Record<string, number>>({});
+
+/** Bumped when MLS governance process hints apply — proposals board revalidates from chain. */
+export const governanceProcessNonceByParentId = writable<Record<string, number>>({});
 
 /** Bumped when squad bot meta / key_rotated MLS announces apply. */
 export const squadBotMetaNonceBySquadId = writable<Record<string, number>>({});

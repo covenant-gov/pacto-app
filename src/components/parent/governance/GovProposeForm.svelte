@@ -2,7 +2,12 @@
   import GovCtaButton from './GovCtaButton.svelte';
   import { treasuryAuthorityPropose } from '../../../lib/governance/api';
   import { gateRequiresCaptainOrCrew, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
-  import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
+  import {
+    fundedByFromWriteResult,
+    govWriteSubmittedToast,
+    type GovWriteFundingMode,
+  } from '../../../lib/governance/gov-write-funding';
+  import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -11,6 +16,8 @@
   export let parentId: string;
   export let treasuryAuthority: string;
   export let privilege: GovernancePrivilege;
+  export let fundingHint = '';
+  export let fundingMode: GovWriteFundingMode | null = null;
   export let onSubmitted: () => void = () => {};
 
   const tFn = get(t);
@@ -26,8 +33,9 @@
   async function submit() {
     if (acting || !proposeGate.enabled) return;
     acting = true;
+    const label = tFn('governance.action.submitProposal');
     try {
-      await treasuryAuthorityPropose({
+      const result = await treasuryAuthorityPropose({
         network,
         parentId,
         treasuryAuthority,
@@ -36,10 +44,10 @@
         dataHex: proposeData,
         operation: proposeOp,
       });
-      showToast(tFn('governance.toast.submitted', { values: { label: tFn('governance.action.submitProposal') } }));
+      showToast(govWriteSubmittedToast(label, fundedByFromWriteResult(result)));
       onSubmitted();
     } catch (e) {
-      showToast(getInvokeErrorMessage(e, tFn('governance.toast.failed', { values: { label: tFn('governance.action.submitProposal') } })));
+      showToast(govWriteErrorMessage(e, label));
     } finally {
       acting = false;
     }
@@ -48,6 +56,9 @@
 
 <div class="propose-section">
   <h6 class="section-label">{$t('governance.section.submitProposal')}</h6>
+  {#if fundingHint}
+    <p class="muted funding-hint">{fundingHint}</p>
+  {/if}
   <div class="form-grid">
     <label>{$t('governance.field.to')}<input bind:value={proposeTo} placeholder={$t('governance.field.toPlaceholder')} disabled={!proposeGate.enabled || acting} /></label>
     <label>{$t('governance.field.valueWei')}<input bind:value={proposeValue} disabled={!proposeGate.enabled || acting} /></label>
@@ -68,6 +79,14 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .muted {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+  .funding-hint {
+    margin: 0 0 4px;
   }
   .section-label {
     margin: 0;

@@ -4,9 +4,11 @@
 
 import type { Abi } from 'viem';
 import erc20Minimal from './abis/erc20-minimal.json';
+import erc20Write from './abis/erc20-write.json';
 
 export const SHIPPED_ABI_CATALOG: Record<string, { label: string; abi: Abi }> = {
   'erc20-minimal': { label: 'ERC-20 (balanceOf, decimals, symbol)', abi: erc20Minimal as Abi },
+  'erc20-write': { label: 'ERC-20 (transfer, approve)', abi: erc20Write as Abi },
 };
 
 export function listShippedAbiRefs(): { ref: string; label: string }[] {

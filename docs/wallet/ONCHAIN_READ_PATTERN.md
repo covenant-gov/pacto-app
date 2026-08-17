@@ -41,6 +41,8 @@ Shell layout map: [`docs/shell/LAYOUT.md`](../shell/LAYOUT.md).
 
 Parent and channel models, MLS ids, and invite flows: **[`docs/communities/`](../communities/)**. This note only ties **when** to read on-chain data relative to account and hub lifecycle.
 
+The Governance **Proposals** board lists Treasury Authority proposals and Quartermaster pending crew via enumerable `eth_call` (`nextProposalId` / `pendingAdds` / `pendingRemoves`). MLS `governance_process_updated` only invalidates the snapshot. Hats tree walk stays bounded (`hats_read.rs`).
+
 ## Related
 
 - DM wallet messages: [DM_WALLET_MESSAGE_SCHEMA.md](./DM_WALLET_MESSAGE_SCHEMA.md)  

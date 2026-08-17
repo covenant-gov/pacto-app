@@ -24,6 +24,8 @@
   import { copyTextToClipboard } from '../../../lib/wallet/clipboard-copy';
   import { showToast } from '../../../stores/toast';
   import { onMount } from 'svelte';
+  import RpcReadErrorCard from './RpcReadErrorCard.svelte';
+  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
   export let squad: Squad;
   export let announcementsGroupId: string | null = null;
@@ -67,6 +69,8 @@
   $: hatsWired = sponsorExtStatus?.hatsWired === true;
   $: canManagePermits = iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId;
   $: showSponsoredCol = hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError);
+  $: sponsorExtRpcKind = rpcReadErrorKind(sponsorExtError);
+  $: settingsChainRpcKind = rpcReadErrorKind(settingsChainError);
 
   onMount(() => {
     if (!parentId) return;
@@ -129,7 +133,11 @@
     {#if sponsorExtLoading && !sponsorExtStatus}
       <span class="muted">{$t('governance.crew.loading')}</span>
     {:else if sponsorExtError && !sponsorExtStatus}
-      <span class="chain-read-error" role="alert">{sponsorExtError}</span>
+      {#if sponsorExtRpcKind}
+        <RpcReadErrorCard kind={sponsorExtRpcKind} />
+      {:else}
+        <span class="chain-read-error" role="alert">{sponsorExtError}</span>
+      {/if}
     {:else if sponsorExtStatus}
       {#if addressOwner}
       <span class="sponsor-owner-value">{ownerLabel()}</span>
@@ -153,7 +161,11 @@
     <p class="muted" role="status">{$t('governance.crew.refreshing')}</p>
   {/if}
   {#if settingsChainError}
-    <p class="chain-read-error" role="alert">{settingsChainError}</p>
+    {#if settingsChainRpcKind}
+      <RpcReadErrorCard kind={settingsChainRpcKind} />
+    {:else}
+      <p class="chain-read-error" role="alert">{settingsChainError}</p>
+    {/if}
   {/if}
 
   {#if announcementsGroupId}

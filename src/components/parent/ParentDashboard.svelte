@@ -83,6 +83,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     persistTreasuryProposalsSnapshot,
   } from '../../lib/dashboard/governance-snapshot-cache';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
+  import { governanceProcessNonceByParentId } from '../../stores/navigation';
   import {
     getCachedSettingsChainSnapshot,
     persistSettingsChainSnapshot,
@@ -340,6 +341,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   function refreshTreasuryProposals() {
     treasuryProposalsKey = '';
     void loadTreasuryProposals();
+  }
+
+  let lastSeenProcessNonce = 0;
+  $: processNonce = $governanceProcessNonceByParentId[parent.id.trim()] ?? 0;
+  $: if (processNonce > 0 && processNonce !== lastSeenProcessNonce) {
+    lastSeenProcessNonce = processNonce;
+    refreshTreasuryProposals();
   }
 
   async function loadHatsTree() {

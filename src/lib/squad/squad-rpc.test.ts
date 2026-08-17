@@ -8,6 +8,8 @@ import {
   resolveSquadRpcUrls,
   setSquadRpcBackup,
   setSquadRpcPrimary,
+  classifySquadChainRpcUrl,
+  isPimlicoBundlerHost,
   SQUAD_RPC_PREFIX,
 } from './squad-rpc';
 import { WALLET_RPC_PREFS_PREFIX } from '../wallet/rpc-prefs';
@@ -40,6 +42,25 @@ describe('squad-rpc slot transitions', () => {
     expect(cfg.rpc1).toEqual({ kind: 'default_public' });
     expect(cfg.rpc2).toEqual({ kind: 'unset' });
     expect(loadRaw()).toBeTruthy();
+  });
+
+  it('rejects Pimlico bundler hosts as chain RPC', () => {
+    expect(isPimlicoBundlerHost('https://api.pimlico.io/v2/11155111/rpc?apikey=x')).toBe(true);
+    expect(isPimlicoBundlerHost('https://eth-sepolia.g.alchemy.com/v2/abc')).toBe(false);
+    expect(classifySquadChainRpcUrl('https://api.pimlico.io/v2/11155111/rpc')).toEqual({
+      ok: false,
+      error: 'squad.rpc.error.bundlerUrl',
+    });
+    initSquadRpcOnCreate(npub, parentId, 'sepolia');
+    const res = setSquadRpcPrimary(
+      npub,
+      parentId,
+      'sepolia',
+      'https://api.pimlico.io/v2/11155111/rpc?apikey=x',
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toBe('squad.rpc.error.bundlerUrl');
   });
 
   it('setSquadRpcPrimary sets custom + public backup', () => {

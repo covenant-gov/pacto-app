@@ -10,6 +10,8 @@ import {
   squadDashboardChannelMode,
   SQUAD_DASHBOARD_MODE_PREFIX,
   parseSquadDashboardChannelMode,
+  squadStatusRpcFocusNonce,
+  focusSquadStatusRpcEditor,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -24,6 +26,7 @@ import {
   dashboardPollReplicaNonceByParentId,
   squadAllowlistNonceByParentId,
   squadTrackedTokensNonceByParentId,
+  governanceProcessNonceByParentId,
   squadBotMetaNonceBySquadId,
 } from './navigation';
 import { setCurrentNpubForPersistence } from './persistence-context';
@@ -58,6 +61,7 @@ describe('navigation', () => {
     activeHubChannelName.set(null);
     activeView.set('hub');
     squadDashboardChannelMode.set('status');
+    squadStatusRpcFocusNonce.set(0);
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -67,6 +71,7 @@ describe('navigation', () => {
     dashboardPollReplicaNonceByParentId.set({});
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
+    governanceProcessNonceByParentId.set({});
     squadBotMetaNonceBySquadId.set({});
     setCurrentNpubForPersistence(null);
     vi.unstubAllGlobals();
@@ -163,5 +168,15 @@ describe('navigation', () => {
   it('bumps the dashboard poll replica nonce', () => {
     dashboardPollReplicaNonceByParentId.set({ p1: 1 });
     expect(get(dashboardPollReplicaNonceByParentId)).toEqual({ p1: 1 });
+  });
+
+  it('focusSquadStatusRpcEditor switches to status and bumps the RPC focus nonce', () => {
+    squadDashboardChannelMode.set('governance');
+    expect(get(squadStatusRpcFocusNonce)).toBe(0);
+    focusSquadStatusRpcEditor();
+    expect(get(squadDashboardChannelMode)).toBe('status');
+    expect(get(squadStatusRpcFocusNonce)).toBe(1);
+    focusSquadStatusRpcEditor();
+    expect(get(squadStatusRpcFocusNonce)).toBe(2);
   });
 });

@@ -456,24 +456,6 @@ describe('api command wrappers', () => {
       network: NETWORK,
       parentId: 'parent1',
       quartermaster: '0xqm',
-      fromBlock: null,
-      rpcUrls: expect.any(Array),
-    });
-  });
-
-  it('listQuartermasterPending passes fromBlock when provided', async () => {
-    mockedInvoke.mockResolvedValueOnce([]);
-    await listQuartermasterPending({
-      network: NETWORK,
-      parentId: 'parent1',
-      quartermaster: '0xqm',
-      fromBlock: 12,
-    });
-    expect(mockedInvoke).toHaveBeenCalledWith('list_quartermaster_pending', {
-      network: NETWORK,
-      parentId: 'parent1',
-      quartermaster: '0xqm',
-      fromBlock: 12,
       rpcUrls: expect.any(Array),
     });
   });

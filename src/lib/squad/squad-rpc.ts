@@ -39,10 +39,29 @@ export function defaultPublicSlot(): SquadRpcSlot {
   return { kind: 'default_public' };
 }
 
-export function urlSlot(raw: string): SquadRpcSlot | null {
+/** Bundler hosts are not chain RPC; do not persist or share them as squad RPC. */
+export function isPimlicoBundlerHost(raw: string): boolean {
+  try {
+    const host = new URL(raw.trim()).hostname.toLowerCase();
+    return host === 'pimlico.io' || host.endsWith('.pimlico.io');
+  } catch {
+    return false;
+  }
+}
+
+export function classifySquadChainRpcUrl(
+  raw: string,
+): { ok: true; url: string } | { ok: false; error: string } {
   const url = normalizeRpcUrl(raw);
-  if (!url) return null;
-  return { kind: 'url', url };
+  if (!url) return { ok: false, error: 'squad.rpc.error.invalidUrl' };
+  if (isPimlicoBundlerHost(url)) return { ok: false, error: 'squad.rpc.error.bundlerUrl' };
+  return { ok: true, url };
+}
+
+export function urlSlot(raw: string): SquadRpcSlot | null {
+  const classified = classifySquadChainRpcUrl(raw);
+  if (!classified.ok) return null;
+  return { kind: 'url', url: classified.url };
 }
 
 export function parseSquadRpcSlot(raw: unknown): SquadRpcSlot | null {
@@ -51,9 +70,9 @@ export function parseSquadRpcSlot(raw: unknown): SquadRpcSlot | null {
   if (o.kind === 'unset') return { kind: 'unset' };
   if (o.kind === 'default_public') return { kind: 'default_public' };
   if (o.kind === 'url' && typeof o.url === 'string') {
-    const url = normalizeRpcUrl(o.url);
-    if (!url) return null;
-    return { kind: 'url', url };
+    const classified = classifySquadChainRpcUrl(o.url);
+    if (!classified.ok) return null;
+    return { kind: 'url', url: classified.url };
   }
   return null;
 }
@@ -165,11 +184,11 @@ export function setSquadRpcPrimary(
   chain: SupportedChainId,
   rawUrl: string,
 ): { ok: true; config: SquadRpcConfig } | { ok: false; error: string } {
-  const slot = urlSlot(rawUrl);
-  if (!slot) return { ok: false, error: 'squad.rpc.error.invalidUrl' };
+  const classified = classifySquadChainRpcUrl(rawUrl);
+  if (!classified.ok) return { ok: false, error: classified.error };
   const config: SquadRpcConfig = {
     chain,
-    rpc1: slot,
+    rpc1: { kind: 'url', url: classified.url },
     rpc2: defaultPublicSlot(),
   };
   saveSquadRpcConfig(accountNpub, parentId, config);
@@ -182,8 +201,8 @@ export function setSquadRpcBackup(
   chain: SupportedChainId,
   rawUrl: string,
 ): { ok: true; config: SquadRpcConfig } | { ok: false; error: string } {
-  const slot = urlSlot(rawUrl);
-  if (!slot) return { ok: false, error: 'squad.rpc.error.invalidUrl' };
+  const classified = classifySquadChainRpcUrl(rawUrl);
+  if (!classified.ok) return { ok: false, error: classified.error };
   const existing = loadSquadRpcConfig(accountNpub, parentId);
   const rpc1 =
     existing?.rpc1.kind === 'url'
@@ -197,7 +216,7 @@ export function setSquadRpcBackup(
   const config: SquadRpcConfig = {
     chain,
     rpc1,
-    rpc2: slot,
+    rpc2: { kind: 'url', url: classified.url },
   };
   saveSquadRpcConfig(accountNpub, parentId, config);
   return { ok: true, config };

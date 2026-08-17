@@ -258,8 +258,7 @@ fn write_lock_exclusive(path: &Path, record: &SandboxLockRecord) -> std::io::Res
         .write(true)
         .create_new(true)
         .open(path)?;
-    let json = serde_json::to_vec(record)
-        .map_err(std::io::Error::other)?;
+    let json = serde_json::to_vec(record).map_err(std::io::Error::other)?;
     file.write_all(&json)
 }
 
@@ -346,9 +345,9 @@ const DEFAULT_WINDOW_STATE_FILENAME: &str = ".window-state.json";
 fn fnv1a32(input: &str) -> u32 {
     const FNV_OFFSET: u32 = 0x811c_9dc5;
     const FNV_PRIME: u32 = 0x0100_0193;
-    input
-        .bytes()
-        .fold(FNV_OFFSET, |hash, byte| (hash ^ byte as u32).wrapping_mul(FNV_PRIME))
+    input.bytes().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ byte as u32).wrapping_mul(FNV_PRIME)
+    })
 }
 
 /// Filename to hand `tauri_plugin_window_state::Builder::with_filename`.

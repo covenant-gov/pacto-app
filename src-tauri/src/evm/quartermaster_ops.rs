@@ -1,10 +1,7 @@
 //! Quartermaster crew roster reads and writes.
 
-use std::collections::HashSet;
-
-use alloy::primitives::{Address, B256, U256};
-use alloy::rpc::types::Log;
-use alloy::sol_types::{SolCall, SolEvent};
+use alloy::primitives::{Address, U256};
+use alloy::sol_types::SolCall;
 use serde::Serialize;
 use tauri::{AppHandle, Runtime};
 
@@ -12,17 +9,13 @@ use super::access_control::GovCapability;
 use super::contracts::hats::IHats::hatSupplyCall;
 use super::contracts::pacto_gov::read_bindings::IQuartermaster::{
     bootstrapCrewCall, cancelAddCrewCall, cancelRemoveCrewCall, crewChangeDelayCall, crewHatIdCall,
-    executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall, pendingCrewAddAtCall,
-    pendingCrewRemoveAtCall, requestAddCrewCall, requestRemoveCrewCall, CrewAddCancelled,
-    CrewAddExecuted, CrewAddRequested, CrewRemoveCancelled, CrewRemoveExecuted,
-    CrewRemoveRequested,
+    executeAddCrewCall, executeRemoveCrewCall, mutinyActiveCall, pendingAddsCall,
+    pendingCrewAddAtCall, pendingCrewRemoveAtCall, pendingRemovesCall, requestAddCrewCall,
+    requestRemoveCrewCall,
 };
 use super::gov_module_write::{resolve_parent_id_for_module, send_gov_module_call};
 use super::gov_read::connect_gov_read_provider;
 use super::pacto_chain_config;
-use super::rpc::logs::{
-    get_logs_chunked, resolve_lookback_range, DEFAULT_LOG_CHUNK_BLOCKS, DEFAULT_LOG_LOOKBACK_BLOCKS,
-};
 use super::rpc::{call::eth_call_decode, parse_address, wallet_err_json};
 use super::squad_sponsor_common::require_parent_member;
 
@@ -93,49 +86,16 @@ pub struct QuartermasterPendingActionDto {
     pub executable_at: String,
 }
 
-fn qm_crew_lifecycle_topic0s() -> [B256; 6] {
-    [
-        CrewAddRequested::SIGNATURE_HASH,
-        CrewAddCancelled::SIGNATURE_HASH,
-        CrewAddExecuted::SIGNATURE_HASH,
-        CrewRemoveRequested::SIGNATURE_HASH,
-        CrewRemoveCancelled::SIGNATURE_HASH,
-        CrewRemoveExecuted::SIGNATURE_HASH,
-    ]
-}
-
-/// Fold Quartermaster lifecycle logs into candidate address sets (Requested − Cancelled/Executed).
-fn collect_qm_pending_candidates_from_logs(logs: &[Log]) -> (HashSet<Address>, HashSet<Address>) {
-    let mut adds = HashSet::new();
-    let mut removes = HashSet::new();
-    for log in logs {
-        let topics = log.topics();
-        let data = log.data().data.as_ref();
-        if let Ok(ev) = CrewAddRequested::decode_raw_log(topics, data) {
-            adds.insert(ev._candidate);
-            continue;
-        }
-        if let Ok(ev) = CrewAddCancelled::decode_raw_log(topics, data) {
-            adds.remove(&ev._candidate);
-            continue;
-        }
-        if let Ok(ev) = CrewAddExecuted::decode_raw_log(topics, data) {
-            adds.remove(&ev._candidate);
-            continue;
-        }
-        if let Ok(ev) = CrewRemoveRequested::decode_raw_log(topics, data) {
-            removes.insert(ev._crew);
-            continue;
-        }
-        if let Ok(ev) = CrewRemoveCancelled::decode_raw_log(topics, data) {
-            removes.remove(&ev._crew);
-            continue;
-        }
-        if let Ok(ev) = CrewRemoveExecuted::decode_raw_log(topics, data) {
-            removes.remove(&ev._crew);
-        }
-    }
-    (adds, removes)
+fn zip_pending(
+    kind: QmPendingKind,
+    addrs: Vec<Address>,
+    executable_ats: Vec<U256>,
+) -> Vec<(QmPendingKind, Address, U256)> {
+    addrs
+        .into_iter()
+        .zip(executable_ats)
+        .map(|(addr, executable_at)| (kind, addr, executable_at))
+        .collect()
 }
 
 #[derive(Serialize)]
@@ -145,6 +105,7 @@ pub struct QuartermasterWriteResult {
     pub chain: String,
     pub chain_id: u64,
     pub quartermaster: String,
+    pub funded_by: String,
 }
 
 #[tauri::command]
@@ -253,67 +214,36 @@ fn fold_qm_pending_verifies(
     out
 }
 
-/// Discover still-pending crew add/remove via QM event logs, verified with `pending*At` views.
+/// List pending crew add/remove from on-chain enumerable views.
 #[tauri::command]
 pub async fn list_quartermaster_pending<R: Runtime>(
     app: AppHandle<R>,
     network: String,
     parent_id: String,
     quartermaster: String,
-    from_block: Option<u64>,
     rpc_urls: Option<Vec<String>>,
 ) -> Result<Vec<QuartermasterPendingActionDto>, String> {
     require_parent_member(&app, &parent_id).await?;
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
-    // Bind quartermaster address to this parent via stored infra (rejects mismatches).
     let _parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
 
     let (provider, _ctx) = connect_gov_read_provider(network.as_str(), rpc_urls).await?;
-    let (from, to) =
-        resolve_lookback_range(&provider, from_block, DEFAULT_LOG_LOOKBACK_BLOCKS).await?;
-    let logs = get_logs_chunked(
-        &provider,
-        qm,
-        from,
-        to,
-        DEFAULT_LOG_CHUNK_BLOCKS,
-        Some(&qm_crew_lifecycle_topic0s()),
-    )
-    .await?;
-    let (add_addrs, remove_addrs) = collect_qm_pending_candidates_from_logs(&logs);
-
-    let candidates: Vec<(QmPendingKind, Address)> = add_addrs
-        .into_iter()
-        .map(|a| (QmPendingKind::Add, a))
-        .chain(remove_addrs.into_iter().map(|a| (QmPendingKind::Remove, a)))
-        .collect();
-
-    let verifies = futures_util::future::join_all(candidates.into_iter().map(|(kind, addr)| {
-        let provider = provider.clone();
-        async move {
-            let executable_at: U256 = match kind {
-                QmPendingKind::Add => {
-                    eth_call_decode(&provider, qm, &pendingCrewAddAtCall { _candidate: addr })
-                        .await
-                        .map_err(|e| wallet_err_json("QM_READ", e, None))?
-                }
-                QmPendingKind::Remove => {
-                    eth_call_decode(&provider, qm, &pendingCrewRemoveAtCall { _crew: addr })
-                        .await
-                        .map_err(|e| wallet_err_json("QM_READ", e, None))?
-                }
-            };
-            Ok::<_, String>((kind, addr, executable_at))
-        }
-    }))
-    .await;
-
-    let mut rows = Vec::with_capacity(verifies.len());
-    for row in verifies {
-        rows.push(row?);
-    }
-    Ok(fold_qm_pending_verifies(rows))
+    let adds = eth_call_decode(&provider, qm, &pendingAddsCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    let removes = eth_call_decode(&provider, qm, &pendingRemovesCall {})
+        .await
+        .map_err(|e| wallet_err_json("QM_READ", e, None))?;
+    Ok(fold_qm_pending_verifies(
+        zip_pending(QmPendingKind::Add, adds._candidates, adds._executableAts)
+            .into_iter()
+            .chain(zip_pending(
+                QmPendingKind::Remove,
+                removes._crew,
+                removes._executableAts,
+            )),
+    ))
 }
 
 async fn qm_write<R: Runtime>(
@@ -328,13 +258,14 @@ async fn qm_write<R: Runtime>(
     let qm = parse_address(quartermaster.trim())
         .map_err(|e| wallet_err_json("INVALID_QUARTERMASTER", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", qm))?;
-    let (tx_hash, chain, chain_id) =
+    let (tx_hash, chain, chain_id, funded_by) =
         send_gov_module_call(app, network, parent, qm, calldata, capability, rpc_urls).await?;
     Ok(QuartermasterWriteResult {
         tx_hash,
         chain,
         chain_id,
         quartermaster: format!("{:#x}", qm),
+        funded_by,
     })
 }
 
@@ -501,31 +432,19 @@ pub async fn quartermaster_execute_remove_crew<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        addresses_equal_normalized, collect_qm_pending_candidates_from_logs, encode_bootstrap_crew,
-        encode_execute_add_crew, encode_request_add_crew, encode_request_remove_crew,
-        fold_qm_pending_verifies, qm_crew_lifecycle_topic0s, QmPendingKind,
+        addresses_equal_normalized, encode_bootstrap_crew, encode_execute_add_crew,
+        encode_request_add_crew, encode_request_remove_crew, fold_qm_pending_verifies, zip_pending,
+        QmPendingKind,
     };
     use crate::evm::contracts::pacto_gov::read_bindings::IQuartermaster::{
         bootstrapCrewCall, executeAddCrewCall, requestAddCrewCall, requestRemoveCrewCall,
-        CrewAddCancelled, CrewAddExecuted, CrewAddRequested, CrewRemoveRequested,
     };
     use crate::evm::rpc::parse_address;
-    use alloy::primitives::{keccak256, Address, U256};
-    use alloy::rpc::types::Log;
-    use alloy::sol_types::{SolCall, SolEvent};
+    use alloy::primitives::U256;
+    use alloy::sol_types::SolCall;
 
     const ADDR_A: &str = "0x1111111111111111111111111111111111111111";
     const ADDR_B: &str = "0x2222222222222222222222222222222222222222";
-
-    fn log_from_event<E: SolEvent>(event: E) -> Log {
-        Log {
-            inner: alloy::primitives::Log {
-                address: Address::ZERO,
-                data: event.encode_log_data(),
-            },
-            ..Default::default()
-        }
-    }
 
     #[test]
     fn request_add_crew_encodes_selector_and_address() {
@@ -575,41 +494,22 @@ mod tests {
     }
 
     #[test]
-    fn crew_lifecycle_topic0s_match_event_signatures() {
-        let topics = qm_crew_lifecycle_topic0s();
-        assert_eq!(topics.len(), 6);
-        assert_eq!(topics[0], keccak256("CrewAddRequested(address,uint256)"));
-        assert_eq!(topics[1], keccak256("CrewAddCancelled(address)"));
-        assert_eq!(topics[2], keccak256("CrewAddExecuted(address)"));
-        assert_eq!(topics[3], keccak256("CrewRemoveRequested(address,uint256)"));
-        assert_eq!(topics[4], keccak256("CrewRemoveCancelled(address)"));
-        assert_eq!(topics[5], keccak256("CrewRemoveExecuted(address)"));
+    fn zip_pending_pairs_addresses_with_etas() {
+        let a = parse_address(ADDR_A).unwrap();
+        let b = parse_address(ADDR_B).unwrap();
+        let rows = zip_pending(
+            QmPendingKind::Add,
+            vec![a, b],
+            vec![U256::from(10u64), U256::from(20u64)],
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], (QmPendingKind::Add, a, U256::from(10u64)));
+        assert_eq!(rows[1], (QmPendingKind::Add, b, U256::from(20u64)));
     }
 
     #[test]
-    fn pending_candidates_track_request_cancel_and_execute() {
-        let a = parse_address(ADDR_A).unwrap();
-        let b = parse_address(ADDR_B).unwrap();
-        let logs = vec![
-            log_from_event(CrewAddRequested {
-                _candidate: a,
-                _executableAt: U256::from(100u64),
-            }),
-            log_from_event(CrewRemoveRequested {
-                _crew: b,
-                _executableAt: U256::from(200u64),
-            }),
-            log_from_event(CrewAddCancelled { _candidate: a }),
-            log_from_event(CrewAddRequested {
-                _candidate: a,
-                _executableAt: U256::from(300u64),
-            }),
-            log_from_event(CrewAddExecuted { _candidate: a }),
-        ];
-        let (adds, removes) = collect_qm_pending_candidates_from_logs(&logs);
-        assert!(adds.is_empty());
-        assert_eq!(removes.len(), 1);
-        assert!(removes.contains(&b));
+    fn zip_pending_empty_is_empty() {
+        assert!(zip_pending(QmPendingKind::Remove, vec![], vec![]).is_empty());
     }
 
     #[test]

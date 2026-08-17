@@ -72,6 +72,7 @@ pub struct MutinyWriteResult {
     pub chain: String,
     pub chain_id: u64,
     pub mutiny_module: String,
+    pub funded_by: String,
 }
 
 #[tauri::command]
@@ -159,13 +160,14 @@ async fn mutiny_write<R: Runtime>(
     let module = parse_address(mutiny_module.trim())
         .map_err(|e| wallet_err_json("INVALID_MUTINY", e, None))?;
     let parent = resolve_parent_id_for_module(&app, parent_id.as_str(), &format!("{:#x}", module))?;
-    let (tx_hash, chain, chain_id) =
+    let (tx_hash, chain, chain_id, funded_by) =
         send_gov_module_call(app, network, parent, module, calldata, capability, rpc_urls).await?;
     Ok(MutinyWriteResult {
         tx_hash,
         chain,
         chain_id,
         mutiny_module: format!("{:#x}", module),
+        funded_by,
     })
 }
 

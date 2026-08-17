@@ -33,7 +33,7 @@ flowchart TD
   acl --> rustPreflight[require_capability]
 ```
 
-**ACL** = access control (classically *access control list*). In Pacto it names this layer: roster EVM + Hats / Squad Admin capability checks before signing (`require_capability`, UI snapshot). Error codes `ACL_DENIED` / `ACL_UNBOUND` use the same shorthand. It is not a separate on-chain contract.
+**ACL** = access control (classically *access control list*). In Pacto it names this layer: squad EVM binding + Hats / Squad Admin capability checks before signing (`require_capability`, UI snapshot). Error codes `ACL_DENIED` / `ACL_UNBOUND` use the same shorthand. It is not a separate on-chain contract. Member-facing UI says “squad EVM” / “squad key,” not “roster.”
 
 ## Enforcement
 
@@ -54,6 +54,8 @@ Tauri IPC is not a security boundary if only the UI gates.
 | Squad Admin writes | `squad_admin_write.rs` (parent from infra / payload; no personal-signer fallback) |
 | Tracked tokens | `db::upsert_squad_tracked_token` / `remove_squad_tracked_token` |
 | UI snapshot | `get_squad_capabilities` → `governance-privilege.ts` / `PactoGovGovernanceShell` |
+
+Member-facing disable/fail copy is i18n’d (`governance.gate.*`, `govWriteErrorMessage` for `ACL_*` / sponsor codes). This doc stays the operator source for hat/ACL mechanics — not a UI copy catalog.
 
 Hat IDs and Safe / Squad Admin addresses come from the Nave Pirata registry deployment for the parent’s `pacto_gov` infra row (`chain` + `canonical_ref` top hat).
 
@@ -91,7 +93,7 @@ Plain rule: **roster can pay gas → EOA tx; roster cannot → sponsored UserOp*
 
 Signer is always the embedded **roster EOA** — not an external smart-contract wallet. EIP-7702 only applies on the sponsored path when that EOA has empty code (temporary set-code to the shared account impl). Details: [PACTO_SQUAD_SPONSOR.md](../wallet/PACTO_SQUAD_SPONSOR.md).
 
-Operator env: `ALCHEMY_RPC_KEY` for chain RPC; **`PIMLICO_API_KEY`** (or optional `BUNDLER_RPC_URL`) for sponsored writes (EntryPoint v0.7 bundler — Pimlico-first; do not use Alchemy as bundler). Debug builds load repo-root `.env` into Rust at startup. EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` (`PactoSimple7702Account`); optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `SPONSOR_PAYMASTER_MISMATCH`, `PAYMASTER_DEPOSIT_LOW`, `PAYMASTER_STAKE_LOW`, `PAYMASTER_VERIFICATION_GAS`, `PAYMASTER_GAS_EFFICIENCY`, `BUNDLER_ESTIMATE`, `PAYMASTER_VALIDATION`, `BUNDLER_FEE`, `ACCOUNT_SIGNATURE`, `ACCOUNT_VALIDATION`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`. Shared paymaster EntryPoint deposit and factory stake (protocol ops) are separate from per-squad sponsor pool deposits.
+Operator env: `ALCHEMY_RPC_KEY` for chain RPC. Sponsored writes use an in-app Pimlico key (Status → Sponsored gas), then **`PIMLICO_API_KEY`**, then optional `BUNDLER_RPC_URL` (EntryPoint v0.7 — Pimlico-first; do not use Alchemy as bundler). Debug builds load repo-root `.env` into Rust at startup. EIP-7702 impl defaults from `networks.sepolia.erc4337.accountImplementation` (`PactoSimple7702Account`); optional `PACTO_ERC4337_ACCOUNT_IMPL` override. Structured failures include `SPONSOR_INELIGIBLE`, `SPONSOR_POOL_LOW`, `SPONSOR_PAYMASTER_MISMATCH`, `PAYMASTER_DEPOSIT_LOW`, `PAYMASTER_STAKE_LOW`, `PAYMASTER_VERIFICATION_GAS`, `PAYMASTER_GAS_EFFICIENCY`, `BUNDLER_ESTIMATE`, `PAYMASTER_VALIDATION`, `BUNDLER_FEE`, `ACCOUNT_SIGNATURE`, `ACCOUNT_VALIDATION`, `PAYMASTER_REJECTED`, `SPONSOR_PATH_UNAVAILABLE`. Shared paymaster EntryPoint deposit and factory stake (protocol ops) are separate from per-squad sponsor pool deposits.
 
 Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov module writes (bootstrap crew, treasury authority, quartermaster, mutiny, etc.).
 

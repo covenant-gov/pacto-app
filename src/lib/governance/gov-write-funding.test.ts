@@ -1,22 +1,37 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('svelte-i18n', () => ({
+  t: {
+    subscribe: (fn: (v: (k: string, opts?: { values?: Record<string, string> }) => string) => void) => {
+      fn((k, opts) => (opts?.values ? `${k}:${JSON.stringify(opts.values)}` : k));
+      return () => {};
+    },
+  },
+}));
+
 import {
   displayGovWriteFundingHint,
   govWriteFundingFallbackHint,
   govWriteFundingHint,
   govWriteNoSponsorHint,
+  fundedByFromWriteResult,
+  govWriteSubmittedToast,
   resolveGovWriteFundingMode,
 } from './gov-write-funding';
 
 describe('govWriteFundingHint', () => {
-  it('distinguishes sponsored vs self-funded', () => {
-    expect(govWriteFundingHint('sponsored')).toMatch(/sponsored/i);
-    expect(govWriteFundingHint('self_funded')).toMatch(/squad-assigned/i);
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('fallback mentions both paths', () => {
-    const copy = govWriteFundingFallbackHint();
-    expect(copy).toMatch(/squad-assigned/i);
-    expect(copy).toMatch(/sponsored/i);
+  it('returns i18n keys for sponsored vs self-funded', () => {
+    expect(govWriteFundingHint('sponsored')).toBe('governance.funding.sponsored');
+    expect(govWriteFundingHint('self_funded')).toBe('governance.funding.selfFunded');
+  });
+
+  it('fallback and no-sponsor return keys', () => {
+    expect(govWriteFundingFallbackHint()).toBe('governance.funding.fallback');
+    expect(govWriteNoSponsorHint()).toBe('governance.funding.noSponsor');
   });
 });
 
@@ -81,5 +96,29 @@ describe('displayGovWriteFundingHint', () => {
         hasSponsorInfra: true,
       }),
     ).toBe(govWriteFundingHint('sponsored'));
+  });
+});
+
+describe('fundedByFromWriteResult', () => {
+  it('reads sponsored or self_funded and ignores unknown', () => {
+    expect(fundedByFromWriteResult({ fundedBy: 'sponsored' })).toBe('sponsored');
+    expect(fundedByFromWriteResult({ fundedBy: 'self_funded' })).toBe('self_funded');
+    expect(fundedByFromWriteResult({ fundedBy: 'maybe' })).toBeNull();
+    expect(fundedByFromWriteResult({})).toBeNull();
+    expect(fundedByFromWriteResult(null)).toBeNull();
+  });
+});
+
+describe('govWriteSubmittedToast', () => {
+  it('picks mode-specific toast keys', () => {
+    expect(govWriteSubmittedToast('Vote', 'sponsored')).toBe(
+      'governance.toast.submittedSponsored:{"label":"Vote"}',
+    );
+    expect(govWriteSubmittedToast('Vote', 'self_funded')).toBe(
+      'governance.toast.submittedSelfFunded:{"label":"Vote"}',
+    );
+    expect(govWriteSubmittedToast('Vote', null)).toBe(
+      'governance.toast.submitted:{"label":"Vote"}',
+    );
   });
 });

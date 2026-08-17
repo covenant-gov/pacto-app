@@ -119,6 +119,7 @@ import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
 import { resetSquadJoinRequestStores } from '../../stores/squad-join-requests';
 import { resetSquadHubAlertStores } from '../../stores/squad-hub-alerts';
+import { resetGovActionPromptStores } from '../../stores/gov-action-prompts';
 import { resetMlsGroupMembersStores } from '../../stores/mls-group-members';
 import { resetMlsStoreResetState } from '../../stores/mls-reset';
 import { resetStickerPacksStore } from '../../stores/stickers';
@@ -206,6 +207,7 @@ export function clearAccountState(npub?: string): void {
   resetDeferredSquadRosterKeyParentIds();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
+  resetGovActionPromptStores();
   resetMlsGroupMembersStores();
   resetMlsStoreResetState();
   resetStickerPacksStore();

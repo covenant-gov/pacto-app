@@ -87,7 +87,10 @@ fn parse_args() -> Args {
         allow_non_fixture_mnemonic,
     };
 
-    Args { sandbox_root, config }
+    Args {
+        sandbox_root,
+        config,
+    }
 }
 
 fn print_usage() {

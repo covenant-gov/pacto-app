@@ -48,6 +48,7 @@ vi.mock('../../stores/auth', () => ({
 
 import { onMlsStructuredMessage } from './mls-structured-refresh';
 import {
+  governanceProcessNonceByParentId,
   squadAllowlistNonceByParentId,
   squadBotMetaNonceBySquadId,
   squadTrackedTokensNonceByParentId,
@@ -64,6 +65,7 @@ describe('onMlsStructuredMessage', () => {
     squadAllowlistNonceByParentId.set({});
     squadTrackedTokensNonceByParentId.set({});
     squadBotMetaNonceBySquadId.set({});
+    governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
     respondToSquadStateSyncRequest.mockClear();
     currentUser.set({ npub: 'npub1alice' });
@@ -176,6 +178,24 @@ describe('onMlsStructuredMessage', () => {
       handlers,
     );
     expect(get(squadTrackedTokensNonceByParentId).g1).toBe(1);
+  });
+
+  it('bumps governance process nonce', () => {
+    const handlers = {
+      mergeTreasurySafesForParent: vi.fn(),
+      mergeSquadInfraForParent: vi.fn(),
+      mergeSquadMemberEvmForAnnouncementsGroup: vi.fn(),
+    };
+    onMlsStructuredMessage(
+      JSON.stringify({
+        type: 'governance_process_updated',
+        payload: { parent_id: 'g1', kind: 'qm_pending' },
+      }),
+      'g1',
+      handlers,
+    );
+    expect(get(governanceProcessNonceByParentId).g1).toBe(1);
+    expect(handlers.mergeSquadInfraForParent).not.toHaveBeenCalled();
   });
 
   it('syncs join requests for join schema', () => {

@@ -43,7 +43,7 @@ pub async fn send_gov_module_call<R: Runtime>(
     calldata: Vec<u8>,
     capability: GovCapability,
     rpc_urls_override: Option<Vec<String>>,
-) -> Result<(String, String, u64), String> {
+) -> Result<(String, String, u64, String), String> {
     let net_key = network.to_lowercase();
     let Some(net) = wallet_chain_config::network_by_key(&net_key) else {
         return Err(wallet_err_json(
@@ -137,7 +137,12 @@ pub async fn send_gov_module_call<R: Runtime>(
                             send.user_op_hash
                         );
                     }
-                    return Ok((receipt.tx_hash, net.key.clone(), net.chain_id));
+                    return Ok((
+                        receipt.tx_hash,
+                        net.key.clone(),
+                        net.chain_id,
+                        "sponsored".to_string(),
+                    ));
                 }
                 Err(e) => {
                     // Soft config gaps: surface a clear path. Hard sponsor rejects stay hard.
@@ -145,7 +150,7 @@ pub async fn send_gov_module_call<R: Runtime>(
                         return Err(wallet_err_json(
                             "SPONSOR_PATH_UNAVAILABLE",
                             format!(
-                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or set PIMLICO_API_KEY (or BUNDLER_RPC_URL) so the Rust backend can reach an EntryPoint v0.7 bundler (repo-root .env is loaded in debug builds)."
+                                "Roster key can't cover this write's gas and the sponsored UserOp is not fully configured ({e}). Fund the roster key, or save a Pimlico API key on Status (optional PIMLICO_API_KEY / BUNDLER_RPC_URL fallback) so the Rust backend can reach an EntryPoint v0.7 bundler."
                             ),
                             None,
                         ));
@@ -179,6 +184,7 @@ pub async fn send_gov_module_call<R: Runtime>(
         format!("0x{:x}", receipt.transaction_hash),
         net.key.clone(),
         net.chain_id,
+        "self_funded".to_string(),
     ))
 }
 

@@ -43,7 +43,8 @@ On successful sponsored inclusion (`success: true` + bundler `actualGasCost`), `
 | Variable | Role |
 |----------|------|
 | `ALCHEMY_RPC_KEY` | Chain RPC URLs only (not the UserOp bundler) |
-| `PIMLICO_API_KEY` | **Default** sponsored bundler — builds `https://api.pimlico.io/v2/11155111/rpc?apikey=…` on Sepolia |
+| In-app Pimlico key | **Preferred** — Status → Sponsored gas; stored on the current account; overrides `.env` without restart |
+| `PIMLICO_API_KEY` | Fallback sponsored bundler — builds `https://api.pimlico.io/v2/11155111/rpc?apikey=…` on Sepolia |
 | `BUNDLER_RPC_URL` | Optional override of the bundler JSON-RPC URL (any EP v0.7 bundler; do **not** use Alchemy as bundler) |
 | `PACTO_ERC4337_ACCOUNT_IMPL` | Optional override of the shared EIP-7702 set-code target (not pacto-gov; leave unset unless experimenting) |
 

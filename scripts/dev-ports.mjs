@@ -178,10 +178,36 @@ function readClaim(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
-    // Missing, unreadable, or mid-write from a racing claimant -- treat the
-    // same as "no live claim here".
+    // Missing, unreadable, or mid-write from a racing claimant.
     return null;
   }
+}
+
+/** @param {number} ms */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Re-read a claim that raced with a concurrent writer. An empty/partial
+ * file is not "free to steal" -- unlinking it while the winner still holds
+ * an open fd hands the same index to two processes.
+ *
+ * @param {string} filePath
+ * @returns {Record<string, unknown> | null}
+ */
+function readClaimSettled(filePath) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const existing = readClaim(filePath);
+    if (existing) return existing;
+    try {
+      fs.accessSync(filePath);
+    } catch {
+      return null; // gone between EEXIST and now
+    }
+    sleepSync(2);
+  }
+  return null;
 }
 
 /** @param {string} filePath @param {Record<string, unknown>} record */
@@ -227,21 +253,32 @@ function claimIndex(claimDir, index, branch, graceMs) {
     if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'EEXIST') throw err;
   }
 
-  const existing = readClaim(target);
-  const ownedBySameBranch = existing && existing.branch === branch;
-  if (existing && !ownedBySameBranch && !isClaimStale(existing, graceMs)) {
-    return false; // live claim held by a different branch
+  const existing = readClaimSettled(target);
+  if (!existing) {
+    // Unreadable while the path still exists usually means a concurrent
+    // winner is mid-write -- never unlink that. Only reclaim when the file
+    // is old enough that a live writer cannot still be finishing.
+    try {
+      const st = fs.statSync(target);
+      if (Date.now() - st.mtimeMs < graceMs) return false;
+    } catch {
+      /* already gone -- try create below */
+    }
+  } else {
+    const ownedBySameBranch = existing.branch === branch;
+    if (!ownedBySameBranch && !isClaimStale(existing, graceMs)) {
+      return false; // live claim held by a different branch
+    }
   }
 
-  // Stale, unreadable, or ours to reclaim: take it over. The unlink is
-  // best-effort -- another racer may already have removed it -- the
-  // exclusive create right after is what actually decides the single
-  // winner when several processes reach this point at once.
+  // Stale, ours, or an aged unreadable husk. Unlink is best-effort -- the
+  // exclusive create decides the single winner.
   try {
     fs.unlinkSync(target);
   } catch {
     /* already gone */
   }
+
   try {
     writeClaimExclusive(target, record);
     return true;

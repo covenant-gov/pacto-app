@@ -396,11 +396,15 @@ mod tests {
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
         assert_eq!(
             gov.nave_pirata_factory,
-            address!("0x44E42cf7b2DadDe6D5fc27B57625EaF3e3D41316")
+            address!("0x6E835c103F4719Fd84EAB57d256132007310B230")
+        );
+        assert_eq!(
+            gov.nave_pirata_registry,
+            Some(address!("0x50F7759F65b1a25B1a827D6c97A5dD61f0036278"))
         );
         assert_eq!(
             gov.master_quartermaster,
-            address!("0xE9C111428E23bd68C892785A6566DFc160358af1")
+            address!("0x44bBAD7b0e2df484Daf0c5288B0FaDB75Feb5284")
         );
     }
 
@@ -598,8 +602,8 @@ mod tests {
         clear_env(GOV_LOCAL_ENV_KEYS);
         let _guard = set_valid_local_gov_env().set("PACTO_LOCAL_CHAIN_ID", "31337");
 
-        let err =
-            guard_local_chain_artifact("local", |_| Ok(false)).expect_err("dead factory must refuse");
+        let err = guard_local_chain_artifact("local", |_| Ok(false))
+            .expect_err("dead factory must refuse");
         assert!(
             err.contains("0x1111111111111111111111111111111111111111"),
             "expected the dead factory address named: {err}"

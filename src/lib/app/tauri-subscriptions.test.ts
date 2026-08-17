@@ -107,6 +107,7 @@ vi.mock('../api/relays', () => ({
 vi.mock('../announcements', () => ({
   parseAnnouncement: (...args: unknown[]) => mocks.mockFunctions.parseAnnouncement(...args),
   ANNOUNCE_TYPE_GOVERNANCE_UPDATED: 'governance_updated',
+  ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED: 'governance_process_updated',
   ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE: 'squad_member_evm_share',
 }));
 

@@ -17,6 +17,8 @@
   import { safeStateByTreasuryId } from '../../../stores/safe';
   import { treasurySafesFetchMetaByParentId } from '../../../lib/dashboard/dashboard-fetch-meta';
   import { refreshAllSafeStates } from '../../../lib/dashboard/batch-safe-state-refresh';
+  import RpcReadErrorCard from './RpcReadErrorCard.svelte';
+  import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
   export let parentId = '';
   export let network = 'sepolia';
@@ -143,7 +145,12 @@
     {/if}
   </div>
   {#if treasuryFetchMeta?.error && (treasurySafes?.length ?? 0) > 0}
-    <p class="chain-read-error treasury-cache-error" role="alert">{treasuryFetchMeta.error}</p>
+    {@const treasuryRpcKind = rpcReadErrorKind(treasuryFetchMeta.error)}
+    {#if treasuryRpcKind}
+      <RpcReadErrorCard kind={treasuryRpcKind} />
+    {:else}
+      <p class="chain-read-error treasury-cache-error" role="alert">{treasuryFetchMeta.error}</p>
+    {/if}
   {/if}
   {#if (treasurySafes?.length ?? 0) > TREASURY_SAFE_UI_CAP}
     <p class="treasury-cap-note muted">
