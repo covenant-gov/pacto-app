@@ -7,6 +7,7 @@ use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::signers::Signer;
 use alloy::sol_types::SolCall;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -68,12 +69,23 @@ pub fn bundler_rpc_url(network_key: &str) -> Result<Option<String>, String> {
     Ok(pimlico_bundler_rpc_url(network_key))
 }
 
-fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
-    let Some(url) = std::env::var("BUNDLER_RPC_URL")
+fn bundler_override_raw() -> Option<String> {
+    std::env::var("BUNDLER_RPC_URL")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-    else {
+}
+
+fn host_is_alchemy(url: &str) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+        .map(|h| h == "alchemy.com" || h.ends_with(".alchemy.com"))
+        .unwrap_or(false)
+}
+
+fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
+    let Some(url) = bundler_override_raw() else {
         return Ok(None);
     };
     if !url.starts_with("https://") {
@@ -83,7 +95,45 @@ fn explicit_bundler_rpc_url() -> Result<Option<String>, String> {
             None,
         ));
     }
+    if host_is_alchemy(&url) {
+        return Err(wallet_err_json(
+            "BUNDLER_CONFIG",
+            "BUNDLER_RPC_URL must not be an Alchemy endpoint. Use PIMLICO_API_KEY (or a non-Alchemy EntryPoint v0.7 bundler).",
+            None,
+        ));
+    }
     Ok(Some(url))
+}
+
+/// UI status only: no URLs or keys.
+pub fn bundler_status_source(network_key: &str) -> &'static str {
+    if let Some(url) = bundler_override_raw() {
+        if host_is_alchemy(&url) {
+            return "blocked_alchemy_override";
+        }
+        if url.starts_with("https://") {
+            return "pimlico";
+        }
+        return "none";
+    }
+    if pimlico_bundler_rpc_url(network_key).is_some() {
+        "pimlico"
+    } else {
+        "none"
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BundlerStatusDto {
+    pub source: String,
+}
+
+#[tauri::command]
+pub fn get_bundler_status(network: String) -> BundlerStatusDto {
+    BundlerStatusDto {
+        source: bundler_status_source(&network).to_string(),
+    }
 }
 
 /// Pimlico EP v0.7 bundler URL from `PIMLICO_API_KEY` (chain-id path). Sepolia/local → 11155111.
@@ -1272,9 +1322,9 @@ async fn bundler_rpc(url: &str, body: &Value) -> Result<Value, BundlerRpcError> 
 mod tests {
     use super::{
         apply_userop_gas_margin, apply_verification_gas_margin, bundler_retry_delay,
-        bundler_rpc_url, call_gas_with_margin, clamp_userop_eip1559_fees,
+        bundler_rpc_url, bundler_status_source, call_gas_with_margin, clamp_userop_eip1559_fees,
         classify_bundler_userop_reject, dummy_userop_signature, eip7702_auth_json,
-        encode_eip7702_authorization, explicit_bundler_rpc_url, pack_u128s,
+        encode_eip7702_authorization, explicit_bundler_rpc_url, host_is_alchemy, pack_u128s,
         parse_estimate_user_op_gas_response, parse_hex_u128, parse_send_user_op_response,
         parse_sponsored_user_op_receipt, paymaster_data, pimlico_bundler_rpc_url,
         pimlico_chain_id_for_network, receipt_transaction_hash, retriable_bundler_status,
@@ -1839,6 +1889,44 @@ mod tests {
         assert!(err.contains("BUNDLER_CONFIG"));
         assert!(!err.contains("http://bundler.example"));
         assert!(explicit_bundler_rpc_url().is_err());
+    }
+
+    #[test]
+    fn bundler_rpc_url_rejects_alchemy_override() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::set_var(
+            "BUNDLER_RPC_URL",
+            "https://eth-sepolia.g.alchemy.com/v2/test-key",
+        );
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
+        let err = bundler_rpc_url("sepolia").unwrap_err();
+        assert!(err.contains("BUNDLER_CONFIG"));
+        assert!(!err.contains("eth-sepolia"));
+        assert!(!err.contains("test-key"));
+        assert!(explicit_bundler_rpc_url().is_err());
+        assert_eq!(bundler_status_source("sepolia"), "blocked_alchemy_override");
+        assert!(host_is_alchemy(
+            "https://eth-sepolia.g.alchemy.com/v2/test-key"
+        ));
+        assert!(!host_is_alchemy(
+            "https://api.pimlico.io/v2/11155111/rpc?apikey=x"
+        ));
+    }
+
+    #[test]
+    fn bundler_status_pimlico_when_key_set() {
+        let _lock = ENV_TEST_MUTEX.lock();
+        let prev_b = std::env::var_os("BUNDLER_RPC_URL");
+        let prev_p = std::env::var_os("PIMLICO_API_KEY");
+        let _gb = EnvVarGuard("BUNDLER_RPC_URL", prev_b);
+        let _gp = EnvVarGuard("PIMLICO_API_KEY", prev_p);
+        std::env::remove_var("BUNDLER_RPC_URL");
+        std::env::set_var("PIMLICO_API_KEY", "test-pimlico-key");
+        assert_eq!(bundler_status_source("sepolia"), "pimlico");
     }
 
     #[test]

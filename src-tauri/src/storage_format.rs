@@ -554,7 +554,10 @@ pub(crate) fn get_storage_compatibility<R: Runtime>(
 ) -> Result<StorageCompatibilityReport, String> {
     let app_data_dir = crate::test_sandbox::test_data_dir(&app)
         .map_err(|_| "Unable to resolve app storage location".to_string())?;
-    Ok(compatibility_report(&app_data_dir, &app.config().identifier))
+    Ok(compatibility_report(
+        &app_data_dir,
+        &app.config().identifier,
+    ))
 }
 
 #[cfg(test)]

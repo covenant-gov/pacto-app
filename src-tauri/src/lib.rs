@@ -9413,6 +9413,7 @@ pub fn run() {
             evm::squad_sponsor_withdraw::withdraw_squad_sponsor,
             evm::squad_sponsor_withdraw::get_squad_sponsor_withdrawable,
             evm::squad_sponsor_read::get_squad_sponsor_summary,
+            evm::sponsor_userop::get_bundler_status,
             evm::squad_sponsor_ext::get_squad_sponsor_ext_status,
             evm::squad_sponsor_ext::squad_sponsor_set_permitted_address,
             evm::squad_admin_deploy::deploy_squad_admin_for_parent,

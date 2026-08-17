@@ -602,8 +602,8 @@ mod tests {
         clear_env(GOV_LOCAL_ENV_KEYS);
         let _guard = set_valid_local_gov_env().set("PACTO_LOCAL_CHAIN_ID", "31337");
 
-        let err =
-            guard_local_chain_artifact("local", |_| Ok(false)).expect_err("dead factory must refuse");
+        let err = guard_local_chain_artifact("local", |_| Ok(false))
+            .expect_err("dead factory must refuse");
         assert!(
             err.contains("0x1111111111111111111111111111111111111111"),
             "expected the dead factory address named: {err}"

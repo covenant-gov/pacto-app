@@ -132,6 +132,7 @@ export const walletFixtures: Record<string, MockCommandHandler> = {
     ok: false,
     message: 'Wallet balances are only available in the desktop app.',
   }),
+  get_bundler_status: () => ({ source: 'none' }),
   wallet_get_usd_spot_prices: () => ({
     ok: false,
     message: 'USD prices are only available in the desktop app.',
