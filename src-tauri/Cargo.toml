@@ -90,6 +90,11 @@ symphonia = { version = "0.5.5", features = ["mp3", "wav", "flac", "pcm"] }
 # stock SQLite, so existing `pacto.db` files are unaffected.
 rusqlite = { version = "0.37", features = ["bundled-sqlcipher-vendored-openssl"] }
 refinery = { version = "0.9", features = ["rusqlite", "int8-versions"] }
+# Same hasher refinery-core uses for migration checksums (SipHasher13).
+# Direct dependency so storage_format::legacy_i32_checksum can reproduce a
+# pre-int8-versions build's checksum for recognition, without depending on
+# refinery-core's private internals.
+siphasher = "1"
 log = "0.4"
 rand = "0.8"
 url = "2.5"

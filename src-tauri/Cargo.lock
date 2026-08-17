@@ -6126,6 +6126,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3 0.10.9",
+ "siphasher",
  "symphonia",
  "tauri",
  "tauri-build",

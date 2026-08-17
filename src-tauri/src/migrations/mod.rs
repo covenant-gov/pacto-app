@@ -51,6 +51,13 @@ pub(crate) fn embedded_migration_set() -> Vec<refinery::Migration> {
 /// Existing pre-refinery databases are detected by the absence of
 /// `refinery_schema_history` and the presence of `settings`, and are
 /// baselined by stamping the full migration history without re-running it.
+///
+/// A database that already has a history table goes through
+/// `reconcile_legacy_checksums` first: a pre-0.6.0 build stamped it with
+/// checksums computed under a narrower `SchemaVersion` type, which
+/// `embedded::migrations::runner().run` below -- refinery's own
+/// checksum-verifying apply -- would otherwise reject as divergent. See
+/// `reconcile_legacy_checksums` for why.
 pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
     let history_exists: bool = conn
         .query_row(
@@ -74,12 +81,68 @@ pub fn run_migrations(conn: &mut rusqlite::Connection) -> Result<(), String> {
         if has_settings {
             baseline_existing_account(conn)?;
         }
+    } else {
+        reconcile_legacy_checksums(conn)?;
     }
 
     embedded::migrations::runner()
         .run(conn)
         .map_err(|e| format!("Migration failed: {}", e))?;
 
+    Ok(())
+}
+
+/// One-time repair for a database whose `refinery_schema_history.checksum`
+/// values were stamped by a build compiled without the `int8-versions`
+/// Cargo feature -- every Pacto release before 0.6.0. Enabling that feature
+/// changed `refinery::SchemaVersion` from `i32` to `i64` (needed so a
+/// 14-digit UTC-timestamp migration version fits); refinery hashes
+/// `(name, version, sql)` together, and hashing an `i32` vs an `i64` for the
+/// identical numeric value feeds a different byte width into the hasher --
+/// silently changing the checksum of every migration a pre-0.6.0 install
+/// had already applied, even though nothing about the migration's content
+/// changed. Left unreconciled, `embedded::migrations::runner().run` --
+/// called right after this in `run_migrations` -- aborts with
+/// `DivergentVersion` on the first such row.
+///
+/// Rewrites the stored checksum to this build's current value wherever it
+/// exactly matches the legacy (i32-schema-version) checksum for that
+/// migration, via raw SQL rather than the refinery API, so a row is only
+/// ever touched by an exact legacy-checksum match. A row that matches
+/// neither checksum is a genuine divergence and is left alone --
+/// `Runner::run` (and `storage_format::classify_history`'s read-only
+/// probe, which tolerates the same legacy checksum) still catch that for
+/// real.
+fn reconcile_legacy_checksums(conn: &rusqlite::Connection) -> Result<(), String> {
+    for migration in embedded::migrations::runner().get_migrations() {
+        let Some(sql) = migration.sql() else {
+            continue;
+        };
+        let current_checksum = migration.checksum().to_string();
+        let legacy_checksum =
+            crate::storage_format::legacy_i32_checksum(migration.name(), migration.version(), sql)
+                .to_string();
+        if legacy_checksum == current_checksum {
+            continue;
+        }
+        conn.execute(
+            "UPDATE refinery_schema_history \
+             SET checksum = ?1 \
+             WHERE version = ?2 AND name = ?3 AND checksum = ?4",
+            rusqlite::params![
+                current_checksum,
+                migration.version(),
+                migration.name(),
+                legacy_checksum
+            ],
+        )
+        .map_err(|e| {
+            format!(
+                "Failed to reconcile legacy checksum for {}: {}",
+                migration, e
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -154,6 +217,17 @@ mod tests {
     use refinery::Migration;
 
     fn stamp_migration(conn: &mut rusqlite::Connection, migration: &Migration) {
+        stamp_migration_with_checksum(conn, migration, &migration.checksum().to_string());
+    }
+
+    /// Like `stamp_migration`, but with an explicit checksum -- used to
+    /// simulate a row stamped by a pre-0.6.0 build (a legacy i32-schema-
+    /// version checksum) instead of this build's own.
+    fn stamp_migration_with_checksum(
+        conn: &mut rusqlite::Connection,
+        migration: &Migration,
+        checksum: &str,
+    ) {
         let applied_on = OffsetDateTime::now_utc()
             .format(&Rfc3339)
             .expect("format baseline timestamp");
@@ -168,12 +242,7 @@ mod tests {
         .expect("create history table");
         conn.execute(
             "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![
-                migration.version(),
-                migration.name(),
-                &applied_on,
-                migration.checksum().to_string()
-            ],
+            rusqlite::params![migration.version(), migration.name(), &applied_on, checksum],
         )
         .expect("stamp migration");
     }
@@ -389,10 +458,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn v1_database_migrates_to_latest() {
-        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
-        // Apply the V1 schema manually to simulate an account created at that version.
+    /// The V1 schema (`profiles`, `chats`, `messages`, `settings`,
+    /// `mls_groups`, `mls_keypackages`, `mls_event_cursors`) as it existed
+    /// before any migration ran, for simulating an account created at that
+    /// version.
+    fn seed_v1_schema(conn: &rusqlite::Connection) {
         conn.execute_batch(
             r#"
             CREATE TABLE profiles (
@@ -442,6 +512,13 @@ mod tests {
             "#,
         )
         .expect("v1 schema");
+    }
+
+    #[test]
+    fn v1_database_migrates_to_latest() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        // Apply the V1 schema manually to simulate an account created at that version.
+        seed_v1_schema(&conn);
 
         // Seed V1 with a message so the V7 migration path has real data to transform.
         conn.execute(
@@ -491,5 +568,61 @@ mod tests {
             })
             .expect("count events");
         assert_eq!(migrated_event, 1, "V1 message should be migrated to events");
+    }
+
+    /// Regression test for the checksum break the `int8-versions` Cargo
+    /// feature introduced (see `reconcile_legacy_checksums`): a V1 row
+    /// stamped with the *legacy* i32-schema-version checksum -- what every
+    /// pre-0.6.0 build actually wrote -- must still let `run_migrations`
+    /// proceed instead of refinery aborting with `DivergentVersion`, and
+    /// the stored checksum must come out reconciled to this build's
+    /// current value afterward.
+    #[test]
+    fn v1_database_with_legacy_checksum_reconciles_and_migrates() {
+        let mut conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        seed_v1_schema(&conn);
+
+        let runner = embedded::migrations::runner();
+        let migrations = runner.get_migrations();
+        let v1 = migrations
+            .iter()
+            .find(|m| m.version() == 1)
+            .expect("V1 migration should be embedded");
+        let legacy_checksum = crate::storage_format::legacy_i32_checksum(
+            v1.name(),
+            v1.version(),
+            v1.sql().expect("embedded migration has sql"),
+        )
+        .to_string();
+        assert_ne!(
+            legacy_checksum,
+            v1.checksum().to_string(),
+            "test fixture must actually exercise a checksum mismatch"
+        );
+        stamp_migration_with_checksum(&mut conn, v1, &legacy_checksum);
+
+        run_migrations(&mut conn).expect("legacy checksum should not block migration");
+
+        let reconciled_checksum: String = conn
+            .query_row(
+                "SELECT checksum FROM refinery_schema_history WHERE version = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("V1 history row should exist");
+        assert_eq!(
+            reconciled_checksum,
+            v1.checksum().to_string(),
+            "legacy checksum should be rewritten to this build's current checksum"
+        );
+
+        let last_version: i64 = conn
+            .query_row(
+                "SELECT MAX(version) FROM refinery_schema_history",
+                [],
+                |row| row.get(0),
+            )
+            .expect("history should exist");
+        assert_eq!(last_version, embedded_ceiling());
     }
 }
