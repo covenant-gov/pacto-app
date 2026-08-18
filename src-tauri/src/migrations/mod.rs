@@ -639,4 +639,91 @@ mod tests {
             .expect("history should exist");
         assert_eq!(last_version, embedded_ceiling());
     }
+
+    /// `v1_database_with_legacy_checksum_reconciles_and_migrates` above only
+    /// stamps a single row with a legacy checksum. A real 0.5.x history has
+    /// every applied migration on the legacy digest, so this proves the
+    /// reconciliation loop rewrites all of them, not just the first --
+    /// while leaving a row that matches neither checksum untouched.
+    #[test]
+    fn reconcile_legacy_checksums_for_table_rewrites_every_stamped_row() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE refinery_schema_history (
+                version INTEGER PRIMARY KEY,
+                name VARCHAR(255),
+                applied_on VARCHAR(255),
+                checksum VARCHAR(255)
+            );",
+        )
+        .expect("create history table");
+
+        let runner = embedded::migrations::runner();
+        let all_migrations = runner.get_migrations();
+        let sample: Vec<&Migration> = all_migrations
+            .iter()
+            .filter(|m| m.sql().is_some())
+            .take(5)
+            .collect();
+        assert!(
+            sample.len() >= 2,
+            "need at least two real migrations to prove the loop, not just the first"
+        );
+
+        let applied_on = OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .expect("format timestamp");
+        for migration in &sample {
+            let legacy_checksum = crate::storage_format::legacy_i32_checksum(
+                migration.name(),
+                migration.version(),
+                migration.sql().expect("sample only has migrations with sql"),
+            )
+            .to_string();
+            conn.execute(
+                "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![migration.version(), migration.name(), &applied_on, legacy_checksum],
+            )
+            .expect("stamp legacy row");
+        }
+        // A genuinely divergent row -- neither legacy nor current -- must be left alone.
+        let last = all_migrations.last().expect("embedded set is non-empty");
+        let divergent_version = last.version() + 1_000_000;
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) VALUES (?1, 'divergent-fixture', ?2, 'not-a-real-checksum')",
+            rusqlite::params![divergent_version, &applied_on],
+        )
+        .expect("stamp divergent row");
+
+        reconcile_legacy_checksums_for_table(&conn, "refinery_schema_history", all_migrations)
+            .expect("reconciliation should not error");
+
+        for migration in &sample {
+            let stored: String = conn
+                .query_row(
+                    "SELECT checksum FROM refinery_schema_history WHERE version = ?1",
+                    [migration.version()],
+                    |row| row.get(0),
+                )
+                .expect("row should exist");
+            assert_eq!(
+                stored,
+                migration.checksum().to_string(),
+                "version {} should be rewritten to the current checksum",
+                migration.version()
+            );
+        }
+
+        let divergent_checksum: String = conn
+            .query_row(
+                "SELECT checksum FROM refinery_schema_history WHERE version = ?1",
+                [divergent_version],
+                |row| row.get(0),
+            )
+            .expect("divergent row should exist");
+        assert_eq!(
+            divergent_checksum, "not-a-real-checksum",
+            "a row matching neither checksum must be left alone"
+        );
+    }
 }
