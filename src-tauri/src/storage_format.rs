@@ -15,6 +15,8 @@
 //! for the gate.
 
 use rusqlite::{Connection, OpenFlags};
+use siphasher::sip::SipHasher13;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -102,6 +104,31 @@ pub(crate) enum StorageFormatVerdict {
     Divergent(i64),
 }
 
+/// Reproduces refinery-core's migration checksum exactly as every Pacto
+/// build before 0.6.0 computed it, when `refinery::SchemaVersion` was `i32`
+/// instead of `i64` (the `int8-versions` Cargo feature, added so a
+/// 14-digit UTC-timestamp migration version fits, was off). Refinery hashes
+/// `(name, version, sql)` through `SipHasher13`; hashing an `i32` vs an
+/// `i64` for the identical numeric `version` feeds a different byte width
+/// into the hasher and produces a different digest, even though the
+/// migration's name and SQL never changed. That silently invalidated the
+/// checksum every pre-0.6.0 install had already stamped into
+/// `refinery_schema_history` for every migration that predates the switch.
+///
+/// Used only to *recognize* a legacy-stamped row -- in `classify_history`
+/// below and in `migrations::reconcile_legacy_checksums_for_table`, reused
+/// for both `pacto.db`'s `refinery_schema_history` and the MLS store's
+/// `_refinery_schema_history_nostr_mls` (see
+/// `mls_store_reset::reconcile_mls_store_legacy_checksums`) -- never to
+/// write a checksum this build computes for a migration it applies itself.
+pub(crate) fn legacy_i32_checksum(name: &str, version: i64, sql: &str) -> u64 {
+    let mut hasher = SipHasher13::new();
+    name.hash(&mut hasher);
+    (version as i32).hash(&mut hasher);
+    sql.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Pure classification over the read-only probe's outputs. Reproduces
 /// refinery-core 0.9.2's `verify_migrations` (default `abort_missing: true`,
 /// `abort_divergent: true`) read-only, looping over every applied row --
@@ -131,7 +158,15 @@ fn classify_history(
         match embedded.iter().find(|m| m.version() == row.version) {
             None => return StorageFormatVerdict::Unrecognized(row.version),
             Some(migration) => {
-                if migration.name() != row.name || migration.checksum().to_string() != row.checksum
+                if migration.name() != row.name {
+                    return StorageFormatVerdict::Divergent(row.version);
+                }
+                let current_checksum = migration.checksum().to_string();
+                let legacy_checksum = migration.sql().map(|sql| {
+                    legacy_i32_checksum(migration.name(), migration.version(), sql).to_string()
+                });
+                if row.checksum != current_checksum
+                    && Some(&row.checksum) != legacy_checksum.as_ref()
                 {
                     return StorageFormatVerdict::Divergent(row.version);
                 }
@@ -720,6 +755,64 @@ mod tests {
         assert_eq!(
             classify_history(&applied, true, true, &embedded),
             StorageFormatVerdict::Divergent(2)
+        );
+    }
+
+    #[test]
+    fn legacy_i32_schema_version_checksum_is_recognized() {
+        let migration =
+            refinery::Migration::unapplied("V1__initial_schema", "CREATE TABLE t (id INTEGER);")
+                .expect("unapplied migration");
+        let legacy = legacy_i32_checksum(
+            migration.name(),
+            migration.version(),
+            "CREATE TABLE t (id INTEGER);",
+        )
+        .to_string();
+        assert_ne!(
+            legacy,
+            migration.checksum().to_string(),
+            "fixture must actually exercise the i32-vs-i64 checksum difference"
+        );
+        let applied = vec![fixture_row(1, migration.name(), &legacy)];
+        assert_eq!(
+            classify_history(&applied, true, true, std::slice::from_ref(&migration)),
+            StorageFormatVerdict::Recognized
+        );
+    }
+
+    /// Anchors `legacy_i32_checksum` to a value computed *outside* this
+    /// reproduction: two throwaway crates pinned to the exact
+    /// `refinery-core = 0.9.2` this build resolves to, one built with the
+    /// `int8-versions` feature and one without, both hashing
+    /// `Migration::unapplied("V1__initial_schema", "CREATE TABLE t (id INTEGER);")`.
+    /// Every other test derives its expected legacy digest from
+    /// `legacy_i32_checksum` itself, so a deterministic-but-wrong
+    /// reproduction (wrong field order, hashing the unparsed input name
+    /// instead of refinery's parsed one, a future `siphasher` major-version
+    /// skew against refinery-core's own) would still pass them all. This
+    /// test fails if that ever happens.
+    #[test]
+    fn legacy_i32_checksum_matches_independently_measured_golden_value() {
+        let name = "initial_schema";
+        let sql = "CREATE TABLE t (id INTEGER);";
+        assert_eq!(legacy_i32_checksum(name, 1, sql), 470904781690771365);
+
+        let migration =
+            refinery::Migration::unapplied("V1__initial_schema", sql).expect("unapplied migration");
+        assert_eq!(migration.name(), name);
+        assert_eq!(migration.checksum(), 17539547413937229480);
+    }
+
+    #[test]
+    fn checksum_matching_neither_current_nor_legacy_is_divergent() {
+        let migration =
+            refinery::Migration::unapplied("V1__initial_schema", "CREATE TABLE t (id INTEGER);")
+                .expect("unapplied migration");
+        let applied = vec![fixture_row(1, migration.name(), "not-a-real-checksum")];
+        assert_eq!(
+            classify_history(&applied, true, true, std::slice::from_ref(&migration)),
+            StorageFormatVerdict::Divergent(1)
         );
     }
 
