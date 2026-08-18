@@ -281,6 +281,7 @@
       attachments: msg.attachments,
       previewMetadata: msg.preview_metadata,
       pending: msg.pending,
+      failed: msg.failed,
     };
     if (msg.mine) {
       base.authorName = tFn('messaging.message.authorYou');
@@ -383,7 +384,7 @@
       setTimeout(scrollMessagesToBottom, 200);
       if (ok) cancelReply();
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send message');
+      const raw = getInvokeErrorMessage(e, tFn('errors.dm.sendFailed'));
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
     }
   }
@@ -747,7 +748,7 @@
       const ok = await sendFileBytes(groupId, repliedTo, new Uint8Array(bytes), fileName, useCompression);
       if (ok) cancelReply();
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      const raw = getInvokeErrorMessage(e, tFn('errors.dm.attachmentFailed'));
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
     }
   }
@@ -760,7 +761,7 @@
       const ok = await sendGifMessage(groupId, url, slug, repliedTo);
       if (ok) cancelReply();
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send GIF');
+      const raw = getInvokeErrorMessage(e, tFn('errors.dm.gifFailed'));
       groupSendError.set(friendlyMessage(raw, 'dm_send'));
     }
   }

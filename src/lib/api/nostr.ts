@@ -113,6 +113,18 @@ export async function deleteDmChatBackend(chatId: string): Promise<void> {
   await invoke('delete_dm_chat', { chatId });
 }
 
+/** Paginated chat row from `get_message_views`. Extra Message fields may also be present. */
+export type MessageViewDto = {
+  id: string;
+  content: string;
+  at: number;
+  mine: boolean;
+  npub?: string;
+  virtual_bucket?: string | null;
+  pending?: boolean;
+  failed?: boolean;
+};
+
 /**
  * Get paginated messages for a DM chat (backend: `get_message_views`).
  * chat_id = npub for DMs; reads from backend DB (filled by fetch_messages from relays).
@@ -123,30 +135,14 @@ export async function getDmMessages(
   limit: number,
   offset: number,
   options?: { virtualBucketFilter?: VirtualBucket | null }
-): Promise<
-  Array<{
-    id: string;
-    content: string;
-    at: number;
-    mine: boolean;
-    npub?: string;
-    virtual_bucket?: string | null;
-  }>
-> {
+): Promise<MessageViewDto[]> {
   dmLog('get_message_views', { chatId: chatId.slice(0, 20) + '…', limit, offset });
-  const msgs = await invoke('get_message_views', {
+  const msgs = (await invoke('get_message_views', {
     chatId,
     limit,
     offset,
     virtualBucketFilter: options?.virtualBucketFilter ?? null,
-  }) as Array<{
-    id: string;
-    content: string;
-    at: number;
-    mine: boolean;
-    npub?: string;
-    virtual_bucket?: string | null;
-  }>;
+  })) as MessageViewDto[];
   dmLog('get_message_views result', { count: msgs.length });
   return msgs;
 }

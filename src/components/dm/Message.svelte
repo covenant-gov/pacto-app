@@ -15,6 +15,7 @@
   import { t } from 'svelte-i18n';
   import type { Attachment, Reaction, PreviewMetadata, DmMessage } from '../../stores/dm';
   import { observeLinkPreview } from '../../lib/messaging/link-preview-observer';
+  import { outboundDeliveryLabel } from '../../lib/dm/resolve-dm-message-presentation';
 
   export let id: string = '';
   export let authorName: string = '';
@@ -38,11 +39,13 @@
   export let previewMetadata: PreviewMetadata | null | undefined = undefined;
   export let chatId: string = '';
   export let pending: boolean = false;
+  export let failed: boolean = false;
   export let onReact: (messageId: string, emoji: string) => void = () => {};
   export let onCopy: (messageId: string, text: string) => void = () => {};
   export let onReply: (messageId: string) => void = () => {};
 
   $: displayContent = body || content;
+  $: deliveryLabel = outboundDeliveryLabel({ pending, failed }, $t);
   /** Only fields `requestLinkPreview` reads are populated; viewport-triggered via `observeLinkPreview`. */
   $: linkPreviewParams = chatId && id
     ? { chatId, message: { id, content, pending, preview_metadata: previewMetadata } as DmMessage }
@@ -336,6 +339,14 @@
       <div class="message-header">
         <span class="author-name">{authorName}</span>
         <span class="timestamp"><time datetime={timestamp}>{formatMessageTimestamp(timestamp)}</time></span>
+        {#if deliveryLabel}
+          <span
+            class="message-delivery"
+            class:failed
+            class:pending={pending && !failed}
+            role="status"
+          >{deliveryLabel}</span>
+        {/if}
         <button
           type="button"
           class="message-options-btn"
@@ -349,6 +360,14 @@
           <span aria-hidden="true">⋯</span>
         </button>
       </div>
+    {/if}
+    {#if compact && deliveryLabel}
+      <span
+        class="message-delivery compact-delivery"
+        class:failed
+        class:pending={pending && !failed}
+        role="status"
+      >{deliveryLabel}</span>
     {/if}
     {#if replyToId && (replyAuthorName != null || replyPreview != null)}
       <div class="msg-reply" role="region" aria-label={$t('messaging.message.replyTo', { values: { name: replyAuthorName ?? $t('messaging.message.replyToDefault') } })}>
@@ -679,6 +698,25 @@
     color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 400;
+  }
+
+  .message-delivery {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+
+  .message-delivery.pending {
+    color: var(--text-muted);
+  }
+
+  .message-delivery.failed {
+    color: var(--danger);
+  }
+
+  .compact-delivery {
+    display: block;
+    margin-bottom: 2px;
   }
 
   .message-options-btn {

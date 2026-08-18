@@ -6,6 +6,7 @@ import {
   getInviterDisplayFromNpub,
   getInviterDisplay,
   buildPlainMessageProps,
+  outboundDeliveryLabel,
 } from './resolve-dm-message-presentation';
 import type { DmMessage } from '../../stores/dm';
 import type { NostrProfile } from '../api/nostr';
@@ -391,5 +392,33 @@ describe('buildPlainMessageProps', () => {
     const message = msg({ mine: false, replied_to: 'r1', replied_to_npub: NPUB_B });
     const props = buildPlainMessageProps(message, NPUB_B, {}, NPUB_A);
     expect(props.replyAuthorName).toBe('Unknown');
+  });
+
+  it('forwards pending and failed delivery flags', () => {
+    const pending = buildPlainMessageProps(msg({ mine: true, pending: true }), NPUB_B, {}, NPUB_A);
+    expect(pending.pending).toBe(true);
+    expect(pending.failed).toBeUndefined();
+    const failed = buildPlainMessageProps(msg({ mine: true, failed: true }), NPUB_B, {}, NPUB_A);
+    expect(failed.failed).toBe(true);
+    expect(failed.pending).toBeUndefined();
+  });
+});
+
+describe('outboundDeliveryLabel', () => {
+  const tFn = (key: string) => key;
+
+  it('returns not-delivered copy when failed', () => {
+    expect(outboundDeliveryLabel({ failed: true, pending: true }, tFn)).toBe(
+      'messaging.message.notDelivered'
+    );
+  });
+
+  it('returns sending copy when pending and not failed', () => {
+    expect(outboundDeliveryLabel({ pending: true }, tFn)).toBe('messaging.message.sending');
+  });
+
+  it('returns null when neither pending nor failed', () => {
+    expect(outboundDeliveryLabel({}, tFn)).toBeNull();
+    expect(outboundDeliveryLabel({ pending: false, failed: false }, tFn)).toBeNull();
   });
 });

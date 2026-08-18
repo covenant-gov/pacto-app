@@ -150,6 +150,15 @@ describe('getDmMessages', () => {
       virtualBucketFilter: null,
     });
   });
+
+  it('preserves pending and failed flags from the backend', async () => {
+    mockedInvoke.mockResolvedValueOnce([
+      { id: 'm1', content: 'hi', at: 1, mine: true, pending: true, failed: false },
+    ]);
+    const msgs = await getDmMessages('npub1peer', 10, 0);
+    expect(msgs[0]?.pending).toBe(true);
+    expect(msgs[0]?.failed).toBe(false);
+  });
 });
 
 describe('syncAllProfiles', () => {
@@ -308,6 +317,11 @@ describe('sendDmMessage', () => {
       file: null,
       virtualBucket: 'polls',
     });
+  });
+
+  it('returns false when the backend reports delivery failure', async () => {
+    mockedInvoke.mockResolvedValueOnce(false);
+    await expect(sendDmMessage('npub1', 'hello')).resolves.toBe(false);
   });
 });
 

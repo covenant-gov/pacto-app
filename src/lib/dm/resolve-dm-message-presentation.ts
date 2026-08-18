@@ -135,6 +135,7 @@ export function buildPlainMessageProps(
     attachments: msg.attachments,
     previewMetadata: msg.preview_metadata,
     pending: msg.pending,
+    failed: msg.failed,
   };
   if (msg.mine) {
     base.authorName = tFn('messaging.message.authorYou');
@@ -161,4 +162,14 @@ export function buildPlainMessageProps(
           : tFn('messaging.message.messageFallback');
   }
   return base;
+}
+
+/** Outbound relay delivery: failed wins over pending; otherwise no status copy. */
+export function outboundDeliveryLabel(
+  msg: { pending?: boolean; failed?: boolean },
+  tFn: MessageFormatter = get(t)
+): string | null {
+  if (msg.failed) return tFn('messaging.message.notDelivered');
+  if (msg.pending) return tFn('messaging.message.sending');
+  return null;
 }
