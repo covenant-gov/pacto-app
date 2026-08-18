@@ -94,7 +94,22 @@ fn redact_unparsed_url_heuristic(raw: &str) -> String {
     "[rpc-url-unparsed]".to_string()
 }
 
-/// Replace every `http://` / `https://` URL-like substring with a redacted form.
+/// Redact credentials from a `ws://`/`wss://` relay URL. Drops the entire query string
+/// rather than filtering by [`SENSITIVE_QUERY_KEYS`] -- relay auth challenges and error
+/// bodies are not constrained to that nine-name allowlist.
+fn redact_relay_url_for_log(raw: &str) -> String {
+    let Ok(mut u) = Url::parse(raw) else {
+        return redact_unparsed_url_heuristic(raw);
+    };
+    let _ = u.set_username("");
+    let _ = u.set_password(None);
+    if u.query().is_some() {
+        u.set_query(None);
+    }
+    String::from(u.as_str())
+}
+
+/// Replace every `http(s)://` / `ws(s)://` URL-like substring with a redacted form.
 pub fn redact_urls_in_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let b = s.as_bytes();
@@ -102,16 +117,22 @@ pub fn redact_urls_in_text(s: &str) -> String {
     while i < b.len() {
         let https_here = i + 8 <= b.len() && &b[i..i + 8] == b"https://";
         let http_here = i + 7 <= b.len() && &b[i..i + 7] == b"http://";
-        let (start, is_https) = if https_here {
-            (i, true)
+        let wss_here = i + 6 <= b.len() && &b[i..i + 6] == b"wss://";
+        let ws_here = i + 5 <= b.len() && &b[i..i + 5] == b"ws://";
+        let (scheme_len, is_relay) = if https_here {
+            (8, false)
         } else if http_here {
-            (i, false)
+            (7, false)
+        } else if wss_here {
+            (6, true)
+        } else if ws_here {
+            (5, true)
         } else {
             out.push(b[i] as char);
             i += 1;
             continue;
         };
-        let mut j = start + if is_https { 8 } else { 7 };
+        let mut j = i + scheme_len;
         while j < b.len() {
             let c = b[j];
             if c.is_ascii_whitespace()
@@ -127,8 +148,12 @@ pub fn redact_urls_in_text(s: &str) -> String {
             }
             j += 1;
         }
-        let slice = &s[start..j];
-        out.push_str(&redact_rpc_url_for_log(slice));
+        let slice = &s[i..j];
+        out.push_str(&if is_relay {
+            redact_relay_url_for_log(slice)
+        } else {
+            redact_rpc_url_for_log(slice)
+        });
         i = j;
     }
     out
@@ -219,6 +244,41 @@ mod tests {
         let text = "http://a.com?secret=x";
         let r = redact_urls_in_text(text);
         assert!(!r.contains("secret=x"));
+    }
+
+    #[test]
+    fn redact_urls_in_text_drops_entire_query_for_wss_non_allowlisted_param() {
+        // `t` is not in SENSITIVE_QUERY_KEYS -- an http:// fixture would pass against the
+        // unfixed helper (allowlist filtering), so this must use wss:// to prove the whole
+        // query string is dropped for relay schemes.
+        let text = "connect failed: wss://relay.example.com/?t=SECRET";
+        let r = redact_urls_in_text(text);
+        assert!(!r.contains("SECRET"));
+        assert!(!r.contains('?'), "entire query string must be dropped: {r}");
+    }
+
+    #[test]
+    fn redact_urls_in_text_drops_entire_query_for_ws_non_allowlisted_param() {
+        let text = "wss handshake failed, retrying ws://relay.example.com/?session=abc123";
+        let r = redact_urls_in_text(text);
+        assert!(!r.contains("abc123"));
+        assert!(!r.contains('?'));
+    }
+
+    #[test]
+    fn redact_urls_in_text_strips_wss_userinfo() {
+        let text = "wss://user:pass@relay.example.com/";
+        let r = redact_urls_in_text(text);
+        assert!(!r.contains("user"));
+        assert!(!r.contains("pass"));
+    }
+
+    #[test]
+    fn redact_urls_in_text_https_query_filtering_unchanged() {
+        // https:// keeps today's allowlist-filtered behavior: a non-sensitive param survives.
+        let text = "https://example.com?foo=bar";
+        let r = redact_urls_in_text(text);
+        assert!(r.contains("foo=bar"));
     }
 
     #[test]

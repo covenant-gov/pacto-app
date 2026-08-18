@@ -13,7 +13,14 @@ import {
   getRelayMetrics,
   getRelayLogs,
   hasRelayHealthData,
+  probeRelay,
+  getRelayCertificate,
+  relayFailureLabel,
+  probeResultLabel,
+  relayCertExpiryLabel,
   type RelayMetrics,
+  type RelayFailureCode,
+  type ExpiryVerdict,
 } from './relays';
 
 vi.mock('@tauri-apps/api/core');
@@ -170,6 +177,41 @@ describe('relay command wrappers', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('get_relay_logs', { url: 'wss://relay.example.com' });
     expect(result).toEqual(logs);
   });
+
+  it('probeRelay sends probe_relay with the url and passes the result through', async () => {
+    const result = { outcome: 'reachable' as const, round_trip_ms: 87 };
+    mockedInvoke.mockResolvedValueOnce(result);
+    const got = await probeRelay('wss://relay.example.com');
+    expect(mockedInvoke).toHaveBeenCalledWith('probe_relay', { url: 'wss://relay.example.com' });
+    expect(got).toEqual(result);
+  });
+
+  it('getRelayCertificate sends get_relay_certificate with the url and passes the result through', async () => {
+    const cert = {
+      subject: 'CN=relay.example.com',
+      issuer: 'CN=relay.example.com',
+      not_before: 1_700_000_000,
+      not_after: 1_800_000_000,
+      san_dns_names: ['relay.example.com'],
+      public_key_algorithm: 'EC',
+      public_key_bits: 256,
+      sha256_fingerprint: 'ab:cd',
+      trust_not_evaluated: true as const,
+      expiry_verdict: 'valid' as const,
+    };
+    mockedInvoke.mockResolvedValueOnce(cert);
+    const got = await getRelayCertificate('wss://relay.example.com');
+    expect(mockedInvoke).toHaveBeenCalledWith('get_relay_certificate', {
+      url: 'wss://relay.example.com',
+    });
+    expect(got).toEqual(cert);
+  });
+
+  it('getRelayCertificate passes through a null result for a non-certificate outcome', async () => {
+    mockedInvoke.mockResolvedValueOnce(null);
+    const got = await getRelayCertificate('ws://localhost:7000');
+    expect(got).toBeNull();
+  });
 });
 
 describe('hasRelayHealthData', () => {
@@ -195,3 +237,57 @@ describe('hasRelayHealthData', () => {
   });
 });
 
+
+describe('relayFailureLabel', () => {
+  const codes: RelayFailureCode[] = [
+    'dns_failed',
+    'connection_refused',
+    'network_unreachable',
+    'timed_out',
+    'tls_failed',
+    'protocol_error',
+    'auth_required',
+    'not_a_relay',
+    'invalid_url',
+    'unknown',
+  ];
+
+  it('maps every failure code to a distinct, non-empty label', () => {
+    const labels = codes.map((code) => relayFailureLabel(code));
+    expect(labels.every((label) => label.length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(codes.length);
+  });
+
+  it('falls back to the raw code for an unrecognized value', () => {
+    expect(relayFailureLabel('some_future_code')).toBe('some_future_code');
+  });
+});
+
+describe('probeResultLabel', () => {
+  it('includes the round-trip time for a reachable result', () => {
+    const label = probeResultLabel({ outcome: 'reachable', round_trip_ms: 123 });
+    expect(label).toContain('123');
+  });
+
+  it('delegates to relayFailureLabel for an unreachable result', () => {
+    const label = probeResultLabel({
+      outcome: 'unreachable',
+      failure: { code: 'dns_failed', detail: null },
+    });
+    expect(label).toBe(relayFailureLabel('dns_failed'));
+  });
+});
+
+describe('relayCertExpiryLabel', () => {
+  const verdicts: ExpiryVerdict[] = ['valid', 'expiring_soon', 'expired'];
+
+  it('maps every verdict to a distinct, non-empty label', () => {
+    const labels = verdicts.map((v) => relayCertExpiryLabel(v));
+    expect(labels.every((label) => label.length > 0)).toBe(true);
+    expect(new Set(labels).size).toBe(verdicts.length);
+  });
+
+  it('falls back to the raw value for an unrecognized verdict', () => {
+    expect(relayCertExpiryLabel('some_future_verdict')).toBe('some_future_verdict');
+  });
+});
