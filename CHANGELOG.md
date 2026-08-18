@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Unreleased
 
 ### Bug Fixes
+- Size gif-picker thumbnails to a readable 3-column grid
+- Close klipy and sticker egress holes found in review (#243)
+- Recognize pre-0.6.0 migration checksums so upgrades don't trip the storage-format gate
+- Reconcile legacy checksums for the MLS store too, not just pacto.db
+- Reconcile MLS legacy checksums on every store open, not once per reset (#275)
+- Patch nanoid and hono to close dependabot alerts (#287)
+- Dm relay bug and error messaging in ui (#281)
+
+
+### Chores
+- Unblock two-account testing and stop migration tests pinning a version
+
+
+### Features
+- Offer a refusable join for groups that added you without an invite dm
+- Add squad sticker packs and an opt-in klipy gif picker to the composer
+- Make squad governance process readable and actionable (#256)
+- Relay connection diagnostics, pre-add probe, and TLS certificate inspection (#270)
+- Squad pfp and pfp picker (#278)
+
+
+### Other
+- Address PR review feedback (#267)
+
+- Persist engine-accepted bare welcomes so a persistSquad failure can retry without re-calling acceptMlsWelcome
+- Keep the join card mounted during in-flight accept so Joining… is reachable
+- Reset joiningWelcomeGroupIds on account clear and abort materialization if the npub changed
+- Add referrerpolicy/lazy on unvetted welcome images and void the fire-and-forget accept handler
+- Cover acceptOfferedWelcome and declineWelcomeForGroup, and log failed Catch up resolves
+- Address PR review feedback (#267)
+
+- Cap pending-welcome cards to the 20 newest; keep engine-accepted recovery rows uncapped
+- Update pacto.app to Pacto.app (#288)
+
+
+### Refactor
+- Use squad-evm language and escuad slang in member copy (#280)
+
+## v0.6.0
+
+### Bug Fixes
 - Clean up chat, messages, and cursor on voluntary group leave (mls)
 - Durably remove mls_groups row on voluntary leave
 - Make dm delete purge history and gate relay replay (#233)
@@ -32,12 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Address PR review feedback (#263)
 - Default cargo run to pacto binary over relay-free-harness
 - Seed a squads catalog row for the relay-free harness squad
+- Restore the pr gate by quoting an unparseable ci step
 
 
 ### Chores
 - Raise legacy sequential migration ceiling to V32
 - Correct the deferral comment and drop tracker ids from source
 - Drop tracker id from a test name
+- Bump version to 0.6.0 (release)
 
 
 ### Features
