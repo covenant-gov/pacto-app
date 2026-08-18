@@ -73,7 +73,7 @@
 	"squad.bundler.statusPimlico": "Pimlico ready",
 	"squad.bundler.statusNone": "Not configured",
 	"squad.bundler.statusBlockedAlchemy": "Alchemy override blocked",
-	"squad.bundler.hint": "Zero-ETH roster writes use Pimlico. Save a key here. Repo-root .env PIMLICO_API_KEY is an optional fallback. Do not paste that key or a Pimlico URL into chain RPC.",
+	"squad.bundler.hint": "Zero-ETH squad EVM writes use Pimlico. Save a key here. Repo-root .env PIMLICO_API_KEY is an optional fallback. Do not paste that key or a Pimlico URL into chain RPC.",
 	"squad.bundler.hintBlocked": "BUNDLER_RPC_URL points at Alchemy. Remove that override so the in-app Pimlico key (or .env fallback) is used, then restart.",
 	"squad.bundler.getKey": "Get a Pimlico key",
 	"squad.bundler.error": "Could not read bundler status.",
