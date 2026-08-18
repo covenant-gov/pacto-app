@@ -66,7 +66,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
 | `components/parent/dashboard/DashboardStatusTab.svelte` | Squad photo, Checklist, Broadcasts |
-| `components/parent/dashboard/DashboardSettingsTab.svelte` | Network, Chain RPC / Pimlico, Join-inbox holders, Contracts, stickers |
+| `components/parent/dashboard/DashboardSettingsTab.svelte` | Stickers, network, Chain RPC / Pimlico, Join-inbox holders, Contracts |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | Pacto Gov role sub-modes (Proposals / Crew / Captain) |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree |
 | `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
@@ -79,7 +79,7 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew` \| `settings`).
 My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
 
-**Status vs Settings.** Status is for frequently needed operational info: squad photo, Checklist, Broadcasts (visibility). Settings is for one-time or occasional config: network, Chain RPC, Pimlico key, Join-inbox holders, Contracts, sticker packs. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` slug) reset to `status`.
+**Status vs Settings.** Status is for frequently needed operational info: squad photo, Checklist, Broadcasts (visibility). Settings is for one-time or occasional config: sticker packs, network, Chain RPC, Pimlico key, Join-inbox holders, Contracts. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` slug) reset to `status`.
 
 **Invariant:** do not add a new `#squad-dashboard` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Roles, Crew). Stickers as its own tab is the anti-pattern.
 

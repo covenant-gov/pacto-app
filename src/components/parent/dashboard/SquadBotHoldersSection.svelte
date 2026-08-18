@@ -239,17 +239,17 @@
 
 <style>
   .squad-bot-holders-section {
-    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
     border: 1px solid var(--border-subtle);
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: 10px;
   }
 
   .section-heading {
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-secondary);
-    margin: 0 0 12px;
+    color: var(--text-primary);
+    margin: 0 0 8px;
   }
 
   .section-lead,

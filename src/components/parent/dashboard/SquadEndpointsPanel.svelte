@@ -363,7 +363,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    margin: 4px 0 12px;
+    margin: 0;
   }
 
   .endpoint-card {

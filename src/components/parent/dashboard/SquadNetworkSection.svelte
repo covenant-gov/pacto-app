@@ -41,9 +41,10 @@
   }
 </script>
 
-<div class="status-fact-row" id="squad-settings-network">
-  <span class="meta-label">{$t('governance.status.networkLabel')}</span>
-  {#if editingNetwork}
+<section class="network-card" id="squad-settings-network" aria-labelledby="squad-settings-network-heading">
+  <h3 id="squad-settings-network-heading" class="card-title">{$t('governance.status.networkLabel')}</h3>
+  <div class="status-fact-row">
+    {#if editingNetwork}
     <select class="network-select" bind:value={squadNetworkChoice} aria-label={$t('governance.status.squadNetworkLabel')}>
       <option value="" disabled>{$t('governance.status.selectPlaceholder')}</option>
       {#each squadNetworkOptions as opt (opt.id)}
@@ -69,27 +70,35 @@
       title={$t('governance.status.editNetworkTitle')}
       on:click={() => (editingNetwork = true)}
     />
-  {/if}
-</div>
+    {/if}
+  </div>
+</section>
 
 <style>
+  .network-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+  }
+
+  .card-title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
   .status-fact-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px 12px;
-    padding: 8px 0;
-    margin-bottom: 0;
+    margin: 0;
     font-size: 0.875rem;
-  }
-
-  .meta-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-    min-width: 5.5rem;
   }
 
   .network-value {

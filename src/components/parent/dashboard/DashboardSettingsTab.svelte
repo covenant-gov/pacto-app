@@ -65,32 +65,42 @@
   });
 </script>
 
-<SquadNetworkSection {squadNetwork} {squadNetworkFromInfra} {onSetSquadNetwork} />
+<div class="settings-stack">
+  <SquadStickersSection {squad} {announcementsGroupId} />
 
-<SquadEndpointsPanel
-  {squadNetwork}
-  {squadRpcConfig}
-  {onSetSquadRpcPrimary}
-  {onSetSquadRpcBackup}
-  {onClearSquadRpcPrimary}
-/>
+  <SquadNetworkSection {squadNetwork} {squadNetworkFromInfra} {onSetSquadNetwork} />
 
-<SquadBotHoldersSection
-  {announcementsGroupId}
-  {channelMembers}
-  squadAdminActive={!!squadAdminCtx}
-  executorRolesLabel={myRosterEvm
-    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
-    : ''}
-/>
-
-{#if parentId}
-  <SmartContractSecuritySection
-    {parentId}
-    announcementsGroupId={announcementsGroupId ?? ''}
-    canManage={permissionsCtx.phase === 'pacto_gov'}
-    compact
+  <SquadEndpointsPanel
+    {squadNetwork}
+    {squadRpcConfig}
+    {onSetSquadRpcPrimary}
+    {onSetSquadRpcBackup}
+    {onClearSquadRpcPrimary}
   />
-{/if}
 
-<SquadStickersSection {squad} {announcementsGroupId} />
+  <SquadBotHoldersSection
+    {announcementsGroupId}
+    {channelMembers}
+    squadAdminActive={!!squadAdminCtx}
+    executorRolesLabel={myRosterEvm
+      ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
+      : ''}
+  />
+
+  {#if parentId}
+    <SmartContractSecuritySection
+      {parentId}
+      announcementsGroupId={announcementsGroupId ?? ''}
+      canManage={permissionsCtx.phase === 'pacto_gov'}
+      compact
+    />
+  {/if}
+</div>
+
+<style>
+  .settings-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+</style>

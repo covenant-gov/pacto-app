@@ -189,11 +189,11 @@
 </script>
 
 <section class="stickers-section" aria-label={`${$t('squad.stickers.sectionAria')} — ${squad.name}`}>
+  <h3 id="squad-stickers-heading" class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
   {#if !squadId}
     <p class="stickers-empty-state">{$t('squad.stickers.emptyState')}</p>
     <p class="muted stickers-empty-hint">{$t('squad.stickers.emptyStateHint')}</p>
   {:else}
-    <h3 class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
 
     <div class="stickers-field-row">
       <label class="meta-label" for="sticker-pack-name">{$t('squad.stickers.packNameLabel')}</label>
@@ -305,12 +305,16 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
     font-size: 0.875rem;
   }
 
   .stickers-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
   }
