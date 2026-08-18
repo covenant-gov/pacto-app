@@ -161,20 +161,27 @@ jobs:
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb dbus-x11
+          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb dbus-x11 libgl1-mesa-dri mesa-utils
 
       - name: Build Tauri debug bundle
-        run: xvfb-run --auto-servernum pnpm tauri build --debug --no-bundle --ci
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm tauri build --debug --no-bundle --ci
 
       - name: Run real-Tauri e2e harness
         env:
           PACTO_TAURI_BINARY: src-tauri/target/debug/pacto
-        # GTK/WebKitGTK probe the AT-SPI accessibility bus on startup; without a
-        # real session bus (no desktop session on the runner) that probe can hang
-        # indefinitely before the binary executes a single line of `run()`,
-        # which is what a plain `xvfb-run` invocation was silently doing here.
-        # `dbus-run-session` gives it a real bus to talk to.
-        run: dbus-run-session -- xvfb-run --auto-servernum pnpm test:e2e:tauri
+          # GTK/WebKitGTK constructors run at .so load, before Rust main(). A
+          # session bus unblocks the AT-SPI probe that used to hang here, but
+          # the next thing the constructor does on this runner is SIGILL in
+          # the DMA-BUF / compositing path (default xvfb-run is 640x480x8).
+          NO_AT_BRIDGE: "1"
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+        # xvfb-run must wrap dbus-run-session so DISPLAY is set before GTK
+        # starts. 24-bit + GLX is required; the xvfb-run default (8-bit)
+        # is what produced SIGILL after the dbus hang was fixed.
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" dbus-run-session -- pnpm test:e2e:tauri
 
       - name: Upload Tauri e2e results on failure
         if: failure()

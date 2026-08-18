@@ -63,6 +63,15 @@ async function waitForPort(port, timeoutMs = 30000) {
       });
       return;
     } catch {
+      if (tauriExit) {
+        log('last MCP bridge port probe error:', lastError);
+        log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+        log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+        log('tauri process state:', tauriExit);
+        throw new Error(
+          `Tauri process exited before MCP bridge port ${port} was ready: ${JSON.stringify(tauriExit)}`,
+        );
+      }
       await sleep(250);
     }
   }
@@ -77,6 +86,14 @@ async function waitForSandboxHandle(root, timeoutMs = 30000) {
   while (Date.now() - start < timeoutMs) {
     const handle = readSandboxHandle(root);
     if (handle) return handle;
+    if (tauriExit) {
+      log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+      log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+      log('tauri process state:', tauriExit);
+      throw new Error(
+        `Tauri process exited before writing a sandbox handle: ${JSON.stringify(tauriExit)}`,
+      );
+    }
     await sleep(250);
   }
   log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
@@ -190,10 +207,13 @@ async function main() {
     PACTO_DEV_PORT: String(portSet.ports.devServer),
     PACTO_DEV_HMR_PORT: String(portSet.ports.hmr),
     PACTO_MCP_BRIDGE_PORT: String(portSet.ports.mcpBridge),
-    // GTK probes the AT-SPI accessibility bus on startup; on a headless
-    // runner with no desktop session that probe can hang before the binary
-    // executes a single line of its own code. Skip it outright.
+    // These must be set in the parent before spawn: GTK/WebKitGTK constructors
+    // run at .so load, before Rust `run()` can call set_var.
     NO_AT_BRIDGE: '1',
+    GDK_BACKEND: 'x11',
+    LIBGL_ALWAYS_SOFTWARE: '1',
+    WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+    WEBKIT_DISABLE_COMPOSITING_MODE: '1',
   };
 
   const frontendDist = path.join(repoRoot, 'build');
