@@ -277,6 +277,7 @@ export interface AnnouncementsInvitePayload {
   groupId: string;
   name: string;
   memberSquads?: { id: string; name: string }[];
+  iconUrl?: string;
 }
 
 export async function acceptAnnouncementsInvite(
@@ -369,6 +370,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
     ? (normalizeStoredSquad({
         id: payload.groupId,
         name: payload.name,
+        iconUrl: payload.iconUrl,
         channels: defaultChannels,
         kind: 'squad-pair',
         pairedSquads: payload.memberSquads,
@@ -378,6 +380,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
     : {
         id: payload.groupId,
         name: payload.name,
+        iconUrl: payload.iconUrl,
         channels: defaultChannels,
         kind: 'squad',
         createdAt: now,
@@ -438,6 +441,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
           payload.kind === 'squad-pair' && payload.pairedSquads
             ? [...payload.pairedSquads]
             : undefined,
+        iconUrl: payload.iconUrl,
       },
       msg.id,
       {

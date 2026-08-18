@@ -39,6 +39,7 @@ import type { Squad } from '../../stores/squads';
 const parent: Squad = {
   id: 'parent-1',
   name: 'Alpha',
+  iconUrl: 'https://cdn.example/a.jpg',
   channels: [
     { name: 'announcements', groupId: 'g-announce', order: 0 },
     { name: 'polls', groupId: 'g-announce', order: 1 },
@@ -123,6 +124,7 @@ describe('runInviteMembersToParent', () => {
         groupId: 'g-announce',
         inviteId: expect.any(String),
         admitterNpubs: expect.arrayContaining(['npub-me', 'npub-member']),
+        iconUrl: 'https://cdn.example/a.jpg',
       }),
       'npub-me'
     );

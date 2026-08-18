@@ -9,8 +9,11 @@
   export let hasUnreadDot = false;
 
   $: firstLetter = label.charAt(0).toUpperCase();
+  $: showImage = !!image && !imageBroken;
 
   let buttonEl: HTMLButtonElement;
+  let imageBroken = false;
+  $: image, (imageBroken = false);
   let showTooltip = false;
   let tooltipPos = { x: 0, y: 0 };
 
@@ -38,8 +41,8 @@
   {#if hasUnreadDot}
     <span class="tab-unread-dot" aria-hidden="true"></span>
   {/if}
-  {#if image}
-    <img src={image} alt={label} class="tab-image" />
+  {#if showImage}
+    <img src={image} alt={label} class="tab-image" on:error={() => (imageBroken = true)} />
   {:else if icon}
     <img src={icon} alt={label} class="tab-icon" />
   {:else}

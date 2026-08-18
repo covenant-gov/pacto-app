@@ -201,7 +201,7 @@ export function runSquadPairCreateFlow(
         try {
           await sendSquadInviteDm(
             npub,
-            { squadName: name, groupId, kind: 'squad-pair', pairedSquads: paired },
+            { squadName: name, groupId, kind: 'squad-pair', pairedSquads: paired, iconUrl },
             myNpub
           );
         } catch (e) {
@@ -286,7 +286,7 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
   const myNpub = get(currentUser)?.npub;
   for (const npub of memberIds) {
     try {
-      await sendSquadInviteDm(npub, { squadName: parent.name, groupId: gid }, myNpub);
+      await sendSquadInviteDm(npub, { squadName: parent.name, groupId: gid, iconUrl: parent.iconUrl }, myNpub);
     } catch (e) {
       console.warn('[squad-pair-create] retry invite DM failed for', npub.slice(0, 20) + '…', e);
     }

@@ -25,6 +25,7 @@ import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
+import { publishSquadIdentityUpdated } from './squad-identity-announce';
 import { openCustomChannelTargets } from '../parent/channel-access';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { dmWarn } from '../utils/dm-debug';
@@ -101,7 +102,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -260,6 +261,10 @@ export async function respondToSquadStateSyncRequest(
   const wantRpc = !req.requested?.length || req.requested.includes('rpc');
   const wantChannels = !req.requested?.length || req.requested.includes('channels');
 
+  const parent =
+    get(squads).find((s) => s.id === parentId) ??
+    get(squads).find((s) => getAnnouncementsChannel(s).groupId === parentId);
+
   let anyOk = false;
 
   if (wantEvm) {
@@ -332,10 +337,16 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
+  if (parent) {
+    try {
+      const ok = await publishSquadIdentityUpdated(parent);
+      if (ok) anyOk = true;
+    } catch (e) {
+      console.warn('[squad-state-sync] identity republish failed', e);
+    }
+  }
+
   if (wantChannels) {
-    const parent =
-      get(squads).find((s) => s.id === parentId) ??
-      get(squads).find((s) => getAnnouncementsChannel(s).groupId === parentId);
     if (parent) {
       try {
         const ok = await publishSquadChannelsCatalog(parent);

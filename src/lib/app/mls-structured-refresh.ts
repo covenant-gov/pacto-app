@@ -23,6 +23,10 @@ import {
   applySquadChannelsCatalog,
   parseSquadChannelsCatalog,
 } from '../squad/squad-channels-catalog';
+import {
+  applySquadIdentityUpdated,
+  parseSquadIdentityUpdated,
+} from '../squad/squad-identity-announce';
 import { currentUser } from '../../stores/auth';
 import {
   governanceProcessNonceByParentId,
@@ -99,6 +103,9 @@ export function onMlsStructuredMessage(
   }
   if (parseSquadChannelsCatalog(raw)) {
     applySquadChannelsCatalog(raw, gid);
+  }
+  if (parseSquadIdentityUpdated(raw)) {
+    applySquadIdentityUpdated(raw, gid);
   }
 
   const networkUpdate = parseSquadNetworkUpdated(raw);

@@ -1,0 +1,22 @@
+{
+	"media.avatarCrop.cancel": "Cancel",
+	"media.avatarCrop.chooseDifferentImage": "Choose a different image",
+	"media.avatarCrop.clear": "Remove photo",
+	"media.avatarCrop.confirm": "Confirm",
+	"media.avatarCrop.decodeError": "Could not read this image.",
+	"media.avatarCrop.hint": "Drag the photo, or use the controls below, to reposition and resize it.",
+	"media.avatarCrop.imagesFilter": "Images",
+	"media.avatarCrop.loadingPreview": "Loading preview…",
+	"media.avatarCrop.panControls": "Move photo",
+	"media.avatarCrop.panDown": "Move photo down",
+	"media.avatarCrop.panLeft": "Move photo left",
+	"media.avatarCrop.panRight": "Move photo right",
+	"media.avatarCrop.panUp": "Move photo up",
+	"media.avatarCrop.retry": "Retry",
+	"media.avatarCrop.undersizedWarning": "This image is smaller than the recommended 512x512, so it may look blurry once uploaded.",
+	"media.avatarCrop.uploadError": "Could not upload the cropped image.",
+	"media.avatarCrop.uploading": "Uploading…",
+	"media.avatarCrop.zoomIn": "Zoom in",
+	"media.avatarCrop.zoomOut": "Zoom out",
+	"media.avatarCrop.zoomSlider": "Zoom"
+}

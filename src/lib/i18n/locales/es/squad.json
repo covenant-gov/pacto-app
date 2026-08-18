@@ -3,8 +3,7 @@
 	"squad.pair.subtitle": "Crea un escuadrón asociado que vincule a {anchorSquadName} con otro escuadrón al que perteneces. Los miembros recibirán invitaciones individuales.",
 	"squad.pair.nameLabel": "Nombre del escuadrón asociado",
 	"squad.pair.namePlaceholder": "p. ej. Coordinación A ↔ B",
-	"squad.pair.iconLabel": "URL del icono (opcional)",
-	"squad.pair.iconPlaceholder": "https://…",
+	"squad.pair.iconLabel": "Foto del escuadrón (opcional)",
 	"squad.pair.partnerLabel": "Escuadrón asociado (selecciona uno)",
 	"squad.pair.partnerAriaLabel": "Escuadrón asociado",
 	"squad.pair.empty": "Únete o crea otro escuadrón primero para vincular con {anchorSquadName}.",
@@ -112,5 +111,10 @@
 	"squad.stickers.saveSuccess": "Paquete de stickers guardado.",
 	"squad.stickers.emptyState": "Aún no hay paquetes de stickers",
 	"squad.stickers.emptyStateHint": "Crea un paquete para compartir stickers con tu escuadrón.",
-	"squad.stickers.createPackButton": "Crear paquete"
+	"squad.stickers.createPackButton": "Crear paquete",
+	"squad.pfp.sectionTitle": "Foto del escuadrón",
+	"squad.pfp.choose": "Elegir foto del escuadrón",
+	"squad.pfp.change": "Cambiar foto del escuadrón",
+	"squad.pfp.cropTitle": "Recortar foto del escuadrón",
+	"squad.pfp.saveError": "No se pudo guardar la foto del escuadrón."
 }

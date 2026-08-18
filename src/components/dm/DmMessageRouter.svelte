@@ -150,6 +150,7 @@
     isMine={msg.mine}
     inviterName={inviterDisplay.inviterName}
     inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
+    squadIconUrl={presentation.payload.iconUrl}
     status={inviteStatus}
     accepting={acceptingSquadInviteId === msg.id}
     onAccept={() => onAcceptSquadInvite(msg, presentation.payload.groupId)}

@@ -15,6 +15,7 @@
     squadIdFromBroadcast,
   } from '../../lib/commons/commons-join-request';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
+  import SquadAvatar from '../squad/SquadAvatar.svelte';
   import {
     COMMONS_MESSAGE_PREVIEW_MAX,
     isCommonsMessageTruncated,
@@ -133,8 +134,10 @@
   on:click={handleCardClick}
   on:keydown={handleCardKeydown}
 >
-  <div class="commons-tile-cover" style={coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}>
-    {#if coverImage}
+  <div class="commons-tile-cover" style={isSquad || coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}>
+    {#if isSquad}
+      <SquadAvatar variant="cover" src={broadcast.squadIconUrl} name={title} seed={coverSeed} />
+    {:else if coverImage}
       <img class="commons-tile-img" src={coverImage} alt="" loading="lazy" decoding="async" />
     {:else}
       <span class="commons-tile-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>

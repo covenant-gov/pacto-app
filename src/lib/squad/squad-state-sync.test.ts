@@ -10,6 +10,7 @@ const {
   listSquadInfra,
   currentUser,
   publishSquadChannelsCatalog,
+  publishSquadIdentityUpdated,
   getMlsGroupMembers,
   inviteMemberToGroup,
 } = vi.hoisted(() => {
@@ -43,6 +44,7 @@ const {
     publishSquadRpcUpdated: vi.fn(),
     listSquadInfra: vi.fn(),
     publishSquadChannelsCatalog: vi.fn(),
+    publishSquadIdentityUpdated: vi.fn(),
     getMlsGroupMembers: vi.fn(),
     inviteMemberToGroup: vi.fn(),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
@@ -55,6 +57,10 @@ vi.mock('../api/nostr', () => ({
   getMlsGroupMembers: (...args: unknown[]) => getMlsGroupMembers(...args),
   inviteMemberToGroup: (...args: unknown[]) => inviteMemberToGroup(...args),
   formatChannelInSquadMessage: () => 'channel-notify',
+}));
+
+vi.mock('./squad-identity-announce', () => ({
+  publishSquadIdentityUpdated: (...args: unknown[]) => publishSquadIdentityUpdated(...args),
 }));
 
 vi.mock('./squad-channels-catalog', () => ({
@@ -140,6 +146,7 @@ describe('squad-state-sync', () => {
     publishSquadNetworkUpdated.mockResolvedValue(true);
     publishSquadRpcUpdated.mockResolvedValue(true);
     publishSquadChannelsCatalog.mockResolvedValue(true);
+    publishSquadIdentityUpdated.mockResolvedValue(true);
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
@@ -184,7 +191,7 @@ describe('squad-state-sync', () => {
       parent_id: 'ann-gid',
       request_id: 'req-1',
       requester_npub: 'npub1joiner',
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity'],
     });
   });
 
@@ -328,6 +335,7 @@ describe('squad-state-sync', () => {
       evmAddress: '0xbound',
     });
     expect(publishSquadNetworkUpdated).toHaveBeenCalledWith('ann-gid');
+    expect(publishSquadIdentityUpdated).toHaveBeenCalled();
     const govCalls = sendDmMessage.mock.calls.filter((c) =>
       String(c[1]).includes('governance_updated'),
     );
@@ -377,6 +385,7 @@ describe('squad-state-sync', () => {
     publishSquadNetworkUpdated.mockResolvedValue(false);
     publishSquadRpcUpdated.mockResolvedValue(false);
     publishSquadChannelsCatalog.mockResolvedValue(false);
+    publishSquadIdentityUpdated.mockResolvedValue(false);
     inviteMemberToGroup.mockRejectedValue(new Error('skip'));
     listSquadInfra.mockResolvedValue([]);
     const raw = formatSquadStateSyncRequest({
@@ -409,6 +418,7 @@ describe('squad-state-sync', () => {
     expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(publishSquadChannelsCatalog).toHaveBeenCalled();
+    expect(publishSquadIdentityUpdated).toHaveBeenCalled();
     expect(inviteMemberToGroup).not.toHaveBeenCalled();
   });
 });
