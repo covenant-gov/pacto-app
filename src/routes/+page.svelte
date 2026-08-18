@@ -789,15 +789,9 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     try {
       const ok = await sendDmMessage(id, content, repliedTo ?? '');
       dmLog('handleDmSend result', { ok });
-      if (!ok) {
-        $dmSendError = friendlyMessage(
-          'Could not deliver to relays. Message may appear as pending or failed.',
-          'dm_send'
-        );
-      }
       return ok;
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send message');
+      const raw = getInvokeErrorMessage(e, get(t)('errors.dm.sendFailed'));
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSend error', e);
       return false;
@@ -821,14 +815,8 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     try {
       const ok = await sendFileBytes(id, repliedTo, new Uint8Array(bytes), fileName, useCompression);
       dmLog('handleDmSendFile result', { ok });
-      if (!ok) {
-        $dmSendError = friendlyMessage(
-          'Could not deliver attachment. It may appear as pending or failed.',
-          'dm_send'
-        );
-      }
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send attachment');
+      const raw = getInvokeErrorMessage(e, get(t)('errors.dm.attachmentFailed'));
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSendFile error', e);
     }
@@ -846,14 +834,8 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
     try {
       const ok = await sendGifMessage(id, url, slug, repliedTo);
       dmLog('handleDmSendGif result', { ok });
-      if (!ok) {
-        $dmSendError = friendlyMessage(
-          'Could not deliver the GIF. It may appear as pending or failed.',
-          'dm_send'
-        );
-      }
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send GIF');
+      const raw = getInvokeErrorMessage(e, get(t)('errors.dm.gifFailed'));
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('handleDmSendGif error', e);
     }
@@ -870,13 +852,11 @@ import MyDashboard from '../components/parent/MyDashboard.svelte';
         dmLog('sendWalletPaymentRequestDm result', { ok });
         if (!ok) {
           removeOutboundDmMessage(npub, optimisticId);
-          const msg = 'Could not deliver the payment request. Check your connection and try again.';
-          $dmSendError = friendlyMessage(msg, 'dm_send');
-          showToast(msg);
+          showToast(get(t)('wallet.couldNotDeliverRequest'));
         }
       } catch (e: unknown) {
         removeOutboundDmMessage(npub, optimisticId);
-        const raw = getInvokeErrorMessage(e, 'Failed to send payment request');
+        const raw = getInvokeErrorMessage(e, get(t)('wallet.couldNotSendPaymentRequest'));
         const msg = friendlyMessage(raw, 'dm_send');
         $dmSendError = msg;
         showToast(msg);

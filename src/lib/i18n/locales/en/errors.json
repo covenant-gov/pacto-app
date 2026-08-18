@@ -1,7 +1,10 @@
 {
 	"errors.fallback": "Something went wrong",
 	"errors.migrationGate": "Please unlock to update account security.",
+	"errors.dm.attachmentFailed": "Failed to send attachment",
+	"errors.dm.gifFailed": "Failed to send GIF",
 	"errors.dm.invalidNpub": "Please enter a valid npub (starts with npub1).",
+	"errors.dm.invalidRequest": "Invalid request. Please try again.",
 	"errors.dm.notInitialized": "Please log in first.",
-	"errors.dm.invalidRequest": "Invalid request. Please try again."
+	"errors.dm.sendFailed": "Failed to send message"
 }

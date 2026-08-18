@@ -69,11 +69,8 @@
     try {
       const ok = await sendDmMessage(trimmedNpub, contentToSend);
       dmLog('MessengerChatView sendDmMessage result', { ok });
-      if (!ok) {
-        $dmSendError = tFn('messaging.dm.newChat.deliverError');
-      }
     } catch (e: unknown) {
-      const raw = getInvokeErrorMessage(e, 'Failed to send message');
+      const raw = getInvokeErrorMessage(e, tFn('errors.dm.sendFailed'));
       $dmSendError = friendlyMessage(raw, 'dm_send');
       dmError('MessengerChatView send error', e);
     } finally {
