@@ -217,12 +217,12 @@ pub(crate) fn set_nostr_client(client: Client) {
     LOGIN_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Bumped on every `set_nostr_client` call (every login path funnels through it). The
-/// live-monitor loops capture this value when they spawn; diagnostic writes compare their
-/// captured generation against the current one and skip on mismatch, so a stale monitor left
-/// running for a previous account can never attribute a failure reason to the current one
-/// (KTD9). Logout does not bump it -- there is no new client to capture a generation from
-/// until the next login.
+/// Bumped on every `set_nostr_client` call (every login path funnels through it)
+/// and on `clear_nostr_client` (logout / pre-login teardown). The live-monitor
+/// loops capture this value when they spawn; diagnostic writes compare their
+/// captured generation against the current one and skip on mismatch, so a stale
+/// monitor left running for a previous account can never attribute a failure
+/// reason, log line, or metric sample to the current one.
 pub(crate) static LOGIN_GENERATION: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
@@ -232,6 +232,7 @@ pub(crate) fn current_login_generation() -> u64 {
 }
 pub(crate) fn clear_nostr_client() {
     *NOSTR_CLIENT.write().expect("NOSTR_CLIENT lock") = None;
+    LOGIN_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
 pub(crate) static TAURI_APP: OnceCell<AppHandle> = OnceCell::new();
@@ -4498,13 +4499,25 @@ fn clear_relay_failure(url: &str) {
     }
 }
 
+/// Generation-guarded clear used by monitor tasks. User-initiated remove/disable/logout
+/// keep calling the unguarded [`clear_relay_failure`] so the operator's own action still
+/// takes effect after a generation change.
+fn clear_relay_failure_if_current(url: &str, captured_generation: u64) {
+    if captured_generation != current_login_generation() {
+        return;
+    }
+    clear_relay_failure(url);
+}
+
 #[cfg(test)]
 mod relay_failure_diagnostics_tests {
     use super::{
-        add_relay_log, clear_relay_diagnostics_on_logout, clear_relay_failure,
+        add_relay_log, add_relay_log_if_current, clear_nostr_client,
+        clear_relay_diagnostics_on_logout, clear_relay_failure, clear_relay_failure_if_current,
         current_login_generation, normalize_relay_url, relay_failure_for,
-        store_relay_failure_if_current, update_relay_metrics, RelayFailure, RelayFailureCode,
-        RelayInfo, DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES, RELAY_LOGS, RELAY_METRICS,
+        store_relay_failure_if_current, update_relay_metrics, update_relay_metrics_if_current,
+        RelayFailure, RelayFailureCode, RelayInfo, DIAGNOSTICS_TEST_LOCK, RELAY_FAILURES,
+        RELAY_LOGS, RELAY_METRICS,
     };
 
     fn failure(code: RelayFailureCode) -> RelayFailure {
@@ -4653,6 +4666,55 @@ mod relay_failure_diagnostics_tests {
     }
 
     #[test]
+    fn logout_bumps_generation_so_pre_logout_monitor_writes_are_skipped() {
+        let _guard = DIAGNOSTICS_TEST_LOCK.lock();
+        let url = "wss://pre-logout-generation.example";
+        let pre_logout = current_login_generation();
+        store_relay_failure_if_current(url, failure(RelayFailureCode::Unknown), pre_logout);
+        assert!(relay_failure_for(url, "disconnected").is_some());
+
+        clear_nostr_client();
+        assert_ne!(current_login_generation(), pre_logout);
+
+        // Stale monitor still holding the pre-logout generation must not wipe or refill.
+        clear_relay_failure_if_current(url, pre_logout);
+        assert!(relay_failure_for(url, "disconnected").is_some());
+
+        store_relay_failure_if_current(url, failure(RelayFailureCode::TimedOut), pre_logout);
+        assert_eq!(
+            relay_failure_for(url, "disconnected").unwrap().code,
+            RelayFailureCode::Unknown
+        );
+
+        add_relay_log_if_current(url, "warn", "stale monitor line", pre_logout);
+        update_relay_metrics_if_current(url, pre_logout, |m| m.ping_ms = Some(9));
+        assert!(RELAY_LOGS
+            .read()
+            .unwrap()
+            .get(&normalize_relay_url(url))
+            .is_none());
+        assert!(RELAY_METRICS
+            .read()
+            .unwrap()
+            .get(&normalize_relay_url(url))
+            .is_none());
+
+        // Unguarded user clear still works after the bump.
+        clear_relay_failure(url);
+        assert!(relay_failure_for(url, "disconnected").is_none());
+        store_relay_failure_if_current(
+            url,
+            failure(RelayFailureCode::TlsFailed),
+            current_login_generation(),
+        );
+        assert_eq!(
+            relay_failure_for(url, "disconnected").unwrap().code,
+            RelayFailureCode::TlsFailed
+        );
+        clear_relay_failure(url);
+    }
+
+    #[test]
     fn logout_clears_failures_logs_and_metrics() {
         let _guard = DIAGNOSTICS_TEST_LOCK.lock();
         let generation = current_login_generation();
@@ -4693,7 +4755,8 @@ mod relay_failure_diagnostics_tests {
     }
 }
 
-/// Add a log entry for a relay
+/// Add a log entry for a relay. Monitor tasks must call [`add_relay_log_if_current`]
+/// instead so a stale first-account loop cannot fill the current account's panel.
 fn add_relay_log(url: &str, level: &str, message: &str) {
     let normalized = normalize_relay_url(url);
     let timestamp = std::time::SystemTime::now()
@@ -4723,7 +4786,14 @@ fn add_relay_log(url: &str, level: &str, message: &str) {
     }
 }
 
-/// Update metrics for a relay
+fn add_relay_log_if_current(url: &str, level: &str, message: &str, captured_generation: u64) {
+    if captured_generation != current_login_generation() {
+        return;
+    }
+    add_relay_log(url, level, message);
+}
+
+/// Update metrics for a relay. Monitor tasks must call [`update_relay_metrics_if_current`].
 fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
     let normalized = normalize_relay_url(url);
     if let Ok(mut metrics) = RELAY_METRICS.write() {
@@ -4732,6 +4802,17 @@ fn update_relay_metrics(url: &str, update_fn: impl FnOnce(&mut RelayMetrics)) {
             .or_insert_with(RelayMetrics::default);
         update_fn(relay_metrics);
     }
+}
+
+fn update_relay_metrics_if_current(
+    url: &str,
+    captured_generation: u64,
+    update_fn: impl FnOnce(&mut RelayMetrics),
+) {
+    if captured_generation != current_login_generation() {
+        return;
+    }
+    update_relay_metrics(url, update_fn);
 }
 
 /// Approximate wire size of an event via its serialized JSON length.
@@ -5128,7 +5209,10 @@ async fn teardown_probe_pool(pool: &RelayPool, url: &str) {
 /// query. Never touches `get_nostr_client()` and never writes to the
 /// candidate. The caller wraps this in the probe's single deadline; on
 /// success it returns the query's elapsed milliseconds.
-async fn run_relay_probe(url: &str) -> Result<u64, RelayFailure> {
+async fn run_relay_probe(
+    url: &str,
+    handshake_done: &std::sync::atomic::AtomicBool,
+) -> Result<u64, RelayFailure> {
     // Resolve the host explicitly -- the only typed route to `dns_failed`;
     // inside the monitor loops a resolver failure arrives as the unstable,
     // non-matchable `io::ErrorKind::Uncategorized` (KTD2).
@@ -5173,6 +5257,7 @@ async fn run_relay_probe(url: &str) -> Result<u64, RelayFailure> {
         teardown_probe_pool(&pool, url).await;
         return Err(failure);
     }
+    handshake_done.store(true, std::sync::atomic::Ordering::SeqCst);
 
     let relay = match pool.relay(url).await {
         Ok(relay) => relay,
@@ -5224,12 +5309,27 @@ async fn probe_relay(url: String) -> Result<ProbeResult, String> {
         Err(_) => return Ok(ProbeResult::failure(RelayFailureCode::InvalidUrl)),
     };
 
-    match tokio::time::timeout(PROBE_DEADLINE, run_relay_probe(&normalized)).await {
+    let handshake_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let handshake_done_for_probe = handshake_done.clone();
+    match tokio::time::timeout(
+        PROBE_DEADLINE,
+        run_relay_probe(&normalized, &handshake_done_for_probe),
+    )
+    .await
+    {
         Ok(Ok(round_trip_ms)) => Ok(ProbeResult::Reachable { round_trip_ms }),
         Ok(Err(failure)) => Ok(ProbeResult::Unreachable { failure }),
-        // The single deadline -- resolution, connect, and query together --
-        // elapsed with no classifiable response at all.
-        Err(_) => Ok(ProbeResult::failure(RelayFailureCode::NotARelay)),
+        // Silence after a completed handshake is `not_a_relay`. A deadline that
+        // fires earlier -- DNS, TCP, TLS, or upgrade still in flight -- is
+        // `timed_out`.
+        Err(_) => {
+            let code = if handshake_done.load(std::sync::atomic::Ordering::SeqCst) {
+                RelayFailureCode::NotARelay
+            } else {
+                RelayFailureCode::TimedOut
+            };
+            Ok(ProbeResult::failure(code))
+        }
     }
 }
 
@@ -5415,9 +5515,16 @@ mod probe_relay_tests {
             started.elapsed() < std::time::Duration::from_secs(12),
             "probe must honor its single 10-second deadline"
         );
-        // Whatever the exact classification, it must be a failure -- the
-        // listener never speaks Nostr.
-        assert!(matches!(result, ProbeResult::Unreachable { .. }));
+        match result {
+            ProbeResult::Unreachable { failure } => {
+                assert_eq!(
+                    failure.code,
+                    RelayFailureCode::TimedOut,
+                    "a host that accepts TCP but never completes the handshake is timed_out, not not_a_relay"
+                );
+            }
+            ProbeResult::Reachable { .. } => panic!("a stalling host must fail"),
+        }
     }
 }
 
@@ -6270,8 +6377,9 @@ async fn monitor_relay_connections() -> Result<bool, String> {
 
     let client = get_nostr_client().expect("Nostr client not initialized");
     // Captured once, at spawn time, and reused by every task below. Compared against the
-    // live generation on every diagnostic write so a stale monitor loop left running for a
-    // previous account can never attribute a failure to the current one (KTD9).
+    // live generation on every diagnostic write (failure store/clear, log, metric) so a
+    // stale monitor loop left running for a previous account cannot attribute diagnostics
+    // to the current one.
     let login_generation = current_login_generation();
     let handle = TAURI_APP.get().unwrap().clone();
 
@@ -6317,10 +6425,11 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                         RelayStatus::Banned => "error",
                         _ => "info",
                     };
-                    add_relay_log(
+                    add_relay_log_if_current(
                         &url_str,
                         log_level,
                         &format!("Status changed to {}", status_str),
+                        login_generation,
                     );
 
                     // Emit relay status update to frontend
@@ -6344,7 +6453,7 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // Relay connection terminated (hard disconnect)
                         }
                         RelayStatus::Connected => {
-                            clear_relay_failure(&url_str);
+                            clear_relay_failure_if_current(&url_str, login_generation);
                             // When a relay reconnects, fetch its bounded catch-up window from just
                             // that relay — skip if a fetch for this relay is already in flight so
                             // rapid Connected/Disconnected flapping never overlaps fetches.
@@ -6369,10 +6478,11 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                                     drop(guard);
                                 });
                             } else {
-                                add_relay_log(
+                                add_relay_log_if_current(
                                     &url_str,
                                     "info",
                                     "Skipping single-relay reconnect fetch: already in flight",
+                                    login_generation,
                                 );
                             }
                         }
@@ -6431,15 +6541,16 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                         Ok(Ok(events)) => {
                             // Any completed round-trip is useful ping data, even an
                             // empty/slow one — we no longer disconnect on this alone.
-                            update_relay_metrics(&url_str, |m| {
+                            update_relay_metrics_if_current(&url_str, login_generation, |m| {
                                 m.ping_ms = Some(ping_ms);
                                 m.last_check = Some(now_secs);
                             });
                             if events.is_empty() && elapsed.as_secs() >= 2 {
-                                add_relay_log(
+                                add_relay_log_if_current(
                                     &url_str,
                                     "warn",
                                     "Health check: slow/empty response",
+                                    login_generation,
                                 );
                             }
                         }
@@ -6448,10 +6559,15 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // probe attempt (R11), but don't force a reconnect — a slower-but-
                             // alive relay shouldn't be treated the same as one that never
                             // answers at all.
-                            update_relay_metrics(&url_str, |m| {
+                            update_relay_metrics_if_current(&url_str, login_generation, |m| {
                                 m.last_check = Some(now_secs);
                             });
-                            add_relay_log(&url_str, "warn", &format!("Health check failed: {}", e));
+                            add_relay_log_if_current(
+                                &url_str,
+                                "warn",
+                                &format!("Health check failed: {}", e),
+                                login_generation,
+                            );
                         }
                         Err(_) => {
                             // Full probe timeout: a materially stronger "not there" signal
@@ -6460,10 +6576,15 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                             // transitions out of Connected on its own, so the reconnect-only-
                             // on-Terminated branch below never sees it. Queue it for the same
                             // forced disconnect+reconnect that branch already uses.
-                            update_relay_metrics(&url_str, |m| {
+                            update_relay_metrics_if_current(&url_str, login_generation, |m| {
                                 m.last_check = Some(now_secs);
                             });
-                            add_relay_log(&url_str, "warn", "Health check failed: timeout");
+                            add_relay_log_if_current(
+                                &url_str,
+                                "warn",
+                                "Health check failed: timeout",
+                                login_generation,
+                            );
                             unhealthy_relays.push((url.clone(), relay.clone()));
                         }
                     }
@@ -6490,13 +6611,18 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                 }
 
                 // Try to reconnect
-                add_relay_log(&url_str, "info", "Attempting reconnection...");
+                add_relay_log_if_current(
+                    &url_str,
+                    "info",
+                    "Attempting reconnection...",
+                    login_generation,
+                );
                 match relay.try_connect(std::time::Duration::from_secs(10)).await {
                     Ok(()) => {
                         // Cheap optimization only -- R3's real guarantee is the read-side gate
                         // in `get_relays` (KTD8), not this status re-check.
                         if relay.status() == RelayStatus::Connected {
-                            clear_relay_failure(&url_str);
+                            clear_relay_failure_if_current(&url_str, login_generation);
                         }
                     }
                     Err(e) => {
@@ -6542,7 +6668,7 @@ async fn monitor_relay_connections() -> Result<bool, String> {
                     match relay.try_connect(std::time::Duration::from_secs(5)).await {
                         Ok(()) => {
                             if relay.status() == RelayStatus::Connected {
-                                clear_relay_failure(&url_str);
+                                clear_relay_failure_if_current(&url_str, login_generation);
                             }
                         }
                         Err(e) => {
