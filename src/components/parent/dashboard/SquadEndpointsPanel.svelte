@@ -15,7 +15,7 @@
   } from '../../../lib/squad/squad-rpc';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { squadStatusRpcFocusNonce } from '../../../stores/navigation';
+  import { squadSettingsRpcFocusNonce } from '../../../stores/navigation';
   import { showToast } from '../../../stores/toast';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
@@ -74,7 +74,7 @@
   );
 
   $effect(() => {
-    const nonce = $squadStatusRpcFocusNonce;
+    const nonce = $squadSettingsRpcFocusNonce;
     if (nonce <= lastRpcFocusNonce) return;
     lastRpcFocusNonce = nonce;
     openRpcEdit('primary');

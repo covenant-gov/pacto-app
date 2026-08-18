@@ -42,7 +42,9 @@
     <span class="tab-unread-dot" aria-hidden="true"></span>
   {/if}
   {#if showImage}
-    <img src={image} alt={label} class="tab-image" on:error={() => (imageBroken = true)} />
+    <span class="tab-image-wrap">
+      <img src={image} alt={label} class="tab-image" on:error={() => (imageBroken = true)} />
+    </span>
   {:else if icon}
     <img src={icon} alt={label} class="tab-icon" />
   {:else}
@@ -125,15 +127,19 @@
     -webkit-user-select: none;
   }
 
-  .tab-image {
+  .tab-image-wrap {
     position: absolute;
     inset: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .tab-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 50%;
     display: block;
-    pointer-events: none;
   }
 
   .tab-icon {

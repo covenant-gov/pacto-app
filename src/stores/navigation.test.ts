@@ -10,8 +10,8 @@ import {
   squadDashboardChannelMode,
   SQUAD_DASHBOARD_MODE_PREFIX,
   parseSquadDashboardChannelMode,
-  squadStatusRpcFocusNonce,
-  focusSquadStatusRpcEditor,
+  squadSettingsRpcFocusNonce,
+  focusSquadSettingsRpcEditor,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -61,7 +61,7 @@ describe('navigation', () => {
     activeHubChannelName.set(null);
     activeView.set('hub');
     squadDashboardChannelMode.set('status');
-    squadStatusRpcFocusNonce.set(0);
+    squadSettingsRpcFocusNonce.set(0);
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -93,6 +93,7 @@ describe('navigation', () => {
     expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
+    expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
   });
 
   it('resets unknown squad dashboard modes to status', () => {
@@ -101,6 +102,7 @@ describe('navigation', () => {
     expect(parseSquadDashboardChannelMode('nope')).toBe('status');
     expect(parseSquadDashboardChannelMode('polls')).toBe('status');
     expect(parseSquadDashboardChannelMode('modules')).toBe('status');
+    expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
   });
 
   it('persists squad dashboard channel mode under an npub-scoped key', () => {
@@ -170,13 +172,13 @@ describe('navigation', () => {
     expect(get(dashboardPollReplicaNonceByParentId)).toEqual({ p1: 1 });
   });
 
-  it('focusSquadStatusRpcEditor switches to status and bumps the RPC focus nonce', () => {
+  it('focusSquadSettingsRpcEditor switches to settings and bumps the RPC focus nonce', () => {
     squadDashboardChannelMode.set('governance');
-    expect(get(squadStatusRpcFocusNonce)).toBe(0);
-    focusSquadStatusRpcEditor();
-    expect(get(squadDashboardChannelMode)).toBe('status');
-    expect(get(squadStatusRpcFocusNonce)).toBe(1);
-    focusSquadStatusRpcEditor();
-    expect(get(squadStatusRpcFocusNonce)).toBe(2);
+    expect(get(squadSettingsRpcFocusNonce)).toBe(0);
+    focusSquadSettingsRpcEditor();
+    expect(get(squadDashboardChannelMode)).toBe('settings');
+    expect(get(squadSettingsRpcFocusNonce)).toBe(1);
+    focusSquadSettingsRpcEditor();
+    expect(get(squadSettingsRpcFocusNonce)).toBe(2);
   });
 });

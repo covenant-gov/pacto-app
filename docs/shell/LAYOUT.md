@@ -9,7 +9,7 @@ How the logged-in app shell is split after the SM refactor: **Svelte orchestrate
 ```
 src/routes/+page.svelte           layout, tab routing, DM send/typing; mounts app event bridge
 src/components/layout/ParentNavbar.svelte   sidebar + modals → lib/parent/* flows
-src/components/parent/ParentDashboard.svelte   #squad-dashboard tab shell (Status→Governance→Treasury→Roles→Crew)
+src/components/parent/ParentDashboard.svelte   #squad-dashboard tab shell (Status→Governance→Treasury→Roles→Crew→Settings)
 src/components/parent/MyDashboard.svelte       #my-dashboard tab shell (Status→Alerts)
 src/components/dm/DmThread.svelte             header/input/options + DmMessageRouter
 src/stores/app.ts                 thin re-export barrel (navigation, dm, squads, mls-chat, persistence)
@@ -65,7 +65,8 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | Path | Role |
 |------|------|
 | `components/dm/DmMessageRouter.svelte` | Invite cards, wallet cards, plain `Message` |
-| `components/parent/dashboard/DashboardStatusTab.svelte` | Broadcast, bot, network, permissions overview |
+| `components/parent/dashboard/DashboardStatusTab.svelte` | Squad photo, Checklist, Broadcasts |
+| `components/parent/dashboard/DashboardSettingsTab.svelte` | Network, Chain RPC / Pimlico, Join-inbox holders, Contracts, stickers |
 | `components/parent/dashboard/DashboardGovernanceTab.svelte` | Pacto Gov role sub-modes (Proposals / Crew / Captain) |
 | `components/parent/dashboard/DashboardRolesTreeTab.svelte` | Hats tree |
 | `components/parent/dashboard/DashboardTreasuryTab.svelte` | Sponsor + governance treasury Safe + other vaults |
@@ -75,8 +76,12 @@ Prefer **direct imports** from domain slices in new code; the barrel remains for
 | `components/parent/dashboard/ParentDashboardModals.svelte` | Deploy/import Safe + privilege modals |
 | `components/parent/dashboard/ParentDashboardMembersPanel.svelte` | Members aside |
 
-Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew`).
+Squad dashboard modes: `squadDashboardChannelMode` (`status` \| `governance` \| `treasury` \| `roles` \| `crew` \| `settings`).
 My dashboard modes: `myDashboardChannelMode` (`status` \| `alerts`).
+
+**Status vs Settings.** Status is for frequently needed operational info: squad photo, Checklist, Broadcasts (visibility). Settings is for one-time or occasional config: network, Chain RPC, Pimlico key, Join-inbox holders, Contracts, sticker packs. Network retargeting for future deploys lives in Settings ([`docs/wallet/CHAIN_CONFIG.md`](../wallet/CHAIN_CONFIG.md)). Unknown persisted dashboard modes (including the former `stickers` slug) reset to `status`.
+
+**Invariant:** do not add a new `#squad-dashboard` segmented mode for a single feature. Occasional config goes in a Settings **section**. A new tab is only for a frequently used operational domain with its own data (Governance, Treasury, Roles, Crew). Stickers as its own tab is the anti-pattern.
 
 **Keep-alive:** After a Squad Dashboard mode is visited once, `ParentDashboard` keeps that tab mounted and toggles visibility with `hidden`/CSS so form and sub-mode state survive mode switches (avoids remount races on Mutiny / QM / Safe loaders).
 

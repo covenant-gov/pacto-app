@@ -11,12 +11,13 @@ describe('parseSquadDashboardChannelMode', () => {
     expect(parseSquadDashboardChannelMode('treasury')).toBe('treasury');
     expect(parseSquadDashboardChannelMode('roles')).toBe('roles');
     expect(parseSquadDashboardChannelMode('crew')).toBe('crew');
+    expect(parseSquadDashboardChannelMode('settings')).toBe('settings');
   });
 
   it('resets unknown values to status', () => {
     expect(parseSquadDashboardChannelMode(null)).toBe('status');
     expect(parseSquadDashboardChannelMode('')).toBe('status');
-    expect(parseSquadDashboardChannelMode('settings')).toBe('status');
+    expect(parseSquadDashboardChannelMode('stickers')).toBe('status');
     expect(parseSquadDashboardChannelMode('roles_tree')).toBe('status');
   });
 });

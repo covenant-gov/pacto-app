@@ -188,12 +188,12 @@
   }
 </script>
 
-<section class="stickers-tab" aria-label={`${$t('squad.stickers.tabAria')} — ${squad.name}`}>
+<section class="stickers-section" aria-label={`${$t('squad.stickers.sectionAria')} — ${squad.name}`}>
   {#if !squadId}
     <p class="stickers-empty-state">{$t('squad.stickers.emptyState')}</p>
     <p class="muted stickers-empty-hint">{$t('squad.stickers.emptyStateHint')}</p>
   {:else}
-    <h3 class="stickers-title">{$t('squad.stickers.tabLabel')}</h3>
+    <h3 class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
 
     <div class="stickers-field-row">
       <label class="meta-label" for="sticker-pack-name">{$t('squad.stickers.packNameLabel')}</label>
@@ -301,7 +301,7 @@
 </section>
 
 <style>
-  .stickers-tab {
+  .stickers-section {
     display: flex;
     flex-direction: column;
     gap: 12px;

@@ -1,19 +1,11 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
-  import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
   import SquadIdentitySection from './SquadIdentitySection.svelte';
-  import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
-  import EditIconButton from '../../ui/EditIconButton.svelte';
-  import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
-  import type { ResolvedSquadAdminContext } from '../../../lib/governance/squad-admin-payload';
-  import type { SupportedChainId } from '../../../lib/wallet/chains';
-  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
-  import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
-  import type { SquadRpcConfig } from '../../../lib/squad/squad-rpc';
-  import SquadEndpointsPanel from './SquadEndpointsPanel.svelte';
   import type { Squad } from '../../../stores/squads';
   import { currentUser } from '../../../stores/auth';
+  import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
+  import type { SupportedChainId } from '../../../lib/wallet/chains';
   import {
     needsSquadRosterKeyChoice,
     squadMemberEvmForDisplay,
@@ -25,56 +17,59 @@
     mintCrewHatsState,
     type ChecklistItemState,
   } from '../../../lib/governance/squad-sponsor-crew';
-  import { onMount } from 'svelte';
 
-  export let squad: Squad;
-  export let permissionsCtx: DashboardPermissionsContext;
-  export let squadAdminCtx: ResolvedSquadAdminContext | null = null;
-  export let announcementsGroupId: string | null = null;
-  export let parentId = '';
-  export let channelMembers: string[] = [];
-  export let squadMemberEvmByNpub: Record<string, string> = {};
-  export let memberRolesByAddress: Record<string, string> = {};
-  export let squadNetwork: SupportedChainId | null = null;
-  export let squadNetworkFromInfra = false;
-  export let onSetSquadNetwork: (chain: SupportedChainId) => void = () => {};
-  export let squadRpcConfig: SquadRpcConfig | null = null;
-  export let onSetSquadRpcPrimary: (url: string) => string | void | Promise<string | void> = () => {};
-  export let onSetSquadRpcBackup: (url: string) => string | void | Promise<string | void> = () => {};
-  export let onClearSquadRpcPrimary: () => void | Promise<void> = () => {};
-  export let hasGovernance = false;
-  export let hasSquadAdmin = false;
-  export let captainWearers: string[] = [];
-  export let crewWearers: string[] = [];
-  export let onOpenDeploy: () => void = () => {};
-  export let onOpenCrewBootstrap: () => void = () => {};
+  let {
+    squad,
+    announcementsGroupId = null,
+    parentId = '',
+    channelMembers = [],
+    squadMemberEvmByNpub = {},
+    squadNetwork = null,
+    hasGovernance = false,
+    hasSquadAdmin = false,
+    captainWearers = [],
+    crewWearers = [],
+    onOpenDeploy = () => {},
+    onOpenCrewBootstrap = () => {},
+    onSelectNetwork = () => {},
+  }: {
+    squad: Squad;
+    announcementsGroupId?: string | null;
+    parentId?: string;
+    channelMembers?: string[];
+    squadMemberEvmByNpub?: Record<string, string>;
+    squadNetwork?: SupportedChainId | null;
+    hasGovernance?: boolean;
+    hasSquadAdmin?: boolean;
+    captainWearers?: string[];
+    crewWearers?: string[];
+    onOpenDeploy?: () => void;
+    onOpenCrewBootstrap?: () => void;
+    onSelectNetwork?: () => void;
+  } = $props();
 
-  const squadNetworkOptions = listSquadDeployNetworkOptions();
-  let editingNetwork = false;
-  let squadNetworkChoice: SupportedChainId | '' = squadNetwork ?? '';
-  $: if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
+  let rosterKeyNeeded = $state(false);
 
-  let rosterKeyNeeded = false;
+  const myNpub = $derived($currentUser?.npub ?? '');
+  const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
+  const shareEvmState = $derived(allMembersShareEvmState(channelMembers, displayEvmByNpub));
+  const govState = $derived(binaryInfraState(hasGovernance));
+  const adminState = $derived(binaryInfraState(hasSquadAdmin));
+  const crewMintState = $derived(
+    mintCrewHatsState({
+      hasGovernance,
+      channelMembers,
+      squadMemberEvmByNpub: displayEvmByNpub,
+      captainWearers,
+      crewWearers,
+    }),
+  );
 
-  $: myNpub = $currentUser?.npub ?? '';
-  $: displayEvmByNpub = squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded);
-  $: myRosterEvm = myNpub ? displayEvmByNpub[myNpub]?.trim() : '';
-  $: networkLabel = squadNetwork ? getWalletNetworkDisplayName(squadNetwork) : $t('governance.status.networkNotSet');
-  $: networkHint = squadNetworkFromInfra ? $t('governance.status.networkLocked') : '';
-  $: shareEvmState = allMembersShareEvmState(channelMembers, displayEvmByNpub);
-  $: govState = binaryInfraState(hasGovernance);
-  $: adminState = binaryInfraState(hasSquadAdmin);
-  $: crewMintState = mintCrewHatsState({
-    hasGovernance,
-    channelMembers,
-    squadMemberEvmByNpub: displayEvmByNpub,
-    captainWearers,
-    crewWearers,
-  });
-
-  onMount(() => {
-    if (!parentId) return;
-    void needsSquadRosterKeyChoice(parentId, announcementsGroupId).then((needed) => {
+  $effect(() => {
+    const pid = parentId;
+    const gid = announcementsGroupId;
+    if (!pid) return;
+    void needsSquadRosterKeyChoice(pid, gid).then((needed) => {
       rosterKeyNeeded = needed;
     });
   });
@@ -84,19 +79,6 @@
     if (state === 'pending') return 'check-pending';
     return 'check-todo';
   }
-
-  function applySquadNetwork() {
-    if (squadNetworkChoice && squadNetworkChoice !== squadNetwork) {
-      onSetSquadNetwork(squadNetworkChoice);
-    }
-    editingNetwork = false;
-  }
-
-  function cancelNetworkEdit() {
-    squadNetworkChoice = squadNetwork ?? '';
-    editingNetwork = false;
-  }
-
 </script>
 
 <SquadIdentitySection {squad} />
@@ -111,14 +93,7 @@
       {#if squadNetwork}
         <span>{$t('governance.status.networkSelected', { values: { network: getWalletNetworkDisplayName(squadNetwork) } })}</span>
       {:else}
-        <button
-          type="button"
-          class="checklist-action"
-          on:click={() => {
-            editingNetwork = true;
-            document.getElementById('squad-status-network')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }}
-        >
+        <button type="button" class="checklist-action" onclick={onSelectNetwork}>
           {$t('governance.status.selectNetwork')}
         </button>
       {/if}
@@ -132,7 +107,7 @@
       {#if hasGovernance}
         <span>{$t('governance.status.squadGovernance')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
+        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadGovernance')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={adminState === 'done'}>
@@ -140,7 +115,7 @@
       {#if hasSquadAdmin}
         <span>{$t('governance.status.squadAdmin')}</span>
       {:else}
-        <button type="button" class="checklist-action" on:click={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
+        <button type="button" class="checklist-action" onclick={onOpenDeploy}>{$t('governance.status.deploySquadAdmin')}</button>
       {/if}
     </li>
     <li class="checklist-item" class:done={crewMintState === 'done'}>
@@ -148,7 +123,7 @@
       {#if crewMintState === 'done'}
         <span>{$t('governance.status.mintCrewHats')}</span>
       {:else if hasGovernance}
-        <button type="button" class="checklist-action" on:click={onOpenCrewBootstrap}
+        <button type="button" class="checklist-action" onclick={onOpenCrewBootstrap}
           >{$t('governance.status.mintCrewHats')}</button
         >
       {:else}
@@ -158,64 +133,7 @@
   </ul>
 </section>
 
-<div class="status-fact-row" id="squad-status-network">
-  <span class="meta-label">{$t('governance.status.networkLabel')}</span>
-  {#if editingNetwork}
-    <select class="network-select" bind:value={squadNetworkChoice} aria-label={$t('governance.status.squadNetworkLabel')}>
-      <option value="" disabled>{$t('governance.status.selectPlaceholder')}</option>
-      {#each squadNetworkOptions as opt (opt.id)}
-        <option value={opt.id}>{opt.label}</option>
-      {/each}
-    </select>
-    <button
-      type="button"
-      class="btn-text"
-      disabled={!squadNetworkChoice || squadNetworkChoice === squadNetwork}
-      on:click={applySquadNetwork}
-    >
-      {$t('governance.common.save')}
-    </button>
-    <button type="button" class="btn-text muted" on:click={cancelNetworkEdit}>{$t('governance.common.cancel')}</button>
-  {:else}
-    <span class="network-value">{networkLabel}</span>
-    {#if networkHint}
-      <span class="muted network-hint">{networkHint}</span>
-    {/if}
-    <EditIconButton
-      ariaLabel={$t('governance.status.editNetwork')}
-      title={$t('governance.status.editNetworkTitle')}
-      on:click={() => (editingNetwork = true)}
-    />
-  {/if}
-</div>
-
-<SquadEndpointsPanel
-  {squadNetwork}
-  {squadRpcConfig}
-  {onSetSquadRpcPrimary}
-  {onSetSquadRpcBackup}
-  {onClearSquadRpcPrimary}
-/>
-
 <SquadBroadcastSettingsSection {squad} />
-
-<SquadBotHoldersSection
-  {announcementsGroupId}
-  {channelMembers}
-  squadAdminActive={!!squadAdminCtx}
-  executorRolesLabel={myRosterEvm
-    ? memberRolesByAddress[myRosterEvm.trim().toLowerCase()] ?? ''
-    : ''}
-/>
-
-{#if parentId}
-  <SmartContractSecuritySection
-    {parentId}
-    announcementsGroupId={announcementsGroupId ?? ''}
-    canManage={permissionsCtx.phase === 'pacto_gov'}
-    compact
-  />
-{/if}
 
 <style>
   .status-checklist {
@@ -225,16 +143,6 @@
     padding: 8px 0 12px;
     margin-bottom: 4px;
     border-bottom: 1px solid var(--border-subtle);
-    font-size: 0.875rem;
-  }
-
-  .status-fact-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    padding: 8px 0;
-    margin-bottom: 0;
     font-size: 0.875rem;
   }
 
@@ -296,46 +204,5 @@
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;
-  }
-
-  .network-value {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .network-hint {
-    font-size: 0.75rem;
-  }
-
-  .muted {
-    color: var(--text-muted);
-  }
-
-  .network-select {
-    min-width: 140px;
-    padding: 4px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-  }
-
-  .btn-text {
-    padding: 4px 8px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    font: inherit;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-
-  .btn-text:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    text-decoration: none;
   }
 </style>
