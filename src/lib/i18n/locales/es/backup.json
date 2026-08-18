@@ -10,7 +10,7 @@
 	"backup.modal.desc.backUp": "Esta frase de recuperación es la única forma de restaurar tu cuenta y fondos. Escríbela en papel y guárdala en un lugar seguro.",
 	"backup.modal.desc.confirm": "Asegúrate de tener las palabras escritas en el orden correcto antes de continuar.",
 	"backup.modal.desc.verify": "Ingresa las palabras de tu copia escrita.",
-	"backup.modal.desc.verified": "Tu copia de seguridad está verificada. Ahora puedes usar funciones restringidas como escuadrones y envíos.",
+	"backup.modal.desc.verified": "Tu copia de seguridad está verificada. Ahora puedes usar funciones restringidas como escuads y envíos.",
 	"backup.modal.warning": "Nunca compartas esta frase ni la guardes en línea. Cualquiera con estas palabras puede controlar tu cuenta.",
 	"backup.modal.showSeedPhrase": "Mostrar frase de recuperación",
 	"backup.modal.hideSeedPhrase": "Ocultar frase de recuperación",
