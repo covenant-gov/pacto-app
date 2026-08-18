@@ -32,7 +32,7 @@ brew install --cask covenant-gov/pacto/pacto
 1. Download the DMG for your Mac from the [latest release](https://github.com/covenant-gov/pacto-app/releases/latest):
    - Apple Silicon: `pacto_0.3.2_aarch64.dmg`
    - Intel: `pacto_0.3.2_x64.dmg`
-2. Open the DMG and drag `pacto.app` to **Applications**.
+2. Open the DMG and drag `Pacto.app` to **Applications**.
 
 #### Unsigned app warning
 
@@ -43,7 +43,7 @@ Pacto is not currently signed by Apple. After installing, you may see a warning 
 To run the app, open a terminal and remove the quarantine attribute:
 
 ```bash
-xattr -r -d com.apple.quarantine /Applications/pacto.app
+xattr -r -d com.apple.quarantine /Applications/Pacto.app
 ```
 
 Then launch Pacto from Applications.

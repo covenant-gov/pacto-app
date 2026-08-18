@@ -12,14 +12,14 @@ brew install --cask pacto
 Pacto is currently unsigned. After installing, remove the quarantine attribute:
 
 ```bash
-xattr -r -d com.apple.quarantine /Applications/pacto.app
+xattr -r -d com.apple.quarantine /Applications/Pacto.app
 ```
 
 Then launch Pacto from Applications.
 
 **Manual install**
 
-Download the DMG for your Mac and drag `pacto.app` to Applications:
+Download the DMG for your Mac and drag `Pacto.app` to Applications:
 - Apple Silicon (M1/M2/M3): `pacto_{{VERSION}}_aarch64.dmg`
 - Intel: `pacto_{{VERSION}}_x64.dmg`
 
