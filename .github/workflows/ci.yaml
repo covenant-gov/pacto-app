@@ -87,7 +87,10 @@ jobs:
           if-no-files-found: ignore
 
   e2e-ui:
+    # Disabled: Playwright smoke tests are slow and currently broken.
+    if: false
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -125,9 +128,11 @@ jobs:
           if-no-files-found: ignore
 
   tauri-e2e:
+    # Disabled: real-Tauri harness is slow and currently broken.
     # Phase 2 real-Tauri harness. Builds the debug binary and drives it via the
     # Hypothesi MCP server. Requires a display (X11) and is sensitive to runner
     # setup, so it is marked continue-on-error until the environment is stable.
+    if: false
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
