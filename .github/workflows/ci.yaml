@@ -161,7 +161,7 @@ jobs:
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb dbus-x11 libgl1-mesa-dri mesa-utils
+          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb dbus-x11 libgl1-mesa-dri mesa-utils gdb
 
       - name: Build Tauri debug bundle
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm tauri build --debug --no-bundle --ci
@@ -174,10 +174,19 @@ jobs:
           # the next thing the constructor does on this runner is SIGILL in
           # the DMA-BUF / compositing path (default xvfb-run is 640x480x8).
           NO_AT_BRIDGE: "1"
+          GTK_A11Y: none
           GDK_BACKEND: x11
           LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: softpipe
           WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: "1"
+          JSC_useJIT: "0"
+          # aws-lc probes AVX-512 via CPUID then runs those paths. Nested GHA
+          # VMs often advertise AVX-512 and then SIGILL on the first VAES insn,
+          # before Rust main() prints anything. ":0" keeps SSE/AVX2, zeros
+          # the extended cap word (AVX-512*).
+          OPENSSL_ia32cap: ":0"
         # xvfb-run must wrap dbus-run-session so DISPLAY is set before GTK
         # starts. 24-bit + GLX is required; the xvfb-run default (8-bit)
         # is what produced SIGILL after the dbus hang was fixed.
