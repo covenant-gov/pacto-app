@@ -236,7 +236,7 @@ export function startPactoGovAndSponsorDeploy(params: {
       const roster = normalizeAddress(rosterRaw ?? '');
       if (!roster || roster.toLowerCase() !== captain.toLowerCase()) {
         throw new Error(
-          'Captain must be your squad-assigned EVM. Bind a roster key for this squad and try again.',
+          'Captain must be your squad-assigned EVM. Bind a squad key for this squad and try again.',
         );
       }
 

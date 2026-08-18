@@ -75,7 +75,7 @@ export function pactoGovModuleDescriptors(
       id: 'quartermaster',
       label: 'Quartermaster',
       address: payload.quartermaster.trim(),
-      summary: mutinyMode ? 'Mutiny mode — roster locked' : 'Add / remove crew (timelock)',
+      summary: mutinyMode ? 'Mutiny mode — crew locked' : 'Add / remove crew (timelock)',
     });
   }
   if (payload.squadAdminProxy?.trim()) {

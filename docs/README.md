@@ -26,6 +26,7 @@ These docs are **tracked in git** and are the primary map for humans and coding 
 | **[wallet/](./wallet/)** | Embedded EVM wallet, RPC, chain config, DM payment messages ([on-chain read pattern](./wallet/ONCHAIN_READ_PATTERN.md)) |
 | **[governance/ACCESS_CONTROL.md](./governance/ACCESS_CONTROL.md)** | Nostr↔EVM roster **ACL** (access control): Hats / Squad Admin capabilities, fail-closed signing preflight |
 | **[CHAIN_TERMINOLOGY.md](./CHAIN_TERMINOLOGY.md)** | Canonical network keys (`local`, not `anvil`); one spelling per chain |
+| **[i18n.md](./i18n.md)** | Locale catalogs (`en`/`es`); Spanish **escuad** slang for Squad |
 | **[RUNTIME_CONFIG.md](./RUNTIME_CONFIG.md)** | Backend-owned `AppConfig` limits/flags over Tauri IPC: source of truth, Zod validation, fallback behavior, how to add a new limit |
 | **[audits/](./audits/)** | **Alpha / no external audit:** wallet and key-handling assurance posture ([README](./audits/README.md)) |
 | **[build/](./build/)** | Desktop build guides (macOS, Windows, Ubuntu); [OPERATOR_UPDATES.md](./build/OPERATOR_UPDATES.md) covers signed in-app updates and the [mandatory update gate](./build/OPERATOR_UPDATES.md#marking-a-release-as-breaking); [DEV_SANDBOX.md](./build/DEV_SANDBOX.md) covers the debug-only dev-world data-directory refusal |
