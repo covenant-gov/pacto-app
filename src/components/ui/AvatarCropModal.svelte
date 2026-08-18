@@ -1,96 +1,96 @@
 <script lang="ts">
-  /**
-   * Interactive avatar crop step: loads a local image file as a preview, lets the user pan and
-   * zoom within a circular crop window, then re-encodes the selected region to a 512x512 JPEG
-   * and uploads it. Cancel (Escape, overlay click, or the Cancel button) leaves the caller's
-   * avatar untouched.
-   */
+  /** Circular crop → 512×512 JPEG → Blossom `upload_avatar`. */
   import { t } from 'svelte-i18n';
-  import Modal from '../ui/Modal.svelte';
+  import Modal from './Modal.svelte';
   import { getImagePreviewBase64, uploadAvatar } from '../../lib/api/nostr';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
 
-  export let open: boolean;
-  export let filepath: string;
-  export let onConfirm: (url: string) => void;
-  export let onCancel: () => void;
+  let {
+    open,
+    filepath,
+    title,
+    onConfirm,
+    onCancel,
+  }: {
+    open: boolean;
+    filepath: string;
+    title: string;
+    onConfirm: (url: string) => void;
+    onCancel: () => void;
+  } = $props();
 
   const titleId = 'avatar-crop-title';
-
-  /** Upper bound for the interactive crop viewport diameter, CSS px -- the actual rendered size
-   * (cropDiameter below) shrinks below this on narrow windows via bind:clientWidth, so all pan/
-   * zoom math stays correct regardless of window size. */
   const MAX_CROP_DIAMETER = 280;
-  /** Never let the selected crop region span fewer source px than this; also the undersized-warning threshold. */
   const MIN_CROP_SOURCE_PX = 512;
-  /** Decoded dimensions beyond this are treated as a decode failure, not a huge-but-real photo. */
   const MAX_PLAUSIBLE_DIMENSION = 20000;
-  /** Safety margin under the backend's 500KB cap; a blob over this triggers a quality stepdown re-encode. */
   const MAX_JPEG_BYTES = 400_000;
   const JPEG_QUALITY_FLOOR = 0.3;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
-  /** Multiplicative zoom change per click of the manual +/- zoom buttons. */
   const ZOOM_BUTTON_FACTOR = 1.2;
-  /** CSS px nudged per click of a manual pan direction button. */
   const PAN_STEP_PX = 24;
 
-  let lastOpenedFilepath: string | null = null;
-  let loadGeneration = 0;
+  let lastOpenedFilepath = $state<string | null>(null);
+  let loadGeneration = $state(0);
+  let loading = $state(false);
+  let previewSrc = $state<string | null>(null);
+  let decodeError = $state<string | null>(null);
+  let naturalWidth = $state(0);
+  let naturalHeight = $state(0);
+  let zoom = $state(1);
+  let pan = $state({ x: 0, y: 0 });
+  let cropDiameter = $state(MAX_CROP_DIAMETER);
+  let uploading = $state(false);
+  let uploadError = $state<string | null>(null);
+  let croppedBytesBase64 = $state<string | null>(null);
+  let imgEl = $state<HTMLImageElement | null>(null);
+  let viewportEl = $state<HTMLDivElement | null>(null);
+  let dragPointerId = $state<number | null>(null);
+  let dragStart = $state({ x: 0, y: 0 });
+  let panStart = $state({ x: 0, y: 0 });
 
-  let loading = false;
-  let previewSrc: string | null = null;
-  let decodeError: string | null = null;
-  let naturalWidth = 0;
-  let naturalHeight = 0;
+  const previewReady = $derived(naturalWidth > 0 && naturalHeight > 0);
+  const showUndersizedWarning = $derived(
+    previewReady && cropDiameter / zoom < MIN_CROP_SOURCE_PX,
+  );
+  const maxPanX = $derived(
+    previewReady ? Math.max(naturalWidth * zoom - cropDiameter, 0) / 2 : 0,
+  );
+  const maxPanY = $derived(
+    previewReady ? Math.max(naturalHeight * zoom - cropDiameter, 0) / 2 : 0,
+  );
+  const canPanUp = $derived(maxPanY > 0.5 && pan.y < maxPanY - 0.5);
+  const canPanDown = $derived(maxPanY > 0.5 && pan.y > -maxPanY + 0.5);
+  const canPanLeft = $derived(maxPanX > 0.5 && pan.x < maxPanX - 0.5);
+  const canPanRight = $derived(maxPanX > 0.5 && pan.x > -maxPanX + 0.5);
 
-  let zoom = 1;
-  let pan: { x: number; y: number } = { x: 0, y: 0 };
-  /** Actual rendered crop-viewport diameter, CSS px -- bound to the element's clientWidth so it
-   * tracks CSS (`min(MAX_CROP_DIAMETER, 100%)`) and therefore shrinks on narrow windows. */
-  let cropDiameter = MAX_CROP_DIAMETER;
-
-  let uploading = false;
-  let uploadError: string | null = null;
-  let croppedBytesBase64: string | null = null;
-
-  let imgEl: HTMLImageElement | null = null;
-  let dragPointerId: number | null = null;
-  let dragStart = { x: 0, y: 0 };
-  let panStart = { x: 0, y: 0 };
-
-  $: previewReady = naturalWidth > 0 && naturalHeight > 0;
-  $: showUndersizedWarning = previewReady && cropDiameter / zoom < MIN_CROP_SOURCE_PX;
-  // Available pan travel per axis at the current zoom -- 0 whenever that axis is already flush
-  // with the crop circle (e.g. the tight axis of a landscape/portrait photo at cover-fit zoom).
-  $: maxPanX = previewReady ? Math.max(naturalWidth * zoom - cropDiameter, 0) / 2 : 0;
-  $: maxPanY = previewReady ? Math.max(naturalHeight * zoom - cropDiameter, 0) / 2 : 0;
-  // Re-clamp whenever cropDiameter changes (window resized while the modal is open) so zoom/pan
-  // never go stale against the new viewport size; idempotent once already in range, so this
-  // settles in one pass rather than looping.
-  $: if (previewReady) {
-    zoom = clampZoom(zoom, naturalWidth, naturalHeight, cropDiameter);
-  }
-  $: if (previewReady) {
-    pan = clampPan(pan, zoom, naturalWidth, naturalHeight, cropDiameter);
-  }
-  // A direction button is only enabled while there's room left to move that way -- disabled
-  // (not silently inert) once the image edge is already flush with the crop circle.
-  $: canPanUp = maxPanY > 0.5 && pan.y < maxPanY - 0.5;
-  $: canPanDown = maxPanY > 0.5 && pan.y > -maxPanY + 0.5;
-  $: canPanLeft = maxPanX > 0.5 && pan.x < maxPanX - 0.5;
-  $: canPanRight = maxPanX > 0.5 && pan.x > -maxPanX + 0.5;
-
-  // Fires once per open-transition (or when filepath changes while already open), not on every
-  // unrelated reactive re-run: lastOpenedFilepath guards against reloading the preview or wiping
-  // in-progress pan/zoom state whenever this block re-evaluates for unrelated reasons.
-  $: if (open && filepath) {
-    if (filepath !== lastOpenedFilepath) {
-      lastOpenedFilepath = filepath;
-      beginPreviewLoad(filepath);
+  $effect(() => {
+    if (open && filepath) {
+      if (filepath !== lastOpenedFilepath) {
+        lastOpenedFilepath = filepath;
+        beginPreviewLoad(filepath);
+      }
+    } else if (!open && lastOpenedFilepath !== null) {
+      lastOpenedFilepath = null;
     }
-  } else if (!open && lastOpenedFilepath !== null) {
-    lastOpenedFilepath = null;
-  }
+  });
+
+  $effect(() => {
+    if (!previewReady) return;
+    const nextZoom = clampZoom(zoom, naturalWidth, naturalHeight, cropDiameter);
+    const nextPan = clampPan(pan, nextZoom, naturalWidth, naturalHeight, cropDiameter);
+    if (nextZoom !== zoom) zoom = nextZoom;
+    if (nextPan.x !== pan.x || nextPan.y !== pan.y) pan = nextPan;
+  });
+
+  $effect(() => {
+    const el = viewportEl;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      handleWheel(e);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  });
 
   function resetCropState() {
     loading = true;
@@ -117,7 +117,7 @@
       .catch((e) => {
         if (gen !== loadGeneration) return;
         loading = false;
-        decodeError = getInvokeErrorMessage(e, $t('profile.crop.decodeError'));
+        decodeError = getInvokeErrorMessage(e, $t('media.avatarCrop.decodeError'));
       });
   }
 
@@ -131,7 +131,7 @@
     const h = imgEl.naturalHeight;
     if (!isPlausibleDimensions(w, h)) {
       previewSrc = null;
-      decodeError = $t('profile.crop.decodeError');
+      decodeError = $t('media.avatarCrop.decodeError');
       return;
     }
     naturalWidth = w;
@@ -143,10 +143,9 @@
 
   function handlePreviewImgError() {
     previewSrc = null;
-    decodeError = $t('profile.crop.decodeError');
+    decodeError = $t('media.avatarCrop.decodeError');
   }
 
-  /** Zoom (CSS px per source px) at which the image just fully covers the circular crop. */
   function coverFitZoom(width: number, height: number, diameter: number): number {
     if (width <= 0 || height <= 0) return 1;
     return Math.max(diameter / width, diameter / height);
@@ -155,8 +154,6 @@
   function computeMaxZoom(width: number, height: number, diameter: number): number {
     const minZ = coverFitZoom(width, height, diameter);
     const sourceFloorZoom = diameter / MIN_CROP_SOURCE_PX;
-    // A source image smaller than the floor can't be over-zoomed past its own cover-fit; the
-    // undersized warning (not this clamp) is what tells the user their source is small.
     return Math.max(sourceFloorZoom, minZ);
   }
 
@@ -171,7 +168,7 @@
     z: number,
     width: number,
     height: number,
-    diameter: number
+    diameter: number,
   ): { x: number; y: number } {
     const slackX = width * z - diameter;
     const slackY = height * z - diameter;
@@ -183,7 +180,6 @@
     };
   }
 
-  /** Manual-control equivalent of the wheel-zoom gesture, for the visible +/- buttons. */
   function zoomByFactor(factor: number) {
     if (uploading || !naturalWidth || !naturalHeight) return;
     const nextZoom = clampZoom(zoom * factor, naturalWidth, naturalHeight, cropDiameter);
@@ -193,7 +189,6 @@
     uploadError = null;
   }
 
-  /** Manual-control equivalent for the visible zoom slider (absolute value, not a step). */
   function setZoomValue(value: number) {
     if (uploading || !naturalWidth || !naturalHeight) return;
     const nextZoom = clampZoom(value, naturalWidth, naturalHeight, cropDiameter);
@@ -203,7 +198,6 @@
     uploadError = null;
   }
 
-  /** Manual-control equivalent of pointer-drag panning, for the visible direction buttons. */
   function panByStep(dx: number, dy: number) {
     if (uploading || !naturalWidth || !naturalHeight) return;
     pan = clampPan({ x: pan.x + dx, y: pan.y + dy }, zoom, naturalWidth, naturalHeight, cropDiameter);
@@ -214,9 +208,6 @@
   function handleWheel(e: WheelEvent) {
     if (uploading || !naturalWidth || !naturalHeight) return;
     e.preventDefault();
-    // Zoom on every wheel/trackpad event rather than gating on ctrlKey: trackpad pinch reports as
-    // wheel+ctrlKey in most browsers, but plain mouse-wheel scroll over this viewport has nothing
-    // else to do, so treating all wheel input as zoom keeps the gesture reliable across devices.
     const factor = Math.exp(-e.deltaY * WHEEL_ZOOM_SENSITIVITY);
     const nextZoom = clampZoom(zoom * factor, naturalWidth, naturalHeight, cropDiameter);
     zoom = nextZoom;
@@ -233,7 +224,7 @@
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
-      // best-effort; dragging still works without capture on browsers that reject it here
+      /* capture optional */
     }
   }
 
@@ -246,7 +237,7 @@
       zoom,
       naturalWidth,
       naturalHeight,
-      cropDiameter
+      cropDiameter,
     );
     croppedBytesBase64 = null;
     uploadError = null;
@@ -258,11 +249,10 @@
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
-      // already released
+      /* already released */
     }
   }
 
-  /** Inverse of the on-screen pan/zoom transform: the crop circle's source-space rectangle. */
   function computeCropSourceRect(): { sx: number; sy: number; sSize: number } {
     const sSize = cropDiameter / zoom;
     const sx = naturalWidth / 2 - pan.x / zoom - sSize / 2;
@@ -313,36 +303,25 @@
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D context is unavailable');
-
-    // Fill white first: a transparent PNG/GIF/WEBP source shouldn't leave transparency baked
-    // into the JPEG output (JPEG has no alpha channel).
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, 512, 512);
-
     const { sx, sy, sSize } = computeCropSourceRect();
     ctx.drawImage(imgEl, sx, sy, sSize, sSize, 0, 0, 512, 512);
-
     const blob = await encodeCanvasUnderBudget(canvas);
     return blobToBase64(blob);
   }
 
   async function handleConfirm() {
     if (uploading || !previewReady) return;
-
-    // showUndersizedWarning is a reactive value derived from zoom (see the $: declaration
-    // above); Svelte recomputes it synchronously on every zoom/pan change, so it is already
-    // current here — no separate re-check needed at confirm time (R10).
-
     uploadError = null;
     try {
       if (!croppedBytesBase64) {
         croppedBytesBase64 = await cropToBase64Jpeg();
       }
     } catch (e) {
-      uploadError = getInvokeErrorMessage(e, $t('profile.crop.uploadError'));
+      uploadError = getInvokeErrorMessage(e, $t('media.avatarCrop.uploadError'));
       return;
     }
-
     uploading = true;
     try {
       const url = await uploadAvatar(croppedBytesBase64, 'avatar');
@@ -350,7 +329,7 @@
       onConfirm(url);
     } catch (e) {
       uploading = false;
-      uploadError = getInvokeErrorMessage(e, $t('profile.crop.uploadError'));
+      uploadError = getInvokeErrorMessage(e, $t('media.avatarCrop.uploadError'));
     }
   }
 
@@ -361,45 +340,39 @@
 
 {#if open}
   <Modal {titleId} onClose={handleCancel} dismissible={!uploading} contentClass="avatar-crop-modal">
-    <h2 id={titleId}>{$t('profile.crop.title')}</h2>
+    <h2 id={titleId}>{title}</h2>
 
     {#if loading}
       <div class="crop-loading" role="status">
         <div class="spinner"></div>
-        <p>{$t('profile.crop.loadingPreview')}</p>
+        <p>{$t('media.avatarCrop.loadingPreview')}</p>
       </div>
     {:else if decodeError}
       <div class="crop-alert" role="alert">
         <p>{decodeError}</p>
-        <!--
-          This button only calls onCancel() — it can't itself relaunch the native file picker
-          across this component's prop boundary. The caller must treat onCancel as safe to invoke
-          from this decode-error path too (not only from Escape, overlay click, or the explicit
-          Cancel button) so the user can pick a different file afterward.
-        -->
-        <button type="button" class="btn-secondary" on:click={handleCancel}>
-          {$t('profile.crop.chooseDifferentImage')}
+        <button type="button" class="btn-secondary" onclick={handleCancel}>
+          {$t('media.avatarCrop.chooseDifferentImage')}
         </button>
       </div>
     {:else if previewSrc}
       {#if !previewReady}
         <div class="crop-loading" role="status">
           <div class="spinner"></div>
-          <p>{$t('profile.crop.loadingPreview')}</p>
+          <p>{$t('media.avatarCrop.loadingPreview')}</p>
         </div>
       {/if}
 
       <div
+        bind:this={viewportEl}
         class="crop-viewport"
         class:crop-viewport-pending={!previewReady}
         role="application"
-        aria-label={$t('profile.crop.hint')}
+        aria-label={$t('media.avatarCrop.hint')}
         bind:clientWidth={cropDiameter}
-        on:wheel|nonpassive={handleWheel}
-        on:pointerdown={handlePointerDown}
-        on:pointermove={handlePointerMove}
-        on:pointerup={handlePointerUp}
-        on:pointercancel={handlePointerUp}
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
+        onpointercancel={handlePointerUp}
       >
         <img
           bind:this={imgEl}
@@ -407,23 +380,23 @@
           alt=""
           class="crop-image"
           style="width: {naturalWidth * zoom}px; height: {naturalHeight * zoom}px; transform: translate(calc(-50% + {pan.x}px), calc(-50% + {pan.y}px));"
-          on:load={handlePreviewImgLoad}
-          on:error={handlePreviewImgError}
+          onload={handlePreviewImgLoad}
+          onerror={handlePreviewImgError}
           draggable="false"
         />
       </div>
 
       {#if previewReady}
-        <p class="crop-hint">{$t('profile.crop.hint')}</p>
+        <p class="crop-hint">{$t('media.avatarCrop.hint')}</p>
 
         <div class="crop-manual-controls">
           <div class="crop-zoom-controls">
             <button
               type="button"
               class="crop-step-btn"
-              on:click={() => zoomByFactor(1 / ZOOM_BUTTON_FACTOR)}
+              onclick={() => zoomByFactor(1 / ZOOM_BUTTON_FACTOR)}
               disabled={uploading}
-              aria-label={$t('profile.crop.zoomOut')}
+              aria-label={$t('media.avatarCrop.zoomOut')}
             >
               &minus;
             </button>
@@ -436,55 +409,55 @@
                 coverFitZoom(naturalWidth, naturalHeight, cropDiameter)) /
                 100 || 0.001}
               value={zoom}
-              on:input={(e) => setZoomValue(Number(e.currentTarget.value))}
+              oninput={(e) => setZoomValue(Number(e.currentTarget.value))}
               disabled={uploading}
-              aria-label={$t('profile.crop.zoomSlider')}
+              aria-label={$t('media.avatarCrop.zoomSlider')}
             />
             <button
               type="button"
               class="crop-step-btn"
-              on:click={() => zoomByFactor(ZOOM_BUTTON_FACTOR)}
+              onclick={() => zoomByFactor(ZOOM_BUTTON_FACTOR)}
               disabled={uploading}
-              aria-label={$t('profile.crop.zoomIn')}
+              aria-label={$t('media.avatarCrop.zoomIn')}
             >
               +
             </button>
           </div>
 
-          <div class="crop-pan-controls" role="group" aria-label={$t('profile.crop.panControls')}>
+          <div class="crop-pan-controls" role="group" aria-label={$t('media.avatarCrop.panControls')}>
             <button
               type="button"
               class="crop-step-btn crop-pan-btn crop-pan-btn-up"
-              on:click={() => panByStep(0, PAN_STEP_PX)}
+              onclick={() => panByStep(0, PAN_STEP_PX)}
               disabled={uploading || !canPanUp}
-              aria-label={$t('profile.crop.panUp')}
+              aria-label={$t('media.avatarCrop.panUp')}
             >
               &uarr;
             </button>
             <button
               type="button"
               class="crop-step-btn crop-pan-btn crop-pan-btn-left"
-              on:click={() => panByStep(PAN_STEP_PX, 0)}
+              onclick={() => panByStep(PAN_STEP_PX, 0)}
               disabled={uploading || !canPanLeft}
-              aria-label={$t('profile.crop.panLeft')}
+              aria-label={$t('media.avatarCrop.panLeft')}
             >
               &larr;
             </button>
             <button
               type="button"
               class="crop-step-btn crop-pan-btn crop-pan-btn-right"
-              on:click={() => panByStep(-PAN_STEP_PX, 0)}
+              onclick={() => panByStep(-PAN_STEP_PX, 0)}
               disabled={uploading || !canPanRight}
-              aria-label={$t('profile.crop.panRight')}
+              aria-label={$t('media.avatarCrop.panRight')}
             >
               &rarr;
             </button>
             <button
               type="button"
               class="crop-step-btn crop-pan-btn crop-pan-btn-down"
-              on:click={() => panByStep(0, -PAN_STEP_PX)}
+              onclick={() => panByStep(0, -PAN_STEP_PX)}
               disabled={uploading || !canPanDown}
-              aria-label={$t('profile.crop.panDown')}
+              aria-label={$t('media.avatarCrop.panDown')}
             >
               &darr;
             </button>
@@ -492,7 +465,7 @@
         </div>
 
         {#if showUndersizedWarning}
-          <p class="crop-warning" role="status">{$t('profile.crop.undersizedWarning')}</p>
+          <p class="crop-warning" role="status">{$t('media.avatarCrop.undersizedWarning')}</p>
         {/if}
 
         {#if uploadError}
@@ -500,11 +473,15 @@
         {/if}
 
         <div class="modal-actions">
-          <button type="button" class="btn-secondary" on:click={handleCancel} disabled={uploading}>
-            {$t('profile.cancel')}
+          <button type="button" class="btn-secondary" onclick={handleCancel} disabled={uploading}>
+            {$t('media.avatarCrop.cancel')}
           </button>
-          <button type="button" class="btn-primary" on:click={handleConfirm} disabled={uploading}>
-            {uploading ? $t('profile.uploading') : uploadError ? $t('profile.crop.retry') : $t('profile.crop.confirm')}
+          <button type="button" class="btn-primary" onclick={() => void handleConfirm()} disabled={uploading}>
+            {uploading
+              ? $t('media.avatarCrop.uploading')
+              : uploadError
+                ? $t('media.avatarCrop.retry')
+                : $t('media.avatarCrop.confirm')}
           </button>
         </div>
       {/if}
@@ -542,8 +519,6 @@
 
   .crop-viewport {
     position: relative;
-    /* Responsive: shrinks below MAX_CROP_DIAMETER (280px) on narrow windows; cropDiameter
-       (bound via clientWidth) tracks whatever this resolves to, so pan/zoom math stays correct. */
     width: min(280px, 100%);
     aspect-ratio: 1;
     margin: 0 auto;
@@ -552,8 +527,7 @@
     background: #000;
     cursor: grab;
     touch-action: none;
-    /* box-shadow (not border) keeps this element's box model exactly cropDiameter regardless of
-       box-sizing, since the pan/zoom math assumes the clipped content area is exactly that size. */
+    /* box-shadow, not border: a border would change the box model cropDiameter assumes. */
     box-shadow: 0 0 0 4px var(--border-subtle);
   }
 
@@ -562,9 +536,7 @@
   }
 
   .crop-viewport-pending {
-    /* Not display:none: that would zero out clientWidth and break the cropDiameter binding
-       while the preview is still loading. visibility:hidden keeps layout (and measurement)
-       intact while hiding the not-yet-sized image from view. */
+    /* visibility keeps layout (and bind:clientWidth) so pan/zoom math still measures. */
     visibility: hidden;
   }
 

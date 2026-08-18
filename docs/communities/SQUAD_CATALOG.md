@@ -13,7 +13,7 @@ Per-account squad and squad-pair rows live in **`squads`** (`pacto.db`), not `lo
 | `commons_tags` | Optional last-used tag defaults (exactly 3 when set). Tags for an active broadcast are on the Nostr event. |
 | `paired_squads` | JSON `[{id,name},{id,name}]` when squad-pair |
 | `channels` | JSON `[{name, groupId, order}]` |
-| `icon_url` | Optional |
+| `icon_url` | Optional Blossom HTTPS avatar. Set via the shared image picker at Organize Squad / pair create, or Dashboard → Status. Members sync through MLS `squad_identity_updated` on `#announcements` (last received wins) and optional `iconUrl` on `squad_invite`. Received values are stored only when they are `https://`. Blank on an intentional publish clears. |
 | `created_at_ms` / `updated_at_ms` | Unix ms |
 
 ## Tauri commands

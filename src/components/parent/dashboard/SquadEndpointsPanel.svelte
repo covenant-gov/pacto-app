@@ -15,7 +15,7 @@
   } from '../../../lib/squad/squad-rpc';
   import { getInvokeErrorMessage } from '../../../lib/utils/tauri-errors';
   import { openExternalUrl } from '../../../lib/utils/open-external';
-  import { squadStatusRpcFocusNonce } from '../../../stores/navigation';
+  import { squadSettingsRpcFocusNonce } from '../../../stores/navigation';
   import { showToast } from '../../../stores/toast';
   import type { SupportedChainId } from '../../../lib/wallet/chains';
 
@@ -74,13 +74,13 @@
   );
 
   $effect(() => {
-    const nonce = $squadStatusRpcFocusNonce;
+    const nonce = $squadSettingsRpcFocusNonce;
     if (nonce <= lastRpcFocusNonce) return;
     lastRpcFocusNonce = nonce;
     openRpcEdit('primary');
     if (typeof document !== 'undefined') {
       queueMicrotask(() => {
-        document.getElementById('squad-status-rpc')?.scrollIntoView({ block: 'nearest' });
+        document.getElementById('squad-settings-rpc')?.scrollIntoView({ block: 'nearest' });
         rpcInputEl?.focus();
       });
     }
@@ -218,7 +218,7 @@
 </script>
 
 <div class="endpoints">
-  <section class="endpoint-card" id="squad-status-rpc" aria-labelledby="squad-chain-rpc-heading">
+  <section class="endpoint-card" id="squad-settings-rpc" aria-labelledby="squad-chain-rpc-heading">
     <div class="card-head">
       <div class="card-titles">
         <h3 id="squad-chain-rpc-heading" class="card-title">{$t('squad.rpc.chainTitle')}</h3>
@@ -363,7 +363,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    margin: 4px 0 12px;
+    margin: 0;
   }
 
   .endpoint-card {

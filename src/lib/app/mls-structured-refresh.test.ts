@@ -18,6 +18,15 @@ vi.mock('../squad/squad-state-sync', async (importOriginal) => {
   };
 });
 
+const applySquadIdentityUpdated = vi.hoisted(() => vi.fn());
+vi.mock('../squad/squad-identity-announce', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../squad/squad-identity-announce')>();
+  return {
+    ...actual,
+    applySquadIdentityUpdated: (...args: unknown[]) => applySquadIdentityUpdated(...args),
+  };
+});
+
 const currentUser = vi.hoisted(() => {
   function makeStore<T>(initial: T) {
     let value = initial;
@@ -68,6 +77,7 @@ describe('onMlsStructuredMessage', () => {
     governanceProcessNonceByParentId.set({});
     vi.mocked(syncJoinRequestsForSquad).mockClear();
     respondToSquadStateSyncRequest.mockClear();
+    applySquadIdentityUpdated.mockClear();
     currentUser.set({ npub: 'npub1alice' });
     store.clear();
     (globalThis as unknown as { localStorage: Storage }).localStorage = {
@@ -278,6 +288,13 @@ describe('onMlsStructuredMessage', () => {
       'g1',
       handlers,
     );
+    const identityRaw = JSON.stringify({
+      type: 'squad_identity_updated',
+      payload: { parent_id: 'g1', icon_url: 'https://cdn.example/a.jpg' },
+      pacto_virtual_bucket: 'announcements',
+    });
+    onMlsStructuredMessage(identityRaw, 'g1', handlers);
+    expect(applySquadIdentityUpdated).toHaveBeenCalledWith(identityRaw, 'g1');
 
     onMlsStructuredMessage(
       JSON.stringify({

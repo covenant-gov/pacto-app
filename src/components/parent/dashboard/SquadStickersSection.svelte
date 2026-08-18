@@ -28,6 +28,7 @@
   }
 
   const squadId = $derived(announcementsGroupId?.trim() ?? '');
+  const stickersHeadingId = $derived(`squad-stickers-heading-${squad.id}`);
   const existingPack = $derived($stickerPacks.find((p) => p.squadId === squadId) ?? null);
 
   let packId = $state('');
@@ -188,12 +189,12 @@
   }
 </script>
 
-<section class="stickers-tab" aria-label={`${$t('squad.stickers.tabAria')} — ${squad.name}`}>
+<section class="stickers-section" aria-labelledby={stickersHeadingId}>
+  <h3 id={stickersHeadingId} class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
   {#if !squadId}
     <p class="stickers-empty-state">{$t('squad.stickers.emptyState')}</p>
     <p class="muted stickers-empty-hint">{$t('squad.stickers.emptyStateHint')}</p>
   {:else}
-    <h3 class="stickers-title">{$t('squad.stickers.tabLabel')}</h3>
 
     <div class="stickers-field-row">
       <label class="meta-label" for="sticker-pack-name">{$t('squad.stickers.packNameLabel')}</label>
@@ -301,16 +302,20 @@
 </section>
 
 <style>
-  .stickers-tab {
+  .stickers-section {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
     font-size: 0.875rem;
   }
 
   .stickers-title {
     margin: 0;
-    font-size: 1rem;
+    font-size: 0.8125rem;
     font-weight: 600;
     color: var(--text-primary);
   }

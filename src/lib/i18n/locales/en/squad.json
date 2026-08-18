@@ -3,8 +3,7 @@
 	"squad.pair.subtitle": "Create a partner squad linking {anchorSquadName} with one other squad you belong to. Members receive individual invites.",
 	"squad.pair.nameLabel": "Partner squad name",
 	"squad.pair.namePlaceholder": "e.g. A ↔ B Coordination",
-	"squad.pair.iconLabel": "Icon URL (optional)",
-	"squad.pair.iconPlaceholder": "https://…",
+	"squad.pair.iconLabel": "Squad photo (optional)",
 	"squad.pair.partnerLabel": "Partner squad (select one)",
 	"squad.pair.partnerAriaLabel": "Partner squad",
 	"squad.pair.empty": "Join or create another squad first to pair with {anchorSquadName}.",
@@ -90,8 +89,8 @@
 	"squad.bundler.toastSaved": "Pimlico key saved.",
 	"squad.bundler.toastCleared": "Pimlico key cleared.",
 	"squad.bundler.toastFailed": "Could not save the Pimlico key.",
-	"squad.stickers.tabLabel": "Stickers",
-	"squad.stickers.tabAria": "Sticker packs",
+	"squad.stickers.sectionTitle": "Stickers",
+	"squad.stickers.sectionAria": "Sticker packs",
 	"squad.stickers.packNameLabel": "Pack name",
 	"squad.stickers.packNamePlaceholder": "e.g. Squad Reactions",
 	"squad.stickers.entriesTitle": "Stickers",
@@ -112,5 +111,11 @@
 	"squad.stickers.saveSuccess": "Sticker pack saved.",
 	"squad.stickers.emptyState": "No sticker packs yet",
 	"squad.stickers.emptyStateHint": "Create a pack to share stickers with your squad.",
-	"squad.stickers.createPackButton": "Create pack"
+	"squad.stickers.createPackButton": "Create pack",
+	"squad.pfp.sectionTitle": "Squad photo",
+	"squad.pfp.choose": "Choose squad photo",
+	"squad.pfp.change": "Change squad photo",
+	"squad.pfp.cropTitle": "Crop squad photo",
+	"squad.pfp.saveError": "Could not save squad photo.",
+	"squad.pfp.publishError": "Saved locally, but could not share the squad photo with members."
 }

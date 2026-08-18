@@ -2,6 +2,8 @@
   import { t } from 'svelte-i18n';
   import Modal from '../ui/Modal.svelte';
   import SquadCommonsVisibilityFields from './SquadCommonsVisibilityFields.svelte';
+  import AvatarPicker from '../ui/AvatarPicker.svelte';
+  import SquadAvatar from './SquadAvatar.svelte';
   import type { Squad } from '../../stores/app';
   import type { SquadVisibility } from '../../stores/squads';
   import { appConfig } from '../../stores/app-config';
@@ -82,14 +84,22 @@
         required
         aria-required="true"
       />
-      <label class="pair-label" for="squad-pair-icon">{$t('squad.pair.iconLabel')}</label>
-      <input
-        id="squad-pair-icon"
-        type="url"
-        class="pair-input"
-        placeholder={$t('squad.pair.iconPlaceholder')}
-        bind:value={iconUrl}
-      />
+      <span class="pair-label">{$t('squad.pair.iconLabel')}</span>
+      <AvatarPicker
+        src={iconUrl || null}
+        editable
+        allowClear={!!iconUrl}
+        size={72}
+        chooseTitle={$t('squad.pfp.choose')}
+        editAriaLabel={$t('squad.pfp.change')}
+        cropTitle={$t('squad.pfp.cropTitle')}
+        onChange={(url) => (iconUrl = url)}
+        onClear={() => (iconUrl = '')}
+      >
+        {#snippet fallback()}
+          <SquadAvatar src={null} name={pairName} seed={pairName} fill />
+        {/snippet}
+      </AvatarPicker>
       <span class="pair-label">{$t('squad.pair.partnerLabel')}</span>
       <div class="pair-candidates" role="radiogroup" aria-label={$t('squad.pair.partnerAriaLabel')}>
         {#each candidates as squad (squad.id)}
@@ -101,6 +111,7 @@
               checked={selectedPartnerSquadId === squad.id}
               on:change={() => selectPartner(squad.id)}
             />
+            <SquadAvatar src={squad.iconUrl} name={squad.name} seed={squad.id || squad.name} size={28} />
             <span class="pair-candidate-name">{squad.name}</span>
           </label>
         {/each}

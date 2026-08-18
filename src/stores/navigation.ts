@@ -20,7 +20,7 @@ export type SquadDashboardChannelMode =
   | 'treasury'
   | 'roles'
   | 'crew'
-  | 'stickers';
+  | 'settings';
 
 export const SQUAD_DASHBOARD_MODE_PREFIX = 'pacto_squad_dashboard_mode';
 
@@ -32,7 +32,7 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
     v === 'treasury' ||
     v === 'roles' ||
     v === 'crew' ||
-    v === 'stickers'
+    v === 'settings'
   ) {
     return v;
   }
@@ -41,12 +41,20 @@ export function parseSquadDashboardChannelMode(raw: string | null): SquadDashboa
 
 export const squadDashboardChannelMode = writable<SquadDashboardChannelMode>('status');
 
-/** Bumped to open Status → Add custom RPC after a dashboard RPC read failure. */
-export const squadStatusRpcFocusNonce = writable(0);
+/** Bumped to open Settings → Add custom RPC after a dashboard RPC read failure. */
+export const squadSettingsRpcFocusNonce = writable(0);
 
-export function focusSquadStatusRpcEditor() {
-  squadDashboardChannelMode.set('status');
-  squadStatusRpcFocusNonce.update((n) => n + 1);
+export function focusSquadSettingsRpcEditor() {
+  squadDashboardChannelMode.set('settings');
+  squadSettingsRpcFocusNonce.update((n) => n + 1);
+}
+
+/** Bumped to open Settings → network editor from the Status checklist CTA. */
+export const squadSettingsNetworkFocusNonce = writable(0);
+
+export function focusSquadSettingsNetworkEditor() {
+  squadDashboardChannelMode.set('settings');
+  squadSettingsNetworkFocusNonce.update((n) => n + 1);
 }
 
 /** #my-dashboard segmented mode; unknown persisted values reset to `status`. */

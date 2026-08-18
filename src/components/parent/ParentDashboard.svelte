@@ -56,8 +56,8 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     loadDashboardCrewTab,
     loadDashboardGovernanceTab,
     loadDashboardRolesTreeTab,
+    loadDashboardSettingsTab,
     loadDashboardStatusTab,
-    loadDashboardStickersTab,
     loadDashboardTreasuryTab,
   } from '../../lib/dashboard/dashboard-tab-components';
   import { resolveDashboardStructureSummary } from '../../lib/dashboard/structure-summary';
@@ -83,7 +83,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     persistTreasuryProposalsSnapshot,
   } from '../../lib/dashboard/governance-snapshot-cache';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
-  import { governanceProcessNonceByParentId } from '../../stores/navigation';
+  import { governanceProcessNonceByParentId, focusSquadSettingsNetworkEditor } from '../../stores/navigation';
   import {
     getCachedSettingsChainSnapshot,
     persistSettingsChainSnapshot,
@@ -98,7 +98,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     'treasury',
     'roles',
     'crew',
-    'stickers',
+    'settings',
   ];
 
   $: dashboardView = $squadDashboardChannelMode;
@@ -559,14 +559,14 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   }
 
   $: if (
-    (dashboardView === 'status' || dashboardView === 'crew') &&
+    (dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') &&
     (pactoGovRow?.canonicalRef || squadAdminCtx?.proxy)
   ) {
     void loadSettingsChainContext();
   }
 
   $: if (
-    (dashboardView === 'status' || dashboardView === 'crew') &&
+    (dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') &&
     pactoGovRow?.canonicalRef &&
     parentId
   ) {
@@ -599,7 +599,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
 
   function selectDashboardView(id: ParentDashboardView) {
     squadDashboardChannelMode.set(id);
-    if ((id === 'status' || id === 'crew') && announcementsGroupId) {
+    if ((id === 'status' || id === 'crew' || id === 'settings') && announcementsGroupId) {
       void ensureMlsGroupMembers(announcementsGroupId);
     }
   }
@@ -615,7 +615,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     }
   }
 
-  $: if ((dashboardView === 'status' || dashboardView === 'crew') && parentId) {
+  $: if ((dashboardView === 'status' || dashboardView === 'crew' || dashboardView === 'settings') && parentId) {
     loadSquadMemberEvm();
   }
 
@@ -727,26 +727,18 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           {#await loadDashboardStatusTab() then StatusTab}
             <StatusTab
               squad={parent}
-              {permissionsCtx}
-              {squadAdminCtx}
               {announcementsGroupId}
               parentId={parentId ?? ''}
               {channelMembers}
               {squadMemberEvmByNpub}
-              {memberRolesByAddress}
               {squadNetwork}
-              squadNetworkFromInfra={infraSquadChain != null}
-              onSetSquadNetwork={setSquadNetwork}
-              {squadRpcConfig}
-              onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
-              onSetSquadRpcBackup={handleSetSquadRpcBackup}
-              onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
               hasGovernance={hasPactoGov}
               {hasSquadAdmin}
               {captainWearers}
               {crewWearers}
               onOpenDeploy={openLaunchpad}
               onOpenCrewBootstrap={() => selectDashboardView('governance')}
+              onSelectNetwork={focusSquadSettingsNetworkEditor}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.status')}</p>
@@ -861,12 +853,28 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
           {/await}
           </div>
         {/if}
-        {#if visitedDashboardViews.has('stickers')}
-          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'stickers'} hidden={dashboardView !== 'stickers'}>
-          {#await loadDashboardStickersTab() then StickersTab}
-            <StickersTab squad={parent} {announcementsGroupId} />
+        {#if visitedDashboardViews.has('settings')}
+          <div class="dashboard-tab-pane" class:dashboard-tab-pane-active={dashboardView === 'settings'} hidden={dashboardView !== 'settings'}>
+          {#await loadDashboardSettingsTab() then SettingsTab}
+            <SettingsTab
+              squad={parent}
+              {permissionsCtx}
+              {squadAdminCtx}
+              {announcementsGroupId}
+              parentId={parentId ?? ''}
+              {channelMembers}
+              {squadMemberEvmByNpub}
+              {memberRolesByAddress}
+              {squadNetwork}
+              squadNetworkFromInfra={infraSquadChain != null}
+              onSetSquadNetwork={setSquadNetwork}
+              {squadRpcConfig}
+              onSetSquadRpcPrimary={handleSetSquadRpcPrimary}
+              onSetSquadRpcBackup={handleSetSquadRpcBackup}
+              onClearSquadRpcPrimary={handleClearSquadRpcPrimary}
+            />
           {:catch}
-            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.stickers')}</p>
+            <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.settings')}</p>
           {/await}
           </div>
         {/if}

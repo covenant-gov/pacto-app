@@ -174,6 +174,35 @@ describe('squad-catalog', () => {
     expect(get(squads)[0]?.channels).toHaveLength(3);
   });
 
+  it('serializes persistSquadPatch per parent so the later patch sees the earlier store write', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let invokeCount = 0;
+    vi.mocked(invoke).mockImplementation(async (_cmd, args) => {
+      invokeCount += 1;
+      const squad = (args as { squad?: { name?: string } } | undefined)?.squad;
+      if (invokeCount === 1) await gate;
+      return { ...sampleRow, name: squad?.name ?? sampleRow.name };
+    });
+    squads.set([
+      {
+        id: 'squad-1',
+        name: 'Alpha',
+        channels: [{ name: 'announcements', groupId: 'g1', order: 0 }],
+        kind: 'squad',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    const first = persistSquadPatch('squad-1', (s) => ({ ...s, name: 'One' }));
+    const second = persistSquadPatch('squad-1', (s) => ({ ...s, name: `${s.name}-Two` }));
+    release();
+    await Promise.all([first, second]);
+    expect(get(squads)[0]?.name).toBe('One-Two');
+  });
+
   it('hydrateSquadsFromDb clears squads on invoke failure', async () => {
     squads.set([
       {

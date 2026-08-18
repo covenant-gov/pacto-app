@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
+  import SquadAvatar from '../squad/SquadAvatar.svelte';
 
   /** Invite card for squad, squad-pair, or channel-in-squad DMs. */
   export let variant: 'squad' | 'squad-pair' | 'channel-in-squad';
@@ -9,6 +10,8 @@
   export let isMine: boolean;
   export let inviterName: string;
   export let inviterAvatarSrc: string | null = null;
+  export let squadIconUrl: string | null | undefined = undefined;
+  export let squadId = '';
   export let status: 'pending' | 'joining' | 'accepted' | 'declined';
   export let accepting: boolean;
   export let onAccept: () => void;
@@ -57,7 +60,9 @@
 
 <div class="invite-card" class:collapsed role="article">
   <div class="invite-card-icon">
-    {#if inviterAvatarSrc}
+    {#if squadIconUrl}
+      <SquadAvatar src={squadIconUrl} name={squadName} seed={squadId || squadName} fill />
+    {:else if inviterAvatarSrc}
       <img src={inviterAvatarSrc} alt="" class="invite-card-icon-img" />
     {:else}
       <span class="invite-card-icon-placeholder" aria-hidden="true">{iconPlaceholder}</span>

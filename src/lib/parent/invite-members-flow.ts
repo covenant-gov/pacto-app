@@ -75,6 +75,7 @@ export function runInviteMembersToParent(opts: {
         admitterNpubs,
         kind: parent.kind === 'squad-pair' ? 'squad-pair' : 'squad',
         pairedSquads: parent.pairedSquads,
+        iconUrl: parent.iconUrl,
       };
 
       try {

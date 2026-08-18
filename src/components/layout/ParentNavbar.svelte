@@ -499,6 +499,8 @@
 
 <ParentSidebar
   parentName={activeParent?.name ?? ''}
+  parentIconUrl={activeParent?.iconUrl}
+  parentId={activeParent?.id ?? ''}
   subheading={subheading}
   channels={channels}
   activeChannelId={$activeChannelId}

@@ -3,7 +3,6 @@
   import { get } from 'svelte/store';
   const tFn = get(t);
   import BroadcastSquadModal from '../../commons/BroadcastSquadModal.svelte';
-  import { commonsTagGradient } from '../../../lib/commons/tag-catalog';
   import {
     cancelSquadCommonsBroadcast,
     fetchActiveSquadCommonsBroadcast,
@@ -20,6 +19,7 @@
     truncateCommonsMessage,
   } from '../../../lib/commons/message-preview';
   import { persistSquadPatch } from '../../../lib/squad/squad-catalog';
+  import SquadAvatar from '../../squad/SquadAvatar.svelte';
   import { showToast } from '../../../stores/toast';
   import { currentUser } from '../../../stores/auth';
   import type { CommonsBroadcastLocalState } from '../../../lib/commons/types';
@@ -183,16 +183,8 @@
 
     <div class="commons-personal squad-broadcast-status" aria-label={$t('governance.broadcast.statusAria')}>
       <div class="commons-personal-row">
-        <div
-          class="commons-personal-avatar"
-          class:is-active={hasActive}
-          style={squad.iconUrl ? '' : `background-image: ${commonsTagGradient(squad.id || squad.name)}`}
-        >
-          {#if squad.iconUrl}
-            <img src={squad.iconUrl} alt="" loading="lazy" decoding="async" />
-          {:else}
-            <span aria-hidden="true">{squad.name.charAt(0).toUpperCase()}</span>
-          {/if}
+        <div class="commons-personal-avatar" class:is-active={hasActive}>
+          <SquadAvatar src={squad.iconUrl} name={squad.name} seed={squad.id || squad.name} fill />
         </div>
 
         <div class="commons-personal-block">
@@ -351,8 +343,6 @@
     overflow: hidden;
     padding: 0;
     background-color: var(--bg-elevated);
-    background-size: cover;
-    background-position: center;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -361,19 +351,6 @@
 
   .commons-personal-avatar.is-active {
     border-color: var(--brand);
-  }
-
-  .commons-personal-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .commons-personal-avatar span {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.92);
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
   }
 
   .commons-personal-block {

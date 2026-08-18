@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from 'svelte-i18n';
   import type { RpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
-  import { focusSquadStatusRpcEditor } from '../../../stores/navigation';
+  import { focusSquadSettingsRpcEditor } from '../../../stores/navigation';
 
   let { kind }: { kind: RpcReadErrorKind } = $props();
 
@@ -20,7 +20,7 @@
 <div class="rpc-read-error-card" role="alert">
   <p class="rpc-read-error-title">{$t(titleKey)}</p>
   <p class="rpc-read-error-body">{$t(bodyKey)}</p>
-  <button type="button" class="btn-primary" onclick={focusSquadStatusRpcEditor}>
+  <button type="button" class="btn-primary" onclick={focusSquadSettingsRpcEditor}>
     {$t('squad.rpc.addCustom')}
   </button>
 </div>

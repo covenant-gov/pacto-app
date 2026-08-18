@@ -25,6 +25,7 @@ import { publishSquadMemberEvmShare, getBoundSquadEvmAddressForParent } from './
 import { publishSquadNetworkUpdated } from './squad-network-share';
 import { publishSquadRpcUpdated } from './squad-rpc-share';
 import { publishSquadChannelsCatalog } from './squad-channels-catalog';
+import { publishSquadIdentityUpdated } from './squad-identity-announce';
 import { openCustomChannelTargets } from '../parent/channel-access';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { dmWarn } from '../utils/dm-debug';
@@ -101,7 +102,7 @@ export function formatSquadStateSyncRequest(params: {
       parent_id: params.parentId.trim(),
       request_id: params.requestId.trim(),
       requester_npub: params.requesterNpub.trim(),
-      requested: ['evm', 'infra', 'network', 'rpc', 'channels'],
+      requested: ['evm', 'infra', 'network', 'rpc', 'channels', 'identity'],
     } satisfies SquadStateSyncRequestPayload,
     pacto_virtual_bucket: 'announcements',
   });
@@ -259,6 +260,11 @@ export async function respondToSquadStateSyncRequest(
   const wantNetwork = !req.requested?.length || req.requested.includes('network');
   const wantRpc = !req.requested?.length || req.requested.includes('rpc');
   const wantChannels = !req.requested?.length || req.requested.includes('channels');
+  const wantIdentity = !req.requested?.length || req.requested.includes('identity');
+
+  const parent =
+    get(squads).find((s) => s.id === parentId) ??
+    get(squads).find((s) => getAnnouncementsChannel(s)?.groupId === parentId);
 
   let anyOk = false;
 
@@ -332,10 +338,16 @@ export async function respondToSquadStateSyncRequest(
     }
   }
 
+  if (wantIdentity && parent?.iconUrl?.trim()) {
+    try {
+      const ok = await publishSquadIdentityUpdated(parent);
+      if (ok) anyOk = true;
+    } catch (e) {
+      console.warn('[squad-state-sync] identity republish failed', e);
+    }
+  }
+
   if (wantChannels) {
-    const parent =
-      get(squads).find((s) => s.id === parentId) ??
-      get(squads).find((s) => getAnnouncementsChannel(s).groupId === parentId);
     if (parent) {
       try {
         const ok = await publishSquadChannelsCatalog(parent);
@@ -359,14 +371,15 @@ export async function respondToSquadStateSyncRequest(
           await inviteMemberToGroup(ch.groupId, requester);
           channelAdmitKeys.add(admitKey);
           pruneChannelAdmitKeys();
-          const announcements = getAnnouncementsChannel(parent);
+          const announcementsGroupId =
+            getAnnouncementsChannel(parent)?.groupId?.trim() || parent.id.trim();
           try {
             await sendDmMessage(
               requester,
               formatChannelInSquadMessage({
                 type: 'channel_in_squad',
                 squadName: parent.name,
-                announcementsGroupId: announcements.groupId,
+                announcementsGroupId,
                 channelGroupId: ch.groupId,
                 channelName: ch.name,
               }),

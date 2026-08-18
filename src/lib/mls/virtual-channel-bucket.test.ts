@@ -351,6 +351,14 @@ describe('announceCardAllowedForTimelineBucket', () => {
     expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
   });
 
+  it('routes squad_identity_updated to announcements', () => {
+    const raw = JSON.stringify({
+      type: 'squad_identity_updated',
+      payload: { parent_id: 'p', icon_url: 'https://cdn.example/a.jpg' },
+    });
+    expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
+  });
+
   it('routes squad_member_left to announcements', () => {
     const raw = JSON.stringify({
       type: 'squad_member_left',

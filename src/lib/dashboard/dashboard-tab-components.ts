@@ -15,8 +15,8 @@ export const loadDashboardTreasuryTab = createLazyComponent(
 export const loadDashboardCrewTab = createLazyComponent(
   () => import('../../components/parent/dashboard/DashboardCrewTab.svelte'),
 );
-export const loadDashboardStickersTab = createLazyComponent(
-  () => import('../../components/parent/dashboard/DashboardStickersTab.svelte'),
+export const loadDashboardSettingsTab = createLazyComponent(
+  () => import('../../components/parent/dashboard/DashboardSettingsTab.svelte'),
 );
 export const loadMyDashboardStatusTab = createLazyComponent(
   () => import('../../components/parent/dashboard/MyDashboardStatusTab.svelte'),

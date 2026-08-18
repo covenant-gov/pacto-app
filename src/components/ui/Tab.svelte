@@ -11,6 +11,9 @@
   $: firstLetter = label.charAt(0).toUpperCase();
 
   let buttonEl: HTMLButtonElement;
+  let imageBroken = false;
+  $: image, (imageBroken = false);
+  $: showImage = !!image && !imageBroken;
   let showTooltip = false;
   let tooltipPos = { x: 0, y: 0 };
 
@@ -38,8 +41,10 @@
   {#if hasUnreadDot}
     <span class="tab-unread-dot" aria-hidden="true"></span>
   {/if}
-  {#if image}
-    <img src={image} alt={label} class="tab-image" />
+  {#if showImage}
+    <span class="tab-image-wrap">
+      <img src={image} alt={label} class="tab-image" on:error={() => (imageBroken = true)} />
+    </span>
   {:else if icon}
     <img src={icon} alt={label} class="tab-icon" />
   {:else}
@@ -84,6 +89,7 @@
     position: absolute;
     top: 2px;
     right: 2px;
+    z-index: 1;
     width: 10px;
     height: 10px;
     border-radius: 50%;
@@ -121,11 +127,19 @@
     -webkit-user-select: none;
   }
 
+  .tab-image-wrap {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .tab-image {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    pointer-events: none;
+    display: block;
   }
 
   .tab-icon {

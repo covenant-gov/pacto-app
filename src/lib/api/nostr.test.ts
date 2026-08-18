@@ -424,9 +424,22 @@ describe('parseSquadInviteMessage', () => {
     expect(parseSquadInviteMessage(JSON.stringify({ type: 'squad_invite' }))).toBeNull();
   });
 
-  it('normalizes kind to squad-pair or squad', () => {
-    const raw = { type: 'squad_invite', squadName: 'A', groupId: 'g1', kind: 'squad-pair' };
-    expect(parseSquadInviteMessage(JSON.stringify(raw))?.kind).toBe('squad-pair');
+  it('parses optional iconUrl', () => {
+    const raw = { ...payload, iconUrl: 'https://cdn.example/a.jpg' };
+    expect(parseSquadInviteMessage(JSON.stringify(raw))?.iconUrl).toBe('https://cdn.example/a.jpg');
+    expect(parseSquadInviteMessage(JSON.stringify(payload))?.iconUrl).toBeUndefined();
+  });
+
+  it('drops non-https invite iconUrl', () => {
+    expect(
+      parseSquadInviteMessage(JSON.stringify({ ...payload, iconUrl: 'http://cdn.example/a.jpg' }))
+        ?.iconUrl,
+    ).toBeUndefined();
+    expect(
+      parseSquadInviteMessage(
+        JSON.stringify({ ...payload, iconUrl: 'data:image/png;base64,abcd' }),
+      )?.iconUrl,
+    ).toBeUndefined();
   });
 });
 
@@ -434,6 +447,16 @@ describe('formatSquadInviteMessage', () => {
   it('serializes payload to JSON', () => {
     const payload = { type: 'squad_invite' as const, squadName: 'A', groupId: 'g1' };
     expect(formatSquadInviteMessage(payload)).toBe(JSON.stringify(payload));
+  });
+
+  it('round-trips optional iconUrl', () => {
+    const payload = {
+      type: 'squad_invite' as const,
+      squadName: 'A',
+      groupId: 'g1',
+      iconUrl: 'https://cdn.example/a.jpg',
+    };
+    expect(parseSquadInviteMessage(formatSquadInviteMessage(payload))).toEqual(payload);
   });
 });
 

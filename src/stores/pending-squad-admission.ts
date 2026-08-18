@@ -13,6 +13,7 @@ export type PendingSquadAdmission = {
   squadName: string;
   inviteId?: string;
   acceptedAt: number;
+  iconUrl?: string;
 };
 
 export const pendingSquadAdmissions = writable<PendingSquadAdmission[]>([]);
@@ -56,7 +57,8 @@ export function loadPendingSquadAdmissions(npub: string): void {
         typeof r.messageId === 'string' &&
         typeof r.groupId === 'string' &&
         typeof r.squadName === 'string' &&
-        typeof r.acceptedAt === 'number'
+        typeof r.acceptedAt === 'number' &&
+        (r.iconUrl === undefined || typeof r.iconUrl === 'string')
       );
     });
     pendingSquadAdmissions.set(rows);

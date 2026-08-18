@@ -2,6 +2,7 @@ import { invoke } from "./index";
 import type { TreasurySafeEntry } from "../treasury/treasury-safes";
 import type { VirtualBucket } from "../mls/virtual-channel-bucket";
 import { dmLog } from "../utils/dm-debug";
+import { isHttpsUrl } from "../utils/profile";
 
 /**
  * Represents a user status
@@ -539,6 +540,8 @@ export interface SquadInvitePayload {
   inviteId?: string;
   /** Announcements members who may run admit when invitee Accepts. */
   admitterNpubs?: string[];
+  /** Optional squad PFP URL at invite time. */
+  iconUrl?: string;
 }
 
 const SQUAD_INVITE_TYPE = 'squad_invite';
@@ -562,6 +565,10 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
           invitedByNpub: typeof raw.invitedByNpub === 'string' ? raw.invitedByNpub : undefined,
           inviteId: typeof raw.inviteId === 'string' ? raw.inviteId : undefined,
           admitterNpubs: admitterNpubs?.length ? admitterNpubs : undefined,
+          iconUrl:
+            typeof raw.iconUrl === 'string' && isHttpsUrl(raw.iconUrl)
+              ? raw.iconUrl.trim()
+              : undefined,
         };
       }
     }

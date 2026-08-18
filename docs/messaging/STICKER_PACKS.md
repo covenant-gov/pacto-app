@@ -178,9 +178,9 @@ them — squad membership gates the *pack*, not the *message*.
 
 ## 6. Authoring surface
 
-A squad member curates a pack from a **Stickers** tab in the squad dashboard
-(`src/components/parent/dashboard/DashboardStickersTab.svelte`, registered in
-`ParentDashboard.svelte`): add an image, assign it a shortcode, remove an
+A squad member curates a pack from **Settings → Stickers** in the squad dashboard
+(`src/components/parent/dashboard/SquadStickersSection.svelte`, hosted by
+`DashboardSettingsTab.svelte`): add an image, assign it a shortcode, remove an
 entry, rename the pack, save. Saving is two steps and both must happen for
 other members to see the result: `saveStickerPack(...)` persists locally and
 stamps `updated_at`, then the caller sends the `sticker_pack_updated` announce
@@ -274,4 +274,4 @@ distribution and Klipy granting production API access.
   exercise, but no human or MCP session has watched a real cross-device sync
   happen.
 
-*Verified against `src-tauri/src/{db.rs,sticker_pack.rs,virtual_channel_bucket.rs,migrations/V20260809062933__sticker_packs.sql}`, `src/lib/api/stickers.ts`, `src/stores/stickers.ts`, `src/lib/app/tauri-subscriptions.ts`, `src/lib/utils/clear-account-state.ts`, `src/lib/announcements.ts`, `src/components/dm/MessageInput.svelte`, `src/components/parent/dashboard/DashboardStickersTab.svelte`, `src/components/parent/ParentDashboard.svelte`, and `docs/plans/2026-08-08-001-feat-sticker-gif-picker-plan.md`.*
+*Verified against `src-tauri/src/{db.rs,sticker_pack.rs,virtual_channel_bucket.rs,migrations/V20260809062933__sticker_packs.sql}`, `src/lib/api/stickers.ts`, `src/stores/stickers.ts`, `src/lib/app/tauri-subscriptions.ts`, `src/lib/utils/clear-account-state.ts`, `src/lib/announcements.ts`, `src/components/dm/MessageInput.svelte`, `src/components/parent/dashboard/SquadStickersSection.svelte`, `src/components/parent/dashboard/DashboardSettingsTab.svelte`, `src/components/parent/ParentDashboard.svelte`, and `docs/plans/2026-08-08-001-feat-sticker-gif-picker-plan.md`.*

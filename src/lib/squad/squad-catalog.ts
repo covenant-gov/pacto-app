@@ -147,8 +147,9 @@ export async function persistCreatedSquad(tempId: string, squad: Squad): Promise
   return persistSquad(squad);
 }
 
-/** Apply a patch in the store, then upsert the merged row. */
-export async function persistSquadPatch(
+const squadPatchQueue = new Map<string, Promise<unknown>>();
+
+async function persistSquadPatchNow(
   parentId: string,
   patch: (squad: Squad) => Squad,
 ): Promise<Squad | null> {
@@ -157,6 +158,26 @@ export async function persistSquadPatch(
   const patched = normalizeSquadFromStorage(patch({ ...current, updatedAt: Date.now() }));
   squads.update((list) => list.map((s) => (s.id !== parentId ? s : patched)));
   return persistSquad(patched);
+}
+
+/** Apply a patch in the store, then upsert the merged row. Serialized per parent. */
+export async function persistSquadPatch(
+  parentId: string,
+  patch: (squad: Squad) => Squad,
+): Promise<Squad | null> {
+  const prev = squadPatchQueue.get(parentId) ?? Promise.resolve();
+  const next = prev.then(
+    () => persistSquadPatchNow(parentId, patch),
+    () => persistSquadPatchNow(parentId, patch),
+  );
+  squadPatchQueue.set(parentId, next);
+  try {
+    return await next;
+  } finally {
+    if (squadPatchQueue.get(parentId) === next) {
+      squadPatchQueue.delete(parentId);
+    }
+  }
 }
 
 export function updateChannelNameIfPlaceholder(groupId: string, newName: string): void {

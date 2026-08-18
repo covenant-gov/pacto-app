@@ -168,7 +168,7 @@ export async function tryCompletePendingSquadAdmission(groupId: string): Promise
   acceptedSquadInviteGroupIds.add(groupId);
   await acceptMlsWelcome(welcome.id);
   await finalizeSquadAfterAnnouncementsWelcome(
-    { groupId, name: pending.squadName },
+    { groupId, name: pending.squadName, iconUrl: pending.iconUrl },
     pending.messageId
   );
   clearPendingSquadAdmissionByGroupId(groupId);
@@ -277,6 +277,7 @@ export interface AnnouncementsInvitePayload {
   groupId: string;
   name: string;
   memberSquads?: { id: string; name: string }[];
+  iconUrl?: string;
 }
 
 export async function acceptAnnouncementsInvite(
@@ -327,6 +328,7 @@ export async function acceptAnnouncementsInvite(
     squadName: payload.name,
     inviteId,
     acceptedAt: Date.now(),
+    iconUrl: payload.iconUrl,
   });
 
   showToast(tt('messaging.inviteCard.acceptanceSentToast'));
@@ -369,6 +371,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
     ? (normalizeStoredSquad({
         id: payload.groupId,
         name: payload.name,
+        iconUrl: payload.iconUrl,
         channels: defaultChannels,
         kind: 'squad-pair',
         pairedSquads: payload.memberSquads,
@@ -378,6 +381,7 @@ export async function finalizeSquadAfterAnnouncementsWelcome(
     : {
         id: payload.groupId,
         name: payload.name,
+        iconUrl: payload.iconUrl,
         channels: defaultChannels,
         kind: 'squad',
         createdAt: now,
@@ -438,6 +442,7 @@ export async function acceptSquadOrPairInvite(msg: DmMessage): Promise<void> {
           payload.kind === 'squad-pair' && payload.pairedSquads
             ? [...payload.pairedSquads]
             : undefined,
+        iconUrl: payload.iconUrl,
       },
       msg.id,
       {

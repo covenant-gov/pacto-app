@@ -7,13 +7,12 @@
   import { getProfileAvatarSrc, getProfileBannerSrc } from '../../lib/utils/profile';
   import { openExternalUrl } from '../../lib/utils/open-external';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
-  import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
   import { showToast } from '../../stores/toast';
   import SettingsCollapsibleSection from './SettingsCollapsibleSection.svelte';
   import EvmAccountKeyExportModal from './EvmAccountKeyExportModal.svelte';
   import ExportAllSecretsModal from './ExportAllSecretsModal.svelte';
   import EditIconButton from '../ui/EditIconButton.svelte';
-  import AvatarCropModal from './AvatarCropModal.svelte';
+  import AvatarPicker from '../ui/AvatarPicker.svelte';
   import { requireBackupVerified } from '../../stores/backup-verification';
 
   $: userNpub = $currentUser?.npub || '';
@@ -33,8 +32,6 @@
   let editAvatarUrl = '';
   let saveError: string | null = null;
   let savingProfile = false;
-  let cropModalOpen = false;
-  let cropFilepath = '';
 
   let copiedNpub = false;
   let exportSeedModalOpen = false;
@@ -78,30 +75,8 @@
     saveError = null;
   }
 
-  async function handleChangeAvatar() {
-    if (!profile) return;
-    try {
-      const selected = await openFileDialog({
-        title: $t('profile.chooseAvatarImage'),
-        filters: [{ name: $t('profile.imagesFilter'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
-        multiple: false,
-      });
-      if (selected == null) return;
-      cropFilepath = selected;
-      cropModalOpen = true;
-    } catch (e) {
-      console.error('Choose avatar image failed:', e);
-      saveError = e instanceof Error ? e.message : $t('profile.failedUploadAvatar');
-    }
-  }
-
-  function handleCropConfirm(url: string) {
+  function handleAvatarChange(url: string) {
     editAvatarUrl = url;
-    cropModalOpen = false;
-  }
-
-  function handleCropCancel() {
-    cropModalOpen = false;
   }
 
   async function handleSaveProfile() {
@@ -175,29 +150,18 @@
 
         <!-- Avatar -->
         <div class="avatar-section">
-          {#if avatarSrc}
-            <img
-              src={avatarSrc}
-              alt={profile.display_name || profile.name}
-              class="avatar"
-              on:error={(e) => {
-                // On error, hide img and show placeholder
-                const img = e.currentTarget as HTMLImageElement;
-                img.style.display = 'none';
-                const placeholder = img.nextElementSibling as HTMLElement;
-                if (placeholder?.classList.contains('avatar-placeholder')) {
-                  placeholder.style.display = 'flex';
-                }
-              }}
-            />
-            <div class="avatar-placeholder" style="display: none;">
-              {(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0).toUpperCase()}
-            </div>
-          {:else}
-            <div class="avatar-placeholder">
-              {(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0).toUpperCase()}
-            </div>
-          {/if}
+          <AvatarPicker
+            src={isEditing ? (editAvatarUrl || avatarSrc) : avatarSrc}
+            editable={isEditing}
+            disabled={savingProfile}
+            size={128}
+            chooseTitle={$t('profile.chooseAvatarImage')}
+            editAriaLabel={$t('profile.changeAvatar')}
+            cropTitle={$t('profile.crop.title')}
+            imageAlt={profile.display_name || profile.name || ''}
+            fallbackText={(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0)}
+            onChange={handleAvatarChange}
+          />
         </div>
 
         <!-- Profile Info or Edit Form -->
@@ -225,12 +189,7 @@
               rows="3"
               disabled={savingProfile}
             ></textarea>
-            <div class="edit-image-buttons">
-              <button type="button" class="btn-edit-image" on:click={handleChangeAvatar} disabled={savingProfile}>
-                {$t('profile.changeAvatar')}
-              </button>
-              <p class="avatar-guidance">{$t('profile.crop.guidance')}</p>
-            </div>
+            <p class="avatar-guidance">{$t('profile.crop.guidance')}</p>
             <div class="edit-actions">
               <button type="button" class="btn-cancel-edit" on:click={cancelEditing} disabled={savingProfile}>{$t('profile.cancel')}</button>
               <button type="button" class="btn-save-edit" on:click={handleSaveProfile} disabled={savingProfile}>
@@ -352,12 +311,6 @@
   onClose={() => (exportAllModalOpen = false)}
 />
 
-<AvatarCropModal
-  open={cropModalOpen}
-  filepath={cropFilepath}
-  onConfirm={handleCropConfirm}
-  onCancel={handleCropCancel}
-/>
 
 <style>
   .loading-state, .error-state, .empty-state {
@@ -433,28 +386,6 @@
   .avatar-section {
     display: flex;
     justify-content: center;
-  }
-
-  .avatar {
-    width: 128px;
-    height: 128px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 4px solid var(--border-subtle);
-  }
-
-  .avatar-placeholder {
-    width: 128px;
-    height: 128px;
-    border-radius: 50%;
-    background: var(--brand);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--on-brand);
-    font-weight: 600;
-    font-size: 3rem;
-    border: 4px solid var(--border-subtle);
   }
 
   .info-section {
@@ -618,38 +549,10 @@
     min-height: 72px;
   }
 
-  .edit-image-buttons {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    margin-top: 16px;
-  }
-
   .avatar-guidance {
     margin: 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
-  }
-
-  .btn-edit-image {
-    padding: 8px 16px;
-    background: var(--bg-hover);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 0.875rem;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .btn-edit-image:hover:not(:disabled) {
-    background: var(--border);
-  }
-
-  .btn-edit-image:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .edit-actions {

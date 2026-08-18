@@ -396,14 +396,20 @@
 
 <style>
   .smart-contract-security {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
   }
 
-  .smart-contract-security--compact {
-    margin-top: 8px;
-    padding-top: 8px;
+  .roles-table-caption {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
   }
 
   .smart-contract-security-note {
