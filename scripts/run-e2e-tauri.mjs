@@ -40,6 +40,7 @@ function sleep(ms) {
 }
 
 let tauriLogs = { out: [], err: [] };
+let tauriExit = null;
 
 async function waitForPort(port, timeoutMs = 30000) {
   const start = Date.now();
@@ -80,6 +81,7 @@ async function waitForSandboxHandle(root, timeoutMs = 30000) {
   }
   log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
   log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+  log('tauri process state:', tauriExit ?? 'still running (no exit/error observed)');
   throw new Error(`sandbox handle at ${root} did not appear within ${timeoutMs}ms`);
 }
 
@@ -188,6 +190,10 @@ async function main() {
     PACTO_DEV_PORT: String(portSet.ports.devServer),
     PACTO_DEV_HMR_PORT: String(portSet.ports.hmr),
     PACTO_MCP_BRIDGE_PORT: String(portSet.ports.mcpBridge),
+    // GTK probes the AT-SPI accessibility bus on startup; on a headless
+    // runner with no desktop session that probe can hang before the binary
+    // executes a single line of its own code. Skip it outright.
+    NO_AT_BRIDGE: '1',
   };
 
   const frontendDist = path.join(repoRoot, 'build');
@@ -206,6 +212,14 @@ async function main() {
 
   tauri.stdout.on('data', d => tauriLogs.out.push(d.toString()));
   tauri.stderr.on('data', d => tauriLogs.err.push(d.toString()));
+  tauri.on('exit', (code, signal) => {
+    tauriExit = { code, signal };
+    log('tauri process exited', tauriExit);
+  });
+  tauri.on('error', err => {
+    tauriExit = { spawnError: err.message };
+    log('tauri process spawn error:', err.message);
+  });
 
   const cleanup = async (exitCode = 1) => {
     log('cleaning up...');
