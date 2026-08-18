@@ -3,15 +3,22 @@
   import { t } from 'svelte-i18n';
   import {
     addCustomRelay,
+    getRelayCertificate,
     getRelayLogs,
     getRelayMetrics,
     hasRelayHealthData,
     listRelays,
+    probeRelay,
+    probeResultLabel,
+    relayCertExpiryLabel,
+    relayFailureLabel,
     relayModeLabel,
     relayStatusLabel,
     removeCustomRelay,
     setRelayEnabled,
     validateRelayUrlInput,
+    type ProbeResult,
+    type RelayCertificate,
     type RelayInfo,
     type RelayLog,
     type RelayMetrics,
@@ -52,6 +59,12 @@
   let addError: string | null = null;
   let adding = false;
 
+  let probing = false;
+  let probeResult: ProbeResult | null = null;
+  let probedUrl: string | null = null;
+  // Stale results (from a probe of a URL the operator has since edited) never render.
+  $: if (newRelayUrl.trim() !== probedUrl) probeResult = null;
+
   let busyUrl: string | null = null;
 
   type RelayDetailState = {
@@ -59,7 +72,12 @@
     error: string | null;
     metrics: RelayMetrics | null;
     logs: RelayLog[];
+    certificate: RelayCertificate | null;
   };
+
+  function isWssRelay(url: string): boolean {
+    return url.toLowerCase().startsWith('wss://');
+  }
 
   function relaySlug(url: string): string {
     return url.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -84,13 +102,23 @@
     const previous = detailByUrl[url];
     detailByUrl = {
       ...detailByUrl,
-      [url]: { loading: true, error: null, metrics: previous?.metrics ?? null, logs: previous?.logs ?? [] },
+      [url]: {
+        loading: true,
+        error: null,
+        metrics: previous?.metrics ?? null,
+        logs: previous?.logs ?? [],
+        certificate: previous?.certificate ?? null,
+      },
     };
     const startedAt = Date.now();
     try {
-      const [metrics, logs] = await Promise.all([getRelayMetrics(url), getRelayLogs(url)]);
+      const [metrics, logs, certificate] = await Promise.all([
+        getRelayMetrics(url),
+        getRelayLogs(url),
+        isWssRelay(url) ? getRelayCertificate(url) : Promise.resolve(null),
+      ]);
       await waitForMinSpin(startedAt);
-      detailByUrl = { ...detailByUrl, [url]: { loading: false, error: null, metrics, logs } };
+      detailByUrl = { ...detailByUrl, [url]: { loading: false, error: null, metrics, logs, certificate } };
     } catch (e) {
       await waitForMinSpin(startedAt);
       detailByUrl = {
@@ -100,6 +128,7 @@
           error: getInvokeErrorMessage(e, $t('settings.toast.couldNotLoadRelayDetail')),
           metrics: previous?.metrics ?? null,
           logs: previous?.logs ?? [],
+          certificate: previous?.certificate ?? null,
         },
       };
     }
@@ -163,6 +192,27 @@
     }
   }
 
+  async function handleProbe() {
+    if (validateRelayUrlInput(newRelayUrl) || probing) return;
+    const url = newRelayUrl.trim();
+    probing = true;
+    probedUrl = url;
+    probeResult = null;
+    try {
+      probeResult = await probeRelay(url);
+    } catch (e) {
+      probeResult = {
+        outcome: 'unreachable',
+        failure: {
+          code: 'unknown',
+          detail: getInvokeErrorMessage(e, $t('settings.toast.couldNotAddRelay')),
+        },
+      };
+    } finally {
+      probing = false;
+    }
+  }
+
   async function handleToggleEnabled(relay: RelayInfo, enabled: boolean) {
     if (busyUrl) return;
     busyUrl = relay.url;
@@ -206,6 +256,15 @@
       return 'nostr-relay-status--pending';
     }
     return 'nostr-relay-status--warn';
+  }
+
+  // Dedicated class set for expiry state (never reuses nostr-relay-status--* --
+  // that palette's "warn" tier is the same muted gray as manually-disabled, which would
+  // render an expired certificate in the least alarming color available).
+  function expiryVerdictClass(verdict: string): string {
+    if (verdict === 'expired') return 'nostr-relay-cert-expiry--expired';
+    if (verdict === 'expiring_soon') return 'nostr-relay-cert-expiry--warning';
+    return 'nostr-relay-cert-expiry--valid';
   }
 </script>
 
@@ -284,7 +343,27 @@
       <button type="button" class="nostr-add-relay-btn" disabled={adding} on:click={handleAddRelay}>
         {adding ? $t('settings.adding') : $t('settings.add')}
       </button>
+      <button
+        type="button"
+        class="nostr-probe-btn"
+        disabled={probing || !!validateRelayUrlInput(newRelayUrl)}
+        on:click={handleProbe}
+      >
+        {probing ? $t('settings.relayProbing') : $t('settings.relayProbeButton')}
+      </button>
     </div>
+    {#if !probing && validateRelayUrlInput(newRelayUrl)}
+      <p class="nostr-probe-disabled-reason">{$t('settings.relayProbeDisabledReason')}</p>
+    {/if}
+    {#if probeResult && probedUrl === newRelayUrl.trim()}
+      <p
+        class="nostr-probe-result nostr-probe-result--{probeResult.outcome}"
+        role="status"
+        aria-live="polite"
+      >
+        {probeResultLabel(probeResult)}
+      </p>
+    {/if}
     {#if addError}
       <p class="nostr-settings-error" role="alert">{addError}</p>
     {/if}
@@ -336,6 +415,11 @@
                   <span class="nostr-relay-status {statusClass(relay.status, relay.enabled)}">
                     {relay.enabled ? relayStatusLabel(relay.status) : $t('settings.relayOff')}
                   </span>
+                  {#if relay.failure_reason}
+                    <span class="nostr-relay-failure-reason">
+                      {relayFailureLabel(relay.failure_reason.code)}
+                    </span>
+                  {/if}
                 </div>
               </div>
               <div class="nostr-relay-actions">
@@ -406,7 +490,7 @@
                       <div class="nostr-relay-detail-logs">
                         <h4 class="nostr-relay-detail-logs-title">{$t('settings.relayRecentActivityLabel')}</h4>
                         <ul class="nostr-relay-detail-log-list">
-                          {#each detail.logs as log (log.timestamp + log.message)}
+                          {#each detail.logs as log, logIndex (logIndex)}
                             <li class="nostr-relay-detail-log-entry nostr-relay-detail-log-entry--{log.level}">
                               <span class="nostr-relay-detail-log-time">{unixToTimestamp(log.timestamp)}</span>
                               <span class="nostr-relay-detail-log-message">{log.message}</span>
@@ -415,6 +499,54 @@
                         </ul>
                       </div>
                     {/if}
+                  {/if}
+                  {#if isWssRelay(relay.url)}
+                    <div class="nostr-relay-cert">
+                      <h4 class="nostr-relay-cert-title">{$t('settings.relayCertTitle')}</h4>
+                      <p class="nostr-relay-cert-disclosure">{$t('settings.relayCertTrustDisclosure')}</p>
+                      {#if detail?.certificate}
+                        {@const cert = detail.certificate}
+                        <p class="nostr-relay-cert-expiry {expiryVerdictClass(cert.expiry_verdict)}">
+                          <span aria-hidden="true">
+                            {cert.expiry_verdict === 'expired' ? '✕' : cert.expiry_verdict === 'expiring_soon' ? '!' : '✓'}
+                          </span>
+                          {relayCertExpiryLabel(cert.expiry_verdict)}
+                        </p>
+                        <dl class="nostr-relay-detail-stats nostr-relay-cert-stats">
+                          <div>
+                            <dt>{$t('settings.relayCertSubjectLabel')}</dt>
+                            <dd>{cert.subject}</dd>
+                          </div>
+                          <div>
+                            <dt>{$t('settings.relayCertIssuerLabel')}</dt>
+                            <dd>{cert.issuer}</dd>
+                          </div>
+                          <div>
+                            <dt>{$t('settings.relayCertValidityLabel')}</dt>
+                            <dd>
+                              {$t('settings.relayCertNotBeforeLabel')}: {unixToTimestamp(cert.not_before)}<br />
+                              {$t('settings.relayCertNotAfterLabel')}: {unixToTimestamp(cert.not_after)}
+                            </dd>
+                          </div>
+                          {#if cert.san_dns_names.length > 0}
+                            <div>
+                              <dt>{$t('settings.relayCertSanLabel')}</dt>
+                              <dd>{cert.san_dns_names.join(', ')}</dd>
+                            </div>
+                          {/if}
+                          <div>
+                            <dt>{$t('settings.relayCertKeyAlgorithmLabel')}</dt>
+                            <dd>{cert.public_key_algorithm} {cert.public_key_bits}</dd>
+                          </div>
+                          <div>
+                            <dt>{$t('settings.relayCertFingerprintLabel')}</dt>
+                            <dd class="nostr-relay-cert-fingerprint">{cert.sha256_fingerprint}</dd>
+                          </div>
+                        </dl>
+                      {:else if !detail?.loading}
+                        <p class="nostr-settings-muted">{$t('settings.relayCertUnavailable')}</p>
+                      {/if}
+                    </div>
                   {/if}
                 {/if}
               </div>
@@ -620,6 +752,47 @@
     cursor: not-allowed;
   }
 
+  .nostr-probe-btn {
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .nostr-probe-btn:hover:not(:disabled) {
+    border-color: var(--brand);
+  }
+
+  .nostr-probe-btn:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .nostr-probe-disabled-reason {
+    margin: 8px 0 0 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .nostr-probe-result {
+    margin: 8px 0 0 0;
+    font-size: 0.875rem;
+  }
+
+  .nostr-probe-result--reachable {
+    color: var(--success);
+  }
+
+  .nostr-probe-result--unreachable {
+    color: var(--text-secondary);
+  }
+
   .nostr-relay-list-head {
     display: flex;
     align-items: center;
@@ -709,6 +882,15 @@
 
   .nostr-relay-status--off {
     color: var(--text-muted);
+  }
+
+  .nostr-relay-failure-reason {
+    /* Full-width on its own wrapped line within the meta row: a classified reason
+       reads longer than any existing status label and must not squeeze the badges. */
+    flex-basis: 100%;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    word-break: break-word;
   }
 
   .nostr-relay-actions {
@@ -859,5 +1041,66 @@
 
   .nostr-relay-detail-log-message {
     word-break: break-word;
+  }
+
+  .nostr-relay-cert {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .nostr-relay-cert-title {
+    margin: 0 0 8px 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Always renders above the certificate fields, in a neutral tone distinct from the
+     computed expiry verdict below -- disclosing that trust was not evaluated is not
+     itself a warning (R14). */
+  .nostr-relay-cert-disclosure {
+    margin: 0 0 10px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .nostr-relay-cert-expiry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  /* Dedicated palette, not nostr-relay-status--*: that set's "warn" tier is the same
+     muted gray as manually-disabled, which would render an expired certificate in the
+     least alarming color available. The symbol before each label is a non-color signal. */
+  .nostr-relay-cert-expiry--valid {
+    color: var(--success);
+  }
+
+  .nostr-relay-cert-expiry--warning {
+    color: var(--warning);
+  }
+
+  .nostr-relay-cert-expiry--expired {
+    color: var(--danger);
+  }
+
+  .nostr-relay-cert-stats dd {
+    word-break: break-word;
+  }
+
+  .nostr-relay-cert-fingerprint {
+    font-family: monospace;
+    font-size: 0.8125rem;
   }
 </style>
