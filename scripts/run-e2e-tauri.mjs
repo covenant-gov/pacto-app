@@ -39,7 +39,85 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function cpuFlags() {
+  try {
+    const info = readFileSync('/proc/cpuinfo', 'utf8');
+    const line = info.split('\n').find(l => l.startsWith('flags') || l.startsWith('Features'));
+    return line || 'cpu flags unavailable';
+  } catch {
+    return 'cpu flags unavailable';
+  }
+}
+
+async function captureCrashBacktrace() {
+  const gdb = '/usr/bin/gdb';
+  if (!tauriBinaryPath || !existsSync(gdb)) {
+    log('gdb backtrace skipped (gdb or binary path missing)');
+    return;
+  }
+  log('re-running binary under gdb to capture SIGILL/SIGSEGV backtrace');
+  log('cpu:', cpuFlags());
+  log('DISPLAY=', tauriChildEnv?.DISPLAY ?? process.env.DISPLAY ?? '(unset)');
+  log('OPENSSL_ia32cap=', tauriChildEnv?.OPENSSL_ia32cap ?? process.env.OPENSSL_ia32cap ?? '(unset)');
+  await new Promise(resolve => {
+    const gdbProc = spawn(
+      gdb,
+      [
+        '-q',
+        '-batch',
+        '-ex', 'set pagination off',
+        '-ex', 'set confirm off',
+        '-ex', 'set disable-randomization on',
+        '-ex', 'run',
+        '-ex', 'echo \n=== BACKTRACE ===\n',
+        '-ex', 'bt',
+        '-ex', 'echo \n=== ALL THREADS ===\n',
+        '-ex', 'thread apply all bt',
+        '-ex', 'echo \n=== REGISTERS ===\n',
+        '-ex', 'info registers',
+        '-ex', 'echo \n=== DISASM ===\n',
+        '-ex', 'x/32i $pc-64',
+        '--args',
+        tauriBinaryPath,
+      ],
+      {
+        cwd: repoRoot,
+        env: tauriChildEnv || process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    const chunks = [];
+    const take = d => {
+      const s = d.toString();
+      chunks.push(s);
+      process.stderr.write(s);
+    };
+    gdbProc.stdout.on('data', take);
+    gdbProc.stderr.on('data', take);
+    const timer = setTimeout(() => {
+      gdbProc.kill('SIGKILL');
+    }, 15000);
+    gdbProc.on('exit', () => {
+      clearTimeout(timer);
+      try {
+        saveArtifact('gdb-backtrace.log', chunks.join(''));
+      } catch (e) {
+        log('failed to save gdb backtrace:', e.message);
+      }
+      resolve();
+    });
+    gdbProc.on('error', err => {
+      clearTimeout(timer);
+      log('gdb spawn error:', err.message);
+      resolve();
+    });
+  });
+}
+
 let tauriLogs = { out: [], err: [] };
+let tauriExit = null;
+let tauriBinaryPath = null;
+let tauriChildEnv = null;
 
 async function waitForPort(port, timeoutMs = 30000) {
   const start = Date.now();
@@ -62,6 +140,15 @@ async function waitForPort(port, timeoutMs = 30000) {
       });
       return;
     } catch {
+      if (tauriExit) {
+        log('last MCP bridge port probe error:', lastError);
+        log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+        log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+        log('tauri process state:', tauriExit);
+        throw new Error(
+          `Tauri process exited before MCP bridge port ${port} was ready: ${JSON.stringify(tauriExit)}`,
+        );
+      }
       await sleep(250);
     }
   }
@@ -76,10 +163,22 @@ async function waitForSandboxHandle(root, timeoutMs = 30000) {
   while (Date.now() - start < timeoutMs) {
     const handle = readSandboxHandle(root);
     if (handle) return handle;
+    if (tauriExit) {
+      log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
+      log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+      log('tauri process state:', tauriExit);
+      if (tauriExit.signal === 'SIGILL' || tauriExit.signal === 'SIGSEGV') {
+        await captureCrashBacktrace();
+      }
+      throw new Error(
+        `Tauri process exited before writing a sandbox handle: ${JSON.stringify(tauriExit)}`,
+      );
+    }
     await sleep(250);
   }
   log('tauri stderr tail:', tauriLogs.err.slice(-10).join(''));
   log('tauri stdout tail:', tauriLogs.out.slice(-10).join(''));
+  log('tauri process state:', tauriExit ?? 'still running (no exit/error observed)');
   throw new Error(`sandbox handle at ${root} did not appear within ${timeoutMs}ms`);
 }
 
@@ -188,6 +287,18 @@ async function main() {
     PACTO_DEV_PORT: String(portSet.ports.devServer),
     PACTO_DEV_HMR_PORT: String(portSet.ports.hmr),
     PACTO_MCP_BRIDGE_PORT: String(portSet.ports.mcpBridge),
+    // These must be set in the parent before spawn: GTK/WebKitGTK constructors
+    // run at .so load, before Rust `run()` can call set_var.
+    NO_AT_BRIDGE: '1',
+    GDK_BACKEND: 'x11',
+    LIBGL_ALWAYS_SOFTWARE: '1',
+    WEBKIT_DISABLE_DMABUF_RENDERER: '1',
+    WEBKIT_DISABLE_COMPOSITING_MODE: '1',
+    WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1',
+    JSC_useJIT: '0',
+    GALLIUM_DRIVER: 'softpipe',
+    GTK_A11Y: 'none',
+    OPENSSL_ia32cap: ':0',
   };
 
   const frontendDist = path.join(repoRoot, 'build');
@@ -198,6 +309,10 @@ async function main() {
   const frontendServer = await startFrontendServer(frontendDist, devUrlPort());
 
   log('launching Tauri binary', binaryPath);
+  log('cpu:', cpuFlags());
+  log('DISPLAY=', env.DISPLAY ?? '(unset)');
+  tauriBinaryPath = binaryPath;
+  tauriChildEnv = env;
   const tauri = spawn(binaryPath, [], {
     cwd: repoRoot,
     env,
@@ -206,6 +321,14 @@ async function main() {
 
   tauri.stdout.on('data', d => tauriLogs.out.push(d.toString()));
   tauri.stderr.on('data', d => tauriLogs.err.push(d.toString()));
+  tauri.on('exit', (code, signal) => {
+    tauriExit = { code, signal };
+    log('tauri process exited', tauriExit);
+  });
+  tauri.on('error', err => {
+    tauriExit = { spawnError: err.message };
+    log('tauri process spawn error:', err.message);
+  });
 
   const cleanup = async (exitCode = 1) => {
     log('cleaning up...');

@@ -10222,6 +10222,12 @@ async fn sync_all_profiles() -> Result<(), String> {
 pub fn run() {
     operator_env::load_operator_env();
 
+    // stderr is unbuffered even when piped, so this line is visible in the
+    // e2e harness if we get past .so constructors and into Rust `main`.
+    if test_sandbox::sandbox_root().is_some() {
+        eprintln!("[sandbox] boot");
+    }
+
     if let Err(e) = trusted_relays::init_from_env() {
         eprintln!("[trusted_relays] {e}");
         std::process::exit(1);
@@ -10251,7 +10257,12 @@ pub fn run() {
     {
         // WebKitGTK can be quite funky cross-platform: as a result, we'll fallback to a more compatible renderer
         // In theory, this will make Vector run more consistently across a wider range of Linux Desktop distros.
+        // Also set before spawn in scripts/run-e2e-tauri.mjs — constructors can
+        // SIGILL on a headless Xvfb display before this line runs.
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
     }
 
     std::panic::set_hook(Box::new(|info| {
