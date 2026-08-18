@@ -87,6 +87,7 @@
     position: absolute;
     top: 2px;
     right: 2px;
+    z-index: 1;
     width: 10px;
     height: 10px;
     border-radius: 50%;
@@ -125,9 +126,13 @@
   }
 
   .tab-image {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 50%;
+    display: block;
     pointer-events: none;
   }
 
