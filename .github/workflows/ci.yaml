@@ -161,7 +161,7 @@ jobs:
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb
+          sudo apt-get install -y build-essential cmake clang libclang-dev file curl wget git pkg-config libssl-dev libvulkan-dev glslc libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb dbus-x11
 
       - name: Build Tauri debug bundle
         run: xvfb-run --auto-servernum pnpm tauri build --debug --no-bundle --ci
@@ -169,7 +169,12 @@ jobs:
       - name: Run real-Tauri e2e harness
         env:
           PACTO_TAURI_BINARY: src-tauri/target/debug/pacto
-        run: xvfb-run --auto-servernum pnpm test:e2e:tauri
+        # GTK/WebKitGTK probe the AT-SPI accessibility bus on startup; without a
+        # real session bus (no desktop session on the runner) that probe can hang
+        # indefinitely before the binary executes a single line of `run()`,
+        # which is what a plain `xvfb-run` invocation was silently doing here.
+        # `dbus-run-session` gives it a real bus to talk to.
+        run: dbus-run-session -- xvfb-run --auto-servernum pnpm test:e2e:tauri
 
       - name: Upload Tauri e2e results on failure
         if: failure()
