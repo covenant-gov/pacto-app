@@ -182,8 +182,16 @@ describe('accept-invite channel persistence', () => {
   });
 
   it('acceptAnnouncementsInvite appends the new squad id to nav order', async () => {
-    await acceptAnnouncementsInvite({ groupId: 'new-squad', name: 'Joined' }, 'msg-join');
-    expect(persistSquadMock).toHaveBeenCalled();
+    await acceptAnnouncementsInvite(
+      { groupId: 'new-squad', name: 'Joined', iconUrl: 'https://cdn.example/a.jpg' },
+      'msg-join',
+    );
+    expect(persistSquadMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'new-squad',
+        iconUrl: 'https://cdn.example/a.jpg',
+      }),
+    );
     expect(get(squadNavOrder)).toEqual(['parent-1', 'new-squad']);
     expect(get(squads).some((s) => s.id === 'new-squad')).toBe(true);
     expect(shouldShowMlsHistoryWelcome('new-squad')).toBe(true);

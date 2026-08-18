@@ -539,6 +539,8 @@ export interface SquadInvitePayload {
   inviteId?: string;
   /** Announcements members who may run admit when invitee Accepts. */
   admitterNpubs?: string[];
+  /** Optional squad PFP URL at invite time. */
+  iconUrl?: string;
 }
 
 const SQUAD_INVITE_TYPE = 'squad_invite';
@@ -562,6 +564,8 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
           invitedByNpub: typeof raw.invitedByNpub === 'string' ? raw.invitedByNpub : undefined,
           inviteId: typeof raw.inviteId === 'string' ? raw.inviteId : undefined,
           admitterNpubs: admitterNpubs?.length ? admitterNpubs : undefined,
+          iconUrl:
+            typeof raw.iconUrl === 'string' && raw.iconUrl.trim() ? raw.iconUrl.trim() : undefined,
         };
       }
     }

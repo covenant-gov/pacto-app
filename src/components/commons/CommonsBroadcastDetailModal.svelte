@@ -16,6 +16,7 @@
     squadIdFromBroadcast,
   } from '../../lib/commons/commons-join-request';
   import { commonsTagGradient } from '../../lib/commons/tag-catalog';
+  import SquadAvatar from '../squad/SquadAvatar.svelte';
 
   export let broadcast: CommonsBroadcastDto;
   export let onClose: () => void;
@@ -107,9 +108,11 @@
 >
   <div
     class="commons-detail-cover"
-    style={coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}
+    style={isSquad || coverImage ? '' : `background-image: ${commonsTagGradient(coverSeed)}`}
   >
-    {#if coverImage}
+    {#if isSquad}
+      <SquadAvatar variant="cover" src={broadcast.squadIconUrl} name={title} seed={coverSeed} />
+    {:else if coverImage}
       <img class="commons-detail-img" src={coverImage} alt="" decoding="async" />
     {:else}
       <span class="commons-detail-initial" aria-hidden="true">{(title || '?').charAt(0).toUpperCase()}</span>

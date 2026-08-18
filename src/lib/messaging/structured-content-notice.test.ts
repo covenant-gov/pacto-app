@@ -77,6 +77,9 @@ describe('summarizeStructuredMessageContent', () => {
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_channels_catalog' }), tFn)
     ).toBe('messaging.structuredNotice.squadChannelsUpdated');
     expect(
+      summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_identity_updated' }), tFn)
+    ).toBe('messaging.structuredNotice.squadIdentityUpdated');
+    expect(
       summarizeStructuredMessageContent(JSON.stringify({ type: 'squad_invite_accepted' }), tFn)
     ).toBe('messaging.structuredNotice.squadInviteAccepted');
     expect(

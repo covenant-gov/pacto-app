@@ -45,6 +45,7 @@ const TYPE_KEYS: Record<string, string> = {
   squad_outbound_invite: 'messaging.structuredNotice.squadInvitePending',
   squad_admit_needed: 'messaging.structuredNotice.squadMemberAdmit',
   squad_channels_catalog: 'messaging.structuredNotice.squadChannelsUpdated',
+  squad_identity_updated: 'messaging.structuredNotice.squadIdentityUpdated',
   squad_invite_accepted: 'messaging.structuredNotice.squadInviteAccepted',
   squad_member_left: 'messaging.structuredNotice.squadMemberLeft',
 };

@@ -89,6 +89,8 @@ Public **Kind 30078** ([NIP-33](https://github.com/nostr-protocol/nips/blob/mast
 }
 ```
 
+Discovery tiles keep `squadIconUrl` from **publish time**. Changing the squad PFP later does not rewrite existing Commons events; a new broadcast snapshots the current URL.
+
 **User broadcast:**
 
 ```json

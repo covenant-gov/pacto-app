@@ -2,6 +2,7 @@
   import Channel from '../channel/Channel.svelte';
   import ResizableSidebar from '../ui/ResizableSidebar.svelte';
   import ParentSettingUp from '../parent/ParentSettingUp.svelte';
+  import SquadAvatar from '../squad/SquadAvatar.svelte';
   import { partitionHubSidebarChannels } from '../../lib/parent-navbar';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import { t } from 'svelte-i18n';
@@ -15,6 +16,8 @@
   }
 
   export let parentName = '';
+  export let parentIconUrl: string | undefined = undefined;
+  export let parentId = '';
   export let subheading: string | undefined = undefined;
   export let channels: ParentChannel[] = [];
   export let activeChannelId: string | null = null;
@@ -94,6 +97,7 @@
   {#if hasParent}
     <div class="parent-heading" role="region" aria-label={$t('nav.parentSidebar.squadHeading', { values: { squadName: parentName } })}>
       <div class="parent-header-row">
+        <SquadAvatar src={parentIconUrl} name={parentName} seed={parentId || parentName} size={32} />
         <h2 class="parent-name">{parentName}</h2>
         <div class="parent-header-actions">
           <button
@@ -274,7 +278,7 @@
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 0 0 4px 0;
+    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

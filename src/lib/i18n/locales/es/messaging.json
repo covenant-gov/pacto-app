@@ -334,6 +334,7 @@
 	"messaging.structuredNotice.squadBotRotationPrompt": "Indicación de rotación de bandeja de entrada",
 	"messaging.structuredNotice.squadBotUpdate": "Actualización de bandeja de entrada",
 	"messaging.structuredNotice.squadChannelsUpdated": "Canales del escuadrón actualizados",
+	"messaging.structuredNotice.squadIdentityUpdated": "Foto del escuadrón actualizada",
 	"messaging.structuredNotice.squadInviteAccepted": "Invitación al escuadrón aceptada",
 	"messaging.structuredNotice.squadInvitePending": "Invitación al escuadrón pendiente",
 	"messaging.structuredNotice.squadJoinRequest": "Solicitud de unión a escuadrón",

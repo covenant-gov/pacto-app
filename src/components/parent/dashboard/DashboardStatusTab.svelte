@@ -2,6 +2,7 @@
   import { t } from 'svelte-i18n';
   import SmartContractSecuritySection from '../governance/SmartContractSecuritySection.svelte';
   import SquadBroadcastSettingsSection from './SquadBroadcastSettingsSection.svelte';
+  import SquadIdentitySection from './SquadIdentitySection.svelte';
   import SquadBotHoldersSection from './SquadBotHoldersSection.svelte';
   import EditIconButton from '../../ui/EditIconButton.svelte';
   import type { DashboardPermissionsContext } from '../../../lib/dashboard/permissions-panel';
@@ -97,6 +98,8 @@
   }
 
 </script>
+
+<SquadIdentitySection {squad} />
 
 <section class="status-checklist" aria-label={$t('governance.status.checklistAria')}>
   <span class="meta-label">{$t('governance.status.checklistTitle')}</span>

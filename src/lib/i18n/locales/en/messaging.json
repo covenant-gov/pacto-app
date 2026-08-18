@@ -334,6 +334,7 @@
 	"messaging.structuredNotice.squadBotRotationPrompt": "Join inbox rotation prompt",
 	"messaging.structuredNotice.squadBotUpdate": "Join inbox update",
 	"messaging.structuredNotice.squadChannelsUpdated": "Squad channels updated",
+	"messaging.structuredNotice.squadIdentityUpdated": "Squad photo updated",
 	"messaging.structuredNotice.squadInviteAccepted": "Squad invite accepted",
 	"messaging.structuredNotice.squadInvitePending": "Squad invite pending",
 	"messaging.structuredNotice.squadJoinRequest": "Squad join request",

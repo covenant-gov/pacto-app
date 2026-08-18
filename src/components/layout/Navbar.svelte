@@ -1,6 +1,8 @@
 <script lang="ts">
   import Tab from '../ui/Tab.svelte';
   import Modal from '../ui/Modal.svelte';
+  import AvatarPicker from '../ui/AvatarPicker.svelte';
+  import SquadAvatar from '../squad/SquadAvatar.svelte';
   import SquadCommonsVisibilityFields from '../squad/SquadCommonsVisibilityFields.svelte';
   import { resolveSquadCommonsOnCreate, validatePublicSquadTags } from '../../lib/squad/squad-commons-fields';
   import type { SquadVisibility } from '../../stores/squads';
@@ -448,7 +450,7 @@
         const myNpub = get(currentUser)?.npub;
         for (const npub of memberNpubs) {
           try {
-            await sendSquadInviteDm(npub, { squadName: name, groupId }, myNpub);
+            await sendSquadInviteDm(npub, { squadName: name, groupId, iconUrl: options.iconUrl }, myNpub);
           } catch (e) {
             console.warn('[Navbar] send squad invite DM failed for', npub.slice(0, 20) + '…', e);
           }
@@ -538,7 +540,6 @@
   $: squadNameLabel = $t('nav.navbar.organizeSquad.nameLabel');
   $: squadNamePlaceholder = $t('nav.navbar.organizeSquad.namePlaceholder');
   $: iconUrlLabel = $t('nav.navbar.organizeSquad.iconLabel');
-  $: iconUrlPlaceholder = $t('nav.navbar.organizeSquad.iconPlaceholder');
   $: organizeMembersLabel = $t('nav.navbar.organizeSquad.membersLabel');
   $: organizeMembersEmpty = $t('nav.navbar.organizeSquad.membersEmpty');
   $: organizeNetworkLabel = $t('nav.navbar.organizeSquad.networkLabel');
@@ -712,14 +713,22 @@
           values: { count: organizeSquadName.length, max: maxSquadNameLength },
         })}
       </p>
-      <label class="organize-label" for="squad-icon">{iconUrlLabel}</label>
-      <input
-        id="squad-icon"
-        type="url"
-        class="organize-input"
-        placeholder={iconUrlPlaceholder}
-        bind:value={organizeSquadIconUrl}
-      />
+      <span class="organize-label">{iconUrlLabel}</span>
+      <AvatarPicker
+        src={organizeSquadIconUrl || null}
+        editable
+        allowClear={!!organizeSquadIconUrl}
+        size={72}
+        chooseTitle={$t('squad.pfp.choose')}
+        editAriaLabel={$t('squad.pfp.change')}
+        cropTitle={$t('squad.pfp.cropTitle')}
+        onChange={(url) => (organizeSquadIconUrl = url)}
+        onClear={() => (organizeSquadIconUrl = '')}
+      >
+        {#snippet fallback()}
+          <SquadAvatar src={null} name={organizeSquadName} seed={organizeSquadName} fill />
+        {/snippet}
+      </AvatarPicker>
       <span class="organize-label">{organizeMembersLabel}</span>
       <div class="organize-members">
         {#each organizeMemberList as entry (entry.npub)}

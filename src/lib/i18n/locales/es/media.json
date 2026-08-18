@@ -1,0 +1,22 @@
+{
+	"media.avatarCrop.cancel": "Cancelar",
+	"media.avatarCrop.chooseDifferentImage": "Elegir otra imagen",
+	"media.avatarCrop.clear": "Quitar foto",
+	"media.avatarCrop.confirm": "Confirmar",
+	"media.avatarCrop.decodeError": "No se pudo leer esta imagen.",
+	"media.avatarCrop.hint": "Arrastra la foto, o usa los controles de abajo, para reposicionarla y ajustar su tamaño.",
+	"media.avatarCrop.imagesFilter": "Imágenes",
+	"media.avatarCrop.loadingPreview": "Cargando vista previa…",
+	"media.avatarCrop.panControls": "Mover foto",
+	"media.avatarCrop.panDown": "Mover foto hacia abajo",
+	"media.avatarCrop.panLeft": "Mover foto hacia la izquierda",
+	"media.avatarCrop.panRight": "Mover foto hacia la derecha",
+	"media.avatarCrop.panUp": "Mover foto hacia arriba",
+	"media.avatarCrop.retry": "Reintentar",
+	"media.avatarCrop.undersizedWarning": "Esta imagen es más pequeña de lo recomendado (512x512), por lo que podría verse borrosa una vez subida.",
+	"media.avatarCrop.uploadError": "No se pudo subir la imagen recortada.",
+	"media.avatarCrop.uploading": "Subiendo…",
+	"media.avatarCrop.zoomIn": "Acercar",
+	"media.avatarCrop.zoomOut": "Alejar",
+	"media.avatarCrop.zoomSlider": "Zoom"
+}

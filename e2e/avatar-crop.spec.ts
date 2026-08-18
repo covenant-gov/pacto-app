@@ -25,7 +25,7 @@ async function createAccountAndOpenProfileSettings(page: Page) {
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
 }
 
-/** Expand the edit form and open the avatar crop modal via "Change avatar". */
+/** Expand the edit form and open the avatar crop modal via the icon-only change control. */
 async function openAvatarCropModal(page: Page) {
   await page.getByRole('button', { name: 'Edit profile' }).click();
   await page.getByRole('button', { name: 'Change avatar' }).click();

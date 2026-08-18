@@ -94,7 +94,7 @@ pub fn normalize_virtual_bucket_for_message(
             }
             if matches!(
                 ty,
-                Some("squad_outbound_invite" | "squad_admit_needed" | "squad_channels_catalog")
+                Some("squad_outbound_invite" | "squad_admit_needed" | "squad_channels_catalog" | "squad_identity_updated")
             ) {
                 return Some("announcements".to_string());
             }
@@ -229,6 +229,14 @@ mod tests {
     #[test]
     fn squad_bot_meta_derives_announcements_bucket() {
         let content = r#"{"schema":"pacto.squad_bot.meta.v1","botNpub":"npub1x","keyEpoch":1}"#;
+        let bucket =
+            normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
+        assert_eq!(bucket.as_deref(), Some("announcements"));
+    }
+
+    #[test]
+    fn squad_identity_updated_derives_announcements_bucket() {
+        let content = r#"{"type":"squad_identity_updated","payload":{"parent_id":"p","icon_url":"https://cdn.example/a.jpg"},"pacto_virtual_bucket":"announcements"}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

@@ -31,21 +31,5 @@
 	"profile.couldNotPublishProfile": "Could not publish profile.",
 	"profile.failedUploadAvatar": "Failed to upload avatar",
 	"profile.crop.title": "Crop Avatar",
-	"profile.crop.loadingPreview": "Loading preview…",
-	"profile.crop.decodeError": "Could not read this image.",
-	"profile.crop.chooseDifferentImage": "Choose a different image",
-	"profile.crop.undersizedWarning": "This image is smaller than the recommended 512x512, so it may look blurry once uploaded.",
-	"profile.crop.confirm": "Confirm",
-	"profile.crop.uploadError": "Could not upload the cropped image.",
-	"profile.crop.retry": "Retry",
-	"profile.crop.guidance": "For best results, use a square image at least 512x512 pixels.",
-	"profile.crop.hint": "Drag the photo, or use the controls below, to reposition and resize it.",
-	"profile.crop.zoomOut": "Zoom out",
-	"profile.crop.zoomIn": "Zoom in",
-	"profile.crop.zoomSlider": "Zoom",
-	"profile.crop.panControls": "Move photo",
-	"profile.crop.panUp": "Move photo up",
-	"profile.crop.panDown": "Move photo down",
-	"profile.crop.panLeft": "Move photo left",
-	"profile.crop.panRight": "Move photo right"
+	"profile.crop.guidance": "For best results, use a square image at least 512x512 pixels."
 }
