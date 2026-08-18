@@ -21,7 +21,7 @@ export function pactoGovPermissionsCatalog(): PermissionsCatalogRow[] {
       id: 'bytes32_roles',
       title: 'On-chain role identifiers',
       summary:
-        'Logical roles are fixed bytes32 keys on SquadAdmin; hat holders, allowlists, and roster tooling bind members to those slots.',
+        'Logical roles are fixed bytes32 keys on SquadAdmin; hat holders, allowlists, and squad-key binding map members to those slots.',
     },
     {
       id: 'full_pause',
@@ -80,7 +80,7 @@ export function resolveDashboardPermissionsContext(
     return {
       phase: 'mls_only',
       leadNote:
-        'On-chain role catalog and executor mappings appear after you deploy Pacto Gov from Deploy. Until then, use this roster for membership and shared EVM addresses.',
+        'On-chain role catalog and executor mappings appear after you deploy Pacto Gov from Deploy. Until then, use Crew for membership and shared EVM addresses.',
       catalogRows: [],
       showExecutorMappingPlaceholder: false,
     };
