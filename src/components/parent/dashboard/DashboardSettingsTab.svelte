@@ -60,6 +60,7 @@
     const gid = announcementsGroupId;
     if (!pid) return;
     void needsSquadRosterKeyChoice(pid, gid).then((needed) => {
+      if (parentId !== pid) return;
       rosterKeyNeeded = needed;
     });
   });

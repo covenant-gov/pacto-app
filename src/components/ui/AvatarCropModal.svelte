@@ -527,6 +527,7 @@
     background: #000;
     cursor: grab;
     touch-action: none;
+    /* box-shadow, not border: a border would change the box model cropDiameter assumes. */
     box-shadow: 0 0 0 4px var(--border-subtle);
   }
 
@@ -535,6 +536,7 @@
   }
 
   .crop-viewport-pending {
+    /* visibility keeps layout (and bind:clientWidth) so pan/zoom math still measures. */
     visibility: hidden;
   }
 

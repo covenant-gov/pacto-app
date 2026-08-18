@@ -2,6 +2,7 @@ import { invoke } from "./index";
 import type { TreasurySafeEntry } from "../treasury/treasury-safes";
 import type { VirtualBucket } from "../mls/virtual-channel-bucket";
 import { dmLog } from "../utils/dm-debug";
+import { isHttpsUrl } from "../utils/profile";
 
 /**
  * Represents a user status
@@ -565,7 +566,9 @@ export function parseSquadInviteMessage(content: string): SquadInvitePayload | n
           inviteId: typeof raw.inviteId === 'string' ? raw.inviteId : undefined,
           admitterNpubs: admitterNpubs?.length ? admitterNpubs : undefined,
           iconUrl:
-            typeof raw.iconUrl === 'string' && raw.iconUrl.trim() ? raw.iconUrl.trim() : undefined,
+            typeof raw.iconUrl === 'string' && isHttpsUrl(raw.iconUrl)
+              ? raw.iconUrl.trim()
+              : undefined,
         };
       }
     }

@@ -355,7 +355,6 @@ describe('announceCardAllowedForTimelineBucket', () => {
     const raw = JSON.stringify({
       type: 'squad_identity_updated',
       payload: { parent_id: 'p', icon_url: 'https://cdn.example/a.jpg' },
-      pacto_virtual_bucket: 'announcements',
     });
     expect(deriveVirtualBucketFromMessageContent(raw)).toBe('announcements');
   });

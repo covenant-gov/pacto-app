@@ -9,7 +9,6 @@
 	"profile.displayNamePlaceholder": "Display name",
 	"profile.aboutLabel": "About",
 	"profile.bioPlaceholder": "Bio",
-	"profile.uploading": "Uploading…",
 	"profile.changeAvatar": "Change avatar",
 	"profile.cancel": "Cancel",
 	"profile.publishing": "Publishing…",
@@ -26,10 +25,8 @@
 	"profile.noUserLoggedIn": "No user logged in",
 	"profile.failedToLoadProfile": "Failed to load profile",
 	"profile.chooseAvatarImage": "Choose avatar image",
-	"profile.imagesFilter": "Images",
 	"profile.profilePublished": "Profile published to the network.",
 	"profile.couldNotPublishProfile": "Could not publish profile.",
-	"profile.failedUploadAvatar": "Failed to upload avatar",
 	"profile.crop.title": "Crop Avatar",
 	"profile.crop.guidance": "For best results, use a square image at least 512x512 pixels."
 }

@@ -13,6 +13,7 @@ const {
   publishSquadIdentityUpdated,
   getMlsGroupMembers,
   inviteMemberToGroup,
+  mockParent,
 } = vi.hoisted(() => {
   /** Minimal writable stand-in so hoisted mocks avoid `require('svelte/store')`. */
   function makeStore<T>(initial: T) {
@@ -48,6 +49,18 @@ const {
     getMlsGroupMembers: vi.fn(),
     inviteMemberToGroup: vi.fn(),
     currentUser: makeStore<{ npub: string } | null>({ npub: 'npub1responder' }),
+    mockParent: {
+      id: 'ann-gid',
+      name: 'Alpha',
+      iconUrl: 'https://cdn.example/a.jpg' as string | undefined,
+      channels: [
+        { name: 'announcements', groupId: 'ann-gid', order: 0 },
+        { name: 'ops', groupId: 'g-ops', order: 1, access: 'open' },
+      ],
+      kind: 'squad',
+      createdAt: 1,
+      updatedAt: 1,
+    },
   };
 });
 
@@ -74,19 +87,7 @@ vi.mock('../parent-navbar', () => ({
 vi.mock('../../stores/squads', () => ({
   squads: {
     subscribe: (run: (v: unknown) => void) => {
-      run([
-        {
-          id: 'ann-gid',
-          name: 'Alpha',
-          channels: [
-            { name: 'announcements', groupId: 'ann-gid', order: 0 },
-            { name: 'ops', groupId: 'g-ops', order: 1, access: 'open' },
-          ],
-          kind: 'squad',
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ]);
+      run([mockParent]);
       return () => {};
     },
   },
@@ -150,6 +151,7 @@ describe('squad-state-sync', () => {
     getMlsGroupMembers.mockResolvedValue({ group_id: 'g', members: [], admins: [] });
     inviteMemberToGroup.mockResolvedValue(undefined);
     listSquadInfra.mockResolvedValue([]);
+    mockParent.iconUrl = 'https://cdn.example/a.jpg';
     const session = new Map<string, string>();
     vi.stubGlobal('sessionStorage', {
       getItem: (k: string) => session.get(k) ?? null,
@@ -418,7 +420,33 @@ describe('squad-state-sync', () => {
     expect(publishSquadMemberEvmShare).not.toHaveBeenCalled();
     expect(publishSquadNetworkUpdated).not.toHaveBeenCalled();
     expect(publishSquadChannelsCatalog).toHaveBeenCalled();
-    expect(publishSquadIdentityUpdated).toHaveBeenCalled();
+    expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
     expect(inviteMemberToGroup).not.toHaveBeenCalled();
+  });
+
+  it('skips identity republish when the local squad has no photo', async () => {
+    mockParent.iconUrl = undefined;
+    const raw = formatSquadStateSyncRequest({
+      parentId: 'ann-gid',
+      requestId: 'req-no-icon',
+      requesterNpub: 'npub1joiner',
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
+  });
+
+  it('skips identity republish when requested omits identity', async () => {
+    const raw = JSON.stringify({
+      type: SQUAD_STATE_SYNC_REQUEST_TYPE,
+      payload: {
+        parent_id: 'ann-gid',
+        request_id: 'req-no-identity',
+        requester_npub: 'npub1joiner',
+        requested: ['evm'],
+      },
+    });
+    await respondToSquadStateSyncRequest(raw, 'ann-gid');
+    expect(publishSquadIdentityUpdated).not.toHaveBeenCalled();
+    expect(publishSquadMemberEvmShare).toHaveBeenCalled();
   });
 });

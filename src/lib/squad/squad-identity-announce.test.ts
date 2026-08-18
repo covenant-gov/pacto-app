@@ -94,6 +94,28 @@ describe('squad identity announce', () => {
     expect(parseSquadIdentityUpdated(JSON.stringify({ type: SQUAD_IDENTITY_UPDATED_TYPE, payload: { parent_id: 'ann-gid', icon_url: null } }))?.icon_url).toBeNull();
   });
 
+  it('rejects non-https icon_url', () => {
+    expect(
+      parseSquadIdentityUpdated(
+        JSON.stringify({
+          type: SQUAD_IDENTITY_UPDATED_TYPE,
+          payload: { parent_id: 'ann-gid', icon_url: 'http://cdn.example/a.jpg' },
+        }),
+      )?.icon_url,
+    ).toBeNull();
+    expect(
+      parseSquadIdentityUpdated(
+        JSON.stringify({
+          type: SQUAD_IDENTITY_UPDATED_TYPE,
+          payload: { parent_id: 'ann-gid', icon_url: 'data:image/png;base64,abcd' },
+        }),
+      )?.icon_url,
+    ).toBeNull();
+    expect(
+      formatSquadIdentityUpdated({ parent_id: 'ann-gid', icon_url: 'http://evil.example/x' }),
+    ).toContain('"icon_url":null');
+  });
+
   it('rejects bad envelopes', () => {
     expect(parseSquadIdentityUpdated(null)).toBeNull();
     expect(parseSquadIdentityUpdated('plain')).toBeNull();

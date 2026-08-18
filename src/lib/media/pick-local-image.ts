@@ -13,6 +13,5 @@ export async function pickLocalImage(options: {
     multiple: false,
   });
   if (selected == null) return null;
-  if (typeof selected === 'string') return selected;
-  return selected[0] ?? null;
+  return selected;
 }

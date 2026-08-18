@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn squad_identity_updated_derives_announcements_bucket() {
-        let content = r#"{"type":"squad_identity_updated","payload":{"parent_id":"p","icon_url":"https://cdn.example/a.jpg"},"pacto_virtual_bucket":"announcements"}"#;
+        let content = r#"{"type":"squad_identity_updated","payload":{"parent_id":"p","icon_url":"https://cdn.example/a.jpg"}}"#;
         let bucket =
             normalize_virtual_bucket_for_message(event_kind::PRIVATE_DIRECT_MESSAGE, content, &[]);
         assert_eq!(bucket.as_deref(), Some("announcements"));

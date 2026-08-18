@@ -12,6 +12,8 @@ import {
   parseSquadDashboardChannelMode,
   squadSettingsRpcFocusNonce,
   focusSquadSettingsRpcEditor,
+  squadSettingsNetworkFocusNonce,
+  focusSquadSettingsNetworkEditor,
   showMembersPanel,
   lastOpenedSquadId,
   lastOpenedChannelId,
@@ -62,6 +64,7 @@ describe('navigation', () => {
     activeView.set('hub');
     squadDashboardChannelMode.set('status');
     squadSettingsRpcFocusNonce.set(0);
+    squadSettingsNetworkFocusNonce.set(0);
     showMembersPanel.set(false);
     lastOpenedSquadId.set(null);
     lastOpenedChannelId.set(null);
@@ -180,5 +183,15 @@ describe('navigation', () => {
     expect(get(squadSettingsRpcFocusNonce)).toBe(1);
     focusSquadSettingsRpcEditor();
     expect(get(squadSettingsRpcFocusNonce)).toBe(2);
+  });
+
+  it('focusSquadSettingsNetworkEditor switches to settings and bumps the network focus nonce', () => {
+    squadDashboardChannelMode.set('governance');
+    expect(get(squadSettingsNetworkFocusNonce)).toBe(0);
+    focusSquadSettingsNetworkEditor();
+    expect(get(squadDashboardChannelMode)).toBe('settings');
+    expect(get(squadSettingsNetworkFocusNonce)).toBe(1);
+    focusSquadSettingsNetworkEditor();
+    expect(get(squadSettingsNetworkFocusNonce)).toBe(2);
   });
 });

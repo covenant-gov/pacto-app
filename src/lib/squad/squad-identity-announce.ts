@@ -8,6 +8,7 @@ import { persistSquadPatch } from './squad-catalog';
 import { getAnnouncementsChannel } from '../parent-navbar';
 import { squads, type Squad } from '../../stores/squads';
 import { dmError } from '../utils/dm-debug';
+import { isHttpsUrl } from '../utils/profile';
 
 export const SQUAD_IDENTITY_UPDATED_TYPE = 'squad_identity_updated';
 
@@ -47,7 +48,7 @@ export function parseSquadIdentityUpdated(
 function normalizeIconUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  return trimmed.length > 0 && isHttpsUrl(trimmed) ? trimmed : null;
 }
 
 function sameGroupId(a: string, b: string): boolean {
@@ -56,7 +57,7 @@ function sameGroupId(a: string, b: string): boolean {
 
 export async function publishSquadIdentityUpdated(parent: Squad): Promise<boolean> {
   const announcements = getAnnouncementsChannel(parent);
-  const gid = announcements.groupId?.trim() || parent.id.trim();
+  const gid = announcements?.groupId?.trim() || parent.id.trim();
   if (!gid) return false;
   const json = formatSquadIdentityUpdated({
     parent_id: gid,

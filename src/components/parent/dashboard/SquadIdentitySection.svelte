@@ -23,7 +23,12 @@
         iconUrl: url?.trim() || undefined,
       }));
       if (patched) {
-        await publishSquadIdentityUpdated(patched);
+        const published = await publishSquadIdentityUpdated(patched);
+        if (!published) {
+          const msg = $t('squad.pfp.publishError');
+          saveError = msg;
+          showToast(msg);
+        }
       }
     } catch (e) {
       const msg = getInvokeErrorMessage(e, $t('squad.pfp.saveError'));

@@ -57,13 +57,14 @@ import {
   resetInviteAcceptState,
   acceptAnnouncementsInvite,
   acceptChannelInSquadInvite,
+  tryCompletePendingSquadAdmission,
   ACCEPT_WELCOME_FAST_PATH_MS,
 } from './accept-invite';
 import { listPendingMlsWelcomes, acceptMlsWelcome, syncMlsGroupsNow } from '../api/nostr';
 import { publishInviteAcceptedClaims } from '../squad/squad-outbound-invite';
 import { squads, type Squad } from '../../stores/squads';
 import { acceptedSquadInviteIds, acceptedChannelInviteMessageIds } from '../../stores/invite-decisions';
-import { pendingSquadAdmissions, resetPendingSquadAdmissions } from '../../stores/pending-squad-admission';
+import { pendingSquadAdmissions, resetPendingSquadAdmissions, upsertPendingSquadAdmission } from '../../stores/pending-squad-admission';
 import { backendDmMessages } from '../../stores/dm';
 import { squadNavOrder } from '../../stores/navigation';
 import {
@@ -233,7 +234,7 @@ describe('accept-invite channel persistence', () => {
     vi.useFakeTimers();
     vi.mocked(listPendingMlsWelcomes).mockResolvedValue([]);
     const done = acceptAnnouncementsInvite(
-      { groupId: 'pending-squad', name: 'Pending' },
+      { groupId: 'pending-squad', name: 'Pending', iconUrl: 'https://cdn.example/a.jpg' },
       'msg-pending',
       { inviteId: 'inv-9', admitterNpubs: ['npub1admitter'], invitedByNpub: 'npub1admitter' }
     );
@@ -241,8 +242,31 @@ describe('accept-invite channel persistence', () => {
     await done;
     expect(publishInviteAcceptedClaims).toHaveBeenCalled();
     expect(get(pendingSquadAdmissions).some((p) => p.groupId === 'pending-squad')).toBe(true);
+    expect(get(pendingSquadAdmissions).find((p) => p.groupId === 'pending-squad')?.iconUrl).toBe(
+      'https://cdn.example/a.jpg',
+    );
     expect(get(squads).some((s) => s.id === 'pending-squad')).toBe(false);
     vi.useRealTimers();
+  });
+
+  it('tryCompletePendingSquadAdmission keeps invite iconUrl', async () => {
+    upsertPendingSquadAdmission({
+      messageId: 'msg-pending',
+      groupId: 'pending-squad',
+      squadName: 'Pending',
+      iconUrl: 'https://cdn.example/a.jpg',
+      acceptedAt: Date.now(),
+    });
+    vi.mocked(listPendingMlsWelcomes).mockResolvedValue([
+      { ...pendingWelcome, nostr_group_id: 'pending-squad' },
+    ]);
+    await tryCompletePendingSquadAdmission('pending-squad');
+    expect(persistSquadMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'pending-squad',
+        iconUrl: 'https://cdn.example/a.jpg',
+      }),
+    );
   });
 
   it('rejects a consent-first invite without a verifiable invite id', async () => {

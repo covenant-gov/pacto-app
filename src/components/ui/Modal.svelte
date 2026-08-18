@@ -23,7 +23,9 @@
   }
 
   function handleContentKeydown(e: KeyboardEvent) {
-    if (dismissible && e.key === 'Escape') onClose();
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    if (dismissible) onClose();
   }
 
   onMount(() => {

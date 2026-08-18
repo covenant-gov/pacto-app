@@ -116,5 +116,6 @@
 	"squad.pfp.choose": "Choose squad photo",
 	"squad.pfp.change": "Change squad photo",
 	"squad.pfp.cropTitle": "Crop squad photo",
-	"squad.pfp.saveError": "Could not save squad photo."
+	"squad.pfp.saveError": "Could not save squad photo.",
+	"squad.pfp.publishError": "Saved locally, but could not share the squad photo with members."
 }

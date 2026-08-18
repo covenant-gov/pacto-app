@@ -49,6 +49,14 @@ export function focusSquadSettingsRpcEditor() {
   squadSettingsRpcFocusNonce.update((n) => n + 1);
 }
 
+/** Bumped to open Settings → network editor from the Status checklist CTA. */
+export const squadSettingsNetworkFocusNonce = writable(0);
+
+export function focusSquadSettingsNetworkEditor() {
+  squadDashboardChannelMode.set('settings');
+  squadSettingsNetworkFocusNonce.update((n) => n + 1);
+}
+
 /** #my-dashboard segmented mode; unknown persisted values reset to `status`. */
 export type MyDashboardChannelMode = 'status' | 'alerts';
 

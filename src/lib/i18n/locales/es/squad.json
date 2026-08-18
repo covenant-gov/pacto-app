@@ -116,5 +116,6 @@
 	"squad.pfp.choose": "Elegir foto del escuad",
 	"squad.pfp.change": "Cambiar foto del escuad",
 	"squad.pfp.cropTitle": "Recortar foto del escuad",
-	"squad.pfp.saveError": "No se pudo guardar la foto del escuad."
+	"squad.pfp.saveError": "No se pudo guardar la foto del escuad.",
+	"squad.pfp.publishError": "Se guardó en este dispositivo, pero no se pudo compartir la foto del escuad con los miembros."
 }

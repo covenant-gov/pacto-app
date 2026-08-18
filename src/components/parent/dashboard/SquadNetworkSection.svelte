@@ -4,6 +4,7 @@
   import type { SupportedChainId } from '../../../lib/wallet/chains';
   import { getWalletNetworkDisplayName } from '../../../lib/wallet/assets';
   import { listSquadDeployNetworkOptions } from '../../../lib/squad/squad-network';
+  import { squadSettingsNetworkFocusNonce } from '../../../stores/navigation';
 
   let {
     squadNetwork = null,
@@ -18,9 +19,25 @@
   const squadNetworkOptions = listSquadDeployNetworkOptions();
   let editingNetwork = $state(false);
   let squadNetworkChoice = $state<SupportedChainId | ''>('');
+  let lastNetworkFocusNonce = $state(0);
 
   $effect(() => {
     if (!editingNetwork) squadNetworkChoice = squadNetwork ?? '';
+  });
+
+  $effect(() => {
+    const nonce = $squadSettingsNetworkFocusNonce;
+    if (nonce <= lastNetworkFocusNonce) return;
+    lastNetworkFocusNonce = nonce;
+    editingNetwork = true;
+    if (typeof document !== 'undefined') {
+      queueMicrotask(() => {
+        document.getElementById('squad-settings-network')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+    }
   });
 
   const networkLabel = $derived(

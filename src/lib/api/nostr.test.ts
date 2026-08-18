@@ -429,6 +429,18 @@ describe('parseSquadInviteMessage', () => {
     expect(parseSquadInviteMessage(JSON.stringify(raw))?.iconUrl).toBe('https://cdn.example/a.jpg');
     expect(parseSquadInviteMessage(JSON.stringify(payload))?.iconUrl).toBeUndefined();
   });
+
+  it('drops non-https invite iconUrl', () => {
+    expect(
+      parseSquadInviteMessage(JSON.stringify({ ...payload, iconUrl: 'http://cdn.example/a.jpg' }))
+        ?.iconUrl,
+    ).toBeUndefined();
+    expect(
+      parseSquadInviteMessage(
+        JSON.stringify({ ...payload, iconUrl: 'data:image/png;base64,abcd' }),
+      )?.iconUrl,
+    ).toBeUndefined();
+  });
 });
 
 describe('formatSquadInviteMessage', () => {

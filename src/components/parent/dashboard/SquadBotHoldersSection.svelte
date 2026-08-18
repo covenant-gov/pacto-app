@@ -271,7 +271,7 @@
   }
   .bot-key-box {
     padding: 10px 12px;
-    background: var(--bg-elevated);
+    background: var(--bg-page);
     border-radius: 8px;
     border: 1px solid var(--border-subtle);
   }

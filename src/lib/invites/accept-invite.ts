@@ -168,7 +168,7 @@ export async function tryCompletePendingSquadAdmission(groupId: string): Promise
   acceptedSquadInviteGroupIds.add(groupId);
   await acceptMlsWelcome(welcome.id);
   await finalizeSquadAfterAnnouncementsWelcome(
-    { groupId, name: pending.squadName },
+    { groupId, name: pending.squadName, iconUrl: pending.iconUrl },
     pending.messageId
   );
   clearPendingSquadAdmissionByGroupId(groupId);
@@ -328,6 +328,7 @@ export async function acceptAnnouncementsInvite(
     squadName: payload.name,
     inviteId,
     acceptedAt: Date.now(),
+    iconUrl: payload.iconUrl,
   });
 
   showToast(tt('messaging.inviteCard.acceptanceSentToast'));

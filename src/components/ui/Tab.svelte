@@ -9,11 +9,11 @@
   export let hasUnreadDot = false;
 
   $: firstLetter = label.charAt(0).toUpperCase();
-  $: showImage = !!image && !imageBroken;
 
   let buttonEl: HTMLButtonElement;
   let imageBroken = false;
   $: image, (imageBroken = false);
+  $: showImage = !!image && !imageBroken;
   let showTooltip = false;
   let tooltipPos = { x: 0, y: 0 };
 

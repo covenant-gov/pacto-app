@@ -20,6 +20,12 @@ function isHttpUrl(s: string): boolean {
   return t.startsWith('http://') || t.startsWith('https://');
 }
 
+/** True if the string is an https URL — required for peer-supplied squad icons. */
+export function isHttpsUrl(s: string): boolean {
+  if (!s || typeof s !== 'string') return false;
+  return s.trim().toLowerCase().startsWith('https://');
+}
+
 /**
  * Get the display name for a profile.
  * Prefer Vector nickname, then Nostr name/display_name, then short npub.

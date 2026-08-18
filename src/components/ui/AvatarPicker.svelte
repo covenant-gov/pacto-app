@@ -15,6 +15,7 @@
     chooseTitle,
     editAriaLabel,
     cropTitle,
+    imageAlt = '',
     onChange,
     onClear,
     fallback,
@@ -28,6 +29,7 @@
     chooseTitle: string;
     editAriaLabel: string;
     cropTitle: string;
+    imageAlt?: string;
     onChange?: (url: string) => void;
     onClear?: () => void;
     fallback?: Snippet;
@@ -40,7 +42,7 @@
   let imageBroken = $state(false);
 
   const displaySrc = $derived(src?.trim() && !imageBroken ? src.trim() : null);
-  const showClear = $derived(editable && allowClear && !!displaySrc && !disabled);
+  const showClear = $derived(editable && allowClear && !!src?.trim());
 
   $effect(() => {
     src;
@@ -78,7 +80,7 @@
     {#if displaySrc}
       <img
         src={displaySrc}
-        alt=""
+        alt={imageAlt}
         class="avatar-picker-img"
         onerror={() => (imageBroken = true)}
       />

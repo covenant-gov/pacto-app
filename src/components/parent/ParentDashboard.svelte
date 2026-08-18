@@ -83,7 +83,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
     persistTreasuryProposalsSnapshot,
   } from '../../lib/dashboard/governance-snapshot-cache';
   import { persistSquadMemberEvmForParent } from '../../lib/dashboard/squad-member-evm-cache';
-  import { governanceProcessNonceByParentId } from '../../stores/navigation';
+  import { governanceProcessNonceByParentId, focusSquadSettingsNetworkEditor } from '../../stores/navigation';
   import {
     getCachedSettingsChainSnapshot,
     persistSettingsChainSnapshot,
@@ -738,15 +738,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               {crewWearers}
               onOpenDeploy={openLaunchpad}
               onOpenCrewBootstrap={() => selectDashboardView('governance')}
-              onSelectNetwork={() => {
-                selectDashboardView('settings');
-                requestAnimationFrame(() => {
-                  document.getElementById('squad-settings-network')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'nearest',
-                  });
-                });
-              }}
+              onSelectNetwork={focusSquadSettingsNetworkEditor}
             />
           {:catch}
             <p class="dashboard-tab-load-error" role="alert">{$t('governance.tabLoadError.status')}</p>

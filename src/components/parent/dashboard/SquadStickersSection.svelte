@@ -28,6 +28,7 @@
   }
 
   const squadId = $derived(announcementsGroupId?.trim() ?? '');
+  const stickersHeadingId = $derived(`squad-stickers-heading-${squad.id}`);
   const existingPack = $derived($stickerPacks.find((p) => p.squadId === squadId) ?? null);
 
   let packId = $state('');
@@ -188,8 +189,8 @@
   }
 </script>
 
-<section class="stickers-section" aria-label={`${$t('squad.stickers.sectionAria')} — ${squad.name}`}>
-  <h3 id="squad-stickers-heading" class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
+<section class="stickers-section" aria-labelledby={stickersHeadingId}>
+  <h3 id={stickersHeadingId} class="stickers-title">{$t('squad.stickers.sectionTitle')}</h3>
   {#if !squadId}
     <p class="stickers-empty-state">{$t('squad.stickers.emptyState')}</p>
     <p class="muted stickers-empty-hint">{$t('squad.stickers.emptyStateHint')}</p>

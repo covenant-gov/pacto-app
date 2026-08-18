@@ -158,6 +158,7 @@
             chooseTitle={$t('profile.chooseAvatarImage')}
             editAriaLabel={$t('profile.changeAvatar')}
             cropTitle={$t('profile.crop.title')}
+            imageAlt={profile.display_name || profile.name || ''}
             fallbackText={(profile.display_name || profile.name || $t('profile.avatarFallback')).charAt(0)}
             onChange={handleAvatarChange}
           />

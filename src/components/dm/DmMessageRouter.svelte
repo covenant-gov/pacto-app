@@ -151,6 +151,7 @@
     inviterName={inviterDisplay.inviterName}
     inviterAvatarSrc={inviterDisplay.inviterAvatarSrc}
     squadIconUrl={presentation.payload.iconUrl}
+    squadId={presentation.payload.groupId}
     status={inviteStatus}
     accepting={acceptingSquadInviteId === msg.id}
     onAccept={() => onAcceptSquadInvite(msg, presentation.payload.groupId)}

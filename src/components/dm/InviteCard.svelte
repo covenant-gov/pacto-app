@@ -11,6 +11,7 @@
   export let inviterName: string;
   export let inviterAvatarSrc: string | null = null;
   export let squadIconUrl: string | null | undefined = undefined;
+  export let squadId = '';
   export let status: 'pending' | 'joining' | 'accepted' | 'declined';
   export let accepting: boolean;
   export let onAccept: () => void;
@@ -60,7 +61,7 @@
 <div class="invite-card" class:collapsed role="article">
   <div class="invite-card-icon">
     {#if squadIconUrl}
-      <SquadAvatar src={squadIconUrl} name={squadName} seed={squadName} fill />
+      <SquadAvatar src={squadIconUrl} name={squadName} seed={squadId || squadName} fill />
     {:else if inviterAvatarSrc}
       <img src={inviterAvatarSrc} alt="" class="invite-card-icon-img" />
     {:else}

@@ -80,7 +80,7 @@
     openRpcEdit('primary');
     if (typeof document !== 'undefined') {
       queueMicrotask(() => {
-        document.getElementById('squad-status-rpc')?.scrollIntoView({ block: 'nearest' });
+        document.getElementById('squad-settings-rpc')?.scrollIntoView({ block: 'nearest' });
         rpcInputEl?.focus();
       });
     }
@@ -218,7 +218,7 @@
 </script>
 
 <div class="endpoints">
-  <section class="endpoint-card" id="squad-status-rpc" aria-labelledby="squad-chain-rpc-heading">
+  <section class="endpoint-card" id="squad-settings-rpc" aria-labelledby="squad-chain-rpc-heading">
     <div class="card-head">
       <div class="card-titles">
         <h3 id="squad-chain-rpc-heading" class="card-title">{$t('squad.rpc.chainTitle')}</h3>

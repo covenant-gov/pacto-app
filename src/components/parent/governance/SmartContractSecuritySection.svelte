@@ -405,10 +405,6 @@
     border-radius: 10px;
   }
 
-  .smart-contract-security--compact {
-    margin: 0;
-  }
-
   .roles-table-caption {
     margin: 0;
     font-size: 0.8125rem;

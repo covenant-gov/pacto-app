@@ -343,8 +343,6 @@
     overflow: hidden;
     padding: 0;
     background-color: var(--bg-elevated);
-    background-size: cover;
-    background-position: center;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -353,19 +351,6 @@
 
   .commons-personal-avatar.is-active {
     border-color: var(--brand);
-  }
-
-  .commons-personal-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .commons-personal-avatar span {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.92);
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
   }
 
   .commons-personal-block {

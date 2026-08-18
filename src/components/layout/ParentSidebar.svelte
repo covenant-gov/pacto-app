@@ -285,7 +285,7 @@
   }
 
   .parent-subheading {
-    margin: 0;
+    margin: 4px 0 0 0;
     font-size: 0.8125rem;
     color: var(--text-muted);
     overflow: hidden;

@@ -48,7 +48,7 @@
         : '';
   $: squadLabel = broadcast.squadName ?? tFn('commons.card.squadDefault');
   $: title = isSquad ? squadLabel : userLabel;
-  $: coverImage = isSquad ? broadcast.squadIconUrl : getProfileAvatarSrc(userProfile);
+  $: coverImage = getProfileAvatarSrc(userProfile);
   $: coverSeed = isSquad ? broadcast.squadId ?? squadLabel : broadcast.authorNpub;
   $: subtitle = (() => {
     if (isUser && broadcast.audience) {

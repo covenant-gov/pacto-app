@@ -9,7 +9,6 @@
 	"profile.displayNamePlaceholder": "Nombre visible",
 	"profile.aboutLabel": "Acerca de",
 	"profile.bioPlaceholder": "Biografía",
-	"profile.uploading": "Subiendo…",
 	"profile.changeAvatar": "Cambiar avatar",
 	"profile.cancel": "Cancelar",
 	"profile.publishing": "Publicando…",
@@ -26,10 +25,8 @@
 	"profile.noUserLoggedIn": "No hay usuario conectado",
 	"profile.failedToLoadProfile": "No se pudo cargar el perfil",
 	"profile.chooseAvatarImage": "Elige una imagen de avatar",
-	"profile.imagesFilter": "Imágenes",
 	"profile.profilePublished": "Perfil publicado en la red.",
 	"profile.couldNotPublishProfile": "No se pudo publicar el perfil.",
-	"profile.failedUploadAvatar": "No se pudo subir el avatar",
 	"profile.crop.title": "Recortar avatar",
 	"profile.crop.guidance": "Para mejores resultados, usa una imagen cuadrada de al menos 512x512 píxeles."
 }
