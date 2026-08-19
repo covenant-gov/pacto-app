@@ -164,6 +164,8 @@ Which tool (CSS vs `svelte/motion` vs `svelte/transition`): [MOTION.md](./MOTION
 
 God shells (`+page.svelte`, `ChatView.svelte`, `ParentDashboard.svelte`) stay legacy. Carve new work into runes child components.
 
+`/design` and `src/components/shell` compose owned shadcn primitives (`Button`, `Badge`, `Input`, `Avatar`, `Card`, `ContextMenu`) plus Tailwind utilities. Do not add scoped `<style>` blocks there.
+
 ---
 
 ## Taste constraints

@@ -22,6 +22,16 @@
   --danger: #fb7185;
   --success: #34d399;
   --warning: #fbbf24;
+  --notif: #cb4f10;
+  --on-notif: #ffffff;
+  --on-success: #062016;
+  --shell-rail-bg: #0c0516;
+  --user-strip-bg: #150a24;
+  --gov-avatar-bg: #12352c;
+  --role-quartermaster: #c4b4de;
+  --role-community-manager: #e8dcf8;
+  --mention-accent: #f0abfc;
+  --danger-muted-fg: #fecaca;
 
   --code-bg: var(--bg-elevated);
   --code-border: var(--border-subtle);

@@ -72,7 +72,6 @@
   overscroll-behavior: none;
 
   --radius: 0.5rem;
-  --notif: #cb4f10;
   --gov-success: var(--success);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -121,7 +120,17 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-notif: var(--notif);
+  --color-on-notif: var(--on-notif);
   --color-gov-success: var(--gov-success);
+  --color-on-success: var(--on-success);
+  --color-warning: var(--warning);
+  --color-shell-rail: var(--shell-rail-bg);
+  --color-user-strip: var(--user-strip-bg);
+  --color-gov-avatar: var(--gov-avatar-bg);
+  --color-role-quartermaster: var(--role-quartermaster);
+  --color-role-community-manager: var(--role-community-manager);
+  --color-mention-accent: var(--mention-accent);
+  --color-danger-muted: var(--danger-muted-fg);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -166,4 +175,13 @@ body {
   justify-content: flex-start;
   height: 100%;
   min-height: 0;
+}
+
+/* Identity chips keep hue; lightness and glyph track color-scheme. Set --identity (hex/hsl) on the element. */
+.identity-fill {
+  background-color: light-dark(
+    hsl(from var(--identity) h s 48%),
+    hsl(from var(--identity) h s 32%)
+  );
+  color: light-dark(hsl(from var(--identity) h 14% 14%), hsl(from var(--identity) h 8% 96%));
 }

@@ -26,6 +26,16 @@ const REQUIRED_THEME_TOKENS = [
   '--danger',
   '--success',
   '--warning',
+  '--notif',
+  '--on-notif',
+  '--on-success',
+  '--shell-rail-bg',
+  '--user-strip-bg',
+  '--gov-avatar-bg',
+  '--role-quartermaster',
+  '--role-community-manager',
+  '--mention-accent',
+  '--danger-muted-fg',
 ] as const;
 
 const THEME_IDS = THEME_OPTIONS.map((o) => o.value);
@@ -89,6 +99,13 @@ describe('theme token contract', () => {
     }
   });
 
+  it('retargets identity chip fill and glyph from color-scheme', () => {
+    const appCss = read(appCssPath);
+    expect(appCss).toContain('.identity-fill');
+    expect(appCss).toContain('hsl(from var(--identity)');
+    expect(appCss).toContain('light-dark(');
+  });
+
   it('maps shadcn primary to brand and accent to hover surface', () => {
     const appCss = read(appCssPath);
     expect(appCss).toContain('--primary: var(--brand);');
@@ -125,6 +142,12 @@ describe('theme token contract', () => {
       const brand = tokenHex(css, '--brand');
       const onBrand = tokenHex(css, '--on-brand');
       expect(contrastRatio(brand, onBrand)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it(`${id} keeps readable notification and success fills`, () => {
+      const css = read(join(themesDir, `${id}.css`));
+      expect(contrastRatio(tokenHex(css, '--notif'), tokenHex(css, '--on-notif'))).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(tokenHex(css, '--success'), tokenHex(css, '--on-success'))).toBeGreaterThanOrEqual(4.5);
     });
   }
 });
