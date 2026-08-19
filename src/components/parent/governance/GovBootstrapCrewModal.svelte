@@ -6,7 +6,6 @@
   import {
     fundedByFromWriteResult,
     govWriteFundingFallbackHint,
-    type GovWriteFundingMode,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
   import { gateRequiresCaptain, type GovernancePrivilege } from '../../../lib/governance/governance-privilege';
@@ -22,7 +21,6 @@
   export let captainAddresses: string[] = [];
   export let onSubmitted: () => void = () => {};
   export let fundingHint = '';
-  export let fundingMode: GovWriteFundingMode | null = null;
 
   const titleId = 'gov-bootstrap-crew-title';
   const descId = 'gov-bootstrap-crew-desc';

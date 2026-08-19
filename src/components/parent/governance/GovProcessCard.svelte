@@ -239,8 +239,7 @@
     font-weight: 500;
     color: var(--text-secondary);
   }
-  .proposal-card-meta,
-  .proposal-card-target {
+  .proposal-card-meta {
     font-size: 0.8125rem;
     line-height: 1.45;
     margin: 0 0 8px 0;
