@@ -11,4 +11,4 @@ pub mod emit;
 pub mod severity;
 
 pub use emit::{emit, SingleEventNotification};
-pub use severity::{contributes_to_badge, earns_catch_up_entry, resolve_tier, EventKind, Tier};
+pub use severity::{contributes_to_badge, earns_catch_up_entry, EventKind, Tier};

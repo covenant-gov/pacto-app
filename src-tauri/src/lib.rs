@@ -556,6 +556,7 @@ impl ChatState {
     }
 
     /// Total unread count across every chat (feeds the OS dock badge).
+    #[cfg(test)]
     fn count_unread_messages(&self) -> u32 {
         self.unread_counts_by_chat().values().sum()
     }
@@ -2457,6 +2458,7 @@ impl IntakeOutcome {
     /// Whether the failure repeats on every retry, so the wrapper should be recorded
     /// as discarded rather than re-fetched on each launch. Timeouts need the per-id
     /// counter in `note_giftwrap_timeout` — use that path from `handle_event_guarded`.
+    #[cfg(test)]
     fn is_permanent_failure(self) -> bool {
         matches!(self, IntakeOutcome::Panicked)
     }
@@ -2881,7 +2883,7 @@ async fn handle_event(event: Event, is_new: bool) -> bool {
                     if let Ok(Some(deleted_at)) = db::get_dm_deletion_cutoff(handle, &contact).await
                     {
                         if db::dm_created_at_at_or_before_cutoff(
-                            rumor.created_at.as_u64(),
+                            rumor.created_at.as_secs(),
                             deleted_at,
                         ) {
                             let _ = db::record_discarded_giftwrap(handle, &wrapper_event_id).await;

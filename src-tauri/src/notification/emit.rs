@@ -164,9 +164,9 @@ mod tests {
         let handle = test_handle();
         emit(
             &handle,
-            EventKind::Ambient,
+            EventKind::GroupMessage,
             All,
-            false,
+            true,
             false,
             "chat-passive",
             "Chat",

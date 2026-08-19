@@ -129,10 +129,6 @@ pub fn record_admitted_event(
         EventKind::GroupMessage => CatchUpKind::Mention,
         EventKind::DirectMessage => CatchUpKind::DirectMessage,
         EventKind::ActionPrompt => CatchUpKind::ActionPrompt,
-        // `earns_catch_up_entry` is unconditionally false for Ambient, so
-        // this arm is unreachable in practice; kept explicit rather than
-        // `_ =>` so a future EventKind variant fails to compile here.
-        EventKind::Ambient => return Ok(()),
     };
     insert_entry(conn, catch_up_kind, chat_id, source_event_id).map(|_| ())
 }
@@ -676,7 +672,7 @@ mod tests {
         // depending on level, but earns admission either way (KD5) — use
         // resolve_tier to show the tie explicitly rather than asserting the
         // admission predicate in isolation.
-        let tier = crate::notification::resolve_tier(
+        let tier = crate::notification::severity::resolve_tier(
             EventKind::GroupMessage,
             crate::chat::NotificationLevel::Mentions,
             false,
@@ -718,28 +714,28 @@ mod tests {
     fn record_and_passive_tier_events_create_no_entry() {
         let conn = migrated_conn();
 
-        // Ambient is always Passive and never admitted.
-        let tier = crate::notification::resolve_tier(
-            EventKind::Ambient,
+        // A member's own event is always Passive and never admitted.
+        let tier = crate::notification::severity::resolve_tier(
+            EventKind::GroupMessage,
             crate::chat::NotificationLevel::All,
-            false,
+            true,
             false,
         );
         assert_eq!(tier, crate::notification::Tier::Passive);
         record_admitted_event(
             &conn,
-            EventKind::Ambient,
-            false,
+            EventKind::GroupMessage,
+            true,
             false,
             "chat-1",
-            "evt-ambient",
+            "evt-own",
         )
         .unwrap();
-        assert!(get_entry(&conn, "evt-ambient").unwrap().is_none());
+        assert!(get_entry(&conn, "evt-own").unwrap().is_none());
 
         // An ordinary group message without a mention hit resolves Record
         // at Mentions level — counted (elsewhere) but never listed (AE3).
-        let tier = crate::notification::resolve_tier(
+        let tier = crate::notification::severity::resolve_tier(
             EventKind::GroupMessage,
             crate::chat::NotificationLevel::Mentions,
             false,

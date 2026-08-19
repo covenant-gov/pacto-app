@@ -1058,6 +1058,7 @@ pub async fn squad_bot_send_join_response<R: Runtime>(
 }
 
 /// Pure helpers for unit tests (membership / holder list rules).
+#[cfg(test)]
 pub fn can_add_holder(
     members: &[String],
     actor: &str,
@@ -1076,6 +1077,7 @@ pub fn can_add_holder(
     Ok(())
 }
 
+#[cfg(test)]
 pub fn next_epoch_after_rotate(current: i64) -> i64 {
     current.saturating_add(1)
 }

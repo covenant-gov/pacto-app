@@ -1,6 +1,7 @@
 //! Load repo-root `.env` into the process for local Tauri debug runs.
 //! Release builds expect operator secrets via the real process environment.
 
+#[cfg(debug_assertions)]
 use std::path::{Path, PathBuf};
 
 /// Best-effort load of root `.env` (debug only). Does not override existing vars.
@@ -32,6 +33,7 @@ pub fn load_operator_env() {
     }
 }
 
+#[cfg(debug_assertions)]
 fn candidate_env_paths() -> Vec<PathBuf> {
     let mut paths = Vec::with_capacity(3);
     paths.push(PathBuf::from(".env"));
