@@ -495,10 +495,6 @@ mod tests {
         "PACTO_NAVE_PIRATA_REGISTRY_LOCAL",
         "PACTO_HATS",
         "PACTO_HATS_LOCAL",
-        "PACTO_ROLE_HAT_CLONES_FACTORY",
-        "PACTO_ROLE_HAT_CLONES_FACTORY_LOCAL",
-        "PACTO_ROLE_HAT_UPGRADER",
-        "PACTO_ROLE_HAT_UPGRADER_LOCAL",
     ];
 
     /// Sets every required `pactoGov` address override so `pacto_gov_deploy_addresses("local")`

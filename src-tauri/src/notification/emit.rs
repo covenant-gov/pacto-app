@@ -160,38 +160,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn passive_tier_never_reaches_the_coalescer() {
-        let handle = test_handle();
-        emit(
-            &handle,
-            EventKind::GroupMessage,
-            All,
-            true,
-            false,
-            "chat-passive",
-            "Chat",
-            single("hi"),
-        )
-        .await;
-
-        assert!(!coalesce::has_window("chat-passive").await);
-    }
-
-    #[tokio::test]
     async fn own_events_never_interrupt_regardless_of_level() {
         let handle = test_handle();
-        for level in [Nothing, Mentions, All] {
-            emit(
-                &handle,
-                EventKind::DirectMessage,
-                level,
-                true,
-                false,
-                "chat-own",
-                "Chat",
-                single("hi"),
-            )
-            .await;
+        for kind in [EventKind::GroupMessage, EventKind::DirectMessage, EventKind::ActionPrompt] {
+            for level in [Nothing, Mentions, All] {
+                emit(
+                    &handle,
+                    kind,
+                    level,
+                    true,
+                    false,
+                    "chat-own",
+                    "Chat",
+                    single("hi"),
+                )
+                .await;
+            }
         }
 
         assert!(!coalesce::has_window("chat-own").await);

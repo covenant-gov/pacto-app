@@ -75,9 +75,8 @@ fn now_epoch_seconds() -> i64 {
         .unwrap_or(0)
 }
 
-/// Mirrors `db::log_sensitive_export_on_conn`'s id shape: kind-prefixed,
-/// time-salted, randomized — unique without a dependency this crate
-/// doesn't otherwise pull in.
+/// Kind-prefixed, time-salted, randomized id — unique without a dependency
+/// this crate doesn't otherwise pull in.
 fn generate_id(kind: CatchUpKind) -> String {
     format!(
         "{}-{}-{:x}",

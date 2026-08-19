@@ -555,7 +555,9 @@ impl ChatState {
         counts
     }
 
-    /// Total unread count across every chat (feeds the OS dock badge).
+    /// Total unread count across every chat. Kept for test assertions;
+    /// the real dock-badge total is folded independently in
+    /// `update_unread_counter` rather than calling this.
     #[cfg(test)]
     fn count_unread_messages(&self) -> u32 {
         self.unread_counts_by_chat().values().sum()

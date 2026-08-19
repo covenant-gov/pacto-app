@@ -496,6 +496,16 @@ mod tests {
     }
 
     #[test]
+    fn write_salt_file_writes_salt_length_bytes() {
+        let app = tauri::test::mock_app();
+        let npub = "npub1saltwrite";
+        let salt = generate_salt();
+        write_salt_file(app.handle(), npub, &salt).unwrap();
+        let path = salt_file_path(app.handle(), npub).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), salt.to_vec());
+    }
+
+    #[test]
     fn chacha_decrypt_rejects_malformed_hex() {
         let key = derive_legacy_key("password");
         let decrypted = decrypt_with_key("not-hex", &key);
