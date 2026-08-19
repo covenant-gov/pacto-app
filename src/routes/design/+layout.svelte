@@ -7,6 +7,8 @@
 	import AppShell from '../../components/shell/AppShell.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { parseShellPreviewState, type AppShellLabels, type ShellPreviewState } from '$lib/shell';
 	import { setTheme, theme, type Theme } from '../../stores/theme';
 	import DesignToolbar from './DesignToolbar.svelte';
@@ -82,7 +84,7 @@
 	<title>{$t('design.pageTitle')}</title>
 </svelte:head>
 
-<div class="design-page h-full min-h-0">
+<div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
 	<DesignToolbar
 		theme={$theme}
 		{previewState}
@@ -90,8 +92,8 @@
 		onPreviewStateChange={selectPreviewState}
 	/>
 
-	<div class="shell-host min-h-0">
-		<AppShell labels={appShellLabels}>
+	<div class="min-h-0 flex-1 overflow-hidden">
+		<AppShell labels={appShellLabels} bind:asideCollapsed={design.asideCollapsed}>
 			{#snippet rail()}
 				<DesignRail
 					squads={design.squadList}
@@ -143,14 +145,16 @@
 				<Dialog.Title>{$t('design.dialog.addSquadTitle')}</Dialog.Title>
 				<Dialog.Description>{$t('design.dialog.addSquadDescription')}</Dialog.Description>
 			</Dialog.Header>
-			<input
+			<Label class="sr-only" for="design-squad-name">{$t('design.dialog.squadName')}</Label>
+			<Input
+				id="design-squad-name"
 				type="text"
 				bind:value={design.newSquadName}
 				placeholder={$t('design.dialog.squadNamePlaceholder')}
 				aria-label={$t('design.dialog.squadName')}
 				autocomplete="off"
 				spellcheck="false"
-				class="dialog-input mt-2"
+				class="mt-2"
 			/>
 			<Dialog.Footer class="mt-4">
 				<Button type="button" variant="outline" onclick={() => (design.addSquadOpen = false)}>
@@ -171,14 +175,16 @@
 				<Dialog.Title>{$t('design.dialog.addChannelTitle')}</Dialog.Title>
 				<Dialog.Description>{$t('design.dialog.addChannelDescription')}</Dialog.Description>
 			</Dialog.Header>
-			<input
+			<Label class="sr-only" for="design-channel-name">{$t('design.dialog.channelName')}</Label>
+			<Input
+				id="design-channel-name"
 				type="text"
 				bind:value={design.newChannelName}
 				placeholder={$t('design.dialog.channelNamePlaceholder')}
 				aria-label={$t('design.dialog.channelName')}
 				autocomplete="off"
 				spellcheck="false"
-				class="dialog-input mt-2"
+				class="mt-2"
 			/>
 			<Dialog.Footer class="mt-4">
 				<Button type="button" variant="outline" onclick={() => (design.addChannelOpen = false)}>
@@ -191,36 +197,3 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
-
-<style>
-	.design-page {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		overflow: hidden;
-		background: var(--bg-page);
-	}
-
-	.shell-host {
-		flex: 1;
-		overflow: hidden;
-	}
-
-	.dialog-input {
-		width: 100%;
-		height: 36px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 6px;
-		background: var(--bg-panel);
-		color: var(--text-primary);
-		font-family: var(--font-ui);
-		font-size: 0.875rem;
-		padding: 0 10px;
-	}
-
-	.dialog-input:focus-visible {
-		border-color: var(--brand);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent);
-		outline: none;
-	}
-</style>

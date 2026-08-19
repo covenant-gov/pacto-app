@@ -55,16 +55,18 @@
 		channelCategory={design.activeChannel.category}
 		announcementOnly={design.activeChannel.id === 'announcements'}
 		messages={visibleMessages}
+		membersCollapsed={design.asideCollapsed}
 		onSend={(text) => design.sendMessage(text, $t('design.chat.justNow'))}
+		onToggleMembers={() => (design.asideCollapsed = !design.asideCollapsed)}
 	/>
 {:else}
 	<div
-		class="flex h-full flex-col items-center justify-center gap-2 bg-[var(--bg-page)] px-6 text-center"
+		class="flex h-full flex-col items-center justify-center gap-2 overflow-hidden rounded-tl-lg bg-background px-6 text-center"
 	>
-		<p class="text-[15px] font-medium text-balance text-[var(--text-primary)]">
+		<p class="text-[15px] font-medium text-balance text-foreground">
 			{$t('design.chat.pickTitle')}
 		</p>
-		<p class="max-w-sm text-sm text-pretty text-[var(--text-muted)]">
+		<p class="max-w-sm text-sm text-pretty text-muted-foreground">
 			{$t('design.chat.pickBody')}
 		</p>
 	</div>

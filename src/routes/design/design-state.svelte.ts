@@ -42,6 +42,7 @@ class DesignSession {
 	addChannelOpen = $state(false);
 	newSquadName = $state('');
 	newChannelName = $state('');
+	asideCollapsed = $state(false);
 
 	get activeSquad() {
 		return this.squadList.find((squad) => squad.id === this.activeSquadId) ?? this.squadList[0];

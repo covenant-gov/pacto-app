@@ -3,6 +3,7 @@
 	import PanelsTopLeft from '@lucide/svelte/icons/panels-top-left';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { t } from 'svelte-i18n';
 	import { THEME_OPTIONS, type Theme } from '../../stores/theme';
 	import type { ShellPreviewState } from '$lib/shell';
@@ -30,29 +31,36 @@
 	);
 </script>
 
-<header class="design-toolbar">
-	<div class="toolbar-brand">
+<header
+	class="flex h-9 shrink-0 items-center justify-between gap-4 overflow-x-auto border-b border-border bg-background/88 px-3 text-secondary-foreground [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+>
+	<div class="flex shrink-0 items-center gap-2">
 		<PanelsTopLeft class="size-4" aria-hidden="true" />
-		<strong>{$t('design.toolbar.title')}</strong>
-		<span>{$t('design.toolbar.devOnly')}</span>
+		<strong class="text-[0.6875rem] font-semibold tracking-[0.04em] text-muted-foreground uppercase whitespace-nowrap">
+			{$t('design.toolbar.title')}
+		</strong>
+		<span class="max-[560px]:sr-only font-mono text-[0.5625rem] font-semibold tracking-[0.08em] text-muted-foreground uppercase opacity-70">
+			{$t('design.toolbar.devOnly')}
+		</span>
 	</div>
 
-	<div class="toolbar-controls">
-		<div class="toolbar-field">
+	<div class="flex shrink-0 items-center gap-2.5">
+		<div class="flex shrink-0 items-center gap-1.5 text-[0.625rem] font-semibold tracking-[0.04em] text-muted-foreground uppercase whitespace-nowrap">
 			<Palette class="size-3.5" aria-hidden="true" />
-			<span>{$t('design.toolbar.theme')}</span>
+			<span class="max-[560px]:sr-only">{$t('design.toolbar.theme')}</span>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<button
+						<Button
 							{...props}
-							type="button"
-							class="toolbar-select"
+							variant="secondary"
+							size="xs"
+							class="h-[26px] min-w-[104px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
 							aria-label={$t('design.toolbar.theme')}
 						>
-							<span class="toolbar-select__value">{themeLabel}</span>
+							<span class="truncate">{themeLabel}</span>
 							<ChevronDown class="size-3 shrink-0 opacity-70" aria-hidden="true" />
-						</button>
+						</Button>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="min-w-36">
@@ -69,20 +77,21 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		</div>
-		<div class="toolbar-field">
-			<span>{$t('design.toolbar.state')}</span>
+		<div class="flex shrink-0 items-center gap-1.5 text-[0.625rem] font-semibold tracking-[0.04em] text-muted-foreground uppercase whitespace-nowrap">
+			<span class="max-[560px]:sr-only">{$t('design.toolbar.state')}</span>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
 					{#snippet child({ props })}
-						<button
+						<Button
 							{...props}
-							type="button"
-							class="toolbar-select"
+							variant="secondary"
+							size="xs"
+							class="h-[26px] min-w-[104px] justify-between px-2 text-xs font-medium normal-case tracking-normal"
 							aria-label={$t('design.toolbar.state')}
 						>
-							<span class="toolbar-select__value">{$t(`design.state.${previewState}`)}</span>
+							<span class="truncate">{$t(`design.state.${previewState}`)}</span>
 							<ChevronDown class="size-3 shrink-0 opacity-70" aria-hidden="true" />
-						</button>
+						</Button>
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="min-w-36">
@@ -103,116 +112,3 @@
 		</div>
 	</div>
 </header>
-
-<style>
-	.design-toolbar {
-		display: flex;
-		height: 36px;
-		flex: none;
-		align-items: center;
-		justify-content: space-between;
-		gap: 16px;
-		overflow-x: auto;
-		border-bottom: 1px solid var(--border-subtle);
-		padding: 0 12px;
-		background: color-mix(in srgb, var(--bg-page) 88%, var(--bg-elevated));
-		color: var(--text-secondary);
-		scrollbar-width: none;
-	}
-
-	.design-toolbar::-webkit-scrollbar {
-		display: none;
-	}
-
-	.toolbar-brand,
-	.toolbar-controls,
-	.toolbar-field {
-		display: flex;
-		flex: none;
-		align-items: center;
-	}
-
-	.toolbar-brand {
-		gap: 8px;
-	}
-
-	.toolbar-brand strong {
-		font-size: 0.6875rem;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		white-space: nowrap;
-		color: var(--text-muted);
-	}
-
-	.toolbar-brand span {
-		color: var(--text-muted);
-		font-family: var(--font-mono-family);
-		font-size: 0.5625rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		opacity: 0.7;
-	}
-
-	.toolbar-controls {
-		gap: 10px;
-	}
-
-	.toolbar-field {
-		gap: 6px;
-		color: var(--text-muted);
-		font-size: 0.625rem;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		white-space: nowrap;
-	}
-
-	.toolbar-select {
-		-webkit-appearance: none;
-		appearance: none;
-		display: inline-flex;
-		height: 26px;
-		min-width: 104px;
-		align-items: center;
-		justify-content: space-between;
-		gap: 8px;
-		border: 0;
-		outline: none;
-		border-radius: 5px;
-		padding: 0 8px;
-		background-color: var(--bg-elevated);
-		background-image: none;
-		box-shadow: none;
-		color: var(--text-primary);
-		font-family: var(--font-ui);
-		font-size: 0.75rem;
-		font-weight: 500;
-		letter-spacing: 0;
-		text-transform: none;
-		cursor: pointer;
-	}
-
-	.toolbar-select__value {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.toolbar-select:focus-visible {
-		box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 55%, transparent);
-	}
-
-	@media (max-width: 560px) {
-		.toolbar-brand span,
-		.toolbar-field > span {
-			position: absolute;
-			width: 1px;
-			height: 1px;
-			overflow: hidden;
-			clip: rect(0, 0, 0, 0);
-			white-space: nowrap;
-		}
-	}
-</style>
