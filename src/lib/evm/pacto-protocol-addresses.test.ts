@@ -8,18 +8,19 @@ describe('pacto-protocol-addresses', () => {
   it('loads Sepolia sponsor and gov factories from the book', () => {
     const sepolia = pactoProtocolNetworkBook('sepolia');
     expect(sepolia?.chainId).toBe(11155111);
-    expect(sepolia?.squadSponsor?.factory).toBe('0x12883924e71Df814ff1E198E5C16CEFd251BC308');
-    expect(sepolia?.squadSponsor?.paymaster).toBe('0x065dA13369604291E628DD8022E0e504dc62Da12');
+    expect(sepolia?.squadSponsor?.factory).toBe('0xb758DB170C6D8da5AEDe32764d099AB1e496873B');
+    expect(sepolia?.squadSponsor?.paymaster).toBe('0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A');
     expect(sepolia?.erc4337?.accountImplementation).toBe(
       '0x33F920B5aF6c527f63BD6B24d58Dccd698b2DC60',
     );
     expect(sepolia?.squadSponsor?.navePirataRegistry).toBe(
-      '0x50F7759F65b1a25B1a827D6c97A5dD61f0036278',
+      '0xf6747bE3425139FCe92B67fA482331D7435bd483',
     );
-    expect(sepolia?.pactoGov?.navePirataFactory).toBe('0x6E835c103F4719Fd84EAB57d256132007310B230');
+    expect(sepolia?.pactoGov?.navePirataFactory).toBe('0xba54955cF9eab7F546c3a1c1fCE2584996626ef0');
     expect(sepolia?.pactoGov?.navePirataRegistry).toBe(
-      '0x50F7759F65b1a25B1a827D6c97A5dD61f0036278',
+      '0xf6747bE3425139FCe92B67fA482331D7435bd483',
     );
+    expect(sepolia?.pactoGov?.warGameRegistry).toBe('0xE415A9290964ce40f58c6f1B15183cAE565471e7');
   });
 
   it('exposes the book version', () => {

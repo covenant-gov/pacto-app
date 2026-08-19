@@ -57,6 +57,7 @@ struct SquadSponsorBook {
 struct PactoGovBook {
     nave_pirata_factory: String,
     nave_pirata_registry: Option<String>,
+    war_game_registry: Option<String>,
     master_quartermaster: String,
     master_mutiny: String,
     master_treasury_authority: String,
@@ -136,6 +137,7 @@ pub struct PactoGovDeployAddresses {
     pub master_squad_admin_impl: Address,
     pub master_squad_admin_ext_impl: Address,
     pub nave_pirata_registry: Option<Address>,
+    pub war_game_registry: Option<Address>,
     pub hats: Option<Address>,
     pub role_hat_clones_factory: Option<Address>,
     pub role_hat_upgrader: Option<Address>,
@@ -184,6 +186,11 @@ pub fn pacto_gov_deploy_addresses(net_key: &str) -> Result<PactoGovDeployAddress
             "PACTO_NAVE_PIRATA_REGISTRY",
             net_key,
             book.and_then(|b| b.nave_pirata_registry.as_deref()),
+        ),
+        war_game_registry: resolve_optional(
+            "PACTO_WAR_GAME_REGISTRY",
+            net_key,
+            book.and_then(|b| b.war_game_registry.as_deref()),
         ),
         hats: resolve_optional("PACTO_HATS", net_key, book.and_then(|b| b.hats.as_deref())),
         role_hat_clones_factory: resolve_optional(
@@ -386,25 +393,29 @@ mod tests {
         let sp = squad_sponsor_deploy_addresses("sepolia").expect("sponsor book");
         assert_eq!(
             sp.squad_sponsor_factory,
-            address!("0x12883924e71Df814ff1E198E5C16CEFd251BC308")
+            address!("0xb758DB170C6D8da5AEDe32764d099AB1e496873B")
         );
         assert_eq!(
             sp.pacto_sponsor_paymaster,
-            address!("0x065dA13369604291E628DD8022E0e504dc62Da12")
+            address!("0x78197483Ac3180361cDb1F59Dd702Ea8ca34AC3A")
         );
 
         let gov = pacto_gov_deploy_addresses("sepolia").expect("gov book");
         assert_eq!(
             gov.nave_pirata_factory,
-            address!("0x6E835c103F4719Fd84EAB57d256132007310B230")
+            address!("0xba54955cF9eab7F546c3a1c1fCE2584996626ef0")
         );
         assert_eq!(
             gov.nave_pirata_registry,
-            Some(address!("0x50F7759F65b1a25B1a827D6c97A5dD61f0036278"))
+            Some(address!("0xf6747bE3425139FCe92B67fA482331D7435bd483"))
+        );
+        assert_eq!(
+            gov.war_game_registry,
+            Some(address!("0xE415A9290964ce40f58c6f1B15183cAE565471e7"))
         );
         assert_eq!(
             gov.master_quartermaster,
-            address!("0x44bBAD7b0e2df484Daf0c5288B0FaDB75Feb5284")
+            address!("0xFDA42686358503Cf89Bc94f6BD108CB4Af274d74")
         );
     }
 
