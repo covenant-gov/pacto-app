@@ -6,6 +6,8 @@
 	import Megaphone from '@lucide/svelte/icons/megaphone';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import type { Snippet } from 'svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import type {
 		ChatFrameLabels,
 		ShellChannelKind,
@@ -36,9 +38,12 @@
 	}: Props = $props();
 </script>
 
-<section class="chat-frame h-full min-h-0" aria-label={labels.region}>
-	<header class="chat-header">
-		<div class="channel-mark" aria-hidden="true">
+<section class="flex h-full min-h-0 flex-col overflow-hidden bg-muted" aria-label={labels.region}>
+	<header class="flex h-12 shrink-0 items-center gap-2 bg-muted px-3.5">
+		<div
+			class="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-muted text-secondary-foreground"
+			aria-hidden="true"
+		>
 			{#if kind === 'private'}
 				<Lock class="size-4" />
 			{:else if kind === 'announcement'}
@@ -48,47 +53,47 @@
 			{/if}
 		</div>
 		<div class="min-w-0 flex-1">
-			<h1 title={title}>{title}</h1>
+			<h1 class="truncate text-[0.9375rem] font-semibold tracking-[-0.01em] text-foreground" {title}>{title}</h1>
 			{#if subtitle}
-				<p title={subtitle}>{subtitle}</p>
+				<p class="truncate text-[0.6875rem] leading-tight text-muted-foreground" title={subtitle}>{subtitle}</p>
 			{/if}
 		</div>
 		{#if actions}
-			<div class="chat-actions">{@render actions()}</div>
+			<div class="flex shrink-0 items-center gap-1">{@render actions()}</div>
 		{/if}
 	</header>
 
-	<div class="chat-body min-h-0">
+	<div class="min-h-0 flex-1 overflow-hidden rounded-tl-lg bg-background">
 		{#if state === 'loading'}
-			<div class="loading-state" role="status" aria-busy="true">
+			<div class="h-full overflow-hidden px-[18px] py-[22px]" role="status" aria-busy="true">
 				<span class="sr-only">{labels.loading}</span>
 				{#each Array(7) as _, index (index)}
-					<div class="message-skeleton" aria-hidden="true">
-						<div class="skeleton-avatar"></div>
-						<div class="skeleton-lines">
-							<div class="skeleton-line skeleton-name" style={`--skeleton-index: ${index}`}></div>
-							<div class="skeleton-line"></div>
-							<div class="skeleton-line skeleton-short"></div>
+					<div class="mb-5 flex gap-2.5" aria-hidden="true">
+						<Skeleton class="size-[34px] shrink-0 rounded-full" />
+						<div class="w-[min(38rem,78%)]">
+							<Skeleton class="my-1.5 h-2.5 rounded" style={`width: calc(28% + ${index} * 2%)`} />
+							<Skeleton class="my-1.5 h-2 w-full rounded" />
+							<Skeleton class="my-1.5 h-2 w-[62%] rounded" />
 						</div>
 					</div>
 				{/each}
 			</div>
 		{:else if state === 'empty'}
-			<div class="content-state">
+			<div class="grid h-full place-content-center justify-items-center px-6 text-center text-muted-foreground">
 				<Inbox class="size-7" aria-hidden="true" />
-				<h2>{labels.emptyTitle}</h2>
-				<p>{labels.emptyBody}</p>
+				<h2 class="mt-2.5 text-base text-foreground">{labels.emptyTitle}</h2>
+				<p class="mt-1 max-w-[30rem] text-[0.8125rem] leading-normal">{labels.emptyBody}</p>
 			</div>
 		{:else if state === 'error'}
-			<div class="content-state" role="alert">
-				<CircleAlert class="size-7 text-[var(--danger)]" aria-hidden="true" />
-				<h2>{labels.errorTitle}</h2>
-				<p>{labels.errorBody}</p>
+			<div class="grid h-full place-content-center justify-items-center px-6 text-center text-muted-foreground" role="alert">
+				<CircleAlert class="size-7 text-destructive" aria-hidden="true" />
+				<h2 class="mt-2.5 text-base text-foreground">{labels.errorTitle}</h2>
+				<p class="mt-1 max-w-[30rem] text-[0.8125rem] leading-normal">{labels.errorBody}</p>
 				{#if onRetry}
-					<button type="button" class="retry-button" onclick={onRetry}>
+					<Button variant="outline" size="sm" class="mt-3.5" onclick={onRetry}>
 						<RotateCcw class="size-3.5" aria-hidden="true" />
 						{labels.retry}
-					</button>
+					</Button>
 				{/if}
 			</div>
 		{:else}
@@ -96,178 +101,3 @@
 		{/if}
 	</div>
 </section>
-
-<style>
-	.chat-frame {
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		background: var(--bg-page);
-	}
-
-	.chat-header {
-		display: flex;
-		height: 48px;
-		flex: none;
-		align-items: center;
-		gap: 9px;
-		border-bottom: 1px solid var(--border-subtle);
-		padding: 0 14px;
-		background: color-mix(in srgb, var(--bg-page) 94%, var(--bg-elevated));
-	}
-
-	.channel-mark {
-		display: grid;
-		width: 28px;
-		height: 28px;
-		flex: none;
-		place-items: center;
-		border: 1px solid var(--border-subtle);
-		border-radius: 7px;
-		background: var(--bg-panel);
-		color: var(--text-secondary);
-	}
-
-	.chat-header h1 {
-		overflow: hidden;
-		color: var(--text-primary);
-		font-size: 0.9375rem;
-		font-weight: 650;
-		letter-spacing: -0.01em;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.chat-header p {
-		overflow: hidden;
-		color: var(--text-muted);
-		font-size: 0.6875rem;
-		line-height: 1.2;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.chat-actions {
-		display: flex;
-		flex: none;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.chat-body {
-		flex: 1;
-		overflow: hidden;
-	}
-
-	.loading-state {
-		height: 100%;
-		overflow: hidden;
-		padding: 22px 18px;
-	}
-
-	.message-skeleton {
-		display: flex;
-		gap: 10px;
-		margin-bottom: 20px;
-	}
-
-	.skeleton-avatar,
-	.skeleton-line {
-		background: var(--bg-hover);
-		animation: skeleton-pulse 1.5s ease-in-out infinite alternate;
-	}
-
-	.skeleton-avatar {
-		width: 34px;
-		height: 34px;
-		flex: none;
-		border-radius: 50%;
-	}
-
-	.skeleton-lines {
-		width: min(38rem, 78%);
-	}
-
-	.skeleton-line {
-		width: 100%;
-		height: 8px;
-		margin: 7px 0;
-		border-radius: 4px;
-	}
-
-	.skeleton-name {
-		width: calc(28% + var(--skeleton-index) * 2%);
-		height: 10px;
-	}
-
-	.skeleton-short {
-		width: 62%;
-	}
-
-	.content-state {
-		display: grid;
-		height: 100%;
-		place-content: center;
-		justify-items: center;
-		padding: 24px;
-		color: var(--text-muted);
-		text-align: center;
-	}
-
-	.content-state h2 {
-		margin-top: 10px;
-		color: var(--text-primary);
-		font-size: 1rem;
-	}
-
-	.content-state p {
-		max-width: 30rem;
-		margin-top: 5px;
-		font-size: 0.8125rem;
-		line-height: 1.5;
-	}
-
-	.retry-button {
-		display: inline-flex;
-		min-height: 32px;
-		align-items: center;
-		gap: 6px;
-		margin-top: 14px;
-		border: 1px solid var(--border-subtle);
-		border-radius: 7px;
-		padding: 0 10px;
-		background: var(--bg-elevated);
-		color: var(--text-primary);
-		font-size: 0.75rem;
-		font-weight: 600;
-		touch-action: manipulation;
-	}
-
-	.retry-button:focus-visible {
-		border-color: var(--brand);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent);
-		outline: none;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.retry-button:hover {
-			background: var(--bg-hover);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.skeleton-avatar,
-		.skeleton-line {
-			animation: none;
-		}
-	}
-
-	@keyframes skeleton-pulse {
-		from {
-			opacity: 0.45;
-		}
-		to {
-			opacity: 0.9;
-		}
-	}
-</style>

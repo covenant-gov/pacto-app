@@ -25,11 +25,11 @@ Reusable shell breakpoints (`matchMedia`):
 
 | Mode | Query | Grid | Drawers |
 |------|-------|------|---------|
-| **Wide** | default / above 1180px | Rail + sidebar + main + aside (if present) | None |
+| **Wide** | default / above 1180px | Rail + sidebar + main + aside (if present) | None. Wide aside can collapse; main grows. Reopen from the main header control. |
 | **Medium** | `max-width: 1180px` | Rail + sidebar + main | Aside (if present) as a right drawer |
 | **Narrow** | `max-width: 720px` | Compact rail + main | Channel sidebar as a left drawer; aside as a right drawer |
 
-The rail stays in the grid at every width. Only channel and member regions move into drawers.
+The rail stays in the grid at every width. Only channel and member regions move into drawers. Identity row is a muted shelf (`bg-muted` / `--bg-panel`); thread is page fill (`bg-background` / `--bg-page`); no hairline under the 48px bars. The thread’s top-left uses `rounded-tl-lg` so the muted panel wraps the canvas at `--radius`.
 
 Drawers:
 

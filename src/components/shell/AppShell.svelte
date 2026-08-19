@@ -1,18 +1,22 @@
 <script lang="ts">
 	import Menu from '@lucide/svelte/icons/menu';
 	import Users from '@lucide/svelte/icons/users';
-	import type { AppShellLabels, AppShellRegions } from '$lib/shell';
+	import {
+		SHELL_MEDIUM_QUERY,
+		SHELL_NARROW_QUERY,
+		type AppShellLabels,
+		type AppShellRegions,
+	} from '$lib/shell';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { cn } from '$lib/utils.js';
 	import ShellDrawer from './ShellDrawer.svelte';
 
 	type ShellViewport = 'narrow' | 'medium' | 'wide';
 
-	const NARROW_QUERY = '(max-width: 720px)';
-	const MEDIUM_QUERY = '(max-width: 1180px)';
-
 	function viewportFromWindow(): ShellViewport {
 		if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'wide';
-		if (window.matchMedia(NARROW_QUERY).matches) return 'narrow';
-		if (window.matchMedia(MEDIUM_QUERY).matches) return 'medium';
+		if (window.matchMedia(SHELL_NARROW_QUERY).matches) return 'narrow';
+		if (window.matchMedia(SHELL_MEDIUM_QUERY).matches) return 'medium';
 		return 'wide';
 	}
 
@@ -24,10 +28,12 @@
 		labels,
 		sidebarOpen = $bindable(false),
 		asideOpen = $bindable(false),
+		asideCollapsed = $bindable(false),
 	}: AppShellRegions & {
 		labels: AppShellLabels;
 		sidebarOpen?: boolean;
 		asideOpen?: boolean;
+		asideCollapsed?: boolean;
 	} = $props();
 
 	let viewport = $state<ShellViewport>(viewportFromWindow());
@@ -35,7 +41,7 @@
 	let asideTrigger: HTMLButtonElement | null = $state(null);
 
 	const sidebarInGrid = $derived(viewport !== 'narrow');
-	const asideInGrid = $derived(Boolean(aside) && viewport === 'wide');
+	const asideInGrid = $derived(Boolean(aside) && viewport === 'wide' && !asideCollapsed);
 	const showSidebarDrawer = $derived(viewport === 'narrow');
 	const showAsideDrawer = $derived(Boolean(aside) && viewport !== 'wide');
 	const showDrawerBar = $derived(showSidebarDrawer || showAsideDrawer);
@@ -44,8 +50,8 @@
 	$effect.pre(() => {
 		if (typeof window.matchMedia !== 'function') return;
 
-		const narrowMq = window.matchMedia(NARROW_QUERY);
-		const mediumMq = window.matchMedia(MEDIUM_QUERY);
+		const narrowMq = window.matchMedia(SHELL_NARROW_QUERY);
+		const mediumMq = window.matchMedia(SHELL_MEDIUM_QUERY);
 
 		function viewportFromQueries(): ShellViewport {
 			if (narrowMq.matches) return 'narrow';
@@ -73,13 +79,19 @@
 </script>
 
 <div
-	class:has-aside={aside}
-	class="shell-grid h-full min-h-0 w-full overflow-hidden"
+	class={cn(
+		'grid h-full min-h-0 w-full overflow-hidden bg-background text-foreground',
+		viewport === 'narrow'
+			? "grid-cols-[64px_minmax(0,1fr)] [grid-template-areas:'rail_main']"
+			: asideInGrid
+				? "grid-cols-[72px_244px_minmax(0,1fr)_220px] [grid-template-areas:'rail_sidebar_main_aside']"
+				: "grid-cols-[72px_244px_minmax(0,1fr)] [grid-template-areas:'rail_sidebar_main']",
+	)}
 	data-shell-background
 	data-viewport={viewport}
 >
 	<div
-		class="shell-rail min-h-0"
+		class="min-h-0 bg-shell-rail [grid-area:rail]"
 		data-shell-region="rail"
 		inert={contentInert || undefined}
 		aria-hidden={contentInert || undefined}
@@ -89,7 +101,7 @@
 
 	{#if sidebarInGrid}
 		<div
-			class="shell-sidebar min-h-0"
+			class="min-h-0 [grid-area:sidebar]"
 			data-shell-region="sidebar"
 			inert={contentInert || undefined}
 			aria-hidden={contentInert || undefined}
@@ -98,39 +110,48 @@
 		</div>
 	{/if}
 
-	<main class="shell-main min-h-0 min-w-0" aria-label={labels.main} data-shell-region="main">
+	<main
+		class="flex min-h-0 min-w-0 flex-col overflow-hidden bg-muted [grid-area:main]"
+		aria-label={labels.main}
+		data-shell-region="main"
+	>
 		{#if showDrawerBar}
-			<div class="shell-drawer-bar">
+			<div
+				class={cn(
+					'flex h-10 shrink-0 items-center justify-end gap-1 border-b border-border bg-muted px-2',
+					viewport === 'narrow' && 'justify-between',
+				)}
+			>
 				{#if showSidebarDrawer}
-					<button
-						bind:this={sidebarTrigger}
-						type="button"
-						class="shell-drawer-trigger"
+					<Button
+						bind:ref={sidebarTrigger}
+						variant="ghost"
+						size="icon"
 						aria-label={labels.openSidebar}
 						aria-haspopup="dialog"
 						aria-expanded={sidebarOpen}
 						onclick={() => (sidebarOpen = true)}
 					>
 						<Menu class="size-4" aria-hidden="true" />
-					</button>
+					</Button>
 				{/if}
 				{#if showAsideDrawer}
-					<button
-						bind:this={asideTrigger}
-						type="button"
-						class="shell-drawer-trigger"
+					<Button
+						bind:ref={asideTrigger}
+						variant="ghost"
+						size="icon"
 						aria-label={labels.openAside}
 						aria-haspopup="dialog"
 						aria-expanded={asideOpen}
 						onclick={() => (asideOpen = true)}
 					>
 						<Users class="size-4" aria-hidden="true" />
-					</button>
+					</Button>
 				{/if}
 			</div>
 		{/if}
 		<div
-			class="shell-main-content min-h-0 min-w-0"
+			class="min-h-0 min-w-0 flex-1 overflow-hidden"
 			inert={contentInert || undefined}
 			aria-hidden={contentInert || undefined}
 		>
@@ -140,7 +161,7 @@
 
 	{#if aside && asideInGrid}
 		<div
-			class="shell-aside min-h-0"
+			class="min-h-0 border-l border-border [grid-area:aside]"
 			data-shell-region="aside"
 			inert={contentInert || undefined}
 			aria-hidden={contentInert || undefined}
@@ -177,102 +198,3 @@
 		{/if}
 	</ShellDrawer>
 {/if}
-
-<style>
-	.shell-grid {
-		display: grid;
-		grid-template-columns: 72px 244px minmax(0, 1fr);
-		grid-template-areas: 'rail sidebar main';
-		background: var(--bg-page);
-		color: var(--text-primary);
-	}
-
-	.shell-grid.has-aside[data-viewport='wide'] {
-		grid-template-columns: 72px 244px minmax(0, 1fr) 220px;
-		grid-template-areas: 'rail sidebar main aside';
-	}
-
-	.shell-grid[data-viewport='narrow'],
-	.shell-grid.has-aside[data-viewport='narrow'] {
-		grid-template-columns: 64px minmax(0, 1fr);
-		grid-template-areas: 'rail main';
-	}
-
-	.shell-rail {
-		--shell-rail-bg: #060c17;
-		grid-area: rail;
-		background: var(--shell-rail-bg);
-	}
-
-	.shell-sidebar {
-		grid-area: sidebar;
-	}
-
-	.shell-main {
-		grid-area: main;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		background: var(--bg-page);
-	}
-
-	.shell-main-content {
-		flex: 1;
-		overflow: hidden;
-	}
-
-	.shell-aside {
-		grid-area: aside;
-		border-left: 1px solid var(--border-subtle);
-	}
-
-	.shell-drawer-bar {
-		display: flex;
-		height: 40px;
-		flex: none;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 4px;
-		border-bottom: 1px solid var(--border-subtle);
-		padding: 4px 8px;
-		background: var(--bg-panel);
-	}
-
-	.shell-grid[data-viewport='narrow'] .shell-drawer-bar {
-		justify-content: space-between;
-	}
-
-	.shell-drawer-trigger {
-		appearance: none;
-		display: inline-flex;
-		width: 32px;
-		height: 32px;
-		align-items: center;
-		justify-content: center;
-		border: 0;
-		border-radius: 6px;
-		background: transparent;
-		box-shadow: none;
-		color: var(--text-secondary);
-		touch-action: manipulation;
-	}
-
-	.shell-drawer-trigger:focus-visible {
-		border-color: var(--brand);
-		box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent);
-		outline: none;
-	}
-
-	@media (hover: hover) and (pointer: fine) {
-		.shell-drawer-trigger:hover {
-			background: var(--bg-hover);
-			color: var(--text-primary);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.shell-drawer-trigger {
-			transition: none;
-		}
-	}
-</style>

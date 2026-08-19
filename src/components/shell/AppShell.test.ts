@@ -65,6 +65,17 @@ describe('AppShell', () => {
 		expect(screen.getByRole('main', { name: labels.main })).not.toBeNull();
 	});
 
+	it('hides the wide member column when collapsed', async () => {
+		const { container } = render(AppShellHarness, {
+			props: { labels, regionNames, asideCollapsed: true },
+		});
+		await tick();
+
+		expect(screen.queryByText(regionNames.aside)).toBeNull();
+		expect(container.querySelector('[data-shell-region="aside"]')).toBeNull();
+		expect(screen.queryByRole('button', { name: labels.openAside })).toBeNull();
+	});
+
 	it('opens a labelled sidebar drawer without duplicating content or inerting the opener', async () => {
 		stubViewport('narrow');
 		await renderShell();

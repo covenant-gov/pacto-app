@@ -10,12 +10,13 @@
 			main: string;
 			aside: string;
 		};
+		asideCollapsed?: boolean;
 	}
 
-	let { labels, regionNames }: Props = $props();
+	let { labels, regionNames, asideCollapsed = false }: Props = $props();
 </script>
 
-<AppShell {labels}>
+<AppShell {labels} bind:asideCollapsed>
 	{#snippet rail()}
 		<div>{regionNames.rail}</div>
 	{/snippet}
