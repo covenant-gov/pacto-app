@@ -139,13 +139,20 @@ export function uniqueChannelsByGroupIdPreservingOrder(channels: Channel[]): Cha
   return out;
 }
 
+/** Result of creating a parent's default MLS group: its id, its sidebar rows, and who was left out. */
+export interface DefaultParentChannelsCreated {
+  parentId: string;
+  channels: Channel[];
+  skippedMembers: SkippedMember[];
+}
+
 /**
  * Create one MLS group for the parent default scope; announcements, inbox, and polls sidebar rows share its `groupId`.
  * Parent id remains that MLS id (roster and invites reference this id).
  */
 export async function createDefaultParentChannels(
   memberNpubs: string[]
-): Promise<{ parentId: string; channels: Channel[]; skippedMembers: SkippedMember[] }> {
+): Promise<DefaultParentChannelsCreated> {
   const { groupId, skippedMembers } = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
   return { parentId: groupId, channels: defaultChannelRowsForGroupId(groupId), skippedMembers };
 }

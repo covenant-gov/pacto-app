@@ -38,6 +38,7 @@
     removeParentCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
+    parentPendingCreateOptions,
     ANNOUNCEMENTS_CHANNEL_NAME,
     type TopNavTab,
     type DmTab,
@@ -47,7 +48,7 @@
   import { sendSquadInviteDm } from '../../lib/pacto-app-inbox';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
-  import { pendingReadyToast, showToast } from '../../stores/toast';
+  import { pendingReadyToast } from '../../stores/toast';
   import { schedulePublicSquadCreateBroadcast } from '../../lib/commons/squad-create-broadcast';
   import {
     commonsUserHasActiveBroadcast,
@@ -60,19 +61,14 @@
   import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads } from '../../lib/squad/squad-nav-order';
   import { initSquadBot } from '../../lib/squad/squad-bot';
   import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
-  import {
-    listSquadDeployNetworkOptions,
-    saveSquadNetworkOverride,
-  } from '../../lib/squad/squad-network';
-  import { publishSquadNetworkUpdated } from '../../lib/squad/squad-network-share';
-  import { initSquadRpcOnCreate } from '../../lib/squad/squad-rpc';
-  import { publishSquadRpcUpdated } from '../../lib/squad/squad-rpc-share';
+  import { listSquadDeployNetworkOptions } from '../../lib/squad/squad-network';
+  import { applySquadCreateNetwork } from '../../lib/squad/squad-create-network';
   import { getProfileDisplayName } from '../../lib/utils/profile';
   import { portal } from '../../lib/utils/portal';
   import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
-  import { retryParentAnnouncementsCreate } from '../../lib/squad-pair-create';
+  import { showCreateFailureToast } from '../../lib/squad-pair-create';
   import { warnSkippedMembers, skippedMembersNotice } from '../../lib/squad/skipped-members';
 
   const translate = get(t);
@@ -382,6 +378,7 @@
     };
     addParentCreatingAnnouncements(squad.id);
     parentPendingCreateMembers.update((m) => ({ ...m, [squad.id]: memberNpubs }));
+    parentPendingCreateOptions.update((m) => ({ ...m, [squad.id]: { network: options.network } }));
     squads.update((list) => [...list, squad]);
     squadNavOrder.update((order) => appendSquadNavId(order, squad.id));
     activeSquadId.set(squad.id);
@@ -407,12 +404,7 @@
         await persistCreatedSquad(tempId, finalized);
         void initSquadBot(groupId);
         const creatorNpub = get(currentUser)?.npub;
-        if (creatorNpub && options.network) {
-          saveSquadNetworkOverride(creatorNpub, groupId, options.network);
-          initSquadRpcOnCreate(creatorNpub, groupId, options.network);
-          void publishSquadNetworkUpdated(groupId);
-          void publishSquadRpcUpdated(groupId);
-        }
+        applySquadCreateNetwork(creatorNpub, groupId, options.network);
         removeParentCreatingAnnouncements(tempId);
         parentCreateErrorById.update((m) => {
           const next = { ...m };
@@ -420,6 +412,11 @@
           return next;
         });
         parentPendingCreateMembers.update((m) => {
+          const next = { ...m };
+          delete next[tempId];
+          return next;
+        });
+        parentPendingCreateOptions.update((m) => {
           const next = { ...m };
           delete next[tempId];
           return next;
@@ -438,8 +435,7 @@
           channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
         if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
-        const resolveMemberName = (npub: string) => getProfileDisplayName(get(profiles)[npub] ?? null);
-        const skippedNotice = skippedMembersNotice(skippedMembers, resolveMemberName);
+        const skippedNotice = skippedMembersNotice(skippedMembers);
         if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
         pendingReadyToast.set({
           text:
@@ -483,12 +479,7 @@
           getInvokeErrorMessage(e, translate('nav.navbar.organizeSquad.createAnnouncementsError'))
         );
         parentCreateErrorById.update((m) => ({ ...m, [tempId]: message }));
-        showToast(
-          message,
-          undefined,
-          { label: translate('governance.common.retry'), action: () => void retryParentAnnouncementsCreate(squad) },
-          { error: true }
-        );
+        showCreateFailureToast(squad, message);
       }
     })();
   }

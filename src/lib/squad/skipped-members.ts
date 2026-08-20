@@ -2,7 +2,19 @@ import { get } from 'svelte/store';
 import { t } from 'svelte-i18n';
 import type { SkippedMember } from '../api/nostr';
 import { showToast } from '../../stores/toast';
+import { profiles } from '../../stores/profiles';
 import { shortNpub } from './squad-bot-announce';
+
+/**
+ * Name for a member the notice has to blame. Reads the profile cache directly rather than
+ * `getProfileDisplayName`, whose 'Unknown' sentinel would hide the one fact worth showing.
+ */
+function skippedMemberName(npub: string): string {
+  const profile = get(profiles)[npub];
+  const name =
+    profile?.nickname?.trim() || profile?.name?.trim() || profile?.display_name?.trim();
+  return name || shortNpub(npub);
+}
 
 /**
  * Warn about members left out of a squad/channel create because their key package couldn't be
@@ -15,23 +27,15 @@ export function warnSkippedMembers(skipped: SkippedMember[]): void {
 }
 
 /** Localized notice text for skipped members, or '' when none were skipped. */
-export function skippedMembersNotice(
-  skipped: SkippedMember[],
-  resolveName: (npub: string) => string = shortNpub
-): string {
+export function skippedMembersNotice(skipped: SkippedMember[]): string {
   if (!skipped.length) return '';
-  const names = skipped
-    .map((s) => resolveName(s.npub).trim() || shortNpub(s.npub))
-    .join(', ');
+  const names = skipped.map((s) => skippedMemberName(s.npub)).join(', ');
   return get(t)('nav.navbar.organizeSquad.membersSkipped', { values: { names } });
 }
 
 /** Warn + toast convenience for callers with no competing toast in flight. */
-export function reportSkippedMembers(
-  skipped: SkippedMember[],
-  resolveName: (npub: string) => string = shortNpub
-): void {
+export function reportSkippedMembers(skipped: SkippedMember[]): void {
   if (!skipped.length) return;
   warnSkippedMembers(skipped);
-  showToast(skippedMembersNotice(skipped, resolveName));
+  showToast(skippedMembersNotice(skipped));
 }

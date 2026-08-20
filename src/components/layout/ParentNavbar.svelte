@@ -10,6 +10,8 @@
     removeParentCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
+    parentPendingCreateOptions,
+    parentRetryingCreateIds,
     MY_DASHBOARD_CHANNEL_ID,
     SQUAD_DASHBOARD_CHANNEL_ID,
     type Squad,
@@ -106,12 +108,15 @@
 
   $: createError = activeParent ? $parentCreateErrorById[activeParent.id] ?? '' : '';
 
+  $: retryingCreate = !!activeParent && $parentRetryingCreateIds.has(activeParent.id);
+
   $: canRetryCreate =
     activeParent &&
     createError &&
     ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0;
 
-  $: canDiscardCreate = !!activeParent && !!createError;
+  /** Discard is destructive: never offer it while a create for this parent is still running. */
+  $: canDiscardCreate = !!activeParent && !!createError && !retryingCreate;
 
   $: subheading =
     activeParent &&
@@ -233,7 +238,6 @@
   });
   $: inviteModalEmptyMessage = $t('nav.parentNavbar.invite.empty');
 
-  let retryingCreate = false;
   let inviteErrorBanner = '';
   let createChannelErrorBanner = '';
 
@@ -269,7 +273,6 @@
     const parent = activeParent;
     if (!parent || !createError || retryingCreate) return;
     if (!$parentPendingCreateMembers[parent.id]?.length) return;
-    retryingCreate = true;
     try {
       await retryParentAnnouncementsCreate(parent);
     } catch (e) {
@@ -277,15 +280,13 @@
         ...m,
         [parent.id]: friendlyMessage(getInvokeErrorMessage(e)),
       }));
-    } finally {
-      retryingCreate = false;
     }
   }
 
   /** Discards a failed placeholder squad and its associated create-flow state. */
   function handleDiscardCreate() {
     const parent = activeParent;
-    if (!parent || !createError) return;
+    if (!parent || !createError || retryingCreate) return;
     squads.update((list) => list.filter((s) => s.id !== parent.id));
     squadNavOrder.update((order) => removeSquadNavId(order, parent.id));
     removeParentCreatingAnnouncements(parent.id);
@@ -295,6 +296,11 @@
       return next;
     });
     parentPendingCreateMembers.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateOptions.update((m) => {
       const next = { ...m };
       delete next[parent.id];
       return next;

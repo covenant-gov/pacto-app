@@ -13,6 +13,8 @@ import {
   removeParentCreatingAnnouncements,
   parentCreateErrorById,
   parentPendingCreateMembers,
+  parentPendingCreateOptions,
+  parentRetryingCreateIds,
   ANNOUNCEMENTS_CHANNEL_NAME,
   type Squad,
 } from '../stores/squads';
@@ -31,6 +33,7 @@ import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broad
 import { persistCreatedSquad } from './squad/squad-catalog';
 import { appendSquadNavId } from './squad/squad-nav-order';
 import { initSquadBot } from './squad/squad-bot';
+import { applySquadCreateNetwork } from './squad/squad-create-network';
 import { warnSkippedMembers, skippedMembersNotice } from './squad/skipped-members';
 import type { PairedSquads } from './squad-pair';
 
@@ -121,8 +124,11 @@ export interface SquadPairCreateCommons {
   commonsTags?: string[];
 }
 
-/** Show the create-failure toast with a Retry action that re-arms itself on repeat failure. */
-function showCreateFailureToast(squadPair: Squad, message: string): void {
+/**
+ * Show the create-failure toast with a Retry action that re-arms itself on repeat failure.
+ * Shared by every create surface so a second failure is never an unhandled rejection.
+ */
+export function showCreateFailureToast(squadPair: Squad, message: string): void {
   showToast(
     message,
     undefined,
@@ -211,7 +217,7 @@ export function runSquadPairCreateFlow(
       const skippedNotice = skippedMembersNotice(skippedMembers);
       if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
       pendingReadyToast.set({
-        text: skippedNotice || `${name} is ready!`,
+        text: skippedNotice || get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
         goTo: {
           type: 'squad',
           name,
@@ -246,12 +252,37 @@ export function runSquadPairCreateFlow(
   })();
 }
 
-/** Retry failed announcements channel create for a squad still in `creating` state. */
+/**
+ * Retry failed announcements channel create for a squad still in `creating` state.
+ * Re-entrant calls for the same parent are dropped: a second create would mint a second MLS
+ * group, a duplicate squad row, and a second round of invite DMs.
+ */
 export async function retryParentAnnouncementsCreate(parent: Squad): Promise<void> {
   const memberIds = get(parentPendingCreateMembers)[parent.id];
   if (!memberIds?.length) return;
+  if (get(parentRetryingCreateIds).has(parent.id)) return;
+  parentRetryingCreateIds.update((s) => new Set(s).add(parent.id));
+  try {
+    await finalizeParentAnnouncementsCreate(parent, memberIds);
+  } finally {
+    parentRetryingCreateIds.update((s) => {
+      const next = new Set(s);
+      next.delete(parent.id);
+      return next;
+    });
+  }
+}
 
+async function finalizeParentAnnouncementsCreate(parent: Squad, memberIds: string[]): Promise<void> {
   const { parentId: gid, channels, skippedMembers } = await createDefaultParentChannels(memberIds);
+
+  // Discard while this create was in flight: the placeholder and its pending members are gone,
+  // so persisting now would resurrect the squad the user just threw away.
+  if (!get(parentPendingCreateMembers)[parent.id]) {
+    console.warn('[squad-pair-create] retry finished after discard; abandoning group', gid);
+    return;
+  }
+
   const finalized: Squad = {
     ...parent,
     id: gid,
@@ -260,6 +291,8 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
   };
   await persistCreatedSquad(parent.id, finalized);
   void initSquadBot(gid);
+  const myNpub = get(currentUser)?.npub;
+  applySquadCreateNetwork(myNpub, gid, get(parentPendingCreateOptions)[parent.id]?.network);
   if (get(activeSquadId) === parent.id) {
     activeSquadId.set(gid);
     activeChannelId.set(gid);
@@ -282,7 +315,9 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
   const skippedNotice = skippedMembersNotice(skippedMembers);
   if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
   pendingReadyToast.set({
-    text: skippedNotice || `${parent.name} is ready!`,
+    text:
+      skippedNotice ||
+      get(t)('nav.navbar.organizeSquad.squadReady', { values: { squadName: parent.name } }),
     goTo: {
       type: 'squad',
       name: parent.name,
@@ -303,12 +338,24 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
     delete next[parent.id];
     return next;
   });
+  parentPendingCreateOptions.update((m) => {
+    const next = { ...m };
+    delete next[parent.id];
+    return next;
+  });
   const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
-  const myNpub = get(currentUser)?.npub;
+  const pairing =
+    parent.kind === 'squad-pair' && parent.pairedSquads
+      ? { kind: 'squad-pair' as const, pairedSquads: parent.pairedSquads }
+      : {};
   for (const npub of memberIds) {
     if (skippedNpubs.has(npub)) continue;
     try {
-      await sendSquadInviteDm(npub, { squadName: parent.name, groupId: gid, iconUrl: parent.iconUrl }, myNpub);
+      await sendSquadInviteDm(
+        npub,
+        { squadName: parent.name, groupId: gid, iconUrl: parent.iconUrl, ...pairing },
+        myNpub
+      );
     } catch (e) {
       console.warn('[squad-pair-create] retry invite DM failed for', npub.slice(0, 20) + '…', e);
     }
