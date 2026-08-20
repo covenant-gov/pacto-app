@@ -3,15 +3,25 @@
    * Shared modal: overlay, content box, Escape to close, click-outside to close,
    * focus trap + restore focus on destroy.
    */
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, type Snippet } from 'svelte';
 
-  export let titleId: string;
-  export let descriptionId: string | undefined = undefined;
-  export let onClose: () => void;
-  /** When false, overlay click and Escape do not close (e.g. in-flight async work). */
-  export let dismissible = true;
-  /** Extra class on the inner dialog panel (e.g. wider layout). */
-  export let contentClass = '';
+  let {
+    titleId,
+    descriptionId = undefined,
+    onClose,
+    dismissible = true,
+    contentClass = '',
+    children,
+  }: {
+    titleId: string;
+    descriptionId?: string;
+    onClose: () => void;
+    /** When false, overlay click and Escape do not close (e.g. in-flight async work). */
+    dismissible?: boolean;
+    /** Extra class on the inner dialog panel (e.g. wider layout). */
+    contentClass?: string;
+    children: Snippet;
+  } = $props();
 
   let dialogEl: HTMLDivElement;
 
@@ -83,7 +93,8 @@
   });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="modal-overlay" onclick={handleOverlayClick}>
   <div
     bind:this={dialogEl}
@@ -97,7 +108,7 @@
     onclick={(e) => e.stopPropagation()}
     onkeydown={handleContentKeydown}
   >
-    <slot />
+    {@render children()}
   </div>
 </div>
 

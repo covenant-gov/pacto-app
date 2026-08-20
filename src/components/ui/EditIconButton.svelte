@@ -1,10 +1,18 @@
 <script lang="ts">
-  export let disabled = false;
-  export let ariaLabel = 'Edit';
-  export let title: string | undefined = undefined;
-  /** Extra class names for the button element. */
-  export let className = '';
-  export let onclick: (() => void) | undefined = undefined;
+  let {
+    disabled = false,
+    ariaLabel = 'Edit',
+    title = undefined,
+    className = '',
+    onclick = undefined,
+  }: {
+    disabled?: boolean;
+    ariaLabel?: string;
+    title?: string;
+    /** Extra class names for the button element. */
+    className?: string;
+    onclick?: () => void;
+  } = $props();
 </script>
 
 <button
