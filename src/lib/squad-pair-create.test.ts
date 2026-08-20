@@ -1,12 +1,116 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { get } from 'svelte/store';
+
+vi.mock('./parent-navbar', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./parent-navbar')>();
+  return {
+    ...actual,
+    createDefaultParentChannels: vi.fn(),
+  };
+});
+
+vi.mock('./utils/tauri-errors', () => ({
+  getInvokeErrorMessage: vi.fn((e: unknown, fallback?: string) =>
+    e instanceof Error ? e.message : (fallback ?? String(e))
+  ),
+  friendlyMessage: vi.fn((msg: string) => msg),
+}));
+
+vi.mock('./pacto-app-inbox', () => ({
+  sendSquadInviteDm: vi.fn(),
+}));
+
+vi.mock('./squad-hub-nav', () => ({
+  activateSquadHub: vi.fn(),
+}));
+
+vi.mock('./commons/squad-create-broadcast', () => ({
+  schedulePublicSquadCreateBroadcast: vi.fn(),
+}));
+
+vi.mock('./squad/squad-catalog', () => ({
+  persistCreatedSquad: vi.fn(async (_tempId: string, squad: unknown) => squad),
+}));
+
+vi.mock('./squad/squad-bot', () => ({
+  initSquadBot: vi.fn(),
+}));
+
+vi.mock('./squad/skipped-members', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./squad/skipped-members')>();
+  return {
+    ...actual,
+    warnSkippedMembers: vi.fn(actual.warnSkippedMembers),
+  };
+});
+
+vi.mock('../stores/squads', () => ({
+  squads: createMockWritable<Squad[]>([]),
+  addParentCreatingAnnouncements: vi.fn(),
+  removeParentCreatingAnnouncements: vi.fn(),
+  parentCreateErrorById: createMockWritable<Record<string, string>>({}),
+  parentPendingCreateMembers: createMockWritable<Record<string, string[]>>({}),
+  ANNOUNCEMENTS_CHANNEL_NAME: 'announcements',
+}));
+
+vi.mock('../stores/navigation', () => ({
+  activeSquadId: createMockWritable<string | null>(null),
+  activeChannelId: createMockWritable<string | null>(null),
+  activeHubChannelName: createMockWritable<string | null>(null),
+  activeView: createMockWritable<'hub' | 'profile'>('hub'),
+  activeTopNavTab: createMockWritable<string>('squads'),
+  lastChannelBySquadId: createMockWritable<Record<string, string>>({}),
+  lastHubChannelNameBySquadId: createMockWritable<Record<string, string>>({}),
+  squadNavOrder: createMockWritable<string[]>([]),
+}));
+
+vi.mock('../stores/auth', () => ({
+  currentUser: createMockWritable<{ npub: string; pubkey: string } | null>(null),
+}));
+
+vi.mock('../stores/toast', () => ({
+  pendingReadyToast: createMockWritable<{ text: string; goTo?: { id: string } } | null>(null),
+  showToast: vi.fn(),
+}));
+
 import {
   buildPairedSquads,
   collectInviteNpubsForSquads,
   pairPartnerExcludeSquadIds,
   resolvePairAnchorFromHub,
   partnerSquadCandidates,
+  runSquadPairCreateFlow,
+  retryParentAnnouncementsCreate,
 } from './squad-pair-create';
 import type { Squad } from '../stores/squads';
+import { createDefaultParentChannels } from './parent-navbar';
+import { sendSquadInviteDm } from './pacto-app-inbox';
+import { persistCreatedSquad } from './squad/squad-catalog';
+import { warnSkippedMembers, skippedMembersNotice } from './squad/skipped-members';
+import { shortNpub } from './squad/squad-bot-announce';
+import { squads, parentPendingCreateMembers } from '../stores/squads';
+import { currentUser } from '../stores/auth';
+import { pendingReadyToast } from '../stores/toast';
+
+function createMockWritable<T>(initial: T) {
+  let value = initial;
+  const subscribers = new Set<(v: T) => void>();
+  return {
+    set: (v: T) => {
+      value = v;
+      subscribers.forEach((fn) => fn(v));
+    },
+    update: (fn: (v: T) => T) => {
+      value = fn(value);
+      subscribers.forEach((sub) => sub(value));
+    },
+    subscribe: (fn: (v: T) => void) => {
+      fn(value);
+      subscribers.add(fn);
+      return () => subscribers.delete(fn);
+    },
+  };
+}
 
 const anchor: Squad = {
   id: 'anchor',
@@ -90,5 +194,134 @@ describe('collectInviteNpubsForSquads', () => {
     });
     const npubs = await collectInviteNpubsForSquads([anchor, partner], 'me', fetchMembers);
     expect(npubs.sort()).toEqual(['alice', 'bob']);
+  });
+});
+
+describe('runSquadPairCreateFlow', () => {
+  beforeEach(() => {
+    squads.set([]);
+    parentPendingCreateMembers.set({});
+    pendingReadyToast.set(null);
+    currentUser.set({ npub: 'me', pubkey: 'pk' });
+    vi.mocked(createDefaultParentChannels).mockReset();
+    vi.mocked(sendSquadInviteDm).mockReset().mockResolvedValue(true);
+    vi.mocked(persistCreatedSquad)
+      .mockReset()
+      .mockImplementation(async (_tempId, squad) => squad as Squad);
+    vi.mocked(warnSkippedMembers).mockClear();
+  });
+
+  afterEach(() => {
+    squads.set([]);
+    parentPendingCreateMembers.set({});
+    pendingReadyToast.set(null);
+    currentUser.set(null);
+  });
+
+  it('folds the skipped-members notice into the ready toast text instead of a separate toast', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-1',
+      channels: [{ name: 'announcements', groupId: 'group-1', order: 0 }],
+      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+    });
+
+    runSquadPairCreateFlow('Pair Name', ['npub-a', 'npub-stale'], anchor, partner);
+
+    await vi.waitFor(() => {
+      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-1');
+    });
+
+    const toast = get(pendingReadyToast);
+    expect(toast?.text).not.toBe('Pair Name is ready!');
+    expect(toast?.text).toContain('npub-stale');
+    expect(warnSkippedMembers).toHaveBeenCalledWith([
+      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
+    ]);
+    expect(sendSquadInviteDm).toHaveBeenCalledWith('npub-a', expect.anything(), 'me');
+    expect(sendSquadInviteDm).not.toHaveBeenCalledWith('npub-stale', expect.anything(), expect.anything());
+  });
+
+  it('keeps the plain ready-toast text when nobody is skipped', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-2',
+      channels: [{ name: 'announcements', groupId: 'group-2', order: 0 }],
+      skippedMembers: [],
+    });
+
+    runSquadPairCreateFlow('Pair Name', ['npub-a'], anchor, partner);
+
+    await vi.waitFor(() => {
+      expect(get(pendingReadyToast)?.goTo?.id).toBe('group-2');
+    });
+
+    expect(get(pendingReadyToast)?.text).toBe('Pair Name is ready!');
+    expect(warnSkippedMembers).not.toHaveBeenCalled();
+  });
+});
+
+describe('retryParentAnnouncementsCreate', () => {
+  const retryParent: Squad = {
+    id: 'parent-1',
+    name: 'Alpha',
+    channels: [],
+    kind: 'squad',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  beforeEach(() => {
+    squads.set([retryParent]);
+    parentPendingCreateMembers.set({ 'parent-1': ['npub-a', 'npub-stale'] });
+    pendingReadyToast.set(null);
+    currentUser.set({ npub: 'me', pubkey: 'pk' });
+    vi.mocked(createDefaultParentChannels).mockReset();
+    vi.mocked(sendSquadInviteDm).mockReset().mockResolvedValue(true);
+    vi.mocked(persistCreatedSquad)
+      .mockReset()
+      .mockImplementation(async (_tempId, squad) => squad as Squad);
+    vi.mocked(warnSkippedMembers).mockClear();
+  });
+
+  afterEach(() => {
+    squads.set([]);
+    parentPendingCreateMembers.set({});
+    pendingReadyToast.set(null);
+    currentUser.set(null);
+  });
+
+  it('folds the skipped-members notice into the retry ready toast', async () => {
+    vi.mocked(createDefaultParentChannels).mockResolvedValue({
+      parentId: 'group-3',
+      channels: [{ name: 'announcements', groupId: 'group-3', order: 0 }],
+      skippedMembers: [{ npub: 'npub-stale', reason: 'Missing required encoding tag' }],
+    });
+
+    await retryParentAnnouncementsCreate(retryParent);
+
+    const toast = get(pendingReadyToast);
+    expect(toast?.text).not.toBe('Alpha is ready!');
+    expect(toast?.text).toContain('npub-stale');
+    expect(warnSkippedMembers).toHaveBeenCalledWith([
+      { npub: 'npub-stale', reason: 'Missing required encoding tag' },
+    ]);
+  });
+
+  it('returns early when there is no pending member list', async () => {
+    parentPendingCreateMembers.set({});
+    await retryParentAnnouncementsCreate(retryParent);
+    expect(createDefaultParentChannels).not.toHaveBeenCalled();
+  });
+});
+
+describe('skippedMembersNotice', () => {
+  it('is empty when nobody was skipped', () => {
+    expect(skippedMembersNotice([])).toBe('');
+  });
+
+  it('falls back to a shortened npub when the resolver returns a blank name', () => {
+    const npub = 'npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq';
+    const notice = skippedMembersNotice([{ npub, reason: 'x' }], () => '   ');
+    expect(notice).toContain(shortNpub(npub));
+    expect(notice).not.toMatch(/add\s*\./);
   });
 });

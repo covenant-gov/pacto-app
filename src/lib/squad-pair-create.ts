@@ -1,6 +1,7 @@
 /** Squad-pair creation helpers — see ai-docs/networks/RNF_PLAN.md */
 
 import { get } from 'svelte/store';
+import { t } from 'svelte-i18n';
 import { createDefaultParentChannels, getAnnouncementsChannel } from './parent-navbar';
 import { getInvokeErrorMessage, friendlyMessage } from './utils/tauri-errors';
 import { sendSquadInviteDm } from './pacto-app-inbox';
@@ -25,11 +26,12 @@ import {
   lastHubChannelNameBySquadId,
   squadNavOrder,
 } from '../stores/navigation';
-import { pendingReadyToast } from '../stores/toast';
+import { pendingReadyToast, showToast } from '../stores/toast';
 import { schedulePublicSquadCreateBroadcast } from './commons/squad-create-broadcast';
 import { persistCreatedSquad } from './squad/squad-catalog';
-import { appendSquadNavId, removeSquadNavId } from './squad/squad-nav-order';
+import { appendSquadNavId } from './squad/squad-nav-order';
 import { initSquadBot } from './squad/squad-bot';
+import { warnSkippedMembers, skippedMembersNotice } from './squad/skipped-members';
 import type { PairedSquads } from './squad-pair';
 
 function resolvePublicSquadBroadcastTarget(squadId: string) {
@@ -119,6 +121,27 @@ export interface SquadPairCreateCommons {
   commonsTags?: string[];
 }
 
+/** Show the create-failure toast with a Retry action that re-arms itself on repeat failure. */
+function showCreateFailureToast(squadPair: Squad, message: string): void {
+  showToast(
+    message,
+    undefined,
+    {
+      label: get(t)('governance.common.retry'),
+      action: () => {
+        void retryParentAnnouncementsCreate(squadPair).catch((e) => {
+          const retryMessage = friendlyMessage(
+            getInvokeErrorMessage(e, get(t)('nav.navbar.organizeSquad.createAnnouncementsError'))
+          );
+          parentCreateErrorById.update((m) => ({ ...m, [squadPair.id]: retryMessage }));
+          showCreateFailureToast(squadPair, retryMessage);
+        });
+      },
+    },
+    { error: true }
+  );
+}
+
 /** Optimistic squad-pair row + background announcements MLS create and invite DMs. */
 export function runSquadPairCreateFlow(
   name: string,
@@ -156,7 +179,7 @@ export function runSquadPairCreateFlow(
 
   void (async () => {
     try {
-      const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
+      const { parentId, channels, skippedMembers } = await createDefaultParentChannels(memberNpubs);
       const groupId = parentId;
       const paired = buildPairedSquads(anchor, partner);
       const finalized: Squad = {
@@ -185,8 +208,10 @@ export function runSquadPairCreateFlow(
         return next;
       });
       activateSquadHub(groupId);
+      const skippedNotice = skippedMembersNotice(skippedMembers);
+      if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
       pendingReadyToast.set({
-        text: `${name} is ready!`,
+        text: skippedNotice || `${name} is ready!`,
         goTo: {
           type: 'squad',
           name,
@@ -196,8 +221,10 @@ export function runSquadPairCreateFlow(
             channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name,
         },
       });
+      const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
       const myNpub = get(currentUser)?.npub;
       for (const npub of memberNpubs) {
+        if (skippedNpubs.has(npub)) continue;
         try {
           await sendSquadInviteDm(
             npub,
@@ -210,20 +237,11 @@ export function runSquadPairCreateFlow(
       }
       schedulePublicSquadCreateBroadcast(groupId, () => resolvePublicSquadBroadcastTarget(groupId));
     } catch (e) {
-      removeParentCreatingAnnouncements(tempId);
-      parentCreateErrorById.update((m) => ({
-        ...m,
-        [tempId]: friendlyMessage(
-          getInvokeErrorMessage(e, 'Failed to create partner squad announcements channel')
-        ),
-      }));
-      squads.update((list) => list.filter((s) => s.id !== tempId));
-      squadNavOrder.update((order) => removeSquadNavId(order, tempId));
-      if (get(activeSquadId) === tempId) {
-        activeSquadId.set(anchor.id);
-        activeChannelId.set(null);
-        activeHubChannelName.set(null);
-      }
+      const message = friendlyMessage(
+        getInvokeErrorMessage(e, get(t)('nav.navbar.organizeSquad.createAnnouncementsError'))
+      );
+      parentCreateErrorById.update((m) => ({ ...m, [tempId]: message }));
+      showCreateFailureToast(squadPair, message);
     }
   })();
 }
@@ -233,7 +251,7 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
   const memberIds = get(parentPendingCreateMembers)[parent.id];
   if (!memberIds?.length) return;
 
-  const { parentId: gid, channels } = await createDefaultParentChannels(memberIds);
+  const { parentId: gid, channels, skippedMembers } = await createDefaultParentChannels(memberIds);
   const finalized: Squad = {
     ...parent,
     id: gid,
@@ -261,8 +279,10 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
       channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
     return hubName ? { ...next, [gid]: hubName } : next;
   });
+  const skippedNotice = skippedMembersNotice(skippedMembers);
+  if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
   pendingReadyToast.set({
-    text: `${parent.name} is ready!`,
+    text: skippedNotice || `${parent.name} is ready!`,
     goTo: {
       type: 'squad',
       name: parent.name,
@@ -283,8 +303,10 @@ export async function retryParentAnnouncementsCreate(parent: Squad): Promise<voi
     delete next[parent.id];
     return next;
   });
+  const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
   const myNpub = get(currentUser)?.npub;
   for (const npub of memberIds) {
+    if (skippedNpubs.has(npub)) continue;
     try {
       await sendSquadInviteDm(npub, { squadName: parent.name, groupId: gid, iconUrl: parent.iconUrl }, myNpub);
     } catch (e) {

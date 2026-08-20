@@ -47,7 +47,7 @@
   import { sendSquadInviteDm } from '../../lib/pacto-app-inbox';
   import { createDefaultParentChannels } from '../../lib/parent-navbar';
   import { activateSquadHub } from '../../lib/squad-hub-nav';
-  import { pendingReadyToast } from '../../stores/toast';
+  import { pendingReadyToast, showToast } from '../../stores/toast';
   import { schedulePublicSquadCreateBroadcast } from '../../lib/commons/squad-create-broadcast';
   import {
     commonsUserHasActiveBroadcast,
@@ -57,7 +57,7 @@
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { requireBackupVerified } from '../../stores/backup-verification';
   import { persistCreatedSquad } from '../../lib/squad/squad-catalog';
-  import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads, removeSquadNavId } from '../../lib/squad/squad-nav-order';
+  import { appendSquadNavId, moveSquadNavIdToGapIndex, orderSquads } from '../../lib/squad/squad-nav-order';
   import { initSquadBot } from '../../lib/squad/squad-bot';
   import { DEFAULT_CHAIN_ID, type SupportedChainId } from '../../lib/wallet/chains';
   import {
@@ -72,6 +72,8 @@
   import { profiles } from '../../stores/profiles';
   import { appConfig } from '../../stores/app-config';
   import { squadRecreateRequest } from '../../stores/squad-recreate';
+  import { retryParentAnnouncementsCreate } from '../../lib/squad-pair-create';
+  import { warnSkippedMembers, skippedMembersNotice } from '../../lib/squad/skipped-members';
 
   const translate = get(t);
   $: orderedSquads = orderSquads($squads, $squadNavOrder);
@@ -389,7 +391,7 @@
 
     (async () => {
       try {
-        const { parentId, channels } = await createDefaultParentChannels(memberNpubs);
+        const { parentId, channels, skippedMembers } = await createDefaultParentChannels(memberNpubs);
         const groupId = parentId;
         const finalized: Squad = {
           id: groupId,
@@ -436,8 +438,13 @@
           channels.find((c) => c.name === ANNOUNCEMENTS_CHANNEL_NAME)?.name ?? channels[0]?.name ?? '';
         if (hubName) lastHubChannelNameBySquadId.update((m) => ({ ...m, [groupId]: hubName }));
 
+        const resolveMemberName = (npub: string) => getProfileDisplayName(get(profiles)[npub] ?? null);
+        const skippedNotice = skippedMembersNotice(skippedMembers, resolveMemberName);
+        if (skippedMembers.length > 0) warnSkippedMembers(skippedMembers);
         pendingReadyToast.set({
-          text: translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
+          text:
+            skippedNotice ||
+            translate('nav.navbar.organizeSquad.squadReady', { values: { squadName: name } }),
           goTo: {
             type: 'squad',
             name,
@@ -448,7 +455,10 @@
           },
         });
         const myNpub = get(currentUser)?.npub;
-        for (const npub of memberNpubs) {
+        const invitedNpubs = memberNpubs.filter(
+          (npub) => !skippedMembers.some((skipped) => skipped.npub === npub)
+        );
+        for (const npub of invitedNpubs) {
           try {
             await sendSquadInviteDm(npub, { squadName: name, groupId, iconUrl: options.iconUrl }, myNpub);
           } catch (e) {
@@ -469,18 +479,16 @@
         });
       } catch (e) {
         console.error('[Navbar] createSquadWithAnnouncements failed', { tempId, name }, e);
-        removeParentCreatingAnnouncements(tempId);
-        parentCreateErrorById.update((m) => ({
-          ...m,
-          [tempId]: friendlyMessage(getInvokeErrorMessage(e, translate('nav.navbar.organizeSquad.createAnnouncementsError'))),
-        }));
-        squads.update((list) => list.filter((s) => s.id !== tempId));
-        squadNavOrder.update((order) => removeSquadNavId(order, tempId));
-        if (get(activeSquadId) === tempId) {
-          activeSquadId.set(null);
-          activeChannelId.set(null);
-          activeHubChannelName.set(null);
-        }
+        const message = friendlyMessage(
+          getInvokeErrorMessage(e, translate('nav.navbar.organizeSquad.createAnnouncementsError'))
+        );
+        parentCreateErrorById.update((m) => ({ ...m, [tempId]: message }));
+        showToast(
+          message,
+          undefined,
+          { label: translate('governance.common.retry'), action: () => void retryParentAnnouncementsCreate(squad) },
+          { error: true }
+        );
       }
     })();
   }

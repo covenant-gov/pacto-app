@@ -27,6 +27,7 @@
   export let creating = false;
   export let createError = '';
   export let canRetryCreate = false;
+  export let canDiscardCreate = false;
   export let retryingCreate = false;
   export let emptyMessage = '';
   /** When false, show empty state instead of header/channels. */
@@ -41,6 +42,7 @@
   export let onSelectChannel: (channel: ParentChannel) => void = () => {};
   export let onCreateChannel: () => void = () => {};
   export let onRetryCreate: () => void = () => {};
+  export let onDiscardCreate: () => void = () => {};
   export let onInvite: () => void = () => {};
   export let onExitSquad: (() => void) | undefined = undefined;
 
@@ -166,6 +168,8 @@
           canRetry={canRetryCreate}
           retrying={retryingCreate}
           onRetry={onRetryCreate}
+          canDiscard={canDiscardCreate}
+          onDiscard={onDiscardCreate}
         />
       {:else}
         <div class="parent-channel-list">

@@ -329,13 +329,28 @@ describe('sendDmMessage', () => {
 
 describe('createGroupChat', () => {
   it('invokes create_group_chat with name and members', async () => {
-    mockedInvoke.mockResolvedValueOnce('group-id');
+    mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id', skippedMembers: [] });
     const result = await createGroupChat('Squad', ['npub1', 'npub2']);
     expect(mockedInvoke).toHaveBeenCalledWith('create_group_chat', {
       groupName: 'Squad',
       memberIds: ['npub1', 'npub2'],
     });
-    expect(result).toBe('group-id');
+    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [] });
+  });
+
+  it('normalizes a missing skippedMembers to an empty array', async () => {
+    mockedInvoke.mockResolvedValueOnce({ groupId: 'group-id' });
+    const result = await createGroupChat('Squad', ['npub1']);
+    expect(result).toEqual({ groupId: 'group-id', skippedMembers: [] });
+  });
+
+  it('passes through skipped members', async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      groupId: 'group-id',
+      skippedMembers: [{ npub: 'npub1', reason: 'Missing required encoding tag' }],
+    });
+    const result = await createGroupChat('Squad', ['npub1', 'npub2']);
+    expect(result.skippedMembers).toEqual([{ npub: 'npub1', reason: 'Missing required encoding tag' }]);
   });
 });
 

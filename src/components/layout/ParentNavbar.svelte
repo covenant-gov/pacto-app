@@ -7,6 +7,7 @@
   import {
     squads,
     parentsCreatingAnnouncements,
+    removeParentCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
     MY_DASHBOARD_CHANNEL_ID,
@@ -21,7 +22,9 @@
     activeTopNavTab,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
+    squadNavOrder,
   } from '../../stores/navigation';
+  import { removeSquadNavId } from '../../lib/squad/squad-nav-order';
   import { dmList, requestsList, pendingList } from '../../stores/dm';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -107,6 +110,8 @@
     activeParent &&
     createError &&
     ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0;
+
+  $: canDiscardCreate = !!activeParent && !!createError;
 
   $: subheading =
     activeParent &&
@@ -274,6 +279,30 @@
       }));
     } finally {
       retryingCreate = false;
+    }
+  }
+
+  /** Discards a failed placeholder squad and its associated create-flow state. */
+  function handleDiscardCreate() {
+    const parent = activeParent;
+    if (!parent || !createError) return;
+    squads.update((list) => list.filter((s) => s.id !== parent.id));
+    squadNavOrder.update((order) => removeSquadNavId(order, parent.id));
+    removeParentCreatingAnnouncements(parent.id);
+    parentCreateErrorById.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateMembers.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    if (get(activeSquadId) === parent.id) {
+      activeSquadId.set(null);
+      activeChannelId.set(null);
+      activeHubChannelName.set(null);
     }
   }
 
@@ -509,6 +538,7 @@
   creating={Boolean(creating)}
   createError={createError}
   canRetryCreate={Boolean(canRetryCreate)}
+  canDiscardCreate={Boolean(canDiscardCreate)}
   retryingCreate={retryingCreate}
   emptyMessage={emptyMessage}
   hasParent={!!activeParent}
@@ -517,6 +547,7 @@
   onSelectChannel={selectChannel}
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
+  onDiscardCreate={handleDiscardCreate}
   onInvite={openInviteModal}
   onExitSquad={openExitModal}
   partnerSquads={partnerSquads}

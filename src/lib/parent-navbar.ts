@@ -14,7 +14,7 @@ import {
   defaultChannelRowsForGroupId,
   ensureDefaultHubChannelRows,
 } from './squad/hub-channel-rows';
-import { createGroupChat, getMlsGroupMembers } from './api/nostr';
+import { createGroupChat, getMlsGroupMembers, type SkippedMember } from './api/nostr';
 
 export { defaultChannelRowsForGroupId, ensureDefaultHubChannelRows };
 
@@ -145,9 +145,9 @@ export function uniqueChannelsByGroupIdPreservingOrder(channels: Channel[]): Cha
  */
 export async function createDefaultParentChannels(
   memberNpubs: string[]
-): Promise<{ parentId: string; channels: Channel[] }> {
-  const groupId = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
-  return { parentId: groupId, channels: defaultChannelRowsForGroupId(groupId) };
+): Promise<{ parentId: string; channels: Channel[]; skippedMembers: SkippedMember[] }> {
+  const { groupId, skippedMembers } = await createGroupChat(ANNOUNCEMENTS_CHANNEL_NAME, memberNpubs);
+  return { parentId: groupId, channels: defaultChannelRowsForGroupId(groupId), skippedMembers };
 }
 
 /**
