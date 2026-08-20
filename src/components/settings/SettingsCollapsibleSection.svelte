@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import chevronDownIcon from '../../icons/chevron-down.svg';
   import {
     setSettingsSectionCollapsed,
@@ -6,13 +7,21 @@
     type SettingsSectionId,
   } from '../../lib/settings/settings-section-collapse';
 
-  export let sectionId: SettingsSectionId;
-  export let title: string;
-  export let sectionClass = '';
+  let {
+    sectionId,
+    title,
+    sectionClass = '',
+    children,
+  }: {
+    sectionId: SettingsSectionId;
+    title: string;
+    sectionClass?: string;
+    children: Snippet;
+  } = $props();
 
-  $: collapsed = $settingsSectionCollapsed[sectionId] ?? true;
-  $: headingId = `${sectionId}-heading`;
-  $: panelId = `${sectionId}-panel`;
+  let collapsed = $derived($settingsSectionCollapsed[sectionId] ?? true);
+  let headingId = $derived(`${sectionId}-heading`);
+  let panelId = $derived(`${sectionId}-panel`);
 
   function toggleCollapsed() {
     setSettingsSectionCollapsed(sectionId, !collapsed);
@@ -44,7 +53,7 @@
   </h2>
 
   <div id={panelId} class="settings-section-panel" hidden={collapsed}>
-    <slot />
+    {@render children()}
   </div>
 </section>
 
