@@ -9102,14 +9102,34 @@ async fn regenerate_device_keypackage(cache: bool) -> Result<serde_json::Value, 
                     .await
                 {
                     Ok(mut events) => {
-                        // Check if we got any events - if so, the cached KeyPackage exists on relay
-                        if events.next().await.is_some() {
-                            return Ok(serde_json::json!({
-                                "device_id": device_id,
-                                "owner_pubkey": owner_pubkey_b32,
-                                "keypackage_ref": ref_id,
-                                "cached": true
-                            }));
+                        // Check if we got any events - if so, confirm the current MLS
+                        // engine can still parse it before trusting the cache. A legacy
+                        // event (e.g. missing the MIP-00/02 encoding tag) must fall
+                        // through to republish instead of short-circuiting forever.
+                        if let Some(event) = events.next().await {
+                            let usable = {
+                                let mls_service =
+                                    MlsService::new_persistent_for_keypackage_refresh(&handle)
+                                        .map_err(|e| e.to_string())?;
+                                mls_service.key_package_event_usable(&event)
+                            }; // mls_service dropped here before any await
+
+                            match usable {
+                                Ok(()) => {
+                                    return Ok(serde_json::json!({
+                                        "device_id": device_id,
+                                        "owner_pubkey": owner_pubkey_b32,
+                                        "keypackage_ref": ref_id,
+                                        "cached": true
+                                    }));
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "[MLS][KeyPackage] Cached event {} no longer parses ({}); republishing",
+                                        ref_id, e
+                                    );
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -9237,16 +9257,34 @@ async fn replay_reset_pending_welcomes<R: Runtime>(handle: &AppHandle<R>) -> Res
     mls_store_reset_state::retain_pending_wrapper_ids(handle, &remaining)
 }
 
-/// Create a new MLS group with initial member devices
-#[tauri::command]
-async fn create_mls_group(
+/// Merge preflight skips (no key package published) with engine-time skips (key package
+/// unfetchable or rejected by MDK's parser) into one list for the caller, preflight first.
+fn merge_skipped_members(
+    preflight: Vec<mls::SkippedMember>,
+    mut engine_skips: Vec<mls::SkippedMember>,
+) -> Vec<mls::SkippedMember> {
+    let mut merged = preflight;
+    merged.append(&mut engine_skips);
+    merged
+}
+
+/// Result returned to the frontend by `create_group_chat`: the new group's wire id plus every
+/// requested member who was left out and why. Reasons are backend diagnostics for logging only
+/// — the UI never renders them, it maps skipped npubs through its own copy.
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct GroupChatCreated {
+    group_id: String,
+    skipped_members: Vec<mls::SkippedMember>,
+}
+
+/// Runs `MlsService::create_group` on a blocking thread (the engine is `!Send`) and returns the
+/// full outcome, including any members skipped for an unresolved or unparseable KeyPackage.
+async fn run_create_mls_group(
     name: String,
     avatar_ref: Option<String>,
     initial_member_devices: Vec<(String, String)>,
-) -> Result<String, String> {
-    session::heartbeat();
-    require_key_derivation_version_2()?;
-    // Use tokio::task::spawn_blocking to run the non-Send MlsService in a blocking context
+) -> Result<mls::GroupCreateOutcome, String> {
     tokio::task::spawn_blocking(move || {
         // Get handle in blocking context
         let handle = TAURI_APP.get().ok_or("App handle not initialized")?.clone();
@@ -9264,11 +9302,30 @@ async fn create_mls_group(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
+/// Create a new MLS group with initial member devices.
+/// Returns the new group's wire id. Callers that need per-member skip detail (e.g.
+/// `create_group_chat`) call `run_create_mls_group` directly instead of this command.
+#[tauri::command]
+async fn create_mls_group(
+    name: String,
+    avatar_ref: Option<String>,
+    initial_member_devices: Vec<(String, String)>,
+) -> Result<String, String> {
+    session::heartbeat();
+    require_key_derivation_version_2()?;
+    run_create_mls_group(name, avatar_ref, initial_member_devices)
+        .await
+        .map(|outcome| outcome.group_id)
+}
+
 /// Create an MLS group from a group name + member npubs (multi-device aware)
 /// - Validates non-empty group name (channel name; squad display name is a separate
 ///   field validated in `squad_catalog::upsert_squad`) and at least one member
 /// - For each member npub, refreshes their latest device keypackage(s)
-/// - If any member fails refresh or has zero keypackages, aborts with a clear error
+/// - A member with zero keypackages after refresh, or whose KeyPackage the MLS engine cannot
+///   parse (e.g. a legacy event missing the MIP-00/02 encoding tag), is skipped rather than
+///   aborting the whole group. If *every* requested member ends up skipped, creation still
+///   fails with a per-member reason.
 /// - Creates the MLS group and persists metadata so it's immediately discoverable
 ///
 /// Note on device selection policy:
@@ -9276,9 +9333,13 @@ async fn create_mls_group(
 /// - For now we choose the first returned device as the member's device to add
 ///   This can be evolved to pick "newest" by fetched_at if exposed; UI can later allow device selection.
 ///
-/// Frontend will invoke this command via: invoke('create_group_chat', { groupName, memberIds })
+/// Frontend invokes this via: invoke('create_group_chat', { groupName, memberIds }) and gets
+/// back `{ groupId, skippedMembers }`. Skipped members are never sent squad-invite DMs.
 #[tauri::command]
-async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Result<String, String> {
+async fn create_group_chat(
+    group_name: String,
+    member_ids: Vec<String>,
+) -> Result<GroupChatCreated, String> {
     session::heartbeat();
     require_key_derivation_version_2()?;
     // Input validation
@@ -9287,12 +9348,17 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
     - "Group name must not be empty": validation error. Frontend disables Create until non-empty; if surfaced, show inline status.
     - "Select at least one member to create a group": validation error. Frontend disables Create until at least one contact is selected; if surfaced, show inline status.
     - "Failed to refresh device keypackage for {npub}: {error}": hard failure for a specific member during preflight refresh. Abort creation and show this exact string in popup/toast and inline status.
-    - Members with zero device keypackages after refresh are skipped (they are not added to the group). If *all* selected members are missing keypackages, creation aborts with:
-      "No device keypackages found for any selected member: [npub1..., npub1...]".
-    - Any error bubbled from create_mls_group(...): engine/storage/network issues are propagated as user-facing strings. Surface them verbatim in the UI.
+    - Members with zero device keypackages after refresh, or whose KeyPackage the engine rejects,
+      are skipped rather than aborting: they show up in the response's `skippedMembers` instead of
+      blocking the rest of the group. If *every* selected member ends up skipped, creation aborts
+      with an error naming each npub and why.
+    - Any other error bubbled from group creation: engine/storage/network issues are propagated as
+      user-facing strings. Surface them verbatim in the UI.
 
     Success path
-    - Returns group_id (wire id used for relay 'h' tag filtering).
+    - Returns `{ groupId, skippedMembers }`: groupId is the wire id used for relay 'h' tag
+      filtering; skippedMembers lists members left out with their reason (backend diagnostics —
+      the UI maps skipped npubs through its own copy, it never renders these strings).
     - Backend also emits "mls_group_initial_sync" so the list view updates without restart.
     */
     let name = group_name.trim();
@@ -9311,7 +9377,7 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
 
     // For each member id (npub), refresh keypackages and pick one device to add
     let mut initial_member_devices: Vec<(String, String)> = Vec::with_capacity(member_ids.len());
-    let mut skipped_missing_keypackages: Vec<String> = Vec::new();
+    let mut preflight_skipped: Vec<mls::SkippedMember> = Vec::new();
 
     for npub in member_ids {
         // Attempt to refresh and fetch device keypackages for this contact
@@ -9331,47 +9397,124 @@ async fn create_group_chat(group_name: String, member_ids: Vec<String>) -> Resul
                 "[MLS][create_group_chat] Skipping member with no device keypackages: {}",
                 npub
             );
-            skipped_missing_keypackages.push(npub);
+            preflight_skipped.push(mls::SkippedMember {
+                npub,
+                reason: "no key package published".to_string(),
+            });
         }
     }
 
     // If everyone was skipped, abort with a clear error
     if initial_member_devices.is_empty() {
-        let list = if skipped_missing_keypackages.is_empty() {
-            "none".to_string()
-        } else {
-            format!("[{}]", skipped_missing_keypackages.join(", "))
-        };
         return Err(format!(
             "No device keypackages found for any selected member: {}",
-            list
+            skipped_members_detail(&preflight_skipped)
         ));
     }
 
     // Log any partially skipped members for troubleshooting
-    if !skipped_missing_keypackages.is_empty() {
+    if !preflight_skipped.is_empty() {
         eprintln!(
             "[MLS][create_group_chat] Proceeding without members missing keypackages: [{}]",
-            skipped_missing_keypackages.join(", ")
+            preflight_skipped
+                .iter()
+                .map(|s| s.npub.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
-    // Delegate to existing helper that persists metadata, publishes welcomes and emits UI events
-    // avatar_ref: None for now (out of scope for this subtask)
-    let result = create_mls_group(name.to_string(), None, initial_member_devices).await;
+    // Delegate to the shared helper that persists metadata, publishes welcomes and emits UI
+    // events; avatar_ref is None for now (out of scope for this subtask)
+    let outcome = run_create_mls_group(name.to_string(), None, initial_member_devices).await?;
 
-    if result.is_ok() {
-        tokio::spawn(async {
-            if let Err(err) = regenerate_device_keypackage(false).await {
-                eprintln!(
-                    "[MLS] Failed to regenerate device KeyPackage after group creation: {}",
-                    err
-                );
-            }
-        });
+    let skipped_members = merge_skipped_members(preflight_skipped, outcome.skipped);
+    for s in &skipped_members {
+        eprintln!(
+            "[MLS][create_group_chat] skipped {}: {}",
+            s.npub, s.reason
+        );
     }
 
-    result
+    tokio::spawn(async {
+        if let Err(err) = regenerate_device_keypackage(false).await {
+            eprintln!(
+                "[MLS] Failed to regenerate device KeyPackage after group creation: {}",
+                err
+            );
+        }
+    });
+
+    Ok(GroupChatCreated {
+        group_id: outcome.group_id,
+        skipped_members,
+    })
+}
+
+/// Format a skip list as `"[npub1 (reason1), npub2 (reason2)]"`, or `"none"` when empty — used
+/// in the "every selected member was skipped" error text.
+fn skipped_members_detail(skipped: &[mls::SkippedMember]) -> String {
+    if skipped.is_empty() {
+        return "none".to_string();
+    }
+    format!(
+        "[{}]",
+        skipped
+            .iter()
+            .map(|s| format!("{} ({})", s.npub, s.reason))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+#[cfg(test)]
+mod create_group_chat_helper_tests {
+    use super::{merge_skipped_members, skipped_members_detail};
+    use crate::mls::SkippedMember;
+
+    fn member(npub: &str, reason: &str) -> SkippedMember {
+        SkippedMember {
+            npub: npub.to_string(),
+            reason: reason.to_string(),
+        }
+    }
+
+    #[test]
+    fn merge_skipped_members_keeps_preflight_before_engine_skips() {
+        let preflight = vec![member("npub1", "no key package published")];
+        let engine = vec![member("npub2", "Missing required encoding tag")];
+        let merged = merge_skipped_members(preflight, engine);
+        assert_eq!(
+            merged.iter().map(|s| s.npub.as_str()).collect::<Vec<_>>(),
+            vec!["npub1", "npub2"]
+        );
+    }
+
+    #[test]
+    fn merge_skipped_members_handles_either_side_empty() {
+        assert!(merge_skipped_members(vec![], vec![]).is_empty());
+        let only_preflight = merge_skipped_members(vec![member("npub1", "reason")], vec![]);
+        assert_eq!(only_preflight.len(), 1);
+        let only_engine = merge_skipped_members(vec![], vec![member("npub1", "reason")]);
+        assert_eq!(only_engine.len(), 1);
+    }
+
+    #[test]
+    fn skipped_members_detail_formats_npub_and_reason() {
+        let skipped = vec![
+            member("npub1", "no key package published"),
+            member("npub2", "Missing required encoding tag"),
+        ];
+        assert_eq!(
+            skipped_members_detail(&skipped),
+            "[npub1 (no key package published), npub2 (Missing required encoding tag)]"
+        );
+    }
+
+    #[test]
+    fn skipped_members_detail_reports_none_when_empty() {
+        assert_eq!(skipped_members_detail(&[]), "none");
+    }
 }
 
 /// Add a member device to an MLS group

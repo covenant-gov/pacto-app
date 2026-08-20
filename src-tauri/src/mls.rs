@@ -124,6 +124,24 @@ pub struct EventCursor {
     pub last_seen_at: u64,
 }
 
+/// A member deliberately left out of a newly created group: no KeyPackage event could be
+/// resolved, or the resolved event failed MDK's key-package validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedMember {
+    pub npub: String,
+    pub reason: String,
+}
+
+/// Outcome of `MlsService::create_group`: the new group's wire id plus any requested members
+/// who could not be added.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCreateOutcome {
+    pub group_id: String,
+    pub skipped: Vec<SkippedMember>,
+}
+
 /// Message record for persisting decrypted MLS messages
 
 /// Main MLS service facade
@@ -291,6 +309,49 @@ fn map_add_member_failure(
     ))
 }
 
+/// Format the "every requested member was skipped" error naming each npub and why, so a
+/// group is never silently created solo when at least one member was actually requested.
+fn format_all_skipped_error(skipped: &[SkippedMember]) -> String {
+    let detail = skipped
+        .iter()
+        .map(|s| format!("{} ({})", s.npub, s.reason))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("create_group: no usable member key packages: {}", detail)
+}
+
+#[cfg(test)]
+mod format_all_skipped_error_tests {
+    use super::{format_all_skipped_error, SkippedMember};
+
+    #[test]
+    fn names_every_skipped_npub_with_its_reason() {
+        let skipped = vec![
+            SkippedMember {
+                npub: "npub1legacy".to_string(),
+                reason: "Missing required encoding tag".to_string(),
+            },
+            SkippedMember {
+                npub: "npub1unresolved".to_string(),
+                reason: "key package event not found on the trusted relays".to_string(),
+            },
+        ];
+        let msg = format_all_skipped_error(&skipped);
+        assert_eq!(
+            msg,
+            "create_group: no usable member key packages: npub1legacy (Missing required encoding tag); npub1unresolved (key package event not found on the trusted relays)"
+        );
+    }
+
+    #[test]
+    fn formats_empty_list_without_panicking() {
+        assert_eq!(
+            format_all_skipped_error(&[]),
+            "create_group: no usable member key packages: "
+        );
+    }
+}
+
 impl MlsService {
     /// Create a new MLS service instance (no engine initialized)
     pub fn new() -> Self {
@@ -393,6 +454,14 @@ impl MlsService {
         self.engine.clone().ok_or(MlsError::NotInitialized)
     }
 
+    /// Whether the current MLS engine can still parse a previously published KeyPackage
+    /// event. A cached reference to an event that no longer parses (e.g. a legacy event
+    /// missing the MIP-00/02 encoding tag) must be treated as a cache miss, not reused.
+    pub fn key_package_event_usable(&self, event: &nostr_sdk::Event) -> Result<(), String> {
+        let engine = self.engine().map_err(|e| e.to_string())?;
+        engine.parse_key_package(event).map(|_| ()).map_err(|e| e.to_string())
+    }
+
     /// Publish the device's keypackage to enable others to add this device to groups
     ///
     /// This will:
@@ -428,9 +497,16 @@ impl MlsService {
       2) Resolve each member device to its KeyPackage Event before touching the MLS engine:
          • Prefer local plaintext index "mls_keypackage_index" to get keypackage_ref by member npub + device_id.
          • If ref exists: fetch exact event by id; else: fetch latest Kind::MlsKeyPackage by author.
-         • Any member device with no resolvable KeyPackage is skipped here (this is a safe-guard; the UI path pre-validates via [rust.create_group_chat()](src-tauri/src/lib.rs:3108) and should not reach here with missing devices).
-      3) Create the group with the persistent sqlite-backed engine (no await while engine is in scope):
-         • engine.create_group(my_pubkey, member_kp_events, admins=[my_pubkey], group_config)
+         • Any member device with no resolvable KeyPackage event, or an npub that fails bech32
+           parsing, is recorded as a `SkippedMember` and left out — it never reaches the engine.
+      3) Inside the no-await engine scope, validate every candidate event with
+         `engine.parse_key_package(...)` before calling `engine.create_group(...)`. MDK's
+         `create_group` parses every event with `collect::<Result<_, _>>()?`, so a single
+         unusable KeyPackage (e.g. a legacy event missing the MIP-00/02 encoding tag) would
+         otherwise abort the whole group; validating up front turns that into one more skipped
+         member instead. If every candidate is rejected while at least one member was
+         requested, the call fails instead of silently creating a solo group.
+         • engine.create_group(my_pubkey, valid_kp_events, admins=[my_pubkey], group_config)
          • Capture:
            - engine_group_id (internal engine id, hex) for local operations and send path.
            - wire group id used on relays (h tag). We derive a canonical 64-hex when possible; fallback to engine id.
@@ -443,7 +519,8 @@ impl MlsService {
     - Error mapping (propagated as strings to the UI):
       • MlsError::NotInitialized: Nostr client/app handle not ready.
       • MlsError::NetworkError: signer resolution, relay parsing, or network fetch/publish failures.
-      • MlsError::NostrMlsError: engine create_group/create_message failures (e.g., storage/codec issues).
+      • MlsError::NostrMlsError: engine create_group/create_message failures, or every candidate
+        member being skipped (unresolvable or unparseable KeyPackage).
       • MlsError::StorageError: reading/writing SQL database or sqlite engine initialization paths.
       • MlsError::CryptoError: bech32 conversions or encrypted data (de)serialization.
       These are returned as Err(String) up to [rust.create_group_chat()](src-tauri/src/lib.rs:3108) and surfaced verbatim by the UI.
@@ -453,21 +530,21 @@ impl MlsService {
       • Event "mls_group_initial_sync" is emitted here for zero-latency list refresh.
 
     - Partial membership:
-      • If some members had no resolvable KeyPackage at engine time, they are skipped here; however, the preflight in [rust.create_group_chat()](src-tauri/src/lib.rs:3108) aborts early on any missing device, ensuring atomic creation semantics for the UI flow.
+      • Members with no resolvable or no parseable KeyPackage are skipped, not fatal: the group
+        is created with whoever remains and each skip's npub + reason comes back in
+        `GroupCreateOutcome.skipped`.
     */
     pub async fn create_group(
         &self,
         name: &str,
         avatar_ref: Option<&str>,
         initial_member_devices: &[(String, String)], // (member_pubkey, device_id) pairs
-    ) -> Result<String, MlsError> {
+    ) -> Result<GroupCreateOutcome, MlsError> {
         // Persistent group creation using sqlite-backed engine.
         // - Resolve signer and relay config
         // - Use engine.create_group() inside a no-await scope (avoid holding !Send across await)
         // - Publish welcome (if any) to the trusted relay set
         // - Store encrypted UI metadata to "mls_groups"
-        //
-        // TODO: Resolve `initial_member_devices` into Vec<Event> KeyPackages (from index or network).
 
         // Resolve client and my pubkey
         let client = get_nostr_client().map_err(|_| MlsError::NotInitialized)?;
@@ -500,6 +577,7 @@ impl MlsService {
         use nostr_sdk::prelude::*;
         let mut member_kp_events: Vec<Event> = Vec::new();
         let mut invited_recipients: Vec<PublicKey> = Vec::new();
+        let mut skipped: Vec<SkippedMember> = Vec::new();
 
         // Load plaintext index
         let index = self.read_keypackage_index().await.unwrap_or_default();
@@ -510,6 +588,10 @@ impl MlsService {
                 Ok(pk) => pk,
                 Err(_) => {
                     eprintln!("[MLS] Invalid member npub: {}", member_npub);
+                    skipped.push(SkippedMember {
+                        npub: member_npub.clone(),
+                        reason: "invalid npub".to_string(),
+                    });
                     continue;
                 }
             };
@@ -532,6 +614,10 @@ impl MlsService {
                             "[MLS] Invalid keypackage_ref in index for {}:{}",
                             member_npub, device_id
                         );
+                        skipped.push(SkippedMember {
+                            npub: member_npub.clone(),
+                            reason: "invalid key package reference in local index".to_string(),
+                        });
                         continue;
                     }
                 };
@@ -593,19 +679,51 @@ impl MlsService {
                     "[MLS] Skipping member device {}:{} (no KeyPackage event)",
                     member_npub, device_id
                 );
+                skipped.push(SkippedMember {
+                    npub: member_npub.clone(),
+                    reason: "key package event not found on the trusted relays".to_string(),
+                });
             }
         }
 
-        let invited_count = member_kp_events.len();
-
         // Perform engine operations without awaits in scope
-        let (group_id_hex, engine_gid_hex, welcome_rumors) = {
+        let (group_id_hex, engine_gid_hex, welcome_rumors, invited_recipients) = {
             let engine = self.engine()?; // Arc to sqlite engine (may be !Send internally)
+
+            // MDK's create_group parses every event with collect::<Result<_, _>>()? — one
+            // unusable KeyPackage would otherwise abort the whole group. Validate individually
+            // first so a stale/legacy key package only drops that member.
+            let mut valid_events: Vec<Event> = Vec::with_capacity(member_kp_events.len());
+            let mut valid_recipients: Vec<PublicKey> = Vec::with_capacity(invited_recipients.len());
+            for (event, recipient) in member_kp_events.into_iter().zip(invited_recipients.into_iter()) {
+                match engine.parse_key_package(&event) {
+                    Ok(_) => {
+                        valid_events.push(event);
+                        valid_recipients.push(recipient);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[MLS] KeyPackage failed validation for {}: {}",
+                            recipient.to_bech32().unwrap_or_default(),
+                            e
+                        );
+                        skipped.push(SkippedMember {
+                            npub: recipient.to_bech32().unwrap_or_default(),
+                            reason: e.to_string(),
+                        });
+                    }
+                }
+            }
+
+            if valid_events.is_empty() && !initial_member_devices.is_empty() {
+                return Err(MlsError::NostrMlsError(format_all_skipped_error(&skipped)));
+            }
+
             let create_out = engine
                 .create_group(
                     &my_pubkey,
-                    member_kp_events, // invited devices' keypackage events
-                    group_config,     // admins now in config
+                    valid_events, // invited devices' keypackage events (validated above)
+                    group_config, // admins now in config
                 )
                 .map_err(|e| MlsError::NostrMlsError(format!("create_group: {}", e)))?;
 
@@ -645,8 +763,15 @@ impl MlsService {
             // Use wire id for UI/store group_id (relay filtering), engine id for local engine ops.
             let gid_hex = wire_gid_hex;
 
-            (gid_hex, engine_gid_hex, create_out.welcome_rumors)
+            (
+                gid_hex,
+                engine_gid_hex,
+                create_out.welcome_rumors,
+                valid_recipients,
+            )
         }; // engine dropped here before any await
+
+        let invited_count = invited_recipients.len();
 
         // Accept 32-hex or 64-hex group ids (engine/codec variability)
         if group_id_hex.len() != 32 && group_id_hex.len() != 64 {
@@ -783,12 +908,16 @@ impl MlsService {
         }
 
         println!(
-            "[MLS] Created group (persistent) id={}, name=\"{}\", invited_devices_hint={}",
+            "[MLS] Created group (persistent) id={}, name=\"{}\", invited_devices_hint={}, skipped={}",
             group_id_hex,
             name,
-            initial_member_devices.len()
+            initial_member_devices.len(),
+            skipped.len()
         );
-        Ok(group_id_hex)
+        Ok(GroupCreateOutcome {
+            group_id: group_id_hex,
+            skipped,
+        })
     }
 
     /// Add a member device to an existing group
@@ -3685,6 +3814,60 @@ mod mls_leave_group_state_lost_tests {
         assert!(
             members.contains(&alice_keys.public_key()),
             "admin must remain"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mls_key_package_validity_tests {
+    use super::*;
+    use nostr_sdk::prelude::*;
+
+    /// Pins the contract `regenerate_device_keypackage`'s cache gate depends on: a
+    /// freshly generated key package event parses, and the same content republished
+    /// without the `encoding` tag (matching Pacto <= v0.5.2's legacy hex-content
+    /// events) is rejected. If MDK's acceptance rules ever change, this must fail.
+    #[tokio::test]
+    async fn key_package_without_encoding_tag_is_rejected() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([21u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+
+        let valid_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content.clone())
+            .tags(kp.tags_443.clone())
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign keypackage");
+        engine
+            .parse_key_package(&valid_event)
+            .expect("freshly generated key package must parse");
+
+        let tags_without_encoding: Vec<Tag> = kp
+            .tags_443
+            .into_iter()
+            .filter(|tag| tag.kind() != TagKind::Custom("encoding".into()))
+            .collect();
+        let legacy_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content)
+            .tags(tags_without_encoding)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign legacy keypackage");
+
+        let err = engine
+            .parse_key_package(&legacy_event)
+            .expect_err("key package missing the encoding tag must be rejected");
+        assert!(
+            err.to_string().contains("encoding tag"),
+            "expected an encoding-tag error, got: {}",
+            err
         );
     }
 }
