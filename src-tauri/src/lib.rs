@@ -2383,14 +2383,14 @@ impl WelcomeOutcome {
 
 /// Classify a `process_welcome` error message as permanent (no retry will ever help)
 /// or transient (may succeed later). Once a welcome permanently fails (e.g. no
-/// matching key package after a seed restore), the MDK engine marks the wrapper
-/// event processed/failed forever; these replay errors carry no new information.
+/// matching key package after a seed restore), mdk-core's `process_welcome` refuses
+/// to retry it and instead returns `Error::WelcomePreviouslyFailed(reason)` on every
+/// later call — Display `"welcome previously failed to process: {reason}"`, with the
+/// original failure text interpolated in, so it can only be matched by prefix, never
+/// by exact equality (mdk-core 0.8.0's `welcomes.rs`, `process_welcome`'s retry guard).
 fn classify_welcome_error(msg: &str) -> WelcomeOutcome {
-    const PERMANENT_ERRORS: [&str; 2] = [
-        "missing welcome for processed welcome",
-        "processed welcome not found",
-    ];
-    if PERMANENT_ERRORS.contains(&msg) {
+    const PERMANENT_RETRY_PREFIX: &str = "welcome previously failed to process:";
+    if msg.starts_with(PERMANENT_RETRY_PREFIX) {
         WelcomeOutcome::PermanentFailure
     } else {
         WelcomeOutcome::TransientFailure
@@ -2402,17 +2402,19 @@ mod welcome_outcome_tests {
     use super::{classify_welcome_error, WelcomeOutcome};
 
     #[test]
-    fn classifies_missing_welcome_for_processed_welcome_as_permanent() {
+    fn classifies_welcome_previously_failed_as_permanent() {
         assert_eq!(
-            classify_welcome_error("missing welcome for processed welcome"),
+            classify_welcome_error(
+                "welcome previously failed to process: Error previewing welcome: Welcome(\"No matching key package was found in the key store.\")"
+            ),
             WelcomeOutcome::PermanentFailure
         );
     }
 
     #[test]
-    fn classifies_processed_welcome_not_found_as_permanent() {
+    fn classifies_bare_permanent_prefix_with_no_reason_as_permanent() {
         assert_eq!(
-            classify_welcome_error("processed welcome not found"),
+            classify_welcome_error("welcome previously failed to process:"),
             WelcomeOutcome::PermanentFailure
         );
     }
