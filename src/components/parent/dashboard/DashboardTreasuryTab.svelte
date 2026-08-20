@@ -20,40 +20,61 @@
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
-  export let parentId = '';
-  export let network = 'sepolia';
-  export let sponsorRow: SquadInfraDto | null = null;
-  export let treasurySafes: TreasurySafeEntry[] = [];
-  export let displayedTreasurySafes: TreasurySafeEntry[] = [];
-  export let governanceTreasurySafe: TreasurySafeEntry | null = null;
-  export let pactoPayload: PactoGovProviderPayloadV1 | null = null;
-  export let announcementsGroupId = '';
-  export let myAddress = '';
-  export let captainWearers: string[] = [];
-  export let crewWearers: string[] = [];
-  export let onOpenSponsorDeploy: () => void = () => {};
-  export let onOpenDeploySafe: () => void = () => {};
-  export let onOpenImportSafe: () => void = () => {};
+  interface Props {
+    parentId?: string;
+    network?: string;
+    sponsorRow?: SquadInfraDto | null;
+    treasurySafes?: TreasurySafeEntry[];
+    displayedTreasurySafes?: TreasurySafeEntry[];
+    governanceTreasurySafe?: TreasurySafeEntry | null;
+    pactoPayload?: PactoGovProviderPayloadV1 | null;
+    announcementsGroupId?: string;
+    myAddress?: string;
+    captainWearers?: string[];
+    crewWearers?: string[];
+    onOpenSponsorDeploy?: () => void;
+    onOpenDeploySafe?: () => void;
+    onOpenImportSafe?: () => void;
+  }
 
-  let capabilitiesLoadKey = '';
-  let capabilities: Awaited<ReturnType<typeof getSquadCapabilities>> | null = null;
+  let {
+    parentId = '',
+    network = 'sepolia',
+    sponsorRow = null,
+    treasurySafes = [],
+    displayedTreasurySafes = [],
+    governanceTreasurySafe = null,
+    pactoPayload = null,
+    announcementsGroupId = '',
+    myAddress = '',
+    captainWearers = [],
+    crewWearers = [],
+    onOpenSponsorDeploy = () => {},
+    onOpenDeploySafe = () => {},
+    onOpenImportSafe = () => {},
+  }: Props = $props();
 
-  $: privilege = resolveGovernancePrivilege({
-    myAddress,
-    safeAddress: pactoPayload?.safe ?? '',
-    captainWearers,
-    crewWearers,
-    capabilities,
-  }) as GovernancePrivilege;
+  let capabilitiesLoadKey = $state('');
+  let capabilities = $state<Awaited<ReturnType<typeof getSquadCapabilities>> | null>(null);
 
-  $: {
+  const privilege = $derived(
+    resolveGovernancePrivilege({
+      myAddress,
+      safeAddress: pactoPayload?.safe ?? '',
+      captainWearers,
+      crewWearers,
+      capabilities,
+    }) as GovernancePrivilege,
+  );
+
+  $effect(() => {
     const pid = parentId.trim();
     const key = `${pid}|${network}`;
     if (pid && key !== capabilitiesLoadKey) {
       capabilitiesLoadKey = key;
       void loadCapabilities(pid);
     }
-  }
+  });
 
   async function loadCapabilities(pid: string) {
     const key = `${pid}|${network}`;
@@ -90,15 +111,17 @@
     if (url) openExternalUrl(url);
   }
 
-  $: treasuryFetchMeta = parentId ? ($treasurySafesFetchMetaByParentId[parentId] ?? null) : null;
-  $: treasurySafeRefreshKey = displayedTreasurySafes.map((e) => e.id).join('|');
-  $: if (treasurySafeRefreshKey) {
-    void refreshAllSafeStates(displayedTreasurySafes);
-  }
-  $: govSafeAddress = governanceTreasurySafe?.safeAddress ?? pactoPayload?.safe ?? '';
-  $: showGovTreasury = !!govSafeAddress.trim();
-  $: govExUrl = showGovTreasury ? explorerAddressUrl(parseSupportedChainId(network), govSafeAddress) : null;
-  $: govSafeAppUrl = showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null;
+  const treasuryFetchMeta = $derived(parentId ? ($treasurySafesFetchMetaByParentId[parentId] ?? null) : null);
+  const treasurySafeRefreshKey = $derived(displayedTreasurySafes.map((e) => e.id).join('|'));
+  $effect(() => {
+    if (treasurySafeRefreshKey) {
+      void refreshAllSafeStates(displayedTreasurySafes);
+    }
+  });
+  const govSafeAddress = $derived(governanceTreasurySafe?.safeAddress ?? pactoPayload?.safe ?? '');
+  const showGovTreasury = $derived(!!govSafeAddress.trim());
+  const govExUrl = $derived(showGovTreasury ? explorerAddressUrl(parseSupportedChainId(network), govSafeAddress) : null);
+  const govSafeAppUrl = $derived(showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null);
 </script>
 
 <SquadSponsorTreasuryPanel {parentId} {sponsorRow} onOpenDeploy={onOpenSponsorDeploy} />

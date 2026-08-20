@@ -27,50 +27,76 @@
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
-  export let squad: Squad;
-  export let announcementsGroupId: string | null = null;
-  export let channelMembers: string[] = [];
-  export let loadingMembers = false;
-  export let settingsChainError = '';
-  export let settingsChainLoading = false;
-  export let settingsChainRefreshing = false;
-  export let squadMemberEvmByNpub: Record<string, string> = {};
-  export let memberHatByAddress: Record<string, string> = {};
-  export let memberRolesByAddress: Record<string, string> = {};
-  export let onOpenSquadRolesModal: () => void = () => {};
-  export let showManagePrivileges = false;
-  export let pactoGovRevision = '';
+  let {
+    squad,
+    announcementsGroupId = null,
+    channelMembers = [],
+    loadingMembers = false,
+    settingsChainError = '',
+    settingsChainLoading = false,
+    settingsChainRefreshing = false,
+    squadMemberEvmByNpub = {},
+    memberHatByAddress = {},
+    memberRolesByAddress = {},
+    onOpenSquadRolesModal = () => {},
+    showManagePrivileges = false,
+    pactoGovRevision = '',
+    sponsorExtStatus = null,
+    sponsorExtLoading = false,
+    sponsorExtError = '',
+    sponsorNetwork = '',
+    parentId = '',
+    onRefreshSponsorExt = () => {},
+    sponsorHatsMode = false,
+    hasSponsor = false,
+    captainWearers = [],
+    crewWearers = [],
+  }: {
+    squad: Squad;
+    announcementsGroupId?: string | null;
+    channelMembers?: string[];
+    loadingMembers?: boolean;
+    settingsChainError?: string;
+    settingsChainLoading?: boolean;
+    settingsChainRefreshing?: boolean;
+    squadMemberEvmByNpub?: Record<string, string>;
+    memberHatByAddress?: Record<string, string>;
+    memberRolesByAddress?: Record<string, string>;
+    onOpenSquadRolesModal?: () => void;
+    showManagePrivileges?: boolean;
+    pactoGovRevision?: string;
+    /** Sponsor Ext eligibility (null when no Ext sponsor / not loaded). */
+    sponsorExtStatus?: SquadSponsorExtStatusDto | null;
+    sponsorExtLoading?: boolean;
+    sponsorExtError?: string;
+    sponsorNetwork?: string;
+    parentId?: string;
+    onRefreshSponsorExt?: () => void;
+    /** Hats-linked sponsor: eligibility from captain/crew wear. */
+    sponsorHatsMode?: boolean;
+    hasSponsor?: boolean;
+    captainWearers?: string[];
+    crewWearers?: string[];
+  } = $props();
 
-  /** Sponsor Ext eligibility (null when no Ext sponsor / not loaded). */
-  export let sponsorExtStatus: SquadSponsorExtStatusDto | null = null;
-  export let sponsorExtLoading = false;
-  export let sponsorExtError = '';
-  export let sponsorNetwork = '';
-  export let parentId = '';
-  export let onRefreshSponsorExt: () => void = () => {};
-  /** Hats-linked sponsor: eligibility from captain/crew wear. */
-  export let sponsorHatsMode = false;
-  export let hasSponsor = false;
-  export let captainWearers: string[] = [];
-  export let crewWearers: string[] = [];
+  let sponsoringAddress = $state('');
+  let rosterKeyNeeded = $state(false);
 
-  let sponsoringAddress = '';
-  let rosterKeyNeeded = false;
-
-  $: myNpub = $currentUser?.npub ?? '';
-  $: displayEvmByNpub = squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded);
-  $: myRosterEvm = (myNpub ? displayEvmByNpub[myNpub]?.trim() : '') || '';
-  $: npubByAddress = npubByEvmAddressFromSquadRoster(displayEvmByNpub);
-  $: permittedByAddress = permittedByAddressFromExtStatus(sponsorExtStatus?.memberPermits ?? []);
-  $: addressOwner = sponsorExtStatus?.addressOwner?.trim().toLowerCase() ?? '';
-  $: ownerNpub = addressOwner ? npubByAddress[addressOwner] : undefined;
-  $: iAmSponsorOwner =
-    !!addressOwner && !!myRosterEvm && myRosterEvm.toLowerCase() === addressOwner;
-  $: hatsWired = sponsorExtStatus?.hatsWired === true;
-  $: canManagePermits = iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId;
-  $: showSponsoredCol = hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError);
-  $: sponsorExtRpcKind = rpcReadErrorKind(sponsorExtError);
-  $: settingsChainRpcKind = rpcReadErrorKind(settingsChainError);
+  const myNpub = $derived($currentUser?.npub ?? '');
+  const displayEvmByNpub = $derived(squadMemberEvmForDisplay(squadMemberEvmByNpub, myNpub, rosterKeyNeeded));
+  const myRosterEvm = $derived((myNpub ? displayEvmByNpub[myNpub]?.trim() : '') || '');
+  const npubByAddress = $derived(npubByEvmAddressFromSquadRoster(displayEvmByNpub));
+  const permittedByAddress = $derived(permittedByAddressFromExtStatus(sponsorExtStatus?.memberPermits ?? []));
+  const addressOwner = $derived(sponsorExtStatus?.addressOwner?.trim().toLowerCase() ?? '');
+  const ownerNpub = $derived(addressOwner ? npubByAddress[addressOwner] : undefined);
+  const iAmSponsorOwner = $derived(
+    !!addressOwner && !!myRosterEvm && myRosterEvm.toLowerCase() === addressOwner,
+  );
+  const hatsWired = $derived(sponsorExtStatus?.hatsWired === true);
+  const canManagePermits = $derived(iAmSponsorOwner && !hatsWired && !!sponsorNetwork && !!parentId);
+  const showSponsoredCol = $derived(hasSponsor && (sponsorHatsMode || !!sponsorExtStatus || sponsorExtLoading || !!sponsorExtError));
+  const sponsorExtRpcKind = $derived(rpcReadErrorKind(sponsorExtError));
+  const settingsChainRpcKind = $derived(rpcReadErrorKind(settingsChainError));
 
   onMount(() => {
     if (!parentId) return;
