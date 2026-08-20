@@ -41,6 +41,7 @@
 
   let myRosterEvm = $state('');
   let resolvingDeployer = $state(true);
+  let deploying = $state(false);
   let deployError = $state('');
   let customizeParams = $state(false);
   let crewChangeDelaySecs = $state(WAR_GAME_SQUAD_PARAMS.crewChangeDelaySecs);
@@ -98,6 +99,7 @@
   });
 
   function executeDeploy() {
+    if (deploying) return;
     deployError = '';
     if (resolvingDeployer) {
       deployError = tFn('governance.deployWarGame.error.loadingEvm');
@@ -121,7 +123,8 @@
       deployError = tFn('governance.squadParams.error.invalid');
       return;
     }
-    startWarGameDeploy({
+    deploying = true;
+    const started = startWarGameDeploy({
       parentId: parentId.trim(),
       announcementsGroupId,
       captain: myRosterEvm,
@@ -130,9 +133,11 @@
       squadParams,
       memberOptions,
       onReject: (message) => {
+        deploying = false;
         deployError = message;
       },
       onError: (message) => {
+        deploying = false;
         deployError = message;
       },
       onComplete: async (out) => {
@@ -140,10 +145,11 @@
         onClose();
       },
     });
+    if (!started) deploying = false;
   }
 </script>
 
-<Modal {titleId} descriptionId={descId} {onClose} dismissible contentClass="deploy-war-game-panel">
+<Modal {titleId} descriptionId={descId} {onClose} dismissible={!deploying} contentClass="deploy-war-game-panel">
   <h2 id={titleId}>
     {redeploy ? $t('governance.deployWarGame.redeployTitle') : $t('governance.deployWarGame.title')}
   </h2>
@@ -177,7 +183,7 @@
     {/if}
   </div>
 
-  <fieldset class="war-game-deploy-field">
+  <fieldset class="war-game-deploy-field" disabled={deploying}>
     <legend class="war-game-deploy-label">{$t('governance.deployWarGame.payFrom')}</legend>
     <label class="signer-option">
       <input type="radio" name="war-game-signer" value="default" bind:group={signerWallet} />
@@ -200,6 +206,7 @@
       inputmode="decimal"
       placeholder={$t('governance.deployWarGame.depositPlaceholder')}
       value={depositEth}
+      disabled={deploying}
       oninput={(e) => {
         depositEth = normalizeLeadingDotDecimalInput((e.currentTarget as HTMLInputElement).value);
       }}
@@ -213,6 +220,7 @@
     bind:proposalExpirySecs
     bind:crewVoteMode
     bind:quorumBps
+    disabled={deploying}
     customizeHintKey="governance.deployWarGame.customizeHint"
   />
 
@@ -225,11 +233,12 @@
   {/if}
 
   <div class="modal-actions">
-    <button type="button" class="btn-secondary" onclick={onClose}>{$t('governance.common.cancel')}</button>
+    <button type="button" class="btn-secondary" onclick={onClose} disabled={deploying}>{$t('governance.common.cancel')}</button>
     <button
       type="button"
       class="btn-primary"
       disabled={
+        deploying ||
         resolvingDeployer ||
         !myRosterEvm ||
         !depositWei ||
@@ -237,7 +246,7 @@
       }
       onclick={executeDeploy}
     >
-      {$t('governance.common.execute')}
+      {deploying ? $t('governance.common.deploying') : $t('governance.common.execute')}
     </button>
   </div>
 </Modal>
