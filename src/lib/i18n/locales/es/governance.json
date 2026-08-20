@@ -218,6 +218,7 @@
 	"governance.proposal.active": "Activo",
 	"governance.proposal.timelock": "Bloqueo temporal",
 	"governance.proposal.mutinyMeta": "Hacia {candidate} · a favor {yeas} / snapshot {snapshot}",
+	"governance.proposal.txHash": "Tx {hash}",
 	"governance.proposal.offboardMeta": "Quitar {address} · a favor {yeas} / en contra {nays} · snapshot {snapshot} · fecha límite {deadline}",
 	"governance.proposal.expired": "Expirado",
 	"governance.common.expire": "Expirar",

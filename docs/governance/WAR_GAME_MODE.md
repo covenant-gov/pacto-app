@@ -39,6 +39,6 @@ Sequence: create/fund the parent Ext if `factory.squads(parentSquadId)` is empty
 
 War-game-first is intended. The factory has **one** parent slot (`squads(keccak256(parentId))`); creating that Ext is required so round clones can mint. Live Deploy Governance / Finish sponsor must **not** call `createSquadSponsor` on that same slot. It `postInitialize`s the **parent** Ext onto **NavePirataRegistry** with the live top hat. Round Exts stay on WarGameRegistry. Do not dual-read round clones as live `sponsor`.
 
-The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`.
+The Active row payload includes `status`, `round`, `gameSquadId`, `sponsor`, and optional `retiredSponsor`. Redeploy upserts the same row. War-game UserOps encode `gameSquadId` (factory `warGameSquadId(parent, round)`), not `keccak256(parentId)`. Deploy, redeploy, and retire fan out on `#announcements` as `war_game_updated`. Wargame Treasury binds `payload.sponsor` (the round clone), never the parent Ext live `sponsor` row.
 
 The Wargame hub reads role hat IDs from **WarGameRegistry**; live `#dashboard` stays on **NavePirataRegistry**.

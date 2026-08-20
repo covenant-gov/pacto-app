@@ -219,6 +219,7 @@
 	"governance.proposal.timelock": "Timelock",
 	"governance.proposal.meta": "Yeas {yeas} / nays {nays} · snapshot {snapshot} · deadline {deadline}",
 	"governance.proposal.mutinyMeta": "Toward {candidate} · yeas {yeas} / snapshot {snapshot}",
+	"governance.proposal.txHash": "Tx {hash}",
 	"governance.proposal.offboardMeta": "Remove {address} · yeas {yeas} / nays {nays} · snapshot {snapshot} · deadline {deadline}",
 	"governance.proposal.expired": "Expired",
 	"governance.common.expire": "Expire",

@@ -114,6 +114,10 @@ import { resetWalletPeerInfoRequestInFlight } from '../wallet/wallet-peer-exchan
 import { resetSquadBotHolderActionInFlight } from '../squad/squad-bot';
 import { resetSquadStateSyncRequestInFlight } from '../squad/squad-state-sync';
 import { resetDeferredSquadRosterKeyParentIds } from '../squad/squad-roster-key-choice';
+import {
+  MUTINY_PROCESS_TX_PREFIX,
+  resetMutinyProcessTxStore,
+} from '../governance/mutiny-process-tx';
 import { PACTO_SQUAD_JOIN_MUTED_PREFIX } from '../squad/squad-join-spam';
 import { SQUAD_NETWORK_PREFIX } from '../squad/squad-network';
 import { SQUAD_RPC_PREFIX } from '../squad/squad-rpc';
@@ -168,6 +172,7 @@ const SCOPED_KEY_PREFIXES = [
   STARTUP_CHECK_PREFIX,
   'pacto_locale_v1',
   MLS_HISTORY_WELCOME_PREFIX,
+  MUTINY_PROCESS_TX_PREFIX,
 ] as const;
 
 function clearAccountLocalStorage(npub?: string): void {
@@ -205,6 +210,7 @@ export function clearAccountState(npub?: string): void {
   resetSquadBotHolderActionInFlight();
   resetSquadStateSyncRequestInFlight();
   resetDeferredSquadRosterKeyParentIds();
+  resetMutinyProcessTxStore();
   resetSquadJoinRequestStores();
   resetSquadHubAlertStores();
   resetGovActionPromptStores();

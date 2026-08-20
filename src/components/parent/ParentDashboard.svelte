@@ -18,13 +18,13 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   import type { ParentGovernanceDto, SquadInfraDto, TreasuryProposalDto, HatTreeNodeDto, SquadSponsorExtStatusDto } from '../../lib/governance/api';
   import {
     getSquadSponsorExtStatus,
-    hasSponsorInfra,
     pactoGovInfraRow,
     pactoGovTreasuryEntryId,
     pactoGovWargameInfraRow,
     sponsorInfraRow,
     withLegacyProvider,
   } from '../../lib/governance/api';
+  import { resolveHubSponsorRow } from '../../lib/governance/hub-sponsor';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';  import { buildCaptainMemberOptions } from '../../lib/governance/start-pacto-gov-deploy';
   import { parsePactoGovProviderPayload } from '../../lib/governance/pacto-gov-payload';
   import {
@@ -160,9 +160,11 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   let deployCoordinator: GovernanceDeployCoordinator | undefined;
 
   $: parentId = parent?.id;
-  $: sponsorRow = sponsorInfraRow(squadInfraRows);
+  $: liveSponsorRow = sponsorInfraRow(squadInfraRows);
+  $: liveHasSponsor = liveSponsorRow != null;
+  $: sponsorRow = resolveHubSponsorRow({ warGameStack, rows: squadInfraRows });
   $: sponsorVariant = resolveSquadSponsorVariant(sponsorRow);
-  $: hasSponsor = hasSponsorInfra(squadInfraRows);
+  $: hasSponsor = sponsorRow != null;
   $: displayedTreasurySafes = vaultTreasurySafesForParent(
     treasurySafes ?? [],
     parentId ?? '',
@@ -829,7 +831,7 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
               myAddress={myGovernanceAddress}
               {captainWearers}
               {crewWearers}
-              onOpenSponsorDeploy={openLaunchpad}
+              onOpenSponsorDeploy={warGameStack ? undefined : openLaunchpad}
               onOpenDeploySafe={openDeploySafe}
               onOpenImportSafe={openSetSafe}
               {warGameStack}
@@ -912,14 +914,14 @@ import { TREASURY_SAFE_UI_CAP, governanceTreasurySafeForParent, vaultTreasurySaf
   parentId={parentId ?? ''}
   {announcementsGroupId}
   treasurySafeCount={treasurySafes?.length ?? 0}
-  {hasSponsor}
+  hasSponsor={liveHasSponsor}
   {hasPactoGov}
   {hasSquadAdmin}
   {warGameStack}
   squadAdminProxy={squadAdminCtx?.proxy ?? ''}
   {squadAdminNetwork}
   {squadNetwork}
-  sponsorAddress={sponsorRow?.canonicalRef ?? ''}
+  sponsorAddress={liveSponsorRow?.canonicalRef ?? ''}
   pactoGovAddress={pactoPayload?.safe?.trim() ||
     pactoPayload?.squadAdminProxy?.trim() ||
     pactoGovRow?.canonicalRef?.trim() ||

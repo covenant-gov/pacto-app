@@ -12,6 +12,8 @@
   } from '../../../lib/governance/treasury-proposal-ui';
   import { executableTreasuryProposals, isMutinyExecutable, isMutinyExpirable } from '../../../lib/governance/gov-proposal-lists';
   import { isCrewOffboardExecutable, isCrewOffboardExpirable } from '../../../lib/governance/crew-offboard';
+  import { mutinyTxExplorerUrl, shortTxHash } from '../../../lib/governance/mutiny-process-tx';
+  import { openExternalUrl } from '../../../lib/utils/open-external';
   import ProposalActionSummary from './ProposalActionSummary.svelte';
 
   export let card: GovProcessCard;
@@ -21,6 +23,8 @@
   export let privilegeReasonKey = '';
   export let onExecute: (() => void) | undefined = undefined;
   export let onExpire: (() => void) | undefined = undefined;
+  export let network = 'sepolia';
+  export let txHash = '';
 
   let delayElapsed = false;
   let unlockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +137,9 @@
       ? $t(execUi.expireReasonKey)
       : execUi.expireReasonKey;
   })();
+  $: mutinyExplorerUrl =
+    card.kind === 'mutiny' && txHash.trim() ? mutinyTxExplorerUrl(network, txHash) : null;
+  $: mutinyTxShort = txHash.trim() ? shortTxHash(txHash.trim()) : '';
 </script>
 
 <li
@@ -200,6 +207,22 @@
       {$t('governance.proposal.captainLine')}
       <code class="proposal-card-ref">{card.status.captain || '—'}</code>
     </p>
+    {#if mutinyTxShort}
+      <p class="proposal-card-meta muted">
+        {$t('governance.proposal.txHash', { values: { hash: mutinyTxShort } })}
+        {#if mutinyExplorerUrl}
+          <button
+            type="button"
+            class="proposal-card-tx-link"
+            onclick={() => {
+              if (mutinyExplorerUrl) openExternalUrl(mutinyExplorerUrl);
+            }}
+          >
+            {$t('governance.action.viewOnExplorer')}
+          </button>
+        {/if}
+      </p>
+    {/if}
   {:else if card.kind === 'crew_offboard'}
     <p class="proposal-card-meta muted">
       {$t('governance.proposal.offboardMeta', {
@@ -322,6 +345,16 @@
     font-family: ui-monospace, monospace;
     font-size: 0.8125rem;
     word-break: break-all;
+  }
+  .proposal-card-tx-link {
+    margin-left: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--brand);
+    cursor: pointer;
+    font-size: inherit;
+    text-decoration: underline;
   }
   .muted {
     color: var(--text-muted);

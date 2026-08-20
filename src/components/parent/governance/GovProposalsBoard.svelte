@@ -32,6 +32,10 @@
     govWriteSubmittedToast,
   } from '../../../lib/governance/gov-write-funding';
   import { govWriteErrorMessage } from '../../../lib/governance/gov-write-errors';
+  import {
+    mutinyProcessTxByParentId,
+    mutinyTxHashForCard,
+  } from '../../../lib/governance/mutiny-process-tx';
   import { showToast } from '../../../stores/toast';
   import { get } from 'svelte/store';
   import { t } from 'svelte-i18n';
@@ -71,6 +75,7 @@
     crewOffboardQuorumBps: parseQuorumBps(qmStatus?.crewOffboardQuorumBps),
   });
   $: openCount = countOpenGovProcesses(processCards);
+  $: mutinyTxHash = mutinyTxHashForCard($mutinyProcessTxByParentId, parentId);
   $: boardLoading =
     (proposalsLoading && proposals.length === 0) ||
     (mutinyLoading && !mutinyStatus) ||
@@ -261,6 +266,8 @@
       {#each processCards as card (govProcessCardKey(card))}
         <GovProcessCardView
           {card}
+          {network}
+          txHash={card.kind === 'mutiny' ? mutinyTxHash : ''}
           showExecute
           executePending={acting}
           privilegeReasonKey={privilegeReasonKeyFor(card)}

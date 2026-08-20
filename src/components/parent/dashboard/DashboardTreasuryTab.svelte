@@ -31,7 +31,7 @@
   export let myAddress = '';
   export let captainWearers: string[] = [];
   export let crewWearers: string[] = [];
-  export let onOpenSponsorDeploy: () => void = () => {};
+  export let onOpenSponsorDeploy: (() => void) | undefined = undefined;
   export let onOpenDeploySafe: () => void = () => {};
   export let onOpenImportSafe: () => void = () => {};
   export let warGameStack = false;
@@ -102,7 +102,11 @@
   $: govSafeAppUrl = showGovTreasury ? safeAppHomeUrl(parseSupportedChainId(network), govSafeAddress) : null;
 </script>
 
-<SquadSponsorTreasuryPanel {parentId} {sponsorRow} onOpenDeploy={onOpenSponsorDeploy} />
+<SquadSponsorTreasuryPanel
+  {parentId}
+  {sponsorRow}
+  onOpenDeploy={warGameStack ? undefined : onOpenSponsorDeploy}
+/>
 
 {#if showGovTreasury}
   <section class="dashboard-section gov-treasury-section" aria-labelledby="gov-treasury-heading">

@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { GovernanceProcessKind } from '../announcements';
 import { withPactoGovProviderPayloadTxHash } from './pacto-gov-payload';
 import { announceGovernanceProcessUpdated } from './governance-process-announce';
+import { recordMutinyProcessTx } from './mutiny-process-tx';
 import { squadRpcUrlsForInvoke } from '../squad/squad-rpc-invoke';
 import type { SquadParamsInput } from './squad-params';
 import { squadParamsToInvoke } from './squad-params';
@@ -672,8 +673,16 @@ function afterGovWrite(
     kind: GovernanceProcessKind;
     address?: string;
     proposalId?: string;
+    mutinyStart?: boolean;
   },
 ): GovernanceWriteResultDto {
+  if (hint.kind === 'mutiny' && result.txHash?.trim()) {
+    recordMutinyProcessTx({
+      parentId: hint.parentId,
+      txHash: result.txHash,
+      isStart: hint.mutinyStart === true,
+    });
+  }
   void announceGovernanceProcessUpdated({
     parentId: hint.parentId,
     kind: hint.kind,
@@ -820,7 +829,7 @@ export async function mutinyStartToCrewMember(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -838,7 +847,7 @@ export async function mutinyStartToCommittee(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -856,7 +865,7 @@ export async function mutinyStartToArbitraryEoa(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -874,7 +883,7 @@ export async function mutinyStartToArbitraryContract(params: {
       proposed: params.proposed.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny', address: params.proposed },
+    { parentId: params.parentId, kind: 'mutiny', address: params.proposed, mutinyStart: true },
   );
 }
 
@@ -890,7 +899,7 @@ export async function mutinyStartToPauseCaptain(params: {
       mutinyModule: params.mutinyModule.trim(),
       rpcUrls: squadRpcUrlsForInvoke(params.parentId, params.network),
     })) as GovernanceWriteResultDto,
-    { parentId: params.parentId, kind: 'mutiny' },
+    { parentId: params.parentId, kind: 'mutiny', mutinyStart: true },
   );
 }
 

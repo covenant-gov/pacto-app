@@ -36,6 +36,7 @@ import {
 } from '../../stores/navigation';
 import { syncJoinRequestsForSquad } from '../../stores/squad-join-requests';
 import { drainPendingAdmitQueue } from '../parent/pending-admit';
+import { ingestMutinyProcessTxFromAnnounce } from '../governance/mutiny-process-tx';
 
 export interface MlsStructuredRefreshHandlers {
   mergeTreasurySafesForParent: (parentId: string) => void;
@@ -88,6 +89,7 @@ export function onMlsStructuredMessage(
   }
   if (announce?.type === ANNOUNCE_TYPE_GOVERNANCE_PROCESS_UPDATED) {
     bumpNonce(governanceProcessNonceByParentId, announce.payload.parent_id);
+    ingestMutinyProcessTxFromAnnounce(announce.payload);
   }
   if (announce?.type === ANNOUNCE_TYPE_SQUAD_MEMBER_EVM_SHARE) {
     handlers.mergeSquadMemberEvmForAnnouncementsGroup(announce.payload.parent_id || gid);
