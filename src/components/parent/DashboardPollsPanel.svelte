@@ -20,21 +20,25 @@
   import { getPollBallotMap, pollReferenceToken, setPollBallot } from '../../lib/parent/parent-polls';
   import { getInvokeErrorMessage } from '../../lib/utils/tauri-errors';
 
-  /** Squad/network id (announcements MLS group id). */
-  export let parentId: string;
-  /** MLS group for poll create/vote rumors (`resolvePollsMlsGroupId` — announcements scope). */
-  export let pollsMlsGroupId: string | null;
-  /** Dashboard tab vs `#polls` channel chrome. */
-  export let variant: 'dashboard' | 'channel' = 'dashboard';
-  /** When true in channel variant, fill the parent split pane instead of a fixed max height. */
-  export let fillParent = false;
+  interface Props {
+    /** Squad/network id (announcements MLS group id). */
+    parentId: string;
+    /** MLS group for poll create/vote rumors (`resolvePollsMlsGroupId` — announcements scope). */
+    pollsMlsGroupId: string | null;
+    /** Dashboard tab vs `#polls` channel chrome. */
+    variant?: 'dashboard' | 'channel';
+    /** When true in channel variant, fill the parent split pane instead of a fixed max height. */
+    fillParent?: boolean;
+  }
 
-  let showCreatePollModal = false;
-  let parentPollsList: ParentPoll[] = [];
-  let pollsScrollEl: HTMLDivElement | null = null;
-  let pollBallotRefresh = 0;
-  let pollVoteSendingPollId: string | null = null;
-  let pollVoteSendingOptionId: string | null = null;
+  let { parentId, pollsMlsGroupId, variant = 'dashboard', fillParent = false }: Props = $props();
+
+  let showCreatePollModal = $state(false);
+  let parentPollsList = $state<ParentPoll[]>([]);
+  let pollsScrollEl = $state<HTMLDivElement | null>(null);
+  let pollBallotRefresh = $state(0);
+  let pollVoteSendingPollId = $state<string | null>(null);
+  let pollVoteSendingOptionId = $state<string | null>(null);
 
   function dashboardPollDtoToParentPoll(d: DashboardPollDto): ParentPoll {
     return {
@@ -66,18 +70,21 @@
     }
   }
 
-  $: viewerNpub = $currentUser?.npub ?? '';
+  const viewerNpub = $derived($currentUser?.npub ?? '');
 
-  $: pollReplicaNonceForParent = parentId?.trim()
-    ? ($dashboardPollReplicaNonceByParentId[parentId.trim()] ?? 0)
-    : 0;
+  const pollReplicaNonceForParent = $derived(
+    parentId?.trim() ? ($dashboardPollReplicaNonceByParentId[parentId.trim()] ?? 0) : 0,
+  );
 
-  $: if (parentId?.trim()) {
+  $effect(() => {
+    if (!parentId?.trim()) return;
     void pollReplicaNonceForParent;
     void refreshDashboardPollsList();
-  }
+  });
 
-  $: pollsFeedScrollKey = `${parentId ?? ''}:${parentPollsList.length}:${parentPollsList.at(-1)?.id ?? ''}`;
+  const pollsFeedScrollKey = $derived(
+    `${parentId ?? ''}:${parentPollsList.length}:${parentPollsList.at(-1)?.id ?? ''}`,
+  );
 
   async function scrollPollsFeedToBottom() {
     await tick();
@@ -86,16 +93,16 @@
     el.scrollTop = el.scrollHeight;
   }
 
-  $: {
+  $effect(() => {
     void pollsFeedScrollKey;
     void scrollPollsFeedToBottom();
-  }
+  });
 
-  $: pollBallotMap = (() => {
+  const pollBallotMap = $derived.by(() => {
     void pollBallotRefresh;
     if (!viewerNpub || !parentId) return {} as Record<string, string>;
     return getPollBallotMap(viewerNpub, parentId);
-  })();
+  });
 
   function openCreatePollModal() {
     if (!viewerNpub?.trim()) {
@@ -185,10 +192,11 @@
     showToast(ok ? tFn('governance.polls.copiedChatRef') : tFn('governance.polls.copyFailed'));
   }
 
-  $: tallyHint =
+  const tallyHint = $derived(
     variant === 'channel'
       ? $t('governance.polls.tallyChannelHint')
-      : $t('governance.polls.tallyDashboardHint');
+      : $t('governance.polls.tallyDashboardHint'),
+  );
 </script>
 
 <div
