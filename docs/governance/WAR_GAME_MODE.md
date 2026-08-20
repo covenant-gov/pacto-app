@@ -2,7 +2,7 @@
 
 Practice stack for Pacto Gov: same protocol, accelerated timings, **Sepolia only**. Real governance stays on the production `pacto_gov` singleton and `NavePirataRegistry`.
 
-Public rules: [Wargame](https://covenant-gov.github.io/pacto-app/) on the download site. Hub channel after first deploy: `squad-wargame`.
+Public rules: [Wargame](https://covenant-gov.github.io/pacto-app/wargame/) on the download site. Hub channel after first deploy: `squad-wargame`.
 
 ## Settled product decisions
 

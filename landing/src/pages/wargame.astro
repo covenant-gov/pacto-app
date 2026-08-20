@@ -1,0 +1,111 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Wargame · Pacto"
+  description="Rules for Pacto war-game mode: same governance protocol, accelerated timings, Sepolia only."
+  path="wargame/"
+  current="wargame"
+>
+  <main class="rules-page">
+    <h1>Wargame</h1>
+    <p class="lede">
+      Practice Pacto Gov on Sepolia. Same protocol as real governance, faster clocks, throwaway stack.
+    </p>
+
+    <section>
+      <h2>Same protocol, not the live stack</h2>
+      <p>
+        War-game mode runs the same on-chain governance as production. It does{' '}
+        <strong>not</strong> replace real gov. Practice lives on{' '}
+        <strong>WarGameRegistry</strong>. Production stays on{' '}
+        <strong>NavePirataRegistry</strong>, the Launchpad “Deployed” slot, and the{' '}
+        <code>pacto_gov</code> singleton.
+      </p>
+      <p>
+        Redeploy retires the previous Active game. It does not unwind a real
+        treasury or captain.
+      </p>
+    </section>
+
+    <section>
+      <h2>Two channels</h2>
+      <ul>
+        <li>
+          <code>squad-dashboard</code> — real governance and treasury.
+        </li>
+        <li>
+          <code>squad-wargame</code> — play hub. It appears after the first war-game
+          deploy and stays as a virtual row (not a separate chat group).
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Timings</h2>
+      <ul>
+        <li>
+          <strong>War-game default:</strong> 5 minutes for crew-change delay and
+          proposal expiry. Customizable down to 1 minute.
+        </li>
+        <li>
+          <strong>Production default:</strong> 7 days for both.
+        </li>
+        <li>
+          Those two knobs also seed mutiny expiry and crew-offboard expiry at
+          deploy.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Crew votes (Treasury Authority)</h2>
+      <p>
+        Treasury proposals use one of two crew-vote modes. You can switch them
+        in the app; flipping mode is itself a two-body proposal.
+      </p>
+      <ul>
+        <li>
+          <strong>Majority (51%):</strong> passes when 2 × yeas &gt; snapshot.
+          Abstain counts against.
+        </li>
+        <li>
+          <strong>Quorum (30% default):</strong> passes when at least that share of
+          the snapshot votes <em>and</em> yeas exceed nays.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>What the switch does not change</h2>
+      <ul>
+        <li>
+          <strong>Mutiny</strong> is always 51% of the snapshot, with no extra
+          vote delay — execute as soon as yeas hit the threshold. It{' '}
+          <strong>does expire</strong> after the proposal-expiry window (5 minutes
+          in war-game, 7 days in production). After the deadline, anyone can
+          expire a stuck mutiny so a failed round does not pin the squad.
+        </li>
+        <li>
+          <strong>Crew-led offboard</strong> is always quorum-of-cast on
+          Quartermaster, independent of the Treasury Authority switch.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>How a round works</h2>
+      <ul>
+        <li>Sepolia only. Real gov can use any configured network.</li>
+        <li>One Active war-game stack at a time.</li>
+        <li>Retire and redeploy as often as you like.</li>
+        <li>Any member can start. Captain for the round is random.</li>
+        <li>
+          Typical loop: start, propose, vote, mutiny if you need a new captain.
+          Video, if you use it, stays out of band.
+        </li>
+      </ul>
+    </section>
+  </main>
+</BaseLayout>
