@@ -12,7 +12,7 @@ These close the research questions in GitHub #138. Do not re-open them as “fir
 
 **Config.** Production deploy defaults stay **7 days** crew-change delay / **7 days** proposal expiry / **Majority (51%)** / **3000 bps** quorum. War-game defaults are **5 minutes**, customizable down to **1 minute** (`MIN_GOV_DELAY`). Clients may customize both duration knobs and TA vote mode / quorum. At factory init, `proposalExpiry` also seeds Mutiny `mutinyExpiry` and Quartermaster `crewOffboardExpiry`.
 
-**Copy.** Official name **war-game mode**. Hub slug **`squad-wargame`**. Public tab label **Wargame**. Any member may start. Sponsor and Squad Admin deploys have no timing knobs.
+**Copy.** Official name **war-game mode**. Hub slug **`squad-wargame`**. Public tab label **Wargame**. Any member may start; the starter is captain. Sponsor and Squad Admin deploys have no timing knobs.
 
 ## What is not this stack
 

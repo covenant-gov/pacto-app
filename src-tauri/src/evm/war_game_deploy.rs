@@ -11,6 +11,7 @@ use tauri::{AppHandle, Runtime};
 
 use crate::db;
 
+use super::access_control::with_gov_write_locks;
 use super::contracts::pacto_gov::read_bindings::IWarGameRegistry::WarGameRegistered;
 use super::contracts::pacto_gov::INavePirataFactory::{deployNavePirataCall, StackKind};
 use super::contracts::pacto_sponsor::ISquadSponsorExt::{
@@ -210,10 +211,9 @@ async fn send_value_call<P: Provider>(
     send_and_confirm(provider, tx, timeout_msg).await
 }
 
-async fn permit_members_on_ext<R: Runtime>(
-    app: &AppHandle<R>,
+async fn permit_members_on_ext<P: Provider>(
     urls: &[String],
-    signing_parent: &str,
+    signing: &P,
     sponsor: Address,
     members: &[Address],
 ) -> Result<(), String> {
@@ -226,10 +226,6 @@ async fn permit_members_on_ext<R: Runtime>(
     if hats_wired {
         return Ok(());
     }
-
-    require_roster_treasury_signing_allowed(app.clone(), signing_parent).await?;
-    let (_signer, wallet) = load_squad_roster_embedded_signer(app.clone(), signing_parent).await?;
-    let provider = connect_signing_provider(urls, wallet).await?;
 
     for member in members {
         let already: bool = {
@@ -248,7 +244,7 @@ async fn permit_members_on_ext<R: Runtime>(
         .abi_encode();
         let tx = contract_call_request(sponsor, calldata);
         let _receipt = send_and_confirm(
-            &provider,
+            signing,
             tx,
             "Timed out waiting for setPermittedAddress confirmation.",
         )
@@ -326,14 +322,26 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
 
     let signing_parent = roster_signing_parent_id(&app, pid, alt)?;
     let signer_mode = parse_signer_wallet(signer_wallet.as_deref(), "default")?;
-    let (_pay_signer, pay_wallet) = if signer_mode == "default" {
+    let (pay_signer, pay_wallet) = if signer_mode == "default" {
         require_treasury_signing_allowed(app.clone()).await?;
         load_active_squad_embedded_signer(app.clone()).await?
     } else {
         require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
         load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?
     };
+    require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
+    let (roster_signer, roster_wallet) =
+        load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?;
+    let pay_addr = pay_signer.address();
+    let address_owner = roster_signer.address();
+    let _write_locks = with_gov_write_locks(pay_addr, address_owner).await;
+
     let pay_provider = connect_signing_provider(&urls, pay_wallet).await?;
+    let roster_provider = if pay_addr == address_owner {
+        pay_provider.clone()
+    } else {
+        connect_signing_provider(&urls, roster_wallet).await?
+    };
     let rpc_chain_id = pay_provider.get_chain_id().await.map_err(|e| {
         wallet_err_json(
             "RPC_CHAIN_ID",
@@ -352,9 +360,6 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         ));
     }
 
-    let (roster_signer, _) =
-        load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?;
-    let address_owner = roster_signer.address();
     let factory_sponsor = sponsor_addrs.squad_sponsor_factory;
     let factory_gov = gov_addrs.nave_pirata_factory;
 
@@ -427,14 +432,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
                 address_owner,
             )
         };
-        permit_members_on_ext(
-            &app,
-            &urls,
-            signing_parent.as_str(),
-            parent_sponsor,
-            &parent_members,
-        )
-        .await?;
+        permit_members_on_ext(&urls, &roster_provider, parent_sponsor, &parent_members).await?;
     }
 
     let round_deposit = if parent_record.is_none() {
@@ -510,14 +508,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
         roster.iter().map(|row| row.evm_address.as_str()),
         address_owner,
     );
-    permit_members_on_ext(
-        &app,
-        &urls,
-        signing_parent.as_str(),
-        round_sponsor,
-        &round_members,
-    )
-    .await?;
+    permit_members_on_ext(&urls, &roster_provider, round_sponsor, &round_members).await?;
 
     let params = nave_pirata_deploy_params(
         captain_addr,
@@ -541,10 +532,6 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
             |e| wallet_err_json_with_tx_hash("PARSE_RECEIPT", e, None, deploy_tx.clone()),
         )?;
 
-    require_roster_treasury_signing_allowed(app.clone(), signing_parent.as_str()).await?;
-    let (_post_signer, post_wallet) =
-        load_squad_roster_embedded_signer(app.clone(), signing_parent.as_str()).await?;
-    let post_provider = connect_signing_provider(&urls, post_wallet).await?;
     let post_calldata = postInitializeCall {
         topHatId: top_hat,
         registry: war_game_registry,
@@ -552,7 +539,7 @@ pub async fn deploy_war_game_for_parent<R: Runtime>(
     }
     .abi_encode();
     let post_receipt = send_and_confirm(
-        &post_provider,
+        &roster_provider,
         contract_call_request(round_sponsor, post_calldata),
         "Timed out waiting for war-game sponsor postInitialize confirmation.",
     )

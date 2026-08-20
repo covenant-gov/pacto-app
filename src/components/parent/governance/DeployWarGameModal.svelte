@@ -14,7 +14,6 @@
     validateSquadParams,
   } from '../../../lib/governance/squad-params';
   import SquadParamsCustomizeFields from './SquadParamsCustomizeFields.svelte';
-  import { pickRandomRosterCaptain } from '../../../lib/governance/war-game-captain';
   import { WAR_GAME_PUBLIC_RULES_URL } from '../../../lib/governance/war-game-links';
   import { openExternalUrl } from '../../../lib/utils/open-external';
   import { getAddress, isAddress, parseEther } from 'viem';
@@ -40,7 +39,6 @@
   const descId = 'deploy-war-game-desc';
   const tFn = get(t);
 
-  let captainAddress = $state('');
   let myRosterEvm = $state('');
   let resolvingDeployer = $state(true);
   let deployError = $state('');
@@ -76,19 +74,6 @@
     return `${addr.slice(0, 10)}…${addr.slice(-8)}`;
   }
 
-  const rosterKey = $derived(
-    memberOptions
-      .map((m) => m.address.trim().toLowerCase())
-      .filter(Boolean)
-      .sort()
-      .join('|'),
-  );
-
-  $effect(() => {
-    const key = rosterKey;
-    captainAddress = pickRandomRosterCaptain(key ? key.split('|') : []) ?? '';
-  });
-
   $effect(() => {
     const pid = parentId.trim();
     let cancelled = false;
@@ -118,11 +103,7 @@
       deployError = tFn('governance.deployWarGame.error.loadingEvm');
       return;
     }
-    if (!captainAddress) {
-      deployError = tFn('governance.deployWarGame.error.noRosterCaptain');
-      return;
-    }
-    if (signerWallet === 'squad' && !myRosterEvm) {
+    if (!myRosterEvm) {
       deployError = tFn('governance.deployWarGame.error.noBoundEvm');
       return;
     }
@@ -143,7 +124,7 @@
     startWarGameDeploy({
       parentId: parentId.trim(),
       announcementsGroupId,
-      captain: captainAddress,
+      captain: myRosterEvm,
       initialDepositWei: depositWei,
       signerWallet,
       squadParams,
@@ -186,13 +167,13 @@
 
   <div class="war-game-deploy-field">
     <span class="war-game-deploy-label">{$t('governance.deployWarGame.captainLabel')}</span>
-    {#if captainAddress}
+    {#if myRosterEvm}
       <p class="war-game-deploy-pinned">
-        <code>{shortAddress(captainAddress)}</code>
-        <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainRandom')}</span>
+        <code>{shortAddress(myRosterEvm)}</code>
+        <span class="war-game-deploy-pinned-note">{$t('governance.deployWarGame.captainYou')}</span>
       </p>
     {:else}
-      <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.captainNoRosterHint')}</p>
+      <p class="war-game-deploy-hint muted">{$t('governance.deployWarGame.captainNoEvmHint')}</p>
     {/if}
   </div>
 
@@ -250,10 +231,9 @@
       class="btn-primary"
       disabled={
         resolvingDeployer ||
-        !captainAddress ||
+        !myRosterEvm ||
         !depositWei ||
-        customizeInvalid ||
-        (signerWallet === 'squad' && !myRosterEvm)
+        customizeInvalid
       }
       onclick={executeDeploy}
     >

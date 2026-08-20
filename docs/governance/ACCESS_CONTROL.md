@@ -99,7 +99,7 @@ Deploy/deposit themselves are **not** sponsored in v1 — only post-deploy gov m
 
 ## Write reliability (adjacent)
 
-- Concurrent gov / Squad Admin sends that share a roster signer EOA share a write lock (nonce safety under rapid clicks / cross-squad).
+- Concurrent gov / Squad Admin / war-game deploy sends that share a signer EOA share a write lock (nonce safety under rapid clicks / cross-squad).
 - Transaction requests set an explicit `chain_id`.
 - `RECEIPT_TIMEOUT` surfaces the submitted hash and warns against blind resubmit of the same calldata.
 
