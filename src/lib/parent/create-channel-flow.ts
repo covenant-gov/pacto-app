@@ -9,6 +9,7 @@ import { resolveHubChannelNameForGroupSelection } from '../mls/virtual-channel-b
 import { getInvokeErrorMessage, friendlyMessage } from '../utils/tauri-errors';
 import { persistSquadPatch } from '../squad/squad-catalog';
 import { publishSquadChannelsCatalog } from '../squad/squad-channels-catalog';
+import { reportSkippedMembers } from '../squad/skipped-members';
 import type { ChannelAccess } from './channel-access';
 import {
   squads,
@@ -59,7 +60,7 @@ export function runCreateChannelInParent(opts: {
 
   void (async () => {
     try {
-      const groupId = await createGroupChat(name, selectedNpubs);
+      const { groupId, skippedMembers } = await createGroupChat(name, selectedNpubs);
       await persistSquadPatch(squadId, (s) => ({
         ...s,
         channels: s.channels.map((ch) =>
@@ -87,13 +88,16 @@ export function runCreateChannelInParent(opts: {
         channelGroupId: groupId,
         channelName: name,
       });
+      const skippedNpubs = new Set(skippedMembers.map((s) => s.npub));
       for (const npub of selectedNpubs) {
+        if (skippedNpubs.has(npub)) continue;
         try {
           await sendDmMessage(npub, payload);
         } catch (e) {
           console.warn('[create-channel] channel notify failed for', npub.slice(0, 20) + '…', e);
         }
       }
+      reportSkippedMembers(skippedMembers);
     } catch (e) {
       onErrorBanner(friendlyMessage(getInvokeErrorMessage(e)));
       await persistSquadPatch(squadId, (s) => ({

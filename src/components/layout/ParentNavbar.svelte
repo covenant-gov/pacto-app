@@ -7,8 +7,11 @@
   import {
     squads,
     parentsCreatingAnnouncements,
+    removeParentCreatingAnnouncements,
     parentCreateErrorById,
     parentPendingCreateMembers,
+    parentPendingCreateOptions,
+    parentRetryingCreateIds,
     MY_DASHBOARD_CHANNEL_ID,
     SQUAD_DASHBOARD_CHANNEL_ID,
     type Squad,
@@ -21,7 +24,9 @@
     activeTopNavTab,
     lastChannelBySquadId,
     lastHubChannelNameBySquadId,
+    squadNavOrder,
   } from '../../stores/navigation';
+  import { removeSquadNavId } from '../../lib/squad/squad-nav-order';
   import { dmList, requestsList, pendingList } from '../../stores/dm';
   import { getInvokeErrorMessage, friendlyMessage } from '../../lib/utils/tauri-errors';
   import { showToast } from '../../stores/toast';
@@ -103,10 +108,15 @@
 
   $: createError = activeParent ? $parentCreateErrorById[activeParent.id] ?? '' : '';
 
+  $: retryingCreate = !!activeParent && $parentRetryingCreateIds.has(activeParent.id);
+
   $: canRetryCreate =
     activeParent &&
     createError &&
     ($parentPendingCreateMembers[activeParent.id]?.length ?? 0) > 0;
+
+  /** Discard is destructive: never offer it while a create for this parent is still running. */
+  $: canDiscardCreate = !!activeParent && !!createError && !retryingCreate;
 
   $: subheading =
     activeParent &&
@@ -228,7 +238,6 @@
   });
   $: inviteModalEmptyMessage = $t('nav.parentNavbar.invite.empty');
 
-  let retryingCreate = false;
   let inviteErrorBanner = '';
   let createChannelErrorBanner = '';
 
@@ -264,7 +273,6 @@
     const parent = activeParent;
     if (!parent || !createError || retryingCreate) return;
     if (!$parentPendingCreateMembers[parent.id]?.length) return;
-    retryingCreate = true;
     try {
       await retryParentAnnouncementsCreate(parent);
     } catch (e) {
@@ -272,8 +280,35 @@
         ...m,
         [parent.id]: friendlyMessage(getInvokeErrorMessage(e)),
       }));
-    } finally {
-      retryingCreate = false;
+    }
+  }
+
+  /** Discards a failed placeholder squad and its associated create-flow state. */
+  function handleDiscardCreate() {
+    const parent = activeParent;
+    if (!parent || !createError || retryingCreate) return;
+    squads.update((list) => list.filter((s) => s.id !== parent.id));
+    squadNavOrder.update((order) => removeSquadNavId(order, parent.id));
+    removeParentCreatingAnnouncements(parent.id);
+    parentCreateErrorById.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateMembers.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    parentPendingCreateOptions.update((m) => {
+      const next = { ...m };
+      delete next[parent.id];
+      return next;
+    });
+    if (get(activeSquadId) === parent.id) {
+      activeSquadId.set(null);
+      activeChannelId.set(null);
+      activeHubChannelName.set(null);
     }
   }
 
@@ -509,6 +544,7 @@
   creating={Boolean(creating)}
   createError={createError}
   canRetryCreate={Boolean(canRetryCreate)}
+  canDiscardCreate={Boolean(canDiscardCreate)}
   retryingCreate={retryingCreate}
   emptyMessage={emptyMessage}
   hasParent={!!activeParent}
@@ -517,6 +553,7 @@
   onSelectChannel={selectChannel}
   onCreateChannel={openCreateChannelModal}
   onRetryCreate={handleRetryCreate}
+  onDiscardCreate={handleDiscardCreate}
   onInvite={openInviteModal}
   onExitSquad={openExitModal}
   partnerSquads={partnerSquads}

@@ -427,21 +427,32 @@ export interface MlsGroupMembers {
   admins: string[];
 }
 
+/** Member left out of a create due to no/unfetchable/unusable key package. */
+export interface SkippedMember {
+  npub: string;
+  reason: string;
+}
+
+export interface GroupChatCreated {
+  groupId: string;
+  skippedMembers: SkippedMember[];
+}
+
 /**
  * Create a new MLS group (channel). Backend: create_group_chat.
- * Returns group_id (hex). Emits mls_group_initial_sync.
+ * Returns group_id (hex) plus members skipped for unusable key packages. Emits mls_group_initial_sync.
  */
 export async function createGroupChat(
   groupName: string,
   memberIds: string[]
-): Promise<string> {
+): Promise<GroupChatCreated> {
   dmLog('create_group_chat', { groupName: groupName.slice(0, 20), memberCount: memberIds.length });
-  const groupId = (await invoke('create_group_chat', {
+  const result = (await invoke('create_group_chat', {
     groupName,
     memberIds,
-  })) as string;
-  dmLog('create_group_chat result', { groupId: groupId?.slice(0, 16) + '…' });
-  return groupId;
+  })) as { groupId: string; skippedMembers?: SkippedMember[] };
+  dmLog('create_group_chat result', { groupId: result.groupId?.slice(0, 16) + '…' });
+  return { groupId: result.groupId, skippedMembers: result.skippedMembers ?? [] };
 }
 
 /**

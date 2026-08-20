@@ -25,7 +25,6 @@ clear_cached_file
 clear_compression_cache
 clear_image_cache
 clear_storage
-create_mls_group
 debug_hot_reload_sync
 delete_whisper_model
 download_whisper_model
