@@ -15,77 +15,109 @@
     order: number;
   }
 
-  export let parentName = '';
-  export let parentIconUrl: string | undefined = undefined;
-  export let parentId = '';
-  export let subheading: string | undefined = undefined;
-  export let channels: ParentChannel[] = [];
-  export let activeChannelId: string | null = null;
-  /** Disambiguates selection when multiple channels share the active MLS group id. */
-  export let activeHubChannelName: string | null = null;
-  export let activeView = 'hub';
-  export let creating = false;
-  export let createError = '';
-  export let canRetryCreate = false;
-  export let canDiscardCreate = false;
-  export let retryingCreate = false;
-  export let emptyMessage = '';
-  /** When false, show empty state instead of header/channels. */
-  export let hasParent = false;
-  /**
-   * Error banners to show below the header. Each can have an optional dismiss handler.
-   * If onDismissBanner is provided, a dismiss button is shown.
-   */
-  export let errorBanners: { id: string; text: string }[] = [];
-  export let onDismissBanner: ((id: string) => void) | undefined = undefined;
+  interface Props {
+    parentName?: string;
+    parentIconUrl?: string;
+    parentId?: string;
+    subheading?: string;
+    channels?: ParentChannel[];
+    activeChannelId?: string | null;
+    /** Disambiguates selection when multiple channels share the active MLS group id. */
+    activeHubChannelName?: string | null;
+    activeView?: string;
+    creating?: boolean;
+    createError?: string;
+    canRetryCreate?: boolean;
+    canDiscardCreate?: boolean;
+    retryingCreate?: boolean;
+    emptyMessage?: string;
+    /** When false, show empty state instead of header/channels. */
+    hasParent?: boolean;
+    /**
+     * Error banners to show below the header. Each can have an optional dismiss handler.
+     * If onDismissBanner is provided, a dismiss button is shown.
+     */
+    errorBanners?: { id: string; text: string }[];
+    onDismissBanner?: (id: string) => void;
+    onSelectChannel?: (channel: ParentChannel) => void;
+    onCreateChannel?: () => void;
+    onRetryCreate?: () => void;
+    onDiscardCreate?: () => void;
+    onInvite?: () => void;
+    onExitSquad?: () => void;
+    /** Partner squad-pairs linked to the active hub. */
+    partnerSquads?: { id: string; name: string }[];
+    activePartnerSquadId?: string | null;
+    onSelectPartnerSquad?: (id: string) => void;
+    /** Show pair action on any hub with a pairable anchor squad. */
+    showPairWithSquadAction?: boolean;
+    onPairWithSquad?: () => void;
+  }
 
-  export let onSelectChannel: (channel: ParentChannel) => void = () => {};
-  export let onCreateChannel: () => void = () => {};
-  export let onRetryCreate: () => void = () => {};
-  export let onDiscardCreate: () => void = () => {};
-  export let onInvite: () => void = () => {};
-  export let onExitSquad: (() => void) | undefined = undefined;
+  let {
+    parentName = '',
+    parentIconUrl = undefined,
+    parentId = '',
+    subheading = undefined,
+    channels = [],
+    activeChannelId = null,
+    activeHubChannelName = null,
+    activeView = 'hub',
+    creating = false,
+    createError = '',
+    canRetryCreate = false,
+    canDiscardCreate = false,
+    retryingCreate = false,
+    emptyMessage = '',
+    hasParent = false,
+    errorBanners = [],
+    onDismissBanner,
+    onSelectChannel = () => {},
+    onCreateChannel = () => {},
+    onRetryCreate = () => {},
+    onDiscardCreate = () => {},
+    onInvite = () => {},
+    onExitSquad,
+    partnerSquads = [],
+    activePartnerSquadId = null,
+    onSelectPartnerSquad = () => {},
+    showPairWithSquadAction = false,
+    onPairWithSquad,
+  }: Props = $props();
 
-  /** Partner squad-pairs linked to the active hub. */
-  export let partnerSquads: { id: string; name: string }[] = [];
-  export let activePartnerSquadId: string | null = null;
-  export let onSelectPartnerSquad: (id: string) => void = () => {};
-
-  /** Show pair action on any hub with a pairable anchor squad. */
-  export let showPairWithSquadAction = false;
-  export let onPairWithSquad: (() => void) | undefined = undefined;
-
-  let menuOpen = false;
+  let menuOpen = $state(false);
   const createErrorId = 'parent-create-error';
 
-  $: groupIdDupCount = channels.reduce<Record<string, number>>((acc, c) => {
-    acc[c.groupId] = (acc[c.groupId] ?? 0) + 1;
-    return acc;
-  }, {});
-  $: firstNameByGroupId = (() => {
+  let groupIdDupCount = $derived(
+    channels.reduce<Record<string, number>>((acc, c) => {
+      acc[c.groupId] = (acc[c.groupId] ?? 0) + 1;
+      return acc;
+    }, {})
+  );
+  let firstNameByGroupId = $derived.by(() => {
     const m: Record<string, string> = {};
     for (const c of channels) {
       if (!(c.groupId in m)) m[c.groupId] = c.name;
     }
     return m;
-  })();
+  });
 
-  $: showPartnerSquads = partnerSquads.length > 0 || showPairWithSquadAction;
-  $: ({ defaultHubChannels, customChannels } = partitionHubSidebarChannels(channels));
-  $: hubAlertByChannelName = (() => {
+  let showPartnerSquads = $derived(partnerSquads.length > 0 || showPairWithSquadAction);
+  let { defaultHubChannels, customChannels } = $derived(partitionHubSidebarChannels(channels));
+  let hubAlertByChannelName = $derived.by(() => {
     const counts = $unreadCountsByChat;
     const out: Record<string, number> = {};
     for (const channel of [...defaultHubChannels, ...customChannels]) {
       out[channel.name] = counts[channel.groupId] ?? 0;
     }
     return out;
-  })();
-  $: showCustomChannelDivider = defaultHubChannels.length > 0 && customChannels.length > 0;
-  $: inviteLabel = $t('nav.parentSidebar.invite');
-  $: showExit = typeof onExitSquad === 'function';
-  $: exitLabel = $t('nav.parentSidebar.exit');
-  $: onExit = onExitSquad;
-  $: resolvedEmptyMessage = emptyMessage || $t('nav.parentSidebar.empty');
+  });
+  let showCustomChannelDivider = $derived(defaultHubChannels.length > 0 && customChannels.length > 0);
+  let inviteLabel = $derived($t('nav.parentSidebar.invite'));
+  let showExit = $derived(typeof onExitSquad === 'function');
+  let exitLabel = $derived($t('nav.parentSidebar.exit'));
+  let onExit = $derived(onExitSquad);
+  let resolvedEmptyMessage = $derived(emptyMessage || $t('nav.parentSidebar.empty'));
 </script>
 
 <svelte:window

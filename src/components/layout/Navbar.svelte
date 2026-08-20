@@ -72,19 +72,19 @@
   import { warnSkippedMembers, skippedMembersNotice } from '../../lib/squad/skipped-members';
 
   const translate = get(t);
-  $: orderedSquads = orderSquads($squads, $squadNavOrder);
+  let orderedSquads = $derived(orderSquads($squads, $squadNavOrder));
 
   const SQUAD_DRAG_THRESHOLD_PX = 6;
-  let squadRailEl: HTMLDivElement | null = null;
-  let squadDragFromId: string | null = null;
+  let squadRailEl = $state<HTMLDivElement | null>(null);
+  let squadDragFromId: string | null = $state(null);
   /** Visual gap index in `orderedSquads` (0 = before first, length = after last). */
-  let squadDropGapIndex: number | null = null;
+  let squadDropGapIndex: number | null = $state(null);
   let squadDragMoved = false;
   let squadDropApplied = false;
   let squadPointerId: number | null = null;
   let squadPointerStartY = 0;
   let squadPendingDragId: string | null = null;
-  let squadGhost: { x: number; y: number; name: string; image: string } | null = null;
+  let squadGhost: { x: number; y: number; name: string; image: string } | null = $state(null);
   let squadWindowListenersBound = false;
 
   function selectSquad(squadId: string) {
@@ -279,37 +279,40 @@
     squads: 'nav.navbar.addButton.squads',
     catchup: '',
   };
-  $: addButtonLabel = showAddButton ? $t(addButtonLabelKeys[$activeTopNavTab]) : '';
-  $: showAddButton =
-    $activeTopNavTab === 'commons' || $activeTopNavTab === 'dms' || $activeTopNavTab === 'squads';
-  $: maxSquadNameLength = $appConfig.squadNameMaxLength;
+  let showAddButton = $derived(
+    $activeTopNavTab === 'commons' || $activeTopNavTab === 'dms' || $activeTopNavTab === 'squads'
+  );
+  let addButtonLabel = $derived(showAddButton ? $t(addButtonLabelKeys[$activeTopNavTab]) : '');
+  let maxSquadNameLength = $derived($appConfig.squadNameMaxLength);
 
-  $: commonsStartBroadcastDisabled =
-    $activeTopNavTab === 'commons' && $commonsUserHasActiveBroadcast;
-  $: commonsAddButtonLabel = commonsStartBroadcastDisabled
-    ? $t('nav.navbar.addButton.broadcastActive')
-    : addButtonLabel;
+  let commonsStartBroadcastDisabled = $derived(
+    $activeTopNavTab === 'commons' && $commonsUserHasActiveBroadcast
+  );
+  let commonsAddButtonLabel = $derived(
+    commonsStartBroadcastDisabled ? $t('nav.navbar.addButton.broadcastActive') : addButtonLabel
+  );
 
-  let commonsActiveBroadcastSyncKey = '';
-  $: {
-    const npub = $activeTopNavTab === 'commons' ? ($currentUser?.npub ?? '') : '';
+  let commonsActiveBroadcastSyncKey = $state('');
+  let commonsBroadcastNpub = $derived($activeTopNavTab === 'commons' ? ($currentUser?.npub ?? '') : '');
+  $effect(() => {
+    const npub = commonsBroadcastNpub;
     if (npub && npub !== commonsActiveBroadcastSyncKey) {
       commonsActiveBroadcastSyncKey = npub;
       void syncCommonsUserActiveBroadcast(npub);
     }
     if (!npub) commonsActiveBroadcastSyncKey = '';
-  }
+  });
 
-  let showOrganizeSquadModal = false;
-  let organizeSquadName = '';
-  let organizeSquadIconUrl = '';
-  let organizeSquadMembers: string[] = [];
-  let organizeSquadError = '';
-  let organizeSquadVisibility: SquadVisibility = 'private';
-  let organizeSquadTags: string[] = [];
-  let organizeSquadTagError = '';
-  let organizeSquadNetwork: SupportedChainId | '' = DEFAULT_CHAIN_ID;
-  let commonsFields: SquadCommonsVisibilityFields;
+  let showOrganizeSquadModal = $state(false);
+  let organizeSquadName = $state('');
+  let organizeSquadIconUrl = $state('');
+  let organizeSquadMembers: string[] = $state([]);
+  let organizeSquadError = $state('');
+  let organizeSquadVisibility = $state<SquadVisibility>('private');
+  let organizeSquadTags: string[] = $state([]);
+  let organizeSquadTagError = $state('');
+  let organizeSquadNetwork = $state<SupportedChainId | ''>(DEFAULT_CHAIN_ID);
+  let commonsFields: SquadCommonsVisibilityFields | undefined = $state();
 
   const squadNetworkOptions = listSquadDeployNetworkOptions();
 
@@ -325,6 +328,7 @@
     organizeSquadTagError = '';
     organizeSquadNetwork = DEFAULT_CHAIN_ID;
     commonsFields?.resetCommonsFields();
+    setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
   }
 
   function closeOrganizeSquadModal() {
@@ -528,43 +532,42 @@
     if ($activeTopNavTab === 'squads') openOrganizeSquadModal();
   }
 
-  $: canCreateSquad =
+  let canCreateSquad = $derived(
     organizeSquadName.trim().length > 0 &&
     organizeSquadMembers.length > 0 &&
-    (organizeSquadVisibility !== 'public' || organizeSquadTags.length === 3);
-  $: organizeMemberList = [...$pinnedList, ...$dmList];
+    (organizeSquadVisibility !== 'public' || organizeSquadTags.length === 3)
+  );
+  let organizeMemberList = $derived([...$pinnedList, ...$dmList]);
 
-  $: organizeSquadTitle = $t('nav.navbar.organizeSquad.title');
-  $: organizeSquadDescription = $t('nav.navbar.organizeSquad.description');
-  $: squadNameLabel = $t('nav.navbar.organizeSquad.nameLabel');
-  $: squadNamePlaceholder = $t('nav.navbar.organizeSquad.namePlaceholder');
-  $: iconUrlLabel = $t('nav.navbar.organizeSquad.iconLabel');
-  $: organizeMembersLabel = $t('nav.navbar.organizeSquad.membersLabel');
-  $: organizeMembersEmpty = $t('nav.navbar.organizeSquad.membersEmpty');
-  $: organizeNetworkLabel = $t('nav.navbar.organizeSquad.networkLabel');
-  $: organizeNetworkNone = $t('nav.navbar.organizeSquad.networkNone');
-  $: organizeCancel = $t('nav.navbar.organizeSquad.cancel');
-  $: organizeCreate = $t('nav.navbar.organizeSquad.create');
-  $: organizeCreateAria = $t('nav.navbar.organizeSquad.createAria');
+  let organizeSquadTitle = $derived($t('nav.navbar.organizeSquad.title'));
+  let organizeSquadDescription = $derived($t('nav.navbar.organizeSquad.description'));
+  let squadNameLabel = $derived($t('nav.navbar.organizeSquad.nameLabel'));
+  let squadNamePlaceholder = $derived($t('nav.navbar.organizeSquad.namePlaceholder'));
+  let iconUrlLabel = $derived($t('nav.navbar.organizeSquad.iconLabel'));
+  let organizeMembersLabel = $derived($t('nav.navbar.organizeSquad.membersLabel'));
+  let organizeMembersEmpty = $derived($t('nav.navbar.organizeSquad.membersEmpty'));
+  let organizeNetworkLabel = $derived($t('nav.navbar.organizeSquad.networkLabel'));
+  let organizeNetworkNone = $derived($t('nav.navbar.organizeSquad.networkNone'));
+  let organizeCancel = $derived($t('nav.navbar.organizeSquad.cancel'));
+  let organizeCreate = $derived($t('nav.navbar.organizeSquad.create'));
+  let organizeCreateAria = $derived($t('nav.navbar.organizeSquad.createAria'));
 
-  $: pinnedTabLabel = $t('nav.navbar.dmTabs.pinned');
-  $: friendsTabLabel = $t('nav.navbar.dmTabs.friends');
-  $: requestsTabLabel = $t('nav.navbar.dmTabs.requests');
-  $: pendingTabLabel = $t('nav.navbar.dmTabs.pending');
-  $: searchTabLabel = $t('nav.navbar.dmTabs.search');
-  $: settingsTabLabel = $t('nav.navbar.settings');
+  let pinnedTabLabel = $derived($t('nav.navbar.dmTabs.pinned'));
+  let friendsTabLabel = $derived($t('nav.navbar.dmTabs.friends'));
+  let requestsTabLabel = $derived($t('nav.navbar.dmTabs.requests'));
+  let pendingTabLabel = $derived($t('nav.navbar.dmTabs.pending'));
+  let searchTabLabel = $derived($t('nav.navbar.dmTabs.search'));
+  let settingsTabLabel = $derived($t('nav.navbar.settings'));
 
-  $: if (showOrganizeSquadModal) {
-    setTimeout(() => document.getElementById('squad-name')?.focus(), 0);
-  }
-
-  $: if ($squadRecreateRequest) {
-    const prefill = $squadRecreateRequest;
-    squadRecreateRequest.set(null);
-    openOrganizeSquadModal();
-    organizeSquadName = prefill.name;
-    organizeSquadMembers = prefill.memberNpubs;
-  }
+  $effect(() => {
+    if ($squadRecreateRequest) {
+      const prefill = $squadRecreateRequest;
+      squadRecreateRequest.set(null);
+      openOrganizeSquadModal();
+      organizeSquadName = prefill.name;
+      organizeSquadMembers = prefill.memberNpubs;
+    }
+  });
 </script>
 
 <div class="navbar">
