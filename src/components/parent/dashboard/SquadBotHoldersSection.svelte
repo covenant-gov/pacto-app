@@ -22,53 +22,68 @@
   } from '../../../lib/squad/squad-bot';
   import { refreshMlsGroupMembers } from '../../../stores/mls-group-members';
 
-  export let announcementsGroupId: string | null = null;
-  export let channelMembers: string[] = [];
-  export let squadAdminActive = false;
-  export let executorRolesLabel = '';
+  interface Props {
+    announcementsGroupId?: string | null;
+    channelMembers?: string[];
+    squadAdminActive?: boolean;
+    executorRolesLabel?: string;
+  }
 
-  let state: SquadBotState | null = null;
-  let loading = true;
-  let addNpub = '';
-  let error = '';
-  let copiedBotNpub = false;
+  let {
+    announcementsGroupId = null,
+    channelMembers = [],
+    squadAdminActive = false,
+    executorRolesLabel = '',
+  }: Props = $props();
 
-  $: squadId = announcementsGroupId?.trim() || '';
-  $: void $squadBotHolderActionInFlightRevision;
-  $: acting = squadId ? isSquadBotHolderActionInFlight(squadId) : false;
-  $: myNpub = $currentUser?.npub ?? '';
-  $: canManage = canManageBotHolders({
-    squadAdminActive,
-    executorRolesLabel,
-    state,
+  let botState = $state<SquadBotState | null>(null);
+  let loading = $state(true);
+  let addNpub = $state('');
+  let error = $state('');
+  let copiedBotNpub = $state(false);
+
+  const squadId = $derived(announcementsGroupId?.trim() || '');
+  const acting = $derived.by(() => {
+    void $squadBotHolderActionInFlightRevision;
+    return squadId ? isSquadBotHolderActionInFlight(squadId) : false;
   });
-  $: candidates = channelMembers.filter(
-    (n) => n && n !== myNpub && !(state?.holders ?? []).includes(n)
+  const myNpub = $derived($currentUser?.npub ?? '');
+  const canManage = $derived(
+    canManageBotHolders({
+      squadAdminActive,
+      executorRolesLabel,
+      state: botState,
+    }),
+  );
+  const candidates = $derived(
+    channelMembers.filter((n) => n && n !== myNpub && !(botState?.holders ?? []).includes(n)),
   );
 
   async function reload() {
     if (!squadId) {
-      state = null;
+      botState = null;
       loading = false;
       return;
     }
     loading = true;
     error = '';
     try {
-      state = (await getSquadBotState(squadId)) ?? (await ensureSquadBot(squadId));
+      botState = (await getSquadBotState(squadId)) ?? (await ensureSquadBot(squadId));
     } catch (e) {
       error = e instanceof Error ? e.message : tFn('governance.botHolders.toastLoadFailed');
-      state = null;
+      botState = null;
     } finally {
       loading = false;
     }
   }
 
-  let lastLoadedId = '';
-  $: if (squadId && squadId !== lastLoadedId) {
-    lastLoadedId = squadId;
-    void reload();
-  }
+  let lastLoadedId = $state('');
+  $effect(() => {
+    if (squadId && squadId !== lastLoadedId) {
+      lastLoadedId = squadId;
+      void reload();
+    }
+  });
 
   onMount(() => {
     if (squadId) void reload();
@@ -79,8 +94,8 @@
   }
 
   async function copyBotNpub() {
-    if (!state?.botNpub) return;
-    const ok = await copyTextToClipboard(state.botNpub);
+    if (!botState?.botNpub) return;
+    const ok = await copyTextToClipboard(botState.botNpub);
     if (ok) {
       copiedBotNpub = true;
       setTimeout(() => {
@@ -93,7 +108,7 @@
 
   async function onAdd() {
     if (!squadId || !addNpub || acting) return;
-    const block = canAddBotHolder(channelMembers, myNpub, addNpub, state?.holders ?? [], {
+    const block = canAddBotHolder(channelMembers, myNpub, addNpub, botState?.holders ?? [], {
       squadAdminActive,
       executorRolesLabel,
     });
@@ -106,7 +121,7 @@
       showToast(result.error);
       return;
     }
-    state = result.state;
+    botState = result.state;
     addNpub = '';
     showToast(tFn('governance.botHolders.toastAdded'));
   }
@@ -118,7 +133,7 @@
       showToast(result.error);
       return;
     }
-    state = result.state;
+    botState = result.state;
     showToast(tFn('governance.botHolders.toastRemoved'));
   }
 
@@ -130,7 +145,7 @@
       showToast(result.error);
       return;
     }
-    state = result.state;
+    botState = result.state;
     showToast(tFn('governance.botHolders.toastRotated'));
   }
 </script>
@@ -147,7 +162,7 @@
     <p class="muted" role="status">{$t('governance.common.loading')}</p>
   {:else if error}
     <p class="err" role="alert">{error}</p>
-  {:else if !state}
+  {:else if !botState}
     <p class="muted">{$t('governance.botHolders.botNotInitialized')}</p>
     <button type="button" class="btn" disabled={acting || !squadId} onclick={() => void reload()}>
       {$t('governance.botHolders.initialize')}
@@ -157,7 +172,7 @@
       <div class="bot-key-box">
         <span class="bot-key-box-label">{$t('governance.botHolders.botNpub')}</span>
         <div class="bot-key-value-row">
-          <code class="bot-key-value-full">{state.botNpub}</code>
+          <code class="bot-key-value-full">{botState.botNpub}</code>
           <button
             type="button"
             class="bot-key-copy-btn"
@@ -186,16 +201,16 @@
 
       <div class="bot-key-box bot-key-box-compact">
         <span class="bot-key-box-label">{$t('governance.botHolders.keyEpoch')}</span>
-        <span class="bot-key-box-value">{state.keyEpoch}</span>
+        <span class="bot-key-box-value">{botState.keyEpoch}</span>
       </div>
     </div>
 
     <h4 class="subhead">{$t('governance.botHolders.holders')}</h4>
     <ul class="holder-list">
-      {#each state.holders as npub (npub)}
+      {#each botState.holders as npub (npub)}
         <li>
           <span>{label(npub)}</span>
-          {#if canManage && state.holders.length > 1}
+          {#if canManage && botState.holders.length > 1}
             <button
               type="button"
               class="linkish danger"

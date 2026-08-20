@@ -13,29 +13,50 @@
   import RpcReadErrorCard from './RpcReadErrorCard.svelte';
   import { rpcReadErrorKind } from '../../../lib/squad/rpc-read-error';
 
-  export let squadInfraRows: unknown[] | undefined = undefined;
-  export let structureSummary: DashboardStructureSummary | null | undefined = undefined;
-  export let hatsTree: HatTreeNodeDto | null = null;
-  export let hatsTreeLoading = false;
-  export let hatsTreeRefreshing = false;
-  export let hatsTreeError = '';
-  export let roleLabelByHatId: Record<string, string> = {};
-  export let wearerAddressesByHatId: Record<string, string[]> = {};
-  export let executorRolesByAddress: Record<string, string> = {};
-  export let squadMemberEvmByNpub: Record<string, string> = {};
-  export let rolesTreeAnnotationsLoading = false;
-  export let rolesTreeAnnotationsRefreshing = false;
-  export let rolesTreeAnnotationsError = '';
-  export let onRefreshRolesTree: () => void = () => {};
-  export let onOpenLaunchpad: () => void = () => {};
-  /** Lowercase address → protocol module label for wearer chips. */
-  export let knownWearerLabels: Record<string, string> = {};
+  interface Props {
+    squadInfraRows?: unknown[];
+    structureSummary?: DashboardStructureSummary | null;
+    hatsTree?: HatTreeNodeDto | null;
+    hatsTreeLoading?: boolean;
+    hatsTreeRefreshing?: boolean;
+    hatsTreeError?: string;
+    roleLabelByHatId?: Record<string, string>;
+    wearerAddressesByHatId?: Record<string, string[]>;
+    executorRolesByAddress?: Record<string, string>;
+    squadMemberEvmByNpub?: Record<string, string>;
+    rolesTreeAnnotationsLoading?: boolean;
+    rolesTreeAnnotationsRefreshing?: boolean;
+    rolesTreeAnnotationsError?: string;
+    onRefreshRolesTree?: () => void;
+    onOpenLaunchpad?: () => void;
+    /** Lowercase address → protocol module label for wearer chips. */
+    knownWearerLabels?: Record<string, string>;
+  }
 
-  $: rolesTreeRefreshing = hatsTreeRefreshing || rolesTreeAnnotationsRefreshing;
-  $: rolesTreeLoading = hatsTreeLoading || rolesTreeAnnotationsLoading;
-  $: chainKey = structureSummary?.chainKey ?? null;
-  $: hatsTreeRpcKind = rpcReadErrorKind(hatsTreeError);
-  $: rolesAnnotationsRpcKind = rpcReadErrorKind(rolesTreeAnnotationsError);
+  let {
+    squadInfraRows = undefined,
+    structureSummary = undefined,
+    hatsTree = null,
+    hatsTreeLoading = false,
+    hatsTreeRefreshing = false,
+    hatsTreeError = '',
+    roleLabelByHatId = {},
+    wearerAddressesByHatId = {},
+    executorRolesByAddress = {},
+    squadMemberEvmByNpub = {},
+    rolesTreeAnnotationsLoading = false,
+    rolesTreeAnnotationsRefreshing = false,
+    rolesTreeAnnotationsError = '',
+    onRefreshRolesTree = () => {},
+    onOpenLaunchpad = () => {},
+    knownWearerLabels = {},
+  }: Props = $props();
+
+  const rolesTreeRefreshing = $derived(hatsTreeRefreshing || rolesTreeAnnotationsRefreshing);
+  const rolesTreeLoading = $derived(hatsTreeLoading || rolesTreeAnnotationsLoading);
+  const chainKey = $derived(structureSummary?.chainKey ?? null);
+  const hatsTreeRpcKind = $derived(rpcReadErrorKind(hatsTreeError));
+  const rolesAnnotationsRpcKind = $derived(rpcReadErrorKind(rolesTreeAnnotationsError));
 </script>
 
 {#if squadInfraRows !== undefined && !structureSummary}
