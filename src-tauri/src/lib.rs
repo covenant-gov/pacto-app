@@ -9302,22 +9302,6 @@ async fn run_create_mls_group(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Create a new MLS group with initial member devices.
-/// Returns the new group's wire id. Callers that need per-member skip detail (e.g.
-/// `create_group_chat`) call `run_create_mls_group` directly instead of this command.
-#[tauri::command]
-async fn create_mls_group(
-    name: String,
-    avatar_ref: Option<String>,
-    initial_member_devices: Vec<(String, String)>,
-) -> Result<String, String> {
-    session::heartbeat();
-    require_key_derivation_version_2()?;
-    run_create_mls_group(name, avatar_ref, initial_member_devices)
-        .await
-        .map(|outcome| outcome.group_id)
-}
-
 /// Create an MLS group from a group name + member npubs (multi-device aware)
 /// - Validates non-empty group name (channel name; squad display name is a separate
 ///   field validated in `squad_catalog::upsert_squad`) and at least one member
@@ -9389,7 +9373,7 @@ async fn create_group_chat(
         // Choose a device. Currently: first entry. Future: prefer newest by fetched_at if available.
         let maybe_first = devices.into_iter().next();
         if let Some((device_id, _kp_ref)) = maybe_first {
-            // Shape required by create_mls_group: (member_npub, device_id)
+            // Shape required by run_create_mls_group: (member_npub, device_id)
             initial_member_devices.push((npub, device_id));
         } else {
             // No keypackages for this member → skip them but keep going
@@ -9400,6 +9384,7 @@ async fn create_group_chat(
             preflight_skipped.push(mls::SkippedMember {
                 npub,
                 reason: "no key package published".to_string(),
+                transient: false,
             });
         }
     }
@@ -9476,6 +9461,7 @@ mod create_group_chat_helper_tests {
         SkippedMember {
             npub: npub.to_string(),
             reason: reason.to_string(),
+            transient: false,
         }
     }
 
@@ -10823,7 +10809,6 @@ pub fn run() {
             regenerate_device_keypackage,
             // MLS core commands
             create_group_chat,
-            create_mls_group,
             sync_mls_groups_now,
             list_mls_groups,
             get_mls_group_metadata,

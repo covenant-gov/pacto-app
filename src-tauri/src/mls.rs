@@ -131,6 +131,12 @@ pub struct EventCursor {
 pub struct SkippedMember {
     pub npub: String,
     pub reason: String,
+    /// Backend-internal classification, never sent to the frontend: `true` means the skip was
+    /// caused by a transient relay failure and a retry may recover this member; `false` means
+    /// the member's key package is genuinely unusable (bad npub, stale index entry, never
+    /// published, or fails MDK validation).
+    #[serde(skip)]
+    pub transient: bool,
 }
 
 /// Outcome of `MlsService::create_group`: the new group's wire id plus any requested members
@@ -320,6 +326,51 @@ fn format_all_skipped_error(skipped: &[SkippedMember]) -> String {
     format!("create_group: no usable member key packages: {}", detail)
 }
 
+/// Upper bound on a relay- or MDK-supplied reason string before it lands in
+/// `SkippedMember.reason`: long enough for a real diagnostic, short enough that neither a
+/// relay nor a malformed event can stuff arbitrary text into a logged/UI-reachable string.
+const SKIP_REASON_MAX_CHARS: usize = 200;
+
+/// Redact any embedded URLs and cap the length of a relay- or MDK-supplied reason string
+/// before it is stored in `SkippedMember.reason` — this text is logged and reachable from UI
+/// surfaces, so it must never carry an unredacted relay URL or unbounded third-party text.
+fn sanitize_skip_reason(reason: &str) -> String {
+    let redacted = crate::evm::wallet_security::redact_urls_in_text(reason);
+    if redacted.chars().count() <= SKIP_REASON_MAX_CHARS {
+        return redacted;
+    }
+    let truncated: String = redacted.chars().take(SKIP_REASON_MAX_CHARS).collect();
+    format!("{}…", truncated)
+}
+
+/// Marker the frontend matches to localize this failure; keep it and the message shape in sync
+/// with `friendlyMessage` in `src/lib/utils/tauri-errors.ts`.
+pub(crate) const RELAY_KEYPACKAGE_UNREACHABLE: &str =
+    "could not reach the relays to check key packages for:";
+
+/// Error returned when `create_group` aborts because a relay fetch failed for at least one
+/// member, as opposed to that member genuinely having no usable key package. Returned before
+/// the MLS group exists so the frontend's retry path can recover every member. Names members
+/// by shortened npub: the frontend maps this string to localized copy, and falls back to
+/// showing it verbatim.
+fn format_transient_skip_error(skipped: &[SkippedMember]) -> String {
+    let npubs = skipped
+        .iter()
+        .filter(|s| s.transient)
+        .map(|s| short_npub(&s.npub))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{} {}", RELAY_KEYPACKAGE_UNREACHABLE, npubs)
+}
+
+/// First 12 characters of an npub, matching how the UI abbreviates members.
+fn short_npub(npub: &str) -> String {
+    if npub.chars().count() <= 16 {
+        return npub.to_string();
+    }
+    format!("{}…", npub.chars().take(12).collect::<String>())
+}
+
 #[cfg(test)]
 mod format_all_skipped_error_tests {
     use super::{format_all_skipped_error, SkippedMember};
@@ -330,10 +381,12 @@ mod format_all_skipped_error_tests {
             SkippedMember {
                 npub: "npub1legacy".to_string(),
                 reason: "Missing required encoding tag".to_string(),
+                transient: false,
             },
             SkippedMember {
                 npub: "npub1unresolved".to_string(),
                 reason: "key package event not found on the trusted relays".to_string(),
+                transient: false,
             },
         ];
         let msg = format_all_skipped_error(&skipped);
@@ -591,6 +644,7 @@ impl MlsService {
                     skipped.push(SkippedMember {
                         npub: member_npub.clone(),
                         reason: "invalid npub".to_string(),
+                        transient: false,
                     });
                     continue;
                 }
@@ -605,6 +659,7 @@ impl MlsService {
                 }
             }
 
+            let mut relay_fetch_error: Option<String> = None;
             let kp_event: Option<Event> = if let Some(id_hex) = ref_event_id_hex {
                 // Fetch exact event by id from the trusted relay set
                 let id = match EventId::from_hex(&id_hex) {
@@ -617,6 +672,7 @@ impl MlsService {
                         skipped.push(SkippedMember {
                             npub: member_npub.clone(),
                             reason: "invalid key package reference in local index".to_string(),
+                            transient: false,
                         });
                         continue;
                     }
@@ -637,6 +693,7 @@ impl MlsService {
                             "[MLS] Fetch KeyPackage by id failed ({}:{}): {}",
                             member_npub, device_id, e
                         );
+                        relay_fetch_error = Some(e.to_string());
                         None
                     }
                 }
@@ -665,6 +722,7 @@ impl MlsService {
                     }
                     Err(e) => {
                         eprintln!("[MLS] Fetch KeyPackages for {} failed: {}", member_npub, e);
+                        relay_fetch_error = Some(e.to_string());
                         None
                     }
                 }
@@ -673,6 +731,16 @@ impl MlsService {
             if let Some(ev) = kp_event {
                 member_kp_events.push(ev);
                 invited_recipients.push(member_pk);
+            } else if let Some(fetch_err) = relay_fetch_error {
+                // The relay fetch itself failed (unreachable relay, budget exceeded, etc.) —
+                // distinct from "no event was found": this member must not be silently
+                // dropped, so the abort check right after this loop turns it into a hard
+                // failure instead of a permanent skip.
+                skipped.push(SkippedMember {
+                    npub: member_npub.clone(),
+                    reason: format!("relay fetch failed: {}", sanitize_skip_reason(&fetch_err)),
+                    transient: true,
+                });
             } else {
                 // Continue without this member device (will create group without them)
                 eprintln!(
@@ -682,8 +750,16 @@ impl MlsService {
                 skipped.push(SkippedMember {
                     npub: member_npub.clone(),
                     reason: "key package event not found on the trusted relays".to_string(),
+                    transient: false,
                 });
             }
+        }
+
+        // A transient (relay-fetch) skip must abort before the MLS group exists: the frontend's
+        // retry path only recovers a create that failed before anything was created, so a member
+        // dropped only because a relay was unreachable must not be baked into a partial group.
+        if skipped.iter().any(|s| s.transient) {
+            return Err(MlsError::NetworkError(format_transient_skip_error(&skipped)));
         }
 
         // Perform engine operations without awaits in scope
@@ -709,7 +785,8 @@ impl MlsService {
                         );
                         skipped.push(SkippedMember {
                             npub: recipient.to_bech32().unwrap_or_default(),
-                            reason: e.to_string(),
+                            reason: sanitize_skip_reason(&e.to_string()),
+                            transient: false,
                         });
                     }
                 }
@@ -3868,6 +3945,154 @@ mod mls_key_package_validity_tests {
             err.to_string().contains("encoding tag"),
             "expected an encoding-tag error, got: {}",
             err
+        );
+    }
+
+    /// Exercises `MlsService::key_package_event_usable` itself (not just the underlying MDK
+    /// call it wraps): the gate `regenerate_device_keypackage` actually calls must accept a
+    /// freshly built key package event.
+    #[tokio::test]
+    async fn key_package_event_usable_accepts_a_freshly_built_event() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([22u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+        let valid_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content.clone())
+            .tags(kp.tags_443.clone())
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign keypackage");
+
+        let service = MlsService {
+            engine: Some(Arc::new(engine)),
+            _initialized: true,
+        };
+        service
+            .key_package_event_usable(&valid_event)
+            .expect("freshly built key package must be usable");
+    }
+
+    /// Same gate, rejection path: a legacy event missing the encoding tag must be reported as
+    /// unusable, with the returned error naming the tag that's missing.
+    #[tokio::test]
+    async fn key_package_event_usable_rejects_event_missing_encoding_tag() {
+        let engine = MDK::new(
+            MdkSqliteStorage::new_with_key(":memory:", EncryptionConfig::new([23u8; 32])).unwrap(),
+        );
+        let keys = Keys::generate();
+        let relay_url = RelayUrl::parse("wss://relay.test").unwrap();
+        let kp = engine
+            .create_key_package_for_event(&keys.public_key(), [relay_url])
+            .expect("create keypackage");
+        let tags_without_encoding: Vec<Tag> = kp
+            .tags_443
+            .into_iter()
+            .filter(|tag| tag.kind() != TagKind::Custom("encoding".into()))
+            .collect();
+        let legacy_event = EventBuilder::new(Kind::MlsKeyPackage, kp.content)
+            .tags(tags_without_encoding)
+            .build(keys.public_key())
+            .sign(&keys)
+            .await
+            .expect("sign legacy keypackage");
+
+        let service = MlsService {
+            engine: Some(Arc::new(engine)),
+            _initialized: true,
+        };
+        let err = service
+            .key_package_event_usable(&legacy_event)
+            .expect_err("key package missing the encoding tag must be rejected");
+        assert!(
+            err.contains("encoding tag"),
+            "expected an encoding-tag error, got: {}",
+            err
+        );
+    }
+}
+
+#[cfg(test)]
+mod sanitize_skip_reason_tests {
+    use super::{sanitize_skip_reason, SKIP_REASON_MAX_CHARS};
+
+    #[test]
+    fn redacts_urls_embedded_in_the_reason() {
+        let reason = "fetch failed: https://relay.example.com/?token=SECRET";
+        let sanitized = sanitize_skip_reason(reason);
+        assert!(!sanitized.contains("SECRET"));
+    }
+
+    #[test]
+    fn truncates_overlong_reasons_with_a_trailing_ellipsis() {
+        let reason = "x".repeat(SKIP_REASON_MAX_CHARS * 2);
+        let sanitized = sanitize_skip_reason(&reason);
+        assert!(sanitized.ends_with('…'));
+        assert_eq!(sanitized.chars().count(), SKIP_REASON_MAX_CHARS + 1);
+    }
+
+    #[test]
+    fn leaves_a_short_plain_reason_untouched() {
+        assert_eq!(sanitize_skip_reason("no key package published"), "no key package published");
+    }
+}
+
+#[cfg(test)]
+mod format_transient_skip_error_tests {
+    use super::{format_transient_skip_error, SkippedMember};
+
+    fn transient(npub: &str) -> SkippedMember {
+        SkippedMember {
+            npub: npub.to_string(),
+            reason: "relay fetch failed: timed out".to_string(),
+            transient: true,
+        }
+    }
+
+    #[test]
+    fn names_every_transiently_skipped_npub() {
+        let skipped = vec![transient("npub1abc"), transient("npub1def")];
+        let msg = format_transient_skip_error(&skipped);
+        assert!(msg.contains("npub1abc"), "{msg}");
+        assert!(msg.contains("npub1def"), "{msg}");
+    }
+
+    #[test]
+    fn ignores_non_transient_skips_in_the_named_list() {
+        let mut skipped = vec![transient("npub1abc")];
+        skipped.push(SkippedMember {
+            npub: "npub1permanent".to_string(),
+            reason: "invalid npub".to_string(),
+            transient: false,
+        });
+        let msg = format_transient_skip_error(&skipped);
+        assert!(msg.contains("npub1abc"));
+        assert!(!msg.contains("npub1permanent"));
+    }
+
+    #[test]
+    fn shortens_full_length_npubs_so_the_toast_stays_readable() {
+        let long = format!("npub1{}", "q".repeat(58));
+        let msg = format_transient_skip_error(&[transient(&long)]);
+        assert!(msg.contains("npub1qqqqqqq…"), "{msg}");
+        assert!(!msg.contains(&long), "{msg}");
+    }
+
+    #[test]
+    fn carries_the_marker_the_frontend_matches() {
+        let msg = format_transient_skip_error(&[transient("npub1abc")]);
+        assert!(msg.starts_with(super::RELAY_KEYPACKAGE_UNREACHABLE), "{msg}");
+    }
+
+    #[test]
+    fn is_stable_for_an_empty_list() {
+        assert_eq!(
+            format_transient_skip_error(&[]),
+            format!("{} ", super::RELAY_KEYPACKAGE_UNREACHABLE)
         );
     }
 }
