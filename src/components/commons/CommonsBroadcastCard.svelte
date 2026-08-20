@@ -18,13 +18,17 @@
   } from '../../lib/commons/message-preview';
   import CommonsBroadcastDetailModal from './CommonsBroadcastDetailModal.svelte';
 
-  export let broadcast: CommonsBroadcastDto;
+  interface Props {
+    broadcast: CommonsBroadcastDto;
+  }
+
+  let { broadcast }: Props = $props();
 
   const tFn = get(t);
 
-  let detailOpen = false;
-  let messageBusy = false;
-  let actionError = '';
+  let detailOpen = $state(false);
+  let messageBusy = $state(false);
+  let actionError = $state('');
 
   function formatExpiry(expiresAt: number): string {
     const ms = expiresAt * 1000 - Date.now();
@@ -37,29 +41,28 @@
     return tFn('commons.duration.daysLeft', { values: { days: d } });
   }
 
-  $: ({
-    isSquad,
-    isUser,
-    title,
-    subtitle,
-    coverImage,
-    coverSeed,
-    squadLabel,
-    joinBlockReason,
-    joinInFlight,
-    canMessage,
-    canJoin,
-    greetingName,
-  } = (() => {
+  const presentation = $derived.by(() => {
     $commonsJoinRequestRevision;
     return computeBroadcastPresentation(broadcast, $profiles, $squads, $currentUser?.npub, tFn);
-  })());
-  $: localSquadIds = $squads.map((s) => s.id);
-  $: myNpub = $currentUser?.npub;
-  $: messageTruncated = isCommonsMessageTruncated(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX);
-  $: previewMessage = messageTruncated
-    ? truncateCommonsMessage(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX)
-    : broadcast.message;
+  });
+  const isSquad = $derived(presentation.isSquad);
+  const isUser = $derived(presentation.isUser);
+  const title = $derived(presentation.title);
+  const subtitle = $derived(presentation.subtitle);
+  const coverImage = $derived(presentation.coverImage);
+  const coverSeed = $derived(presentation.coverSeed);
+  const squadLabel = $derived(presentation.squadLabel);
+  const joinBlockReason = $derived(presentation.joinBlockReason);
+  const joinInFlight = $derived(presentation.joinInFlight);
+  const canMessage = $derived(presentation.canMessage);
+  const canJoin = $derived(presentation.canJoin);
+  const greetingName = $derived(presentation.greetingName);
+  const localSquadIds = $derived($squads.map((s) => s.id));
+  const myNpub = $derived($currentUser?.npub);
+  const messageTruncated = $derived(isCommonsMessageTruncated(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX));
+  const previewMessage = $derived(
+    messageTruncated ? truncateCommonsMessage(broadcast.message, COMMONS_MESSAGE_PREVIEW_MAX) : broadcast.message
+  );
 
   function openDetail() {
     detailOpen = true;

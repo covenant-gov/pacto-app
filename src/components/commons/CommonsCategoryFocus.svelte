@@ -7,18 +7,29 @@
     localizeCommonsTagCategory,
   } from '../../lib/commons/tag-catalog';
 
-  export let categoryId: string;
-  /** True while filtering ANY tag in the category (ALL chip). */
-  export let categoryAllMode = false;
-  export let activeTags: string[] = [];
-  export let countsByTag: Record<string, number> = {};
-  export let onToggleTag: (tag: string) => void = () => {};
-  export let onClearFocus: () => void = () => {};
+  interface Props {
+    categoryId: string;
+    /** True while filtering ANY tag in the category (ALL chip). */
+    categoryAllMode?: boolean;
+    activeTags?: string[];
+    countsByTag?: Record<string, number>;
+    onToggleTag?: (tag: string) => void;
+    onClearFocus?: () => void;
+  }
 
-  $: category = findCommonsTagCategory(categoryId);
-  $: localizedCategory = category ? localizeCommonsTagCategory($t, category) : null;
-  $: art = localizedCategory ? commonsTagArtSrc(localizedCategory) : null;
-  $: activeSet = new Set(activeTags);
+  let {
+    categoryId,
+    categoryAllMode = false,
+    activeTags = [],
+    countsByTag = {},
+    onToggleTag = () => {},
+    onClearFocus = () => {},
+  }: Props = $props();
+
+  const category = $derived(findCommonsTagCategory(categoryId));
+  const localizedCategory = $derived(category ? localizeCommonsTagCategory($t, category) : null);
+  const art = $derived(localizedCategory ? commonsTagArtSrc(localizedCategory) : null);
+  const activeSet = $derived(new Set(activeTags));
 </script>
 
 {#if localizedCategory}
